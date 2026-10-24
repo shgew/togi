@@ -1217,6 +1217,7 @@ fn a_stop_at_a_durable_boundary_drains_what_it_owes_and_starts_no_new_work(edge:
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
+            | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }

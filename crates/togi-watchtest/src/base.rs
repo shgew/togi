@@ -156,6 +156,7 @@ impl Base {
                         | Payload::DayCleanStop(_)
                         | Payload::DayAnswer(_)
                         | Payload::DayRecord(_)
+                        | Payload::DayFault(_)
                         | Payload::DayUncleanEnd(_)
                         | Payload::StateRebuilt(_) => false,
                     })),
@@ -324,6 +325,7 @@ fn dead_end() -> Result<Vec<Event>, Error> {
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
+            | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }

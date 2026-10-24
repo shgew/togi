@@ -187,6 +187,7 @@ fn session_metrics(events: &[Event]) -> SessionMetrics {
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
+            | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -410,6 +411,7 @@ fn failure_metrics(p: &Projection<'_>, since: Option<Timestamp>) -> FailureMetri
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
+            | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }

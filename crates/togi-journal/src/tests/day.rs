@@ -398,8 +398,28 @@ fn a_record_before_the_unclean_end_names_nothing() {
 fn a_boot_was_read_back_when_its_observer_last_reported() {
     let crashes = DayCrashes::of(&[
         started(2, A, 0),
-        at(3, A, 600, &[], DayCheckpoint { applied_secs: 600 }.into()),
-        at(4, B, 900, &[], DayCheckpoint { applied_secs: 1 }.into()),
+        at(
+            3,
+            A,
+            600,
+            &[],
+            DayCheckpoint {
+                applied_secs: 600,
+                load_mix: LoadMix::default(),
+            }
+            .into(),
+        ),
+        at(
+            4,
+            B,
+            900,
+            &[],
+            DayCheckpoint {
+                applied_secs: 1,
+                load_mix: LoadMix::default(),
+            }
+            .into(),
+        ),
         unclean(5, A),
     ]);
     let read = crashes.get(&id(A)).and_then(|named| named.read_back);

@@ -4,8 +4,9 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
 use togi_machine::{
-    BiosContext, BootId, CoreId, EndEvidence, InvalidTarget, KernelFault, KernelTail,
-    ObservedOffset, PerCore, ResetKind, ResetReason, TargetOffset,
+    BankType, BiosContext, BootId, CoreId, CpuId, EndEvidence, InvalidTarget, KernelErrorKind,
+    KernelFault, KernelTail, ObservedOffset, PerCore, ProcessFaultKind, ResetKind, ResetReason,
+    TargetOffset,
 };
 
 use crate::{Build, Event, Seq};
@@ -32,6 +33,156 @@ object_only! {
         /// Whole seconds (floor) the observer has been active this boot, cumulative across its `day.boot_start`
         /// records; downtime between restarts is not credited.
         pub applied_secs: u64,
+        /// How the sampled part of that active time divided among the load shapes, cumulative like `applied_secs`.
+        /// A checkpoint written before the mix was sampled has none, which reads as zero.
+        #[serde(default)]
+        pub load_mix: LoadMix,
+    }
+}
+
+object_only! {
+    /// Milliseconds of sampled active time per load shape. Each sample interval counts toward exactly one shape,
+    /// so the sum is the sampled time; an interval the sampler missed (a gap over three sample periods) counts
+    /// toward none.
+    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct LoadMix {
+        /// A few cores busy, the rest idle or light: the shape single-thread boost needs.
+        #[serde(default)]
+        pub single_thread_ms: u64,
+        /// At least half the cores busy and one lightly loaded, like regime R8.
+        #[serde(default)]
+        pub light_beside_busy_ms: u64,
+        /// Every core busy, like regime R9.
+        #[serde(default)]
+        pub all_threads_ms: u64,
+        /// Intervals in which the machine went from no core busy to some busy, or back.
+        #[serde(default)]
+        pub idle_transition_ms: u64,
+        /// Intervals with no core busy, after an interval with none: idle or lightly used.
+        #[serde(default)]
+        pub quiet_ms: u64,
+        /// Active intervals that fit none of the shapes above.
+        #[serde(default)]
+        pub other_ms: u64,
+    }
+}
+
+impl LoadMix {
+    /// The sampled time.
+    pub fn total_ms(&self) -> u64 {
+        [
+            self.single_thread_ms,
+            self.light_beside_busy_ms,
+            self.all_threads_ms,
+            self.idle_transition_ms,
+            self.quiet_ms,
+            self.other_ms,
+        ]
+        .into_iter()
+        .fold(0, u64::saturating_add)
+    }
+}
+
+/// What a userspace process was killed for, among the traps a flawed core can cause.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Trap {
+    /// SIGILL: an invalid opcode.
+    IllegalInstruction,
+    /// SIGBUS.
+    Bus,
+    /// A general-protection fault in the process.
+    GeneralProtection,
+}
+
+impl Trap {
+    /// The trap a process fault is, if it is one the day service records; a segmentation fault or abort is not.
+    pub const fn of(kind: ProcessFaultKind) -> Option<Self> {
+        match kind {
+            ProcessFaultKind::IllegalInstruction => Some(Self::IllegalInstruction),
+            ProcessFaultKind::Bus => Some(Self::Bus),
+            ProcessFaultKind::GeneralProtection => Some(Self::GeneralProtection),
+            ProcessFaultKind::Segmentation | ProcessFaultKind::Abort => None,
+        }
+    }
+}
+
+object_only! {
+    /// A fault the kernel logged while the machine ran normally.
+    #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum LiveFault {
+        MachineCheck {
+            cpu: CpuId,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            core: Option<CoreId>,
+            bank: u16,
+            bank_type: BankType,
+            corrected: bool,
+        },
+        KernelError { error: KernelErrorKind },
+        Trap {
+            trap: Trap,
+            name: String,
+            pid: u32,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            cpu: Option<CpuId>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            core: Option<CoreId>,
+        },
+    }
+}
+
+object_only! {
+    /// A live fault, journaled once. The envelope's boot is the boot it happened in.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct DayFault {
+        pub fault: LiveFault,
+        /// When the kernel logged it, since boot.
+        pub monotonic_ns: u64,
+        /// The offsets last read back before the observer recorded the fault: the profile the machine ran.
+        pub offsets: PerCore<ObservedOffset>,
+        /// The log lines that reported it.
+        pub lines: Vec<String>,
+    }
+}
+
+impl DayFault {
+    /// What identifies the fault within its boot, which is how the same log line is journaled once however often
+    /// the observer restarts: the fault and the time it was logged. A trap carries only its kind, process name
+    /// and pid in the fault part, with the CPU evidence left out, because the kernel line and the core dump
+    /// record of one killed process carry different CPU evidence; such records are one fault when their times
+    /// are close, which the observer judges, so a later crash that reuses the pid is another.
+    pub fn identity(&self) -> (LiveFault, u64) {
+        match &self.fault {
+            LiveFault::Trap {
+                trap, name, pid, ..
+            } => (
+                LiveFault::Trap {
+                    trap: *trap,
+                    name: name.clone(),
+                    pid: *pid,
+                    cpu: None,
+                    core: None,
+                },
+                self.monotonic_ns,
+            ),
+            LiveFault::MachineCheck { .. } | LiveFault::KernelError { .. } => {
+                (self.fault.clone(), self.monotonic_ns)
+            }
+        }
+    }
+}
+
+impl LiveFault {
+    /// The core the fault names, when the log did.
+    pub const fn core(&self) -> Option<CoreId> {
+        match self {
+            Self::MachineCheck { core, .. } | Self::Trap { core, .. } => *core,
+            Self::KernelError { .. } => None,
+        }
     }
 }
 

@@ -738,6 +738,7 @@ const fn decides(payload: &Payload) -> bool {
         | Payload::DayCleanStop(_)
         | Payload::DayAnswer(_)
         | Payload::DayRecord(_)
+        | Payload::DayFault(_)
         | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => false,
     }

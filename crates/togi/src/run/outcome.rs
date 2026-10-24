@@ -196,6 +196,7 @@ impl HiddenClosing {
             | EventKind::DayCleanStop
             | EventKind::DayAnswer
             | EventKind::DayRecord
+            | EventKind::DayFault
             | EventKind::DayUncleanEnd
             | EventKind::StateRebuilt => self.0.clear(),
         }

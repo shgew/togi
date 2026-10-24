@@ -1,7 +1,9 @@
 //! Kernel evidence: [`Kernel`] reads boot history, machine-check errors and reset reasons through
-//! journalctl and pstore; [`parse`] decodes kernel messages and [`boot_id`] reads the current boot id.
+//! journalctl and pstore, and per-CPU scheduler times from `/proc/stat`; [`parse`] decodes kernel messages and
+//! [`boot_id`] reads the current boot id.
 
 mod boot;
+mod cpu_times;
 mod error;
 mod fault;
 mod journal;
@@ -17,13 +19,14 @@ mod tests;
 use std::time::Duration;
 
 use togi_machine::{
-    BootId, CoreInfo, EndEvidence, KernelCursor, KernelRead, KernelTail, Mce, MceCount, Partial,
-    PstoreRecord, ResetReason,
+    BootId, CoreInfo, CpuTime, EndEvidence, KernelCursor, KernelRead, KernelTail, Mce, MceCount,
+    Partial, PstoreRecord, ResetReason,
 };
 
 pub use boot::boot_id;
+pub use cpu_times::{CpuTimesError, cpu_times};
 pub use error::{BootIdError, Error, Operation};
-pub use fault::{FaultNumberError, FaultParseFailure, process_faults};
+pub use fault::{FaultNumberError, FaultParseFailure, kernel_errors, process_faults};
 pub use journal::DecodeError;
 pub use parse::{CpuCoreMap, DuplicateCpu, Message, ParseFailure, StatusError, parse};
 pub use pstore::{Access, PstoreError, Unsafe};
@@ -99,6 +102,15 @@ impl Kernel {
         }
     }
 
+    /// Every logical CPU's cumulative scheduler time, read from `/proc/stat`.
+    ///
+    /// # Errors
+    /// Returns an error when the file cannot be read or a CPU line cannot be decoded.
+    pub fn read_cpu_times(&self) -> Result<Vec<CpuTime>, Error> {
+        let stat = std::fs::read_to_string("/proc/stat").map_err(Error::CpuTimes)?;
+        cpu_times(&stat).map_err(Error::CpuTimesFormat)
+    }
+
     fn journal(&self) -> Journal<'_> {
         Journal::new(self.journalctl.as_ref(), self.budget)
     }
@@ -170,6 +182,7 @@ impl Kernel {
             )
             .map_err(nothing)?;
         let interval = read_interval(&out, boot, after);
+        let errors = kernel_errors(&interval.messages);
         let mut faults = interval.faults;
         let fault_error = match process_faults(&interval.messages, &self.cores) {
             Ok(parsed) => {
@@ -200,6 +213,7 @@ impl Kernel {
                 return Ok(KernelRead {
                     mces,
                     faults,
+                    errors,
                     cursor,
                 });
             }
@@ -212,6 +226,7 @@ impl Kernel {
             value: KernelRead {
                 mces,
                 faults,
+                errors,
                 ..KernelRead::default()
             },
             error: error.into(),

@@ -107,6 +107,7 @@ pub fn settled<'a>(pending: SessionId, live: impl IntoIterator<Item = &'a Event>
         | Payload::DayCleanStop(_)
         | Payload::DayAnswer(_)
         | Payload::DayRecord(_)
+        | Payload::DayFault(_)
         | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => false,
     })

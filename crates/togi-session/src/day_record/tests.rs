@@ -88,7 +88,15 @@ fn history(offsets: PerCore<ObservedOffset>) -> Vec<Event> {
                 offsets: profile([-5, -5, -5, -5]),
             },
         ),
-        event(4, "crashed", 700, DayCheckpoint { applied_secs: 600 }),
+        event(
+            4,
+            "crashed",
+            700,
+            DayCheckpoint {
+                applied_secs: 600,
+                load_mix: togi_journal::LoadMix::default(),
+            },
+        ),
         event(
             5,
             "next",

@@ -75,7 +75,15 @@ fn crashes(recorded: &[&str]) -> DayCrashes {
     let mut events = vec![
         start(1, "first", 100),
         start(2, "second", 600),
-        event(3, "second", 700, DayCheckpoint { applied_secs: 100 }),
+        event(
+            3,
+            "second",
+            700,
+            DayCheckpoint {
+                applied_secs: 100,
+                load_mix: togi_journal::LoadMix::default(),
+            },
+        ),
         end(4, "first", -5),
         end(5, "second", -10),
     ];

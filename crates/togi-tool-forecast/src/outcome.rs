@@ -252,6 +252,7 @@ pub(crate) fn stamp_of(event: &Event) -> Option<&Build> {
         | Payload::DayCleanStop(_)
         | Payload::DayAnswer(_)
         | Payload::DayRecord(_)
+        | Payload::DayFault(_)
         | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => None,
     }
@@ -367,6 +368,7 @@ impl Scan {
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
+            | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -434,6 +436,7 @@ impl RunTime {
                 | Payload::DayCleanStop(_)
                 | Payload::DayAnswer(_)
                 | Payload::DayRecord(_)
+                | Payload::DayFault(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_)
                 | Payload::CommandReset(_)
@@ -501,6 +504,7 @@ impl RunTime {
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
+            | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => event.boot != self.boot,
         };

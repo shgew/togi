@@ -129,6 +129,7 @@ pub fn style_for(payload: &Payload) -> Style {
         | Payload::DayCleanStop(_)
         | Payload::DayAnswer(_)
         | Payload::DayRecord(_)
+        | Payload::DayFault(_)
         | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => Style::Plain,
     }

@@ -267,7 +267,15 @@ mod record {
             )
             .unwrap();
         journal
-            .append(stamp(700), DayCheckpoint { applied_secs: 600 }.into(), &[])
+            .append(
+                stamp(700),
+                DayCheckpoint {
+                    applied_secs: 600,
+                    load_mix: togi_journal::LoadMix::default(),
+                }
+                .into(),
+                &[],
+            )
             .unwrap();
         journal
             .append(

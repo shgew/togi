@@ -168,6 +168,7 @@ impl Kernel for LogKernel {
         Ok(KernelRead {
             mces,
             faults: log.faults.clone(),
+            errors: Vec::new(),
             cursor: KernelCursor::from(format!("{boot}/{}", log.mces.len())),
         })
     }

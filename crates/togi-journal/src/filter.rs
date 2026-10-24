@@ -202,6 +202,7 @@ fn widening_covers(payload: &Payload, widening: &Widening) -> bool {
         | Payload::DayUncleanEnd(_)
         | Payload::DayAnswer(_)
         | Payload::DayRecord(_)
+        | Payload::DayFault(_)
         | Payload::StateRebuilt(_) => false,
     }
 }

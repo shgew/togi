@@ -299,6 +299,7 @@ fn a_dead_end_resumed_after_its_saved_entry_was_recorded_only_shuts_down() {
                     | EventKind::DayCleanStop
                     | EventKind::DayAnswer
                     | EventKind::DayRecord
+                    | EventKind::DayFault
                     | EventKind::DayUncleanEnd
                     | EventKind::StateRebuilt
                     | EventKind::TrialEnd

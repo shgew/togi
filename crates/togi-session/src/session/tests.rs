@@ -785,6 +785,7 @@ fn a_reopened_session_resumes_its_own_boots_cursor_and_files_the_tail_between_tr
         vec![Ok(togi_machine::KernelRead {
             mces: vec![tail],
             faults: Vec::new(),
+            errors: Vec::new(),
             cursor: resumed.clone(),
         })],
     );

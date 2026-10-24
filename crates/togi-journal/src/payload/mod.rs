@@ -18,8 +18,8 @@ pub use config::{
 };
 pub use day::{
     CrashedBoot, DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayCrashes,
-    DayOffsetsChanged, DayQuestions, DayRecord, DayUncleanEnd, EndClass, OffsetSource,
-    OffsetsError, RecordableEnd, RecordedOffsets, Running,
+    DayFault, DayOffsetsChanged, DayQuestions, DayRecord, DayUncleanEnd, EndClass, LiveFault,
+    LoadMix, OffsetSource, OffsetsError, RecordableEnd, RecordedOffsets, Running, Trap,
 };
 pub use domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
@@ -162,6 +162,7 @@ payloads! {
     DayUncleanEnd(DayUncleanEnd) = "day.unclean_end",
     DayAnswer(DayAnswer) = "day.answer",
     DayRecord(DayRecord) = "day.record",
+    DayFault(DayFault) = "day.fault",
 }
 
 impl Payload {
@@ -224,7 +225,8 @@ impl Payload {
             | Self::DayCleanStop(_)
             | Self::DayUncleanEnd(_)
             | Self::DayAnswer(_)
-            | Self::DayRecord(_) => None,
+            | Self::DayRecord(_)
+            | Self::DayFault(_) => None,
         }
     }
 
@@ -265,6 +267,7 @@ impl Payload {
             Self::DefectFound(p) => p.cores.contains(core),
             Self::DefectAnswered(p) => p.cores.contains(core),
             Self::DeadEnd(p) => p.core == Some(core),
+            Self::DayFault(p) => p.fault.core() == Some(core),
             Self::SessionStart(_)
             | Self::SessionContext(_)
             | Self::SessionBaseline(_)
@@ -318,6 +321,7 @@ impl EventKind {
                 | Self::DayUncleanEnd
                 | Self::DayAnswer
                 | Self::DayRecord
+                | Self::DayFault
         )
     }
 

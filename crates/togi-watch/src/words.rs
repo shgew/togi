@@ -879,6 +879,7 @@ pub fn words(kind: EventKind) -> Words {
         | EventKind::DayCleanStop
         | EventKind::DayAnswer
         | EventKind::DayRecord
+        | EventKind::DayFault
         | EventKind::DayUncleanEnd
         | EventKind::StateRebuilt => Words::SILENT,
         EventKind::PreflightCheck
