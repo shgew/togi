@@ -4,7 +4,7 @@ use togi_machine::{
     PerCore, ResetKind, ResetReason,
 };
 
-use super::fixtures::{at, core};
+use super::fixtures::{at, core, seq};
 use crate::*;
 
 const A: &str = "aaaaaaaa-0000-0000-0000-000000000000";
@@ -321,4 +321,142 @@ fn the_summary_words_the_evidence(
 ) {
     let end = end_of(A, None, crashed, successor, tail);
     assert_eq!(end.summary(), format!("{SUMMARY_HEAD}{expected}"));
+}
+
+fn started(seq: u64, boot: &str, seconds: i64) -> Event {
+    at(
+        seq,
+        boot,
+        seconds,
+        &[],
+        DayBootStart {
+            build: super::fixtures::build(),
+            bios: super::fixtures::bios(),
+            offsets: offsets(0),
+        }
+        .into(),
+    )
+}
+
+fn recorded(seq: u64, boot: &str) -> Event {
+    at(
+        seq,
+        "cccccccc-0000-0000-0000-000000000000",
+        0,
+        &[],
+        DayRecord {
+            boot: CrashedBoot::UncleanEnd { boot: id(boot) },
+            offsets: RecordedOffsets::new(offsets(-10)).unwrap(),
+            source: OffsetSource::ReadBack {
+                at: "2026-10-02T01:00:00Z".parse().unwrap(),
+            },
+            running: Running::Idle,
+            note: None,
+        }
+        .into(),
+    )
+}
+
+#[test]
+fn the_newest_unrecorded_end_is_the_default_crash() {
+    let events = [unclean(2, A), unclean(3, B)];
+    let crashes = DayCrashes::of(&events);
+    assert_eq!(
+        crashes
+            .newest_unrecorded()
+            .map(|named| named.end.boot.clone()),
+        Some(id(B))
+    );
+    let crashes = DayCrashes::of(&[unclean(2, A), unclean(3, B), recorded(4, B)]);
+    assert_eq!(
+        crashes
+            .newest_unrecorded()
+            .map(|named| named.end.boot.clone()),
+        Some(id(A))
+    );
+    let crashes = DayCrashes::of(&[unclean(2, A), recorded(3, A)]);
+    assert_eq!(crashes.newest_unrecorded(), None);
+    assert_eq!(crashes.ends().len(), 1, "a recorded end stays listed");
+}
+
+#[test]
+fn the_first_record_of_a_boot_is_the_one_the_fold_keeps() {
+    let crashes = DayCrashes::of(&[unclean(2, A), recorded(3, A), recorded(4, A)]);
+    assert_eq!(
+        crashes.get(&id(A)).and_then(|named| named.recorded),
+        Some(seq(3))
+    );
+}
+
+#[test]
+fn a_record_before_the_unclean_end_names_nothing() {
+    let crashes = DayCrashes::of(&[recorded(2, A), unclean(3, A)]);
+    assert_eq!(crashes.get(&id(A)).and_then(|named| named.recorded), None);
+}
+
+#[test]
+fn a_boot_was_read_back_when_its_observer_last_reported() {
+    let crashes = DayCrashes::of(&[
+        started(2, A, 0),
+        at(3, A, 600, &[], DayCheckpoint { applied_secs: 600 }.into()),
+        at(4, B, 900, &[], DayCheckpoint { applied_secs: 1 }.into()),
+        unclean(5, A),
+    ]);
+    let read = crashes.get(&id(A)).and_then(|named| named.read_back);
+    assert_eq!(read, Some("2026-10-02T01:10:00Z".parse().unwrap()));
+    let crashes = DayCrashes::of(&[unclean(2, A)]);
+    assert_eq!(crashes.get(&id(A)).and_then(|named| named.read_back), None);
+}
+
+#[test]
+fn recorded_offsets_refuse_nothing_and_anything_outside_the_target_range() {
+    assert_eq!(
+        RecordedOffsets::new(PerCore::default()),
+        Err(OffsetsError::Empty)
+    );
+    let too_deep: PerCore<ObservedOffset> = [(core(0), ObservedOffset(-51))].into_iter().collect();
+    assert!(matches!(
+        RecordedOffsets::new(too_deep),
+        Err(OffsetsError::OutOfRange { .. })
+    ));
+    let positive: PerCore<ObservedOffset> = [(core(0), ObservedOffset(1))].into_iter().collect();
+    assert!(RecordedOffsets::new(positive).is_err());
+}
+
+#[test]
+fn a_record_on_the_wire_cannot_carry_empty_or_unknown_parts() {
+    let known = serde_json::json!({
+        "boot": {"kind": "unclean_end", "boot": A},
+        "offsets": {"0": -10},
+        "source": {"kind": "read_back", "at": "2026-10-02T01:00:00Z"},
+        "running": "game",
+    });
+    let record: DayRecord = serde_json::from_value(known.clone()).unwrap();
+    assert_eq!(record.note, None);
+    let mut empty = known.clone();
+    empty["offsets"] = serde_json::json!({});
+    assert!(serde_json::from_value::<DayRecord>(empty).is_err());
+    let mut deep = known.clone();
+    deep["offsets"] = serde_json::json!({"0": -80});
+    assert!(serde_json::from_value::<DayRecord>(deep).is_err());
+    let mut extra = known.clone();
+    extra["extra"] = serde_json::json!(1);
+    assert!(serde_json::from_value::<DayRecord>(extra).is_err());
+    let mut other = known;
+    other["running"] = serde_json::json!("sleeping");
+    assert!(serde_json::from_value::<DayRecord>(other).is_err());
+}
+
+#[test_case(Running::Idle, "idle"; "idle")]
+#[test_case(Running::Desktop, "desktop"; "desktop")]
+#[test_case(Running::Build, "build"; "build")]
+#[test_case(Running::Game, "game"; "game")]
+#[test_case(Running::Other, "other"; "other")]
+#[test_case(Running::Unknown, "unknown"; "unknown")]
+fn running_categories_are_snake_case_on_the_wire(running: Running, wire: &str) {
+    assert_eq!(running.as_str(), wire);
+    assert_eq!(
+        serde_json::to_string(&running).unwrap(),
+        format!("\"{wire}\"")
+    );
 }

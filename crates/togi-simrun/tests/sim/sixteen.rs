@@ -351,6 +351,7 @@ fn sixteen_cores_reach_a_clean_cycle() {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_)
             | Payload::DeepeningRound(_) => {}

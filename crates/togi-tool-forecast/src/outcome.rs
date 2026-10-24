@@ -251,6 +251,7 @@ pub(crate) fn stamp_of(event: &Event) -> Option<&Build> {
         | Payload::DayOffsetsChanged(_)
         | Payload::DayCleanStop(_)
         | Payload::DayAnswer(_)
+        | Payload::DayRecord(_)
         | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => None,
     }
@@ -365,6 +366,7 @@ impl Scan {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -431,6 +433,7 @@ impl RunTime {
                 | Payload::DayOffsetsChanged(_)
                 | Payload::DayCleanStop(_)
                 | Payload::DayAnswer(_)
+                | Payload::DayRecord(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_)
                 | Payload::CommandReset(_)
@@ -497,6 +500,7 @@ impl RunTime {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => event.boot != self.boot,
         };

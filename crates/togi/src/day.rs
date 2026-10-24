@@ -19,6 +19,7 @@ use crate::exit::Exit;
 use crate::report::{current_build, exit_with};
 
 mod notify;
+mod record;
 pub mod socket;
 
 const CHECKPOINT: Duration = Duration::from_secs(600);
@@ -34,10 +35,14 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
             "togi day answer <boot> frozen",
             "Answer a pending question without root",
         ),
+        (
+            "sudo togi day record",
+            "Record a crash togi did not observe",
+        ),
     ])
 });
 
-/// Observe daily use, or answer what happened after an unclean end
+/// Observe daily use, answer what happened after an unclean end, or record a crash togi missed
 ///
 /// With no subcommand, reads every core at start and each ten-minute checkpoint, records active
 /// hours excluding suspend, and writes a final checkpoint before a clean stop on SIGTERM, SIGINT
@@ -45,7 +50,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// host and writer locks: stop the day service before tuning. Status/watch stay lock-free.
 ///
 /// The answer and notify subcommands need no root or journal access. They use the running day
-/// service's credential-checked socket; configure services.togi.day.users for access.
+/// service's credential-checked socket; configure services.togi.day.users for access. The record
+/// subcommand needs root and writes the journal itself, so it needs the day service stopped.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -66,6 +72,7 @@ pub enum Command {
     },
     /// Send pending questions to this graphical session's notification daemon.
     Notify,
+    Record(record::Args),
 }
 
 fn parse_answer(value: &str) -> Result<togi_journal::DayAnswerKind, String> {
@@ -81,6 +88,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         return match command {
             Command::Answer { boot, answer } => answer_end(boot, *answer, ctx),
             Command::Notify => notify::run(ctx),
+            Command::Record(record) => record::run(record, ctx),
         };
     }
     if let Err(error) = ctx.system.check_platform() {

@@ -458,6 +458,10 @@ fn units_appear_in_text() {
     EventKind::DayAnswer,
     "uid 1000 answered that boot 7a1b2c3d ended because graphics died but sound went on; offsets [00: -10, 01: -5]"
 )]
+#[test_case(
+    EventKind::DayRecord,
+    "recorded a crash at 2026-10-19T11:00:00Z that no day observer saw with offsets [00: -25, 01: -5] (entered in firmware setup at 2026-10-19T12:00:00Z); running: builds or tests; a Nix build"
+)]
 fn day_messages_tell_a_stranger_what_the_observer_saw(kind: EventKind, text: &str) {
     assert_eq!(message(kind), text);
 }

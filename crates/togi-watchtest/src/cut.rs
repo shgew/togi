@@ -95,6 +95,7 @@ pub fn cut_trial(
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -175,6 +176,7 @@ pub fn cut_passed_trial(
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -252,6 +254,7 @@ pub fn hunt_with_unconfirmed_profile(events: &[Event]) -> Result<&[Event], Error
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }

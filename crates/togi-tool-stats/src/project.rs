@@ -385,6 +385,7 @@ impl<'a> Projection<'a> {
                 | Payload::DayOffsetsChanged(_)
                 | Payload::DayCleanStop(_)
                 | Payload::DayAnswer(_)
+                | Payload::DayRecord(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => {}
             }

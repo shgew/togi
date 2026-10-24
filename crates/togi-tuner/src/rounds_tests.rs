@@ -93,6 +93,7 @@ fn kinds(events: &[Event]) -> Vec<&'static str> {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => None,
         })

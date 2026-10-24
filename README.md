@@ -44,6 +44,7 @@ sudo togi doctor                       # check this machine is ready for a run, 
 sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
 sudo togi day                          # observe daily use after a session exists; stop before run/reset
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
+sudo togi day record                   # journal a crash togi did not observe, with the offsets it ran; stop the day service first
 sudo togi run --cycles 3            # stop after three clean cycles, counted from phase 2's confirmation
 sudo togi run --first-result        # stop at the first confirmed BIOS profile, after phase 1's passed cycle
 togi status                            # phase, BIOS profile, failure points and combinations, per-core offsets and evidence

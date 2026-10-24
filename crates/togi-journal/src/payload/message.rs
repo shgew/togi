@@ -13,13 +13,13 @@ use super::smu::SmuCommand;
 use super::tuner::{Member, Rederived};
 use super::{
     BackendRetry, BootLeaveReason, BootSavedEntry, CheckingChain, CheckingCycle, CheckingStep,
-    Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, DayAnswer,
-    DayBootStart, DayCheckpoint, DayOffsetsChanged, DayUncleanEnd, DeadEnd, DeepeningRound,
-    DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking, HuntEnd, HuntGroup,
-    HuntSkipped, HuntStart, JournalTorn, Mce, Payload, PreflightCheck, ProfileApplied,
-    ProfileChange, ProfileRestored, SessionArchived, SessionBaseline, SessionCarried,
-    SessionContext, SessionNotice, SessionStart, SessionWarning, Shutdown, SmuError,
-    SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt, TrialCarried, TrialEnd,
+    Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, CrashedBoot, DayAnswer,
+    DayBootStart, DayCheckpoint, DayOffsetsChanged, DayRecord, DayUncleanEnd, DeadEnd,
+    DeepeningRound, DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking, HuntEnd,
+    HuntGroup, HuntSkipped, HuntStart, JournalTorn, Mce, OffsetSource, Payload, PreflightCheck,
+    ProfileApplied, ProfileChange, ProfileRestored, SessionArchived, SessionBaseline,
+    SessionCarried, SessionContext, SessionNotice, SessionStart, SessionWarning, Shutdown,
+    SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt, TrialCarried, TrialEnd,
     TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart, TunerDecision, TunerWarning,
 };
 use crate::Build;
@@ -83,6 +83,7 @@ impl Payload {
             Self::DayCleanStop(_) => "day observer stopped on request".to_owned(),
             Self::DayUncleanEnd(p) => day_unclean_end(p),
             Self::DayAnswer(p) => day_answer(p),
+            Self::DayRecord(p) => day_record(p),
         }
     }
 }
@@ -1254,4 +1255,43 @@ fn day_answer(p: &DayAnswer) -> String {
         p.answer.meaning(),
         offsets(&p.offsets, |offset| offset.0.to_string())
     )
+}
+
+fn offset_source(source: OffsetSource) -> String {
+    match source {
+        OffsetSource::Entered { at } => format!("entered in firmware setup at {at}"),
+        OffsetSource::ReadBack { at } => format!("read back at {at}"),
+    }
+}
+
+fn day_record(p: &DayRecord) -> String {
+    let boot = match &p.boot {
+        CrashedBoot::UncleanEnd { boot } => format!("boot {}", short_boot(boot.as_str())),
+        CrashedBoot::Unobserved { at } => format!("a crash at {at} that no day observer saw"),
+    };
+    let mut text = format!(
+        "recorded {boot} with offsets {} ({}); running: {}",
+        offsets(p.offsets.get(), |offset| offset.0.to_string()),
+        offset_source(p.source),
+        p.running.meaning()
+    );
+    if let Some(note) = &p.note {
+        let _ = write!(text, "; {note}");
+    }
+    text
+}
+
+pub(super) fn day_record_effect(p: &DayRecord) -> String {
+    let mut text = format!(
+        "Ruleset 13 will treat this record as a whole-profile veto: it never applies a day profile at or deeper than offsets {} on every core, until evidence clears the record. This build only records it; nothing reads it yet.",
+        offsets(p.offsets.get(), |offset| offset.0.to_string())
+    );
+    if let CrashedBoot::UncleanEnd { boot } = &p.boot {
+        let _ = write!(
+            text,
+            " It does not answer the question about boot {}.",
+            short_boot(boot.as_str())
+        );
+    }
+    text
 }

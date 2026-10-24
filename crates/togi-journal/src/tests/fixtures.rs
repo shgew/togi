@@ -692,10 +692,22 @@ pub(crate) fn samples() -> Vec<Payload> {
             uid: 1000,
         }
         .into(),
+        DayRecord {
+            boot: CrashedBoot::Unobserved {
+                at: "2026-10-19T11:00:00Z".parse().unwrap(),
+            },
+            offsets: RecordedOffsets::new(day_offsets(-25)).unwrap(),
+            source: OffsetSource::Entered {
+                at: "2026-10-19T12:00:00Z".parse().unwrap(),
+            },
+            running: Running::Build,
+            note: Some("a Nix build".into()),
+        }
+        .into(),
     ]
 }
 
-fn bios() -> BiosContext {
+pub(crate) fn bios() -> BiosContext {
     BiosContext {
         bios_version: "F31".into(),
         board: "X570".into(),

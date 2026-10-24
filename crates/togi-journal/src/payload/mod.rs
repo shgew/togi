@@ -17,8 +17,9 @@ pub use config::{
     ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
 };
 pub use day::{
-    DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayOffsetsChanged,
-    DayQuestions, DayUncleanEnd, EndClass,
+    CrashedBoot, DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayCrashes,
+    DayOffsetsChanged, DayQuestions, DayRecord, DayUncleanEnd, EndClass, OffsetSource,
+    OffsetsError, RecordableEnd, RecordedOffsets, Running,
 };
 pub use domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
@@ -160,6 +161,7 @@ payloads! {
     DayCleanStop(DayCleanStop) = "day.clean_stop",
     DayUncleanEnd(DayUncleanEnd) = "day.unclean_end",
     DayAnswer(DayAnswer) = "day.answer",
+    DayRecord(DayRecord) = "day.record",
 }
 
 impl Payload {
@@ -221,7 +223,8 @@ impl Payload {
             | Self::DayOffsetsChanged(_)
             | Self::DayCleanStop(_)
             | Self::DayUncleanEnd(_)
-            | Self::DayAnswer(_) => None,
+            | Self::DayAnswer(_)
+            | Self::DayRecord(_) => None,
         }
     }
 
@@ -292,7 +295,8 @@ impl Payload {
             | Self::DayOffsetsChanged(_)
             | Self::DayCleanStop(_)
             | Self::DayUncleanEnd(_)
-            | Self::DayAnswer(_) => false,
+            | Self::DayAnswer(_)
+            | Self::DayRecord(_) => false,
         }
     }
 }
@@ -313,6 +317,7 @@ impl EventKind {
                 | Self::DayCleanStop
                 | Self::DayUncleanEnd
                 | Self::DayAnswer
+                | Self::DayRecord
         )
     }
 
