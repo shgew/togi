@@ -1269,7 +1269,6 @@ impl<O: Os> Supervisor<O> {
             core_mhz: readings.core_mhz,
             worker_cpu_ms: *workers,
             package_power_w: readings.package_power_w,
-            cores_power_w: readings.cores_power_w,
             pm_table: self
                 .env
                 .pm_table
