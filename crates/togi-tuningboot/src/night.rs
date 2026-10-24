@@ -12,8 +12,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use jiff::civil::Time;
-use jiff::tz::TimeZone;
+use jiff::tz::{AmbiguousOffset, TimeZone};
 use jiff::{SignedDuration, Timestamp};
+use serde::de::{self, DeserializeOwned};
 use serde::{Deserialize, Serialize};
 
 use crate::{Bootloader, SavedEntry};
@@ -129,7 +130,8 @@ impl Morning {
     }
 
     /// The first instant after `now` at which the clock in `zone` reads this time. A time the zone
-    /// skips on that day resolves as jiff's compatible disambiguation does.
+    /// skips on that day resolves as jiff's compatible disambiguation does; a time the clock reads
+    /// twice counts at both readings.
     ///
     /// # Errors
     ///
@@ -137,13 +139,16 @@ impl Morning {
     pub fn next_after(self, now: Timestamp, zone: &TimeZone) -> Result<Timestamp, NightError> {
         let mut date = now.to_zoned(zone.clone()).date();
         loop {
-            let at = date
-                .to_datetime(self.0)
-                .to_zoned(zone.clone())
-                .map_err(NightError::Morning)?
-                .timestamp();
-            if at > now {
-                return Ok(at);
+            let ambiguous = zone.to_ambiguous_timestamp(date.to_datetime(self.0));
+            let first = ambiguous.compatible().map_err(NightError::Morning)?;
+            if first > now {
+                return Ok(first);
+            }
+            if matches!(ambiguous.offset(), AmbiguousOffset::Fold { .. }) {
+                let second = ambiguous.later().map_err(NightError::Morning)?;
+                if second > now {
+                    return Ok(second);
+                }
             }
             date = date.tomorrow().map_err(NightError::Morning)?;
         }
@@ -197,7 +202,17 @@ impl FromStr for Setup {
     type Err = RecordError;
 
     fn from_str(text: &str) -> Result<Self, RecordError> {
-        serde_json::from_str(text).map_err(RecordError::Syntax)
+        object_only(text).map_err(RecordError::Syntax)
+    }
+}
+
+/// Decodes `text` only when it is a JSON object: serde's derived `Deserialize` for a struct also
+/// accepts an array of the fields in declaration order, which would set them by position.
+fn object_only<T: DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> {
+    if text.trim_start().starts_with('{') {
+        serde_json::from_str(text)
+    } else {
+        Err(de::Error::custom("expected a JSON object"))
     }
 }
 
@@ -292,7 +307,7 @@ impl Night {
     }
 
     fn decode(record: &str) -> Result<Self, RecordError> {
-        let wire: Wire = serde_json::from_str(record).map_err(RecordError::Syntax)?;
+        let wire: Wire = object_only(record).map_err(RecordError::Syntax)?;
         if wire.boots.len() > CRASH_LOOP_REBOOTS + 1 {
             return Err(RecordError::Boots);
         }

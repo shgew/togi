@@ -65,6 +65,58 @@ impl Bootloader for Memory {
     }
 }
 
+/// A GRUB that misbehaves the way `grub-editenv` can: it keeps ignoring writes of the selection, or
+/// cannot read the night record.
+enum Fault {
+    IgnoresSelectionWrites,
+    NightUnreadable,
+}
+
+struct Flaky(Memory, Fault);
+
+impl Environment for Flaky {
+    fn get(&mut self, name: &str) -> io::Result<Option<String>> {
+        match self.1 {
+            Fault::NightUnreadable if name == NIGHT_VARIABLE => {
+                Err(io::Error::other("grubenv unreadable"))
+            }
+            Fault::NightUnreadable | Fault::IgnoresSelectionWrites => self.0.get(name),
+        }
+    }
+
+    fn set(&mut self, values: &[(&str, &str)]) -> io::Result<()> {
+        match self.1 {
+            Fault::IgnoresSelectionWrites => {
+                let kept: Vec<_> = values
+                    .iter()
+                    .copied()
+                    .filter(|(name, _)| *name != SAVED_ENTRY_VARIABLE)
+                    .collect();
+                self.0.set(&kept)
+            }
+            Fault::NightUnreadable => self.0.set(values),
+        }
+    }
+
+    fn unset(&mut self, names: &[&str]) -> io::Result<()> {
+        self.0.unset(names)
+    }
+}
+
+impl Bootloader for Flaky {
+    fn clear_saved_entry(&mut self) -> io::Result<SavedEntry> {
+        self.0.clear_saved_entry()
+    }
+}
+
+fn flaky(saved: Option<&str>, fault: Fault) -> (GrubSelection, Values) {
+    let (_, values) = selection(saved);
+    (
+        GrubSelection::new(Box::new(Flaky(Memory(Rc::clone(&values)), fault))),
+        values,
+    )
+}
+
 const TUNING: &str = "NixOS - togi";
 const DAY: &str = "NixOS - Configuration 7";
 
@@ -431,4 +483,61 @@ fn the_setup_names_the_environment_the_entry_and_the_morning() {
 #[test_case(r#"{"entry":"a","morning":"06:30"}"#; "missing grubenv")]
 fn a_malformed_setup_is_refused(text: &str) {
     assert!(text.parse::<Setup>().is_err(), "{text}");
+}
+
+#[test_case("2026-10-25T00:45:00Z", "2026-10-25T01:30:00Z"; "the second reading of a repeated time")]
+#[test_case("2026-10-25T00:15:00Z", "2026-10-25T00:30:00Z"; "the first reading of a repeated time")]
+#[test_case("2026-10-25T01:30:00Z", "2026-10-26T01:30:00Z"; "after both readings")]
+#[test_case("2026-03-29T00:30:00Z", "2026-03-29T01:30:00Z"; "a time the clock skips")]
+fn a_morning_counts_both_readings_of_a_repeated_time_and_resolves_a_skipped_one(
+    now: &str,
+    expected: &str,
+) {
+    // Central European time: clocks go back at 03:00 on 2026-10-25 and forward at 02:00 on 2026-03-29.
+    let zone = TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").unwrap();
+    let morning: Morning = "02:30".parse().unwrap();
+    let found = morning.next_after(now.parse().unwrap(), &zone).unwrap();
+    assert_eq!(found, expected.parse::<Timestamp>().unwrap());
+}
+
+#[test]
+fn a_record_written_as_an_array_is_refused() {
+    let (mut grub, values) = selection(Some(TUNING));
+    values
+        .borrow_mut()
+        .insert(NIGHT_VARIABLE.to_owned(), "[1800000000,[]]".to_owned());
+    assert!(matches!(grub.night(), Err(NightError::Invalid { .. })));
+}
+
+#[test]
+fn a_setup_written_as_an_array_is_refused() {
+    let text = r#"["/boot/grub/grubenv","NixOS - togi","06:30"]"#;
+    assert!(text.parse::<Setup>().is_err());
+}
+
+#[test]
+fn beginning_refuses_when_the_selection_does_not_read_back_as_the_tuning_entry() {
+    let (mut grub, values) = flaky(Some(DAY), Fault::IgnoresSelectionWrites);
+    let error = grub
+        .begin(&tuning(), &Night::new(at(START + 8 * HOUR)))
+        .unwrap_err();
+    assert!(
+        matches!(&error, NightError::NotSelected { expected, found }
+            if expected == TUNING && found.as_deref() == Some(DAY)),
+        "{error:?}"
+    );
+    assert_eq!(saved(&values).as_deref(), Some(DAY));
+}
+
+#[test]
+fn a_guard_that_cannot_read_the_record_fails_and_changes_nothing() {
+    let (mut grub, values) = flaky(Some(TUNING), Fault::NightUnreadable);
+    values.borrow_mut().insert(
+        NIGHT_VARIABLE.to_owned(),
+        Night::new(at(START + 8 * HOUR)).encode(),
+    );
+    let before = values.borrow().clone();
+    let outcome = guard(&mut grub, at(START), morning(), &TimeZone::UTC);
+    assert!(matches!(outcome, Err(NightError::Read(_))), "{outcome:?}");
+    assert_eq!(*values.borrow(), before);
 }

@@ -241,10 +241,26 @@ in
           };
           # Runs before the tuner in every tuning boot and counts the boot in GRUB's environment, so neither the count
           # nor the morning deadline depends on the tuner starting. togi requires it: a guard that fails keeps the
-          # tuner from starting unguarded, and the restart limit then returns to the normal system.
+          # tuner from starting unguarded, and the guard's own failure unit returns to the normal system, because a
+          # tuner start that fails on its dependency never reaches the restart limit.
+          systemd.services.togi-night-guard-failed = {
+            description = "Return to the normal system after the night guard failed";
+            unitConfig.RequiresMountsFor = grubenv;
+            path = [
+              pkgs.grub2
+              config.systemd.package
+            ];
+            serviceConfig.Type = "oneshot";
+            # No reboot when the selection stays: the next boot would enter the same night and fail the same way.
+            script = ''
+              ${lib.getExe cfg.package} night-end || grub-editenv ${grubenv} unset saved_entry
+              systemctl reboot
+            '';
+          };
           systemd.services.togi-night-guard = {
             description = "Return to the normal system when the night is over";
             before = [ "togi.service" ];
+            onFailure = [ "togi-night-guard-failed.service" ];
             after = [ "local-fs.target" ];
             unitConfig.RequiresMountsFor = grubenv;
             path = [
@@ -255,6 +271,8 @@ in
               Type = "oneshot";
               # Once per boot: a restart of the tuner finds the guard active and does not count as a boot.
               RemainAfterExit = true;
+              # A hung guard would hold the tuner back for good; the timeout fails it into the recovery above.
+              TimeoutStartSec = "60s";
               ExecStart = "${lib.getExe cfg.package} night-guard";
             };
           };

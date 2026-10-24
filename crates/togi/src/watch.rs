@@ -127,7 +127,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
 
 /// The night switch the dashboard offers: into the night from a normal boot, back to the day from the tuning
 /// boot, and none when the host has no tuning boot set up or the reader cannot change the boot loader.
-fn offer(args: &Args, ctx: &Context<'_>) -> Option<Direction> {
+pub fn offer(args: &Args, ctx: &Context<'_>) -> Option<Direction> {
     if !ctx.system.privileged() || night::setup(ctx).is_err() {
         return None;
     }

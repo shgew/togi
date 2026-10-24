@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
 use jiff::Timestamp;
-use togi_tuningboot::night::{GrubSelection, Morning, Night, SETUP_PATH, Selection as _, Setup};
+use togi_tuningboot::night::{GrubSelection, Morning, Night, SETUP_PATH, Selection, Setup};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
@@ -166,20 +166,27 @@ pub fn begin(ctx: &mut Context<'_>, until: Option<Morning>, confirmation: Confir
         local(ctx, ends)
     );
     if let Err(exit) = emit(ctx, goodnight) {
+        restore_day(ctx, &mut selection, "the failed message");
         return exit;
     }
     if let Err(error) = ctx.system.reboot() {
         let exit = fail(ctx, COMMAND, togi_render::error_chain(&error));
-        if let Err(error) = selection.end() {
-            let _ = writeln!(
-                ctx.err,
-                "togi {COMMAND}: restore the day's boot entry after the failed reboot: {}",
-                togi_render::error_chain(&error)
-            );
-        }
+        restore_day(ctx, &mut selection, "the failed reboot");
         return exit;
     }
     Exit::Ok
+}
+
+/// Gives the tuning selection back after the night failed to start, so no later reboot enters a night the command
+/// reported as failed.
+fn restore_day(ctx: &mut Context<'_>, selection: &mut impl Selection, after: &str) {
+    if let Err(error) = selection.end() {
+        let _ = writeln!(
+            ctx.err,
+            "togi {COMMAND}: restore the day's boot entry after {after}: {}",
+            togi_render::error_chain(&error)
+        );
+    }
 }
 
 /// Asks whether to reboot into the night and reads the answer typed after the question.

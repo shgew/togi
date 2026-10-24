@@ -21,6 +21,7 @@ use std::time::Duration;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use support::{Host, Ran};
+use test_case::test_case;
 use togi_cli::Exit;
 use togi_cli::cli::Context;
 use togi_cli::dashboard::Surface;
@@ -33,6 +34,7 @@ use togi_machine::{BiosContext, BootId, Machine};
 use togi_render::OutputFacts;
 use togi_tuningboot::night::{DAY_ENTRY_VARIABLE, NIGHT_VARIABLE, SETUP_PATH};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
+use togi_watch::screen::Direction;
 
 const SETUP: &str = r#"{"grubenv":"/boot/grub/grubenv","entry":"NixOS - togi","morning":"07:00"}"#;
 const DAY: &str = "NixOS - Configuration 7";
@@ -142,8 +144,16 @@ impl Night {
     }
 
     fn with_context<T>(&self, work: impl FnOnce(&mut Context<'_>) -> T) -> (T, Ran) {
+        self.with_output(Vec::new(), work)
+    }
+
+    fn with_output<T>(
+        &self,
+        mut out: impl Write,
+        work: impl FnOnce(&mut Context<'_>) -> T,
+    ) -> (T, Ran) {
         let state = support::MemoryDir::new();
-        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let mut err = Vec::new();
         let mut ctx = Context {
             state_dir: state.path(),
             out: &mut out,
@@ -155,7 +165,7 @@ impl Night {
             result,
             Ran {
                 exit: Exit::Ok,
-                out: String::from_utf8(out).unwrap(),
+                out: String::new(),
                 err: String::from_utf8(err).unwrap(),
             },
         )
@@ -550,4 +560,73 @@ fn the_night_shows_the_plan_status_gives_for_the_session() {
         ran.out
     );
     assert!(!ran.out.contains("no tuning session yet"), "{}", ran.out);
+}
+
+/// Standard output that breaks once the good-night message comes, as a closed pipe would.
+struct BreaksAtGoodnight;
+
+impl Write for BreaksAtGoodnight {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf.windows(10).any(|window| window == b"Good night") {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        } else {
+            Ok(buf.len())
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_good_night_message_that_cannot_be_written_gives_the_tuning_selection_back() {
+    let night = Night::new();
+    night.day_is(DAY);
+    let (exit, _) = night.with_output(BreaksAtGoodnight, |ctx| {
+        togi_cli::night::begin(ctx, None, togi_cli::night::Confirmation::Given)
+    });
+    assert_eq!(exit, Exit::Error);
+    assert_eq!(night.reboots(), 0);
+    assert_eq!(night.value("saved_entry").as_deref(), Some(DAY));
+    assert_eq!(night.value(NIGHT_VARIABLE), None);
+}
+
+#[derive(clap::Parser)]
+struct WatchCli {
+    #[command(flatten)]
+    watch: togi_cli::watch::Args,
+}
+
+fn offered(night: &Night, args: &[&str]) -> Option<Direction> {
+    let args = <WatchCli as clap::Parser>::try_parse_from(
+        std::iter::once("watch").chain(args.iter().copied()),
+    )
+    .unwrap()
+    .watch;
+    night
+        .with_context(|ctx| togi_cli::watch::offer(&args, ctx))
+        .0
+}
+
+#[test]
+fn the_dashboard_offers_the_night_only_to_root_in_a_normal_boot_with_a_tuning_boot_set_up() {
+    let night = Night::new();
+    assert_eq!(offered(&night, &[]), Some(Direction::Night));
+    night.root.set(false);
+    assert_eq!(offered(&night, &[]), None);
+}
+
+#[test]
+fn the_tuning_boot_dashboard_is_offered_only_the_way_back_to_the_day() {
+    let night = Night::new();
+    assert_eq!(offered(&night, &["--tuning-boot"]), Some(Direction::Day));
+    night.root.set(false);
+    assert_eq!(offered(&night, &["--tuning-boot"]), None);
+}
+
+#[test_case(&[]; "normal boot")]
+#[test_case(&["--tuning-boot"]; "tuning boot")]
+fn a_host_without_a_tuning_boot_set_up_offers_no_switch(args: &[&str]) {
+    assert_eq!(offered(&Night::bare(), args), None);
 }

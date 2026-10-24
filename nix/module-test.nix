@@ -279,6 +279,12 @@ assert lib.hasInfix
 assert nightGuard.serviceConfig.ExecStart == "${lib.getExe package} night-guard";
 assert nightGuard.serviceConfig.Type == "oneshot";
 assert nightGuard.serviceConfig.RemainAfterExit;
+assert nightGuard.serviceConfig.TimeoutStartSec == "60s";
+assert nightGuard.onFailure == [ "togi-night-guard-failed.service" ];
+assert lib.hasInfix
+  (builtins.unsafeDiscardStringContext "${lib.getExe package} night-end || grub-editenv /boot/grub/grubenv unset saved_entry")
+  tuning.systemd.services.togi-night-guard-failed.script;
+assert lib.hasInfix "systemctl reboot" tuning.systemd.services.togi-night-guard-failed.script;
 assert builtins.elem "togi.service" nightGuard.before;
 assert nightGuard.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
 assert builtins.elem "togi-night-guard.service" togiService.requires;
