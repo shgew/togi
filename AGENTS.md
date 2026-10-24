@@ -22,7 +22,7 @@ Every change, docs included, lands through a pull request against `main` on `git
 - Plan pull requests before coding. Each is one independently acceptable/revertible merge unit, usually one issue or a design's Pull requests entry; size alone does not justify splitting. Commits separate behavior-preserving refactors and seams from the behavior they enable. Use short imperative messages.
 - Stack only independently worthwhile merge units, even if upper layers never land; follow [stack mechanics](docs/development.md#pull-request-stacks).
 - Use the owner's account through `gh`; `robotogi[bot]` only publishes reviews ([integration](docs/development.md#review-integration)).
-- Follow `.github/pull_request_template.md`: short summary, collapsed demo. Say `Closes #N` when finishing, otherwise `Refs #N`. Hardware-pending Acceptance uses `Refs #N`, merges otherwise green and retains `needs-hardware` ([queue](docs/issues.md)).
+- Follow `.github/pull_request_template.md`: Summary, Evidence (before and after), Merge Danger (door and blast radius). Say `Closes #N` when finishing, otherwise `Refs #N`. Hardware-pending Acceptance uses `Refs #N`, merges otherwise green and retains `needs-hardware` ([queue](docs/issues.md)).
 - Start independent review immediately after opening, before reporting done. Merge requires CI, robotogi's `review` check on the head and resolved threads.
 - Address every finding on the same branch. Fix behavior, safety, security, journal, concurrency, Acceptance, inadequate behavior tests and contradictory-doc defects. Otherwise reply with reasons without edits: taste, optional tests/refactors or another layer's work do not justify changing this layer.
 - Schema/ruleset bumps (`togi_journal::SCHEMA`, `togi_tuner::RULESET`) require a `[BREAKING]` title, `breaking` label and `**BREAKING**` changelog line.
@@ -40,7 +40,7 @@ User-visible command, flag, behavior, output or config changes get `changes/<PR>
 - **Portable:** write for any reader's setup, nothing specific to one machine or tool. Where there are several ways to get somewhere, name them, then continue as if the reader got there.
 - Write commits, pull requests and docs for readers who have not seen the conversation that produced them.
 - Each rule has one owner, the spec. README, howto, ADRs and tool docs link to it instead of restating it.
-- Never overstate: claim only what the demo or the checks showed.
+- Never overstate: claim only what the evidence or the checks showed.
 - Describe workflow steps by the action (open a pull request, set the milestone), so they hold whatever program performs them. Name the repository's own commands.
 
 ## Commands
