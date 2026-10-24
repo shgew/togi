@@ -26,9 +26,10 @@ const STAGING: &str = "controller-frequency.pending.tmp";
 
 /// How long one cap or one restore waits, in total, for its written limits to read back: the
 /// cpufreq core applies a written limit from a work item that normally runs within milliseconds,
-/// so half a second leaves ample room for a work queue delayed by load while the whole
-/// transaction, whose policies share this one deadline, stays inside the slack the start, stop
-/// and sweep bounds keep (`Timing::margin`).
+/// so half a second leaves ample room for a work queue delayed by load. Every policy is written
+/// first and the deadline starts after the last write, so each policy gets nearly the whole
+/// window and a total failure still costs half a second, inside the slack the start, stop and
+/// sweep bounds keep (`Timing::margin`) however many policies there are.
 const READBACK_DEADLINE: Duration = Duration::from_millis(500);
 
 /// How long a limit that does not read back yet waits before it is read again: ten milliseconds
@@ -187,33 +188,56 @@ impl Limits {
         // Publish all originals durably before the first hardware write. Even a failing write
         // may have taken effect, so every intended policy remains recoverable until read back.
         self.save(&pending)?;
-        let wait = ReadbackWait::begin(cancel);
-        for index in 0..pending.policies.len() {
-            let saved = &pending.policies[index];
+        for saved in &pending.policies {
             report.push(format!(
                 "controller frequency intent: policy{} CPUs {:?}, saved scaling_max_freq {} kHz, cap {} kHz",
                 saved.policy.get(), saved.related_cpus, saved.original_khz, saved.cap_khz
             ));
             self.machine
                 .set_scaling_max_khz(saved.policy, saved.cap_khz)?;
-            let readback = self.read_back(&wait, saved.policy, saved.cap_khz).await?;
-            report.push(format!(
-                "controller frequency cap readback: policy{} {} kHz (requested {} kHz)",
-                saved.policy.get(),
-                readback.last(saved.cap_khz),
-                saved.cap_khz
-            ));
-            if let Readback::Unconfirmed { last, ended } = readback {
-                return Err(invalid(format!(
-                    "policy{} cap readback {last} kHz differs from {} kHz {ended}",
-                    saved.policy.get(),
-                    saved.cap_khz
-                )));
-            }
-            pending.policies[index].state = State::Capped;
-            self.save(&pending)?;
         }
-        Ok(())
+        let targets: Vec<_> = pending
+            .policies
+            .iter()
+            .map(|saved| (saved.policy, saved.cap_khz))
+            .collect();
+        let wait = ReadbackWait::begin(cancel);
+        let mut first: Option<io::Error> = None;
+        for (index, readback) in self
+            .read_back(&wait, &targets)
+            .await
+            .into_iter()
+            .enumerate()
+        {
+            let (policy, cap) = targets[index];
+            let readback = match readback {
+                Ok(readback) => readback,
+                Err(error) => {
+                    first.get_or_insert(error);
+                    continue;
+                }
+            };
+            report.push(format!(
+                "controller frequency cap readback: policy{} {} kHz (requested {cap} kHz)",
+                policy.get(),
+                readback.last(cap),
+            ));
+            match readback {
+                Readback::Matched => {
+                    pending.policies[index].state = State::Capped;
+                    self.save(&pending)?;
+                }
+                Readback::Unconfirmed { last, ended } => {
+                    first.get_or_insert_with(|| {
+                        invalid(format!(
+                            "policy{} cap readback {last} kHz differs from {cap} kHz {ended}",
+                            policy.get()
+                        ))
+                    });
+                }
+            }
+        }
+        first.map_or(Ok(()), Err)
     }
 
     /// Call only after teardown or sweep proved no workload remains. A previous boot's policy
@@ -245,15 +269,50 @@ impl Limits {
         let policies = self.machine.policies()?;
         let total = pending.policies.len();
         let mut unrestored: Option<Unrestored> = None;
+        // Every policy is written before any is read, so each gets the whole readback window
+        // after its own write instead of what an earlier, slower policy left of it.
+        let mut outcomes: Vec<io::Result<()>> = pending
+            .policies
+            .iter()
+            .map(|saved| self.write_original(saved, &policies, report))
+            .collect();
+        let targets: Vec<(usize, FrequencyPolicyId, u32)> = pending
+            .policies
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| outcomes[*index].is_ok())
+            .map(|(index, saved)| (index, saved.policy, saved.original_khz))
+            .collect();
         let wait = ReadbackWait::begin(cancel);
-        for index in 0..total {
+        let asked: Vec<_> = targets
+            .iter()
+            .map(|&(_, policy, khz)| (policy, khz))
+            .collect();
+        for (&(index, policy, khz), readback) in
+            targets.iter().zip(self.read_back(&wait, &asked).await)
+        {
+            outcomes[index] = match readback {
+                Ok(readback) => {
+                    report.push(format!(
+                        "controller frequency restore readback: policy{} {} kHz (saved {khz} kHz)",
+                        policy.get(),
+                        readback.last(khz),
+                    ));
+                    match readback {
+                        Readback::Matched => Ok(()),
+                        Readback::Unconfirmed { ended, .. } => Err(invalid(format!(
+                            "restored frequency readback differs from the saved limit {ended}"
+                        ))),
+                    }
+                }
+                Err(error) => Err(error),
+            };
+        }
+        for (index, outcome) in outcomes.into_iter().enumerate() {
             let policy = pending.policies[index].policy;
             // A policy restored in hardware whose Restored state fails to persist is restored
             // again by the next recovery; the later policies are attempted regardless.
-            let result = match self
-                .restore_saved(&pending.policies[index], &policies, &wait, report)
-                .await
-            {
+            let result = match outcome {
                 Ok(()) => {
                     pending.policies[index].state = State::Restored;
                     self.save(&pending)
@@ -290,12 +349,12 @@ impl Limits {
         Ok(())
     }
 
-    /// Writes nothing to a policy that is missing or whose CPUs changed since the intent.
-    async fn restore_saved(
+    /// Writes the saved limit back; writes nothing to a policy that is missing or whose CPUs
+    /// changed since the intent. The readback is the caller's.
+    fn write_original(
         &self,
         saved: &Saved,
         policies: &[FrequencyPolicy],
-        wait: &ReadbackWait<'_>,
         report: &mut Vec<String>,
     ) -> io::Result<()> {
         let phase = match saved.state {
@@ -330,53 +389,56 @@ impl Limits {
             saved.original_khz
         ));
         self.machine
-            .set_scaling_max_khz(saved.policy, saved.original_khz)?;
-        let readback = self
-            .read_back(wait, saved.policy, saved.original_khz)
-            .await?;
-        report.push(format!(
-            "controller frequency restore readback: policy{} {} kHz (saved {} kHz)",
-            saved.policy.get(),
-            readback.last(saved.original_khz),
-            saved.original_khz
-        ));
-        if let Readback::Unconfirmed { ended, .. } = readback {
-            return Err(invalid(format!(
-                "restored frequency readback differs from the saved limit {ended}"
-            )));
-        }
-        Ok(())
+            .set_scaling_max_khz(saved.policy, saved.original_khz)
     }
 
-    /// Reads `policy` until it shows `written`, the transaction's deadline passes or
-    /// cancellation ends the wait. The cpufreq core applies a written limit asynchronously, so
-    /// the first read can still show the previous one.
+    /// Reads every target in rounds until each shows its written value, the wait's deadline
+    /// passes or cancellation ends it; a target still not showing it then is unconfirmed. The
+    /// cpufreq core applies a written limit asynchronously, so the first read can still show the
+    /// previous one. Every target is read at least once. Results follow the order of `targets`.
     async fn read_back(
         &self,
         wait: &ReadbackWait<'_>,
-        policy: FrequencyPolicyId,
-        written: u32,
-    ) -> io::Result<Readback> {
+        targets: &[(FrequencyPolicyId, u32)],
+    ) -> Vec<io::Result<Readback>> {
+        let mut outcomes: Vec<Option<io::Result<Readback>>> =
+            targets.iter().map(|_| None).collect();
+        let mut lasts = vec![0; targets.len()];
         loop {
-            let last = self.machine.scaling_max_khz(policy)?;
-            if last == written {
-                return Ok(Readback::Matched);
+            for (index, &(policy, written)) in targets.iter().enumerate() {
+                if outcomes[index].is_some() {
+                    continue;
+                }
+                match self.machine.scaling_max_khz(policy) {
+                    Ok(last) if last == written => outcomes[index] = Some(Ok(Readback::Matched)),
+                    Ok(last) => lasts[index] = last,
+                    Err(error) => outcomes[index] = Some(Err(error)),
+                }
+            }
+            if outcomes.iter().all(Option::is_some) {
+                break;
             }
             let now = Instant::now();
-            if now >= wait.deadline {
-                return Ok(Readback::Unconfirmed {
-                    last,
-                    ended: Ended::Deadline,
-                });
-            }
-            tokio::select! {
-                biased;
-                () = until_cancelled(wait.cancel, &wait.woken) => {
-                    return Ok(Readback::Unconfirmed { last, ended: Ended::Cancelled });
+            let ended = if now >= wait.deadline {
+                Some(Ended::Deadline)
+            } else {
+                tokio::select! {
+                    biased;
+                    () = until_cancelled(wait.cancel, &wait.woken) => Some(Ended::Cancelled),
+                    () = sleep_until((now + READBACK_POLL).min(wait.deadline)) => None,
                 }
-                () = sleep_until((now + READBACK_POLL).min(wait.deadline)) => {}
+            };
+            if let Some(ended) = ended {
+                for (index, outcome) in outcomes.iter_mut().enumerate() {
+                    outcome.get_or_insert(Ok(Readback::Unconfirmed {
+                        last: lasts[index],
+                        ended,
+                    }));
+                }
+                break;
             }
         }
+        outcomes.into_iter().flatten().collect()
     }
 
     fn load(&self) -> io::Result<Option<Pending>> {

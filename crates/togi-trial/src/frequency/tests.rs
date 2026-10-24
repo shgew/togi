@@ -436,6 +436,51 @@ fn a_restore_that_applies_after_some_reads_is_confirmed_within_the_deadline(read
 }
 
 #[test]
+fn a_slow_policy_does_not_use_up_the_window_of_a_later_cap() {
+    let (machine, _, limits) = fixture(two_policies());
+    machine.apply_to(
+        FrequencyPolicyId::new(0),
+        Apply::AfterReads(last_read_in_deadline()),
+    );
+    machine.apply_to(FrequencyPolicyId::new(1), Apply::AfterReads(2));
+    let (outcome, waited) = timed(limits.0.cap(
+        &both(),
+        &[],
+        &CancellationToken::new(),
+        &mut Vec::new(),
+    ));
+    outcome.unwrap();
+    assert!(waited <= READBACK_DEADLINE, "{waited:?}");
+    for id in [0, 1] {
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(id)).unwrap(),
+            400_000
+        );
+    }
+}
+
+#[test]
+fn a_slow_policy_does_not_use_up_the_window_of_a_later_restore() {
+    let (machine, fs, limits) = fixture(two_policies());
+    limits.cap(&both(), &[], &mut Vec::new()).unwrap();
+    machine.apply_to(
+        FrequencyPolicyId::new(0),
+        Apply::AfterReads(last_read_in_deadline()),
+    );
+    machine.apply_to(FrequencyPolicyId::new(1), Apply::AfterReads(2));
+    let (outcome, waited) = timed(limits.0.restore(&CancellationToken::new(), &mut Vec::new()));
+    outcome.unwrap();
+    assert!(waited <= READBACK_DEADLINE, "{waited:?}");
+    for id in [0, 1] {
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(id)).unwrap(),
+            5_700_000
+        );
+    }
+    assert_eq!(fs.contents(pending_path()), None);
+}
+
+#[test]
 fn a_cap_one_read_beyond_the_deadline_is_unconfirmed_and_recovered() {
     let (machine, fs, limits) = fixture(vec![policy(&[0, 16])]);
     machine.apply(Apply::AfterReads(last_read_in_deadline() + 1));

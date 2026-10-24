@@ -34,6 +34,7 @@ struct State {
     wrong_readback: bool,
     fail_discovery: bool,
     apply: Apply,
+    apply_to: Vec<(FrequencyPolicyId, Apply)>,
     held: Vec<Held>,
     before_write: Option<Box<dyn Fn() + Send + Sync>>,
 }
@@ -49,6 +50,7 @@ impl Fake {
                 wrong_readback: false,
                 fail_discovery: false,
                 apply: Apply::Immediately,
+                apply_to: Vec::new(),
                 held: Vec::new(),
                 before_write: None,
             })),
@@ -78,6 +80,11 @@ impl Fake {
     /// Applies every later write as `apply` says; a write already held keeps its own delay.
     pub(crate) fn apply(&self, apply: Apply) {
         self.state().apply = apply;
+    }
+
+    /// Applies later writes of one policy as `apply` says, whatever the fake's default is.
+    pub(crate) fn apply_to(&self, id: FrequencyPolicyId, apply: Apply) {
+        self.state().apply_to.push((id, apply));
     }
 
     pub(crate) fn before_write(&self, hook: impl Fn() + Send + Sync + 'static) {
@@ -154,7 +161,12 @@ impl CpuFrequency for Fake {
             ));
         }
         state.held.retain(|held| held.id != id);
-        let reads = match state.apply {
+        let apply = state
+            .apply_to
+            .iter()
+            .find(|(policy, _)| *policy == id)
+            .map_or(state.apply, |(_, apply)| *apply);
+        let reads = match apply {
             Apply::Immediately => return Self::set(&mut state, id, khz),
             Apply::AfterReads(reads) => Some(reads),
             Apply::Never => None,
