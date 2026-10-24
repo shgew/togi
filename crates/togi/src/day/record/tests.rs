@@ -46,7 +46,7 @@ fn crashes(recorded: &[&str]) -> DayCrashes {
         event(
             seq,
             "next",
-            1000 + seq as i64,
+            1000 + seq.cast_signed(),
             DayUncleanEnd {
                 boot: boot(crashed),
                 last_checkpoint: None,

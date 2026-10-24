@@ -231,7 +231,7 @@ mod record {
             .map(|index| CoreInfo {
                 core: core(index),
                 ccd: CcdId::new(index / 2).unwrap(),
-                cpus: vec![CpuId::from(index as u16)],
+                cpus: vec![CpuId::from(u16::try_from(index).unwrap())],
             })
             .collect();
         let dir = host.lock_state_dir(Path::new(STATE)).unwrap();

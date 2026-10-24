@@ -180,20 +180,19 @@ pub fn draft_record(events: &[Event], draft: &Draft) -> Result<DayRecord, Record
                     seq,
                 });
             }
-            let (offsets, source) = match entered {
-                Some(entered) => (
+            let (offsets, source) = if let Some(entered) = entered {
+                (
                     resolve(&entered.specs, cores)?,
                     OffsetSource::Entered { at: entered.at },
-                ),
-                None => {
-                    let at = named
-                        .read_back
-                        .ok_or_else(|| RecordError::NoReadBack { boot: boot.clone() })?;
-                    (
-                        RecordedOffsets::new(named.end.offsets)?,
-                        OffsetSource::ReadBack { at },
-                    )
-                }
+                )
+            } else {
+                let at = named
+                    .read_back
+                    .ok_or_else(|| RecordError::NoReadBack { boot: boot.clone() })?;
+                (
+                    RecordedOffsets::new(named.end.offsets)?,
+                    OffsetSource::ReadBack { at },
+                )
             };
             (
                 CrashedBoot::UncleanEnd { boot: boot.clone() },

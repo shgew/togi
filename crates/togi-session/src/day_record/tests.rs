@@ -25,10 +25,9 @@ fn boot(name: &str) -> BootId {
 }
 
 fn profile(values: [i64; 4]) -> PerCore<ObservedOffset> {
-    values
-        .into_iter()
-        .enumerate()
-        .map(|(index, value)| (core(index as i64), ObservedOffset(value)))
+    (0_i64..)
+        .zip(values)
+        .map(|(index, value)| (core(index), ObservedOffset(value)))
         .collect()
 }
 
@@ -51,7 +50,7 @@ fn session() -> Event {
         .map(|index| CoreInfo {
             core: core(index),
             ccd: ccd(index / 2),
-            cpus: vec![CpuId::from(index as u16)],
+            cpus: vec![CpuId::from(u16::try_from(index).unwrap())],
         })
         .collect();
     event(
