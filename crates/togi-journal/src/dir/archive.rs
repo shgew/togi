@@ -20,14 +20,16 @@ use crate::session_id::SessionId;
 
 const JOURNAL_SUFFIX: &str = ".jsonl";
 const TRIALS_SUFFIX: &str = "-trials";
+const IMPORT_TMP: &str = ".import-pending.tmp";
 
-/// A zero-byte file in `archive/` named after a session, whose existence is the record.
+/// A file in `archive/` named after a session, whose existence is the record. Only an import marker has content: the
+/// destination session it names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Marker {
     /// An archive of a journal this build cannot append to is under way.
     CompatPending,
-    /// The session's evidence is waiting to be carried into a session that has not committed it yet.
-    CarryPending,
+    /// The session's day records are waiting to be imported into a destination session that has not committed them.
+    ImportPending,
     /// Nothing at or before the session may feed a later session.
     ResetAll,
 }
@@ -39,19 +41,19 @@ pub enum Lifetime {
 }
 
 impl Marker {
-    const ALL: [Self; 3] = [Self::CompatPending, Self::CarryPending, Self::ResetAll];
+    const ALL: [Self; 3] = [Self::CompatPending, Self::ImportPending, Self::ResetAll];
 
     const fn suffix(self) -> &'static str {
         match self {
             Self::CompatPending => "-compat-pending",
-            Self::CarryPending => "-carry-pending",
+            Self::ImportPending => "-import-pending",
             Self::ResetAll => "-reset-all",
         }
     }
 
     pub const fn lifetime(self) -> Lifetime {
         match self {
-            Self::CompatPending | Self::CarryPending => Lifetime::Pending,
+            Self::CompatPending | Self::ImportPending => Lifetime::Pending,
             Self::ResetAll => Lifetime::Permanent,
         }
     }
@@ -63,11 +65,20 @@ impl fmt::Display for Marker {
     }
 }
 
+/// A pending fresh-transition import: the immutable archived source session and the session that imports its day
+/// records (`docs/spec/journal.md`, Transitions).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ImportMarker {
+    pub source: SessionId,
+    pub destination: SessionId,
+}
+
 /// Why a session's journal leaves the state directory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArchiveKind {
-    /// A new session will carry this session's evidence; a pending carry from an earlier session stays the source.
-    Transition,
+    /// A new session will import this session's day records. A pending import from an earlier session keeps that
+    /// session as its source and keeps its destination unless the destination is the session being archived.
+    Transition { destination: SessionId },
     /// The session and everything before it is discarded for good.
     ResetAll,
 }
@@ -159,9 +170,60 @@ impl StateDir {
         Ok(self.marked(Marker::ResetAll)?.pop())
     }
 
-    /// The newest session whose carry no journal has committed yet.
-    pub fn pending_carry(&self) -> Result<Option<SessionId>, DirError> {
-        Ok(self.marked(Marker::CarryPending)?.pop())
+    /// The newest pending import: the source whose day records no journal has committed yet, and the session that
+    /// imports them.
+    pub fn pending_import(&self) -> Result<Option<ImportMarker>, DirError> {
+        let Some(source) = self.marked(Marker::ImportPending)?.pop() else {
+            return Ok(None);
+        };
+        let path = self.marker_path(Marker::ImportPending, &source);
+        let bytes = self.fs().read(&path).map_err(io_at("read marker", &path))?;
+        let destination = std::str::from_utf8(&bytes)
+            .ok()
+            .and_then(|text| SessionId::from_str(text.trim_end()).ok())
+            .ok_or(DirError::BadMarker { path })?;
+        Ok(Some(ImportMarker {
+            source,
+            destination,
+        }))
+    }
+
+    /// The raw bytes of an archived journal; `None` when the directory holds no archive of the session.
+    pub fn archived_raw(&self, session: &SessionId) -> Result<Option<Vec<u8>>, DirError> {
+        let path = self.archive_journal(session);
+        match self.fs().read(&path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if not_found(&error) => Ok(None),
+            Err(error) => Err(io_at("read archive", &path)(error)),
+        }
+    }
+
+    /// The id a session importing `source`'s day records gets: the first free id for `now` that sorts after the
+    /// source, every archive, every marker and the reset boundary, so a clock set back cannot sort it before them.
+    pub fn import_destination(
+        &self,
+        source: &SessionId,
+        now: jiff::Timestamp,
+    ) -> Result<SessionId, DirError> {
+        let floor = self
+            .archives()?
+            .into_iter()
+            .chain(self.markers()?.into_iter().map(|(_, session)| session))
+            .chain([*source])
+            .max()
+            .unwrap_or(*source);
+        let mut candidate = self.session_id(now)?;
+        if candidate <= floor {
+            candidate = floor
+                .next_suffix()
+                .ok_or(DirError::SessionIdsExhausted { after: floor })?;
+        }
+        while self.id_reserved(&candidate)? {
+            candidate = candidate
+                .next_suffix()
+                .ok_or(DirError::SessionIdsExhausted { after: candidate })?;
+        }
+        Ok(candidate)
     }
 
     fn ensure_archive_dir(&self) -> Result<(), DirError> {
@@ -236,14 +298,41 @@ impl StateDir {
         Ok(newest)
     }
 
-    /// Discards the pending carry: the reset boundary becomes durable before the carry markers go.
-    pub fn drop_pending_carry(&mut self) -> Result<Option<SessionId>, DirError> {
-        let Some(dropped) = self.pending_carry()? else {
+    /// Discards the pending import: the reset boundary becomes durable before the import marker goes.
+    pub fn drop_pending_import(&mut self) -> Result<Option<SessionId>, DirError> {
+        let Some(dropped) = self.pending_import()? else {
             return Ok(None);
         };
-        self.mark_reset_through(Some(dropped))?;
-        self.clear_pending(Marker::CarryPending)?;
-        Ok(Some(dropped))
+        self.mark_reset_through(Some(dropped.source))?;
+        self.clear_pending(Marker::ImportPending)?;
+        Ok(Some(dropped.source))
+    }
+
+    /// Writes the import marker for `source` naming `destination`, replacing the one an earlier attempt left: the
+    /// content reaches a temporary file, is synced, then renamed over the marker, so the marker is never seen empty,
+    /// and both directories are synced before anything moves behind it.
+    fn mark_import(&self, source: &SessionId, destination: &SessionId) -> Result<(), DirError> {
+        self.ensure_archive_dir()?;
+        let path = self.marker_path(Marker::ImportPending, source);
+        if self
+            .kind_of(&path)?
+            .is_some_and(|kind| kind != FileKind::File)
+        {
+            return Err(DirError::NotRegular { path });
+        }
+        let tmp = self.archive_dir().join(IMPORT_TMP);
+        let mut file = self
+            .fs()
+            .create_truncate(&tmp)
+            .map_err(io_at("create marker", &tmp))?;
+        file.write_all(format!("{destination}\n").as_bytes())
+            .map_err(io_at("write marker", &tmp))?;
+        file.sync().map_err(io_at("sync marker", &tmp))?;
+        drop(file);
+        self.fs()
+            .rename(&tmp, &path)
+            .map_err(io_at("publish marker", &path))?;
+        self.sync_dirs()
     }
 
     /// Refuses a session whose archived journal or archived trial directory already exists. Its own transaction
@@ -283,10 +372,11 @@ impl StateDir {
     ) -> Result<(), DirError> {
         match kind {
             ArchiveKind::ResetAll => self.mark_reset_through(Some(*session)).map(drop),
-            ArchiveKind::Transition => {
-                let source = self.pending_carry()?.unwrap_or(*session);
-                self.mark(Marker::CarryPending, &source)?;
-                Ok(())
+            ArchiveKind::Transition { destination } => {
+                let source = self
+                    .pending_import()?
+                    .map_or(*session, |marker| marker.source);
+                self.mark_import(&source, &destination)
             }
         }
     }
@@ -355,10 +445,11 @@ impl StateDir {
         self.sync_dir(&self.archive_dir())
     }
 
-    /// A carry marker for the session that still owns the live journal is a leftover of an archive that never started.
-    pub(crate) fn drop_stale_carry(&self, live: &SessionId) -> Result<(), DirError> {
-        if self.marked(Marker::CarryPending)?.contains(live) {
-            self.remove_marker(Marker::CarryPending, live)?;
+    /// An import marker for the session that still owns the live journal is a leftover of an archive that never
+    /// started.
+    pub(crate) fn drop_stale_import(&self, live: &SessionId) -> Result<(), DirError> {
+        if self.marked(Marker::ImportPending)?.contains(live) {
+            self.remove_marker(Marker::ImportPending, live)?;
         }
         Ok(())
     }

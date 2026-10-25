@@ -112,6 +112,11 @@ pub(super) fn start(id: SessionId, cores: &[i64], evidence: u32) -> SessionStart
 
 pub(super) fn intent(id: &str, condition: Condition, regime: Regime) -> TrialIntent {
     TrialIntent {
+        night: None,
+        task: None,
+        content: Vec::new(),
+        placement: None,
+        tested: None,
         trial: trial(id),
         kernel_cursor: None,
         kernel_error: None,

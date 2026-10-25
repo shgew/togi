@@ -263,12 +263,12 @@ fn markers_list_by_session_and_kind_and_ignore_other_names() {
     let fs = MemFs::new();
     let dir = dir(&fs);
     fs.put("/state/archive/20260101T000000Z-2-reset-all", "");
-    fs.put("/state/archive/20260101T000000Z-carry-pending", "");
-    fs.put("/state/archive/stray-carry-pending", "");
+    fs.put("/state/archive/20260101T000000Z-import-pending", "");
+    fs.put("/state/archive/stray-import-pending", "");
     assert_eq!(
         dir.markers().unwrap(),
         [
-            (Marker::CarryPending, sid("20260101T000000Z")),
+            (Marker::ImportPending, sid("20260101T000000Z")),
             (Marker::ResetAll, sid("20260101T000000Z-2")),
         ]
     );
@@ -290,7 +290,7 @@ fn a_marker_that_is_not_a_regular_file_is_refused() {
 fn session_entries_list_journals_and_markers_by_name_without_the_lock() {
     let fs = MemFs::new();
     for name in [
-        "20260102T000000Z-carry-pending",
+        "20260102T000000Z-import-pending",
         "20260101T000000Z.jsonl",
         "20260101T000000Z-reset-all",
         "20260102T000000Z-compat-pending",
@@ -306,8 +306,8 @@ fn session_entries_list_journals_and_markers_by_name_without_the_lock() {
         [
             "20260101T000000Z-reset-all",
             "20260101T000000Z.jsonl",
-            "20260102T000000Z-carry-pending",
             "20260102T000000Z-compat-pending",
+            "20260102T000000Z-import-pending",
         ]
     );
     assert_eq!(fs.kind(Path::new("/state/lock")).unwrap(), None);
@@ -339,10 +339,10 @@ fn a_symlinked_session_entry_is_refused_naming_it() {
 #[test]
 fn a_session_entry_that_is_a_directory_is_refused_naming_it() {
     let fs = MemFs::new();
-    fs.put("/state/archive/20260101T000000Z-carry-pending/inside", "");
+    fs.put("/state/archive/20260101T000000Z-import-pending/inside", "");
     assert!(matches!(
         session_entries_in(&fs, Path::new("/state")),
-        Err(DirError::NotRegular { path }) if path == Path::new("/state/archive/20260101T000000Z-carry-pending")
+        Err(DirError::NotRegular { path }) if path == Path::new("/state/archive/20260101T000000Z-import-pending")
     ));
 }
 
@@ -364,17 +364,40 @@ fn a_symlinked_reset_marker_is_never_followed() {
 fn pending_markers_clear_but_the_reset_boundary_is_permanent() {
     let fs = MemFs::new();
     let mut dir = dir(&fs);
-    fs.put("/state/archive/20260101T000000Z-carry-pending", "");
-    fs.put("/state/archive/20260102T000000Z-carry-pending", "");
+    fs.put(
+        "/state/archive/20260101T000000Z-import-pending",
+        "20260101T000000Z-2\n",
+    );
+    fs.put(
+        "/state/archive/20260102T000000Z-import-pending",
+        "20260102T000000Z-2\n",
+    );
     fs.put("/state/archive/20260101T000000Z-reset-all", "");
-    assert_eq!(dir.pending_carry().unwrap(), Some(sid("20260102T000000Z")));
-    dir.clear_pending(Marker::CarryPending).unwrap();
-    assert_eq!(dir.pending_carry().unwrap(), None);
+    assert_eq!(
+        dir.pending_import().unwrap(),
+        Some(ImportMarker {
+            source: sid("20260102T000000Z"),
+            destination: sid("20260102T000000Z-2"),
+        })
+    );
+    dir.clear_pending(Marker::ImportPending).unwrap();
+    assert_eq!(dir.pending_import().unwrap(), None);
     assert!(matches!(
         dir.clear_pending(Marker::ResetAll),
         Err(DirError::PermanentMarker(Marker::ResetAll))
     ));
     assert_eq!(dir.reset_boundary().unwrap(), Some(sid("20260101T000000Z")));
+}
+
+#[test]
+fn an_import_marker_that_names_no_session_is_refused() {
+    let fs = MemFs::new();
+    let dir = dir(&fs);
+    fs.put("/state/archive/20260101T000000Z-import-pending", "");
+    assert!(matches!(
+        dir.pending_import(),
+        Err(DirError::BadMarker { .. })
+    ));
 }
 
 #[test]
@@ -395,27 +418,30 @@ fn the_reset_boundary_is_the_newest_source_there_is() {
     let fs = MemFs::new();
     let mut dir = dir(&fs);
     fs.put("/state/archive/20260101T000000Z.jsonl", "");
-    fs.put("/state/archive/20260301T000000Z-carry-pending", "");
+    fs.put("/state/archive/20260301T000000Z-import-pending", "");
     fs.put("/state/archive/20260201T000000Z-compat-pending", "");
     assert_eq!(dir.mark_reset_all().unwrap(), Some(sid("20260301T000000Z")));
     assert_eq!(dir.reset_boundary().unwrap(), Some(sid("20260301T000000Z")));
 }
 
-fn carry_pending_dir(fs: &MemFs) -> StateDir {
+fn import_pending_dir(fs: &MemFs) -> StateDir {
     fs.put("/state/archive/20260101T000000Z.jsonl", "");
-    fs.put("/state/archive/20260101T000000Z-carry-pending", "");
+    fs.put(
+        "/state/archive/20260101T000000Z-import-pending",
+        "20260101T000000Z-2\n",
+    );
     dir(fs)
 }
 
 #[test]
-fn the_reset_boundary_is_synced_before_a_carry_marker_is_removed() {
+fn the_reset_boundary_is_synced_before_an_import_marker_is_removed() {
     let fs = MemFs::new();
     fs.record_history();
-    let mut dir = carry_pending_dir(&fs);
-    dir.drop_pending_carry().unwrap();
+    let mut dir = import_pending_dir(&fs);
+    dir.drop_pending_import().unwrap();
     let log = fs.log();
     let boundary = "/state/archive/20260101T000000Z-reset-all";
-    let carry = "/state/archive/20260101T000000Z-carry-pending";
+    let carry = "/state/archive/20260101T000000Z-import-pending";
     let created = log
         .iter()
         .position(|(op, path)| *op == Op::Open && path == Path::new(boundary))
@@ -444,23 +470,23 @@ fn the_reset_boundary_is_synced_before_a_carry_marker_is_removed() {
 }
 
 #[test]
-fn a_fault_anywhere_in_dropping_a_carry_never_loses_the_boundary_or_the_carry() {
+fn a_fault_anywhere_in_dropping_an_import_never_loses_the_boundary_or_the_import() {
     for nth in 1..=12 {
         for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
             let fs = MemFs::new();
-            let mut dir = carry_pending_dir(&fs);
+            let mut dir = import_pending_dir(&fs);
             fs.inject(fault.clone());
-            let result = dir.drop_pending_carry();
+            let result = dir.drop_pending_import();
             fs.clear_faults();
-            let carry = dir.pending_carry().unwrap();
+            let carry = dir.pending_import().unwrap();
             let boundary = dir.reset_boundary().unwrap();
             if carry.is_none() {
                 assert_eq!(boundary, Some(sid("20260101T000000Z")), "{fault:?}");
             }
             if result.is_err() {
-                dir.drop_pending_carry().unwrap();
+                dir.drop_pending_import().unwrap();
             }
-            assert_eq!(dir.pending_carry().unwrap(), None, "{fault:?}");
+            assert_eq!(dir.pending_import().unwrap(), None, "{fault:?}");
             assert_eq!(
                 dir.reset_boundary().unwrap(),
                 Some(sid("20260101T000000Z")),
@@ -471,11 +497,11 @@ fn a_fault_anywhere_in_dropping_a_carry_never_loses_the_boundary_or_the_carry() 
 }
 
 #[test]
-fn dropping_without_a_pending_carry_invents_no_boundary() {
+fn dropping_without_a_pending_import_invents_no_boundary() {
     let fs = MemFs::new();
     fs.put("/state/archive/20260101T000000Z.jsonl", "");
     let mut dir = dir(&fs);
-    assert_eq!(dir.drop_pending_carry().unwrap(), None);
+    assert_eq!(dir.drop_pending_import().unwrap(), None);
     assert_eq!(dir.reset_boundary().unwrap(), None);
 }
 
@@ -499,11 +525,46 @@ fn archived_trial_directories_and_markers_reserve_an_id() {
     let fs = MemFs::new();
     let dir = dir(&fs);
     fs.put("/state/archive/20231114T221320Z-trials/x", "");
-    fs.put("/state/archive/20231114T221320Z-2-carry-pending", "");
+    fs.put("/state/archive/20231114T221320Z-2-import-pending", "");
     assert_eq!(
         dir.session_id(at(1_700_000_000)).unwrap().to_string(),
         "20231114T221320Z-3"
     );
+}
+
+#[test]
+fn an_import_destination_sorts_after_the_source_every_archive_and_the_boundary() {
+    let fs = MemFs::new();
+    let dir = dir(&fs);
+    let source = sid("20231114T221320Z");
+    fs.put("/state/archive/20231114T221320Z.jsonl", "");
+    assert_eq!(
+        dir.import_destination(&source, at(1_700_000_000)).unwrap(),
+        sid("20231114T221320Z-2"),
+        "a clock that has not moved on still sorts after the source"
+    );
+    fs.put("/state/archive/20231114T221320Z-2.jsonl", "");
+    fs.put("/state/archive/20231114T221320Z-5-reset-all", "");
+    assert_eq!(
+        dir.import_destination(&source, at(1_700_000_000)).unwrap(),
+        sid("20231114T221320Z-6")
+    );
+    assert_eq!(
+        dir.import_destination(&source, at(1_800_000_000)).unwrap(),
+        sid("20270115T080000Z")
+    );
+}
+
+#[test]
+fn an_archived_journal_reads_back_raw_or_is_absent() {
+    let fs = MemFs::new();
+    let dir = dir(&fs);
+    fs.put("/state/archive/20231114T221320Z.jsonl", "{\"seq\":1}\n");
+    assert_eq!(
+        dir.archived_raw(&sid("20231114T221320Z")).unwrap().unwrap(),
+        b"{\"seq\":1}\n"
+    );
+    assert_eq!(dir.archived_raw(&sid("20231115T000000Z")).unwrap(), None);
 }
 
 #[test]

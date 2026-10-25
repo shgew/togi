@@ -4,7 +4,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "Copies of a state directory for forecast, facts and replay: the live journal, state.json and the archive entries that belong to a session"
+description = "Copies of a state directory for facts and replay: the live journal, state.json and the archive entries that belong to a session"
 
 [dependencies]
 thiserror.workspace = true

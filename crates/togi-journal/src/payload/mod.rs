@@ -2,6 +2,8 @@ mod config;
 mod day;
 mod domain;
 mod message;
+mod ruleset13;
+mod ruleset13_day;
 mod session;
 mod smu;
 mod trial;
@@ -22,9 +24,24 @@ pub use day::{
     LoadMix, OffsetSource, OffsetsError, RecordableEnd, RecordedOffsets, Running, Trap,
 };
 pub use domain::{
-    Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
-    DefectAnswer, DefectDirection, HuntOutcome, HuntStage, Inference, Notice, Outcome, RetryTarget,
-    RoundEvent, ShutdownReason, SmuOp, WarningKind,
+    Activity, Attribution, Certainty, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition,
+    Decision, DefectAnswer, DefectDirection, FailureTime, FreezeChoice, HuntOutcome, HuntStage,
+    ImportClass, Inference, IntervalState, MissingFact, Notice, Outcome, Placement,
+    QualificationPurpose, Queue, ReproductionState, RetryTarget, RoundEvent, ShutdownReason, SmuOp,
+    TaskStatus, VetoState, WarningKind,
+};
+pub use ruleset13::{
+    ApplicationId, Binding, Budget, Candidate, CcdCap, CcdEdge, CcdVector, CellEvidence,
+    CellWitness, CreditExclusion, DayEventId, DecisionId, Edge, ExposureClass, ExposureFailure,
+    ExposureObserved, ExposureOrigin, Finite, InvalidNumber, LowerEndpoint, NightId, NightPlan,
+    NightQualification, NightReproduction, ObservedProfile, OriginalSource, PlannedTask, Position,
+    QualificationState, Rate, RateBound, RateCell, ReproductionTarget, Slope, TaskId, Tested,
+    UnavailableBackend, WorkloadContent,
+};
+pub use ruleset13_day::{
+    ApplyCause, CcdCursor, Classification, DayApplied, DayEvent, DayFreeze, DayHold, DayImported,
+    DayInterval, DayStep, DayVeto, Escalation, FreezeSource, HoldChange, HoldReason, ImportCounts,
+    ImportedRecordRef, Resolution, RetreatCause, SessionImported, StepCauses, StepKind,
 };
 pub use session::{
     BootLeaveReason, BootSavedEntry, CarriedCore, CarriedFailurePoint, CarriedLimit, CarriedSource,
@@ -111,6 +128,7 @@ payloads! {
     SessionNotice(SessionNotice) = "session.notice",
     SessionWarning(SessionWarning) = "session.warning",
     SessionArchived(SessionArchived) = "session.archived",
+    SessionImported(SessionImported) = "session.imported",
     SessionCarried(SessionCarried) = "session.carried",
     ConfigLoaded(ConfigLoaded) = "config.loaded",
     PreflightCheck(PreflightCheck) = "preflight.check",
@@ -163,6 +181,20 @@ payloads! {
     DayAnswer(DayAnswer) = "day.answer",
     DayRecord(DayRecord) = "day.record",
     DayFault(DayFault) = "day.fault",
+    ExposureObserved(ExposureObserved) = "exposure.observed",
+    CcdEdge(CcdEdge) = "ccd.edge",
+    CcdCap(CcdCap) = "ccd.cap",
+    NightPlan(NightPlan) = "night.plan",
+    NightQualification(NightQualification) = "night.qualification",
+    NightReproduction(NightReproduction) = "night.reproduction",
+    DayStep(DayStep) = "day.step",
+    DayApplied(DayApplied) = "day.applied",
+    DayEvent(DayEvent) = "day.event",
+    DayVeto(DayVeto) = "day.veto",
+    DayHold(DayHold) = "day.hold",
+    DayFreeze(DayFreeze) = "day.freeze",
+    DayInterval(DayInterval) = "day.interval",
+    DayImported(DayImported) = "day.imported",
 }
 
 impl Payload {
@@ -182,6 +214,7 @@ impl Payload {
             Self::SessionWarning(p) => p.trial.as_ref(),
             Self::TrialCarried(p) => p.source.trial.as_ref(),
             Self::FailureCarried(p) => p.source.trial.as_ref(),
+            Self::ExposureObserved(p) => p.source.trial.as_ref(),
             Self::SessionStart(_)
             | Self::SessionContext(_)
             | Self::SessionBaseline(_)
@@ -226,7 +259,21 @@ impl Payload {
             | Self::DayUncleanEnd(_)
             | Self::DayAnswer(_)
             | Self::DayRecord(_)
-            | Self::DayFault(_) => None,
+            | Self::DayFault(_)
+            | Self::SessionImported(_)
+            | Self::CcdEdge(_)
+            | Self::CcdCap(_)
+            | Self::NightPlan(_)
+            | Self::NightQualification(_)
+            | Self::NightReproduction(_)
+            | Self::DayStep(_)
+            | Self::DayApplied(_)
+            | Self::DayEvent(_)
+            | Self::DayVeto(_)
+            | Self::DayHold(_)
+            | Self::DayFreeze(_)
+            | Self::DayInterval(_)
+            | Self::DayImported(_) => None,
         }
     }
 
@@ -268,6 +315,10 @@ impl Payload {
             Self::DefectAnswered(p) => p.cores.contains(core),
             Self::DeadEnd(p) => p.core == Some(core),
             Self::DayFault(p) => p.fault.core() == Some(core),
+            Self::ExposureObserved(p) => {
+                p.class.cores.contains(core)
+                    || p.failures.iter().any(|failure| failure.core == Some(core))
+            }
             Self::SessionStart(_)
             | Self::SessionContext(_)
             | Self::SessionBaseline(_)
@@ -299,7 +350,21 @@ impl Payload {
             | Self::DayCleanStop(_)
             | Self::DayUncleanEnd(_)
             | Self::DayAnswer(_)
-            | Self::DayRecord(_) => false,
+            | Self::DayRecord(_)
+            | Self::SessionImported(_)
+            | Self::CcdEdge(_)
+            | Self::CcdCap(_)
+            | Self::NightPlan(_)
+            | Self::NightQualification(_)
+            | Self::NightReproduction(_)
+            | Self::DayStep(_)
+            | Self::DayApplied(_)
+            | Self::DayEvent(_)
+            | Self::DayVeto(_)
+            | Self::DayHold(_)
+            | Self::DayFreeze(_)
+            | Self::DayInterval(_)
+            | Self::DayImported(_) => false,
         }
     }
 }
@@ -309,8 +374,8 @@ impl Payload {
 pub struct UnknownKind(pub String);
 
 impl EventKind {
-    /// Whether this is a `togi day` observer event. Day events record what the machine did outside tuning and
-    /// never feed a tuning decision.
+    /// Whether this is a day kind: a `togi day` observer event, or a Ruleset 13 day decision, event or import.
+    /// Observer events record what the machine did outside tuning and never feed a tuning decision.
     pub const fn is_day(self) -> bool {
         matches!(
             self,
@@ -322,6 +387,14 @@ impl EventKind {
                 | Self::DayAnswer
                 | Self::DayRecord
                 | Self::DayFault
+                | Self::DayStep
+                | Self::DayApplied
+                | Self::DayEvent
+                | Self::DayVeto
+                | Self::DayHold
+                | Self::DayFreeze
+                | Self::DayInterval
+                | Self::DayImported
         )
     }
 

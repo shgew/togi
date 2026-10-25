@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
+use super::domain::Placement;
+use super::ruleset13::{NightId, TaskId, Tested, WorkloadContent};
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
@@ -58,6 +60,18 @@ object_only! {
         pub condition: Condition,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub activity: Option<Activity>,
+        /// The night this trial belongs to, by its `until`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub night: Option<NightId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub task: Option<TaskId>,
+        /// Every workload the roles run with its frozen content identity.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub content: Vec<WorkloadContent>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub placement: Option<Placement>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub tested: Option<Tested>,
         #[serde(default, skip_serializing_if = "is_false")]
         pub retry: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]

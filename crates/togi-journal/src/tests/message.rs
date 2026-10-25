@@ -323,6 +323,12 @@ fn multi_core_intent() -> TrialIntent {
     intent.offset = None;
     intent.cores = set(&[3, 7]);
     intent.retry = false;
+    intent.activity = Some(Activity::Hunt);
+    intent.night = None;
+    intent.task = None;
+    intent.content = Vec::new();
+    intent.placement = None;
+    intent.tested = None;
     intent.cycle = None;
     intent.step = None;
     intent.round = None;
@@ -1385,4 +1391,31 @@ fn monotonicity_warnings_use_the_detail_or_the_trial_and_pass_count() {
         text.contains("idle failure") && text.contains("2 passes"),
         "{text}"
     );
+}
+
+#[test]
+fn an_exposure_names_its_ccd_position_offset_and_evidence() {
+    assert_eq!(
+        message(EventKind::ExposureObserved),
+        "CCD0 R8 light core 03 at -20: 120 s eligible, no failure"
+    );
+}
+
+#[test]
+fn night_activities_are_named_in_the_trial_intent_message() {
+    let text = message(EventKind::TrialIntent);
+    assert!(text.contains("mapping task mapping #4"), "{text}");
+    assert!(text.contains("testing CCD0 at -32"), "{text}");
+}
+
+#[test]
+fn a_failed_requalification_names_its_night() {
+    let Payload::DayVeto(mut veto) = sample(EventKind::DayVeto) else {
+        unreachable!()
+    };
+    veto.event = DayEventId::Requalification {
+        night: NightId(Seq::new(41).unwrap()),
+    };
+    let text = Payload::from(veto).message();
+    assert!(text.contains("re-qualification of night #41"), "{text}");
 }

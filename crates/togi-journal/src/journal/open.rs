@@ -77,7 +77,7 @@ impl StateDir {
             (Vec::new(), None)
         } else {
             if let Some(session) = started_session(&events) {
-                self.drop_stale_carry(&session)?;
+                self.drop_stale_import(&session)?;
             }
             (events, torn)
         };

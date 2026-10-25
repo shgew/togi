@@ -10,24 +10,26 @@ fn full() -> ConfigLoaded {
     ConfigLoaded {
         build: build(),
         config: ConfigSnapshot {
-            start_offsets: [(core(3), target(-10)), (core(15), target(0))]
-                .into_iter()
-                .collect(),
-            candidate_solo_limits: [(core(2), target(-36))].into_iter().collect(),
-            durations: ConfigDurations {
+            start_offsets: Some(
+                [(core(3), target(-10)), (core(15), target(0))]
+                    .into_iter()
+                    .collect(),
+            ),
+            candidate_solo_limits: Some([(core(2), target(-36))].into_iter().collect()),
+            durations: Some(ConfigDurations {
                 search_trial_s: 60,
                 short_trial_s: 86_400,
                 checking_trial_s: 1,
                 checking_idle_s: 7_200,
                 checking_all_core_s: 4,
-            },
-            evidence: ConfigEvidence {
+            }),
+            evidence: Some(ConfigEvidence {
                 miss: 0.001,
                 rate: 0.25,
-            },
-            checking: ConfigChecking {
+            }),
+            checking: Some(ConfigChecking {
                 cycle: vec![Regime::R6, Regime::R1, Regime::R6],
-            },
+            }),
             dead_ends: ConfigDeadEnds {
                 inconclusive_in_a_row: 1,
                 stray_crashes_in_a_row: 100,
@@ -135,7 +137,32 @@ fn a_snapshot_records_values_without_the_configuration_policy() {
     value["durations"]["search_trial_s"] = json!(0);
     value["backends"]["mprime"] = json!("relative/path");
     let snapshot = serde_json::from_value::<ConfigSnapshot>(value).unwrap();
-    assert_eq!(snapshot.durations.search_trial_s, 0);
+    assert_eq!(snapshot.durations.unwrap().search_trial_s, 0);
+}
+
+#[test]
+fn a_snapshot_without_the_retired_settings_writes_none_of_them() {
+    let snapshot = ConfigSnapshot {
+        start_offsets: None,
+        candidate_solo_limits: None,
+        durations: None,
+        evidence: None,
+        checking: None,
+        ..bare_config()
+    };
+    let value = serde_json::to_value(&snapshot).unwrap();
+    assert_eq!(
+        value,
+        json!({
+            "dead_ends": {"inconclusive_in_a_row": 3, "stray_crashes_in_a_row": 3},
+            "backends": {"mprime": null, "ycruncher": null},
+            "backend_user": null
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<ConfigSnapshot>(value).unwrap(),
+        snapshot
+    );
 }
 
 #[test_case("/start_offsets", json!({"3": 10}); "a start offset on a core that does not exist")]

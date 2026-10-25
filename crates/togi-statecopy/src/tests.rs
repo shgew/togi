@@ -8,7 +8,7 @@ use super::*;
 const SESSION_BEARING: [&str; 4] = [
     "20260101T000000Z.jsonl",
     "20260101T000000Z-reset-all",
-    "20260102T000000Z-carry-pending",
+    "20260102T000000Z-import-pending",
     "20260102T000000Z-compat-pending",
 ];
 

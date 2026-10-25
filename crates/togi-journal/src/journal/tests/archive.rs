@@ -7,12 +7,14 @@ use crate::testing::{
     stamp, start,
 };
 use crate::{
-    AppendError, ArchiveError, ArchiveKind, DirError, EventKind, Marker, Recording, SessionId,
+    AppendError, ArchiveError, ArchiveKind, DirError, EventKind, ImportMarker, Marker, Recording,
+    SessionId,
 };
 
 const ARCHIVED: &str = "/state/archive/20231114T221320Z.jsonl";
 const TRIALS: &str = "/state/archive/20231114T221320Z-trials";
-const CARRY: &str = "/state/archive/20231114T221320Z-carry-pending";
+const IMPORT: &str = "/state/archive/20231114T221320Z-import-pending";
+const IMPORT_TMP: &str = "/state/archive/.import-pending.tmp";
 const RESET: &str = "/state/archive/20231114T221320Z-reset-all";
 const COMPAT: &str = "/state/archive/20231114T221320Z-compat-pending";
 
@@ -68,35 +70,54 @@ fn reset_all_archives_the_session_behind_a_durable_boundary() {
         ["session.start", "session.warning", "session.archived"]
     );
     assert_eq!(dir.reset_boundary().unwrap(), Some(default_session()));
-    assert_eq!(dir.pending_carry().unwrap(), None);
+    assert_eq!(dir.pending_import().unwrap(), None);
     assert_eq!(dir.archives().unwrap(), [default_session()]);
     assert!(fs.contents(RESET).is_some());
 }
 
-#[test]
-fn a_transition_leaves_a_pending_carry_and_no_boundary() {
-    let fs = MemFs::new();
-    let dir = seeded(&fs)
-        .archive(stamp(5), ArchiveKind::Transition, &[])
-        .unwrap();
-    assert_eq!(dir.pending_carry().unwrap(), Some(default_session()));
-    assert_eq!(dir.reset_boundary().unwrap(), None);
-    assert!(fs.contents(CARRY).is_some());
+fn transition(destination: &str) -> ArchiveKind {
+    ArchiveKind::Transition {
+        destination: session(destination),
+    }
 }
 
 #[test]
-fn a_transition_keeps_an_earlier_pending_carry_as_the_source() {
+fn a_transition_leaves_a_pending_import_naming_its_destination_and_no_boundary() {
     let fs = MemFs::new();
     let dir = seeded(&fs)
-        .archive(stamp(5), ArchiveKind::Transition, &[])
+        .archive(stamp(5), transition("20231115T000000Z"), &[])
+        .unwrap();
+    assert_eq!(
+        dir.pending_import().unwrap(),
+        Some(ImportMarker {
+            source: default_session(),
+            destination: session("20231115T000000Z"),
+        })
+    );
+    assert_eq!(dir.reset_boundary().unwrap(), None);
+    assert_eq!(fs.contents(IMPORT).unwrap(), b"20231115T000000Z\n");
+    assert_eq!(fs.contents(IMPORT_TMP), None);
+}
+
+#[test]
+fn a_transition_keeps_an_earlier_pending_import_as_the_source_and_names_the_new_destination() {
+    let fs = MemFs::new();
+    let dir = seeded(&fs)
+        .archive(stamp(5), transition("20231115T000000Z"), &[])
         .unwrap();
     drop(dir);
     let mut second = begin(&fs, session("20231115T000000Z"));
     second.append(stamp(6), note("more"), &[]).unwrap();
     let dir = second
-        .archive(stamp(7), ArchiveKind::Transition, &[])
+        .archive(stamp(7), transition("20231116T000000Z"), &[])
         .unwrap();
-    assert_eq!(dir.pending_carry().unwrap(), Some(default_session()));
+    assert_eq!(
+        dir.pending_import().unwrap(),
+        Some(ImportMarker {
+            source: default_session(),
+            destination: session("20231116T000000Z"),
+        })
+    );
     assert_eq!(dir.markers().unwrap().len(), 1);
     assert_eq!(dir.archives().unwrap().len(), 2);
 }
@@ -186,7 +207,7 @@ fn a_poisoned_journal_cannot_archive() {
 
 #[test]
 fn every_archive_step_failure_resumes_once_and_leaves_the_sources_immutable() {
-    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
+    for kind in [ArchiveKind::ResetAll, transition("20231115T000000Z")] {
         let expected = reference(kind);
         for nth in 1..=60 {
             for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
@@ -202,8 +223,8 @@ fn every_archive_step_failure_resumes_once_and_leaves_the_sources_immutable() {
                     assert_archived_intact(&fs, &expected, &context);
                     assert!(reopened.events().is_empty(), "{context}");
                     match kind {
-                        ArchiveKind::Transition => {
-                            assert!(fs.contents(CARRY).is_some(), "{context}");
+                        ArchiveKind::Transition { .. } => {
+                            assert!(fs.contents(IMPORT).is_some(), "{context}");
                         }
                         ArchiveKind::ResetAll => assert!(fs.contents(RESET).is_some(), "{context}"),
                     }
@@ -216,7 +237,7 @@ fn every_archive_step_failure_resumes_once_and_leaves_the_sources_immutable() {
                     );
                     assert_eq!(reopened.events().len(), 2, "{context}");
                     assert!(
-                        fs.contents(CARRY).is_none(),
+                        fs.contents(IMPORT).is_none(),
                         "{context}: no carry for a session that lives on"
                     );
                 }
@@ -247,7 +268,7 @@ fn unreadable_fixture(fs: &MemFs) -> Vec<u8> {
 }
 
 #[test_case(ArchiveKind::ResetAll; "reset all")]
-#[test_case(ArchiveKind::Transition; "transition")]
+#[test_case(transition("20231115T000000Z"); "transition")]
 fn an_unreadable_journal_is_archived_byte_for_byte_behind_a_compat_marker(kind: ArchiveKind) {
     let fs = MemFs::new();
     let original = unreadable_fixture(&fs);
@@ -283,7 +304,7 @@ fn archiving_nothing_archives_nothing() {
 
 #[test]
 fn an_unreadable_archive_resumes_through_every_step_failure() {
-    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
+    for kind in [ArchiveKind::ResetAll, transition("20231115T000000Z")] {
         for nth in 1..=50 {
             for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
                 let fs = MemFs::new();
@@ -301,7 +322,7 @@ fn an_unreadable_archive_resumes_through_every_step_failure() {
                 } else {
                     assert!(result.is_err(), "{context}");
                     assert_eq!(live(&fs), original, "{context}");
-                    assert!(fs.contents(CARRY).is_none(), "{context}");
+                    assert!(fs.contents(IMPORT).is_none(), "{context}");
                 }
                 assert_eq!(fs.contents(COMPAT), None, "{context}");
             }
@@ -324,11 +345,12 @@ fn an_archive_recorded_before_the_unreadable_path_runs_is_only_finished() {
     assert_eq!(Recording::parse(&recorded).unwrap().events().len(), 3);
     let mut dir = simulated(&fs);
     assert_eq!(
-        dir.archive_unreadable(ArchiveKind::Transition).unwrap(),
+        dir.archive_unreadable(transition("20231115T000000Z"))
+            .unwrap(),
         Some(default_session())
     );
     assert_eq!(fs.contents(ARCHIVED).unwrap(), recorded);
-    assert_eq!(fs.contents(CARRY), None);
+    assert_eq!(fs.contents(IMPORT), None);
     assert_eq!(fs.contents(COMPAT), None);
 }
 
@@ -336,10 +358,10 @@ fn an_archive_recorded_before_the_unreadable_path_runs_is_only_finished() {
 fn open_finishes_a_recorded_archive_even_when_a_torn_tail_follows_it() {
     let fs = MemFs::new();
     let journal = seeded(&fs);
-    fs.inject(Fault::before(crate::fs::Op::Rename, 1));
+    fs.inject(Fault::before(crate::fs::Op::Rename, 2));
     assert!(
         journal
-            .archive(stamp(5), ArchiveKind::Transition, &[])
+            .archive(stamp(5), transition("20231115T000000Z"), &[])
             .is_err()
     );
     fs.clear_faults();
@@ -445,7 +467,7 @@ fn recorded_but_not_moved(fs: &MemFs) -> Vec<u8> {
     fs.inject(Fault::before(crate::fs::Op::Rename, 1));
     assert!(
         journal
-            .archive(stamp(5), ArchiveKind::Transition, &[])
+            .archive(stamp(5), transition("20231115T000000Z"), &[])
             .is_err()
     );
     fs.clear_faults();
@@ -489,7 +511,7 @@ fn the_boundary_is_durable_before_a_recorded_reset_all_moves_anything() {
 
 #[test]
 fn a_failed_archive_before_its_event_retries_to_completion() {
-    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
+    for kind in [ArchiveKind::ResetAll, transition("20231115T000000Z")] {
         let expected = reference(kind);
         for nth in 1..=60 {
             for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
@@ -523,7 +545,7 @@ fn undecodable_fixture(fs: &MemFs) -> Vec<u8> {
 
 #[test]
 fn an_undecodable_journal_archive_retries_through_its_own_markers() {
-    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
+    for kind in [ArchiveKind::ResetAll, transition("20231115T000000Z")] {
         for nth in 1..=50 {
             for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
                 let fs = MemFs::new();
@@ -545,7 +567,9 @@ fn an_undecodable_journal_archive_retries_through_its_own_markers() {
                 );
                 assert_archived_intact(&fs, &original, &context);
                 match kind {
-                    ArchiveKind::Transition => assert!(fs.contents(CARRY).is_some(), "{context}"),
+                    ArchiveKind::Transition { .. } => {
+                        assert!(fs.contents(IMPORT).is_some(), "{context}");
+                    }
                     ArchiveKind::ResetAll => assert!(fs.contents(RESET).is_some(), "{context}"),
                 }
             }
@@ -638,30 +662,38 @@ fn open_syncs_a_surviving_compat_marker_and_its_directories_before_resuming_the_
 }
 
 #[test]
-fn a_transition_retry_syncs_the_pending_carry_it_keeps_as_its_source() {
+fn a_transition_retry_syncs_the_pending_import_it_keeps_as_its_source() {
     let fs = MemFs::new();
     drop(
         seeded(&fs)
-            .archive(stamp(5), ArchiveKind::Transition, &[])
+            .archive(stamp(5), transition("20231115T000000Z"), &[])
             .unwrap(),
     );
     let mut second = begin(&fs, session("20231115T000000Z"));
     second.append(stamp(6), note("more"), &[]).unwrap();
-    fs.inject(Fault::before(Op::Sync, 1).named("20231114T221320Z-carry-pending"));
+    fs.inject(Fault::before(Op::Sync, 1).named(".import-pending.tmp"));
     assert!(
         second
-            .archive(stamp(7), ArchiveKind::Transition, &[])
+            .archive(stamp(7), transition("20231116T000000Z"), &[])
             .is_err()
     );
     fs.clear_faults();
     assert_eq!(fs.contents("/state/archive/20231115T000000Z.jsonl"), None);
+    assert_eq!(fs.contents(IMPORT).unwrap(), b"20231115T000000Z\n");
 
     fs.record_history();
     let dir = reopen(&fs, 3)
-        .archive(stamp(7), ArchiveKind::Transition, &[])
+        .archive(stamp(7), transition("20231116T000000Z"), &[])
         .unwrap();
-    assert!(position(&fs.log(), Op::Sync, CARRY).is_some());
-    assert_eq!(dir.pending_carry().unwrap(), Some(default_session()));
+    assert!(position(&fs.log(), Op::Sync, IMPORT_TMP).is_some());
+    assert!(position(&fs.log(), Op::Rename, IMPORT_TMP).is_some());
+    assert_eq!(
+        dir.pending_import().unwrap(),
+        Some(ImportMarker {
+            source: default_session(),
+            destination: session("20231116T000000Z"),
+        })
+    );
     assert_eq!(dir.markers().unwrap().len(), 1);
     assert_eq!(dir.archives().unwrap().len(), 2);
 }

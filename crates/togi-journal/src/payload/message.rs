@@ -9,6 +9,7 @@ use super::domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, Decision, HuntOutcome, HuntStage,
     Notice, Outcome, RoundEvent, ShutdownReason, SmuOp, WarningKind,
 };
+use super::ruleset13::Tested;
 use super::session::{CarriedSource, ResetTarget};
 use super::smu::SmuCommand;
 use super::tuner::{Member, Rederived};
@@ -25,6 +26,9 @@ use super::{
     TunerDecision, TunerWarning,
 };
 use crate::Build;
+
+#[path = "message_ruleset13.rs"]
+mod ruleset13;
 
 impl Payload {
     pub fn message(&self) -> String {
@@ -87,6 +91,21 @@ impl Payload {
             Self::DayAnswer(p) => day_answer(p),
             Self::DayRecord(p) => day_record(p),
             Self::DayFault(p) => day_fault(p),
+            Self::SessionImported(p) => ruleset13::session_imported(p),
+            Self::ExposureObserved(p) => ruleset13::exposure_observed(p),
+            Self::CcdEdge(p) => ruleset13::ccd_edge(p),
+            Self::CcdCap(p) => ruleset13::ccd_cap(p),
+            Self::NightPlan(p) => ruleset13::night_plan(p),
+            Self::NightQualification(p) => ruleset13::night_qualification(p),
+            Self::NightReproduction(p) => ruleset13::night_reproduction(p),
+            Self::DayStep(p) => ruleset13::day_step(p),
+            Self::DayApplied(p) => ruleset13::day_applied(p),
+            Self::DayEvent(p) => ruleset13::day_event(p),
+            Self::DayVeto(p) => ruleset13::day_veto(p),
+            Self::DayHold(p) => ruleset13::day_hold(p),
+            Self::DayFreeze(p) => ruleset13::day_freeze(p),
+            Self::DayInterval(p) => ruleset13::day_interval(p),
+            Self::DayImported(p) => ruleset13::day_imported(p),
         }
     }
 }
@@ -339,6 +358,27 @@ fn trial_intent(p: &TrialIntent) -> String {
         p.duration_s,
         p.condition
     );
+    match p.activity {
+        Some(
+            activity @ (Activity::Mapping
+            | Activity::Qualification
+            | Activity::Reproduction
+            | Activity::Control),
+        ) => {
+            let _ = write!(text, " {activity}");
+        }
+        Some(Activity::Search | Activity::Checking | Activity::Hunt | Activity::Deepening)
+        | None => {}
+    }
+    if let Some(task) = p.task {
+        let _ = write!(text, " task {} #{}", task.queue, task.ordinal);
+    }
+    if let Some(night) = p.night {
+        let _ = write!(text, " night {night}");
+    }
+    if let Some(Tested::Isolated { ccd, offset }) = p.tested {
+        let _ = write!(text, " testing CCD{ccd} at {}", offset.get());
+    }
     if p.retry {
         text.push_str(" (retry)");
     }
