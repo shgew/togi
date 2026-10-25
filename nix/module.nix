@@ -166,12 +166,14 @@ in
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
+              TimeoutStopSec = "30s";
               ExecStart = runtimeWatchdog "0";
               # Firmware can clear the SP5100 timer's MMIO decode on deep resume. Probe restores it.
-              # Ignore (and let systemd log) reload failures so PID 1 is always asked to re-arm.
+              # A failed or stalled module command must not skip re-arming: '-' ignores failures, while
+              # timeout kills each command within 7s, well before systemd's 30s stop deadline.
               ExecStopPost = [
-                "-${pkgs.kmod}/bin/modprobe -r sp5100_tco"
-                "-${pkgs.kmod}/bin/modprobe sp5100_tco"
+                "-${pkgs.coreutils}/bin/timeout --verbose --kill-after=2s 5s ${pkgs.kmod}/bin/modprobe -r sp5100_tco"
+                "-${pkgs.coreutils}/bin/timeout --verbose --kill-after=2s 5s ${pkgs.kmod}/bin/modprobe sp5100_tco"
                 (runtimeWatchdog "18446744073709551615")
               ];
             };

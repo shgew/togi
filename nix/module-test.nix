@@ -243,10 +243,15 @@ assert lib.hasSuffix "RuntimeWatchdogUSec t 0" (
 assert
   map builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStopPost
   == [
-    "-${builtins.unsafeDiscardStringContext "${pkgs.kmod}/bin/modprobe"} -r sp5100_tco"
-    "-${builtins.unsafeDiscardStringContext "${pkgs.kmod}/bin/modprobe"} sp5100_tco"
+    "-${builtins.unsafeDiscardStringContext "${pkgs.coreutils}/bin/timeout"} --verbose --kill-after=2s 5s ${builtins.unsafeDiscardStringContext "${pkgs.kmod}/bin/modprobe"} -r sp5100_tco"
+    "-${builtins.unsafeDiscardStringContext "${pkgs.coreutils}/bin/timeout"} --verbose --kill-after=2s 5s ${builtins.unsafeDiscardStringContext "${pkgs.kmod}/bin/modprobe"} sp5100_tco"
     "${builtins.unsafeDiscardStringContext "${watched.systemd.package}/bin/busctl"} set-property org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager RuntimeWatchdogUSec t 18446744073709551615"
   ];
+assert watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.TimeoutStopSec == "30s";
+assert lib.hasInfix "TimeoutStopSec=30s"
+  watched.systemd.units."togi-day-watchdog-sleep.service".text;
+assert lib.hasInfix "--verbose --kill-after=2s 5s"
+  watched.systemd.units."togi-day-watchdog-sleep.service".text;
 assert !(watched.systemd.services.togi-day-watchdog-sleep.serviceConfig ? ExecStop);
 assert !(day.systemd.services ? togi-day-watchdog-sleep);
 assert !(watchedTuning.systemd.services ? togi-day-watchdog-sleep);
