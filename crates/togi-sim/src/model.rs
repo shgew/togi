@@ -12,7 +12,9 @@ use crate::definition::{
 use crate::error::{InvalidMachine, Path, Problem};
 use crate::hazard::largest_limit_rate;
 use crate::random::draw_limits;
-use crate::vocab::{ResetMix, SignalMix, regime_index, reset_slot, signal_slot};
+use crate::vocab::{
+    MODELED_REGIMES, ResetMix, SignalMix, modeled_as, regime_index, reset_slot, signal_slot,
+};
 use crate::voltage::Voltage;
 
 const MAX_CORES: usize = 16;
@@ -23,7 +25,7 @@ const MAX_CORES: usize = 16;
 pub struct Limits {
     /// R1 to R5 with every other core at 0.
     pub alone: [i64; 5],
-    /// R1 to R7 with other cores set.
+    /// R1 to R7 with other cores set; R8 reads R2's slot and R9 R7's ([`limit_index`](crate::limit_index)).
     pub together: [i64; 7],
     /// The limit of the core while unloaded.
     pub idle: Option<i64>,
@@ -55,19 +57,18 @@ pub struct JointMember {
     pub offset: TargetOffset,
 }
 
-/// A set of regimes; the empty set means every regime.
+/// A set of regimes; the empty set means every regime. A regime is also in the set when the regime it is
+/// [modeled as](crate::limit_index) is: a joint that names R7 covers R9, and one that names R2 covers R8.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct RegimeSet(u8);
+pub struct RegimeSet(u16);
 
 impl RegimeSet {
-    fn from_regimes(path: &Path<'_>, regimes: &[Regime]) -> Result<Self, InvalidMachine> {
-        let mut mask = 0;
-        for (index, &regime) in regimes.iter().enumerate() {
-            let slot = regime_index(regime)
-                .ok_or_else(|| path.index(index).error(Problem::UnmodeledRegime))?;
-            mask |= 1 << slot;
-        }
-        Ok(Self(mask))
+    fn from_regimes(regimes: &[Regime]) -> Self {
+        Self(
+            regimes
+                .iter()
+                .fold(0, |mask, &regime| mask | 1 << regime_index(regime)),
+        )
     }
 
     pub const fn is_all(self) -> bool {
@@ -75,7 +76,8 @@ impl RegimeSet {
     }
 
     pub fn covers(self, regime: Regime) -> bool {
-        self.is_all() || regime_index(regime).is_some_and(|slot| self.0 & (1 << slot) != 0)
+        let has = |regime| self.0 & (1 << regime_index(regime)) != 0;
+        self.is_all() || has(regime) || has(modeled_as(regime))
     }
 }
 
@@ -112,7 +114,7 @@ struct Inner {
     old_kernel: bool,
     params: Params,
     signals: SignalMix,
-    regime_signals: [Option<SignalMix>; 7],
+    regime_signals: [Option<SignalMix>; MODELED_REGIMES],
     reset: ResetMix,
     limits: Vec<Limits>,
     ccd: Option<CcdDef>,
@@ -243,10 +245,12 @@ impl Model {
         &self.0.params
     }
 
-    /// The signal weights of failures in `regime`: its own when the model lists one, else the pooled mix.
+    /// The signal weights of failures in `regime`: its own when the model lists one, else those of the regime it
+    /// is modeled as (R8 as R2, R9 as R7) when listed, else the pooled mix.
     pub fn signal_mix(&self, regime: Regime) -> &SignalMix {
-        regime_index(regime)
-            .and_then(|slot| self.0.regime_signals[slot].as_ref())
+        let listed = |regime| self.0.regime_signals[regime_index(regime)].as_ref();
+        listed(regime)
+            .or_else(|| listed(modeled_as(regime)))
             .unwrap_or(&self.0.signals)
     }
 
@@ -356,7 +360,12 @@ pub(crate) fn signal_mix(
     mix_weights(path, signals, signal_slot, Signal::as_str).map(SignalMix::new)
 }
 
-type ModelParts = (Params, SignalMix, [Option<SignalMix>; 7], ResetMix);
+type ModelParts = (
+    Params,
+    SignalMix,
+    [Option<SignalMix>; MODELED_REGIMES],
+    ResetMix,
+);
 
 fn resolve_model(model: &ModelDef, path: &Path<'_>) -> Result<ModelParts, InvalidMachine> {
     let growth_path = path.key("growth");
@@ -384,12 +393,11 @@ fn resolve_model(model: &ModelDef, path: &Path<'_>) -> Result<ModelParts, Invali
         },
     };
     let signals = signal_mix(&path.key("signals"), &model.signals)?;
-    let mut regime_signals: [Option<SignalMix>; 7] = Default::default();
+    let mut regime_signals: [Option<SignalMix>; MODELED_REGIMES] = Default::default();
     let regimes = path.key("regime_signals");
     for (regime, mix) in &model.regime_signals {
         let mix_path = regimes.key(regime.as_str());
-        let slot = regime_index(*regime).ok_or_else(|| mix_path.error(Problem::UnmodeledRegime))?;
-        regime_signals[slot] = Some(signal_mix(&mix_path, mix)?);
+        regime_signals[regime_index(*regime)] = Some(signal_mix(&mix_path, mix)?);
     }
     let reset = mix_weights(
         &path.key("reset"),
@@ -515,7 +523,7 @@ fn resolve_joint(
         .transpose()?;
     Ok(Joint {
         members,
-        regimes: RegimeSet::from_regimes(&path.key("regimes"), &joint.regimes)?,
+        regimes: RegimeSet::from_regimes(&joint.regimes),
         rate,
         after_s,
         signal,

@@ -7,7 +7,7 @@ use togi_journal::{EventKind, Payload, ShutdownReason};
 use togi_machine::{CoreId, Machine, TargetOffset};
 use togi_render::OutputFacts;
 
-use crate::support::{Fake, biased, interrupt_at_first_trial, interrupt_on_first_write};
+use crate::support::{CORES, Fake, interrupt_at_first_trial, interrupt_on_first_write};
 
 fn interrupted() -> Fake {
     let mut fake = Fake::new();
@@ -54,14 +54,14 @@ fn an_unsupported_platform_is_reported_before_anything_else_is_touched() {
 /// Every core's offset on the simulated machine, read back through its SMU.
 fn offsets(fake: &Fake) -> Vec<i64> {
     let mut smu = fake.sim.seams().smu;
-    (0..16)
+    (0..CORES)
         .map(|core| smu.offset(CoreId::new(core).unwrap()).unwrap().0)
         .collect()
 }
 
 /// A run stopped by a signal restored what it had written (`profile.restored` before the final shutdown), and
-/// the machine reads back at its boot offsets.
-fn assert_stopped_by_a_signal_with_the_offsets_restored(fake: &Fake, boot: i64, what: &str) {
+/// the machine reads back at the all-zero baseline.
+fn assert_stopped_by_a_signal_with_the_offsets_restored(fake: &Fake, what: &str) {
     let events = fake.events();
     let last = events.last().unwrap();
     assert!(
@@ -83,18 +83,22 @@ fn assert_stopped_by_a_signal_with_the_offsets_restored(fake: &Fake, boot: i64, 
         restored + 1 < events.len(),
         "{what}: restored after the shutdown"
     );
-    assert_eq!(offsets(fake), vec![boot; 16], "{what}: not restored");
+    assert!(
+        offsets(fake).iter().all(|offset| *offset == 0),
+        "{what}: not restored: {:?}",
+        offsets(fake)
+    );
 }
 
 #[test]
 fn cancellation_stops_a_run_cleanly_with_the_offsets_restored_and_the_shutdown_recorded() {
-    let mut fake = Fake::on(biased(1000, -5));
+    let mut fake = Fake::new();
     fake.wrap = Box::new(interrupt_on_first_write);
     let (exit, out, err) = fake.run(&["run", "--no-tui"]);
     assert_eq!(exit, Exit::Ok, "{err}");
     assert_eq!(out, "");
     assert!(err.contains("session.start"), "{err}");
-    assert_stopped_by_a_signal_with_the_offsets_restored(&fake, -5, "SIGINT");
+    assert_stopped_by_a_signal_with_the_offsets_restored(&fake, "SIGINT");
     assert_eq!(fake.opened.get(), 1);
 }
 
@@ -797,7 +801,7 @@ fn a_restoration_the_dashboard_hid_at_a_resumes_startup_is_not_repeated_by_the_c
     // A run in the same boot left offsets applied, so the resume restores them at its startup, while the
     // dashboard shows, and then goes on to work: only the restoration and the shutdown of its own stop belong
     // on stderr once it ends.
-    let mut first = Fake::on(biased(1000, -5));
+    let mut first = Fake::new();
     first_run(&mut first);
     first
         .sim

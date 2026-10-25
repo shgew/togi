@@ -433,7 +433,7 @@ _togi() {
                     if [[ ${cur} == *,* ]]; then
                         prefix="${cur%,*},"
                     fi
-                    COMPREPLY=($(compgen -P "${prefix}" -W "backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.boot_start day.checkpoint day.clean_stop day.fault day.offsets_changed day.record day.unclean_end deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning" -- "${cur##*,}"))
+                    COMPREPLY=($(compgen -P "${prefix}" -W "backend backend.retry boot boot.leave_reason boot.saved_entry ccd ccd.cap ccd.edge checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.applied day.boot_start day.checkpoint day.clean_stop day.event day.fault day.freeze day.hold day.imported day.interval day.offsets_changed day.record day.step day.unclean_end day.veto deadend deepening deepening.round defect defect.answered defect.found exposure exposure.observed failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce night night.plan night.qualification night.reproduction preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.imported session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning" -- "${cur##*,}"))
                     return 0
                     ;;
                 --trial)
@@ -752,34 +752,12 @@ _togi() {
             return 0
             ;;
         togi__subcmd__reset)
-            opts="-h --core --all --config --state-dir --help"
+            opts="-h --all --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --core)
-                    COMPREPLY=("${cur}")
-                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
-                        compopt -o nospace
-                    fi
-                    return 0
-                    ;;
-                --config)
-                    local oldifs
-                    if [ -n "${IFS+x}" ]; then
-                        oldifs="$IFS"
-                    fi
-                    IFS=$'\n'
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    if [ -n "${oldifs+x}" ]; then
-                        IFS="$oldifs"
-                    fi
-                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
-                        compopt -o filenames
-                    fi
-                    return 0
-                    ;;
                 --state-dir)
                     COMPREPLY=()
                     if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
@@ -831,7 +809,7 @@ _togi() {
             return 0
             ;;
         togi__subcmd__run)
-            opts="-h --config --cycles --first-result --tuning-boot --no-tui --state-dir --help"
+            opts="-h --config --tuning-boot --no-tui --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -850,10 +828,6 @@ _togi() {
                     if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
                         compopt -o filenames
                     fi
-                    return 0
-                    ;;
-                --cycles)
-                    COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --tuning-boot)

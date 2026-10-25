@@ -183,7 +183,7 @@ fn real_process_a_usage_error_on_a_full_stdout_stays_exit_2() {
     assert!(stderr(&ran).contains("unrecognized subcommand"));
 }
 
-const SCOPE: &str = "--config applies only to doctor, run and reset";
+const SCOPE: &str = "--config applies only to doctor and run";
 
 #[test_case(&["bogus"], "unrecognized subcommand 'bogus'" ; "unknown subcommand")]
 #[test_case(&["--bogus"], "unexpected argument '--bogus'" ; "unknown flag")]
@@ -340,11 +340,11 @@ fn run_help() {
 }
 
 #[test]
-fn the_cycles_example_is_worded_the_same_in_the_top_level_and_run_help() {
+fn the_run_example_is_worded_the_same_in_the_top_level_and_run_help() {
     let row = |text: &str| {
         let rows: Vec<String> = text
             .lines()
-            .filter(|line| line.contains("sudo togi run --cycles 1"))
+            .filter(|line| line.contains("sudo togi run ") && line.contains("until you stop it"))
             .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
             .collect();
         assert_eq!(rows.len(), 1, "{text}");
@@ -355,14 +355,9 @@ fn the_cycles_example_is_worded_the_same_in_the_top_level_and_run_help() {
     assert_eq!(row(stdout(&top)), row(stdout(&run)));
 }
 
-#[test_case(
-    &["run", "--first-result", "--cycles", "1"],
-    "cannot be used with" ;
-    "first result with cycles"
-)]
-#[test_case(&["run", "--cycles", "0"], "must be a positive integer" ; "zero cycles")]
-#[test_case(&["run", "--cycles", "many"], "must be a positive integer" ; "cycles not a number")]
-#[test_case(&["run", "--cycles"], "a value is required" ; "cycles without a value")]
+#[test_case(&["run", "--until", "07:30"], "unexpected argument '--until'" ; "retired until")]
+#[test_case(&["run", "--cycles", "1"], "unexpected argument '--cycles'" ; "retired cycles")]
+#[test_case(&["run", "--first-result"], "unexpected argument '--first-result'" ; "retired first result")]
 #[test_case(&["run", "--bogus"], "unexpected argument '--bogus'" ; "unknown flag")]
 #[test_case(&["run", "--version"], "unexpected argument '--version'" ; "version")]
 fn run_usage_errors_exit_2_before_anything_is_touched(args: &[&str], text: &str) {
@@ -497,22 +492,21 @@ fn night_end_help() {
     snapshot!(night_end_help, help("night-end"));
 }
 
-#[test_case("doctor" ; "doctor")]
-#[test_case("reset" ; "reset")]
-fn doctor_and_reset_list_config(command: &str) {
-    assert!(help(command).contains("--config"));
+#[test]
+fn doctor_lists_config() {
+    assert!(help("doctor").contains("--config"));
 }
 
+#[test_case("reset" ; "reset")]
 #[test_case("restart-limit" ; "restart limit")]
 #[test_case("emergency-stop" ; "emergency stop")]
-fn restart_limit_and_emergency_stop_do_not_list_config(command: &str) {
+fn reset_restart_limit_and_emergency_stop_do_not_list_config(command: &str) {
     assert!(!help(command).contains("--config"));
 }
 
 #[test_case(&["reset"], "required arguments were not provided" ; "reset without a target")]
-#[test_case(&["reset", "--core", "1", "--all"], "cannot be used with" ; "reset core and all")]
-#[test_case(&["reset", "--core", "x"], "invalid value 'x'" ; "reset core not a number")]
-#[test_case(&["reset", "--core", "-1"], "unexpected argument" ; "reset negative core")]
+#[test_case(&["reset", "--core", "1", "--all"], "unexpected argument '--core'" ; "reset core and all")]
+#[test_case(&["reset", "--core", "1"], "unexpected argument '--core'" ; "reset core")]
 #[test_case(&["reset", "--all", "extra"], "unexpected argument 'extra'" ; "reset extra argument")]
 #[test_case(&["restart-limit"], "required arguments were not provided" ; "restart limit without a boot")]
 #[test_case(&["restart-limit", "--tuning-boot="], "a value is required" ; "restart limit empty boot")]

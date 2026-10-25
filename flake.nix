@@ -57,17 +57,13 @@
                 (bench + "/facts")
                 (bench + "/suite.json")
                 (bench + "/baseline.jsonl")
-                (bench + "/research/896/suite.json")
                 (bench + "/gates")
-                (bench + "/research/490/machines")
-                (bench + "/research/490/suite.json")
               ];
               togi-tool-fit = [ (bench + "/facts") ];
               togi-tool-sim = [
                 (bench + "/machines")
                 (bench + "/suite.json")
               ];
-              togi-tool-stats = [ (bench + "/machines") ];
               togi-tool-trialfacts = [ (bench + "/facts") ];
             };
           # nextest's profiles, and the fixtures the named crates' tests read.
@@ -83,7 +79,6 @@
               "togi-tuner"
               "togi-defect"
               "togi-facts"
-              "togi-carry"
               "togi-render"
               "togi-tuningboot"
               "togi-trialfiles"
@@ -112,7 +107,6 @@
             tools = [
               "togi-tool-audit"
               "togi-tool-bench"
-              "togi-tool-forecast"
               "togi-tool-modelcheck"
               "togi-tool-trialfacts"
               "togi-tool-copy-state"

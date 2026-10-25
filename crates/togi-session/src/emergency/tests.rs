@@ -12,7 +12,7 @@ use super::{Access, Response, Withheld, respond};
 use crate::error::JournalFailure;
 use crate::session::{Fault, Lifecycle, Swept};
 use crate::testing::{Rig, core, target};
-use crate::write::{ConstraintRefusal, apply};
+use crate::write::apply;
 
 fn failure() -> JournalFailure {
     JournalFailure::new(AppendError::SeqExhausted)
@@ -77,10 +77,7 @@ fn cores(n: i64) -> CoreSet {
 }
 
 fn lower(rig: &mut Rig, n: i64, offset: i64) {
-    let checked = rig
-        .hardware
-        .check_set(core(n), target(offset), &mut |_| None::<ConstraintRefusal>)
-        .unwrap();
+    let checked = rig.hardware.check_set(core(n), target(offset)).unwrap();
     drop(
         apply(
             &mut rig.appender,

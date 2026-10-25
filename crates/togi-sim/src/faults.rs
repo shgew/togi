@@ -54,6 +54,8 @@ pub(crate) struct Faults {
     pub fail_setup: u32,
     pub escape: bool,
     pub missing_backends: BTreeSet<Backend>,
+    /// Backends every trial start of which fails its setup.
+    pub failing_backends: BTreeSet<Backend>,
     pub failed_checks: BTreeMap<String, String>,
     pub hook: Option<Box<dyn SmuHook>>,
 }

@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use togi_journal::{DeadEnd, DeadEndCondition, Payload, PreflightCheck, Seq, SessionWarning};
-use togi_machine::{CancellationToken, Error, PerCore, TargetOffset};
+use togi_machine::{CancellationToken, Error};
 
 use crate::emergency::SweepCleared;
 use crate::error::{SessionError, Step};
@@ -90,7 +90,7 @@ impl Session<'_> {
     }
 
     /// Waits for the hardware watchdog when started from the tuning boot, records the machine's checks and the BIOS
-    /// context comparison, and ends in a preflight dead end citing the failed ones.
+    /// context comparison (a difference is recorded, never a failure: `begin` records the new context), and ends in a preflight dead end citing the failed ones.
     pub(crate) fn preflight(&mut self) -> Outcome {
         let cancel = self.waiting_token();
         if self.appender.handoff().is_some() {
@@ -124,21 +124,17 @@ impl Session<'_> {
                 names.push(format!("{} ({})", check.name, check.detail));
             }
         }
-        let recorded = self.appender.recovery().context().cloned();
-        if let Some(recorded) = recorded
+        if let Some(recorded) = self.appender.recovery().context().cloned()
             && failed.is_empty()
         {
             let current = self.host.bios_context()?;
-            let mismatch = recorded.first_difference(&current);
-            let detail = mismatch.as_ref().map_or_else(
+            let detail = recorded.first_difference(&current).map_or_else(
                 || "the BIOS context is the one the session recorded".to_owned(),
-                ToString::to_string,
+                |difference| {
+                    format!("{difference}; a new session.context records the machine's current one")
+                },
             );
-            let seq = self.record_check("bios_context", detail.clone(), mismatch.is_none())?;
-            if mismatch.is_some() {
-                failed.push(seq);
-                names.push(format!("bios_context ({detail})"));
-            }
+            self.record_check("bios_context", detail, true)?;
         }
         if failed.is_empty() {
             return Ok(Control::Continue);
@@ -224,13 +220,13 @@ impl Session<'_> {
 }
 
 impl Session<'_> {
-    /// On a boot a run already used: reads the offsets that run left, puts the baseline back as bounded by `held`
-    /// and only then lets the boot's cancellation count. A failed read or write is SMU evidence.
-    pub(crate) fn reconcile(&mut self, held: &PerCore<TargetOffset>) -> Outcome {
+    /// On a boot a run already used: reads the offsets that run left, puts every core back at CO 0 and only then
+    /// lets the boot's cancellation count. A failed read or write is SMU evidence.
+    pub(crate) fn reconcile(&mut self) -> Outcome {
         if !self.unreconciled() {
             return Ok(Control::Continue);
         }
-        let step = self.read_back_and_restore(held).map(|()| Control::Continue);
+        let step = self.read_back_and_restore().map(|()| Control::Continue);
         let control = self.settle(step)?;
         if control == Control::Continue {
             self.visit = Visit::Same { reconciled: true };
@@ -238,9 +234,9 @@ impl Session<'_> {
         Ok(control)
     }
 
-    fn read_back_and_restore(&mut self, held: &PerCore<TargetOffset>) -> Step<()> {
+    fn read_back_and_restore(&mut self) -> Step<()> {
         write::read_all(&mut self.appender, &mut *self.smu, &mut self.hardware, &[])?;
-        self.restore(held).map(drop)
+        self.restore().map(drop)
     }
 
     /// What the journal holds that ends the run before it starts: a dead end pending from before, a defect that needs
@@ -262,6 +258,3 @@ impl Session<'_> {
         Ok(Control::Continue)
     }
 }
-
-#[cfg(test)]
-mod tests;

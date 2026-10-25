@@ -199,8 +199,7 @@ fn config_is_never_accepted(args: &[&str]) {
     assert_eq!(ran.exit, Exit::Usage, "{args:?}");
     assert_eq!(ran.out, "");
     assert!(
-        ran.err
-            .contains("--config applies only to doctor, run and reset"),
+        ran.err.contains("--config applies only to doctor and run"),
         "{args:?}: {}",
         ran.err
     );

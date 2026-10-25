@@ -36,10 +36,8 @@ _togi() {
             (run)
 _arguments "${_arguments_options[@]}" : \
 '--config=[JSON configuration file \[default\: /etc/togi/config.json\]]:path:_files' \
-'(--first-result)--cycles=[Stop after N clean cycles, each a passed full cycle ending at or after phase 2'\''s confirmation cycle (default endless)]:N:_default' \
 '--tuning-boot=[Run as the tuning boot service\: persist a leave reason before restoring the day'\''s boot selection, using a GRUB environment or /etc/togi/night.json, and reboot after a boot loop]:file:_files' \
 '--state-dir=[State directory]:path:_files -/' \
-'--first-result[Stop once the BIOS profile is first confirmed, after phase 1'\''s passed cycle and before phase 2 moves a core]' \
 '--no-tui[Print one line per event instead of the dashboard on a terminal]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
@@ -145,7 +143,7 @@ _arguments "${_arguments_options[@]}" : \
 (events)
 _arguments "${_arguments_options[@]}" : \
 '--core=[Only events naming core N, and the outcomes of trials that load it]:N:' \
-'*--kind=[Only these comma-separated known kinds, or groups such as trial for every trial.* kind]:kinds:_sequence compadd - backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.boot_start day.checkpoint day.clean_stop day.fault day.offsets_changed day.record day.unclean_end deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning' \
+'*--kind=[Only these comma-separated known kinds, or groups such as trial for every trial.* kind]:kinds:_sequence compadd - backend backend.retry boot boot.leave_reason boot.saved_entry ccd ccd.cap ccd.edge checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.applied day.boot_start day.checkpoint day.clean_stop day.event day.fault day.freeze day.hold day.imported day.interval day.offsets_changed day.record day.step day.unclean_end day.veto deadend deepening deepening.round defect defect.answered defect.found exposure exposure.observed failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce night night.plan night.qualification night.reproduction preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.imported session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning' \
 '--trial=[Only events of trial ID]:ID:' \
 '--since=[Only events at or after this RFC 3339 time]:time:' \
 '--until=[Only events before this RFC 3339 time]:time:' \
@@ -171,8 +169,6 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (reset)
 _arguments "${_arguments_options[@]}" : \
-'--core=[Reset core N\: clear its failure point and every combination that includes it, and restart its search from the baseline]:N:' \
-'--config=[JSON configuration file \[default\: /etc/togi/config.json\]]:path:_files' \
 '--state-dir=[State directory]:path:_files -/' \
 '--all[Archive the session; the next run starts a new one]' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -311,14 +307,14 @@ esac
 (( $+functions[_togi_commands] )) ||
 _togi_commands() {
     local commands; commands=(
-'run:Start or resume the tuning session in the foreground' \
+'run:Start or resume the night'\''s tuning session in the foreground' \
 'day:Observe daily use, answer what happened after an unclean end, or record a crash togi missed' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
 'night:Reboot into the tuning boot for the night' \
 'night-end:Restore the day'\''s boot selection' \
-'reset:Reset one core, or archive the whole session' \
+'reset:Archive the whole session' \
 'restart-limit:Recover after the tuning service reaches its restart limit' \
 'emergency-stop:Internal emergency recovery that stops leftover trials and sets every core to offset 0' \
 'status:Show the session at a glance' \
@@ -405,14 +401,14 @@ _togi__subcmd__events_commands() {
 (( $+functions[_togi__subcmd__help_commands] )) ||
 _togi__subcmd__help_commands() {
     local commands; commands=(
-'run:Start or resume the tuning session in the foreground' \
+'run:Start or resume the night'\''s tuning session in the foreground' \
 'day:Observe daily use, answer what happened after an unclean end, or record a crash togi missed' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
 'night:Reboot into the tuning boot for the night' \
 'night-end:Restore the day'\''s boot selection' \
-'reset:Reset one core, or archive the whole session' \
+'reset:Archive the whole session' \
 'restart-limit:Recover after the tuning service reaches its restart limit' \
 'emergency-stop:Internal emergency recovery that stops leftover trials and sets every core to offset 0' \
 'status:Show the session at a glance' \

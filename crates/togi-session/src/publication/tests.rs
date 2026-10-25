@@ -113,8 +113,7 @@ fn state_rebuild_write_failure_warns_and_continues() {
     assert!(!kinds.contains(&"crash.detected"));
     assert_eq!(resumed.preflight().unwrap(), Control::Continue);
     assert_eq!(resumed.sweep().unwrap(), Control::Continue);
-    let held = resumed.held();
-    resumed.reconcile(&held).unwrap();
+    resumed.reconcile().unwrap();
     resumed.record_shutdown(&Stop::Signal);
     let ended = resumed.close(Ok(Stop::Signal));
     assert!(ended.errors.is_empty());
@@ -229,12 +228,11 @@ fn live_publishes_after_every_append_and_the_last_state_covers_the_final_event()
         saved.facts,
         togi_journal::State::replay(ended.journal.events()).unwrap()
     );
-    assert_eq!(
-        saved.tuner,
-        togi_tuner::replay(ended.journal.events())
-            .unwrap()
-            .project()
-    );
+    let mut tuner = togi_tuner::policy::State::new(togi_tuner::policy::Params::SPEC);
+    for event in ended.journal.events() {
+        tuner.fold(event).unwrap();
+    }
+    assert_eq!(saved.tuner, tuner.project());
 }
 
 #[test]
@@ -297,7 +295,7 @@ fn reseal(state: &mut serde_json::Value) {
 }
 
 #[test_case("/recovery/trials", serde_json::json!(999), "recovery"; "run recovery")]
-#[test_case("/incremental/poisoned", serde_json::json!(true), "incremental"; "incremental tuner")]
+#[test_case("/incremental/stop", serde_json::json!({}), "incremental"; "incremental tuner")]
 #[test_case("/defects/excluded", serde_json::json!([1]), "defects"; "defect index")]
 #[test_case("/presentation/facts/stopped", serde_json::json!(true), "presentation"; "watch end view")]
 fn boot_replays_independently_even_when_a_wrong_full_fold_has_a_valid_checksum(
@@ -355,7 +353,7 @@ fn every_differing_facts_key_is_named_in_journal_order() {
 #[test]
 fn a_disagreeing_tuner_projection_is_named_apart_from_facts() {
     let fields = rebuilt_after_tampering(|state| {
-        state["tuner"]["clean_cycles"] = serde_json::json!(7);
+        state["tuner"]["stopped"] = serde_json::json!(true);
         state["facts"]["last_seq"] = serde_json::json!(1);
         reseal(state);
     });
@@ -404,7 +402,7 @@ fn a_resealed_prefix_stamp_mismatch_is_rebuilt_and_named() {
 
 #[test_case("/facts/last_seq", serde_json::json!(1); "prefix sequence and facts disagree")]
 #[test_case("/recovery/trials", serde_json::json!(999); "restored fold differs")]
-#[test_case("/tuner/clean_cycles", serde_json::json!(999); "published projection differs")]
+#[test_case("/tuner/stopped", serde_json::json!(true); "published projection differs")]
 fn independent_snapshot_verification_reports_resealed_mismatches(
     pointer: &str,
     value: serde_json::Value,

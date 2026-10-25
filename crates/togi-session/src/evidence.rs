@@ -470,6 +470,11 @@ impl Observer {
 /// Reads a trial's samples once: the last one, which loaded core's worker stopped first (a unique one, over valid
 /// readings of two or more cores outside R6, where the workers are suspended on purpose), the loaded cores'
 /// requested voltage, and the request telemetry, which needs every loaded core on a known CCD.
+/// The cores a trial's intent loads: the cores it lists and the one core it names.
+pub(crate) fn loaded_cores(intent: &togi_journal::TrialIntent) -> CoreSet {
+    intent.cores.iter().chain(intent.core).collect()
+}
+
 pub(crate) fn summarize_samples(
     samples: impl IntoIterator<Item = Result<TrialConditions, togi_machine::SampleError>>,
     loaded: CoreSet,

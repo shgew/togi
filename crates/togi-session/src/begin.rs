@@ -1,25 +1,19 @@
-//! The session's own records before its first trial: the BIOS context, the baseline the machine was found at, the
-//! notice for a nonzero one, the carry from an archived session and the phase every core starts the search in.
+//! The session's own records before its first trial: the BIOS context, the all-zero baseline the machine was found
+//! at and the day records a fresh transition imports.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
-use togi_carry::copied_identity;
-use togi_journal::{
-    CarriedCore, CorePhase, CoreTransition, Notice, Payload, SessionBaseline, SessionContext,
-    SessionNotice,
-};
-use togi_machine::{CoreId, CoreSet, Regime, TargetOffset, workloads};
-
-use togi_config::InitialOverride;
+use togi_journal::{Payload, Provenance, Seq, SessionBaseline, SessionContext};
+use togi_machine::CoreSet;
 
 use crate::error::{SessionError, Step};
 use crate::session::{Control, Outcome, Session};
 use crate::write;
 
 impl Session<'_> {
-    /// Records what the session starts from, each piece once however often the run begins: the BIOS context, the
-    /// baseline and its notice, the carry and a start phase for every core. A baseline that cannot be read is SMU
-    /// evidence.
+    /// Records what the session starts from, each piece once however often the run begins: the BIOS context (again
+    /// when a resumed run finds a different one), the verified all-zero baseline and the import. A baseline that
+    /// cannot be read is SMU evidence; one that is nonzero or incomplete is refused, never clamped.
     pub(crate) fn begin(&mut self) -> Outcome {
         let step = self.record_start().map(|()| Control::Continue);
         self.settle(step)
@@ -28,16 +22,21 @@ impl Session<'_> {
     fn record_start(&mut self) -> Step<()> {
         self.record_context()?;
         self.record_baseline()?;
-        self.record_notice()?;
-        self.record_carry()?;
-        self.start_phases()
+        self.record_import()
     }
 
+    /// Records the BIOS context unless the journal's latest `session.context` is the machine's current one: a
+    /// resumed run on changed firmware records the new context and goes on.
     fn record_context(&mut self) -> Step<()> {
-        if self.appender.recovery().context().is_some() {
+        let context = self.host.bios_context().map_err(SessionError::from)?;
+        if self
+            .appender
+            .recovery()
+            .context()
+            .is_some_and(|recorded| recorded.first_difference(&context).is_none())
+        {
             return Ok(());
         }
-        let context = self.host.bios_context().map_err(SessionError::from)?;
         let payload = SessionContext {
             bios_version: context.bios_version,
             board: context.board,
@@ -55,6 +54,24 @@ impl Session<'_> {
             return Ok(());
         }
         let reading = write::read_all(&mut self.appender, &mut *self.smu, &mut self.hardware, &[])?;
+        let missing: CoreSet = self
+            .topology
+            .iter()
+            .map(|info| info.core)
+            .filter(|core| reading.offsets.get(*core).is_none())
+            .collect();
+        if !missing.is_empty() {
+            return Err(SessionError::BaselineIncomplete { cores: missing }.into());
+        }
+        let nonzero: CoreSet = reading
+            .offsets
+            .iter()
+            .filter(|(_, offset)| offset.0 != 0)
+            .map(|(core, _)| core)
+            .collect();
+        if !nonzero.is_empty() {
+            return Err(SessionError::BaselineNotZero { cores: nonzero }.into());
+        }
         let payload = SessionBaseline {
             offsets: reading.offsets,
         };
@@ -63,150 +80,46 @@ impl Session<'_> {
         Ok(())
     }
 
-    fn record_notice(&mut self) -> Step<()> {
-        if self.appender.recovery().noticed() {
-            return Ok(());
-        }
-        let Some((baseline, offsets)) = self.appender.recovery().baseline() else {
+    /// Appends the `day.imported` events the journal does not hold yet, in manifest order, then the
+    /// `session.imported` that commits them. A journal that already holds the commitment is never imported into
+    /// again; one killed before it resumes the same manifest and appends only the identities it lacks.
+    fn record_import(&mut self) -> Step<()> {
+        let Some(import) = self.import.as_ref() else {
             return Ok(());
         };
-        let cores: CoreSet = offsets
+        let events = self.appender.journal().events();
+        if events
             .iter()
-            .filter(|(_, offset)| offset.0 != 0)
-            .map(|(core, _)| core)
-            .collect();
-        if cores.is_empty() {
-            return Ok(());
-        }
-        let notice = SessionNotice {
-            notice: Notice::NonzeroBaseline,
-            cores,
-        };
-        self.appender
-            .append(Payload::SessionNotice(notice), &[baseline])?;
-        Ok(())
-    }
-
-    /// Appends the facts the carry brings that the journal does not hold yet, then the `session.carried` that commits
-    /// them. Only before any core has a phase.
-    fn record_carry(&mut self) -> Step<()> {
-        let Some(carry) = self.carry.as_ref() else {
-            return Ok(());
-        };
-        let recovery = self.appender.recovery();
-        if recovery.carried().is_some()
-            || self
-                .topology
-                .iter()
-                .any(|info| recovery.phase(info.core).is_some())
+            .any(|event| matches!(event.payload, Payload::SessionImported(_)))
         {
             return Ok(());
         }
-        let Some(context) = recovery.context() else {
-            return Ok(());
-        };
-        let resolved = carry.resolve(context, self.config.backends(), self.build.evidence);
-        let cores = self.hardware.cores();
-        let copied: HashSet<_> = self
-            .appender
-            .journal()
-            .events()
+        let mut held: HashMap<Provenance, Seq> = events
             .iter()
-            .filter_map(|event| copied_identity(&event.payload))
+            .filter_map(|event| {
+                if let Payload::DayImported(record) = &event.payload {
+                    Some((record.original, event.seq))
+                } else {
+                    None
+                }
+            })
             .collect();
-        for payload in resolved.fact_payloads(&copied, cores) {
-            self.appender.append(payload, &[])?;
-        }
-        self.appender.append(
-            Payload::SessionCarried(resolved.session_carried(cores)),
-            &[],
-        )?;
-        Ok(())
-    }
-
-    fn start_phases(&mut self) -> Step<()> {
-        let cores: Vec<CoreId> = self.topology.iter().map(|info| info.core).collect();
-        for core in cores {
-            let recovery = self.appender.recovery();
-            if recovery.phase(core).is_some() {
-                continue;
-            }
-            let Some((baseline_seq, baseline)) = recovery.baseline() else {
-                return Ok(());
+        let manifest = import.manifest();
+        let mut causes = Vec::with_capacity(manifest.records().len());
+        for record in manifest.records() {
+            let seq = if let Some(seq) = held.get(&record.original) {
+                *seq
+            } else {
+                let seq = self
+                    .appender
+                    .append(Payload::DayImported(record.clone()), &[])?;
+                held.insert(record.original, seq);
+                seq
             };
-            let carried = recovery.carried();
-            let seed = carried.and_then(|(_, seeds)| seeds.get_ref(core)?.as_ref());
-            let observed = baseline.get(core).map_or(0, |offset| offset.0);
-            let mut causes = vec![baseline_seq];
-            causes.extend(carried.filter(|_| seed.is_some()).map(|(seq, _)| seq));
-            let transition = self.first_transition(core, observed, seed);
-            self.appender
-                .append(Payload::CorePhase(transition), &causes)?;
+            causes.push(seq);
         }
+        self.appender
+            .append(Payload::SessionImported(manifest.commitment()), &causes)?;
         Ok(())
-    }
-
-    /// Where a core's search starts: a configured candidate solo limit, a configured start offset, a carried
-    /// candidate, then the clamped baseline. A carried failure point holds the start one count shallower.
-    fn first_transition(
-        &self,
-        core: CoreId,
-        observed: i64,
-        seed: Option<&CarriedCore>,
-    ) -> CoreTransition {
-        let clamped = TargetOffset::clamped(observed);
-        let carried_limit = seed.and_then(|seed| seed.candidate_solo_limit);
-        let (mut start, mut reason, check) = match (self.config.override_for(core), carried_limit) {
-            (Some(InitialOverride::CandidateSoloLimit(offset)), _) => {
-                (offset, "configured candidate solo limit".to_owned(), true)
-            }
-            (Some(InitialOverride::Start(offset)), _) => {
-                (offset, "configured start offset".to_owned(), false)
-            }
-            (None, Some(limit)) => (
-                limit.offset,
-                format!(
-                    "candidate solo limit {} carried from session {}",
-                    limit.offset.get(),
-                    limit.from.session
-                ),
-                true,
-            ),
-            (None, None) if clamped.get() == observed => (clamped, "baseline".to_owned(), false),
-            (None, None) => (
-                clamped,
-                format!("baseline {observed} clamped to {}", clamped.get()),
-                false,
-            ),
-        };
-        let failure_point = seed.and_then(|seed| seed.failure_point);
-        if let Some(point) = failure_point
-            && point.offset.get() < 0
-            && start <= point.offset
-        {
-            start = TargetOffset::clamped(point.offset.get() + 1);
-            reason = format!(
-                "{reason}; clamped to {}, one count shallower than the failure point {} carried from session {}",
-                start.get(),
-                point.offset.get(),
-                point.from.session
-            );
-        }
-        let frozen = [Regime::R1, Regime::R2].map(|regime| workloads(regime)[0].id());
-        CoreTransition {
-            core,
-            from: None,
-            to: CorePhase::Search,
-            offset: start,
-            pass: None,
-            failure_point: failure_point.map(|point| point.offset),
-            check_solo_limit: check,
-            workloads: if check { frozen.to_vec() } else { Vec::new() },
-            cleared_combination: Vec::new(),
-            reason,
-        }
     }
 }
-
-#[cfg(test)]
-mod tests;

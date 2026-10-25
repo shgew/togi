@@ -174,8 +174,8 @@ impl ReadState {
         &self.folds.facts
     }
 
-    /// The complete incremental tuner state, including the state needed by forecast premises.
-    pub const fn tuner(&self) -> &togi_tuner::State {
+    /// The complete incremental tuner state.
+    pub const fn tuner(&self) -> &togi_tuner::policy::State {
         &self.folds.tuner
     }
 

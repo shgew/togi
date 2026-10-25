@@ -41,8 +41,6 @@ pub enum Problem {
     Unsupported,
     #[error("must name exactly the three R7 workloads")]
     Workloads,
-    #[error("is a role regime the simulator does not model")]
-    UnmodeledRegime,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -172,6 +170,4 @@ pub enum ShapeError {
     Profile { expected: usize, found: usize },
     #[error("loaded core {core} does not exist on a {cores}-core machine")]
     LoadedCore { core: u8, cores: usize },
-    #[error("the simulator does not model regime {regime}")]
-    UnmodeledRegime { regime: togi_machine::Regime },
 }

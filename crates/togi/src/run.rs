@@ -11,7 +11,6 @@
 
 use std::cell::{Cell, RefCell};
 use std::io::{self, Write};
-use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::LazyLock;
@@ -23,9 +22,7 @@ use togi_hostlock::HostLock;
 use togi_journal::{Build, Operation, Verdict};
 use togi_machine::CancellationToken;
 use togi_render::{Renderer, Style, escape_text};
-use togi_session::{
-    PrepareError, Prompt, PublicationPolicy, RunInput, SessionError, StopPolicy, prepare,
-};
+use togi_session::{PrepareError, PublicationPolicy, RunInput, SessionError, prepare};
 use togi_tuningboot::{Bootloader, LeaveReason, RestartCount};
 
 use crate::args::ConfigArgs;
@@ -34,19 +31,10 @@ use crate::exit::Exit;
 use crate::report::{current_build, exit_with, refusal_message, unknown_event_message};
 
 mod outcome;
-pub(crate) mod prompt;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
-        (
-            "sudo togi run",
-            "Tune this machine until a signal or a dead end",
-        ),
-        crate::cli::CYCLES_EXAMPLE,
-        (
-            "sudo togi run --first-result",
-            "Stop at the first confirmed BIOS profile, after phase 1's passed cycle",
-        ),
+        crate::cli::RUN_EXAMPLE,
         (
             "sudo togi run --no-tui",
             "Print one line per event instead of the dashboard",
@@ -54,18 +42,21 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     ])
 });
 
-/// Start or resume the tuning session in the foreground
+/// Start or resume the night's tuning session in the foreground
 ///
-/// Searches for each core's solo limit, hunts the core or combination behind unattributed failures with
-/// parked trials, checks the profile from one count shallower than each solo limit (phase 1), moves cores
-/// back toward their solo limits one count per round and confirms the result with a full cycle (phase 2),
-/// then keeps checking it with full cycles. After a crash the next run attributes it from the journal and
-/// continues. On resume, known defects affecting past decisions name the cores; a run at a terminal offers to
-/// reset them. An unanswered too-aggressive defect stops an unattended run. It needs root.
+/// Runs the night of the per-CCD tuning policy: controls, coverage mapping, qualification and reproduction, then
+/// cap tests and re-qualification while nothing else is due. The night has no deadline: it runs until you stop it
+/// (a signal, F10 in the dashboard, or a reboot), a conclusive failure at CO 0, no configured backend giving
+/// evidence any more, or a runtime safety dead end. A restart after a crash continues the night; a restart after a
+/// stop or a normal boot opens the next one. After a crash the next run attributes it from the journal and
+/// continues. On resume, known defects affecting past decisions are recorded with their cores; a too-aggressive
+/// one stops the run until reset --all starts a fresh session. It needs root.
 ///
-/// A journal from an older ruleset, schema or evidence epoch, and no newer one, is archived. A newer ruleset,
-/// schema or evidence epoch stops the run before another event is written; reset --all archives that
-/// session. Journal lines are colored on terminals and in the system journal unless the environment asks for no colour.
+/// A session starts only from a verified all-zero baseline and returns every core to CO 0 when it stops. A
+/// BIOS change found on resume is recorded and the session continues. A journal from an older ruleset, schema or
+/// evidence epoch, and no newer one, is archived. A newer ruleset, schema or evidence epoch stops the run before
+/// another event is written; reset --all archives that session. Journal lines are colored on terminals and in
+/// the system journal unless the environment asks for no colour.
 ///
 /// Only one day observer, run or reset can own this machine, even with different state directories.
 /// Stop the day service before tuning. A busy /run/lock/togi.lock stops the command before any hardware access or event.
@@ -83,16 +74,6 @@ pub struct Args {
     #[command(flatten)]
     pub config: ConfigArgs,
 
-    /// Stop after N clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle
-    /// (default endless)
-    #[arg(long, value_name = "N", value_parser = positive, allow_negative_numbers = true, conflicts_with = "first_result")]
-    pub cycles: Option<NonZeroU32>,
-
-    /// Stop once the BIOS profile is first confirmed, after phase 1's passed cycle and before phase 2 moves
-    /// a core
-    #[arg(long)]
-    pub first_result: bool,
-
     /// Run as the tuning boot service: persist a leave reason before restoring the day's boot
     /// selection, using a GRUB environment or /etc/togi/night.json, and reboot after a boot loop
     #[arg(long, value_name = "file", value_hint = ValueHint::FilePath)]
@@ -101,11 +82,6 @@ pub struct Args {
     /// Print one line per event instead of the dashboard on a terminal
     #[arg(long)]
     pub no_tui: bool,
-}
-
-fn positive(text: &str) -> Result<NonZeroU32, String> {
-    text.parse::<NonZeroU32>()
-        .map_err(|_| "must be a positive integer".to_owned())
 }
 
 /// Runs the command.
@@ -196,25 +172,13 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
         }
     };
-    let mut machine = match ctx.system.open_machine(&config, ctx.state_dir, &lock) {
+    let machine = match ctx.system.open_machine(&config, ctx.state_dir, &lock) {
         Ok(machine) => machine,
         Err(error) => {
             return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
         }
     };
-    let bios = machine
-        .host
-        .validate_smu()
-        .ok()
-        .and_then(|_| machine.host.bios_context().ok());
-    let prepared = match prepare(
-        dir,
-        &build,
-        boot.clone(),
-        ctx.system.now(),
-        bios.as_ref(),
-        KNOWN_DEFECTS,
-    ) {
+    let prepared = match prepare(dir, &build, boot.clone(), ctx.system.now()) {
         Ok(prepared) => prepared,
         Err(PrepareError::Refused(refusal)) => {
             let refused = Refused {
@@ -247,9 +211,6 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         ),
         None => (ctx.system.stderr(), ctx.system.stderr()),
     };
-    let prompt: Option<Box<dyn Prompt>> = interactive.then(|| {
-        Box::new(prompt::Terminal::new(cancel.clone(), dashboard.clone())) as Box<dyn Prompt>
-    });
     let zone = ctx.system.zone();
     let input = RunInput {
         config,
@@ -258,16 +219,11 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         boot,
         journal,
         machine,
-        policy: StopPolicy {
-            cycles: args.cycles,
-            first_result: args.first_result,
-        },
         publication: PublicationPolicy::default(),
         bootloader,
-        prompt,
         defects: KNOWN_DEFECTS,
         resume: None,
-        carry: prepared.carry,
+        import: prepared.import,
         log: Some(log),
         on_append: dashboard.as_ref().map(|_| {
             let hidden_closing = Rc::clone(&hidden_closing);
@@ -282,7 +238,6 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         zone: zone.clone(),
         cancel,
         report,
-        controller: togi_machine::ControllerContract::Legacy,
     };
     if let Some(dashboard) = &dashboard {
         dashboard.show();

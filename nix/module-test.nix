@@ -55,14 +55,7 @@ let
             tuning.display = lib.mkIf (display != null) display;
             tuning.kmscon.fontSize = fontSize;
             settings = {
-              start_offsets."3" = -10;
-              candidate_solo_limits."5" = -20;
-              durations.search_trial_s = 60;
-              checking.cycle = [ "R7" ];
-              evidence = {
-                miss = 0.001;
-                rate = 0.25;
-              };
+              dead_ends.inconclusive_in_a_row = 4;
             };
           };
           hardware.cpu.amd.ryzen-smu.enable = false;

@@ -1,9 +1,9 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use togi_machine::{PerCore, TargetOffset};
+use togi_machine::{ContentId, WorkloadId};
+use togi_tuner::policy::{Contents, NightQuery, NotReady};
 
 use crate::SessionError;
-use crate::execute::TunerValues;
 use crate::session::{Control, Ended, Outcome, Panic, RunInput, Session, Stop, message_of};
 
 /// Runs the session. A panic in it is caught only to take the cleanup every exit takes: the run is cancelled, the
@@ -58,9 +58,7 @@ impl Session<'_> {
             if control != Control::Continue {
                 return Ok(control);
             }
-            self.record_drained_leaving_dead_end_pending()?;
-            let held = self.held();
-            let control = self.reconcile(&held)?;
+            let control = self.reconcile()?;
             if control != Control::Continue {
                 return Ok(control);
             }
@@ -72,9 +70,15 @@ impl Session<'_> {
         self.begin()
     }
 
-    fn record_drained_leaving_dead_end_pending(&mut self) -> Result<(), SessionError> {
-        let _finished_by_inspect_after_reconciliation = self.record_drained()?;
-        Ok(())
+    /// The frozen content identity of `workload`, asked of the trial runner once and kept for the run.
+    pub(crate) fn content(&mut self, workload: WorkloadId) -> Result<ContentId, SessionError> {
+        let key = workload.runs();
+        if let Some(content) = self.contents.get(&key) {
+            return Ok(content.clone());
+        }
+        let content = self.trials.content(key)?;
+        self.contents.insert(key, content.clone());
+        Ok(content)
     }
 
     fn tune(&mut self) -> Result<Stop, SessionError> {
@@ -82,32 +86,29 @@ impl Session<'_> {
             if let Some(stop) = self.check_dead_end()? {
                 return Ok(stop);
             }
-            let tuner = self.appender.tuner();
-            let action = tuner.next()?;
-            let profile = tuner.profile();
-            let tuned = TunerValues {
-                profile: profile.as_ref(),
-                profile_seq: tuner.profile_seq(),
-                clean_cycles: tuner.clean_cycles(),
-                first_result: tuner.first_result(),
+            let unavailable = self.unavailable_backends();
+            let contents = Contents::new(
+                self.contents
+                    .iter()
+                    .map(|(workload, content)| (*workload, content.clone())),
+            );
+            let query = NightQuery {
+                now: self.appender.clock().now(),
+                contents: &contents,
+                unavailable: &unavailable,
             };
-            match self.execute(action, &tuned)? {
+            let action = match self.appender.tuner().next(&query) {
+                Ok(action) => action,
+                Err(NotReady::UnknownContent(workload)) => {
+                    self.content(workload)?;
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
+            match self.execute(action)? {
                 Control::Continue => {}
                 Control::Stop(stop) => return Ok(stop),
             }
         }
     }
-
-    pub(crate) fn held(&self) -> PerCore<TargetOffset> {
-        self.appender
-            .tuner()
-            .project()
-            .cores
-            .into_iter()
-            .map(|core| (core.core, core.offset))
-            .collect()
-    }
 }
-
-#[cfg(test)]
-mod tests;

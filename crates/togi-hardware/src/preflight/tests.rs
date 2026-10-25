@@ -145,6 +145,10 @@ struct BackendCheck {
 }
 
 impl BackendAdapter for BackendCheck {
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, BackendError> {
+        Ok(workload.id.as_bytes().to_vec())
+    }
+
     fn kind(&self) -> Backend {
         self.kind
     }

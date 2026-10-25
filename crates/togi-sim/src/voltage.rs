@@ -1,9 +1,9 @@
 //! The shared-voltage rail of a 16-core machine: package power, CCD clocks, per-core voltage requests
 //! and the softplus hazard of each loaded core below its required voltage.
 //!
-//! Only an R7 trial that loads more than one core is *shared*: the rail then replaces the loaded cores'
-//! limit hazards, the joints and the CCD residual. Telemetry for any other trial is computed from the
-//! same equations without changing its hazards.
+//! Only a trial modeled as R7 (an R7 or R9 trial) that loads more than one core is *shared*: the rail then
+//! replaces the loaded cores' limit hazards, the joints and the CCD residual. Telemetry for any other trial is
+//! computed from the same equations without changing its hazards.
 
 use serde::Serialize;
 use togi_machine::{CoreId, Regime, TargetOffset, object_only, workloads};

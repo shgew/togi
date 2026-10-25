@@ -1,6 +1,6 @@
 use std::{io, path::PathBuf};
 
-use togi_machine::{Backend, CoreId, InvalidCore, InvalidTarget, Regime};
+use togi_machine::Backend;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{value} is not within [{min}, {max}]")]
@@ -10,26 +10,6 @@ pub struct RangeError {
     pub max: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, thiserror::Error)]
-#[error("{0} is not a number strictly between 0 and 1")]
-pub struct ProbabilityError(pub f64);
-
-#[derive(Clone, Copy, Debug, PartialEq, thiserror::Error)]
-#[error("miss {miss} and rate {rate} do not give between 1 and 1000 trials per step")]
-pub struct TrialsError {
-    pub miss: f64,
-    pub rate: f64,
-}
-
-/// A checking cycle the tuner cannot run.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum InvalidSchedule {
-    #[error("the schedule must name at least one regime")]
-    Empty,
-    #[error("{0} is not a regime this ruleset schedules")]
-    Unscheduled(Regime),
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{path:?} is not an absolute path")]
 pub struct RelativeBackendPath {
@@ -37,46 +17,44 @@ pub struct RelativeBackendPath {
     pub path: PathBuf,
 }
 
+/// A setting Ruleset 12 had that Ruleset 13 retired. The night policy owns what these tuned (start points,
+/// trial lengths, evidence quotas, the checking schedule), so a configuration that sets one is refused instead of
+/// silently ignored.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum Retired {
+    #[error("start_offsets")]
+    StartOffsets,
+    #[error("candidate_solo_limits")]
+    CandidateSoloLimits,
+    #[error("durations.search_trial_s")]
+    SearchTrial,
+    #[error("durations.short_trial_s")]
+    ShortTrial,
+    #[error("durations.checking_trial_s")]
+    CheckingTrial,
+    #[error("durations.checking_idle_s")]
+    CheckingIdle,
+    #[error("durations.checking_all_core_s")]
+    CheckingAllCore,
+    #[error("evidence.miss")]
+    EvidenceMiss,
+    #[error("evidence.rate")]
+    EvidenceRate,
+    #[error("checking.cycle")]
+    CheckingCycle,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error("parse config JSON")]
     Syntax(#[from] serde_json::Error),
-    #[error("durations.{field}")]
-    Duration {
-        field: &'static str,
-        source: RangeError,
-    },
-    #[error("evidence.{field}")]
-    Probability {
-        field: &'static str,
-        source: ProbabilityError,
-    },
-    #[error("evidence")]
-    Trials(#[from] TrialsError),
+    #[error("{0}: Ruleset 13 retired this setting; remove it from the configuration")]
+    Retired(Retired),
     #[error("dead_ends.{field}")]
     DeadEnd {
         field: &'static str,
         source: RangeError,
     },
-    #[error("checking.cycle")]
-    Schedule(#[from] InvalidSchedule),
-    #[error("{table}.{key:?}: a core id is a plain decimal number such as \"3\"")]
-    CoreKey { table: &'static str, key: String },
-    #[error("{table}")]
-    Core {
-        table: &'static str,
-        source: InvalidCore,
-    },
-    #[error("{table}.{core} is set more than once")]
-    DuplicateCore { table: &'static str, core: CoreId },
-    #[error("{table}.{core}")]
-    Offset {
-        table: &'static str,
-        core: CoreId,
-        source: InvalidTarget,
-    },
-    #[error("start_offsets.{0} and candidate_solo_limits.{0}: set at most one per core")]
-    CoreConflict(CoreId),
     #[error("backends.{}", source.backend)]
     Backend {
         #[from]

@@ -139,6 +139,13 @@ impl ScopeProbe for RunnerHandle {
 }
 
 impl<R: Trials> Trials for RunnerHandle<R> {
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, Error> {
+        lock(&self.0).content(workload)
+    }
+
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
         lock(&self.0).sweep(cancel)
     }

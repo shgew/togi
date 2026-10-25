@@ -1008,3 +1008,26 @@ fn unattributed_r7_failures_draw_the_regime_mix_when_there_is_one(
         Some(expected) => assert_eq!(failure_of(&waited), Some(expected)),
     }
 }
+
+#[test_case(Regime::R8, &[8]; "r8 light core 08 beside its CCD")]
+#[test_case(Regime::R9, &[0]; "r9 serial cpu on core 00")]
+fn the_role_regimes_run_on_the_default_machine_and_fail_past_their_limits(
+    regime: Regime,
+    cores: &[i64],
+) {
+    let definition = MachineDefinition {
+        model: sharp(Signal::ComputationError),
+        ..MachineDefinition::default()
+    };
+    let mut rig = Rig::new(&definition, 1);
+    rig.set_all(0).expect("zero");
+    let safe = rig.pass(basic(regime, cores, 120 * SECOND));
+    assert!(safe.failure.is_none(), "{regime} at zero offsets");
+    rig.set_all(-50).expect("deepest");
+    let deep = rig.pass(basic(regime, cores, 120 * SECOND));
+    assert_eq!(
+        deep.failure.map(|failure| failure.signal),
+        Some(Signal::ComputationError),
+        "{regime} at -50"
+    );
+}

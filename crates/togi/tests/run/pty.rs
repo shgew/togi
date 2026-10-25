@@ -21,7 +21,7 @@ use togi_machine::{
 };
 use togi_render::open_pty;
 
-use crate::support::{Fake, Scripted, biased};
+use crate::support::{CORES, Fake, Scripted, simulator, written};
 
 const SCENARIO: &str = "TOGI_RUN_TEST_PTY";
 const DIR: &str = "TOGI_RUN_TEST_PTY_DIR";
@@ -29,7 +29,8 @@ const BOUND: Duration = Duration::from_secs(30);
 /// The file in [`DIR`] that lets a `real-panic` trial panic.
 const GO: &str = "panic-now";
 
-/// A trial that runs until the run is cancelled, or panics as [`Panic`] says.
+/// Trials that run until the run is cancelled, or panic as [`Panic`] says, from the first one at an offset the run
+/// wrote; the night's stock controls before it run as the machine runs them.
 struct Endless(Box<dyn Trials>, Panic);
 
 struct EndlessRunning(Box<dyn Running>, Panic);
@@ -44,6 +45,13 @@ enum Panic {
 }
 
 impl Trials for Endless {
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, MachineError> {
+        self.0.content(workload)
+    }
+
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, MachineError> {
         self.0.sweep(cancel)
     }
@@ -54,10 +62,12 @@ impl Trials for Endless {
         spec: TrialSpec,
         ready: Stopped,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-        Ok(Box::new(EndlessRunning(
-            self.0.start(cancel, spec, ready)?,
-            self.1.clone(),
-        )))
+        let endless = written(&spec);
+        let running = self.0.start(cancel, spec, ready)?;
+        if !endless {
+            return Ok(running);
+        }
+        Ok(Box::new(EndlessRunning(running, self.1.clone())))
     }
 
     fn ended(&mut self, id: &str) -> Result<(), MachineError> {
@@ -107,7 +117,7 @@ fn real_process_helper() {
         return;
     }
     let dir = PathBuf::from(std::env::var_os(DIR).unwrap());
-    let mut fake = Fake::in_dir(biased(1000, -5), &dir);
+    let mut fake = Fake::in_dir(simulator(1000), &dir);
     fake.real_stderr = true;
     fake.interactive = true;
     let scenario = std::env::var(SCENARIO).unwrap_or_default();
@@ -133,12 +143,12 @@ fn real_process_helper() {
     let exit = togi_cli::run_process(args, &fake);
     if scenario == "run" {
         let mut smu = fake.sim.seams().smu;
-        for core in 0..16 {
+        for core in 0..CORES {
             assert_eq!(
                 smu.offset(togi_machine::CoreId::new(core).unwrap())
                     .unwrap()
                     .0,
-                -5,
+                0,
                 "core {core}",
             );
         }
@@ -208,9 +218,11 @@ pub(super) fn stopped_by_signal(signal: Signal) {
         .spawn()
         .unwrap();
 
-    wait_until("a trial to run", || {
-        events_of(dir.path())
+    wait_until("a trial at a written offset to run", || {
+        let events = events_of(dir.path());
+        events
             .iter()
+            .skip_while(|event| event.kind() != EventKind::SmuIntent)
             .any(|event| event.kind() == EventKind::TrialStart)
     });
     let quiet = tcgetattr(&master).unwrap();

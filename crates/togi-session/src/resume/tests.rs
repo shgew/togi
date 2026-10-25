@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use togi_defect::{DefectState, Entry};
 use togi_journal::{DefectDirection, DefectId, Payload};
 use togi_machine::Signal;
@@ -37,8 +35,7 @@ fn bench() -> Bench {
 }
 
 fn one_cycle(bench: &Bench, resume: Option<ResumeCapsule>) -> Ended {
-    let mut input = bench.input();
-    input.policy.cycles = Some(NonZeroU32::MIN);
+    let mut input = bench.input_ending_at(bench.short_night());
     input.resume = resume;
     run(input)
 }
@@ -71,7 +68,7 @@ fn halves(ended: &Ended) -> (&[Event], &[Event]) {
 fn a_capsule_verifies_the_state_it_folded() {
     let bench = bench();
     let ended = one_cycle(&bench, None);
-    assert_eq!(ended.stop, Some(Stop::Cycles));
+    assert!(matches!(ended.stop, Some(Stop::Signal)), "{:?}", ended.stop);
     let capsule = ended.capsule.as_ref().unwrap();
     capsule.verify(ended.journal.events()).unwrap();
 }
@@ -120,7 +117,6 @@ fn a_verified_capsules_document_round_trips_through_json() {
     let decoded: StateDocument =
         serde_json::from_str(&serde_json::to_string(&document).unwrap()).unwrap();
     assert_eq!(decoded, document);
-    assert!(!document.tuner.cores.is_empty());
     check_document(&document, &document).unwrap();
 }
 
@@ -248,8 +244,7 @@ fn crashed_publishing(bench: &Bench, publication: crate::PublicationPolicy) -> E
             },
         )
         .unwrap();
-    let mut input = bench.input();
-    input.policy.cycles = Some(NonZeroU32::MIN);
+    let mut input = bench.input_ending_at(bench.short_night());
     input.publication = publication;
     let ended = run(input);
     assert!(

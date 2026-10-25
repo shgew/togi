@@ -8,8 +8,8 @@ use togi_sim::MachineDefinition;
 use togi_sim::faults::{HookPhase, SmuOp as SimOp, SmuOperation};
 
 use super::{
-    ConstraintRefusal, ProfileFailure, ProfileRecord, ProfileRequest, Refused, Slot, WriteFailure,
-    apply, apply_profile,
+    ProfileFailure, ProfileRecord, ProfileRequest, Refused, Slot, WriteFailure, apply,
+    apply_profile,
 };
 use crate::emergency::{Access, Response, respond};
 use crate::error::Flow;
@@ -23,16 +23,9 @@ fn profile(offsets: &[i64]) -> PerCore<TargetOffset> {
         .collect()
 }
 
-fn allow(_: &PerCore<TargetOffset>) -> Option<ConstraintRefusal> {
-    None
-}
-
 impl Rig {
     fn set(&mut self, n: i64, offset: i64) -> Result<super::Verified, WriteFailure> {
-        let checked = self
-            .hardware
-            .check_set(core(n), target(offset), &mut allow)
-            .unwrap();
+        let checked = self.hardware.check_set(core(n), target(offset)).unwrap();
         apply(
             &mut self.appender,
             &mut *self.smu,
@@ -53,11 +46,7 @@ impl Rig {
         )
     }
 
-    fn put(
-        &mut self,
-        offsets: &[i64],
-        check: &mut dyn FnMut(&PerCore<TargetOffset>) -> Option<ConstraintRefusal>,
-    ) -> Result<super::Verified, ProfileFailure> {
+    fn put(&mut self, offsets: &[i64]) -> Result<super::Verified, ProfileFailure> {
         let target = profile(offsets);
         apply_profile(
             &mut self.appender,
@@ -69,7 +58,6 @@ impl Rig {
                 causes: &[],
                 record: ProfileRecord::Applied(Condition::Together),
             },
-            check,
         )
     }
 
@@ -126,114 +114,19 @@ fn zeroing_every_core_reads_every_core_back() {
 }
 
 #[test]
-fn a_refused_write_appends_no_intent_and_reaches_no_hardware() {
-    let mut rig = Rig::new(4);
-    rig.zero_all().unwrap();
-    let before = rig.kinds();
-    let refused = rig
-        .hardware
-        .check_set(core(1), target(-30), &mut |_| {
-            Some(ConstraintRefusal::Reached(
-                togi_tuner::Reached::FailurePoint {
-                    core: core(1),
-                    point: togi_tuner::FailurePoint::new(target(-30)),
-                },
-            ))
-        })
-        .unwrap_err();
-    assert_eq!(
-        togi_render::error_chain(&refused),
-        "refusing to write core 01 to -30: check the resulting profile: failure point -30 of core 01"
-    );
-    assert!(matches!(refused, Refused::Reaches { .. }));
-    assert_eq!(rig.kinds(), before);
-    assert_eq!(rig.offset(1), 0);
-    assert_eq!(
-        rig.hardware.slot(core(1)),
-        Some(Slot::Known(TargetOffset::ZERO))
-    );
-}
-
-#[test]
-fn only_a_write_that_can_deepen_a_core_is_checked() {
-    let mut rig = Rig::new(2);
-    rig.zero_all().unwrap();
-    rig.set(0, -20).unwrap();
-    let seen = Rc::new(Cell::new(0_u32));
-    let counter = Rc::clone(&seen);
-    let mut count = move |_: &PerCore<TargetOffset>| {
-        counter.set(counter.get() + 1);
-        None
-    };
-    drop(
-        rig.hardware
-            .check_set(core(0), target(-10), &mut count)
-            .unwrap(),
-    );
-    drop(
-        rig.hardware
-            .check_set(core(0), target(0), &mut count)
-            .unwrap(),
-    );
-    drop(
-        rig.hardware
-            .check_set(core(0), target(-20), &mut count)
-            .unwrap(),
-    );
-    assert_eq!(seen.get(), 0);
-    drop(
-        rig.hardware
-            .check_set(core(0), target(-21), &mut count)
-            .unwrap(),
-    );
-    assert_eq!(seen.get(), 1);
-}
-
-#[test]
-fn the_check_sees_the_profile_the_write_would_leave() {
-    let mut rig = Rig::new(2);
-    rig.zero_all().unwrap();
-    rig.set(0, -20).unwrap();
-    let mut seen = None;
-    let checked = rig
-        .hardware
-        .check_set(core(1), target(-5), &mut |after| {
-            seen = Some(*after);
-            None
-        })
-        .unwrap();
-    drop(checked);
-    assert_eq!(seen, Some(profile(&[-20, -5])));
-}
-
-#[test]
-fn a_negative_write_over_unknown_offsets_is_refused() {
-    let mut rig = Rig::new(2);
-    let refused = rig
-        .hardware
-        .check_set(core(0), target(-5), &mut allow)
-        .unwrap_err();
-    assert_eq!(refused, Refused::Unknown { core: core(0) });
-    assert_eq!(rig.kinds(), ["session.start"]);
-}
-
-#[test]
 fn a_write_to_a_core_the_machine_lacks_is_refused() {
     let mut rig = Rig::new(2);
-    let refused = rig
-        .hardware
-        .check_set(core(9), target(-5), &mut allow)
-        .unwrap_err();
+    let refused = rig.hardware.check_set(core(9), target(-5)).unwrap_err();
     assert_eq!(refused, Refused::NoSuchCore { core: core(9) });
 }
 
 #[test]
 fn a_profile_zeroes_an_unknown_machine_then_writes_shallower_before_deeper() {
     let mut rig = Rig::new(4);
-    rig.put(&[-30, -20, -10, -30], &mut allow).unwrap();
+    rig.put(&[-30, -20, -10, -30]).unwrap();
     assert_eq!(rig.intents()[0], (None, 0));
     let start = rig.intents().len();
-    let verified = rig.put(&[-31, -19, -11, -29], &mut allow).unwrap();
+    let verified = rig.put(&[-31, -19, -11, -29]).unwrap();
     let steps: Vec<_> = rig.intents()[start..]
         .iter()
         .map(|(core, offset)| (core.unwrap().get(), *offset))
@@ -250,73 +143,17 @@ fn a_profile_zeroes_an_unknown_machine_then_writes_shallower_before_deeper() {
 #[test]
 fn a_profile_that_is_already_on_the_machine_writes_nothing() {
     let mut rig = Rig::new(2);
-    rig.put(&[-5, -6], &mut allow).unwrap();
+    rig.put(&[-5, -6]).unwrap();
     let writes = rig.intents().len();
-    let verified = rig.put(&[-5, -6], &mut allow).unwrap();
+    let verified = rig.put(&[-5, -6]).unwrap();
     assert_eq!(rig.intents().len(), writes);
     assert!(verified.readbacks().is_empty());
 }
 
 #[test]
-fn a_combination_is_refused_at_the_step_that_reaches_it_with_the_earlier_steps_kept() {
-    let mut rig = Rig::new(4);
-    let mut combination = |after: &PerCore<TargetOffset>| {
-        let deep = |n| after.get(core(n)).is_some_and(|offset| offset.get() <= -30);
-        (deep(0) && deep(1)).then(|| {
-            ConstraintRefusal::Reached(togi_tuner::Reached::Combination(
-                togi_tuner::CombinationId::new(std::num::NonZeroU32::new(1).unwrap()),
-            ))
-        })
-    };
-    let error = rig.put(&[-30, -30, 0, 0], &mut combination).unwrap_err();
-    assert!(matches!(
-        error,
-        ProfileFailure::Refused(Refused::Reaches { .. })
-    ));
-    assert_eq!(rig.intents(), [(None, 0), (Some(core(0)), -30)]);
-    assert_eq!(rig.offset(0), -30);
-    assert_eq!(rig.offset(1), 0);
-    assert!(!rig.kinds().contains(&"profile.applied"));
-    assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Known(target(-30))));
-    assert_eq!(
-        rig.hardware.slot(core(1)),
-        Some(Slot::Known(TargetOffset::ZERO))
-    );
-    assert_fold_consistent(&rig.appender);
-}
-
-#[test]
-fn a_failure_point_is_refused_before_any_write_of_that_core() {
-    let mut rig = Rig::new(4);
-    rig.put(&[0, 0, 0, 0], &mut allow).unwrap();
-    let before = rig.kinds();
-    let mut failure_point = |after: &PerCore<TargetOffset>| {
-        after
-            .get(core(2))
-            .is_some_and(|offset| offset.get() <= -30)
-            .then(|| {
-                ConstraintRefusal::Reached(togi_tuner::Reached::FailurePoint {
-                    core: core(2),
-                    point: togi_tuner::FailurePoint::new(target(-30)),
-                })
-            })
-    };
-    let error = rig.put(&[0, 0, -30, 0], &mut failure_point).unwrap_err();
-    assert_eq!(
-        togi_render::error_chain(&error),
-        "refusing to write core 02 to -30: check the resulting profile: failure point -30 of core 02"
-    );
-    assert_eq!(rig.kinds(), before);
-    assert_eq!(
-        rig.hardware.slot(core(2)),
-        Some(Slot::Known(TargetOffset::ZERO))
-    );
-}
-
-#[test]
 fn a_profile_must_name_exactly_the_cores_of_the_machine() {
     let mut rig = Rig::new(4);
-    let error = rig.put(&[-5, -5], &mut allow).unwrap_err();
+    let error = rig.put(&[-5, -5]).unwrap_err();
     assert!(matches!(
         error,
         ProfileFailure::Shape {
@@ -331,7 +168,7 @@ fn a_profile_must_name_exactly_the_cores_of_the_machine() {
 fn a_failed_command_is_recorded_and_is_an_smu_dead_end_with_the_verified_steps_kept() {
     let mut rig = Rig::new(4);
     rig.sim.fail_write(3);
-    let error = rig.put(&[-30, -30, 0, 0], &mut allow).unwrap_err();
+    let error = rig.put(&[-30, -30, 0, 0]).unwrap_err();
     let ProfileFailure::Write(
         failure @ WriteFailure::Smu {
             op, core: failed, ..
@@ -595,121 +432,7 @@ fn a_crash_at_the_write_is_before_any_effect() {
     let failure = rig.set(0, -10).unwrap_err();
     assert!(matches!(failure, WriteFailure::Crashed));
     assert_eq!(rig.kinds(), expected);
-    let registers = rig.appender.recovery().registers(&rig.boot).unwrap();
-    assert!(registers.uncertain(core(0)));
-    assert_eq!(registers.offset(core(0)), Some(ObservedOffset(-10)));
     assert_fold_consistent(&rig.appender);
-}
-
-fn tuner_after(rig: &mut Rig, payloads: Vec<Payload>) -> togi_tuner::State {
-    for payload in payloads {
-        rig.appender.append(payload, &[]).unwrap();
-    }
-    let mut state = togi_tuner::State::new();
-    for event in rig.events() {
-        state.fold(event).unwrap();
-    }
-    state
-}
-
-fn failure_point(core_id: i64, offset: i64) -> Payload {
-    Payload::CorePhase(togi_journal::CoreTransition {
-        core: core(core_id),
-        from: None,
-        to: togi_journal::CorePhase::AtLimit,
-        offset: target(offset + 1),
-        pass: Some(target(offset + 1)),
-        failure_point: Some(target(offset)),
-        check_solo_limit: false,
-        workloads: Vec::new(),
-        cleared_combination: Vec::new(),
-        reason: "test".to_owned(),
-    })
-}
-
-fn combination(members: &[(i64, i64)]) -> Payload {
-    Payload::Combination(togi_journal::Combination {
-        combination: std::num::NonZeroU32::MIN,
-        members: members
-            .iter()
-            .map(|&(member, offset)| togi_journal::Member {
-                core: core(member),
-                offset: target(offset),
-            })
-            .collect(),
-        fallback: false,
-        hunt: std::num::NonZeroU32::MIN,
-        reason: "test".to_owned(),
-    })
-}
-
-#[test_case(-30; "-30")]
-#[test_case(-31; "-31")]
-#[test_case(-50; "-50")]
-fn a_write_reaching_a_folded_failure_point_is_refused_with_no_intent_appended(deeper: i64) {
-    let mut rig = Rig::new(4);
-    rig.zero_all().unwrap();
-    let state = tuner_after(&mut rig, vec![failure_point(2, -30)]);
-    let before = rig.kinds();
-
-    let refused = rig
-        .hardware
-        .check_set(core(2), target(deeper), &mut |after| {
-            super::refusal(&state, after)
-        })
-        .unwrap_err();
-    assert_eq!(
-        togi_render::error_chain(&refused),
-        format!(
-            "refusing to write core 02 to {deeper}: check the resulting profile: failure point -30 of core 02"
-        )
-    );
-
-    assert_eq!(rig.kinds(), before);
-    assert_eq!(rig.offset(2), 0);
-    drop(
-        rig.hardware
-            .check_set(core(2), target(-29), &mut |after| {
-                super::refusal(&state, after)
-            })
-            .unwrap(),
-    );
-}
-
-#[test]
-fn a_write_completing_a_folded_combination_is_refused_after_the_safe_steps() {
-    let mut rig = Rig::new(4);
-    rig.zero_all().unwrap();
-    let state = tuner_after(&mut rig, vec![combination(&[(0, -20), (1, -20)])]);
-    let error = rig
-        .put(&[-20, -20, 0, 0], &mut |after| {
-            super::refusal(&state, after)
-        })
-        .unwrap_err();
-    let ProfileFailure::Refused(Refused::Reaches {
-        core: refused,
-        refusal,
-        ..
-    }) = error
-    else {
-        panic!("not refused: {error:?}");
-    };
-    assert_eq!(refused, core(1));
-    assert_eq!(refusal.to_string(), "combination C1");
-    assert_eq!(rig.intents(), [(None, 0), (Some(core(0)), -20)]);
-    assert_eq!(rig.offset(0), -20);
-    assert_eq!(rig.offset(1), 0);
-}
-
-#[test]
-fn a_profile_the_tuner_cannot_judge_is_refused_never_read_as_safe() {
-    let mut rig = Rig::new(4);
-    let empty = togi_tuner::State::new();
-    assert!(super::refusal(&empty, &profile(&[0, 0, 0, 0])).is_some());
-    let state = tuner_after(&mut rig, Vec::new());
-    assert!(super::refusal(&state, &profile(&[0, 0, 0, 0])).is_none());
-    assert!(super::refusal(&state, &profile(&[0, 0, 0])).is_some());
-    assert!(super::refusal(&state, &profile(&[0, 0, 0, 0, 0])).is_some());
 }
 
 #[test]

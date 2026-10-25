@@ -10,7 +10,6 @@ use togi_tuningboot::night::{BootSelection, SETUP_PATH, Selection, Setup};
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::report::{emit, fail};
-use crate::run::prompt::parse_answer;
 use crate::{read, status};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
@@ -85,7 +84,7 @@ fn plan(ctx: &mut Context<'_>) -> Result<Vec<String>, Exit> {
                 Some(fs) => togi_watch::model::Model::read_in(&*fs, ctx.state_dir, events),
                 None => togi_watch::model::Model::read(ctx.state_dir, events),
             };
-            status::plan(events, &model)
+            status::plan(events, &model, &ctx.system.zone())
                 .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?
         }
         Err(error) => return Err(fail(ctx, COMMAND, togi_render::error_chain(&error))),
@@ -190,3 +189,14 @@ fn unchanged(ctx: &mut Context<'_>) -> Exit {
         Err(exit) => exit,
     }
 }
+
+/// Whether `line` is a complete line that says yes: `y` or `yes`, in any case, after trimming.
+fn parse_answer(line: &str) -> bool {
+    line.ends_with('\n') && {
+        let answer = line.trim();
+        answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes")
+    }
+}
+
+#[cfg(test)]
+mod tests;

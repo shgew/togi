@@ -81,7 +81,7 @@ fn a_matching_context_is_compared_after_every_other_check_passed() {
 }
 
 #[test]
-fn a_changed_context_fails_its_check_and_says_run_archives_the_session() {
+fn a_changed_context_warns_and_says_run_records_it_and_continues() {
     let survey = Fake {
         bios: Some(BiosContext {
             bios_version: "3.10".to_owned(),
@@ -94,7 +94,7 @@ fn a_changed_context_fails_its_check_and_says_run_archives_the_session() {
     assert!(!bios.ok);
     assert_eq!(
         bios.detail,
-        "bios_version is 3.10; the session recorded 3.14; run archives this session and starts a new one"
+        "bios_version is 3.10; the session recorded 3.14; run records the new context and the session continues, re-qualifying under it"
     );
 }
 

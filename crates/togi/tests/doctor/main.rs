@@ -129,7 +129,7 @@ fn a_changed_context_is_a_warning_not_a_failure() {
     diagnosis.ran.pop();
     diagnosis.ran.push(check(
         "bios_context",
-        "bios_version is 3.15; the session recorded 3.14; run archives this session and starts a new one",
+        "bios_version is 3.15; the session recorded 3.14; run records the new context and the session continues, re-qualifying under it",
         false,
     ));
     let session = Session::new();
@@ -366,7 +366,7 @@ fn a_configuration_error_exits_2(malformed: bool) {
     fixture.write(&bad, "{").unwrap();
     let missing = cfg.path().join("missing.json");
     let path = if malformed { &bad } else { &missing };
-    let session = Session::with_fs(fixture.fs.clone(), togi_watchtest::Scenario::Confirm);
+    let session = Session::with_fs(fixture.fs.clone(), togi_watchtest::Scenario::Controls);
     let host = host_with(ready(), fixture.fs);
     let ran = doctor(&host, session.path(), &["--config", path.to_str().unwrap()]);
     assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);

@@ -6,9 +6,9 @@ use rand::rngs::StdRng;
 use std::io;
 use std::time::Duration;
 use togi_machine::{
-    CancellationToken, Condition, CoreId, CoreSet, CpuId, Error, LoadSchedule, Partial, Regime,
-    Reporter, ResetKind, Running, Signal, Started, Stopped, Swept, TargetOffset, TrialConditions,
-    TrialFailure, TrialResult, TrialSpec, Trials,
+    CancellationToken, Condition, ContentId, CoreId, CoreSet, CpuId, Error, LoadSchedule, Partial,
+    Regime, Reporter, ResetKind, Running, Signal, Started, Stopped, Swept, TargetOffset,
+    TrialConditions, TrialFailure, TrialResult, TrialSpec, Trials, WorkloadId,
 };
 
 use crate::hazard::{HazardSource, Load, SourceKind};
@@ -73,6 +73,14 @@ impl Trials for SimTrials {
         }
         if runtime.faults.fail_setup > 0 {
             runtime.faults.fail_setup -= 1;
+            return Err(fail(other("simulated backend setup failure")));
+        }
+        if spec.roles.iter().any(|role| {
+            runtime
+                .faults
+                .failing_backends
+                .contains(&role.workload.backend())
+        }) {
             return Err(fail(other("simulated backend setup failure")));
         }
         if runtime
@@ -142,6 +150,19 @@ impl Trials for SimTrials {
         };
         togi_trialfiles::compress_unsynced(&dir.join(id))
             .map_err(|errors| Error::Other(Box::new(errors)))
+    }
+
+    fn content(&mut self, workload: WorkloadId) -> Result<ContentId, Error> {
+        if self
+            .0
+            .borrow()
+            .faults
+            .missing_backends
+            .contains(&workload.backend())
+        {
+            return Err(Error::BackendMissing);
+        }
+        Ok(crate::content::content_id(workload))
     }
 
     fn samples<'a>(

@@ -8,6 +8,7 @@
 //! [`faults`] of one machine, and hands out its seams as a [`togi_machine::Machine`].
 
 mod adapters;
+mod content;
 mod cores;
 pub mod day_night;
 pub mod definition;
@@ -26,6 +27,7 @@ mod trials;
 mod vocab;
 pub mod voltage;
 
+pub use content::content_id;
 pub use definition::MachineDefinition;
 pub use error::{InvalidMachine, Problem, ShapeError};
 pub use hazard::{HazardSource, Load, SourceKind, saturating_count};
@@ -34,4 +36,4 @@ pub use persisted::{Persisted, RestoreError};
 pub use runtime::{ArithmeticError, History, REBOOT_TIME, RunSettings};
 pub use samples::SampleStorage;
 pub use simulator::{ScriptError, Simulator};
-pub use vocab::{RESETS, ResetMix, SignalMix, WEIGHTED_SIGNALS, regime_index};
+pub use vocab::{RESETS, ResetMix, SignalMix, WEIGHTED_SIGNALS, limit_index, regime_index};

@@ -51,7 +51,7 @@ pub fn refusal_message(refusal: &Refusal, recorded: &Build, current: &Build) -> 
         );
     } else {
         text.push_str(
-            "togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.",
+            "togi run archives it and starts a new session that maps from scratch, keeping the raw day observations; togi reset --all archives it and starts over.",
         );
     }
     text

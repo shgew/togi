@@ -23,7 +23,9 @@ pub(crate) fn compare_bios_context(recorded: &BiosContext, current: &BiosContext
         None => passed(CheckName::BiosContext, "matches the session"),
         Some(mismatch) => failed(
             CheckName::BiosContext,
-            format!("{mismatch}; run archives this session and starts a new one"),
+            format!(
+                "{mismatch}; run records the new context and the session continues, re-qualifying under it"
+            ),
         ),
     }
 }

@@ -26,13 +26,25 @@ pub(crate) struct Unresumed {
 
 /// Every reducer the run keeps over its journal, each fed every event once and in order: the recovery fold first,
 /// then the tuner state, then the defect state.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Folds {
     pub recovery: RecoveryState,
-    pub tuner: togi_tuner::State,
+    pub tuner: togi_tuner::policy::State,
     pub defects: DefectState,
     pub facts: togi_journal::State,
     pub presentation: togi_watch::model::Presentation,
+}
+
+impl Default for Folds {
+    fn default() -> Self {
+        Self {
+            recovery: RecoveryState::default(),
+            tuner: togi_tuner::policy::State::new(togi_tuner::policy::Params::SPEC),
+            defects: DefectState::default(),
+            facts: togi_journal::State::default(),
+            presentation: togi_watch::model::Presentation::default(),
+        }
+    }
 }
 
 impl Folds {
@@ -221,7 +233,7 @@ impl<'machine> Appender<'machine> {
         &self.folds.recovery
     }
 
-    pub(crate) const fn tuner(&self) -> &togi_tuner::State {
+    pub(crate) const fn tuner(&self) -> &togi_tuner::policy::State {
         &self.folds.tuner
     }
 
