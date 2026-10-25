@@ -3,11 +3,11 @@
 use std::collections::{BTreeMap, HashSet};
 
 use togi_journal::{
-    Activity, Budget, DeadEnd, DeadEndCondition, NightId, NightPlan, NightQualification,
-    PlannedTask, QualificationState, Queue as JournalQueue, Seq, TaskId, TaskStatus, Tested,
+    Activity, Budget, DeadEnd, DeadEndCondition, Event, NightId, NightPlan, NightQualification,
+    PlannedTask, QualificationState, Queue as JournalQueue, Seq, Stamp, TaskId, TaskStatus, Tested,
     UnavailableBackend,
 };
-use togi_machine::{CcdId, CcdProfile, ContentId, TargetOffset, WorkloadId};
+use togi_machine::{BootId, CcdId, CcdProfile, ContentId, TargetOffset, WorkloadId};
 
 use super::State;
 use super::decision::{Decision, PolicyPayload};
@@ -150,22 +150,63 @@ impl State {
     /// open, the commitments the last night owes at its close come first, then the plan that opens a new one. The night ends only at a dead end or when every
     /// runnable cell needs an excluded backend: otherwise there is always a trial to run.
     pub fn next(&self, query: &NightQuery<'_>) -> Result<Action, NotReady> {
-        // Evidence is current only under the contents this night runs: a changed content invalidates the
-        // earlier exposures before any trial of it has been folded.
-        let changed = query.contents.map().iter().any(|(workload, content)| {
+        if self.contents_changed(query) {
+            let mut view = self.clone();
+            view.run_contents(query);
+            return view.next_in(query);
+        }
+        self.next_in(query)
+    }
+
+    /// Whether `query` runs a content other than the one the journal last recorded for a workload.
+    fn contents_changed(&self, query: &NightQuery<'_>) -> bool {
+        query.contents.map().iter().any(|(workload, content)| {
             self.machine
                 .contents
                 .get(workload)
                 .is_some_and(|known| known != content)
-        });
-        if changed {
-            let mut view = self.clone();
-            for (&workload, content) in query.contents.map() {
-                view.machine.set_content(workload, content);
-            }
-            return view.next_in(query);
+        })
+    }
+
+    /// Takes the contents `query` runs as current. Evidence is current only under the contents this night
+    /// runs: a changed content invalidates the earlier exposures before any trial of it has been folded.
+    fn run_contents(&mut self, query: &NightQuery<'_>) {
+        for (&workload, content) in query.contents.map() {
+            self.machine.set_content(workload, content);
         }
-        self.next_in(query)
+    }
+
+    /// The `FailureAtZero` dead end the journal already establishes once the failure and exposure
+    /// commitments it owes are folded, for a caller that must stop before draining them: a conclusive
+    /// failure of the stock controls still ends the run as a dead end. `None` when the stock controls stand
+    /// or a dead end is already recorded. It appends nothing; the decision cites the journal as it is.
+    pub fn stock_dead_end(&self, query: &NightQuery<'_>) -> Result<Option<Decision>, NotReady> {
+        if self.stop.is_some() {
+            return Ok(None);
+        }
+        let mut view = self.clone();
+        if self.contents_changed(query) {
+            view.run_contents(query);
+        }
+        let mut seq = self.last.ok_or(NotReady::NoSession)?;
+        while let Some(owed) = view.owed_failure().or_else(|| view.owed_exposure()) {
+            seq = seq.next().ok_or(NotReady::SeqExhausted)?;
+            let event = Event::new(
+                seq,
+                Stamp {
+                    time: query.now,
+                    mono: None,
+                },
+                BootId::from(String::new()),
+                owed.causes,
+                owed.payload.into(),
+            );
+            view.fold(&event)?;
+        }
+        view.with_layout(|layout| match view.stock(layout)? {
+            Stock::Unstable { class } => Ok(Some(self.dead_end(&class))),
+            Stock::Pending { .. } | Stock::Cleared { .. } => Ok(None),
+        })
     }
 
     fn next_in(&self, query: &NightQuery<'_>) -> Result<Action, NotReady> {

@@ -101,6 +101,10 @@ pub enum NotReady {
     CoreProfile(#[from] crate::day::CoreProfileError),
     #[error("deciding a day step")]
     Day(#[from] DayStepError),
+    #[error("folding an owed commitment")]
+    Fold(#[from] super::fold::FoldError),
+    #[error("numbering an owed commitment past the last sequence number")]
+    SeqExhausted,
 }
 
 impl State {

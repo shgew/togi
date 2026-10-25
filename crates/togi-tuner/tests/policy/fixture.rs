@@ -10,7 +10,7 @@ use togi_machine::{
     PerCore, TargetOffset,
 };
 use togi_tuner::policy::{
-    Action, Contents, DayQuery, EndReason, NightQuery, NotReady, Params, State, TrialPlan,
+    Action, Contents, DayQuery, Decision, EndReason, NightQuery, NotReady, Params, State, TrialPlan,
 };
 
 pub(crate) const START: i64 = 1_700_000_000;
@@ -238,6 +238,16 @@ impl Journal {
             &[],
         );
         journal
+    }
+
+    /// The stock dead end the journal establishes before its owed commitments are drained.
+    pub(crate) fn stock_dead_end(&self, now: Timestamp) -> Result<Option<Decision>, NotReady> {
+        let contents = Contents::new(std::iter::empty());
+        self.state.stock_dead_end(&NightQuery {
+            now,
+            contents: &contents,
+            unavailable: &BTreeMap::new(),
+        })
     }
 
     pub(crate) fn next(&self, now: Timestamp) -> Result<Action, NotReady> {

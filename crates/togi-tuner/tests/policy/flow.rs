@@ -13,7 +13,7 @@ use togi_journal::{
 use togi_machine::{BootId, CcdProfile, EndEvidence, ResetReason};
 use togi_tuner::cap::Rate;
 use togi_tuner::day::{Invocation, Pause};
-use togi_tuner::policy::{DayQuery, EndReason, Params, TrialPlan};
+use togi_tuner::policy::{Action, DayQuery, EndReason, Params, PolicyPayload, TrialPlan};
 
 use crate::fixture::{Ending, Journal, at, ccd, firmware, offsets_of, zero};
 
@@ -321,6 +321,48 @@ fn a_conclusive_failure_of_the_stock_controls_is_a_dead_end() {
         journal.until_end(at(300), &BTreeMap::new()).unwrap_err(),
         EndReason::DeadEnd
     );
+}
+
+#[test]
+fn a_stock_failure_whose_commitments_are_still_owed_already_establishes_the_dead_end() {
+    let mut journal = Journal::ready();
+    let plan = journal.until_trial(at(100));
+    assert_eq!(journal.stock_dead_end(at(150)).unwrap(), None);
+    journal.run(&plan, Ending::Fail(Some(0)));
+    // The failure and its exposure are still owed: the night would commit them before its dead end.
+    let Ok(Action::Decide(owed)) = journal.next(at(200)) else {
+        panic!("expected an owed commitment");
+    };
+    assert!(
+        !matches!(owed.payload, PolicyPayload::DeadEnd(_)),
+        "{owed:?}"
+    );
+    let events = journal.events.len();
+    let dead_end = journal
+        .stock_dead_end(at(200))
+        .unwrap()
+        .unwrap_or_else(|| panic!("no dead end before the owed commitments"));
+    assert_eq!(journal.events.len(), events);
+    assert_eq!(dead_end.causes, vec![journal.events.last().unwrap().seq]);
+    // It is the dead end the drained night commits.
+    assert_eq!(
+        journal.until_end(at(300), &BTreeMap::new()).unwrap_err(),
+        EndReason::DeadEnd
+    );
+    let committed = journal
+        .events
+        .iter()
+        .find_map(|event| {
+            if let Payload::DeadEnd(committed) = &event.payload {
+                Some(committed)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(PolicyPayload::DeadEnd(committed.clone()), dead_end.payload);
+    // Once recorded, nothing more is established.
+    assert_eq!(journal.stock_dead_end(at(400)).unwrap(), None);
 }
 
 /// The projection after an unexplained end's provisional retreat, pinned except for the cap's class lists
