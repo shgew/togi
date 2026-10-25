@@ -11,7 +11,7 @@ expression: body
 │
 │  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0462
 │   R1   light load  on core 00 alone at -11   mprime SSE 4K-21K · 1 worker                                         PHASE 2 · ROUND 1 · CORE 00 AT -11 · LIGHT
-│  ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
+│  ██████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 │
 │  if 5 of 5 pass:      next trial: deepening round 1: R2 heavy vector, core 00 alone at -11
 │  if a core is named:  its failure point is recorded → ... → it backs off; next trial: rerun R1 light, core 00 at -10 · 2m

@@ -31,7 +31,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 
 /// Show the session as a read-only dashboard
 ///
-/// It redraws when the journal changes and once a second for the clock. During an idle trial it
+/// It redraws when the journal changes and on whole-second boundaries for the clock. During an idle trial it
 /// holds still, clock included, until the journal changes, a key is pressed or the terminal is
 /// resized. togi says in plain words what it is doing and why, how far the current trial and cycle
 /// have come, and what each outcome would lead to. Each CCD's cores show their offsets and limits

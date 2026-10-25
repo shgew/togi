@@ -11,7 +11,7 @@ expression: body
 │
 │  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0604
 │   R2   heavy vector load  on 05 · 00-04 06-15 at failing offsets, 05 parked at 0   mprime AVX2 36K-248K · 1 worker                      HUNT 1 · PART 1 OF 2
-│  ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
+│  ██████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 │
 │  if 5 of 5 pass:      next trial: part 2: 00-04 06-15 parked at 0, idle
 │  if none is named:    next trial: hunt 1 group 2: R2 heavy vector on 05 · 09-15 at failing offsets, 00-08 parked at 0
@@ -30,7 +30,7 @@ expression: body
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  none confirmed yet: phase 1 has not passed a full cycle
 │                                                                                  18:35  hunt     #1 started · part 1: 00-04 06-15 at failing offsets, 05...
-│  HUNT 1 ───────────────────────────────────────── started 18:35 · 40s so far     18:35  fail     R2 heavy... · corrected hardware error · no core named
+│  HUNT 1 ───────────────────────────────────────── started 18:35 · 39s so far     18:35  fail     R2 heavy... · corrected hardware error · no core named
 │                                                                                  18:33  chain    cycle 1 step 3 · CCD 1 partials end
 │  cause       corrected hardware error in R2 heavy vector · no core named         18:33  chain    cycle 1 step 3 · CCD 1 partial 5 loads 09 13
 │  candidates  00-15, deeper at failure than at their parked offsets               18:33  pass     R7 partial CCD 1 on 09 10 13 14 · 4 passed · Tctl max 74°C

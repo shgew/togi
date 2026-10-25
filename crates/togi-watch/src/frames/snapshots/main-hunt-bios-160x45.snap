@@ -11,7 +11,7 @@ expression: body
 │
 │  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1954
 │   R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle   mprime AVX2 36K-248K · 1 worker                              HUNT 5 · PART 1 OF 2
-│  ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  2/5 ■ ■ ► · ·
+│  ██████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  2/5 ■ ■ ► · ·
 │
 │  if 5 of 5 pass:      next trial: part 2: 08 at failing offsets, 06 parked, idle
 │  if none is named:    hunt 5 ends: 06 named → core 06 -38 → -37; next trial: rerun R2 heavy vector, core 00 at -23 · 2m
@@ -33,7 +33,7 @@ expression: body
 │  CCD 1    -5* -33  -13   -7  -14  -35  -12  -13                                  00:05  crash    R2 heavy vector on core 00 at... · rebooted · no core named
 │  * unconfirmed: a passed full cycle confirms it, unless a failure is held        00:04  hunt     not hunted: held: first unattributed failure loading...
 │                                                                                  00:04  crash    R2 heavy vector on core 00 at... · rebooted · no core named
-│  HUNT 5 ───────────────────────────────────────── started 00:05 · 40s so far     00:02  pass     R7 full CCD 0+1 on 00-15 · 4 passed · Tctl max 74°C
+│  HUNT 5 ───────────────────────────────────────── started 00:05 · 39s so far     00:02  pass     R7 full CCD 0+1 on 00-15 · 4 passed · Tctl max 74°C
 │                                                                                  23:46  chain    cycle 4 step 3 · CCD 1 partials end
 │  cause       crash in R2 heavy vector on 00 · no core named                      23:46  pass     R7 partial CCD 1 on 09 13 · 4 passed · Tctl max 70°C
 │  evidence    last sample 0:06 in · not enough to attribute                       23:35  chain    cycle 4 step 3 · CCD 1 partial 5 loads 09 13

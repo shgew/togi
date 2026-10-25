@@ -18,7 +18,7 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~  ggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggg
 │   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                                                                  CYCLE 1 · STEP 1 · PART 1
 ~  hhhh  wwwwwwwwwwwww  tttttttt   gggggggggggggggggggggggggggggggg                                                                  ccccccccccccccccccccccccc
-│  ███████████████████████████████████████████▋░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/4 ► · · ·
+│  ███████████████████████████████████████████▍░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/4 ► · · ·
 ~  cccccccccccccccccccccccccccccccccccccccccccckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk  wwwwggggg  ttttc g g g
 │
 │  if 3 of 4 pass:      next trial: trial 4 of 4 · 5m
