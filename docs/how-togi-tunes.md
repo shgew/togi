@@ -57,7 +57,7 @@ Day steps are decided at a cold boot and applied only after a verified readback.
 - **Freeze.** Keeps D and blocks promotions; it never blocks a retreat or a firmware reset.
 - **Firmware.** A BIOS, AGESA or microcode change invalidates qualifications, slopes and caps and sets D to CO 0. New controls and a new qualification must pass before a nonzero profile returns.
 
-An unclean end raises a question; answering `frozen` makes it CPU-suspect, `graphics` or `power_off` makes it non-CPU, and `unsure` or no answer at a nonzero D forms a provisional CPU-suspect event. The rules are in [Daily events](spec/tuner.md#daily-events).
+An unclean end raises a question. Machine-check evidence comes first: a core-local or uncorrected machine check makes the end CPU-suspect whatever the answer. For an otherwise unexplained end, answering `frozen` makes it CPU-suspect, `graphics` or `power_off` makes it non-CPU, and `unsure` or no answer at a nonzero D forms a provisional CPU-suspect event. The rules are in [Daily events](spec/tuner.md#daily-events).
 
 ## What the screens show
 
