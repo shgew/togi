@@ -185,6 +185,26 @@ fn tuning() -> Entry {
     Entry::try_from("togi".to_owned()).unwrap()
 }
 
+#[test_case(r#"{"variables":{},"night":"Unrecorded"}"#, true; "object state")]
+#[test_case(r#"[{},"Unrecorded"]"#, false; "positional state")]
+#[test_case(r#"{"variables":{},"night":{"Selected":{"selected":"night.conf","default":null,"last_booted":null}}}"#, true; "object snapshot")]
+#[test_case(r#"{"variables":{},"night":{"Selected":["night.conf",null,null]}}"#, false; "positional snapshot")]
+#[test_case(r#"{"variables":{},"night":{"Ended":{"boot_id":"boot"}}}"#, true; "object ended record")]
+#[test_case(r#"{"variables":{},"night":{"Ended":["boot"]}}"#, false; "positional ended record")]
+#[test_case(r#"{"variables":{},"night":"Unrecorded","extra":null}"#, false; "unknown state field")]
+#[test_case(r#"{"variables":{},"night":{"Selected":{"selected":"night.conf","default":null,"last_booted":null,"extra":null}}}"#, false; "unknown snapshot field")]
+#[test_case(r#"{"variables":{},"night":{"Ended":{"boot_id":"boot","extra":null}}}"#, false; "unknown ended field")]
+fn backend_state_requires_objects_at_every_record_boundary(json: &str, valid: bool) {
+    let fake = Fake::new(Some("day.conf"), Some("day.conf"));
+    fake.0.borrow_mut().state = Some(json.as_bytes().to_vec());
+    let result = fake.backend().state();
+    assert_eq!(result.is_ok(), valid);
+    if !valid {
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+    assert!(fake.0.borrow().operations.is_empty());
+}
+
 #[test_case(None; "absent default")]
 #[test_case(Some("nixos-generation-3.conf"); "explicit id")]
 #[test_case(Some("nixos-generation-*.conf"); "pattern")]
@@ -259,7 +279,8 @@ fn repeated_begin_keeps_the_first_snapshot() {
 #[test_case(Some("@saved"), None, Some(SELECTED), None; "EFI saved policy clears tuning")]
 #[test_case(None, Some("@saved"), Some(SELECTED), None; "loader conf saved policy clears tuning")]
 #[test_case(Some("day.conf"), Some("@saved"), Some(SELECTED), Some(SELECTED); "EFI overrides loader conf")]
-#[test_case(Some("@saved"), None, Some("day.conf"), Some("day.conf"); "saved day unchanged")]
+#[test_case(Some("@saved"), None, Some("day.conf"), Some("day.conf"); "installed saved day identity unchanged")]
+#[test_case(Some("@saved"), None, Some("missing.conf"), Some("missing.conf"); "missing saved entry unchanged")]
 #[test_case(Some("@saved"), None, None, None; "absent last booted unchanged")]
 fn menu_night_only_clears_saved_tuning(
     default: Option<&str>,
@@ -268,7 +289,16 @@ fn menu_night_only_clears_saved_tuning(
     expected: Option<&str>,
 ) {
     let fake = Fake::new(default, saved);
-    fake.0.borrow_mut().configured_default = configured.map(str::to_owned);
+    {
+        let mut memory = fake.0.borrow_mut();
+        memory.configured_default = configured.map(str::to_owned);
+        memory.entries.push(loader_entry(
+            "day.conf",
+            "day-kernel.efi",
+            "day-initrd.efi",
+            "init=/nix/store/current-day/init quiet",
+        ));
+    }
     fake.backend().clear_saved_entry().unwrap();
     assert_eq!(fake.text(DEFAULT).as_deref(), default);
     assert_eq!(fake.text(LAST_BOOTED).as_deref(), expected);

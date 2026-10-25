@@ -1266,3 +1266,48 @@ fn a_dead_end_that_asks_for_no_reboot_does_not_reboot() {
     assert_eq!(exit, Exit::BootLoop, "{err}");
     assert_eq!(fake.reboots.get(), 0, "{err}");
 }
+
+#[test_case::test_case(None, "entity not found"; "unreadable")]
+#[test_case::test_case(Some(&b"\xff\xfe"[..]), "invalid utf-8"; "not text")]
+#[test_case::test_case(Some(&b""[..]), "setup is malformed"; "empty")]
+#[test_case::test_case(Some(&b"{ not json"[..]), "setup is malformed"; "not json")]
+#[test_case::test_case(Some(&b"[\"grub\"]"[..]), "setup is malformed"; "not an object")]
+#[test_case::test_case(Some(&br#"{"loader":"lilo"}"#[..]), "setup is malformed"; "unknown loader")]
+#[test_case::test_case(Some(&br#"{"loader":"grub","grubenv":"/boot/grubenv"}"#[..]), "setup is malformed"; "missing entry")]
+fn a_tuning_boot_whose_night_setup_cannot_be_loaded_fails_before_any_journal_or_hardware_work(
+    setup: Option<&[u8]>,
+    cause: &str,
+) {
+    use togi_tuningboot::night::SETUP_PATH;
+
+    let mut fake = Fake::new();
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    if let Some(bytes) = setup {
+        fake.create_dir("/etc").unwrap();
+        fake.create_dir("/etc/togi").unwrap();
+        fake.write(SETUP_PATH, bytes).unwrap();
+    }
+    let (exit, out, err) = fake.run(&["run", "--no-tui", "--tuning-boot", SETUP_PATH]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    assert_eq!(out, "");
+    assert!(err.starts_with("togi run: "), "{err}");
+    assert!(err.contains(cause), "{err}");
+    assert_eq!(*fake.calls.borrow(), ["check_platform"]);
+    assert_eq!((fake.boots_read.get(), fake.opened.get()), (0, 0));
+    assert_eq!(fake.reboots.get(), 0);
+    assert!(
+        !fake.exists(fake.state_dir()),
+        "the state directory was created"
+    );
+    assert!(!fake.exists(&fake.lock), "the host lock was taken");
+    assert!(fake.events().is_empty(), "a journal was written");
+    let grub = fake.grub.state();
+    assert_eq!(grub.cleared, 0);
+    assert!(grub.log.is_empty(), "{:?}", grub.log);
+    assert_eq!(
+        grub.values.keys().collect::<Vec<_>>(),
+        ["saved_entry"],
+        "{:?}",
+        grub.values
+    );
+}

@@ -749,7 +749,10 @@ in
     name = "togi-night-systemd-boot";
 
     nodes.machine =
-      { lib, ... }:
+      { config, lib, ... }:
+      let
+        efivar = name: "/sys/firmware/efi/efivars/${name}-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
+      in
       {
         imports = [ module ];
         networking.useDHCP = false;
@@ -770,6 +773,15 @@ in
           '';
         };
         hardware.cpu.amd.ryzen-smu.enable = false;
+        environment.systemPackages = [ pkgs.e2fsprogs ];
+        # `togi night` requests `systemctl reboot` right after its Default write. Put first in PATH, this records both
+        # loader variables' attributes at that moment, on the root disk, before the reboot remounts efivarfs.
+        environment.etc."togi-reboot-probe/systemctl".source = pkgs.writeShellScript "systemctl" ''
+          ${pkgs.e2fsprogs}/bin/lsattr -d ${efivar "LoaderEntryDefault"} ${efivar "LoaderEntryLastBooted"} \
+            >/root/reboot-flags
+          ${pkgs.coreutils}/bin/sync /root/reboot-flags
+          exec ${config.systemd.package}/bin/systemctl "$@"
+        '';
       };
 
     testScript = ''
@@ -781,15 +793,35 @@ in
       guid = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
 
 
+      def variable(name):
+          return f"/sys/firmware/efi/efivars/{name}-{guid}"
+
+
       def efi(name):
-          path = f"/sys/firmware/efi/efivars/{name}-{guid}"
-          status, output = machine.execute(f"base64 -w0 {path} 2>/dev/null")
+          status, output = machine.execute(f"base64 -w0 {variable(name)} 2>/dev/null")
           return None if status else base64.b64decode(output)
 
 
       def value(name):
           raw = efi(name)
           return None if raw is None else raw[4:].decode("utf-16-le").rstrip("\0")
+
+
+      def immutable(listing):
+          # `lsattr -d` prints the attribute letters, then the path.
+          return {
+              path.removeprefix("/sys/firmware/efi/efivars/").removesuffix(f"-{guid}"): "i" in letters
+              for letters, path in (line.split() for line in listing.splitlines())
+          }
+
+
+      def flags(*names):
+          return immutable(machine.succeed("lsattr -d " + " ".join(variable(name) for name in names)))
+
+
+      def make_immutable(*names):
+          machine.succeed("chattr +i " + " ".join(variable(name) for name in names))
+          assert flags(*names) == dict.fromkeys(names, True), flags(*names)
 
 
       def reaches_reboot():
@@ -802,8 +834,8 @@ in
           return machine.succeed("readlink -f /run/current-system").strip()
 
 
-      def enter_night():
-          out = machine.succeed("echo y | togi night")
+      def enter_night(path=""):
+          out = machine.succeed(f"echo y | {path}togi night")
           assert "Good night." in out, out
           reaches_reboot()
           assert current_system() == tuning_system
@@ -896,10 +928,20 @@ in
           saved_last = efi("LoaderEntryLastBooted")
           assert value("LoaderEntryDefault") == "@saved"
           assert value("LoaderEntryLastBooted") == day
-          enter_night()
+          loader_variables = ("LoaderEntryDefault", "LoaderEntryLastBooted")
+          # Each write clears the immutable flag only for its own write, then sets it again.
+          make_immutable(*loader_variables)
+          machine.succeed("rm -f /root/reboot-flags")
+          enter_night("PATH=/etc/togi-reboot-probe:$PATH ")
+          at_reboot = immutable(machine.succeed("cat /root/reboot-flags"))
+          assert at_reboot == dict.fromkeys(loader_variables, True), at_reboot
+          # Booting the tuning entry changed LastBooted, so night-end rewrites both variables.
+          assert value("LoaderEntryLastBooted") == tuning_entry
+          make_immutable(*loader_variables)
           machine.succeed("togi night-end")
           assert efi("LoaderEntryDefault") == saved_default
           assert efi("LoaderEntryLastBooted") == saved_last
+          assert flags(*loader_variables) == dict.fromkeys(loader_variables, True), flags(*loader_variables)
           machine.reboot()
           machine.wait_for_unit("multi-user.target")
           assert current_system() == normal_system

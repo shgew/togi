@@ -38,11 +38,27 @@ trait BootIo {
     fn boot_id(&mut self) -> stdio::Result<String>;
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct State {
-    variables: BTreeMap<String, String>,
-    night: Night,
+togi_machine::object_only! {
+    #[derive(Debug, Default, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct State {
+        variables: BTreeMap<String, String>,
+        night: Night,
+    }
+
+    #[derive(Debug, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct Snapshot {
+        selected: String,
+        default: Option<Vec<u8>>,
+        last_booted: Option<Vec<u8>>,
+    }
+
+    #[derive(Debug, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct Ended {
+        boot_id: String,
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -51,17 +67,7 @@ enum Night {
     Unrecorded,
     Selected(Snapshot),
     // A repeat in the same boot must not reinterpret a restored @saved value as a menu night.
-    Ended {
-        boot_id: String,
-    },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Snapshot {
-    selected: String,
-    default: Option<Vec<u8>>,
-    last_booted: Option<Vec<u8>>,
+    Ended(Ended),
 }
 
 /// systemd-boot's persistent default and togi's independent durable restart/selection state.
@@ -169,18 +175,18 @@ impl SystemdBoot {
                 // A different default may be a user change or our completed restore before a crash.
                 // Either way, preserving both current values is the only non-destructive choice.
             }
-            Night::Ended { boot_id: ended } if ended == &boot_id => {
+            Night::Ended(Ended { boot_id: ended }) if ended == &boot_id => {
                 return Ok(SavedEntry {
                     before: before.clone().unwrap_or_default(),
                     after: before.unwrap_or_default(),
                 });
             }
-            Night::Unrecorded | Night::Ended { .. } => {
+            Night::Unrecorded | Night::Ended(_) => {
                 self.clear_menu_saved(before.as_deref())?;
             }
         }
         let after = self.read_text(DEFAULT)?;
-        state.night = Night::Ended { boot_id };
+        state.night = Night::Ended(Ended { boot_id });
         self.persist(&state)?;
         Ok(SavedEntry {
             before: before.unwrap_or_default(),
