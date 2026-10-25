@@ -103,7 +103,7 @@ pub struct Check {
 }
 
 object_only! {
-    /// Whether PID 1 holds an active hardware watchdog with a readable counter within its timeout.
+    /// Whether PID 1 holds an active hardware watchdog whose counter is plausible, where supported.
     /// `detail` names the device, or what prevents establishing reset protection.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]

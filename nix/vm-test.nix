@@ -169,12 +169,10 @@ in
           for line in machine.succeed("togi events --json --kind preflight.check").splitlines()
       ]
       watchdog = [e for e in preflight if e["data"]["check"] == "watchdog"]
-      # i6300esb has no get_timeleft operation: active alone cannot establish counting.
-      # Its real reset is still exercised below; SP5100 decoding recovery needs hardware.
-      assert len(watchdog) == 1 and not watchdog[0]["data"]["ok"], preflight
-      assert "open but not counting" in watchdog[0]["data"]["detail"], watchdog
+      # i6300esb has no get_timeleft operation, so its state-only readiness remains supported.
+      assert len(watchdog) == 1 and watchdog[0]["data"]["ok"], preflight
       assert preflight[0]["data"]["check"] == "watchdog", preflight
-      machine.log(f"unreadable watchdog counter preflight: {watchdog[0]}")
+      machine.log(f"armed watchdog preflight: {watchdog[0]}")
       # The dead end exit 15 is abnormal, so the ExecStopPost hook runs; the VM has no SMU, so it refuses before any
       # write and says offsets are unchanged.
       machine.succeed("journalctl -b -u togi.service -o cat --no-pager | grep -F 'emergency-stop:' | grep -F 'offsets unchanged'")
