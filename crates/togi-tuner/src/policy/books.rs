@@ -203,6 +203,8 @@ pub(super) struct PlanBook {
     /// The boot of the plan that opened the night: a crash reboot back into tuning continues it, and only a
     /// later boot's `day.boot_start` closes it.
     pub(super) opened_in: BootId,
+    /// How many nights opened before this one: the ordinal of its filler task.
+    pub(super) ordinal: u32,
     /// The event that closed the night: a later boot's `day.boot_start`, a `shutdown` by signal or a session
     /// reset. `None` while it is open.
     pub(super) closed_by: Option<Seq>,

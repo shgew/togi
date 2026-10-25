@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
-use togi_journal::{DayCheckpoint, DayCleanStop, LoadMix, Payload, Queue};
+use togi_journal::{
+    DayCheckpoint, DayCleanStop, LoadMix, Payload, Queue, Shutdown, ShutdownReason,
+};
 use togi_machine::BootId;
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, NightQuery, State};
@@ -124,5 +126,41 @@ fn a_night_query_after_many_days_costs_what_one_after_a_few_costs() {
     assert!(
         late_cost <= early_cost * SLACK,
         "after {intervals} committed intervals a query took {late_cost:?}, against {early_cost:?} after ten days"
+    );
+}
+
+/// The state at the filler trial of night `nights`: the first night ran to its filler, and each later one
+/// was stopped by the operator and reopened straight into its filler.
+fn filler_state_of_night(nights: u32) -> ((State, Timestamp), u32) {
+    let mut journal = Journal::ready();
+    journal.until_filler(|_| Ending::Pass);
+    for _ in 1..nights {
+        journal.append(
+            Shutdown {
+                reason: ShutdownReason::Signal,
+                kernel_cursor: None,
+                kernel_error: None,
+                cycles: None,
+            }
+            .into(),
+            &[],
+        );
+        let now = at(i64::try_from(journal.events.len()).unwrap() + 1);
+        let plan = journal.until_trial(now);
+        assert_eq!(plan.task.queue, Queue::Filler, "the night reopens at its filler");
+    }
+    let now = at(i64::try_from(journal.events.len()).unwrap() + 1);
+    journal.until_trial(now);
+    ((journal.state, now), nights)
+}
+
+#[test]
+fn a_filler_query_in_a_late_night_costs_what_one_in_an_early_night_costs() {
+    let (early, _) = filler_state_of_night(3);
+    let (late, nights) = filler_state_of_night(50_000);
+    let (early_cost, late_cost) = fastest(&early, &late);
+    assert!(
+        late_cost <= early_cost * SLACK,
+        "in night {nights} a filler query took {late_cost:?}, against {early_cost:?} in the third"
     );
 }

@@ -291,9 +291,7 @@ impl State {
 
     /// How many nights opened before `night`: the ordinal of its filler task.
     fn night_ordinal(&self, night: NightId) -> u32 {
-        super::ledger::saturating_u32(
-            u64::try_from(self.nights.plans.range(..night).count()).unwrap_or(u64::MAX),
-        )
+        self.nights.plans.get(&night).map_or(0, |book| book.ordinal)
     }
 
     /// The plan of `night` as it stands (`None` for the plan that opens a night): each queue's share and

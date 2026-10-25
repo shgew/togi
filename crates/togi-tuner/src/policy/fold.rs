@@ -144,6 +144,9 @@ impl State {
                     // A plan without a night opens one, identified by this plan's sequence.
                     None => {
                         let night = togi_journal::NightId(seq);
+                        let ordinal = super::ledger::saturating_u32(
+                            u64::try_from(self.nights.plans.len()).unwrap_or(u64::MAX),
+                        );
                         self.nights.open = Some(night);
                         self.nights.plans.insert(
                             night,
@@ -151,6 +154,7 @@ impl State {
                                 first: latest.clone(),
                                 latest,
                                 opened_in: event.boot.clone(),
+                                ordinal,
                                 closed_by: None,
                             },
                         );
