@@ -65,7 +65,8 @@ pub(crate) fn firmware(bios_version: &str) -> SessionContext {
     }
 }
 
-fn cores() -> Vec<CoreInfo> {
+/// The machine's four cores, two per CCD, each with two CPUs.
+pub(crate) fn cores() -> Vec<CoreInfo> {
     (0..4_u8)
         .map(|id| CoreInfo {
             core: CoreId::new(i64::from(id)).unwrap(),

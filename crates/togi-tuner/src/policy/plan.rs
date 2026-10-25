@@ -123,7 +123,7 @@ pub(super) fn workloads_of(workloads: Workloads) -> Vec<WorkloadId> {
 }
 
 /// The roles of `cell`: R1–R7 through the legacy constructor with one CPU per loaded core (both CPUs of
-/// the core for R5), R8 and R9 through their role constructors.
+/// the core for R5), R8 and R9 through their role constructors, R9 on the cell's loaded cores only.
 pub(super) fn roles_of(
     cell: &Cell,
     seed: u64,
@@ -168,7 +168,12 @@ pub(super) fn roles_of(
             },
         ) => Ok(TrialRole::neighbours(class, light, heavy, seed, topology)?),
         (Roles::AllThreads { serial, .. }, Workloads::One { workload }) => {
-            Ok(TrialRole::all_threads(workload, serial, topology)?)
+            let loaded: Vec<CoreInfo> = topology
+                .iter()
+                .filter(|info| cell.loaded.contains(info.core))
+                .cloned()
+                .collect();
+            Ok(TrialRole::all_threads(workload, serial, &loaded)?)
         }
         (
             Roles::SingleCore { .. }

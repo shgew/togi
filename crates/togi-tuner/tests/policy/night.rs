@@ -9,9 +9,10 @@ use togi_journal::{
 };
 use togi_machine::{Backend, BootId};
 use togi_tuner::day::{Invocation, Pause};
+use togi_tuner::night::Roles;
 use togi_tuner::policy::{Action, DayQuery, EndReason, TrialPlan};
 
-use crate::fixture::{Ending, Journal, at};
+use crate::fixture::{Ending, Journal, at, cores};
 
 /// Runs `trials` passing trials, returning the night they ran in.
 fn run_trials(journal: &mut Journal, trials: i64) -> NightId {
@@ -402,4 +403,38 @@ fn no_query_before_a_night_owes_a_closure() {
         panic!("expected a night.plan");
     };
     assert_eq!(plan.night, None);
+}
+
+#[test]
+fn an_isolated_all_thread_trial_loads_only_the_tested_ccd() {
+    let mut journal = Journal::ready();
+    let cores = cores();
+    let mut checked = 0;
+    for step in 0..3_500_i64 {
+        let plan = journal.until_trial(at(100 + step));
+        if plan.task.queue == Queue::Filler {
+            break;
+        }
+        if let (Tested::Isolated { ccd, .. }, Roles::AllThreads { .. }) =
+            (plan.tested, plan.cell.roles)
+        {
+            let on_ccd: Vec<_> = cores.iter().filter(|info| info.ccd == ccd).collect();
+            let roles = plan.roles(1, &cores).unwrap();
+            // Every logical CPU of the tested CCD's cores, and none of another CCD's.
+            assert_eq!(
+                roles.len(),
+                on_ccd.iter().map(|info| info.cpus.len()).sum::<usize>(),
+                "{plan:?}"
+            );
+            assert!(
+                roles
+                    .iter()
+                    .all(|role| on_ccd.iter().any(|info| info.core == role.core)),
+                "{roles:?}"
+            );
+            checked += 1;
+        }
+        journal.run(&plan, Ending::Pass);
+    }
+    assert!(checked > 0, "the night ran no isolated R9 trial");
 }
