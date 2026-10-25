@@ -616,6 +616,7 @@ in
 
     testScript = ''
       import json
+      import re
 
       grubenv_list = "grub-editenv /boot/grub/grubenv list"
 
@@ -645,6 +646,13 @@ in
       day = machine.succeed("grep -m1 '^menuentry' /boot/grub/grub.cfg | cut -d'\"' -f2").strip()
       assert day and day != "NixOS - togi", day
       machine.succeed(f"grub-set-default '{day}' && sync")
+
+      # A menu pick stays selected because the module's `default = "saved"` gives every entry GRUB's savedefault: the
+      # entry it boots becomes `saved_entry` at boot, the day entry and the tuning entry alike.
+      grub_cfg = machine.succeed("cat /boot/grub/grub.cfg")
+      for title in (day, "NixOS - togi"):
+          block = re.search(r'menuentry "' + re.escape(title) + r'"[^{]*\{(.*?)\n\s*\}', grub_cfg, re.DOTALL)
+          assert block and "savedefault" in block.group(1), (title, block and block.group(1))
 
       # Declining changes nothing.
       before = grubenv()
@@ -684,24 +692,33 @@ in
       assert "togi_night" not in env, env
       assert env["togi_day_entry"] == day, env
 
-      # A tuning boot picked from the boot menu: GRUB's savedefault selects it as the menu does, and nothing began a
-      # night, so the day entry the last night remembered is not its day. Ending it boots the boot loader's default.
+      # A tuning boot picked from the boot menu: the selection is set as the menu's savedefault sets it, and nothing
+      # began a night, so the day entry the last night remembered is not its day.
       machine.succeed("grub-set-default 'NixOS - togi' && sync")
       machine.reboot()
       machine.wait_for_unit("multi-user.target")
       assert machine.succeed("readlink -f /run/current-system").strip() == tuning_system
+      # A crash reboot stays in it too, and still nothing marks it as begun.
+      machine.crash()
+      machine.start(allow_reboot=True)
+      machine.wait_for_unit("multi-user.target")
+      assert machine.succeed("readlink -f /run/current-system").strip() == tuning_system
+      env = grubenv()
+      assert env["saved_entry"] == "NixOS - togi", env
+      assert "togi_night" not in env, env
       machine.wait_until_succeeds("systemctl is-active togi.service")
+      # Ending it boots the boot loader's default.
       machine.send_monitor_command("system_powerdown")
       machine.wait_for_shutdown()
       machine.start(allow_reboot=True)
       machine.wait_for_unit("multi-user.target")
       assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
-      # Ending unset `saved_entry`, so GRUB booted its first entry, and its savedefault then saved that entry's title.
       machine.succeed(
           "journalctl -b -1 -u togi-leave-tuning-boot.service -o cat | grep -F 'boot entry restored to \"\", was \"NixOS - togi\"'"
       )
+      # Ending unset `saved_entry`, so GRUB booted its first entry, the day's, and its savedefault saved that title.
       env = grubenv()
-      assert env.get("saved_entry", day) == day, env
+      assert env["saved_entry"] == day, env
       assert "togi_day_entry" not in env, env
       assert "togi_night" not in env, env
     '';
