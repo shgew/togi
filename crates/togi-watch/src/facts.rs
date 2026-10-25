@@ -2,11 +2,13 @@
 //! such as when a trial started, what the hardware read back, how the session stopped.
 //! Per-core facts use dense optional slots; trial keys remain dynamic.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 
 use jiff::Timestamp;
-use togi_journal::{Event, Payload, State as JournalState, TrialEnd, TrialId, TrialIntent};
+use togi_journal::{
+    ApplyCause, DecisionId, Event, Payload, State as JournalState, TrialEnd, TrialId, TrialIntent,
+};
 use togi_machine::{BootId, CoreSet, ObservedOffset, PerCore};
 
 use crate::history::{History, LOG_LIMIT, LogEntry};
@@ -54,6 +56,9 @@ pub(crate) struct Facts {
     pub(crate) day: togi_journal::DayQuestions,
     #[serde(default)]
     pub(crate) day_totals: crate::day_totals::DayTotals,
+    /// The day steps a `day.applied` carried out: a proposal not listed here was never committed.
+    #[serde(default)]
+    pub(crate) applied_steps: BTreeSet<DecisionId>,
 }
 
 pub(crate) fn secs(seconds: u32) -> Duration {
@@ -85,6 +90,11 @@ impl Facts {
             }
         }
         match &event.payload {
+            Payload::DayApplied(applied) => {
+                if let ApplyCause::Step { decision } = applied.cause {
+                    self.applied_steps.insert(decision);
+                }
+            }
             Payload::SessionStart(_) => {
                 self.session = Some(SessionView {
                     start: event.time,
@@ -200,7 +210,6 @@ impl Facts {
             | Payload::NightQualification(_)
             | Payload::NightReproduction(_)
             | Payload::DayStep(_)
-            | Payload::DayApplied(_)
             | Payload::DayEvent(_)
             | Payload::DayVeto(_)
             | Payload::DayHold(_)

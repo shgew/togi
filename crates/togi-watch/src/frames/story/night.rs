@@ -11,7 +11,7 @@ use togi_tuner::policy::{FirmwareValidity, NightProjection, Projection};
 use super::super::colours::Paint;
 use super::super::scene::Scene;
 use super::Story;
-use crate::model::TrialView;
+use crate::model::{Snapshot, TrialView};
 use crate::words::plural;
 
 /// The trial's activity, from its intent, else from the night's current task.
@@ -292,7 +292,8 @@ fn hours(seconds: u64) -> String {
 }
 
 /// The day state, in up to two lines: the applied profile and what the latest proposal says.
-pub(super) fn day_lines(policy: &Projection) -> Vec<String> {
+pub(super) fn day_lines(snapshot: &Snapshot<'_>) -> Vec<String> {
+    let policy = snapshot.policy;
     let mut first = match &policy.applied {
         Some(profile) => format!("The day profile is {}.", profile_words(profile)),
         None => "No day profile has been applied; every CCD stays at CO 0.".to_owned(),
@@ -315,7 +316,7 @@ pub(super) fn day_lines(policy: &Projection) -> Vec<String> {
         FirmwareValidity::Valid | FirmwareValidity::Unknown => {}
     }
     if let Some((_, step)) = &policy.day.last_step {
-        second.push(step_words(&step.step));
+        second.push(step_words(&step.step, snapshot.step_applied(step)));
     }
     let unresolved = policy
         .events
@@ -335,7 +336,7 @@ pub(super) fn day_lines(policy: &Projection) -> Vec<String> {
     }
 }
 
-fn step_words(step: &StepKind) -> String {
+fn step_words(step: &StepKind, applied: bool) -> String {
     match step {
         StepKind::Hold { blocked_by } if blocked_by.is_empty() => {
             "The latest proposal keeps the profile.".to_owned()
@@ -348,16 +349,30 @@ fn step_words(step: &StepKind) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        StepKind::Promote { changed } if applied => {
+            format!(
+                "The latest step promoted CCD {} and it was applied.",
+                changed.get()
+            )
+        }
         StepKind::Promote { changed } => format!(
             "The latest proposal promotes CCD {}; it counts once it is applied.",
             changed.get()
+        ),
+        StepKind::Retreat { changed, .. } if applied => format!(
+            "The latest step stepped {} back and it was applied.",
+            ccd_list(changed)
         ),
         StepKind::Retreat { changed, .. } => format!(
             "The latest proposal steps {} back; it counts once it is applied.",
             ccd_list(changed)
         ),
+        StepKind::FirmwareZero { changed } if applied => format!(
+            "The latest step set {} to CO 0 after a firmware change and it was applied.",
+            ccd_list(changed)
+        ),
         StepKind::FirmwareZero { changed } => format!(
-            "The latest proposal sets {} to CO 0 after a firmware change.",
+            "The latest proposal sets {} to CO 0 after a firmware change; it counts once it is applied.",
             ccd_list(changed)
         ),
     }
@@ -412,7 +427,7 @@ pub(super) fn between(scene: &Scene<'_>) -> Story {
     let mut lines = vec![first];
     match next_words(policy) {
         Some(next) => lines.push(next),
-        None if scene.s.last.is_some() => lines.extend(day_lines(policy)),
+        None if scene.s.last.is_some() => lines.extend(day_lines(&scene.s)),
         None => {}
     }
     let brief = lines.last().cloned().unwrap_or_default();

@@ -6,6 +6,7 @@
 //! and after what. Raw facts stay raw; the frames escape them at output.
 
 use std::cell::OnceCell;
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -232,6 +233,8 @@ pub struct Snapshot<'a> {
     pub day: &'a togi_journal::DayQuestions,
     /// Observed hours and crashes beside the CO 0 totals.
     pub day_totals: &'a crate::day_totals::DayTotals,
+    /// The day steps a `day.applied` carried out. The policy projection holds the latest proposal, applied or not.
+    pub applied_steps: &'a BTreeSet<togi_journal::DecisionId>,
     /// The Ruleset 13 policy: per-CCD day, cap and edge, the day, the night and the qualifications.
     pub policy: &'a PolicyProjection,
     /// What the lenient read of the journal skipped or ignored, in one line; shown whatever else is on screen.
@@ -319,6 +322,13 @@ impl<'a> Snapshot<'a> {
             total: self.log_total,
             arrived: 0,
         }
+    }
+
+    /// Whether the day step the policy shows was carried out: a `day.applied` cites its decision. A hold applies
+    /// nothing, so it is never proposed.
+    pub fn step_applied(&self, step: &togi_journal::DayStep) -> bool {
+        matches!(step.step, togi_journal::StepKind::Hold { .. })
+            || self.applied_steps.contains(&step.decision)
     }
 }
 
@@ -650,6 +660,7 @@ impl Model {
             day: &facts.day,
             day_totals: &facts.day_totals,
             policy: &derived.policy,
+            applied_steps: &facts.applied_steps,
             skipped: self.skipped.as_deref(),
             ended: None,
         };

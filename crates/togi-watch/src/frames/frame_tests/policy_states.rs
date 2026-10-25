@@ -30,7 +30,7 @@ fn assert_shows(shown: &str, want: &str) {
     assert!(shown.contains(want), "the frame lacks {want:?}:\n{shown}");
 }
 
-#[test_case(StepKind::Hold { blocked_by: Vec::new() }, "last step   hold, nothing blocks it"; "an unblocked hold")]
+#[test_case(StepKind::Hold { blocked_by: Vec::new() }, false, "last step   hold, nothing blocks it"; "an unblocked hold")]
 #[test_case(
     StepKind::Hold {
         blocked_by: vec![
@@ -38,17 +38,67 @@ fn assert_shows(shown: &str, want: &str) {
             HoldReason::QuestionPending { boot: BootId::from("boot-2".to_owned()) },
         ],
     },
+    false,
     "last step   hold: incomplete, 1h00m of 8h00m, a question is pending";
-    "a blocked hold"
+    "a hold blocked by its hours and a question"
+)]
+#[test_case(
+    StepKind::Hold { blocked_by: vec![HoldReason::AtCap {}, HoldReason::NotQualified {}] },
+    false,
+    "last step   hold: at the cap, not qualified";
+    "a hold at the cap and unqualified"
+)]
+#[test_case(
+    StepKind::Hold { blocked_by: vec![HoldReason::Vetoed { veto: record() }, HoldReason::EventUnresolved { event: record() }] },
+    false,
+    "last step   hold: vetoed by record #12, record #12 is unresolved";
+    "a hold behind a veto and an unresolved event"
+)]
+#[test_case(
+    StepKind::Hold { blocked_by: vec![HoldReason::Frozen {}, HoldReason::Paused {}, HoldReason::Expired {}] },
+    false,
+    "last step   hold: frozen, paused, expired";
+    "a frozen paused expired hold"
+)]
+#[test_case(StepKind::Promote { changed: ccd(1) }, true, "last step   promoted CCD 1"; "an applied promotion")]
+#[test_case(
+    StepKind::Promote { changed: ccd(1) },
+    false,
+    "last step   proposed promoting CCD 1, not applied";
+    "a proposed promotion"
+)]
+#[test_case(
+    StepKind::Retreat { changed: vec![ccd(0), ccd(1)], cause: togi_journal::RetreatCause::ShallowerCap {}, wanted: None },
+    true,
+    "last step   retreated CCD 0, 1";
+    "an applied retreat"
+)]
+#[test_case(
+    StepKind::Retreat { changed: vec![ccd(0)], cause: togi_journal::RetreatCause::ShallowerCap {}, wanted: None },
+    false,
+    "last step   proposed retreating CCD 0, not applied";
+    "a proposed retreat"
 )]
 #[test_case(
     StepKind::FirmwareZero { changed: vec![ccd(0), ccd(1)] },
+    true,
     "last step   reset CCD 0, 1 after firmware change";
-    "a firmware reset"
+    "an applied firmware reset"
 )]
-fn the_day_names_its_last_step(kind: StepKind, want: &str) {
+#[test_case(
+    StepKind::FirmwareZero { changed: vec![ccd(0), ccd(1)] },
+    false,
+    "last step   proposed resetting CCD 0, 1 after firmware change, not applied";
+    "a proposed firmware reset"
+)]
+fn the_day_names_its_last_step(kind: StepKind, applied: bool, want: &str) {
     let mut hand = Staged::Day.hand();
-    hand.policy.day.last_step = Some((seq(5), step(kind)));
+    hand.applied_steps.clear();
+    let step = step(kind);
+    if applied {
+        hand.applied_steps.insert(step.decision);
+    }
+    hand.policy.day.last_step = Some((seq(5), step));
     assert_shows(&shown(&hand), want);
 }
 

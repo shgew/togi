@@ -406,6 +406,7 @@ fn ccds_text(changed: &[togi_machine::CcdId]) -> String {
 }
 
 fn step_value(scene: &Scene<'_>, step: &DayStep) -> Line<'static> {
+    let applied = scene.s.step_applied(step);
     let (paint, text) = match &step.step {
         StepKind::Hold { blocked_by } if blocked_by.is_empty() => {
             (Paint::Text, "hold, nothing blocks it".to_owned())
@@ -421,13 +422,33 @@ fn step_value(scene: &Scene<'_>, step: &DayStep) -> Line<'static> {
                     .join(", ")
             ),
         ),
-        StepKind::Promote { changed } => (Paint::Good, format!("promoted CCD {}", changed.get())),
-        StepKind::Retreat { changed, .. } => {
+        StepKind::Promote { changed } if applied => {
+            (Paint::Good, format!("promoted CCD {}", changed.get()))
+        }
+        StepKind::Promote { changed } => (
+            Paint::Grey,
+            format!("proposed promoting CCD {}, not applied", changed.get()),
+        ),
+        StepKind::Retreat { changed, .. } if applied => {
             (Paint::Bad, format!("retreated CCD {}", ccds_text(changed)))
         }
-        StepKind::FirmwareZero { changed } => (
+        StepKind::Retreat { changed, .. } => (
+            Paint::Grey,
+            format!(
+                "proposed retreating CCD {}, not applied",
+                ccds_text(changed)
+            ),
+        ),
+        StepKind::FirmwareZero { changed } if applied => (
             Paint::Warn,
             format!("reset CCD {} after firmware change", ccds_text(changed)),
+        ),
+        StepKind::FirmwareZero { changed } => (
+            Paint::Grey,
+            format!(
+                "proposed resetting CCD {} after firmware change, not applied",
+                ccds_text(changed)
+            ),
         ),
     };
     value(scene, paint, text)
@@ -635,10 +656,9 @@ mod tests {
         let mut hand = closed(hand());
         hand.policy.applied = Some(profile_of(&[(0, -10)]));
         hand.policy.day.freeze = true;
-        hand.policy.day.last_step = Some((
-            crate::tests::kit::seq(5),
-            step(StepKind::Promote { changed: ccd(0) }),
-        ));
+        let promoted = step(StepKind::Promote { changed: ccd(0) });
+        hand.applied_steps.insert(promoted.decision);
+        hand.policy.day.last_step = Some((crate::tests::kit::seq(5), promoted));
         let rows = rows(&hand, 7 * 3600, 240, 67);
         assert!(rows[0].trim_end().ends_with("applied -10"), "{:?}", rows[0]);
         assert!(

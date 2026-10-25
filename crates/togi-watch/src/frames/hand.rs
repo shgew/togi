@@ -51,6 +51,8 @@ pub(crate) struct Hand {
     pub(crate) totals: DayTotals,
     /// When the frame draws: 40 seconds after the fixed time unless a test moves it.
     pub(crate) now: Timestamp,
+    /// The day steps a `day.applied` carried out.
+    pub(crate) applied_steps: std::collections::BTreeSet<DecisionId>,
 }
 
 impl Hand {
@@ -73,6 +75,7 @@ impl Hand {
             policy,
             totals: DayTotals::default(),
             now: FIXED_NOW + SignedDuration::from_secs(40),
+            applied_steps: std::collections::BTreeSet::new(),
         }
     }
 
@@ -91,6 +94,7 @@ impl Hand {
             last_failure: self.last_failure,
             policy: &self.policy,
             day_totals: &self.totals,
+            applied_steps: &self.applied_steps,
             ..self.model.snapshot()
         }
     }
@@ -582,7 +586,12 @@ impl Staged {
                     saved: true,
                 });
             }
-            Self::Mapping | Self::Qualifying | Self::Reproducing | Self::Day | Self::Idle => {}
+            Self::Day => {
+                if let Some((_, step)) = &hand.policy.day.last_step {
+                    hand.applied_steps.insert(step.decision);
+                }
+            }
+            Self::Mapping | Self::Qualifying | Self::Reproducing | Self::Idle => {}
         }
         hand.history = vec![Entry::new(
             FIXED_NOW,

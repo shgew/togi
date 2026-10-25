@@ -255,3 +255,106 @@ fn a_recovery_says_the_journal_is_intact_and_what_the_night_does_next() {
         "1 task left in the night's plan; the next listed is mapping task 5."
     );
 }
+
+/// The day lines between trials for a latest step of `kind`, applied when `applied`.
+fn day_step(kind: togi_journal::StepKind, applied: bool) -> String {
+    let mut fx = Fx::new();
+    fx.last = Some(end_view(Outcome::Pass, None));
+    fx.policy.applied = Some(profile(&[(0, -10), (1, -5)]));
+    let step = crate::frames::hand::step(kind);
+    if applied {
+        fx.applied_steps.insert(step.decision);
+    }
+    fx.policy.day.last_step = Some((togi_journal::Seq::new(5).expect("a seq"), step));
+    let said = story(&fx.scene(ts(2000)));
+    said.lines[2].clone()
+}
+
+#[test]
+fn the_day_says_whether_its_latest_step_was_applied_or_only_proposed() {
+    use togi_journal::{RetreatCause, StepKind};
+    let promote = StepKind::Promote { changed: ccd_id(1) };
+    let retreat = StepKind::Retreat {
+        changed: vec![ccd_id(0), ccd_id(1)],
+        cause: RetreatCause::ShallowerCap {},
+        wanted: None,
+    };
+    let reset = StepKind::FirmwareZero {
+        changed: vec![ccd_id(0)],
+    };
+    for (kind, applied, want) in [
+        (
+            promote.clone(),
+            false,
+            "The latest proposal promotes CCD 1; it counts once it is applied.",
+        ),
+        (
+            promote,
+            true,
+            "The latest step promoted CCD 1 and it was applied.",
+        ),
+        (
+            retreat.clone(),
+            false,
+            "The latest proposal steps CCDs 0, 1 back; it counts once it is applied.",
+        ),
+        (
+            retreat,
+            true,
+            "The latest step stepped CCDs 0, 1 back and it was applied.",
+        ),
+        (
+            reset.clone(),
+            false,
+            "The latest proposal sets CCD 0 to CO 0 after a firmware change; it counts once it is applied.",
+        ),
+        (
+            reset,
+            true,
+            "The latest step set CCD 0 to CO 0 after a firmware change and it was applied.",
+        ),
+    ] {
+        assert_eq!(day_step(kind, applied), want);
+    }
+}
+
+#[test]
+fn a_held_step_names_every_blocker() {
+    use togi_journal::{DayEventId, HoldReason, StepKind};
+    let event = DayEventId::Boot {
+        boot: togi_machine::BootId::from("boot-3".to_owned()),
+    };
+    assert_eq!(
+        day_step(
+            StepKind::Hold {
+                blocked_by: Vec::new()
+            },
+            false
+        ),
+        "The latest proposal keeps the profile."
+    );
+    let every = StepKind::Hold {
+        blocked_by: vec![
+            HoldReason::Incomplete {
+                credited_s: 60,
+                required_s: 120,
+            },
+            HoldReason::AtCap {},
+            HoldReason::NotQualified {},
+            HoldReason::Vetoed {
+                veto: event.clone(),
+            },
+            HoldReason::QuestionPending {
+                boot: togi_machine::BootId::from("boot-3".to_owned()),
+            },
+            HoldReason::EventUnresolved { event },
+            HoldReason::Frozen {},
+            HoldReason::Paused {},
+            HoldReason::Expired {},
+        ],
+    };
+    assert_eq!(
+        day_step(every, false),
+        "The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired."
+    );
+}

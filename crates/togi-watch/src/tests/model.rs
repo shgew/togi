@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -1066,5 +1066,25 @@ fn the_ended_trial_keeps_the_policy_as_it_stood_before_its_end() {
     assert_ne!(
         snap.policy, &before,
         "the live projection moved on with the application"
+    );
+}
+
+#[test]
+fn only_an_application_caused_by_a_step_marks_that_step_applied() {
+    let mut script = Script::three();
+    script.append(baseline(&[0, 1, 2]), &[]);
+    script.append(day_applied(1, &[(0, -5), (1, -5)]), &[]);
+    assert!(script.model().snapshot().applied_steps.is_empty());
+    let mut stepped = day_applied(2, &[(0, -6), (1, -5)]);
+    if let Payload::DayApplied(applied) = &mut stepped {
+        applied.cause = ApplyCause::Step {
+            decision: togi_journal::DecisionId(7),
+        };
+    }
+    script.append(stepped, &[]);
+    let model = script.model();
+    assert_eq!(
+        model.snapshot().applied_steps,
+        &BTreeSet::from([togi_journal::DecisionId(7)])
     );
 }

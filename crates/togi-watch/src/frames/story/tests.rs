@@ -54,6 +54,8 @@ struct Fx {
     stopped: Option<StopView>,
     dead_end: Option<DeadEndView>,
     day: togi_journal::DayQuestions,
+    cores: Vec<crate::model::CoreView>,
+    applied_steps: std::collections::BTreeSet<togi_journal::DecisionId>,
 }
 
 impl Fx {
@@ -71,6 +73,8 @@ impl Fx {
             stopped: None,
             dead_end: None,
             day: togi_journal::DayQuestions::default(),
+            cores: Vec::new(),
+            applied_steps: std::collections::BTreeSet::new(),
         }
     }
 
@@ -91,6 +95,8 @@ impl Fx {
         s.stopped = self.stopped.as_ref();
         s.dead_end = self.dead_end.as_ref();
         s.day = &self.day;
+        s.cores = &self.cores;
+        s.applied_steps = &self.applied_steps;
         s
     }
 

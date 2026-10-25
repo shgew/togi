@@ -279,7 +279,7 @@ fn recover_story(scene: &Scene<'_>) -> Story {
     ];
     match night::next_words(policy) {
         Some(next) => lines.push(next),
-        None => lines.extend(night::day_lines(policy)),
+        None => lines.extend(night::day_lines(&scene.s)),
     }
     let brief = lines[0].clone();
     Story::new("RECOVERED", lines, brief, Paint::Warn)
