@@ -178,7 +178,10 @@ fn asking_line(direction: Direction, width: usize, colours: Colours) -> Line<'st
             Form::empty(),
         ],
     );
-    fit_clauses(width, &[clause], colours)
+    let line = fit_clauses(width, &[clause], colours);
+    #[cfg(test)]
+    crate::corpus::line("footer.question", "", &line);
+    line
 }
 
 /// Draws the footer row: the key hints when the reader has keys, with the night switch's key and then `after`

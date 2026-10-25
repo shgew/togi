@@ -672,4 +672,19 @@ mod tests {
         assert_eq!(left.sweep.renders, 1);
         assert!(left.any());
     }
+
+    #[test]
+    fn the_manifest_lists_the_night_and_day_narration() {
+        let night: Vec<&str> = manifest::literals()
+            .iter()
+            .filter(|literal| literal.file == "frames/story/night.rs")
+            .map(|literal| literal.text.as_str())
+            .collect();
+        for phrase in [
+            "The latest proposal keeps the profile.",
+            "No day profile has been applied; every CCD stays at CO 0.",
+        ] {
+            assert!(night.contains(&phrase), "{phrase:?} is not in {night:#?}");
+        }
+    }
 }

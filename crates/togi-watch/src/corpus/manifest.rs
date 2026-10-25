@@ -23,6 +23,10 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../frames/story/mod.rs"),
     ),
     (
+        "frames/story/night.rs",
+        include_str!("../frames/story/night.rs"),
+    ),
+    (
         "frames/story/resting.rs",
         include_str!("../frames/story/resting.rs"),
     ),

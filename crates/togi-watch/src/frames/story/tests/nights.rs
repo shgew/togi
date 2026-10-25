@@ -447,3 +447,22 @@ fn a_held_step_names_every_blocker() {
         "The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired."
     );
 }
+
+#[test]
+fn unresolved_day_events_are_counted_as_blocking_promotion() {
+    use togi_journal::{Classification, DayEventId, ReproductionState, Resolution};
+    let mut fx = Fx::new();
+    fx.last = Some(end_view(Outcome::Pass, None));
+    fx.policy.events = ["boot-1", "boot-2"]
+        .map(|boot| togi_tuner::policy::EventProjection {
+            event: DayEventId::Boot {
+                boot: togi_machine::BootId::from(boot.to_owned()),
+            },
+            classification: Classification::Unexplained {},
+            resolution: Resolution::Unresolved {},
+            reproduction: ReproductionState::Pending,
+        })
+        .into();
+    let said = story(&fx.scene(ts(2000)));
+    assert_eq!(said.lines[2], "2 day events still block promotion.");
+}
