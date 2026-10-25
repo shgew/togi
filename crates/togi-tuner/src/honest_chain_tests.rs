@@ -1,8 +1,11 @@
-use togi_machine::PerCore;
+use togi_machine::{CoreSet, PerCore};
 
-use crate::testkit::set;
 use crate::tests::core;
 use crate::{HonestChain, PartialBasis, UncoveredReason};
+
+fn set(ids: &[u8]) -> CoreSet {
+    ids.iter().map(|&id| core(id)).collect()
+}
 
 fn requests(pairs: &[(u8, f64)]) -> PerCore<f64> {
     pairs.iter().map(|&(id, volts)| (core(id), volts)).collect()
