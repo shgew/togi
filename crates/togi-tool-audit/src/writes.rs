@@ -46,7 +46,8 @@ impl Writes {
                 Payload::SmuIntent(_)
                 | Payload::SmuWrite(_)
                 | Payload::TrialStart(_)
-                | Payload::ProfileApplied(_) => {
+                | Payload::ProfileApplied(_)
+                | Payload::DayApplied(_) => {
                     findings.add(
                         event.seq,
                         Check::WriteProtocol,
@@ -117,7 +118,6 @@ impl Writes {
                 | Payload::NightQualification(_)
                 | Payload::NightReproduction(_)
                 | Payload::DayStep(_)
-                | Payload::DayApplied(_)
                 | Payload::DayEvent(_)
                 | Payload::DayVeto(_)
                 | Payload::DayHold(_)
@@ -138,7 +138,9 @@ impl Writes {
                 self.write(event, record.command(), seen, cores, findings);
             }
             Payload::SmuReadback(readback) => self.readback(event, readback, seen, findings),
-            Payload::ProfileApplied(_) | Payload::ProfileRestored(_) => self.flush(findings),
+            Payload::ProfileApplied(_) | Payload::DayApplied(_) | Payload::ProfileRestored(_) => {
+                self.flush(findings);
+            }
             Payload::TrialStart(_)
             | Payload::TrialEnd(_)
             | Payload::DeadEnd(_)
@@ -198,7 +200,6 @@ impl Writes {
             | Payload::NightQualification(_)
             | Payload::NightReproduction(_)
             | Payload::DayStep(_)
-            | Payload::DayApplied(_)
             | Payload::DayEvent(_)
             | Payload::DayVeto(_)
             | Payload::DayHold(_)
