@@ -6,8 +6,8 @@ night since 00:00, 50h22m elapsed: mapping (task filler #0)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#8959] trial 1810 core 00 offset -1 R1 mprime SSE 4K-21K 90 s
-  together mapping task filler #0 night #30 testing CCD0 at -1
+in flight: [#8961] trial 1810 core 00 offset -1 R1 mprime SSE 4K-21K 90 s
+  together mapping task filler #0 night #31 testing CCD0 at -1
 
 CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 0   0-7   0   0   measured rate     fails -9     0         121     121

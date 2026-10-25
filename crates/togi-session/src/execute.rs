@@ -27,28 +27,28 @@ impl Session<'_> {
     }
 
     /// Every cell the night could run needs an excluded backend: the evidence-backed dead end when one stands,
-    /// otherwise a no-evidence dead end citing the inconclusive streaks that excluded the backends.
+    /// otherwise a no-evidence dead end citing the events that excluded the backends.
     fn unavailable_dead_end(&mut self) -> Step<Control> {
         if let Some(stop) = self.check_dead_end()? {
             return Ok(Control::Stop(stop));
         }
-        let exhausted = self
+        let unavailable = self
             .appender
             .recovery()
-            .exhausted_backends(self.inconclusive_threshold());
-        let causes: Vec<_> = exhausted
+            .unavailable_backends(self.inconclusive_threshold());
+        let causes: Vec<_> = unavailable
             .iter()
-            .flat_map(|(_, streak)| streak.iter().copied())
+            .flat_map(|(_, unavailable)| unavailable.causes().iter().copied())
             .collect();
-        let names: Vec<String> = exhausted
+        let names: Vec<String> = unavailable
             .iter()
-            .map(|(backend, streak)| format!("{backend} {} times", streak.len()))
+            .map(|(backend, unavailable)| format!("{backend} {unavailable}"))
             .collect();
         let dead_end = DeadEnd {
             condition: DeadEndCondition::NoEvidence,
             core: None,
             detail: format!(
-                "every runnable cell needs an exhausted backend; inconclusive in a row: {}",
+                "every runnable cell needs an unavailable backend: {}",
                 names.join(", ")
             ),
             action: None,

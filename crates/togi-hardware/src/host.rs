@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use rustix::process::geteuid;
 use togi_machine::{
-    BiosContext, BootId, Check, CoreInfo, CoreRank, Error as MachineError, Host, Partial,
-    SmuValidated, error_chain,
+    BackendCheck, BiosContext, BootId, Check, CoreInfo, CoreRank, Error as MachineError, Host,
+    Partial, SmuValidated, error_chain,
 };
 use togi_smu::Driver;
 use togi_trial::{Backends, Runner};
@@ -151,8 +151,8 @@ impl<R: HostReadings> SystemHost<R> {
         }
     }
 
-    pub(crate) fn run_steps(&self, privileged: bool) -> Vec<Outcome> {
-        preflight::run(privileged, |step| self.step(step))
+    pub(crate) fn run_steps(&self, steps: &[Step], privileged: bool) -> Vec<Outcome> {
+        preflight::run(steps, privileged, |step| self.step(step))
     }
 
     pub(crate) fn watchdog_check(&self) -> Check {
@@ -206,10 +206,14 @@ impl<R: HostReadings> Host for SystemHost<R> {
     }
 
     fn preflight(&mut self) -> Vec<Check> {
-        let outcomes = self.run_steps(self.privilege.is_root());
+        let outcomes = self.run_steps(&preflight::SAFETY_STEPS, self.privilege.is_root());
         std::iter::once(self.root_check())
             .chain(outcomes.into_iter().map(Outcome::into_check))
             .collect()
+    }
+
+    fn backends(&mut self) -> Vec<BackendCheck> {
+        preflight::backend_checks(&self.backends)
     }
 
     fn watchdog(&mut self) -> Check {

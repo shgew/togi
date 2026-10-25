@@ -421,14 +421,14 @@ impl<'machine> Session<'machine> {
         &self.appender
     }
 
-    /// The backends whose inconclusive streak outlasted every retry, each with that streak: the night plans around
-    /// them and cites it.
+    /// The backends excluded for the rest of the night, each with the events that excluded it: the night plans
+    /// around them and cites those.
     pub(crate) fn unavailable_backends(&self) -> BTreeMap<Backend, Vec<Seq>> {
         self.appender
             .recovery()
-            .exhausted_backends(self.inconclusive_threshold())
+            .unavailable_backends(self.inconclusive_threshold())
             .into_iter()
-            .map(|(backend, streak)| (backend, streak.to_vec()))
+            .map(|(backend, unavailable)| (backend, unavailable.causes().to_vec()))
             .collect()
     }
 
@@ -794,13 +794,13 @@ impl<'machine> Session<'machine> {
         }
     }
 
-    /// The dead end the recorded evidence supports, strongest first.
+    /// The dead end the recorded evidence supports, strongest first. Unavailable backends are never one: only the
+    /// scheduler's `Unavailable` ends a night that has no runnable work left.
     pub(crate) fn check_dead_end(&mut self) -> Result<Option<Stop>, SessionError> {
         let recovery = self.appender.recovery();
         let cited = |condition, cited: Option<&Cited>| {
             cited.map(|cited| (condition, cited.detail.clone(), vec![cited.seq]))
         };
-        let inconclusive = self.inconclusive_threshold();
         let stray_limit = self.config.dead_ends().stray_crashes_in_a_row().get() as usize;
         let unreadable = self.unreadable.as_ref().map(|unreadable| {
             (
@@ -811,36 +811,12 @@ impl<'machine> Session<'machine> {
         });
         let found = cited(DeadEndCondition::ThermalTrip, recovery.thermal_evidence())
             .or(unreadable)
-            .or_else(|| cited(DeadEndCondition::NoEvidence, recovery.missing_evidence()))
             .or_else(|| cited(DeadEndCondition::Smu, recovery.smu_evidence()))
-            .or_else(|| cited(DeadEndCondition::Containment, recovery.containment_evidence()))
             .or_else(|| {
-                let exhausted = recovery.exhausted_backends(inconclusive);
-                let configured: Vec<Backend> = [Backend::Mprime, Backend::Ycruncher]
-                    .into_iter()
-                    .filter(|backend| self.config.backends().path(*backend).is_some())
-                    .collect();
-                let spent = !configured.is_empty()
-                    && configured
-                        .iter()
-                        .all(|backend| exhausted.iter().any(|(spent, _)| spent == backend));
-                spent.then(|| {
-                    let names: Vec<String> = exhausted
-                        .iter()
-                        .map(|(backend, streak)| format!("{backend} {} times", streak.len()))
-                        .collect();
-                    (
-                        DeadEndCondition::NoEvidence,
-                        format!(
-                            "every backend stayed inconclusive in a row after retries at 1, 5 and 30 min: {}",
-                            names.join(", ")
-                        ),
-                        exhausted
-                            .iter()
-                            .flat_map(|(_, streak)| streak.iter().copied())
-                            .collect(),
-                    )
-                })
+                cited(
+                    DeadEndCondition::Containment,
+                    recovery.containment_evidence(),
+                )
             })
             .or_else(|| {
                 let stray = recovery.stray();

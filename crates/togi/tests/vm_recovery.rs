@@ -262,6 +262,10 @@ mod vm_recovery {
             Vec::new()
         }
 
+        fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+            Vec::new()
+        }
+
         fn watchdog(&mut self) -> Check {
             Check::default()
         }

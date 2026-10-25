@@ -1,4 +1,4 @@
-use togi_machine::{Backend, Check, error_chain};
+use togi_machine::{Backend, BackendCheck, Check, error_chain};
 use togi_trial::{BackendIdentity, Backends, IdentityError};
 
 use crate::checks::{CheckName, Skip, Skipped, failed, passed};
@@ -24,6 +24,18 @@ pub(crate) const STEPS: [Step; 8] = [
     Step::PmTable,
     Step::SlotMapping,
     Step::Backends,
+    Step::BackendUser,
+    Step::SystemdRun,
+];
+
+/// The mandatory safety steps `run` makes: every step but backend availability, which `Host::backends` reports
+/// per backend.
+pub(crate) const SAFETY_STEPS: [Step; 7] = [
+    Step::Cpu,
+    Step::RyzenSmu,
+    Step::Readback,
+    Step::PmTable,
+    Step::SlotMapping,
     Step::BackendUser,
     Step::SystemdRun,
 ];
@@ -86,11 +98,15 @@ pub(crate) const fn skip(step: Step, privileged: bool, identified: bool) -> Opti
     }
 }
 
-/// Runs the steps in order. `identified` falls once an identity check fails.
-pub(crate) fn run(privileged: bool, mut make: impl FnMut(Step) -> Check) -> Vec<Outcome> {
+/// Runs `steps` in order. `identified` falls once an identity check fails.
+pub(crate) fn run(
+    steps: &[Step],
+    privileged: bool,
+    mut make: impl FnMut(Step) -> Check,
+) -> Vec<Outcome> {
     let mut identified = true;
-    let mut outcomes = Vec::with_capacity(STEPS.len());
-    for step in STEPS {
+    let mut outcomes = Vec::with_capacity(steps.len());
+    for &step in steps {
         if let Some(reason) = skip(step, privileged, identified) {
             outcomes.push(Outcome::Skipped(Skipped {
                 name: step.name(),
@@ -107,28 +123,46 @@ pub(crate) fn run(privileged: bool, mut make: impl FnMut(Step) -> Check) -> Vec<
     outcomes
 }
 
-pub(crate) fn check_backends(backends: &Backends) -> Check {
-    let mut ready = true;
-    let mut details = Vec::new();
-    for kind in [Backend::Mprime, Backend::Ycruncher] {
-        match backends.get(kind) {
-            None => {
-                ready = false;
-                details.push(format!("backends.{kind} not configured"));
+/// Each backend's availability on its own: an unconfigured backend or a missing, nonregular or nonexecutable
+/// executable makes only that backend unavailable.
+pub(crate) fn backend_checks(backends: &Backends) -> Vec<BackendCheck> {
+    [Backend::Mprime, Backend::Ycruncher]
+        .into_iter()
+        .map(|kind| {
+            let (detail, available) = match backends.get(kind) {
+                None => (format!("backends.{kind} not configured"), false),
+                Some(backend) => match backend.check() {
+                    Ok(found) => (found.detail, true),
+                    Err(error) => (error_chain(&error), false),
+                },
+            };
+            BackendCheck {
+                backend: kind,
+                detail,
+                available,
             }
-            Some(backend) => match backend.check() {
-                Ok(found) => details.push(format!("{kind}: {}", found.detail)),
-                Err(error) => {
-                    ready = false;
-                    details.push(error_chain(&error));
-                }
-            },
-        }
-    }
+        })
+        .collect()
+}
+
+/// The doctor's `backends` row: every backend's availability, failed when any is unavailable. It is a warning,
+/// never a mandatory check.
+pub(crate) fn check_backends(backends: &Backends) -> Check {
+    let checks = backend_checks(backends);
+    let details: Vec<String> = checks
+        .iter()
+        .map(|check| {
+            if check.available {
+                format!("{}: {}", check.backend, check.detail)
+            } else {
+                check.detail.clone()
+            }
+        })
+        .collect();
     Check {
         name: CheckName::Backends.as_str().to_owned(),
         detail: details.join("; "),
-        ok: ready,
+        ok: checks.iter().all(|check| check.available),
     }
 }
 

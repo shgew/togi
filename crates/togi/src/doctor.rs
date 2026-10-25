@@ -47,7 +47,9 @@ pub struct Args {
 }
 
 const COMMAND: &str = "doctor";
-const WARNINGS: [&str; 2] = ["watchdog", "bios_context"];
+/// Checks whose failure is reported as `warn` and never makes the machine not ready: backend availability excludes
+/// only the backend from a night.
+const WARNINGS: [&str; 3] = ["watchdog", "bios_context", "backends"];
 
 /// Makes the checks and prints the table.
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {

@@ -144,6 +144,34 @@ fn a_changed_context_is_a_warning_not_a_failure() {
 }
 
 #[test]
+fn an_unavailable_backend_is_a_warning_not_a_failure() {
+    let mut diagnosis = ready();
+    let backends = diagnosis
+        .ran
+        .iter_mut()
+        .find(|check| check.name == "backends")
+        .unwrap();
+    *backends = check(
+        "backends",
+        "backends.mprime not configured; ycruncher: /nix/store/y-cruncher/bin/y-cruncher",
+        false,
+    );
+    let session = Session::new();
+    let host = host_with(diagnosis, session.fs.clone());
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert_eq!(ran.err, "");
+    assert!(
+        ran.out
+            .lines()
+            .any(|line| line.starts_with("backends      warn    backends.mprime not configured")),
+        "{}",
+        ran.out
+    );
+    assert!(ran.out.ends_with("\nready\n"), "{}", ran.out);
+}
+
+#[test]
 fn a_failed_check_names_itself_and_exits_15() {
     let mut ran_checks = ready_checks();
     ran_checks[3] = check(
@@ -575,15 +603,24 @@ fn the_unknown_kind_refusal_is_red_bold_on_a_terminal_like_the_stamp_refusal() {
 #[test]
 fn an_unprivileged_failed_check_exits_15_and_another_platform_exits_1() {
     let mut diagnosis = ready();
-    diagnosis.ran[5].ok = false;
+    let user = diagnosis
+        .ran
+        .iter_mut()
+        .find(|check| check.name == "backend_user")
+        .unwrap();
+    user.ok = false;
     diagnosis.ran.retain(|check| check.name != "bios_context");
     let session = Session::new();
     let mut host = host_with(diagnosis, session.fs.clone());
     host.root = false;
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Preflight, "{}", ran.err);
-    assert_eq!(ran.err, "togi doctor: not ready: backends\n");
-    assert!(ran.out.ends_with("not ready: backends\n"), "{}", ran.out);
+    assert_eq!(ran.err, "togi doctor: not ready: backend_user\n");
+    assert!(
+        ran.out.ends_with("not ready: backend_user\n"),
+        "{}",
+        ran.out
+    );
     assert_eq!(host.lock_acquisitions.get(), 0);
 
     let mut host = host_with(ready(), session.fs.clone());

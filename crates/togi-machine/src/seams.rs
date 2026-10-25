@@ -1,8 +1,8 @@
 use crate::object_only;
 use crate::{
-    BankType, BiosContext, BootId, CancellationToken, Condition, ContentId, CoreId, CoreInfo,
-    CpuId, Error, KernelCursor, LoadSchedule, ObservedOffset, Partial, PerCore, Regime, ResetKind,
-    Signal, TargetOffset, TrialConditions, TrialRole, WorkloadId,
+    Backend, BankType, BiosContext, BootId, CancellationToken, Condition, ContentId, CoreId,
+    CoreInfo, CpuId, Error, KernelCursor, LoadSchedule, ObservedOffset, Partial, PerCore, Regime,
+    ResetKind, Signal, TargetOffset, TrialConditions, TrialRole, WorkloadId,
 };
 use jiff::Timestamp;
 use serde::Serialize;
@@ -85,7 +85,11 @@ pub trait Host {
     /// The partial value is the preferred-core values read before the failure, in topology order. An unavailable
     /// ranking is `Err(Partial { value: vec![], error })`.
     fn ranking(&mut self) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>>;
+    /// The mandatory safety checks. Backend availability is not one of them: [`Host::backends`] reports it.
     fn preflight(&mut self) -> Vec<Check>;
+    /// Each backend's availability for the night: what was found, or why it cannot run. An unavailable backend is
+    /// excluded from the night on its own, never a failed safety check.
+    fn backends(&mut self) -> Vec<BackendCheck>;
     fn watchdog(&mut self) -> Check;
 }
 
@@ -100,6 +104,14 @@ pub struct Check {
     pub name: String,
     pub detail: String,
     pub ok: bool,
+}
+
+/// One backend's preflight availability: its executables when `available`, or why it cannot run.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackendCheck {
+    pub backend: Backend,
+    pub detail: String,
+    pub available: bool,
 }
 
 object_only! {

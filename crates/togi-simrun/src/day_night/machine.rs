@@ -319,6 +319,9 @@ impl Host for CycleHost {
     fn preflight(&mut self) -> Vec<Check> {
         self.inner.preflight()
     }
+    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+        self.inner.backends()
+    }
     fn watchdog(&mut self) -> Check {
         self.inner.watchdog()
     }

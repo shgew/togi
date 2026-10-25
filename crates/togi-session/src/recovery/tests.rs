@@ -1065,9 +1065,9 @@ fn a_backend_inconclusive_through_every_retry_is_exhausted_until_a_no_evidence_d
         log.ended(&id, Outcome::Inconclusive, &[]);
         let exhausted: Vec<_> = log
             .state()
-            .exhausted_backends(k)
+            .unavailable_backends(k)
             .into_iter()
-            .map(|(backend, streak)| (backend, streak.len()))
+            .map(|(backend, unavailable)| (backend, unavailable.causes().len()))
             .collect();
         let expected: Vec<_> = (n == 4)
             .then_some((Backend::Mprime, 4))
@@ -1076,7 +1076,7 @@ fn a_backend_inconclusive_through_every_retry_is_exhausted_until_a_no_evidence_d
         assert_eq!(exhausted, expected, "after {n}");
     }
     log.add(dead_end(DeadEndCondition::NoEvidence), &[]);
-    assert!(log.state().exhausted_backends(k).is_empty());
+    assert!(log.state().unavailable_backends(k).is_empty());
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1117,8 +1117,7 @@ fn a_closed_night_carries_no_backend_exclusion_into_the_next(witness: Witness, c
     let mut missing = trial_end("0005", Outcome::Inconclusive);
     missing.backend_missing = true;
     log.add(Payload::TrialEnd(missing), &[]);
-    assert_eq!(log.state().exhausted_backends(k).len(), 1);
-    assert!(log.state().missing_evidence().is_some());
+    assert_eq!(log.state().unavailable_backends(k).len(), 1);
     let day_boot = Payload::DayBootStart(togi_journal::DayBootStart {
         build: build(),
         bios: togi_machine::BiosContext::default(),
@@ -1143,31 +1142,55 @@ fn a_closed_night_carries_no_backend_exclusion_into_the_next(witness: Witness, c
         log.add(payload, &[]);
     }
     assert_eq!(
-        log.state().exhausted_backends(k).is_empty(),
-        closes,
-        "{witness:?}"
-    );
-    assert_eq!(
-        log.state().missing_evidence().is_none(),
+        log.state().unavailable_backends(k).is_empty(),
         closes,
         "{witness:?}"
     );
 }
 
-#[test]
-fn a_missing_backend_is_evidence_until_the_no_evidence_dead_end() {
+#[derive(Clone, Copy, Debug)]
+enum Probe {
+    Trial,
+    Preflight,
+}
+
+#[test_case(Probe::Trial; "a trial that found its program missing")]
+#[test_case(Probe::Preflight; "a failed backend preflight check")]
+fn a_missing_backend_is_unavailable_at_once_until_the_no_evidence_dead_end(probe: Probe) {
+    let k = togi_config::DeadEndThreshold::new(3).unwrap();
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
-    log.trial_intent("0001", Some(0), Regime::R1);
-    let mut end = trial_end("0001", Outcome::Inconclusive);
-    end.backend_missing = true;
-    end.reason = Some("no such file".into());
-    let ended = log.add(Payload::TrialEnd(end), &[]);
-    let missing = log.state().missing_evidence().cloned().unwrap();
-    assert_eq!(missing.seq, ended);
-    assert_eq!(missing.detail, "backend mprime is missing: no such file");
+    let check = |check: &str, ok| {
+        Payload::PreflightCheck(togi_journal::PreflightCheck {
+            check: check.to_owned(),
+            detail: "missing".to_owned(),
+            ok,
+        })
+    };
+    log.add(check("backends.ycruncher", true), &[]);
+    log.add(check("backend_user", false), &[]);
+    assert!(log.state().unavailable_backends(k).is_empty());
+    let missing = match probe {
+        Probe::Trial => {
+            log.trial_intent("0001", Some(0), Regime::R1);
+            let mut end = trial_end("0001", Outcome::Inconclusive);
+            end.backend_missing = true;
+            log.add(Payload::TrialEnd(end), &[])
+        }
+        Probe::Preflight => log.add(check("backends.mprime", false), &[]),
+    };
+    assert_eq!(
+        log.state()
+            .unavailable_backends(k)
+            .into_iter()
+            .map(|(backend, unavailable)| (backend, unavailable.causes().to_vec()))
+            .collect::<Vec<_>>(),
+        [(Backend::Mprime, vec![missing])]
+    );
+    log.add(check("backends.mprime", true), &[]);
+    assert_eq!(log.state().unavailable_backends(k).len(), 1);
     log.add(dead_end(DeadEndCondition::NoEvidence), &[]);
-    assert!(log.state().missing_evidence().is_none());
+    assert!(log.state().unavailable_backends(k).is_empty());
 }
 
 #[test]

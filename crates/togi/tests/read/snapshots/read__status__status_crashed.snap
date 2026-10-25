@@ -6,8 +6,8 @@ night since 00:00, 15h30m elapsed: mapping (task mapping #5)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#2659] trial 0522 core 08 offset -10 R1 mprime SSE 4K-21K 90 s
-  together mapping task mapping #5 night #30 testing CCD1 at -10
+in flight: [#2660] trial 0522 core 08 offset -10 R1 mprime SSE 4K-21K 90 s
+  together mapping task mapping #5 night #31 testing CCD1 at -10
 
 CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 0   0-7   0   0   fallback rate     fails -10    0         80      129

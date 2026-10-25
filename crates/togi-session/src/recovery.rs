@@ -190,6 +190,10 @@ struct BackendState {
     followed: bool,
     last_reason: Option<String>,
     streak: Vec<Seq>,
+    /// The event that found the backend missing this night: its failed `backends.<backend>` preflight check, or
+    /// a trial that found its program missing. It excludes the backend at once, without retries.
+    #[serde(default)]
+    missing: Option<Seq>,
 }
 
 /// The latest dead end and what has followed it.
@@ -237,7 +241,6 @@ pub(crate) struct RecoveryState {
     recovered: Vec<RecoveredMce>,
     smu: Option<Cited>,
     containment: Option<Cited>,
-    missing: Option<Cited>,
     thermal: Option<Cited>,
     stray: Vec<Seq>,
     trials: u32,
@@ -446,13 +449,27 @@ impl RecoveryState {
                     self.night_boot = Some(event.boot.clone());
                 }
             }
+            Payload::PreflightCheck(check) => {
+                if !check.ok
+                    && let Some(backend) =
+                        check
+                            .check
+                            .strip_prefix(BACKEND_CHECK_PREFIX)
+                            .and_then(|name| {
+                                [Backend::Mprime, Backend::Ycruncher]
+                                    .into_iter()
+                                    .find(|backend| backend.as_str() == name)
+                            })
+                {
+                    self.backend(backend).missing.get_or_insert(seq);
+                }
+            }
             Payload::SessionWarning(_)
             | Payload::SessionNotice(_)
             | Payload::Failure(_)
             | Payload::CorePhase(_)
             | Payload::SessionArchived(_)
             | Payload::SessionCarried(_)
-            | Payload::PreflightCheck(_)
             | Payload::TrialCarried(_)
             | Payload::FailureCarried(_)
             | Payload::TunerDecision(_)
@@ -824,11 +841,7 @@ impl RecoveryState {
             });
         }
         if end.backend_missing {
-            let reason = end.reason.as_deref().unwrap_or_default();
-            self.missing = Some(Cited {
-                seq: event.seq,
-                detail: format!("backend {backend} is missing: {reason}"),
-            });
+            self.backend(backend).missing.get_or_insert(event.seq);
         }
     }
 
@@ -838,11 +851,9 @@ impl RecoveryState {
         state.followed = false;
     }
 
-    /// A closing witness ends the night: its backend exclusions, retries and missing-backend evidence do not carry
-    /// into the next one.
+    /// A closing witness ends the night: its backend exclusions and retries do not carry into the next one.
     fn close_night(&mut self) {
         self.backends.clear();
-        self.missing = None;
         self.night_boot = None;
     }
 
@@ -860,8 +871,8 @@ impl RecoveryState {
             DeadEndCondition::NoEvidence => {
                 for state in self.backends.values_mut() {
                     state.streak.clear();
+                    state.missing = None;
                 }
-                self.missing = None;
                 self.kernel_retries.clear();
             }
             DeadEndCondition::ThermalTrip => self.thermal = None,
@@ -869,6 +880,36 @@ impl RecoveryState {
             DeadEndCondition::FailureAtZero
             | DeadEndCondition::Preflight
             | DeadEndCondition::Defect => {}
+        }
+    }
+}
+
+/// The prefix of a backend's own `preflight.check` name, `backends.<backend>`.
+pub(crate) const BACKEND_CHECK_PREFIX: &str = "backends.";
+
+/// Why a backend is excluded for the rest of the night.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Unavailable<'a> {
+    /// The failed preflight check or trial that found it missing.
+    Missing(&'a Seq),
+    /// The trials of the streak that stayed inconclusive through every retry.
+    Exhausted(&'a [Seq]),
+}
+
+impl Unavailable<'_> {
+    pub(crate) fn causes(&self) -> &[Seq] {
+        match self {
+            Self::Missing(seq) => std::slice::from_ref(*seq),
+            Self::Exhausted(streak) => streak,
+        }
+    }
+}
+
+impl std::fmt::Display for Unavailable<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing(_) => f.write_str("missing"),
+            Self::Exhausted(streak) => write!(f, "inconclusive {} times in a row", streak.len()),
         }
     }
 }
@@ -1062,10 +1103,6 @@ impl RecoveryState {
         self.containment.as_ref()
     }
 
-    pub(crate) fn missing_evidence(&self) -> Option<&Cited> {
-        self.missing.as_ref()
-    }
-
     pub(crate) fn thermal_evidence(&self) -> Option<&Cited> {
         self.thermal.as_ref()
     }
@@ -1084,12 +1121,24 @@ impl RecoveryState {
             .and_then(|state| state.last_reason.as_deref())
     }
 
-    /// Every backend that stayed inconclusive through every retry, with the trials that were.
-    pub(crate) fn exhausted_backends(&self, threshold: DeadEndThreshold) -> Vec<(Backend, &[Seq])> {
+    /// Every backend excluded for the rest of the night, with the events that excluded it: the failed preflight
+    /// check or trial that found it missing, or the trials of a streak that stayed inconclusive through every retry.
+    pub(crate) fn unavailable_backends(
+        &self,
+        threshold: DeadEndThreshold,
+    ) -> Vec<(Backend, Unavailable<'_>)> {
         self.backends
             .iter()
-            .filter(|(_, state)| evidence::backend_exhausted(state.streak.len(), threshold))
-            .map(|(backend, state)| (*backend, state.streak.as_slice()))
+            .filter_map(|(backend, state)| {
+                let unavailable = match &state.missing {
+                    Some(seq) => Unavailable::Missing(seq),
+                    None if evidence::backend_exhausted(state.streak.len(), threshold) => {
+                        Unavailable::Exhausted(&state.streak)
+                    }
+                    None => return None,
+                };
+                Some((*backend, unavailable))
+            })
             .collect()
     }
 

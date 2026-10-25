@@ -118,7 +118,13 @@ fn the_privileged_and_unprivileged_check_sets_partition_the_preflight() {
     let mut system = host(&tree, Privilege::Root, refused_account(), Scope::creating());
     let preflight = system.preflight();
     assert_eq!(preflight[0].name, "root");
-    let steps = names(&preflight[1..]);
+    // The doctor also reports backend availability, which `run` probes per backend apart from its preflight.
+    let mut steps = names(&preflight[1..]);
+    let user = steps
+        .iter()
+        .position(|name| *name == "backend_user")
+        .unwrap();
+    steps.insert(user, "backends");
 
     let watch = Watch::on(&tree);
     let privileged = diagnose_at(&tree, None, true, Privilege::Root).unwrap();
@@ -157,6 +163,46 @@ fn failed_checks_skip_the_bios_comparison() {
         }]
     );
     assert!(diagnosis.bios_context_error.is_none());
+}
+
+/// Every step passes but the named ones.
+struct Failing(&'static [CheckName]);
+
+impl crate::diagnose::Survey for Failing {
+    fn steps(&self, _: bool) -> Vec<crate::preflight::Outcome> {
+        crate::preflight::STEPS
+            .into_iter()
+            .map(|step| {
+                crate::preflight::Outcome::Ran(Check {
+                    name: step.name().as_str().to_owned(),
+                    detail: String::new(),
+                    ok: !self.0.contains(&step.name()),
+                })
+            })
+            .collect()
+    }
+
+    fn watchdog(&self) -> Check {
+        Check {
+            name: "watchdog".to_owned(),
+            detail: String::new(),
+            ok: true,
+        }
+    }
+
+    fn bios_context(&self) -> Result<BiosContext, togi_smu::Error> {
+        Ok(recorded())
+    }
+}
+
+#[test_case::test_case(&[CheckName::Backends], true; "an unavailable backend")]
+#[test_case::test_case(&[CheckName::BackendUser], false; "a mandatory check")]
+fn only_a_failed_mandatory_check_skips_the_bios_comparison(
+    failing: &'static [CheckName],
+    compared: bool,
+) {
+    let diagnosis = diagnose_with(&Failing(failing), Some(&recorded()), true);
+    assert_eq!(names(&diagnosis.ran).contains(&"bios_context"), compared);
 }
 
 #[test]

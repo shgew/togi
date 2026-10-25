@@ -744,6 +744,10 @@ impl togi_machine::Host for UnvalidatedHost {
         }]
     }
 
+    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+        self.inner.backends()
+    }
+
     fn watchdog(&mut self) -> togi_machine::Check {
         self.inner.watchdog()
     }
@@ -783,6 +787,10 @@ impl togi_machine::Host for FourCcds {
 
     fn preflight(&mut self) -> Vec<togi_machine::Check> {
         self.0.preflight()
+    }
+
+    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+        self.0.backends()
     }
 
     fn watchdog(&mut self) -> togi_machine::Check {

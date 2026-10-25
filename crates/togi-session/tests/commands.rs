@@ -752,6 +752,99 @@ fn a_backend_a_closed_night_excluded_is_tried_again_by_a_same_boot_restart(stopp
     assert_eq!(intents_of(after, Backend::Mprime) > 0, stopped);
 }
 
+#[test_case(&[togi_machine::Backend::Mprime]; "one backend")]
+#[test_case(&[togi_machine::Backend::Mprime, togi_machine::Backend::Ycruncher]; "both backends")]
+fn a_backend_missing_at_preflight_is_excluded_from_the_night_without_a_launch_or_a_wait(
+    missing: &[togi_machine::Backend],
+) {
+    use togi_machine::Backend;
+    let sim = simulator();
+    for backend in missing {
+        sim.miss_backend(*backend);
+    }
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(BackendGate {
+        inner: input.machine.trials,
+        failing: None,
+        cancel: input.cancel.clone(),
+        failed: 0,
+        starts: 0,
+        stop: Box::new(|_, _, starts| starts > 20),
+    });
+    let ended = run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let events = ended.journal.events();
+    let checks: Vec<_> = events
+        .iter()
+        .filter_map(|event| {
+            if let Payload::PreflightCheck(check) = &event.payload
+                && check.check.starts_with("backends.")
+            {
+                Some((check.check.as_str(), check.ok, event.seq))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let expected: Vec<_> = [Backend::Mprime, Backend::Ycruncher]
+        .into_iter()
+        .map(|backend| (format!("backends.{backend}"), !missing.contains(&backend)))
+        .collect();
+    assert_eq!(
+        checks
+            .iter()
+            .map(|(check, ok, _)| ((*check).to_owned(), *ok))
+            .collect::<Vec<_>>(),
+        expected
+    );
+    for backend in missing {
+        assert_eq!(intents_of(events, *backend), 0, "{backend}");
+        let check = checks
+            .iter()
+            .find(|(check, ..)| *check == format!("backends.{backend}"))
+            .unwrap()
+            .2;
+        let cited = events.iter().any(|event| {
+            matches!(&event.payload, Payload::NightPlan(plan) if plan.unavailable.iter().any(
+                |unavailable| unavailable.backend == *backend && unavailable.causes == [check]
+            ))
+        });
+        assert!(cited, "{backend}: {:?}", kinds(&ended.journal));
+    }
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::BackendRetry(_))),
+        "{:?}",
+        kinds(&ended.journal)
+    );
+    let dead_ends: Vec<_> = events
+        .iter()
+        .filter_map(|event| {
+            if let Payload::DeadEnd(dead_end) = &event.payload {
+                Some(dead_end.condition)
+            } else {
+                None
+            }
+        })
+        .collect();
+    // Only the scheduler's `Unavailable` ends the night, never a failed preflight.
+    assert_eq!(dead_ends, [togi_journal::DeadEndCondition::NoEvidence]);
+    if missing.len() == 1 {
+        // The other backend runs its cells, but the stock controls that need the missing one never pass, so no
+        // offset is ever mapped.
+        assert!(intents_of(events, Backend::Ycruncher) > 0);
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event.payload, Payload::CcdEdge(_))),
+            "{:?}",
+            kinds(&ended.journal)
+        );
+    }
+}
+
 #[test]
 fn an_overflowing_duration_keeps_the_containment_dead_end_durable() {
     let sim = simulator();

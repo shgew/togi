@@ -42,10 +42,10 @@ pub use scalars::{
     MIN_OFFSET, ObservedOffset, PER_CORE_MAX, TargetOffset,
 };
 pub use seams::{
-    Check, Clock, CoreRank, CpuTime, Host, Instance, Kernel, KernelError, KernelErrorKind,
-    KernelRead, Machine, Mce, ProcessFault, ProcessFaultKind, PstoreRecord, Reporter, ResetReason,
-    Running, Sample, Smu, SmuValidated, Started, Stopped, Swept, TrialFailure, TrialResult,
-    TrialSpec, Trials, WatchdogState, monotonic_duration,
+    BackendCheck, Check, Clock, CoreRank, CpuTime, Host, Instance, Kernel, KernelError,
+    KernelErrorKind, KernelRead, Machine, Mce, ProcessFault, ProcessFaultKind, PstoreRecord,
+    Reporter, ResetReason, Running, Sample, Smu, SmuValidated, Started, Stopped, Swept,
+    TrialFailure, TrialResult, TrialSpec, Trials, WatchdogState, monotonic_duration,
 };
 pub use topology::{BiosContext, ContextField, ContextMismatch, CoreInfo, order};
 pub use vocab::{

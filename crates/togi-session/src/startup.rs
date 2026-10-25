@@ -9,6 +9,7 @@ use togi_machine::{CancellationToken, Error};
 use crate::emergency::SweepCleared;
 use crate::error::{SessionError, Step};
 use crate::recover::{self, Recovered, Recovery};
+use crate::recovery::BACKEND_CHECK_PREFIX;
 use crate::session::{Control, Fault, Lifecycle, Outcome, Session, Stop, Visit};
 use crate::write;
 
@@ -123,6 +124,12 @@ impl Session<'_> {
                 failed.push(seq);
                 names.push(format!("{} ({})", check.name, check.detail));
             }
+        }
+        // Each backend's availability is recorded on its own and never fails preflight: recovery excludes an
+        // unavailable backend from the night, and the scheduler plans around it.
+        for check in self.host.backends() {
+            let name = format!("{BACKEND_CHECK_PREFIX}{}", check.backend);
+            self.record_check(&name, check.detail, check.available)?;
         }
         if let Some(recorded) = self.appender.recovery().context().cloned()
             && failed.is_empty()
