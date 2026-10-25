@@ -17,7 +17,7 @@ use togi_tuner::policy::{Action, DayQuery, EndReason, Params, PolicyPayload, Tri
 
 use crate::fixture::{Ending, Journal, at, ccd, firmware, offsets_of, rebuilt, zero};
 
-fn cold_boot(boot: &str, second: i64) -> DayQuery {
+pub(crate) fn cold_boot(boot: &str, second: i64) -> DayQuery {
     DayQuery {
         boot: BootId::from(boot.to_owned()),
         invocation: Invocation::ColdBoot {
@@ -38,7 +38,7 @@ fn cold_boot_at(boot: &str, now: jiff::Timestamp) -> DayQuery {
 }
 
 /// The steps among `payloads`.
-fn steps(payloads: &[Payload]) -> Vec<&DayStep> {
+pub(crate) fn steps(payloads: &[Payload]) -> Vec<&DayStep> {
     payloads
         .iter()
         .filter_map(|payload| {
@@ -94,7 +94,7 @@ fn qualifications(journal: &Journal) -> Vec<&NightQualification> {
 
 /// Runs the first night until the filler, closes it at the cold boot `day1`, settles the day and applies
 /// its promotion: D is then the qualified proposal.
-fn promoted() -> (Journal, CcdProfile) {
+pub(crate) fn promoted() -> (Journal, CcdProfile) {
     promoted_with(Params::SPEC)
 }
 

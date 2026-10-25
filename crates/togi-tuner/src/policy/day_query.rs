@@ -447,8 +447,10 @@ impl State {
             .max()
     }
 
-    /// The `day.step` this cold boot owes: none once the boot has its step, or for a restart that needs
-    /// no retreat.
+    /// The `day.step` this invocation owes. A boot gets one hold or promotion, so once it has any
+    /// step neither is owed again; a required retreat or firmware reset is owed whenever it differs
+    /// from the profile the boot's latest step already proposed, so a same-boot restart that finds a
+    /// firmware change or a cap under D still yields it, while an issued decision is never repeated.
     fn owed_day_step(
         &self,
         query: &DayQuery,
@@ -457,14 +459,11 @@ impl State {
         let Some(history) = self.days.history.as_ref() else {
             return Ok(None);
         };
-        if self
+        let issued = self
             .days
             .steps
             .values()
-            .any(|step| step.payload.cold_boot == query.boot)
-        {
-            return Ok(None);
-        }
+            .rfind(|step| step.payload.cold_boot == query.boot);
         let intervals = self.committed_intervals();
         let reproductions = self.reproduction_outcomes();
         let caps = self.committed_caps()?;
@@ -482,6 +481,14 @@ impl State {
             invocation: query.invocation,
             params: self.params.hold,
         })?;
+        if issued.is_some()
+            && matches!(
+                decision,
+                DayDecision::Hold { .. } | DayDecision::Promote { .. }
+            )
+        {
+            return Ok(None);
+        }
         let applied = &history.current().profile;
         let old = self.ccd_vector(applied)?;
         let (credited, hold_s) = self.credited();
@@ -617,6 +624,9 @@ impl State {
                 Vec::new(),
             ),
         };
+        if issued.is_some_and(|step| step.payload.proposed == proposed) {
+            return Ok(None);
+        }
         let hold_s = match &step {
             StepKind::Hold { .. } | StepKind::Promote { .. } => hold_s,
             StepKind::Retreat { .. } | StepKind::FirmwareZero { .. } => 0,
