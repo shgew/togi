@@ -89,10 +89,10 @@ Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, set eve
 
 How togi treats the BIOS values:
 
-- It reads every core's offset from the SMU at the first run and records that observed baseline; the readback is evidence, not a carried search candidate. Ruleset 13 starts its [day decisions at CO 0](spec/tuner.md#day-steps), without per-core configuration seeds. Keep [BIOS at CO 0](adr/0082-bios-stays-at-zero.md) rather than entering a tuning result there.
+- It reads every core's offset from the SMU once, at the first `run` of a session, and requires an all-zero baseline: a nonzero or incomplete readback is refused, not clamped ([Session start](spec/tuner.md#session-start)). Keep BIOS Curve Optimizer at 0; a BIOS profile that crashes before togi runs surfaces as a boot-loop dead end ([ADR 0082](adr/0082-bios-stays-at-zero.md)).
 - Every write sets the core's absolute offset; the SMU does not add it to the BIOS value. Firmware restores BIOS values on reboot; togi's trial writes replace those offsets.
 - The BIOS context that ties a session to a BIOS (BIOS version, board, CPU model, microcode and boost limit) holds no Curve Optimizer offsets. Changing a Curve Optimizer offset in BIOS does not start a new session, and togi keeps the baseline it captured.
-- A clean stop uses the session's original baseline for restoration, not later BIOS values. The safety rules can restore a shallower offset instead ([Exit restoration](spec/runtime.md#exit-codes)). It does not capture the baseline again.
+- A clean stop restores every core to CO 0 through the verified write/readback path ([Exit restoration](spec/runtime.md#exit-codes)). It does not capture the baseline again.
 
 Then check that the machine is ready, without starting a session:
 
@@ -157,7 +157,7 @@ For a crash with no recorded end, give when it happened with `--unobserved-at` a
 sudo togi day record --unobserved-at "<crash time>" --offset ccd0=-25 --offset ccd1=-30 \
   --entered-at "<time you entered the offsets>" --running build
 
-# the freeze at the confirmed profile, which differs per core: one --offset coreI=N per core, N from your profile
+# the freeze at a profile that differs per core: one --offset coreI=N per core, N from your profile
 sudo togi day record --unobserved-at "<crash time>" --offset core0=N --offset core1=N --offset core2=N \
   --entered-at "<time you entered the offsets>" --running desktop  # ...and so on for every core
 
@@ -230,11 +230,11 @@ The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed t
 
 The tuning boot also saves kernel messages on an orderly reboot or shutdown, as well as panic ([Tuning boot](spec/runtime.md#tuning-boot)). After an unclean togi boot, `togi events --json --kind crash.detected` includes `pstore.path` and the last lines of the saved kernel messages when it finds that boot's matching EFI pstore archive ([Trial outcome](spec/workloads.md#trial-outcome)). The archive stays under `/var/lib/systemd/pstore/`.
 
-After search, checking's R7 steps run each CCD's full load, then partial loads that idle the top voltage requesters found so far, and the all-core load last ([Together trial sequence](spec/tuner.md#together-trial-sequence)). A night can spend longer on R7 than a fixed five-part schedule. `status` and the dashboard show top requesters and each core's self-sufficiency for each R7 workload.
+A night works through its queues (reproduction, qualification, mapping, controls, requalification) by their shares of elapsed observed time, then the filler ([Night order](spec/tuner.md#night-order-and-reserved-budgets)). R7 loads run each CCD's full load, then partial loads derived from measured requests, and the all-core load ([coverage matrix](spec/workloads.md#coverage-matrix)). `status` and the dashboard show each queue's share used.
 
-Multi-core R7 failures follow [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff), not a hunt of the loaded cores; [R7 request order and attribution](spec/tuner.md#r7-request-order-and-attribution) says which core moves. An unattributed one whose idle cores are off CO 0 is [located](spec/tuner.md#escalation-to-a-located-hunt) by a [hunt](spec/tuner.md#hunt) of those cores only after its load has been backed off twice since its last pass, or when no loaded core can step back. R1–R6 and single-core failures keep their hunts.
+Mapping descends one CCD at a time with only that CCD tuned, so a failure is charged to that CCD ([Night edge U](spec/tuner.md#night-edge-u)). Failures at a nonzero whole profile stay profile-level evidence until isolated testing locates them.
 
-No failure at CO 0 stops togi on its own trial, unless every core was at 0 in it already: togi first reruns the failing trial with every core at CO 0 (`trial.intent` ending `rerun with every core at offset 0`). [Dead ends](spec/tuner.md#dead-ends) says what each result means, and [section 6](#6-dead-ends) covers the dead end.
+A conclusive failure at CO 0 stops togi on its own: it records a `platform unstable at stock` dead end naming the class, rather than tuning around it. A failure at a nonzero profile that names a CO 0 core first gets one rerun of the same class with every CCD at CO 0. [Dead ends](spec/tuner.md#dead-ends) and [CO-0 controls](spec/tuner.md#co-0-controls) say what each result means, and [section 6](#6-dead-ends) covers the dead end.
 
 ## 5. In the morning
 
@@ -244,28 +244,22 @@ Shut down or reboot. The next boot follows your restored normal selection; with 
 togi status
 ```
 
-`status` lists the profile to enter in BIOS in its `BIOS` column, one offset per core, with each core's failure point and combinations and its phase. A `*` marks an offset that is not confirmed yet: a passed full cycle confirms it, except that a held failure's stepped-back offset stays marked until its hold ends, and until phase 1's first passed cycle there is no confirmed profile. `status` also names the phase and, in phase 2, how many rounds remain at most before one full cycle, then the clean cycles once phase 2 has concluded, valid trials per workload, missing full-cycle coverage and the Tctl peak ([Commands](spec/runtime.md#commands)). Those offsets can differ from the solo limits search found, because phase 2 moves cores toward them. Picking "NixOS - togi" again continues the session.
+`status` shows, for each CCD, its applied day offset `D`, its cap `S` with the slope (fallback or measured) and what binds it, its edge `U`, the counts still to go, and the trial classes covered and uncovered for the cap. Below the table it shows the Day policy (applied profile, hold, latest step and what blocks it, freeze, firmware, events and vetoes) and the Night (elapsed observed time and each queue's share used; [Commands](spec/runtime.md#commands)); [How togi tunes](how-togi-tunes.md) explains each. Picking "NixOS - togi" again continues the session.
 
-Choose how long to keep testing with `sudo togi run --cycles N`, replacing N with a positive count; [Checking](spec/tuner.md#checking) says when it stops. Without the flag, checking continues indefinitely. To stop at the first confirmed profile instead, right after phase 1's passed cycle and before phase 2 moves any core, use `sudo togi run --first-result` (not together with `--cycles`); run again without it to continue with phase 2.
+A night has no end time: `sudo togi run` tunes until you end it with Ctrl-C, F10 in the dashboard or a reboot (the power button included), and restores every core to CO 0 when it stops. A crash reboot into the tuning boot continues the same night; the next run after you end it opens a new one. The other stopping conditions are the tuner's [DeadEnd and Unavailable results](spec/tuner.md#night-query-results), including blocked stock controls with no other admissible work, and runtime safety dead ends.
 
-A clean cycle is workload breadth, not proof of stability. The default cycle's R3 and R4 trials on every core ([schedule](spec/workloads.md#durations-and-checking-schedule)) add about 2.1 hours per cycle on 16 cores in simulation (a failure-free simulated cycle takes 15.6 hours instead of 13.5). A rare failure can still pass them: under the simulator's limit model, three R4 trials miss a failure one count past a core's limit about 0.01% of the time, against 4.6% for one trial; on a machine fitted to real evidence where one trial misses it 70.6% of the time, three still miss it 35.1% of the time. More cycles provide more testing, but neither a count nor a Tctl peak guarantees safety in untested real use.
+A night's mapping and qualification are evidence, not proof of stability. Qualification runs the [coverage matrix](spec/workloads.md#coverage-matrix) on the exact profile under test; classes that do not bound the cap are listed as uncovered, never as safe.
 
-Before entering the profile, understand the coverage behind “confirmed”: checking exercises the synthetic loads in the [regime table](spec/workloads.md#regimes), with full-cycle coverage defined by [Checking](spec/tuner.md#checking). Passing evidence can come from deeper offsets, so confirmation does not mean every trial ran at the exact profile you enter.
+That coverage does not include light work on many cores at once or both threads of many cores at once beyond the matrix's own classes. The idle trial is not proof of stability through real desktop idle, sleep and wake, or changing background activity. Trial offsets also do not exercise the early boot stages before togi applies a profile. A qualified profile can still crash in ordinary use.
 
-That coverage does not include light work on many cores at once or both threads of many cores at once. The idle trial is not proof of stability through real desktop idle, sleep and wake, or changing background activity. Trial offsets also do not exercise the early boot phases that a BIOS-applied offset runs through before togi starts. A confirmed profile can still crash in ordinary use.
-
-The table shows the current `OFFSET` and, in `BIOS`, the profile to enter, and shows each core's `CCD` and `SLOT` (0-7 within that CCD). Enter the `BIOS` column of every row in the BIOS per-core Curve Optimizer controls by CCD and slot, not by Linux core number alone. BIOS labels vary by board; confirm every row before saving. Stop if the labels cannot be reconciled with the recorded CCD and slot.
-
-After saving the profile, let it run ordinary use for a while before putting heavy or write-intensive work, such as package builds and system rebuilds, on it. Keep backups: a crash during writes risks the filesystem and package store. No fixed observation period makes the profile proven stable.
+Keep BIOS Curve Optimizer at **0** ([ADR 0082](adr/0082-bios-stays-at-zero.md)); do not copy the proposed day profile into firmware. The [day-step policy](spec/tuner.md#day-steps) and [application boundary](spec/runtime.md#day-policy-integration) specify when a proposal may be applied and committed after verified readback. The observer `togi day` itself remains read-only. Let each applied step run ordinary use before heavy or write-intensive work, such as package builds and system rebuilds, and keep backups: a crash during writes risks the filesystem and package store. No fixed observation period makes a profile proven stable.
 
 ### If the profile crashes in daily use
 
-1. Set every Curve Optimizer offset back to **0 in BIOS** before resuming normal work. Do not keep trying the failed profile.
+1. Reboot and answer the question about the unclean end (`togi day answer`, [Answering what happened](#answering-what-happened)). A CPU-suspect event vetoes that whole profile and every later day profile at or deeper than it on every CCD. It schedules a step back at the next cold boot and one reproduction night; [daily-event escalation](spec/tuner.md#whole-profile-veto-and-escalation) determines which steps retreat. A clean reproduction does not clear the veto; only evidence that reclassifies the event does.
 2. Check the filesystem with the checks appropriate to that filesystem, using rescue media or an unmounted filesystem where required. Check the Nix package store's contents with `sudo nix-store --verify --check-contents`, and address any reported damage before returning to heavy or write-intensive work.
-3. Do not guess a uniform step-back, even one shallower than the profile's shallowest core. It can leave the weakest core almost unchanged from the offset that crashed; it is not a tested replacement profile.
-4. Record what was running, when the crash happened and every per-core offset actually entered in BIOS, then [report the crash](https://github.com/shgew/togi/issues). Keep the togi session and available system logs as evidence; remove personal and machine-identifying details from anything you publish. A readback after changing BIOS settings cannot tell you the crashed boot's offsets.
-
-togi does not currently record daily-use crashes as feedback against the BIOS profile. Running it again or seeing the same confirmed profile in `status` does not clear that failure. Stay at BIOS CO 0 rather than treating the displayed profile as safe to re-enter.
+3. If togi was not running when the machine froze, [record the crash](#recording-a-crash-togi-did-not-observe) with the offsets that were applied.
+4. [Report the crash](https://github.com/shgew/togi/issues) with what was running and when; keep the togi session and available system logs as evidence, and remove personal and machine-identifying details from anything you publish.
 
 ## 6. Dead ends
 
@@ -289,7 +283,7 @@ Rebuild, then reboot into the tuning boot. Its active hardware watchdog is espec
 
 [Fact eligibility](spec/journal.md#fact-eligibility) specifies which raw day observations can be imported and the reset boundaries they may not cross. Their source identities and import commitment are visible with `togi events --kind day.imported` and `togi events --kind session.imported`; there is no `carried:` tuning-state line or `session.carried` event.
 
-A BIOS, AGESA or microcode change alone does not archive the session. The same session records the changed context and follows [firmware invalidation](spec/tuner.md#firmware), retaining historical observations without treating them as current-context qualification or exposure.
+A change to the recorded BIOS context (BIOS version, microcode, board, CPU or boost limit), including a BIOS or AGESA update, alone does not archive the session. The same session records the changed context and follows [firmware invalidation](spec/tuner.md#firmware), retaining historical observations without treating them as current-context qualification or exposure.
 
 To start over without importing earlier observations, use `sudo togi reset --all`. There is no `reset --core`. A session written by a newer ruleset, schema or evidence epoch is still refused by `run`: install its writing build again or archive it with `sudo togi reset --all`. [Reset and compatibility](spec/runtime.md#reset-and-compatibility) gives the refusal advice and pending-import recovery behavior.
 
