@@ -299,6 +299,8 @@ fn the_host_watchdog_reads_its_root() {
         "sys/class/watchdog/watchdog0/identity",
         "SP5100 TCO timer\n",
     );
+    tree.put("sys/class/watchdog/watchdog0/timeout", "60\n");
+    tree.put("sys/class/watchdog/watchdog0/timeleft", "58\n");
     let check = host.watchdog();
     assert!(check.ok, "{check:?}");
 }

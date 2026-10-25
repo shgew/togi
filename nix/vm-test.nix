@@ -48,6 +48,9 @@ in
       # The guest reports each vCPU as its own CCD and the tuner refuses a topology of more than three.
       virtualisation.cores = 3;
       services.togi.hardwareTestGroup = "togi-hardware";
+      # Exercise the shipped normal-boot sleep unit without needing SP5100 or actual ACPI sleep.
+      services.togi.day.enable = true;
+      services.togi.day.watchdog = true;
       users.groups.togi-hardware = { };
       users.users.togi-hardware = {
         isNormalUser = true;
@@ -103,9 +106,24 @@ in
       tuning_system = machine.succeed("readlink -f /run/current-system/specialisation/togi").strip()
       assert tuning_system != normal_system, (normal_system, tuning_system)
       machine.succeed("! systemctl is-active --quiet togi.service")
+      machine.wait_until_succeeds("grep -qx active /sys/class/watchdog/watchdog0/state")
       machine.succeed(
-          "test ! -e /sys/class/watchdog/watchdog0/state || "
-          "grep -qx inactive /sys/class/watchdog/watchdog0/state"
+          "systemd-run --unit=togi-sleep-hold --property=Wants=sleep.target sleep infinity"
+      )
+      machine.wait_for_unit("togi-day-watchdog-sleep.service")
+      machine.succeed("grep -qx inactive /sys/class/watchdog/watchdog0/state")
+      machine.succeed(
+          "test \"$(busctl get-property org.freedesktop.systemd1 /org/freedesktop/systemd1 "
+          "org.freedesktop.systemd1.Manager RuntimeWatchdogUSec)\" = 't 0'"
+      )
+      # Stopping sleep.target follows the resume path. SP5100 cannot probe on i6300esb; its failure
+      # must not prevent PID 1 re-arming the existing hardware watchdog.
+      machine.succeed("systemctl stop sleep.target togi-sleep-hold.service")
+      machine.wait_until_succeeds("grep -qx active /sys/class/watchdog/watchdog0/state")
+      machine.succeed("! systemctl is-failed --quiet togi-day-watchdog-sleep.service")
+      machine.succeed(
+          "journalctl -b -u togi-day-watchdog-sleep.service -o cat --no-pager | "
+          "grep -F 'sp5100_tco'"
       )
       machine.succeed("grep -q '^FONT=Lat2-Terminus16' /etc/vconsole.conf")
       machine.succeed("test -f /boot/grub/grub.cfg")
@@ -151,6 +169,7 @@ in
           for line in machine.succeed("togi events --json --kind preflight.check").splitlines()
       ]
       watchdog = [e for e in preflight if e["data"]["check"] == "watchdog"]
+      # i6300esb has no get_timeleft operation, so its state-only readiness remains supported.
       assert len(watchdog) == 1 and watchdog[0]["data"]["ok"], preflight
       assert preflight[0]["data"]["check"] == "watchdog", preflight
       machine.log(f"armed watchdog preflight: {watchdog[0]}")

@@ -273,7 +273,7 @@ fn observe_with_socket(
     let started = clock.monotonic()?;
     let bios = observer.bios_context()?;
     let mut offsets = observer.offsets()?;
-    let watchdog = observer.watchdog();
+    let mut watchdog = observer.watchdog();
     append(
         journal,
         clock,
@@ -281,7 +281,7 @@ fn observe_with_socket(
             build: build.clone(),
             bios,
             offsets,
-            watchdog: Some(watchdog),
+            watchdog: Some(watchdog.clone()),
         },
     )?;
     let mut sampler = Sampler::new(
@@ -312,7 +312,19 @@ fn observe_with_socket(
         }
         let now = clock.monotonic()?;
         let stopping = cancel.is_cancelled();
-        if stopping || now.checked_sub(sampled).ok_or(Error::ClockReversed)? >= SAMPLE {
+        let due = now.checked_sub(checkpointed).ok_or(Error::ClockReversed)? >= CHECKPOINT;
+        let sample = now.checked_sub(sampled).ok_or(Error::ClockReversed)? >= SAMPLE;
+        // The first scheduled sample after waking checks again too: active state alone can survive S3
+        // while the timer loses its MMIO decoding. Changes get a checkpoint immediately.
+        let watchdog_changed = if stopping || sample || due {
+            let checked = observer.watchdog();
+            let changed = checked != watchdog;
+            watchdog = checked;
+            changed
+        } else {
+            false
+        };
+        if stopping || sample {
             sampler.record(now, observer.cpu_times()?)?;
             sampled = now;
         }
@@ -320,7 +332,7 @@ fn observe_with_socket(
             faults.poll(journal, observer, clock, offsets)?;
             polled = now;
         }
-        if !stopping && now.checked_sub(checkpointed).ok_or(Error::ClockReversed)? < CHECKPOINT {
+        if !stopping && !due && !watchdog_changed {
             continue;
         }
         checkpointed = now;
@@ -339,6 +351,7 @@ fn observe_with_socket(
             DayCheckpoint {
                 applied_secs: applied.as_secs(),
                 load_mix: sampler.mix(),
+                watchdog: Some(watchdog.clone()),
             },
         )?;
         if stopping {
@@ -379,8 +392,7 @@ pub(crate) struct Ledger {
     pub boots: BTreeMap<BootId, Boot>,
     pub profiles: BTreeMap<Profile, u64>,
     pub last_unclean: Option<(BootId, ResetReason)>,
-    /// The watchdog state the newest observer start recorded; `None` before any start, or when that start's
-    /// record predates the check.
+    /// The newest watchdog check; `None` when the newest observer start predates the check.
     pub watchdog: Option<WatchdogState>,
 }
 
@@ -413,6 +425,9 @@ impl Ledger {
                 }
             }
             if let Payload::DayCheckpoint(checkpoint) = &event.payload {
+                if let Some(state) = &checkpoint.watchdog {
+                    ledger.watchdog = Some(state.clone());
+                }
                 if let Some(boot) = ledger.boots.get_mut(&event.boot) {
                     if !boot.changed {
                         let profile = boot

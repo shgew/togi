@@ -327,7 +327,7 @@ fn render_day(out: &mut String, events: &[Event]) {
     );
     let watchdog = match &ledger.watchdog {
         Some(state) => format!(
-            "hardware watchdog at the last observer start: {} ({})",
+            "hardware watchdog at the last observer check: {} ({})",
             if state.is_armed() {
                 "armed"
             } else {
@@ -335,7 +335,7 @@ fn render_day(out: &mut String, events: &[Event]) {
             },
             esc(state.detail())
         ),
-        None => "hardware watchdog at the last observer start: not recorded".to_owned(),
+        None => "hardware watchdog at the last observer check: not recorded".to_owned(),
     };
     wrap(out, "", "  ", &watchdog);
     out.push_str("Applied hours per read-back profile (changed intervals excluded):\n");
