@@ -89,7 +89,7 @@ A filler cap probe uses the isolated mapping contract and records mapping activi
 
 ### Night query results
 
-`next()` returns a runnable task whenever any cell is runnable, including filler; there is no deadline, completed-work or insufficient-budget `EndNight`. Its policy `EndReason` is exactly `DeadEnd` (confirmed stock instability) or `Unavailable` (every configured backend exhausted for the rest of this night). The session separately enforces [runtime safety stops](runtime.md#run-recovery), including a thermal trip (exit 18), an unanswered too-aggressive defect without a terminal (exit 17), and inherited dead ends. A stuck backend makes only that backend unavailable for the rest of the night under runtime's retry/exhaustion rule; it does not end a night while another configured backend remains usable.
+`next()` returns a runnable task whenever any cell is runnable, including filler; there is no deadline, completed-work or insufficient-budget `EndNight`. Its policy `EndReason` is exactly `DeadEnd` (confirmed stock instability) or `Unavailable` (**no runnable cell remains without an excluded backend**). The latter includes every configured backend being exhausted, or required first-night/firmware stock controls still needing an excluded backend with nothing else admissible. The session separately enforces [runtime safety stops](runtime.md#run-recovery), including a thermal trip (exit 18), an unanswered too-aggressive defect without a terminal (exit 17), and inherited dead ends. A stuck backend makes only that backend unavailable for the rest of the night under runtime's retry/exhaustion rule; another usable backend prevents an end only while it has an admissible cell to run.
 
 
 ## CO-0 controls
