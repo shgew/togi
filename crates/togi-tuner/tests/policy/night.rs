@@ -438,3 +438,51 @@ fn an_isolated_all_thread_trial_loads_only_the_tested_ccd() {
     }
     assert!(checked > 0, "the night ran no isolated R9 trial");
 }
+
+/// Drives the night with passing trials until it asks for a mapping trial of CCD0 at a nonzero offset.
+fn until_mapping_of_ccd0(journal: &mut Journal) -> TrialPlan {
+    for step in 0..3_500_i64 {
+        let plan = journal.until_trial(at(100 + step));
+        if plan.task.queue == Queue::Mapping
+            && matches!(plan.tested, Tested::Isolated { ccd, offset }
+                if ccd.get() == 0 && offset.get() < 0)
+        {
+            return plan;
+        }
+        assert_ne!(plan.task.queue, Queue::Filler, "the night never mapped CCD0");
+        journal.run(&plan, Ending::Pass);
+    }
+    panic!("the night never mapped CCD0");
+}
+
+#[test]
+fn a_failure_on_a_co_zero_core_owes_an_all_zero_rerun_that_charges_no_ccd() {
+    let mut journal = Journal::ready();
+    let failed = until_mapping_of_ccd0(&mut journal);
+    // Core 2 is on CCD1, which an isolated CCD0 trial holds at CO 0.
+    journal.run(&failed, Ending::Fail(Some(2)));
+    let is_rerun = |plan: &TrialPlan| {
+        plan.activity == Activity::Control && plan.profile.is_zero() && plan.cell == failed.cell
+    };
+    // The rerun is the failed class at its duration, every CCD at CO 0, once; the conclusive pass
+    // discharges it, so the night reaches its filler without a second one.
+    let mut reruns = 0;
+    for step in 0..3_500_i64 {
+        let plan = journal.until_trial(at(5_000 + step));
+        if plan.task.queue == Queue::Filler {
+            break;
+        }
+        if is_rerun(&plan) {
+            assert_eq!(plan.task.queue, Queue::Control, "{plan:?}");
+            reruns += 1;
+        }
+        journal.run(&plan, Ending::Pass);
+    }
+    assert_eq!(reruns, 1);
+    // Neither CCD was charged with the failure.
+    let projection = serde_json::to_value(journal.state.project()).unwrap();
+    for ccd in 0..2 {
+        let edge = &projection["ccds"][ccd]["edge"];
+        assert_ne!(edge["kind"], "observed", "CCD{ccd}: {edge}");
+    }
+}
