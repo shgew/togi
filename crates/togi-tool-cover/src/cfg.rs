@@ -1,5 +1,6 @@
 //! Rust `cfg` predicates evaluated for the coverage build's host, three-valued: a name the host
-//! does not decide, such as a Cargo feature, a custom `--cfg` or `test`, is unknown, never false.
+//! does not decide, such as a Cargo feature, a custom `--cfg` or, outside integration tests,
+//! `test`, is unknown, never false.
 
 use std::collections::HashSet;
 
@@ -70,6 +71,15 @@ impl HostCfg {
             let name = option.split_once('=').map_or(option, |(name, _)| name);
             cfg.known.insert(name.to_owned());
         }
+        cfg
+    }
+
+    /// The cfg of an integration-test target: cargo compiles each with `--test`, so `test` is set.
+    #[must_use]
+    pub fn with_test(&self) -> Self {
+        let mut cfg = self.clone();
+        cfg.set.insert("test".to_owned());
+        cfg.known.insert("test".to_owned());
         cfg
     }
 

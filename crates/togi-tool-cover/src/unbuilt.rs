@@ -13,15 +13,21 @@ use crate::lcov::{Measured, relative};
 use crate::scan::cfg_out;
 use crate::tree::Tree;
 
-/// The repository-relative sources the dep-info files under a build profile directory name: every
-/// file a build into it compiled. Crates and their tests write dep-info into `deps`, build scripts
-/// into `build/<package>-<hash>`. Each source also has a line of its own ending in a colon, which is
-/// what is read; rustc escapes a space in its path as a backslash and a space.
-pub fn built_sources(
-    tree: &dyn Tree,
-    build_dir: &Path,
-    root: &Path,
-) -> Result<HashSet<String>, Error> {
+/// The repository-relative sources the dep-info files under a build profile directory name.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Built {
+    /// Every file a build into the directory compiled.
+    pub sources: HashSet<String>,
+    /// The files an integration-test target compiled: those its dep-info names.
+    pub tested: HashSet<String>,
+}
+
+/// The sources the dep-info files under a build profile directory name. Crates and their tests
+/// write dep-info into `deps`, build scripts into `build/<package>-<hash>`. Each source also has a
+/// line of its own ending in a colon, which is what is read, the crate root first; rustc escapes a
+/// space in its path as a backslash and a space. A dep-info whose crate root is
+/// `<package>/tests/<name>.rs` or `<package>/tests/<name>/main.rs` is an integration test's.
+pub fn built_sources(tree: &dyn Tree, build_dir: &Path, root: &Path) -> Result<Built, Error> {
     let dep_infos = |dir: &Path| {
         tree.list(dir)
             .unwrap_or_default()
@@ -38,22 +44,44 @@ pub fn built_sources(
     if infos.is_empty() {
         return Err(Error::NoDepInfo(build_dir.to_owned()));
     }
-    let mut built = HashSet::new();
+    let mut built = Built::default();
     for info in infos {
         let data = tree.read(&info).map_err(|source| Error::ReadDepInfo {
             path: info.clone(),
             source,
         })?;
-        for line in String::from_utf8_lossy(&data).lines() {
-            let Some(source) = line.strip_suffix(':') else {
-                continue;
-            };
-            if let Some(path) = relative(root, Path::new(&source.replace("\\ ", " "))) {
-                built.insert(path);
-            }
+        let sources: Vec<String> = String::from_utf8_lossy(&data)
+            .lines()
+            .filter_map(|line| line.strip_suffix(':'))
+            .filter_map(|source| relative(root, Path::new(&source.replace("\\ ", " "))))
+            .collect();
+        if sources
+            .first()
+            .is_some_and(|crate_root| is_integration_test_root(tree, root, crate_root))
+        {
+            built.tested.extend(sources.iter().cloned());
         }
+        built.sources.extend(sources);
     }
     Ok(built)
+}
+
+/// Whether the repository-relative `path` is the crate root of an integration test:
+/// `<package>/tests/<name>.rs` or `<package>/tests/<name>/main.rs` with a `Cargo.toml` in `<package>`.
+fn is_integration_test_root(tree: &dyn Tree, root: &Path, path: &str) -> bool {
+    fn package_of(target: &str) -> Option<&str> {
+        let (tests, _) = target.rsplit_once('/')?;
+        if tests == "tests" {
+            Some("")
+        } else {
+            tests.strip_suffix("/tests")
+        }
+    }
+    let package = package_of(path).or_else(|| package_of(path.strip_suffix("/main.rs")?));
+    package.is_some_and(|package| {
+        tree.list(&root.join(package))
+            .is_ok_and(|entries| entries.iter().any(|entry| entry == "Cargo.toml"))
+    })
 }
 
 /// The changed files, sorted, that the coverage build leaves out in part or whole: a file no
@@ -61,18 +89,20 @@ pub fn built_sources(
 /// unknown for the host and none of whose lines the trace measures. A measured line inside the
 /// item shows some build compiled it, so the item is not claimed; this covers `cfg(not(test))` and
 /// `cfg(feature = "...")` code with executable lines. `measured` holds the lines the trace lists
-/// per file, reached or not.
+/// per file, reached or not. A file an integration test's dep-info names is judged with `test`
+/// set: cargo compiles such a target with `--test` unless it sets `harness = false`, which no
+/// workspace test does, and the trace leaves `tests/` files out.
 pub fn not_built(
     tree: &dyn Tree,
     root: &Path,
     changed: &Changed,
-    built: &HashSet<String>,
+    built: &Built,
     measured: &Measured,
     cfg: &HostCfg,
 ) -> Result<Vec<String>, Error> {
     let mut paths = Vec::new();
     for (path, changes) in changed {
-        if !built.contains(path) {
+        if !built.sources.contains(path) {
             paths.push(path.clone());
             continue;
         }
@@ -84,12 +114,13 @@ pub fn not_built(
             })?;
         let lines: Vec<&[u8]> = src.split(|&b| b == b'\n').collect();
         let measured = measured.get(path);
-        for item in cfg_out(&src, cfg) {
+        let test_cfg = built.tested.contains(path).then(|| cfg.with_test());
+        for item in cfg_out(&src, test_cfg.as_ref().unwrap_or(cfg)) {
             if measured.is_some_and(|lines| lines.keys().any(|&line| item.contains(line))) {
                 continue;
             }
             let text = String::from_utf8_lossy(&lines[item.indices()].join(&b'\n')).into_owned();
-            if module_built(tree, root, path, &text, built)? {
+            if module_built(tree, root, path, &text, &built.sources)? {
                 continue;
             }
             if changes.iter().any(|&change| change.overlaps(item)) {
