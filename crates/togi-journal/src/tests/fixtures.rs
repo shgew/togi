@@ -783,9 +783,12 @@ pub(crate) fn samples() -> Vec<Payload> {
                 witnesses: vec![seq(30), seq(31)],
             },
             adequate: vec![exposure_class()],
-            uncovered: vec![ExposureClass {
-                regime: Regime::R9,
-                ..exposure_class()
+            uncovered: vec![UncoveredClass {
+                class: ExposureClass {
+                    regime: Regime::R9,
+                    ..exposure_class()
+                },
+                reason: UncoveredReason::MappingInadequate,
             }],
             cells: vec![RateCell {
                 class: exposure_class(),

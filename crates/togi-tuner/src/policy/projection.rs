@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use togi_journal::{
     Activity, Binding, Budget, Classification, DayEventId, DayStep, Edge, ExposureClass, NightId,
     PlannedTask, QualificationPurpose, QualificationState, ReproductionState, Resolution, Seq,
-    Slope, TaskId, TaskStatus, UnavailableBackend, VetoState,
+    Slope, TaskId, TaskStatus, UnavailableBackend, UncoveredClass, VetoState,
 };
 use togi_machine::{BootId, CcdId, CcdProfile, CoreSet, TargetOffset};
 
@@ -22,7 +22,7 @@ pub struct CapProjection {
     pub binding: Binding,
     pub slope: Slope,
     pub adequate: Vec<ExposureClass>,
-    pub uncovered: Vec<ExposureClass>,
+    pub uncovered: Vec<UncoveredClass>,
     /// The `ccd.cap` event.
     pub witness: Seq,
 }

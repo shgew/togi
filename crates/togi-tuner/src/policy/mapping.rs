@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use togi_journal::{
     Binding, Candidate, CcdCap, CcdEdge, Edge, ExposureClass, Finite, LowerEndpoint,
-    Rate as JournalRate, RateBound, RateCell, Seq, Tested,
+    Rate as JournalRate, RateBound, RateCell, Seq, Tested, UncoveredClass, UncoveredReason,
 };
 use togi_machine::{CcdId, ContentId, TargetOffset, WorkloadId};
 
@@ -809,7 +809,14 @@ impl State {
             budget: JournalRate::new(budget_rate.get())?,
             edge: edge.clone(),
             adequate: cap.witnesses.iter().map(|w| class(w.class)).collect(),
-            uncovered: cap.uncovered.iter().map(|u| class(u.class)).collect(),
+            uncovered: cap
+                .uncovered
+                .iter()
+                .map(|uncovered| UncoveredClass {
+                    class: class(uncovered.class),
+                    reason: uncovered_reason(uncovered.reason),
+                })
+                .collect(),
             cells,
             slope: journal_slope(cap.slope, historical_min)?,
             candidates,
@@ -871,6 +878,14 @@ fn same_cap(a: &CcdCap, b: &CcdCap) -> bool {
         && a.adequate == b.adequate
         && a.uncovered == b.uncovered
         && a.candidates == b.candidates
+}
+
+fn uncovered_reason(reason: cap::UncoveredReason) -> UncoveredReason {
+    match reason {
+        cap::UncoveredReason::NoObservations => UncoveredReason::NoObservations,
+        cap::UncoveredReason::NonMappingOnly => UncoveredReason::NonMappingOnly,
+        cap::UncoveredReason::MappingInadequate => UncoveredReason::MappingInadequate,
+    }
 }
 
 fn previous_lower(slope: Slope) -> Option<Beta> {

@@ -8,9 +8,9 @@ use togi_journal::{
     Activity, ApplicationId, ApplyCause, CellEvidence, Classification, DayApplied, DayCheckpoint,
     DayCleanStop, DayOffsetsChanged, DayStep, DayUncleanEnd, Edge, LoadMix, NightQualification,
     Payload, QualificationPurpose, QualificationState, Queue, ReproductionState, RetreatCause, Seq,
-    StepKind, Tested, WarningKind,
+    StepKind, Tested, UncoveredReason, WarningKind,
 };
-use togi_machine::{BootId, CcdProfile, EndEvidence, ResetReason};
+use togi_machine::{BootId, CcdProfile, EndEvidence, Regime, ResetReason};
 use togi_tuner::cap::Rate;
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{Action, DayQuery, EndReason, Params, PolicyPayload, TrialPlan};
@@ -726,4 +726,42 @@ fn a_failure_is_warned_of_once_its_class_passes_deeper() {
     assert!(causes.contains(&failed), "{causes:?}");
     assert!(!passes.is_empty());
     assert!(passes.iter().all(|&pass| pass > failed), "{passes:?}");
+}
+
+#[test]
+fn a_cap_says_why_each_class_is_uncovered() {
+    let mut journal = Journal::ready();
+    journal.until_filler(|_| Ending::Pass);
+    let first = journal
+        .events
+        .iter()
+        .find_map(|event| {
+            if let Payload::CcdCap(cap) = &event.payload
+                && cap.ccd == ccd(0)
+            {
+                Some(cap)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("the night committed no cap for CCD 0"));
+    let reasons = |regime: Regime| -> Vec<UncoveredReason> {
+        first
+            .uncovered
+            .iter()
+            .filter(|uncovered| uncovered.class.regime == regime)
+            .map(|uncovered| uncovered.reason)
+            .collect()
+    };
+    // R3 lies outside the mapping projection, so qualification exposure leaves it uncovered, and says so.
+    let r3 = reasons(Regime::R3);
+    assert!(!r3.is_empty());
+    assert!(
+        r3.iter()
+            .all(|&reason| reason == UncoveredReason::NonMappingOnly),
+        "{r3:?}"
+    );
+    // R9 is a mapping class the night had not mapped yet when it first committed a cap.
+    let r9 = reasons(Regime::R9);
+    assert!(r9.contains(&UncoveredReason::NoObservations), "{r9:?}");
 }

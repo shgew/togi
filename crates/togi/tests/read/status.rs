@@ -12,7 +12,9 @@ use togi_journal::{
     Build, ConfigLoaded, DeadEnd, DeadEndCondition, FixStamp, SCHEMA, SessionBaseline,
     SessionContext, SessionStart,
 };
-use togi_journal::{Certainty, ExposureClass, Finite, Placement, Rate};
+use togi_journal::{
+    Certainty, ExposureClass, Finite, Placement, Rate, UncoveredClass, UncoveredReason,
+};
 use togi_journal::{FactSource, Outcome, TrialCarried, TrialClass, TrialId, TrialIntent};
 use togi_machine::{
     BiosContext, BootId, CcdId, CcdProfile, CoreId, CoreInfo, CoreSet, ObservedOffset, PerCore,
@@ -496,9 +498,18 @@ fn edge_and_cap(first: i64, cap: i64) -> Vec<Payload> {
             edge,
             adequate: vec![class(Regime::R1, 90)],
             uncovered: vec![
-                class(Regime::R3, 120),
-                class(Regime::R3, 120),
-                class(Regime::R6, 900),
+                UncoveredClass {
+                    class: class(Regime::R3, 120),
+                    reason: UncoveredReason::NonMappingOnly,
+                },
+                UncoveredClass {
+                    class: class(Regime::R3, 120),
+                    reason: UncoveredReason::NonMappingOnly,
+                },
+                UncoveredClass {
+                    class: class(Regime::R6, 900),
+                    reason: UncoveredReason::NoObservations,
+                },
             ],
             cells: Vec::new(),
             slope: Slope::Fallback {
@@ -552,9 +563,15 @@ fn a_ccd_row_shows_its_day_offset_cap_slope_binding_edge_and_coverage() {
         shown.contains("0 0-7 0 -15 fallback edge fails -20 15 1 3"),
         "{shown}"
     );
-    assert!(shown.contains("CCD 0 uncovered for the cap: R3"), "{shown}");
-    assert!(shown.contains("120s isolated x2; R6"), "{shown}");
-    assert!(shown.contains("R6"), "{shown}");
+    assert!(
+        shown.contains("CCD 0 uncovered for the cap, no observations: R6"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("CCD 0 uncovered for the cap, non-mapping exposure only: R3"),
+        "{shown}"
+    );
+    assert!(shown.contains("120s isolated x2"), "{shown}");
     assert!(
         shown.contains("A CCD with no cap yet has S at offset 0."),
         "{shown}"

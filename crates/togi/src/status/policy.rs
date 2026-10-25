@@ -10,7 +10,7 @@ use jiff::tz::TimeZone;
 use togi_journal::{
     Activity, Binding, DayEventId, DayStep, Edge, ExposureClass, HoldReason, Position,
     QualificationPurpose, Queue, ReproductionState, Resolution, RetreatCause, Slope, StepKind,
-    TaskId, VetoState,
+    TaskId, UncoveredReason, VetoState,
 };
 use togi_machine::{CcdProfile, CoreId, CoreSet};
 use togi_tuner::policy::{
@@ -149,8 +149,22 @@ pub(super) fn class_word(class: &ExposureClass) -> String {
 /// Trial classes in words, first-seen order. Classes that differ only in the cores they load read the same,
 /// so each reading is shown once with how many classes share it: `R1 mprime-sse-4k-21k 90s exact x8`.
 fn classes_word(classes: &[ExposureClass]) -> String {
+    counted_words(classes.iter())
+}
+
+/// Why a class is uncovered for the cap.
+fn uncovered_reason_word(reason: UncoveredReason) -> &'static str {
+    match reason {
+        UncoveredReason::NoObservations => "no observations",
+        UncoveredReason::NonMappingOnly => "non-mapping exposure only",
+        UncoveredReason::MappingInadequate => "mapping exposure inadequate",
+    }
+}
+
+/// The distinct classes in order, each repeated one suffixed with its count.
+fn counted_words<'a>(classes: impl Iterator<Item = &'a ExposureClass>) -> String {
     let mut counted: Vec<(String, usize)> = Vec::new();
-    for word in classes.iter().map(class_word) {
+    for word in classes.map(class_word) {
         match counted.iter_mut().find(|(seen, _)| *seen == word) {
             Some((_, count)) => *count += 1,
             None => counted.push((word, 1)),
@@ -236,12 +250,24 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
     for ccd in &policy.ccds {
         match &ccd.cap {
             Some(cap) if !cap.uncovered.is_empty() => {
-                let text = format!(
-                    "CCD {} uncovered for the cap: {}",
-                    ccd.ccd,
-                    classes_word(&cap.uncovered)
-                );
-                wrap(out, "  ", "    ", &text);
+                for &reason in UncoveredReason::ALL {
+                    let mut classes = cap
+                        .uncovered
+                        .iter()
+                        .filter(|uncovered| uncovered.reason == reason)
+                        .map(|uncovered| &uncovered.class)
+                        .peekable();
+                    if classes.peek().is_none() {
+                        continue;
+                    }
+                    let text = format!(
+                        "CCD {} uncovered for the cap, {}: {}",
+                        ccd.ccd,
+                        uncovered_reason_word(reason),
+                        counted_words(classes)
+                    );
+                    wrap(out, "  ", "    ", &text);
+                }
             }
             Some(_) | None => {}
         }

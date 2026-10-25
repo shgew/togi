@@ -140,6 +140,15 @@ wire_enum!(
     }
 );
 wire_enum!(
+    /// Why a class is uncovered for a CCD's cap: it has no observations, only non-mapping exposure, or
+    /// mapping exposure that never met the adequate-exposure threshold.
+    UncoveredReason {
+        NoObservations => "no_observations",
+        NonMappingOnly => "non_mapping_only",
+        MappingInadequate => "mapping_inadequate",
+    }
+);
+wire_enum!(
     /// Where a daily event's bounded reproduction task stands.
     ReproductionState {
         Pending => "pending",

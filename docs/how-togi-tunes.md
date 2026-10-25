@@ -26,7 +26,7 @@ A **profile** is one offset per CCD, expanded to every core of that CCD. Per-cor
 
 The projection needs a **slope**: how fast the failure rate grows with depth. Until some class has failures at two or more offsets, togi uses a labelled **fallback** slope (a rate 1.5 times higher per count). After that the **measured** slope is the conservative end of a fitted interval, and later non-mapping evidence cannot make S deeper.
 
-**Coverage.** Only mapping classes count towards S: single-core rotation, light core beside heavy neighbours, multi-core partial loads and all-threads serial positions. Everything else, such as load steps, duty-limited loads, SMT, idle, and qualification, control and reproduction exposure, is **uncovered for the cap** even when it passed. `togi status` lists those classes; uncovered is never read as safe.
+**Coverage.** Only mapping classes count towards S: single-core rotation, light core beside heavy neighbours, multi-core partial loads and all-threads serial positions. Everything else, such as load steps, duty-limited loads, SMT, idle, and qualification, control and reproduction exposure, is **uncovered for the cap** even when it passed. `togi status` lists those classes with the reason for each: no observations, non-mapping exposure only, or mapping exposure that never reached the adequacy threshold. Uncovered is never read as safe.
 
 ## What a night does
 

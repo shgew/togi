@@ -28,7 +28,7 @@ pub use domain::{
     Decision, DefectAnswer, DefectDirection, FailureTime, FreezeChoice, HuntOutcome, HuntStage,
     ImportClass, Inference, IntervalState, MissingFact, Notice, Outcome, Placement,
     QualificationPurpose, Queue, ReproductionState, RetryTarget, RoundEvent, ShutdownReason, SmuOp,
-    TaskStatus, VetoState, WarningKind,
+    TaskStatus, UncoveredReason, VetoState, WarningKind,
 };
 pub use ruleset13::{
     ApplicationId, Binding, Budget, Candidate, CcdCap, CcdEdge, CcdVector, CellEvidence,
@@ -36,7 +36,7 @@ pub use ruleset13::{
     ExposureObserved, ExposureOrigin, Finite, InvalidNumber, LowerEndpoint, NightId, NightPlan,
     NightQualification, NightReproduction, ObservedProfile, OriginalSource, PlannedTask, Position,
     QualificationState, Rate, RateBound, RateCell, ReproductionTarget, Slope, TaskId, Tested,
-    UnavailableBackend, WorkloadContent,
+    UnavailableBackend, UncoveredClass, WorkloadContent,
 };
 pub use ruleset13_day::{
     ApplyCause, CcdCursor, Classification, DayApplied, DayEvent, DayFreeze, DayHold, DayImported,

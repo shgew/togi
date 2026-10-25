@@ -13,7 +13,7 @@ use togi_machine::{
 
 use super::domain::{
     Activity, FailureTime, Outcome, Placement, QualificationPurpose, Queue, ReproductionState,
-    TaskStatus,
+    TaskStatus, UncoveredReason,
 };
 use super::session::Provenance;
 use super::trial::TrialId;
@@ -401,6 +401,16 @@ object_only! {
 }
 
 object_only! {
+    /// A class uncovered for a CCD's cap, and why.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct UncoveredClass {
+        pub class: ExposureClass,
+        pub reason: UncoveredReason,
+    }
+}
+
+object_only! {
     /// What fixed the cap.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -422,7 +432,7 @@ object_only! {
         pub budget: Rate,
         pub edge: Edge,
         pub adequate: Vec<ExposureClass>,
-        pub uncovered: Vec<ExposureClass>,
+        pub uncovered: Vec<UncoveredClass>,
         pub cells: Vec<RateCell>,
         pub slope: Slope,
         pub candidates: Vec<Candidate>,

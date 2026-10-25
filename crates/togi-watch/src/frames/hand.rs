@@ -11,7 +11,7 @@ use togi_journal::{
     Activity, Binding, Budget, CcdVector, Classification, DayEventId, DayStep, DeadEndCondition,
     DecisionId, Edge, ExposureClass, Finite, LowerEndpoint, NightId, Outcome, Placement,
     PlannedTask, QualificationPurpose, Queue, ReproductionState, Resolution, ShutdownReason, Slope,
-    StepCauses, StepKind, TaskId, TaskStatus, Tested,
+    StepCauses, StepKind, TaskId, TaskStatus, Tested, UncoveredClass, UncoveredReason,
 };
 use togi_machine::{
     BootId, CcdId, CcdProfile, ObservedOffset, PerCore, Regime, ResetKind, TargetOffset,
@@ -228,7 +228,12 @@ pub(crate) fn cap(
         binding,
         slope,
         adequate: (0..covered).map(|_| class(Regime::R1, &[0])).collect(),
-        uncovered: (0..uncovered).map(|_| class(Regime::R7, &[0, 1])).collect(),
+        uncovered: (0..uncovered)
+            .map(|_| UncoveredClass {
+                class: class(Regime::R7, &[0, 1]),
+                reason: UncoveredReason::MappingInadequate,
+            })
+            .collect(),
         witness: seq(11),
     }
 }
