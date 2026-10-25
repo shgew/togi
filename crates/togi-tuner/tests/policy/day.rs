@@ -1,11 +1,13 @@
-//! The day query through the journal: what a boot owes once it has a step.
+//! The day query through the journal: what a boot owes once it has a step, and which live machine checks
+//! are CPU evidence.
 
-use togi_journal::StepKind;
-use togi_machine::BootId;
+use test_case::test_case;
+use togi_journal::{Classification, DayFault, LiveFault, Payload, StepKind};
+use togi_machine::{BankType, BootId, CoreId, CpuId};
 use togi_tuner::day::Invocation;
 use togi_tuner::policy::DayQuery;
 
-use crate::fixture::{Ending, Journal, at, firmware};
+use crate::fixture::{Ending, Journal, at, firmware, offsets_of};
 use crate::flow::{cold_boot, promoted, steps};
 
 fn same_boot(boot: &str, second: i64) -> DayQuery {
@@ -60,4 +62,70 @@ fn a_boot_that_held_never_promotes_later_in_the_same_boot() {
             .any(|step| matches!(step.step, StepKind::Promote { .. })),
         "{committed:?}"
     );
+}
+
+/// A corrected or uncorrected machine check in bank `bank_type`, reported by core 1 when `core` says so.
+fn machine_check(bank_type: BankType, corrected: bool, core: bool) -> LiveFault {
+    LiveFault::MachineCheck {
+        cpu: CpuId::from(2_u16),
+        core: core.then(|| CoreId::new(1).unwrap()),
+        bank: 0,
+        bank_type,
+        corrected,
+    }
+}
+
+#[test_case(BankType::L3Cache, true, true, false; "a corrected shared bank with its core is not CPU evidence")]
+#[test_case(BankType::MemoryController, true, true, false; "a corrected memory controller with its core is not CPU evidence")]
+#[test_case(BankType::DataFabric, true, true, false; "a corrected data fabric with its core is not CPU evidence")]
+#[test_case(BankType::Unknown, true, true, false; "a corrected unknown bank with its core is not CPU evidence")]
+#[test_case(BankType::L2Cache, true, false, true; "a corrected core-local bank without a resolved core is CPU evidence")]
+#[test_case(BankType::ExecutionUnit, true, true, true; "a corrected core-local bank with its core is CPU evidence")]
+#[test_case(BankType::L3Cache, false, false, true; "an uncorrected shared bank is CPU evidence")]
+#[test_case(BankType::Unknown, false, true, true; "an uncorrected unknown bank is CPU evidence")]
+fn a_live_machine_check_is_cpu_evidence_by_its_bank(
+    bank_type: BankType,
+    corrected: bool,
+    core: bool,
+    cpu: bool,
+) {
+    let (mut journal, d) = promoted();
+    journal.append(
+        DayFault {
+            fault: machine_check(bank_type, corrected, core),
+            monotonic_ns: 1_000_000_000,
+            offsets: offsets_of(&d),
+            lines: Vec::new(),
+        }
+        .into(),
+        &[],
+    );
+    let committed = journal.settle_day(&same_boot("day1", 60_100));
+    let events: Vec<_> = committed
+        .iter()
+        .filter_map(|payload| {
+            if let Payload::DayEvent(event) = payload {
+                Some(event)
+            } else {
+                None
+            }
+        })
+        .collect();
+    if cpu {
+        assert!(
+            matches!(
+                events.as_slice(),
+                [event] if matches!(event.classification, Classification::CpuSuspect { .. })
+            ),
+            "{committed:?}"
+        );
+    } else {
+        assert!(events.is_empty(), "{committed:?}");
+        assert!(
+            !committed
+                .iter()
+                .any(|payload| matches!(payload, Payload::DayVeto(_))),
+            "{committed:?}"
+        );
+    }
 }

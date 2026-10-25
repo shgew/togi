@@ -38,7 +38,10 @@ pub(super) struct DayView {
 }
 
 /// The CPU evidence of a live machine check (`docs/spec/tuner.md`, Live faults and load mix): an
-/// uncorrected one is CPU-suspect without a known core, a corrected one only when it names its core.
+/// uncorrected one is CPU-suspect whatever its bank, a corrected one only when its decoded bank is
+/// core-local (`docs/spec/workloads.md`, MCE bank classification). A shared or unknown bank (L3,
+/// memory controller, data fabric) is not core-local even when a reporting core is known, and a
+/// core-local bank is CPU evidence even when the topology did not resolve its core.
 fn live_mce_kind(fault: &LiveFault) -> Option<MceKind> {
     match fault {
         LiveFault::MachineCheck {
@@ -46,13 +49,11 @@ fn live_mce_kind(fault: &LiveFault) -> Option<MceKind> {
         } => Some(MceKind::Uncorrected),
         LiveFault::MachineCheck {
             corrected: true,
-            core: Some(_),
+            bank_type,
             ..
-        } => Some(MceKind::CoreLocal),
+        } if bank_type.core_local() => Some(MceKind::CoreLocal),
         LiveFault::MachineCheck {
-            corrected: true,
-            core: None,
-            ..
+            corrected: true, ..
         }
         | LiveFault::KernelError { .. }
         | LiveFault::Trap { .. } => None,
