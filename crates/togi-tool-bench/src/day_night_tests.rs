@@ -420,7 +420,7 @@ mod selection {
 
 mod parallel {
     use std::num::NonZeroUsize;
-    use std::time::Duration;
+    use std::sync::{Condvar, Mutex, PoisonError};
 
     use togi_simrun::day_night::PolicyKind;
 
@@ -437,16 +437,46 @@ mod parallel {
         Registration::parse(&serde_json::to_vec(&document).unwrap()).unwrap()
     }
 
+    /// Holds the callers of [`Gate::wait`] until another thread has called [`Gate::open`].
+    #[derive(Default)]
+    struct Gate {
+        open: Mutex<bool>,
+        opened: Condvar,
+    }
+
+    impl Gate {
+        fn open(&self) {
+            *self.open.lock().unwrap_or_else(PoisonError::into_inner) = true;
+            self.opened.notify_all();
+        }
+
+        fn wait(&self) {
+            let open = self.open.lock().unwrap_or_else(PoisonError::into_inner);
+            drop(
+                self.opened
+                    .wait_while(open, |open| !*open)
+                    .unwrap_or_else(PoisonError::into_inner),
+            );
+        }
+    }
+
     type Keys = Vec<(String, u64, String)>;
 
     fn keys(jobs: usize) -> (Keys, Keys) {
         let registration = two_scenarios();
-        // Earlier work sleeps longest, so a pool that wrote in completion order would reverse it.
+        // With several workers the first registered run holds until the last registered run has returned, so a
+        // pool that wrote in completion order would reverse it. One worker cannot overlap runs.
+        let last_returned = Gate::default();
         let run = |scenario: &str, seed: u64, policy: PolicyKind, _| {
-            let rank = u64::from(scenario == "edge-shallow") * 4
-                + u64::from(seed == 1) * 2
-                + u64::from(policy == PolicyKind::CoZero);
-            std::thread::sleep(Duration::from_millis(2 + rank * 5));
+            let first = scenario == "edge-shallow" && seed == 1 && policy == PolicyKind::CoZero;
+            let last =
+                scenario == "firmware-change" && seed == 2 && policy == PolicyKind::FixedMargin;
+            if first && jobs > 1 {
+                last_returned.wait();
+            }
+            if last {
+                last_returned.open();
+            }
             Ok(successful_metrics())
         };
         let mut jsonl = Vec::new();
@@ -496,9 +526,13 @@ mod parallel {
     #[test]
     fn the_first_failing_run_in_order_is_the_error_even_when_others_fail_sooner() {
         let registration = two_scenarios();
+        // Every earlier-registered run fails only after a later-registered run has failed.
+        let later_failed = Gate::default();
         let run = |scenario: &str, _, _, _| {
             if scenario == "edge-shallow" {
-                std::thread::sleep(Duration::from_millis(30));
+                later_failed.wait();
+            } else {
+                later_failed.open();
             }
             Err(togi_simrun::day_night::RunError::Calendar(
                 if scenario == "edge-shallow" {
