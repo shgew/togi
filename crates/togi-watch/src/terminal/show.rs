@@ -547,7 +547,7 @@ mod tests {
                 for second in 0..8 {
                     for offset in (137..1000).step_by(137) {
                         let at = Duration::from_secs(second) + Duration::from_millis(offset);
-                        advance(at - h.start.elapsed()).await;
+                        advance(at.checked_sub(h.start.elapsed()).unwrap()).await;
                         h.send(Event::Changed).await;
                         assert_eq!(
                             h.script.times.borrow().last().unwrap().as_second(),
@@ -557,7 +557,7 @@ mod tests {
                     }
                     let frames = h.frames();
                     let boundary = Duration::from_secs(second + 1);
-                    advance(boundary - h.start.elapsed()).await;
+                    advance(boundary.checked_sub(h.start.elapsed()).unwrap()).await;
                     settle().await;
                     assert_eq!(h.frames(), frames + 1, "boundary {boundary:?}");
                     assert_eq!(
