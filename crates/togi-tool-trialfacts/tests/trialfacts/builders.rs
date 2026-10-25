@@ -205,6 +205,7 @@ impl Writer {
 
 pub(crate) fn alone(id: &str, core_n: i64, value: i64, profile: &[i64]) -> TrialIntent {
     TrialIntent {
+        task_start: None,
         core: Some(core(core_n)),
         offset: Some(TargetOffset::new(value).unwrap()),
         ..together(id, Regime::R1, &[], profile, Condition::Alone)
@@ -219,6 +220,7 @@ pub(crate) fn together(
     condition: Condition,
 ) -> TrialIntent {
     TrialIntent {
+        task_start: None,
         night: None,
         task: None,
         content: Vec::new(),

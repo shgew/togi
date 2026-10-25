@@ -338,6 +338,7 @@ fn multi_core_intent() -> TrialIntent {
 #[test]
 fn multi_core_trial_intents_name_every_loaded_core() {
     let hunt = TrialIntent {
+        task_start: None,
         condition: Condition::Parked,
         ..multi_core_intent()
     };
@@ -349,6 +350,7 @@ fn multi_core_trial_intents_name_every_loaded_core() {
     assert!(!text.contains(" offset "), "{text}");
 
     let deepening = TrialIntent {
+        task_start: None,
         condition: Condition::Together,
         hunt: None,
         group: None,
@@ -364,6 +366,7 @@ fn multi_core_trial_intents_name_every_loaded_core() {
 #[test]
 fn a_single_target_trial_intent_says_core_not_cores() {
     let one = TrialIntent {
+        task_start: None,
         condition: Condition::Parked,
         cores: set(&[5]),
         ..multi_core_intent()

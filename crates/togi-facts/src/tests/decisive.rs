@@ -18,6 +18,7 @@ use crate::{Decisive, FactsError, Observation, Telemetry, TrialClass};
 fn an_excluded_pass_cannot_be_carried_as_a_full_shape_fact() {
     let mut s = Script::begin(&[0, 1]);
     s.add(togi_journal::TrialIntent {
+        task_start: None,
         cores: set(&[0, 1]),
         profile: profile(&[(0, -10), (1, -10)]),
         ..intent("excluded", Condition::Together, Regime::R7)
@@ -42,11 +43,13 @@ fn decisive_facts() {
         boost_limit_mhz: 5000,
     });
     s.add(Payload::from(togi_journal::TrialIntent {
+        task_start: None,
         activity: Some(Activity::Search),
         ..alone("alone", 4, -10, &[2, 4])
     }));
     let alone_end = s.add(pass("alone", 89));
     s.add(togi_journal::TrialIntent {
+        task_start: None,
         cores: set(&[4, 2]),
         profile: profile(&[(2, -20), (4, -30)]),
         duration_s: 900,
@@ -58,6 +61,7 @@ fn decisive_facts() {
     s.add(config_loaded(refreshed_build.clone()));
     let together_end = s.add(fail("together", Signal::Crash, 12));
     s.add(togi_journal::TrialIntent {
+        task_start: None,
         cores: set(&[2, 4]),
         profile: profile(&[(2, -9), (4, -30)]),
         duration_s: 120,
@@ -68,6 +72,7 @@ fn decisive_facts() {
     s.add(intent("inconclusive", Condition::Alone, Regime::R2));
     s.add(end("inconclusive", Outcome::Inconclusive, 1));
     s.add(togi_journal::TrialIntent {
+        task_start: None,
         cores: set(&[2, 4]),
         core: Some(core(4)),
         profile: profile(&[(2, 0), (4, -30)]),
@@ -217,6 +222,7 @@ fn config_loaded_changing_a_durable_stamp_is_an_error(
 fn failure_keeps_attribution_and_telemetry() {
     let mut s = Script::begin(&[1, 3, 7]);
     s.add(togi_journal::TrialIntent {
+        task_start: None,
         cores: set(&[7, 3]),
         profile: profile(&[(1, -20), (3, -30), (7, -40)]),
         duration_s: 120,
@@ -458,6 +464,7 @@ fn a_ycruncher_pass_takes_the_ycruncher_identity() {
         ..config_loaded(build(1))
     });
     s.add(togi_journal::TrialIntent {
+        task_start: None,
         workload: ycruncher_workload(),
         ..alone("y", 0, -3, &[0])
     });

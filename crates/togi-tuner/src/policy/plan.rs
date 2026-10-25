@@ -82,6 +82,7 @@ impl TrialPlan {
             Workloads::LightHeavy { light, .. } => light,
         };
         Ok(TrialIntent {
+            task_start: None,
             trial,
             kernel_cursor: None,
             kernel_error: None,

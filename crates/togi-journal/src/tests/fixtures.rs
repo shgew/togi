@@ -314,6 +314,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
         TrialIntent {
+            task_start: None,
             trial: trial(),
             kernel_cursor: None,
             kernel_error: Some("cursor lost".into()),

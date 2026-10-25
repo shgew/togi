@@ -86,6 +86,10 @@ object_only! {
         pub round: Option<NonZeroU32>,
         #[serde(default, skip_serializing_if = "is_false")]
         pub rerun: bool,
+        /// When the task began, before profile preparation and backend retry waits; the wall time of a trial counts
+        /// from here. Absent on intents from before the field: they count from the intent itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub task_start: Option<Timestamp>,
     }
 }
 

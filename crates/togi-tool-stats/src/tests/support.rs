@@ -179,6 +179,7 @@ pub(super) fn shutdown(reason: ShutdownReason) -> Shutdown {
 /// A trial of the first workload of `regime` loading `cores`, as the tuner would plan it in a search.
 pub(super) fn intent(id: &str, regime: Regime, cores: &[i64], offsets: &[i64]) -> TrialIntent {
     TrialIntent {
+        task_start: None,
         night: None,
         task: None,
         content: Vec::new(),

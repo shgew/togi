@@ -92,6 +92,7 @@ fn a_resume_under_the_recorded_configuration_repeats_the_recorded_trials() {
         intents(&events)[done].clone()
     };
     let strip = |intent: &TrialIntent| TrialIntent {
+        task_start: None,
         trial: want.trial.clone(),
         kernel_cursor: None,
         kernel_error: None,

@@ -177,6 +177,7 @@ impl Log {
 
     pub(crate) fn trial_intent(&mut self, id: &str, single: Option<i64>, regime: Regime) -> Seq {
         let intent = TrialIntent {
+            task_start: None,
             night: None,
             task: None,
             content: Vec::new(),

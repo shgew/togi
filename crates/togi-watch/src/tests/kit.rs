@@ -334,6 +334,7 @@ pub(crate) fn intent(
     cores: &[u8],
 ) -> TrialIntent {
     TrialIntent {
+        task_start: None,
         night: None,
         task: None,
         content: Vec::new(),

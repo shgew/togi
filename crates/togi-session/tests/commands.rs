@@ -574,6 +574,45 @@ fn retry_waits_preserve_the_bounded_seconds_schedule() {
 }
 
 #[test]
+fn a_trial_after_a_retry_wait_starts_its_task_before_the_wait() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(SetupFailure(input.machine.trials));
+    let ended = run(input);
+    let events = ended.journal.events();
+    let mut checked = 0;
+    for (index, event) in events.iter().enumerate() {
+        let Payload::BackendRetry(retry) = &event.payload else {
+            continue;
+        };
+        let Some((intent, at)) = events[index..].iter().find_map(|later| {
+            if let Payload::TrialIntent(intent) = &later.payload {
+                Some((intent, later.time))
+            } else {
+                None
+            }
+        }) else {
+            continue;
+        };
+        let start = intent.task_start.expect("an intent names its task start");
+        assert!(
+            start <= event.time,
+            "{start} after the retry at {}",
+            event.time
+        );
+        let span = at.duration_since(start).as_secs();
+        assert!(
+            span >= i64::from(retry.wait_s),
+            "{span}s of task before {}s of wait",
+            retry.wait_s
+        );
+        checked += 1;
+    }
+    assert!(checked > 0);
+}
+
+#[test]
 fn an_overflowing_duration_keeps_the_containment_dead_end_durable() {
     let sim = simulator();
     let mem = MemFs::new();

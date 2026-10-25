@@ -53,6 +53,7 @@ fn start(cores: &[i64]) -> SessionStart {
 
 fn intent() -> TrialIntent {
     TrialIntent {
+        task_start: None,
         night: None,
         task: None,
         content: Vec::new(),

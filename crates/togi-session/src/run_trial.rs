@@ -96,6 +96,7 @@ impl Session<'_> {
         if self.cancel.is_cancelled() {
             return Ok(self.shut_down(Stop::Signal));
         }
+        let task_start = self.appender.clock().now();
         self.ensure_profile(plan)?;
         let mut backends: Vec<Backend> = Vec::new();
         for workload in plan.workloads() {
@@ -109,7 +110,7 @@ impl Session<'_> {
                 return Ok(stop);
             }
         }
-        self.trial(plan)?;
+        self.trial(plan, task_start)?;
         Ok(match self.check_dead_end()? {
             Some(stop) => Control::Stop(stop),
             None => Control::Continue,
@@ -198,7 +199,7 @@ impl Session<'_> {
         }
     }
 
-    fn trial(&mut self, plan: &TrialPlan) -> Step<()> {
+    fn trial(&mut self, plan: &TrialPlan, task_start: jiff::Timestamp) -> Step<()> {
         if self.lifecycle.stopped().is_none() {
             return Err(SessionError::Unproven.into());
         }
@@ -216,6 +217,7 @@ impl Session<'_> {
             .map_err(SessionError::Plan)?;
         intent.kernel_cursor = boundary.cursor;
         intent.kernel_error = boundary.error;
+        intent.task_start = Some(task_start);
         let workload = intent.workload;
         let intent = self
             .appender
