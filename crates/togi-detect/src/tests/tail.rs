@@ -200,6 +200,7 @@ fn evidence_of_a_crashed_boot_joins_its_tail_and_both_boots_machine_checks() {
             OLD,
             "-o",
             "json",
+            "--all",
             "--output-fields=MESSAGE",
             "-n",
             "256",

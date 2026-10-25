@@ -108,6 +108,7 @@ fn reset_reason_kinds_priority_and_support(
             OLD,
             "-o",
             "json",
+            "--all",
             "--output-fields=MESSAGE",
             "--grep",
             "Linux version|Previous system reset reason",
@@ -245,6 +246,7 @@ fn the_reset_reason_after_a_boot_is_its_immediate_successors() {
             "1",
             "-o",
             "json",
+            "--all",
             "--output-fields=_BOOT_ID,__SEQNUM,__SEQNUM_ID",
             "--no-pager",
             "-q",
@@ -260,6 +262,7 @@ fn the_reset_reason_after_a_boot_is_its_immediate_successors() {
             "+1",
             "-o",
             "json",
+            "--all",
             "--output-fields=_BOOT_ID,__SEQNUM,__SEQNUM_ID",
             "--no-pager",
             "-q"

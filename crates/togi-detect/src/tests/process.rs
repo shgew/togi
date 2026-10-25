@@ -168,7 +168,7 @@ fn real_process_a_program_that_answers_is_run_by_path_with_the_exact_arguments()
     assert_eq!(mces.len(), 1);
     let args = fs::read_to_string(args_file).unwrap();
     assert_eq!(args.lines().nth(2), Some(OLD));
-    assert_eq!(args.lines().count(), 10);
+    assert_eq!(args.lines().count(), 11);
 }
 
 #[test]

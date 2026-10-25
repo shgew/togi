@@ -21,8 +21,10 @@ fn argv(parts: &[&str]) -> Vec<OsString> {
     parts.iter().map(OsString::from).collect()
 }
 
+/// `--all` keeps fields longer than 4096 bytes, which journalctl's JSON output otherwise writes as
+/// `null`.
 fn kernel_log(boot: &JournalBoot, fields: &str) -> Vec<OsString> {
-    argv(&["-k", "-b", boot.as_str(), "-o", "json", fields])
+    argv(&["-k", "-b", boot.as_str(), "-o", "json", "--all", fields])
 }
 
 pub(crate) fn mces_args(boot: &JournalBoot) -> Vec<OsString> {
@@ -40,6 +42,7 @@ pub(crate) fn interval_args(boot: &JournalBoot, after: Option<&KernelCursor>) ->
         boot.as_str(),
         "-o",
         "json",
+        "--all",
         "--output-fields=MESSAGE,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP,__CURSOR,_BOOT_ID,COREDUMP_PID,COREDUMP_COMM,COREDUMP_SIGNAL,COREDUMP_CGROUP",
         "--no-pager",
         "-q",
@@ -93,6 +96,7 @@ pub(crate) fn boundary_args(boot: &JournalBoot, edge: Edge) -> Vec<OsString> {
         count,
         "-o",
         "json",
+        "--all",
         "--output-fields=_BOOT_ID,__SEQNUM,__SEQNUM_ID",
         "--no-pager",
         "-q",

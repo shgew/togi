@@ -66,6 +66,7 @@ fn cursor_reads_keep_empty_intervals_resumable() {
         OLD,
         "-o",
         "json",
+        "--all",
         fields,
         "--no-pager",
         "-q",
@@ -435,5 +436,30 @@ fn coredump_signals_are_typed_without_parsing_the_localized_message(
     assert_eq!(read.faults.len(), 1);
     assert_eq!(read.faults[0].kind, kind);
     assert_eq!(read.faults[0].pid, 821);
+    assert_eq!(read.cursor, cursor("dump"));
+}
+
+fn long_coredump_message() -> String {
+    format!(
+        "Process 821 (mprime) of user 1000 dumped core.\n\n{}",
+        "frame\n".repeat(840)
+    )
+}
+
+#[test_case(|text| json!(text); "plain string")]
+#[test_case(|text| json!(text.bytes().collect::<Vec<u8>>()); "byte array of a non-UTF-8 field")]
+fn a_coredump_message_over_4096_bytes_keeps_its_full_text(encode: fn(&str) -> Value) {
+    let message = long_coredump_message();
+    assert!(message.len() > 4096);
+    let mut record = entry("dump", OLD, "", 1_000_000);
+    record["MESSAGE"] = encode(&message);
+    record["COREDUMP_PID"] = json!("821");
+    record["COREDUMP_COMM"] = json!("mprime");
+    record["COREDUMP_SIGNAL"] = json!("11");
+    let out = lines(&[record]);
+    let (mut kernel, _) = kernel(&[], move |_| ok(&out));
+    let read = kernel.read_mces(&boot(OLD), None).unwrap();
+    assert_eq!(read.faults.len(), 1);
+    assert_eq!(read.faults[0].lines, [message]);
     assert_eq!(read.cursor, cursor("dump"));
 }
