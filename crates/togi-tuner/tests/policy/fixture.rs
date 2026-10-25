@@ -156,6 +156,20 @@ impl Journal {
         journal
     }
 
+    /// Starts the fresh session `session` on the same machine and firmware.
+    pub(crate) fn start_session(&mut self, session: &str) {
+        self.append(
+            SessionStart {
+                build: build(),
+                session: session.parse().unwrap(),
+                cores: cores(),
+            }
+            .into(),
+            &[],
+        );
+        self.append(context().into(), &[]);
+    }
+
     pub(crate) fn contextual() -> Self {
         Self::contextual_with(Params::SPEC)
     }
@@ -244,7 +258,8 @@ impl Journal {
     }
 }
 
-fn content() -> ContentId {
+/// The backend build every trial runs unless a test rebuilds it.
+pub(crate) fn content() -> ContentId {
     ContentId {
         backend: Backend::Mprime,
         executable: Digest::from_bytes([1; 32]),

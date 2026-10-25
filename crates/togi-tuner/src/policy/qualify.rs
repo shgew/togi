@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use sha2::{Digest as _, Sha256};
 use togi_journal::{
-    CcdVector, CellEvidence, CellWitness, ExposureClass, NightQualification, Outcome,
+    Activity, CcdVector, CellEvidence, CellWitness, ExposureClass, NightQualification, Outcome,
     QualificationPurpose, QualificationState, Queue, Seq, TaskId, Tested, WorkloadContent,
 };
 use togi_machine::{BiosContext, CcdId, CcdProfile, ContentId, Digest, WorkloadId};
@@ -597,6 +597,56 @@ impl State {
         })
     }
 
+    /// The witnesses that block `profile` from qualification, ascending, when a qualification of it as a
+    /// proposal other than D failed conclusively in this session and firmware: its exact failures, and
+    /// the failed commitment when it was written. Raw failures alone block, so an interrupted failed
+    /// commitment still does; neither content, night nor restart lifts the block
+    /// (`docs/spec/tuner.md`, Failed next-step qualification).
+    pub(super) fn qualification_blocked(&self, profile: &CcdProfile) -> Option<Vec<Seq>> {
+        let firmware = self.machine.firmware.as_ref()?;
+        let session = self.machine.session?;
+        let mut blocked = Vec::new();
+        for record in self.qualification_records().iter().filter(|record| {
+            record.queue() == Queue::Qualification
+                && &record.start.payload.profile.ccd == profile
+                && &record.start.payload.firmware == firmware
+                && record.start.payload.epoch == EVIDENCE_EPOCH
+        }) {
+            let failures = self
+                .ledger
+                .by_task
+                .get(&record.task())
+                .into_iter()
+                .flatten();
+            let start = blocked.len();
+            blocked.extend(
+                failures
+                    .filter_map(|&index| self.ledger.records.get(index))
+                    .filter(|exposure| {
+                        let observed = &exposure.observed;
+                        observed.outcome == Outcome::Failure
+                            && observed.activity == Activity::Qualification
+                            && observed.tested == Tested::Exact {}
+                            && &observed.profile.ccd == profile
+                            && &observed.firmware == firmware
+                            && observed.epoch == EVIDENCE_EPOCH
+                            && observed.source.session == session
+                    })
+                    .map(|exposure| exposure.seq),
+            );
+            if let QualificationState::Failed { failure, .. } = &record.latest.payload.state
+                && blocked
+                    .get(start..)
+                    .is_some_and(|own| own.contains(failure))
+            {
+                blocked.push(record.latest.seq);
+            }
+        }
+        blocked.sort_unstable();
+        blocked.dedup();
+        (!blocked.is_empty()).then_some(blocked)
+    }
+
     /// The next admissible promotion proposal: D moved toward the committed cap S, unless an active veto
     /// forbids it. A vetoed proposal is held, not replaced by another CCD or step, so there is nothing
     /// to qualify until a cap or a veto changes.
@@ -712,7 +762,15 @@ impl State {
         purpose: QualificationPurpose,
         now: jiff::Timestamp,
     ) -> Result<QualWork, NotReady> {
-        if self.failed_current(records, &profile) {
+        // A failed proposal stays failed for the session and firmware; a failed re-qualification of D is
+        // the day's to answer.
+        let failed = match purpose {
+            QualificationPurpose::NextStep | QualificationPurpose::Firmware => {
+                self.qualification_blocked(&profile).is_some()
+            }
+            QualificationPurpose::Requalification => self.failed_current(records, &profile),
+        };
+        if failed {
             return Ok(QualWork::None);
         }
         let mut open: Option<QualWork> = None;

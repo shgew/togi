@@ -8,6 +8,7 @@
 mod fixture;
 mod flow;
 mod night;
+mod qualification;
 mod step_cost;
 
 use std::collections::BTreeMap;
