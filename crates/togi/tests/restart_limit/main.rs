@@ -236,7 +236,7 @@ fn a_night_setup_that_cannot_be_loaded_fails_before_any_retry_state_or_reboot(
     let host = Host::new();
     let state = support::MemoryDir::new();
     if let Some(bytes) = setup {
-        host.write(SETUP_PATH, bytes).unwrap();
+        assert!(host.write(SETUP_PATH, bytes).is_ok());
     }
     let ran = host.run(
         state.path(),
