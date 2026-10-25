@@ -24,7 +24,7 @@ pub(super) struct Options<N> {
     /// The night switch to offer.
     pub(super) switch: Option<Direction>,
     pub(super) colours: Colours,
-    /// The wall clock, from which holds are measured.
+    /// Wall time sampled once, then advanced by the monotonic clock.
     pub(super) now: N,
     /// A redraw at least this often, whatever the frame's hold says.
     pub(super) tick: Option<std::time::Duration>,
@@ -44,7 +44,8 @@ impl Painter {
         &mut self,
         session: &mut Session<B>,
         screen: &mut Screen,
-        frame: &mut impl FnMut(&Screen, &mut Buffer) -> Drawn,
+        frame: &mut impl FnMut(&Screen, Timestamp, &mut Buffer) -> Drawn,
+        now: Timestamp,
     ) -> Result<Drawn, Error> {
         session
             .terminal
@@ -65,7 +66,7 @@ impl Painter {
         );
         self.scratch.resize(area);
         self.scratch.reset();
-        let drawn = frame(screen, &mut self.scratch);
+        let drawn = frame(screen, now, &mut self.scratch);
         let target = session.terminal.current_buffer_mut();
         for y in 0..area.height {
             for x in 0..area.width {
@@ -88,7 +89,7 @@ pub(super) async fn show<B, N>(
     backend: B,
     options: Options<N>,
     events: &mut mpsc::UnboundedReceiver<Event>,
-    mut frame: impl FnMut(&Screen, &mut Buffer) -> Drawn,
+    mut frame: impl FnMut(&Screen, Timestamp, &mut Buffer) -> Drawn,
     mut reload: impl FnMut() -> bool,
 ) -> Result<Outcome, Error>
 where
@@ -99,7 +100,7 @@ where
     let mut painter = Painter {
         scratch: Buffer::empty(Rect::ZERO),
     };
-    let mut clock = Clock::paced(options.tick);
+    let mut clock = Clock::paced(options.tick, (options.now)());
     let mut screen = Screen {
         view: View::Main,
         keys: options.keys,
@@ -117,8 +118,9 @@ where
             session.repaint()?;
             repaint = false;
         }
-        let drawn = painter.paint(&mut session, &mut screen, &mut frame)?;
-        clock.schedule(drawn.hold, (options.now)());
+        let now = clock.now();
+        let drawn = painter.paint(&mut session, &mut screen, &mut frame, now)?;
+        clock.schedule(drawn.hold, now);
         if let Some(frozen) = &options.frozen {
             frozen.send_if_modified(|frozen| {
                 let now = drawn.hold == Hold::Frozen;
@@ -192,6 +194,7 @@ mod tests {
     /// What the frame callback reports and what the reload callback answers, set by the test.
     struct Script {
         screens: RefCell<Vec<Screen>>,
+        times: RefCell<Vec<Timestamp>>,
         areas: RefCell<Vec<Rect>>,
         hold: Cell<Hold>,
         scroll: Cell<usize>,
@@ -253,6 +256,7 @@ mod tests {
             let script = Rc::new(Script {
                 screens: RefCell::default(),
                 areas: RefCell::default(),
+                times: RefCell::default(),
                 hold: Cell::new(Hold::Never),
                 scroll: Cell::new(0),
                 lines: RefCell::default(),
@@ -284,7 +288,10 @@ mod tests {
                     backend,
                     options,
                     &mut queue,
-                    move |screen, buf: &mut Buffer| frame(&frame_script, screen, buf),
+                    move |screen, now, buf: &mut Buffer| {
+                        frame_script.times.borrow_mut().push(now);
+                        frame(&frame_script, screen, buf)
+                    },
                     move || {
                         reload_script.reloads.set(reload_script.reloads.get() + 1);
                         reload_script.reloaded_changed.get()
@@ -523,6 +530,42 @@ mod tests {
                 advance(Duration::from_secs(1)).await;
                 settle().await;
                 assert_eq!(recorder.clears(), 2, "the next tick did not clear again");
+                h.send(Event::Cancel).await;
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
+            })
+            .await;
+        });
+    }
+
+    #[test]
+    fn arbitrary_journal_redraws_do_not_move_the_next_second() {
+        crate::terminal::testing::paused(async {
+            local(async {
+                let recorder = Recorder::new(80, 12);
+                let h = Harness::start(&recorder, &Setup::default());
+                settle().await;
+                for second in 0..8 {
+                    for offset in (137..1000).step_by(137) {
+                        let at = Duration::from_secs(second) + Duration::from_millis(offset);
+                        advance(at - h.start.elapsed()).await;
+                        h.send(Event::Changed).await;
+                        assert_eq!(
+                            h.script.times.borrow().last().unwrap().as_second(),
+                            i64::try_from(second).unwrap(),
+                            "journal redraw at {at:?}"
+                        );
+                    }
+                    let frames = h.frames();
+                    let boundary = Duration::from_secs(second + 1);
+                    advance(boundary - h.start.elapsed()).await;
+                    settle().await;
+                    assert_eq!(h.frames(), frames + 1, "boundary {boundary:?}");
+                    assert_eq!(
+                        *h.script.times.borrow().last().unwrap(),
+                        EPOCH + boundary,
+                        "the next periodic frame keeps its original deadline"
+                    );
+                }
                 h.send(Event::Cancel).await;
                 assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
@@ -1056,7 +1099,7 @@ mod tests {
                     frozen: None,
                 },
                 &mut queue,
-                |_: &Screen, _: &mut Buffer| -> Drawn { panic!("session panic") },
+                |_: &Screen, _, _: &mut Buffer| -> Drawn { panic!("session panic") },
                 || false,
             ))
         }));
@@ -1132,7 +1175,7 @@ mod tests {
                         backend,
                         options,
                         &mut queue,
-                        move |screen, _: &mut Buffer| {
+                        move |screen, _, _: &mut Buffer| {
                             let mut source = frame_source.borrow_mut();
                             let text = match source.journal(screen) {
                                 crate::screen::Journal::Missing => "no session yet".to_owned(),

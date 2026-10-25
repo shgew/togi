@@ -3,32 +3,42 @@
 use std::pin::Pin;
 use std::time::Duration;
 
-use jiff::Timestamp;
+use jiff::{SignedDuration, Timestamp};
 use tokio::time::{Instant, Interval, MissedTickBehavior, Sleep};
 
 use crate::screen::Hold;
 
 /// What wakes the loop for the clock. Nothing is armed until a frame says how long it stays true, and a paced clock
 /// also wakes at a steady interval whatever the frame says.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct Clock {
+    wall: Timestamp,
+    start: Instant,
     ticker: Option<Interval>,
     timer: Option<Pin<Box<Sleep>>>,
     pace: Option<Interval>,
 }
 
 impl Clock {
-    /// A clock that also wakes every `tick`, if given.
-    pub(super) fn paced(tick: Option<Duration>) -> Self {
+    /// Anchors wall time once to monotonic time, also waking every `tick`, if given.
+    pub(super) fn paced(tick: Option<Duration>, wall: Timestamp) -> Self {
         let pace = tick.map(|tick| {
             let mut pace = tokio::time::interval_at(Instant::now() + tick, tick);
             pace.set_missed_tick_behavior(MissedTickBehavior::Delay);
             pace
         });
         Self {
+            wall,
+            start: Instant::now(),
+            ticker: None,
+            timer: None,
             pace,
-            ..Self::default()
         }
+    }
+
+    /// One monotonic reference supplies both the frame's time and its redraw deadlines.
+    pub(super) fn now(&self) -> Timestamp {
+        self.wall + self.start.elapsed()
     }
 
     /// Arms the clock for a frame that stays true for `hold`, as of `now`.
@@ -43,15 +53,18 @@ impl Clock {
             }
             Hold::Until(until) if until.duration_since(now).is_positive() => {
                 self.ticker = None;
-                let delay = until.duration_since(now).unsigned_abs();
-                self.timer = Some(Box::pin(tokio::time::sleep(delay)));
+                let deadline = self.start + until.duration_since(self.wall).unsigned_abs();
+                self.timer = Some(Box::pin(tokio::time::sleep_until(deadline)));
             }
             Hold::Never | Hold::Until(_) => {
                 self.timer = None;
                 if self.ticker.is_none() {
                     let second = Duration::from_secs(1);
-                    let mut ticker = tokio::time::interval_at(Instant::now() + second, second);
-                    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                    let nanos = 1_000_000_000 - now.subsec_nanosecond().rem_euclid(1_000_000_000);
+                    let next = now + SignedDuration::from_nanos(i64::from(nanos));
+                    let deadline = self.start + next.duration_since(self.wall).unsigned_abs();
+                    let mut ticker = tokio::time::interval_at(deadline, second);
+                    ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
                     self.ticker = Some(ticker);
                 }
             }
@@ -70,6 +83,7 @@ impl Clock {
             ticker,
             timer,
             pace,
+            ..
         } = self;
         let held = async {
             if let Some(sleep) = timer.as_mut() {
@@ -114,9 +128,34 @@ mod tests {
     }
 
     #[test]
+    fn redraws_follow_second_boundaries_instead_of_the_startup_phase() {
+        crate::terminal::testing::paused(async {
+            let now = NOW + SignedDuration::from_millis(250);
+            let mut clock = Clock::paced(None, now);
+            clock.schedule(Hold::Never, now);
+            assert!(!wakes(&mut clock, Duration::from_millis(749)).await);
+            assert!(wakes(&mut clock, Duration::from_millis(2)).await);
+        });
+    }
+
+    #[test]
+    fn late_rendering_skips_missed_ticks_without_shifting_the_phase() {
+        crate::terminal::testing::paused(async {
+            let mut clock = Clock::paced(None, NOW);
+            clock.schedule(Hold::Never, clock.now());
+            tokio::time::advance(Duration::from_millis(2300)).await;
+            clock.wake().await;
+            assert_eq!(clock.now(), NOW + SignedDuration::from_millis(2300));
+            clock.schedule(Hold::Never, clock.now());
+            assert!(!wakes(&mut clock, Duration::from_millis(699)).await);
+            assert!(wakes(&mut clock, Duration::from_millis(2)).await);
+        });
+    }
+
+    #[test]
     fn a_clock_frame_wakes_every_second() {
         crate::terminal::testing::paused(async {
-            let mut clock = Clock::default();
+            let mut clock = Clock::paced(None, NOW);
             clock.schedule(Hold::Never, NOW);
             assert!(!wakes(&mut clock, Duration::from_millis(999)).await);
             assert!(wakes(&mut clock, Duration::from_millis(2)).await);
@@ -128,7 +167,7 @@ mod tests {
     #[test]
     fn a_held_frame_stays_quiet_until_its_instant_then_ticks() {
         crate::terminal::testing::paused(async {
-            let mut clock = Clock::default();
+            let mut clock = Clock::paced(None, NOW);
             clock.schedule(Hold::Never, NOW);
             clock.schedule(Hold::Until(after(10)), NOW);
             assert!(!wakes(&mut clock, Duration::from_secs(9)).await);
@@ -144,7 +183,7 @@ mod tests {
     #[test]
     fn a_frozen_frame_arms_nothing_for_hours() {
         crate::terminal::testing::paused(async {
-            let mut clock = Clock::default();
+            let mut clock = Clock::paced(None, NOW);
             clock.schedule(Hold::Never, NOW);
             clock.schedule(Hold::Frozen, NOW);
             assert!(!clock.is_armed());
@@ -155,7 +194,7 @@ mod tests {
     #[test]
     fn the_ticker_is_not_restarted_by_a_redraw() {
         crate::terminal::testing::paused(async {
-            let mut clock = Clock::default();
+            let mut clock = Clock::paced(None, NOW);
             clock.schedule(Hold::Never, NOW);
             tokio::time::advance(Duration::from_millis(600)).await;
             clock.schedule(Hold::Never, NOW);

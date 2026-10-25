@@ -15,7 +15,7 @@ expression: body
 │  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ▀█    ▀▀█ █▀█
 │  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░           █  ▀ █▀▀ █ █
 │                                                                                                                                                                                                                                ▀▀▀ ▀ ▀▀▀ ▀▀▀
-│  0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
+│  0:39 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 │
 │  if 5 of 5 pass:      next trial: part 2: 00-04 06-15 parked at 0, idle
 │  if none is named:    next trial: hunt 1 group 2: R2 heavy vector on 05 · 09-15 at failing offsets, 00-08 parked at 0
@@ -34,7 +34,7 @@ expression: body
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 │  none confirmed yet: phase 1 has not passed a full cycle
 │                                                                                                                          18:35  hunt     #1 started · part 1: 00-04 06-15 at failing offsets, 05 parked
-│  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 18:35 · 40s so far     18:35  fail     R2 heavy vector on core 05 at -9 · corrected hardware error · no core named
+│  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 18:35 · 39s so far     18:35  fail     R2 heavy vector on core 05 at -9 · corrected hardware error · no core named
 │                                                                                                                          18:33  chain    cycle 1 step 3 · CCD 1 partials end
 │  cause       corrected hardware error in R2 heavy vector on 05 · cycle 1 step 4, part 11 · no core named                 18:33  chain    cycle 1 step 3 · CCD 1 partial 5 loads 09 13
 │  candidates  00-15, deeper at failure than at their parked offsets                                                       18:33  pass     R7 partial CCD 1 on 09 10 13 14 · 4 passed · Tctl max 74°C

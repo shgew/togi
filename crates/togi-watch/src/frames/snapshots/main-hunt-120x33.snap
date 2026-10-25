@@ -22,7 +22,7 @@ expression: body
 │   06 -37 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄        -39             14 -15 MEMBER   ▄▄▄▄▄▄▄▄▄                   -17
 │   07 -29 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄            -31             15 -13 MEMBER   ▄▄▄▄▄▄▄▄                    -15
 │
-│ HUNT 1 ────────────────────────────────────── 18:35 · 40s   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ HUNT 1 ────────────────────────────────────── 18:35 · 39s   WHAT HAPPENED ─────────────────────────────── l: last 400
 │
 │ cause      corrected hardware error, no core named          18:35  hunt     #1 started · part 1: 00-04 06-15 at...
 │ ► part 1/2 00-04 06-15 at failing... trial 1/5              18:35  fail     corrected hardware error · no core named

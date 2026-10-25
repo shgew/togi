@@ -473,10 +473,10 @@ fn drive_with<B: console::Console>(
                     frozen: Some(frozen),
                 },
                 &mut queue,
-                |screen, buf| {
+                |screen, now, buf| {
                     let mut feed = feed.borrow_mut();
                     let journal = feed.journal(screen);
-                    render(&journal, screen, now(), buf)
+                    render(&journal, screen, now, buf)
                 },
                 || {
                     let mut feed = feed.borrow_mut();
