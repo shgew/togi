@@ -239,6 +239,7 @@ impl State {
             | Payload::Combination(_)
             | Payload::DeepeningRound(_)
             | Payload::BackendRetry(_)
+            | Payload::TaskStart(_)
             | Payload::DefectFound(_)
             | Payload::DefectAnswered(_)
             | Payload::BootSavedEntry(_)

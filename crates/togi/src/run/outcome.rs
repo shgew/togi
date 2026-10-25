@@ -181,6 +181,7 @@ impl HiddenClosing {
             | EventKind::DeepeningRound
             | EventKind::TunerWarning
             | EventKind::BackendRetry
+            | EventKind::TaskStart
             | EventKind::SessionImported
             | EventKind::ExposureObserved
             | EventKind::CcdEdge

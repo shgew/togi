@@ -35,8 +35,8 @@ pub use ruleset13::{
     CellWitness, CreditExclusion, DayEventId, DecisionId, Edge, ExposureClass, ExposureFailure,
     ExposureObserved, ExposureOrigin, Finite, InvalidNumber, LowerEndpoint, NightId, NightPlan,
     NightQualification, NightReproduction, ObservedProfile, OriginalSource, PlannedTask, Position,
-    QualificationState, Rate, RateBound, RateCell, ReproductionTarget, Slope, TaskId, Tested,
-    UnavailableBackend, UncoveredClass, WorkloadContent,
+    QualificationState, Rate, RateBound, RateCell, ReproductionTarget, Slope, TaskId, TaskStart,
+    Tested, UnavailableBackend, UncoveredClass, WorkloadContent,
 };
 pub use ruleset13_day::{
     ApplyCause, CcdCursor, Classification, DayApplied, DayEvent, DayFreeze, DayHold, DayImported,
@@ -185,6 +185,7 @@ payloads! {
     CcdEdge(CcdEdge) = "ccd.edge",
     CcdCap(CcdCap) = "ccd.cap",
     NightPlan(NightPlan) = "night.plan",
+    TaskStart(TaskStart) = "task.start",
     NightQualification(NightQualification) = "night.qualification",
     NightReproduction(NightReproduction) = "night.reproduction",
     DayStep(DayStep) = "day.step",
@@ -264,6 +265,7 @@ impl Payload {
             | Self::CcdEdge(_)
             | Self::CcdCap(_)
             | Self::NightPlan(_)
+            | Self::TaskStart(_)
             | Self::NightQualification(_)
             | Self::NightReproduction(_)
             | Self::DayStep(_)
@@ -355,6 +357,7 @@ impl Payload {
             | Self::CcdEdge(_)
             | Self::CcdCap(_)
             | Self::NightPlan(_)
+            | Self::TaskStart(_)
             | Self::NightQualification(_)
             | Self::NightReproduction(_)
             | Self::DayStep(_)

@@ -7,8 +7,8 @@ use std::time::Duration;
 use jiff::Timestamp;
 use togi_config::DeadEndThreshold;
 use togi_journal::{
-    Build, CrashDetected, DeadEnd, DeadEndCondition, Event, EventKind, Outcome, Payload,
-    RetryTarget, Seq, ShutdownReason, SmuCommand, TrialId, TrialIntent,
+    Build, CrashDetected, DeadEnd, DeadEndCondition, Event, EventKind, NightId, Outcome, Payload,
+    RetryTarget, Seq, ShutdownReason, SmuCommand, TaskId, TaskStart, TrialId, TrialIntent,
 };
 use togi_machine::{
     Backend, BiosContext, BootId, CcdId, Condition, CpuId, KernelCursor, ObservedOffset, PerCore,
@@ -248,6 +248,10 @@ pub(crate) struct RecoveryState {
     /// The boot the open night's first plan was made in: a day boot in another boot closes that night.
     #[serde(default)]
     night_boot: Option<BootId>,
+    /// The night task whose start is recorded but whose trial is not, with that start: a restart that resumes the
+    /// task keeps it.
+    #[serde(default)]
+    task: Option<(TaskStart, Timestamp)>,
 }
 
 impl RecoveryState {
@@ -358,6 +362,7 @@ impl RecoveryState {
             Payload::SmuReadback(readback) => self.smu_readback(event, readback),
             Payload::TrialIntent(intent) => {
                 self.hunt_group = self.hunt_group && intent.condition == Condition::Parked;
+                self.task = None;
                 self.unmatched.push(OpenIntent {
                     seq,
                     boot: event.boot.clone(),
@@ -449,6 +454,7 @@ impl RecoveryState {
                     self.night_boot = Some(event.boot.clone());
                 }
             }
+            Payload::TaskStart(start) => self.task = Some((*start, event.time)),
             Payload::PreflightCheck(check) => {
                 if !check.ok
                     && let Some(backend) =
@@ -543,6 +549,7 @@ impl RecoveryState {
             | Payload::ProfileChange(_)
             | Payload::ProfileRestored(_)
             | Payload::TrialIntent(_)
+            | Payload::TaskStart(_)
             | Payload::TrialStart(_)
             | Payload::TrialProgress(_)
             | Payload::TrialSignal(_)
@@ -851,10 +858,12 @@ impl RecoveryState {
         state.followed = false;
     }
 
-    /// A closing witness ends the night: its backend exclusions and retries do not carry into the next one.
+    /// A closing witness ends the night: its backend exclusions, retries and started task do not carry into the
+    /// next one.
     fn close_night(&mut self) {
         self.backends.clear();
         self.night_boot = None;
+        self.task = None;
     }
 
     fn dead_ended(&mut self, seq: Seq, causes: &[Seq], dead_end: &DeadEnd) {
@@ -1049,6 +1058,13 @@ impl RecoveryState {
 
     pub(crate) fn next_trial_id(&self) -> TrialId {
         TrialId::from(format!("{:04}", self.trials + 1))
+    }
+
+    /// When `task` of `night` started, if its start is recorded and no trial of it followed yet.
+    pub(crate) fn task_start(&self, night: NightId, task: TaskId) -> Option<Timestamp> {
+        self.task
+            .filter(|(start, _)| start.night == night && start.task == task)
+            .map(|(_, time)| time)
     }
 
     pub(crate) fn kernel_cursor(&self, boot: &BootId) -> Option<&KernelCursor> {

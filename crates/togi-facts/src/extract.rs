@@ -215,6 +215,7 @@ impl Extractor {
             | Payload::DeepeningRound(_)
             | Payload::TunerWarning(_)
             | Payload::BackendRetry(_)
+            | Payload::TaskStart(_)
             | Payload::DefectFound(_)
             | Payload::DefectAnswered(_)
             | Payload::DeadEnd(_)

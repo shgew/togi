@@ -205,6 +205,7 @@ impl<'a> Scan<'a> {
                 | Payload::DeepeningRound(_)
                 | Payload::TunerWarning(_)
                 | Payload::BackendRetry(_)
+                | Payload::TaskStart(_)
                 | Payload::DefectAnswered(_)
                 | Payload::DeadEnd(_)
                 | Payload::BootSavedEntry(_)

@@ -208,6 +208,7 @@ fn widening_covers(payload: &Payload, widening: &Widening) -> bool {
         | Payload::CcdEdge(_)
         | Payload::CcdCap(_)
         | Payload::NightPlan(_)
+        | Payload::TaskStart(_)
         | Payload::NightQualification(_)
         | Payload::NightReproduction(_)
         | Payload::DayStep(_)

@@ -5,8 +5,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::time::Duration;
 
 use togi_journal::{
-    BackendRetry, Mce, Payload, RetryTarget, Seq, TrialEnd, TrialId, TrialInstance, TrialSignal,
-    TrialStart, WorkloadContent,
+    BackendRetry, Mce, Payload, RetryTarget, Seq, TaskStart, TrialEnd, TrialId, TrialInstance,
+    TrialSignal, TrialStart, WorkloadContent,
 };
 use togi_machine::{
     Backend, CancellationToken, Condition, ControllerContract, CoreId, CoreSet, CpuId, Error,
@@ -96,7 +96,22 @@ impl Session<'_> {
         if self.cancel.is_cancelled() {
             return Ok(self.shut_down(Stop::Signal));
         }
-        let task_start = self.appender.clock().now();
+        // The task's start is durable before its preparation and waits, so a restart that resumes the task keeps
+        // charging them, and the downtime between, to it.
+        if self
+            .appender
+            .recovery()
+            .task_start(plan.night, plan.task)
+            .is_none()
+        {
+            let start = TaskStart {
+                night: plan.night,
+                task: plan.task,
+            };
+            self.appender
+                .append(Payload::TaskStart(start), &plan.causes)?;
+        }
+        let task_start = self.appender.recovery().task_start(plan.night, plan.task);
         self.ensure_profile(plan)?;
         let mut backends: Vec<Backend> = Vec::new();
         for workload in plan.workloads() {
@@ -199,7 +214,7 @@ impl Session<'_> {
         }
     }
 
-    fn trial(&mut self, plan: &TrialPlan, task_start: jiff::Timestamp) -> Step<()> {
+    fn trial(&mut self, plan: &TrialPlan, task_start: Option<jiff::Timestamp>) -> Step<()> {
         if self.lifecycle.stopped().is_none() {
             return Err(SessionError::Unproven.into());
         }
@@ -217,7 +232,7 @@ impl Session<'_> {
             .map_err(SessionError::Plan)?;
         intent.kernel_cursor = boundary.cursor;
         intent.kernel_error = boundary.error;
-        intent.task_start = Some(task_start);
+        intent.task_start = task_start;
         let workload = intent.workload;
         let intent = self
             .appender

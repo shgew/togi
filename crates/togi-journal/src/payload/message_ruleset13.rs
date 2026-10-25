@@ -11,7 +11,7 @@ use super::super::domain::{
 use super::super::ruleset13::{
     Binding, CcdCap, CcdEdge, CcdVector, DayEventId, Edge, ExposureClass, ExposureObserved,
     LowerEndpoint, NightPlan, NightQualification, NightReproduction, ObservedProfile, Position,
-    QualificationState, ReproductionTarget, Slope, Tested,
+    QualificationState, ReproductionTarget, Slope, TaskStart, Tested,
 };
 use super::super::ruleset13_day::{
     ApplyCause, Classification, DayApplied, DayEvent, DayFreeze, DayHold, DayImported, DayInterval,
@@ -186,6 +186,13 @@ pub(super) fn night_plan(p: &NightPlan) -> String {
         } else {
             format!("; unavailable: {}", unavailable.join(", "))
         }
+    )
+}
+
+pub(super) fn task_start(p: TaskStart) -> String {
+    format!(
+        "night {}: {} task {} started",
+        p.night, p.task.queue, p.task.ordinal
     )
 }
 

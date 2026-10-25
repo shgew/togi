@@ -752,6 +752,83 @@ fn a_backend_a_closed_night_excluded_is_tried_again_by_a_same_boot_restart(stopp
     assert_eq!(intents_of(after, Backend::Mprime) > 0, stopped);
 }
 
+#[test]
+fn a_task_a_crash_interrupts_in_its_retry_wait_keeps_its_start_across_the_restart() {
+    use togi_machine::Backend;
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut first = input(&sim, &mem);
+    first.machine.trials = Box::new(BackendGate {
+        inner: first.machine.trials,
+        failing: Some(Backend::Mprime),
+        cancel: first.cancel.clone(),
+        failed: 0,
+        starts: 0,
+        stop: Box::new(|_, _, starts| starts > 200),
+    });
+    let cancel = first.cancel.clone();
+    first.on_append = Some(Box::new(move |event| {
+        if matches!(event.payload, Payload::BackendRetry(_)) {
+            cancel.cancel();
+        }
+    }));
+    let ended = run(first);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let journal = ended.journal;
+    let retry = journal
+        .events()
+        .iter()
+        .position(|event| matches!(event.payload, Payload::BackendRetry(_)))
+        .unwrap();
+    let retried_at = journal.events()[retry].time;
+    drop(journal.close().unwrap());
+    // The crash: nothing after the retry record reached the journal, and the machine was down for an hour.
+    let bytes = mem.contents("/state/events.jsonl").unwrap();
+    let kept = bytes
+        .split_inclusive(|byte| *byte == b'\n')
+        .take(retry + 1)
+        .map(<[u8]>::len)
+        .sum();
+    mem.put("/state/events.jsonl", bytes[..kept].to_vec());
+    sim.seams()
+        .clock
+        .sleep(
+            &CancellationToken::new(),
+            std::time::Duration::from_secs(3600),
+        )
+        .unwrap();
+    let mut second = input(&sim, &mem);
+    let before = second.journal.events().len();
+    assert_eq!(before, retry + 1);
+    second.machine.trials = Box::new(BackendGate {
+        inner: second.machine.trials,
+        failing: None,
+        cancel: second.cancel.clone(),
+        failed: 0,
+        starts: 0,
+        stop: Box::new(|_, _, _| true),
+    });
+    let ended = run(second);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let resumed = ended.journal.events()[before..]
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some(intent)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(resumed.workload.backend(), Backend::Mprime);
+    // The interrupted wait and the downtime stay charged to the task that waited.
+    let task_start = resumed.task_start.unwrap();
+    assert!(
+        task_start <= retried_at,
+        "{task_start} is after the retry the crash interrupted at {retried_at}"
+    );
+}
+
 #[test_case(&[togi_machine::Backend::Mprime]; "one backend")]
 #[test_case(&[togi_machine::Backend::Mprime, togi_machine::Backend::Ycruncher]; "both backends")]
 fn a_backend_missing_at_preflight_is_excluded_from_the_night_without_a_launch_or_a_wait(

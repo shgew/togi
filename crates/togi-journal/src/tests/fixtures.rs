@@ -831,6 +831,14 @@ pub(crate) fn samples() -> Vec<Payload> {
             }],
         }
         .into(),
+        TaskStart {
+            night: night(),
+            task: TaskId {
+                queue: Queue::Mapping,
+                ordinal: 4,
+            },
+        }
+        .into(),
         NightQualification {
             profile: ccd_vector(&[-20, -10]),
             firmware: bios(),

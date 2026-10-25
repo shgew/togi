@@ -88,6 +88,7 @@ fn every_scenario_names_the_fixed_build(scenario: Scenario) {
         | Payload::DeepeningRound(_)
         | Payload::TunerWarning(_)
         | Payload::BackendRetry(_)
+        | Payload::TaskStart(_)
         | Payload::CommandReset(_)
         | Payload::DefectFound(_)
         | Payload::DefectAnswered(_)

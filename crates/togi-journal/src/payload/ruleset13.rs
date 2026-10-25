@@ -479,6 +479,18 @@ object_only! {
 }
 
 object_only! {
+    /// A night task's start, recorded before its profile is prepared and its backends are waited for. Its time
+    /// is where the task's wall time starts: a restart that resumes the task keeps it, so the interrupted
+    /// preparation, wait and recovery downtime stay charged to the task.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct TaskStart {
+        pub night: NightId,
+        pub task: TaskId,
+    }
+}
+
+object_only! {
     /// A backend excluded from the night and the evidence that excluded it, its inconclusive streak.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]

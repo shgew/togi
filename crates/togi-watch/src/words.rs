@@ -790,6 +790,7 @@ pub fn words(kind: EventKind) -> Words {
         | EventKind::TrialSignal
         | EventKind::TrialSample
         | EventKind::TrialIntent
+        | EventKind::TaskStart
         | EventKind::TunerWarning
         | EventKind::DefectAnswered
         | EventKind::BootSavedEntry

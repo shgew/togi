@@ -139,6 +139,7 @@ fn count_events(events: &[Event], measured: &mut Measured) {
             | Payload::DeepeningRound(_)
             | Payload::TunerWarning(_)
             | Payload::BackendRetry(_)
+            | Payload::TaskStart(_)
             | Payload::CommandReset(_)
             | Payload::DefectFound(_)
             | Payload::DefectAnswered(_)

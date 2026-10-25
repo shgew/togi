@@ -96,6 +96,7 @@ impl Payload {
             Self::CcdEdge(p) => ruleset13::ccd_edge(p),
             Self::CcdCap(p) => ruleset13::ccd_cap(p),
             Self::NightPlan(p) => ruleset13::night_plan(p),
+            Self::TaskStart(p) => ruleset13::task_start(*p),
             Self::NightQualification(p) => ruleset13::night_qualification(p),
             Self::NightReproduction(p) => ruleset13::night_reproduction(p),
             Self::DayStep(p) => ruleset13::day_step(p),

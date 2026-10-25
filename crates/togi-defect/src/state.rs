@@ -202,6 +202,7 @@ impl DefectState {
             | Payload::DeepeningRound(_)
             | Payload::TunerWarning(_)
             | Payload::BackendRetry(_)
+            | Payload::TaskStart(_)
             | Payload::DeadEnd(_)
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)

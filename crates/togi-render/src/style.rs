@@ -171,6 +171,7 @@ pub fn style_for(payload: &Payload) -> Style {
         | Payload::SessionImported(_)
         | Payload::ExposureObserved(_)
         | Payload::NightPlan(_)
+        | Payload::TaskStart(_)
         | Payload::NightReproduction(_)
         | Payload::DayApplied(_)
         | Payload::DayHold(_)
