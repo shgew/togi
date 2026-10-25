@@ -143,11 +143,13 @@ struct BuildNumbers {
     ruleset: u32,
 }
 
-/// The nonblank lines of a journal with their 1-based line numbers; `None` for bytes that are not UTF-8.
+/// The nonblank newline-terminated lines of a journal with their 1-based line numbers; `None` for bytes that are
+/// not UTF-8. A torn tail, the bytes after the last newline, is never a line.
 fn lines(bytes: &[u8]) -> impl Iterator<Item = (u64, Option<&str>)> {
     bytes
-        .split(|byte| *byte == b'\n')
+        .split_inclusive(|byte| *byte == b'\n')
         .enumerate()
+        .filter_map(|(index, line)| Some((index, line.strip_suffix(b"\n")?)))
         .filter(|(_, line)| !line.is_empty())
         .map(|(index, line)| {
             (

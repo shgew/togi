@@ -473,6 +473,41 @@ fn unknown_kinds_and_unreadable_lines_are_listed_and_never_imported() {
 }
 
 #[test]
+fn a_torn_tail_that_parses_is_never_an_imported_record() {
+    let bench = bench();
+    let id = finished(&bench);
+    let mut bytes = bench.mem.contents("/state/events.jsonl").unwrap();
+    let last = bytes[..bytes.len() - 1]
+        .split(|byte| *byte == b'\n')
+        .next_back()
+        .unwrap();
+    let mut tail: serde_json::Value = serde_json::from_slice(last).unwrap();
+    tail["seq"] = 99.into();
+    serde_json::to_writer(&mut bytes, &tail).unwrap();
+    assert_eq!(bytes.last(), Some(&b'}'));
+    bench.mem.put("/state/events.jsonl", bytes);
+    let import = prepared(&bench, &next_build()).import.unwrap();
+    let manifest = import.manifest();
+    assert_eq!(manifest.records().len(), 3);
+    assert!(manifest.unknown().is_empty());
+    assert!(
+        manifest
+            .records()
+            .iter()
+            .all(|record| { record.original.session == id && record.original.seq.get() != 99 })
+    );
+}
+
+#[test_case(b"\n", true; "terminated")]
+#[test_case(b"", false; "torn")]
+fn only_a_terminated_commitment_line_ends_the_archive_walk(end: &[u8], committed: bool) {
+    let mut bytes = br#"{"seq":1,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"session.imported","data":{}}"#
+        .to_vec();
+    bytes.extend_from_slice(end);
+    assert_eq!(import::commits_import(&bytes), committed);
+}
+
+#[test]
 fn an_archive_that_cannot_be_read_fails_the_preparation() {
     let bench = bench();
     let id = finished(&bench);
