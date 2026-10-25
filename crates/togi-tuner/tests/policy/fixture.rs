@@ -251,6 +251,24 @@ impl Journal {
 
     /// Journals one trial of `plan` whose every workload ran the backend build `built`.
     pub(crate) fn run_built(&mut self, plan: &TrialPlan, ending: Ending, built: &ContentId) -> Seq {
+        self.run_from(plan, ending, built, None)
+    }
+
+    /// Journals one passing trial of `plan` whose task began `waited` seconds before its intent, as when the
+    /// session prepared the profile and waited for a backend first.
+    pub(crate) fn run_after_wait(&mut self, plan: &TrialPlan, waited: i64) -> Seq {
+        let intent_at = at(i64::try_from(self.events.len()).unwrap() + 1);
+        let task_start = intent_at.checked_sub(jiff::SignedDuration::from_secs(waited)).unwrap();
+        self.run_from(plan, Ending::Pass, &content(), Some(task_start))
+    }
+
+    fn run_from(
+        &mut self,
+        plan: &TrialPlan,
+        ending: Ending,
+        built: &ContentId,
+        task_start: Option<Timestamp>,
+    ) -> Seq {
         let id = TrialId::from(format!("t{}", self.events.len() + 1));
         let content = plan
             .workloads()
@@ -261,7 +279,8 @@ impl Journal {
             })
             .collect();
         let cores = cores();
-        let intent = plan.intent(id.clone(), &cores, content).unwrap();
+        let mut intent = plan.intent(id.clone(), &cores, content).unwrap();
+        intent.task_start = task_start;
         let duration_s = intent.duration_s;
         let intent = self.append(intent.into(), &plan.causes);
         let mut start: TrialStart = serde_json::from_value(serde_json::json!({

@@ -486,3 +486,39 @@ fn a_failure_on_a_co_zero_core_owes_an_all_zero_rerun_that_charges_no_ccd() {
         assert_ne!(edge["kind"], "observed", "CCD{ccd}: {edge}");
     }
 }
+
+#[test]
+fn a_trial_charges_its_queue_from_when_its_task_began() {
+    let mut journal = Journal::ready();
+    let plan = journal.until_trial(at(100));
+    let night = plan.night;
+    // Profile preparation and a backend retry wait took half an hour before the intent.
+    journal.run_after_wait(&plan, 1_800);
+    journal.append(
+        Shutdown {
+            reason: ShutdownReason::Signal,
+            kernel_cursor: None,
+            kernel_error: None,
+            cycles: None,
+        }
+        .into(),
+        &[],
+    );
+    journal.until_trial(at(5_000));
+    let closing = journal
+        .events
+        .iter()
+        .filter_map(|event| {
+            if let Payload::NightPlan(committed) = &event.payload
+                && committed.night == Some(night)
+            {
+                Some(committed)
+            } else {
+                None
+            }
+        })
+        .next_back()
+        .unwrap();
+    let consumed: u64 = closing.budgets.iter().map(|budget| budget.consumed_s).sum();
+    assert!(consumed >= 1_800, "{closing:?}");
+}

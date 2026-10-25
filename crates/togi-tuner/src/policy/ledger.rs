@@ -368,13 +368,15 @@ impl State {
             })
     }
 
-    /// The wall seconds a trial occupied the night: from its intent to its end, which for a trial a
-    /// crash interrupted includes the downtime until recovery closed it.
+    /// The wall seconds a trial occupied the night: from its task's start, before the profile was prepared
+    /// and the backends waited for, to its end, which for a trial a crash interrupted includes the downtime
+    /// until recovery closed it. An intent that records no task start counts from itself.
     pub(super) fn trial_wall(trial: &Trial) -> u64 {
+        let from = trial.intent.task_start.unwrap_or(trial.intent_time);
         trial
             .end
             .as_ref()
-            .map_or(0, |ended| wall_secs(trial.intent_time, ended.time))
+            .map_or(0, |ended| wall_secs(from, ended.time))
     }
 
     /// The workload content of the plan's workloads under `contents`.
