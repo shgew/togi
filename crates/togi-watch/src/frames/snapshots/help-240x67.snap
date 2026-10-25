@@ -26,24 +26,24 @@ expression: body
 │    ?         no hardware offset has been read back for this core                       R6          During idle trials this screen holds still, clock included, so    step         what the day decided: hold, promote one CCD, retreat, or
 │    grey ▄▄▄  the same depth, grey when the core is not loaded                                      it cannot wake the cores.                                                      reset after a firmware change
 │    ···       the cap S: how far past the applied offset the night's evidence lets                                                                                    veto         a profile an event forbids until the veto clears
-│              its CCD go                                                                NO ETA      Nights and days follow the clock, but when a hold completes       freeze       a manual stop on every day step
-│    red ▄     the night edge U of its CCD: the shallowest offset that failed in                     depends on what runs, so togi shows only what is scheduled and    qualifying   running a whole profile until every class has witnessed it
-│              isolation, one count wide at Wide and Medium                                          the time left in the current trial.                               reproducing  re-running a daily event's conditions to see whether it
-│    amber ▄   a censored edge: nothing failed down to the mapping limit                                                                                                            comes back
-│    cyan      running now                                                               RULES       How togi decides what to do:                                      share        the part of the night's elapsed time a queue has used,
-│    amber     a hold, a veto, a retreat, a crash, or classes uncovered for the cap                  https://github.com/shgew/togi/blob/main/docs/spec/tuner.md                     against the part it is meant to take
-│    red       failures, past and present
+│              its CCD go                                                                NO ETA      Nights and days follow the clock, but when a hold completes       freeze       keeps D and blocks promotions; a required retreat or
+│    red ▄     the night edge U of its CCD: the shallowest offset that failed in                     depends on what runs, so togi shows only what is scheduled and                 firmware reset still applies
+│              isolation, one count wide at Wide and Medium                                          the time left in the current trial.                               qualifying   running a whole profile until every class has witnessed it
+│    amber ▄   a censored edge: nothing failed down to the mapping limit                                                                                               reproducing  re-running a daily event's conditions to see whether it
+│    cyan      running now                                                               RULES       How togi decides what to do:                                                   comes back
+│    amber     a hold, a veto, a retreat, a crash, or classes uncovered for the cap                  https://github.com/shgew/togi/blob/main/docs/spec/tuner.md        share        the part of the night's elapsed time a queue has used,
+│    red       failures, past and present                                                                                                                                           against the part it is meant to take
 │    green     passed, done, covered
-│    grey      idle, still to come, unknown                                                                                                                            KINDS OF LOAD ─────────────────────────────────────────────────────────
+│    grey      idle, still to come, unknown
+│                                                                                                                                                                      KINDS OF LOAD ─────────────────────────────────────────────────────────
 │
-│                                                                                                                                                                      R1 light          one light thread: compiling, browsing
-│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
-│                                                                                                                                                                      R3 load steps     load switching on and off: current steps
-│    failures       failure decisions, including trials skipped because they already                                                                                   R4 partial load   light load at 25-75% duty: bursty work
-│                   failed                                                                                                                                             R5 both threads   both threads of one core: SMT pressure
-│    crashes        boots that ended without a clean shutdown                                                                                                          R6 idle + bursts  idle with short wake-ups: idle and boost
-│    last observed  the last failure seen in this session that changed what togi                                                                                       R7 all-core       a CCD, part of one, or every core: power and heat
-│                   does; skips do not count
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  R1 light          one light thread: compiling, browsing
+│                                                                                                                                                                      R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+│    failures       failure decisions, including trials skipped because they already                                                                                   R3 load steps     load switching on and off: current steps
+│                   failed                                                                                                                                             R4 partial load   light load at 25-75% duty: bursty work
+│    crashes        boots that ended without a clean shutdown                                                                                                          R5 both threads   both threads of one core: SMT pressure
+│    last observed  the last failure seen in this session that changed what togi                                                                                       R6 idle + bursts  idle with short wake-ups: idle and boost
+│                   does; skips do not count                                                                                                                           R7 all-core       a CCD, part of one, or every core: power and heat
 │    q              exit dashboard; tuning itself keeps running
 │
 │

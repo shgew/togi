@@ -70,7 +70,7 @@ fn a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named() {
     }];
     let shown = shown(&hand);
     for want in [
-        "freeze      on: nothing is applied",
+        "freeze      on: D kept, no promotion; retreats and firmware resets still apply",
         "firmware    changed at #7; D awaits a reset",
         "questions   2 pending",
         "events      record #12 · not the cpu · resolved",

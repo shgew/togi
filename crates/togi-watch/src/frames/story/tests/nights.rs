@@ -184,7 +184,10 @@ fn the_day_state_names_the_applied_profile_and_what_the_latest_proposal_says() {
         said.lines[1],
         "The day profile is CCD 0 at -10, CCD 1 at -5. 1.500 h credited at it."
     );
-    assert_eq!(said.lines[2], "Promotion is frozen.");
+    assert_eq!(
+        said.lines[2],
+        "Promotion is frozen: the day profile stays, and retreats and firmware resets still apply."
+    );
     assert!(
         !super::said(&said).contains("required"),
         "no threshold is narrated: {:?}",

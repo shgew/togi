@@ -48,41 +48,41 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~    wwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttt                                      ttttttttttttttttttttttttt                                                      ttttttttttttttttttttttttttttt
 │    ···       the cap S: how far past the applied offset the night's evidence lets                                                                                    veto         a profile an event forbids until the veto clears
 ~    www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                    wwww         tttttttttttttttttttttttttttttttttttttttttttttttt
-│              its CCD go                                                                NO ETA      Nights and days follow the clock, but when a hold completes       freeze       a manual stop on every day step
-~              tttttttttt                                                                wwwwww      ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt       wwwwww       ttttttttttttttttttttttttttttttt
-│    red ▆     the night edge U of its CCD: the shallowest offset that failed in                     depends on what runs, so togi shows only what is scheduled and    qualifying   running a whole profile until every class has witnessed it
-~    wwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt    wwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│              isolation, one count wide at Wide and Medium                                          the time left in the current trial.                               reproducing  re-running a daily event's conditions to see whether it
-~              tttttttttttttttttttttttttttttttttttttttttttt                                          ttttttttttttttttttttttttttttttttttt                               wwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│    amber ▆   a censored edge: nothing failed down to the mapping limit                                                                                                            comes back
-~    wwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                                            tttttttttt
-│    cyan      running now                                                               RULES       How togi decides what to do:                                      share        the part of the night's elapsed time a queue has used,
-~    wwww      ttttttttttt                                                               wwwww       tttttttttttttttttttttttttttt                                      wwwww        tttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│    amber     a hold, a veto, a retreat, a crash, or classes uncovered for the cap                  https://github.com/shgew/togi/blob/main/docs/spec/tuner.md                     against the part it is meant to take
-~    wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                     tttttttttttttttttttttttttttttttttttt
-│    red       failures, past and present
-~    www       tttttttttttttttttttttttttt
+│              its CCD go                                                                NO ETA      Nights and days follow the clock, but when a hold completes       freeze       keeps D and blocks promotions; a required retreat or
+~              tttttttttt                                                                wwwwww      ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt       wwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    red ▆     the night edge U of its CCD: the shallowest offset that failed in                     depends on what runs, so togi shows only what is scheduled and                 firmware reset still applies
+~    wwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                 tttttttttttttttttttttttttttt
+│              isolation, one count wide at Wide and Medium                                          the time left in the current trial.                               qualifying   running a whole profile until every class has witnessed it
+~              tttttttttttttttttttttttttttttttttttttttttttt                                          ttttttttttttttttttttttttttttttttttt                               wwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    amber ▆   a censored edge: nothing failed down to the mapping limit                                                                                               reproducing  re-running a daily event's conditions to see whether it
+~    wwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                               wwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    cyan      running now                                                               RULES       How togi decides what to do:                                                   comes back
+~    wwww      ttttttttttt                                                               wwwww       tttttttttttttttttttttttttttt                                                   tttttttttt
+│    amber     a hold, a veto, a retreat, a crash, or classes uncovered for the cap                  https://github.com/shgew/togi/blob/main/docs/spec/tuner.md        share        the part of the night's elapsed time a queue has used,
+~    wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt        wwwww        tttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    red       failures, past and present                                                                                                                                           against the part it is meant to take
+~    www       tttttttttttttttttttttttttt                                                                                                                                           tttttttttttttttttttttttttttttttttttt
 │    green     passed, done, covered
 ~    wwwww     ttttttttttttttttttttt
-│    grey      idle, still to come, unknown                                                                                                                            KINDS OF LOAD ─────────────────────────────────────────────────────────
-~    wwww      tttttttttttttttttttttttttttt                                                                                                                            wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│    grey      idle, still to come, unknown
+~    wwww      tttttttttttttttttttttttttttt
+│                                                                                                                                                                      KINDS OF LOAD ─────────────────────────────────────────────────────────
+~                                                                                                                                                                      wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │
-│                                                                                                                                                                      R1 light          one light thread: compiling, browsing
-~                                                                                                                                                                      wwwwwwww          ttttttttttttttttttttttttttttttttttttt
-│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
-~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                  wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                                                                      R3 load steps     load switching on and off: current steps
-~                                                                                                                                                                      wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
-│    failures       failure decisions, including trials skipped because they already                                                                                   R4 partial load   light load at 25-75% duty: bursty work
-~    wwwwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                   wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
-│                   failed                                                                                                                                             R5 both threads   both threads of one core: SMT pressure
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  R1 light          one light thread: compiling, browsing
+~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                  wwwwwwww          ttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+~                                                                                                                                                                      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
+│    failures       failure decisions, including trials skipped because they already                                                                                   R3 load steps     load switching on and off: current steps
+~    wwwwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                   wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
+│                   failed                                                                                                                                             R4 partial load   light load at 25-75% duty: bursty work
 ~                   tttttt                                                                                                                                             wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
-│    crashes        boots that ended without a clean shutdown                                                                                                          R6 idle + bursts  idle with short wake-ups: idle and boost
-~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt                                                                                                          wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
-│    last observed  the last failure seen in this session that changed what togi                                                                                       R7 all-core       a CCD, part of one, or every core: power and heat
-~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                       wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
-│                   does; skips do not count
-~                   tttttttttttttttttttttttt
+│    crashes        boots that ended without a clean shutdown                                                                                                          R5 both threads   both threads of one core: SMT pressure
+~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt                                                                                                          wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
+│    last observed  the last failure seen in this session that changed what togi                                                                                       R6 idle + bursts  idle with short wake-ups: idle and boost
+~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                       wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
+│                   does; skips do not count                                                                                                                           R7 all-core       a CCD, part of one, or every core: power and heat
+~                   tttttttttttttttttttttttt                                                                                                                           wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
 │    q              exit dashboard; tuning itself keeps running
 ~    w              ttttttttttttttttttttttttttttttttttttttttttt
 │

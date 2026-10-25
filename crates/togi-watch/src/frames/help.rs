@@ -148,7 +148,10 @@ const WORDS: Section = Section {
             "what the day decided: hold, promote one CCD, retreat, or reset after a firmware change",
         ),
         ("veto", "a profile an event forbids until the veto clears"),
-        ("freeze", "a manual stop on every day step"),
+        (
+            "freeze",
+            "keeps D and blocks promotions; a required retreat or firmware reset still applies",
+        ),
         (
             "qualifying",
             "running a whole profile until every class has witnessed it",

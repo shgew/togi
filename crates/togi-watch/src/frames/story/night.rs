@@ -302,7 +302,10 @@ pub(super) fn day_lines(policy: &Projection) -> Vec<String> {
     }
     let mut second = Vec::new();
     if policy.day.freeze {
-        second.push("Promotion is frozen.".to_owned());
+        second.push(
+            "Promotion is frozen: the day profile stays, and retreats and firmware resets still apply."
+                .to_owned(),
+        );
     }
     match &policy.day.firmware {
         FirmwareValidity::Invalidated { .. } => second.push(

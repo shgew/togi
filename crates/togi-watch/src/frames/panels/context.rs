@@ -292,7 +292,11 @@ fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'
         out.push(field_row(
             scene,
             "freeze",
-            value(scene, Paint::Warn, "on: nothing is applied".to_owned()),
+            value(
+                scene,
+                Paint::Warn,
+                "on: D kept, no promotion; retreats and firmware resets still apply".to_owned(),
+            ),
             width,
         ));
     }

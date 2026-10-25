@@ -5,8 +5,8 @@ expression: body
 │ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
 │ ► NIGHT 0h30m ─ mapping C1 -20 ─ 9:20 left
 │
-│ │ veto         a profile an event forbids until the veto clears
-│ │ freeze       a manual stop on every day step
+│ │ freeze       keeps D and blocks promotions; a required retreat or firmware
+│ │              reset still applies
 │ │ qualifying   running a whole profile until every class has witnessed it
 │ │ reproducing  re-running a daily event's conditions to see whether it comes
 │ │              back

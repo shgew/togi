@@ -29,7 +29,7 @@ expression: body
 │  │ hold         applied hours at D out of the hours a step needs
 │  █ step         what the day decided: hold, promote one CCD, retreat, or reset after a firmware change
 │  █ veto         a profile an event forbids until the veto clears
-│  █ freeze       a manual stop on every day step
+│  █ freeze       keeps D and blocks promotions; a required retreat or firmware reset still applies
 │  █ qualifying   running a whole profile until every class has witnessed it
 │  █ reproducing  re-running a daily event's conditions to see whether it comes back
 │  █ share        the part of the night's elapsed time a queue has used, against the part it is meant to take
