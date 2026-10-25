@@ -1510,7 +1510,7 @@ The `togi` crate gains the three administration commands ([#828](https://github.
 | `TestWriteStatusWrapsWideBIOS` | `read::status::wide_bios_fields_wrap_by_terminal_cells_and_stay_whole` |
 | `TestWriteStatusWrapsWideDecisionNotes`, `TestStatusWideTablesWrapWithoutDroppingValues`, `TestWrapLines` | `table::tests::wide_decision_notes_wrap_under_their_row_within_the_width`, `a_row_wider_than_the_width_wraps_without_dropping_a_value`, `text_wraps_at_the_width_and_continues_under_the_rest_prefix`, `wide_text_wraps_by_terminal_cells`, `a_wide_cell_pads_to_its_cells_not_its_characters` |
 | `TestWriteStatusPreservesUnicodeWords` | `table::tests::unicode_words_are_kept_whole`, `a_wide_word_that_exactly_fills_the_room_stays_on_the_first_line`, `a_combining_word_that_exactly_fills_the_room_stays_on_the_first_line` |
-| `TestStatusFitsEightyColumns` | `read::status::status_fits_eighty_columns` |
+| `TestStatusFitsEightyColumns` | `read::status::scenarios_render_the_status` |
 | `TestStatusHuntLabelsAccumulatedPassEvidence` | the `PASS EVIDENCE` column of `status_hunt` and `status_member-probe` |
 | `TestCarriedEventsLeaveStatusUnchanged` | `read::status::carried_facts_add_self_sufficiency_evidence_but_no_live_regime_exposure`: changed, not byte-identical. A carried R7 pass adds one to the core's self-sufficiency `observed (N passing trials)` (`tuner.md`: live and carried evidence) and leaves the REGIME TRIALS table alone (a carried fact is not a live exposure) |
 | (`TestCarriedEventsLeaveStatusUnchanged`, event filters) | `read::events::kind_filters_select_the_carried_facts_they_name`: `--kind trial`, `trial.carried`, `failure`, `failure.carried` and `trial,failure` select the appended `trial.carried` and `failure.carried` facts |

@@ -246,3 +246,82 @@ Rationale: [#904](https://github.com/shgew/togi/issues/904)'s owner decision, ab
 - [docs/spec/runtime.md](spec/runtime.md): the `status` command (singular agreement is not specified; the locate group, `VALID PASSES`, plain-word dead end) and the search-forecast paragraph.
 - [docs/spec/journal.md](spec/journal.md): the sample `trial.intent` and `tuner.decision` messages and the per-decision wording.
 - [docs/howto.md](howto.md): the all-zero rerun message.
+
+## Ruleset 13 (#1217)
+
+The per-core tuner's phrases are gone from the dashboard, the history and `togi status`; the per-CCD policy ([How togi tunes](how-togi-tunes.md)) has its own. Nothing here is a rewording of an older phrase except where a row says renamed. Wire names are unchanged: historical event kinds read as their recorded `msg`, never as new policy. Each list was checked against this tree; a phrase is listed only when it is gone from, or new in, the producing code.
+
+### Stage line (`dash/stage.rs`, `frames/story`)
+
+| Removed | New |
+|---|---|
+| `SOLO LIMITS`, `PHASE 1`, `PHASE 2` and `PHASE 2 · ROUND n`, `CYCLE n`, `HUNT n`, `RERUN`, `RERUN AT OFFSET 0` | `NIGHT since HH:MM · <E>` (compact `NIGHT <E>`, `E` the elapsed observed time such as `0h30m`), then the activity: `mapping CCD 1 at -20`, `qualifying -10/-8`, `reproducing boot <id>`; narration labels `MAPPING`, `QUALIFYING`, `REQUALIFYING`, `REPRODUCING` and `CONTROLS AT CO 0`; `DAY` between nights |
+| `NIGHT until HH:MM` (wide), `NIGHT HH:MM` (compact) | renamed: `NIGHT since HH:MM · <E>` |
+| `LAST NIGHT ended HH:MM` | `LAST NIGHT HH:MM-HH:MM`, or `LAST NIGHT HH:MM` when the closing event is not in the log (an ASCII hyphen: the en dash is not in IBM437) |
+| `NIGHT OVER` for an open night with no task left | only after a later boot closed the night; an open night with nothing due shows `filler on CCD n` (compact `filler C{n}`) or `filler` |
+
+### Context panel (`panels/context.rs`)
+
+| Removed | New |
+|---|---|
+| `NIGHT until HH:MM` rule with `Xh of Yh used` | `NIGHT since HH:MM · <E> elapsed` with no right-hand cell; a closed night reads `LAST NIGHT HH:MM-HH:MM` |
+| budget rows `<queue> Xh of Yh` | `shares      mapping 66%/10% · qualification 33%/75% · control 0%/5% · filler 3%`: used share of elapsed time over the queue's share; filler shows its used share only; a queue with share 0 and nothing consumed is omitted |
+| task row naming the activity | `task        mapping task 3 · 1 of 2 planned tasks done` (names the queue) |
+| the BIOS profile panel and the R7 rule with top requesters | none; D, S, U and coverage are in the CCD tables, `hold`, `firmware`, `events` and vetoes in the day section |
+| | `unavailable mprime, ycruncher` (amber) when backends are excluded for the night |
+| | `hold        3h00m of 8h00m · holding -10/-8`, `firmware    valid`, `last step   promoted CCD 0`, `events      boot 7a1b2c3d · unexplained · unresolved · reproduction pending` |
+
+### CCD rows (`dash/ccd.rs`, `panels/ccd.rs`)
+
+| Removed | New |
+|---|---|
+| per-core solo-limit, failure-point, combination and hunt-group marks | per CCD: `D -10 · S -26 fallback slope · bound by rate R1 · U fails at -31 · 16 counts to S` and `3 covered for the cap · 1 uncovered for the cap`; `U censored at -50`, `measured slope` |
+| | gauge: applied depth, dots to the cap S, a red mark at U (amber when censored); a core with no readback shows `?` |
+
+### Story and narration (`frames/story`)
+
+| Removed | New |
+|---|---|
+| `I'm finding core NN's solo limit…`, `candidate solo limit … confirming it`, `One core at a time with the rest at 0…` | `Mapping CCD 1 at -20 (mapping task 3).` |
+| `Round N moves … one count toward their solo limits`, `Core NN runs alone at its proposed …`, `Step N is R… with …`, `Part X of Y loads …`, the R7 partial note and every `clean cycles count for this profile` sentence | `Reproducing on the exact failed profile (reproduction task 5).`, qualification, requalification and controls sentences naming the exact profile and the queue |
+| every hunt, member-probe, singleton and combination sentence; `I look for the cause among …`; `Core NN was named: its failure point is recorded and it backs off.` | none |
+| the rerun sentences (`The failed load runs again…`, `Cycle N waits at step M…`) and the all-zero rerun sentences (`A failure at offset 0 would stop tuning…`) | `A trial failed conclusively with every CCD at CO 0, so the platform is unstable at stock and Curve Optimizer is not the cause.`; stage `STOCK FAILURE` |
+| `The last trial has ended; the tuner records what it decided…` | `Trial <id> ended: <word>.` followed by the night's next task or the day state |
+| `The night's plan has no task left to run.`, `the night reached its end` | `Every planned task is done; filler work runs until you end the night.` |
+| | `… Unavailable this night: ycruncher.` after the next-task line |
+| recovery: `… no core named …` and the cycle place | `I picked up from the journal after the reboot; nothing it recorded is lost.` plus the next task or the day state |
+| resting band `next trial: deciding` | `next trial: <queue> task N`, or `next trial: filler` with no task pending |
+| | day state narration: applied profile, credited hours, freeze, firmware invalidated, latest proposal and its hold reasons, unresolved events |
+| defect dead end: `… Answer the reset question at a terminal before tuning continues.` | `… Run togi reset --all to start a fresh session before tuning continues.` (no per-core defect reset question remains) |
+
+### History and words (`words.rs`, `history.rs`, `describe.rs`)
+
+| Removed | New |
+|---|---|
+| `solo limit N`, `starts over from`, `has room again`, `confirming … as its solo limit`, `core NN passed … searches … on its next turn`, `failure held; tuning stays at …` | `ccd.edge: CCD1 edge unknown → fails at -23` |
+| `cycle N started`, `cycle N passed`, `cycle N ended early`, `C{id} over …`, `… · clear of C{id}` | `ccd.cap: CCD0 cap 0 → -15 · binding · fallback slope` (or `measured slope`) |
+| `hunt N …`, `#N done`, `round …`, `skip: … already failed … → hunt N` | `night.plan`, `night.qualification` start, complete and failed, `night.reproduction` reproduced, unreproduced and untestable |
+| `session started · N solo limits carried from the last session` | `day.event`, `day.veto`, `day.step` promote, retreat and firmware-zero, `day.applied`, `day.hold` reset and recomputed, `day.freeze` |
+| the `no core named` suffix | `session.imported: imported N of M selected records from K sessions` |
+| log tags `cycle`, `hunt`, `combo`, `round`, `chain`, `group`, `probe`, `confirm`, `limit`, `room`, `backoff`, `skip` | log tags `night`, `edge`, `cap`, `qualify`, `repro`, `day`, `veto`, `apply`, `freeze`, `import` |
+| trial subjects naming an R7 cycle or hunt group | `activity · CCD n at off \| the exact profile · <queue> task N · retry · R2 heavy vector on cores…` |
+| | `exposure.observed`, `day.interval` and `day.imported` are silent in the history and listed in the log view; the old kinds `core.phase`, `tuner.decision`, `checking.cycle`, `checking.step`, `checking.chain`, `hunt.*`, `combination` and `deepening.round` read as their recorded `msg` under the tag `note` |
+
+### Help (`frames/help.rs`)
+
+| Removed | New |
+|---|---|
+| `SOLO LIMITS`, `PHASE 2`, `BIOS PROFILE` entries; the words `solo limit` and `self-sufficient` | entries for `D`, `S`, `U`, `slope`, `bound by`, `covered`, `hold`, `step`, `veto`, `freeze`, `qualifying`, `reproducing` and `share` |
+| `Until its deadline togi maps…`; the `budget` entry (a queue's reserved time) | `NIGHT`: runs until you end it; maps each CCD's edge, qualifies profiles, reproduces daily events, runs controls and fills idle time; its stage shows when it started, its elapsed time and what the current trial tests. `share`: the part of the night's elapsed time a queue has used against the part it is meant to take |
+
+### `togi status` (`crates/togi/src/status.rs`, `status/policy.rs`)
+
+| Removed | New |
+|---|---|
+| header `night until HH:MM: …` | `night since 00:00, 11h55m elapsed: mapping (task mapping #2)`; `night since HH:MM, <E> elapsed: between tasks`; `day` once a later boot closed the night |
+| `Night until HH:MM (planned HH:MM, N h available)` | `Night since 00:00`, or `Last night 08:00–16:00` once closed |
+| table `QUEUE CONSUMED RESERVED TASKS` | `elapsed: 11h55m`, then `QUEUE  SHARE  USED  TIME` (the filler's share reads `-`; a queue with share 0 and nothing consumed is omitted) |
+| `current task: <queue> #<n> (<activity>)` | `current task: mapping (task mapping #2)` |
+| `requalification of the night until HH:MM` | `requalification of night #<seq>` |
+| the core table `CORE CCD SLOT OFFSET BIOS PHASE FAILURE QUEUED`, the phase and activity lines, the candidate table, combinations, last decisions, `R7 self-sufficiency`, PASS EVIDENCE and BIOS confirmation notes | `CCD CORES D S SLOPE BINDING U REMAINING COVERED UNCOVERED`; `CCD n uncovered for the cap: R1 mprime-sse-4k-21k 90s exact x8; …` (classes that differ only in cores collapsed to `xN`); `Day policy` with `applied profile`, `hold`, `latest step [#seq] at cold boot …: promotes CCD 0 to …`, `freeze`, `firmware`; mapping `next offset`; `qualifying CCD 0 -1, CCD 1 0: 0 cells witnessed, 259 outstanding`; `unavailable: <backend>, excluded by #<seq>` |
+| `togi reset --core N` and its defect reset hints | none |

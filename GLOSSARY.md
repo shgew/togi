@@ -1,11 +1,10 @@
 # togi
 
-togi finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them for breadth: it reports clean cycles, not a durability grade.
+togi finds the deepest per-CCD Curve Optimizer offsets a Zen 5 desktop CPU sustains, tests them on whole profiles at night and observes them by day: it reports evidence, not a durability grade.
 
 The glossary governs prose and display. Wire names are frozen: a vocabulary change renames messages, help and docs, never an event kind or field ([journal.md](docs/spec/journal.md#event-format)) or a configuration key ([runtime.md](docs/spec/runtime.md#configuration)), so it never bumps `journal.Schema` on its own.
 
 ## Language
-
 ### Hardware
 
 **Core**:
@@ -29,7 +28,7 @@ More negative / less negative offset.
 _Avoid_: higher, lower, increase, decrease
 
 **Profile**:
-The offsets of all cores at one moment.
+One offset per CCD, expanded to every core of that CCD.
 _Avoid_: config, preset, vector, resident profile
 
 **Baseline**:
@@ -42,10 +41,10 @@ The identity of the firmware and CPU a session is tuned under: BIOS version, boa
 ### Testing
 
 **Session**:
-One tuning effort under one BIOS context, from the first `run` until `reset --all` or a transition, spanning any number of reboots.
+One tuning effort, from the first `run` until `reset --all` or a transition, spanning any number of reboots and BIOS changes.
 
 **Transition**:
-The end of a session written by an older ruleset, schema or evidence epoch, with no newer dimension, or of a compatible session whose BIOS context changed: the next `run` archives it and starts a new session seeded from eligible evidence ([Transitions](docs/spec/journal.md#transitions)).
+The end of a session written by an older ruleset, schema or evidence epoch, with no newer dimension: the next `run` archives it and starts a new session that imports only its raw day records ([Transitions](docs/spec/journal.md#transitions)). A BIOS-context change is no transition; the tuner handles it inside the session ([Firmware](docs/spec/tuner.md)).
 
 **Backend**:
 An external stress program togi drives: mprime or y-cruncher.
@@ -56,7 +55,7 @@ The package store path `config.loaded` records for a backend, such as `/nix/stor
 _Avoid_: backend version
 
 **Regime**:
-One of seven classes of load, R1 to R7, each exercising a different operating condition.
+One of nine classes of load, R1 to R9, each exercising a different operating condition.
 _Avoid_: test type, mode, stage
 
 **Workload**:
@@ -67,17 +66,8 @@ _Avoid_: test
 One launch of one workload on its target under a fixed profile, ending as a pass, a failure or inconclusive. The unit of pass evidence because failures can cluster at onset.
 _Avoid_: start, test, iteration, run
 
-**Top requester**:
-Globally, the loaded core with the highest voltage request sets the shared core rail voltage. R7 attribution uses a separate top-request group on each loaded CCD, with cores within 1 mV of that CCD's highest request tied. A CCD's top group need not contain the global rail maximum ([R7 request order and attribution](docs/spec/tuner.md#r7-request-order-and-attribution)).
-
-**Self-sufficient**:
-A core with observed passing evidence as a top requester for a given R7 workload at an equal or deeper offset. An evidence descriptor, not proof of future stability or permission to tolerate failures ([R7 self-sufficiency evidence](docs/spec/tuner.md#r7-self-sufficiency-evidence)).
-
 **Partial part**:
-An R7 load that idles the top requesters found so far, in request order, to test the remaining cores.
-
-**Multi-core / single-core R7**:
-An R7 trial loading at least two cores / exactly one core. Multi-core R7 uses request-based attribution and voltage-targeted backoff; single-core R7 retains the ordinary first-failure rules. Checking's partial chain never launches a single-core part.
+An R7 load of fewer cores than a CCD's full load, derived from measured request order, to test the remaining cores.
 
 **Trial class**:
 The regime, workload, sorted loaded cores and duration of a trial. Evidence transfers by class ([Evidence](docs/spec/tuner.md#evidence)).
@@ -85,101 +75,47 @@ The regime, workload, sorted loaded cores and duration of a trial. Evidence tran
 **Target**:
 The core or cores a trial loads.
 
-**Alone**:
-A trial condition where only the target carries its offset and every other core sits at 0.
-_Avoid_: isolated
+**Night**:
+The testing period the operator ends: identified by its opening `night.plan` sequence, it runs until the operator stops it or the next normal boot begins, a dead end stops togi, or every cell it could run needs an unavailable backend. It has no end time ([Night declaration](docs/spec/runtime.md#night-declaration)).
 
-**Together**:
-A trial condition where the whole profile is applied.
-_Avoid_: resident
+**Day**:
+Normal-boot use under the day offset, observed without workloads ([Day steps](docs/spec/tuner.md#day-steps)).
 
-**Parked trial**:
-A trial condition retaining the failed trial's workload and load, with a group's cores at failing offsets and all others at parked offsets.
-_Avoid_: masked
+**Night queue**:
+One of the kinds of work a night runs: mapping, control, qualification, requalification and reproduction, with the filler when none is due ([Scheduling](docs/spec/tuner.md#scheduling)).
 
-**Parked offsets**:
-The offsets at which a hunt group holds every core outside its selected candidates ([Hunt](docs/spec/tuner.md#hunt)).
-_Avoid_: anchor
+**Mapping**:
+A night queue that descends one CCD alone from 0 by five counts, brackets its first failure in single counts and sweeps from the edge U towards the cap S ([Night order](docs/spec/tuner.md#night-order-and-reserved-budgets)).
 
-**Group**:
-One hunt trial plan: the selected cores kept at failing offsets, with every other core at parked offsets ([Hunt](docs/spec/tuner.md#hunt)).
-_Avoid_: mask
+**Control**:
+A night queue that runs the whole coverage matrix at all-zero, on the first night and after a firmware change ([CO-0 controls](docs/spec/tuner.md#co-0-controls)).
+_Avoid_: baseline run
 
-**Search**:
-The phase that finds and checks a core's candidate solo limit with R1 and R2 trials alone.
+**Qualification**:
+A night queue that runs the whole coverage matrix on one exact day profile; only a complete, current one lets that profile become the day offset ([Coverage matrix](docs/spec/workloads.md#coverage-matrix)).
 
-**Hunt**:
-Parked trials that identify the core or combination behind an unattributed failure outside multi-core R7, or a located hunt's unloaded cores.
+**Requalification**:
+The qualification of the current day offset, due 30 days after its last complete one or at once when invalidated.
 
-**Located hunt**:
-The hunt of an unattributed multi-core R7 failure whose unloaded cores were not all at 0, started only when stepping back its load's top requesters stops helping or cannot help. Its first group, locate, reruns the failed load with the unloaded cores at 0. The escalation grounds and reuse of a prior `loaded` result are in [Escalation](docs/spec/tuner.md#escalation-to-a-located-hunt).
+**Reproduction**:
+A night queue that re-runs a CPU-suspect daily event's failed profile, then each CCD alone, for one night. It never qualifies; it ends reproduced, unreproduced or untestable.
 
-**Member probe**:
-A hunt's parked trial after it finds a combination, which moves one member to find how shallow it must be for the combination to pass ([Hunt](docs/spec/tuner.md#hunt)).
-_Avoid_: edge probe
+**Filler**:
+The work a night does when no queue has due work: a cap probe one count deeper than S, otherwise exact repeats of the day offset's qualification cells.
 
-**Margin**:
-The one count by which a core's checking starts shallower than its solo limit. A method constant, not fitted to any machine ([Phase 1](docs/spec/tuner.md#phase-1)).
-_Avoid_: tolerance, safety offset
+**Share**:
+A queue's soft percentage of the night's elapsed observed time. A queue at or over its share yields only while another with due work is under its own; it is neither a cap nor a guarantee.
 
-**Phase 1**:
-Checking from the margin offsets until the first passed full cycle that ends after every core left search. It never deepens: group failures only step cores back ([Phase 1](docs/spec/tuner.md#phase-1)).
+**Elapsed observed time**:
+What a night's tasks consumed, filler included. Intended time, sleep and unobserved downtime are not part of it.
 
-**First result**:
-The first confirmed profile: phase 1's passed full cycle. `run --first-result` stops there, before phase 2 moves a core ([BIOS profile](docs/spec/tuner.md#bios-profile)).
-
-**Phase 2**:
-The bounded phase after phase 1: rounds that move each candidate one count toward its solo limit, then the confirmation cycle ([Phase 2](docs/spec/tuner.md#phase-2)).
-
-**Remaining work**:
-Phase 2's worst case shown to the operator: each candidate's gap to its solo limit, the most rounds left if none fails, then one full cycle. It never estimates through future failures ([Remaining work](docs/spec/tuner.md#phase-2)).
-
-**Deepening**:
-Phase 2's rounds: each moves every candidate one count toward its solo limit and checks the moved cores. Nothing deepens outside search and these rounds.
-_Avoid_: refinement, refine
-
-**Confirmed profile**:
-The profile of phase 1's first passed full cycle (the first confirmed profile), then that of every later passed full cycle: the confirmation cycle's, then each cycle of indefinite checking.
-
-**Held failure**:
-After phase 2 concludes and the gate is open, the first failure against a core: the tuner moves nothing, the BIOS profile shows the step-back at once, and a second failure against the same core within K cycles steps it back ([Later failures](docs/spec/tuner.md#later-failures)).
-
-**BIOS profile**:
-The profile to enter in BIOS: the last confirmed profile with every later step-back applied and every held failure shown stepped back ([BIOS profile](docs/spec/tuner.md#bios-profile)).
-
-**Unconfirmed profile**:
-A BIOS profile with a core shown stepped back, by a step-back or by a valid held failure, since the last confirmed profile; the next passed full cycle confirms it, except for cores a valid hold still shows stepped back.
-
-**Confirmation cycle**:
-The cycle that starts once phase 1 has ended and no round is due. Its first passed full end concludes phase 2; checking then continues indefinitely without deepening ([Phase 2](docs/spec/tuner.md#phase-2)).
-
-**Checking**:
-Testing together across all regimes; it continues indefinitely after phase 2 concludes.
-_Avoid_: guard
-
-**Cycle**:
-One pass through the configured checking schedule, whose requirements are trials.
-_Avoid_: rotation
-
-**Full cycle**:
-A cycle covering every R1 and R2 workload on every core, every part of every R7 workload occurrence, partials included, and R3, R4, R5 and R6 ([Checking](docs/spec/tuner.md#checking)).
-_Avoid_: qualifying rotation
-
-**Clean cycle**:
-A passed full cycle that ended at or after phase 2's conclusion. The phase-1 cycle never counts, and nothing earlier is credited. A passed cycle can be not clean because it ended before the conclusion, not because it ended on a failed trial ([Checking](docs/spec/tuner.md#checking)).
-_Avoid_: qualified rotation
-
-**Passed cycle**:
-A cycle whose requirements all passed. Failures and backoffs inside it do not end it; it can pass after dozens of them. For example, cycle 1 can fail an R7 part, back off and rerun it, then fulfill its remaining requirements and end passed, still as cycle 1. It need not be full or end with every core at its limit.
-_Avoid_: clean rotation
+**Unavailable backend**:
+A backend excluded for the rest of a night after its trials stayed inconclusive through their retries; no cell that needs it runs, and the night's plan names it.
 
 **Inconclusive**:
 A trial outcome that says nothing about stability, such as a backend that failed to start.
 
 ### Evidence
-
-**Pass rule**:
-The number of passing launches needed to accept a trial class: `ceil(ln(evidence.miss) / log1p(-evidence.rate))`. `evidence.rate` is the failure probability per independent trial that the rule aims to detect; `evidence.miss` is the maximum probability of missing that rate by observing only passes. Defaults 0.5 and 0.05 require five passes. These are heuristic settings, not a bound on every real failure mode ([Evidence](docs/spec/tuner.md#evidence)).
 
 **Failure**:
 Evidence of instability: a computation error, a stall, a corrected MCE, an uncorrected MCE or a crash.
@@ -188,69 +124,47 @@ Evidence of instability: a computation error, a stall, a corrected MCE, an uncor
 The machine rebooted or froze without a clean shutdown, detected on the next boot.
 _Avoid_: hang, freeze, reset
 
-**Stray crash**:
-A crash that happened before togi applied its profile in that boot.
-
-**Attributed**:
-A failure whose evidence names one core.
-
-**Unattributed**:
-A failure whose evidence names no single core.
-
-**Failure point**:
-A failure's shallowest ruled-out offset for a core, set by [attribution](docs/spec/tuner.md#checking), a [hunt](docs/spec/tuner.md#hunt) culprit, an [R7 backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff) or a [carried failure point](docs/spec/journal.md#transitions) ([Failure points and combinations](docs/spec/tuner.md#failure-points-and-combinations)).
-_Avoid_: failed mark, mark of a core
-
-**Combination**:
-A failed combination of offsets on multiple cores; profiles at least as deep on every member reach the combination.
-_Avoid_: joint mark
-
-**At its limit**:
-A core at -50, or one for which one more count deeper would reach a failure point or combination ([Failure points and combinations](docs/spec/tuner.md#failure-points-and-combinations)).
-_Avoid_: done
-
-**Has room**:
-A core that has finished search but is not at its limit: at least one count deeper is within [-50, 0] and does not reach a failure point or combination. A descriptive phase: only a has-room core shallower than its solo limit is a phase-2 candidate.
-_Avoid_: resident (core state or phase)
-
-**Carried failure point**:
-A failure point a transition brings into the new session, recorded in `session.carried` with the session and `seq` it came from ([Transitions](docs/spec/journal.md#transitions)).
-_Avoid_: carried mark
-
-**Carried fact**:
-A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original provenance. It is not a new trial or live exposure ([Evidence](docs/spec/tuner.md#evidence)).
-
 **Evidence epoch**:
 The compatibility version of trial outcomes: workload content, the backend configuration togi generates, intended durations, and pass/failure detection ([Evidence compatibility](docs/spec/workloads.md#evidence-compatibility)).
 
-**Solo limit**:
-A core's checked candidate solo limit, tested alone. Checking starts one count shallower (the margin); phase 2 may return to it.
-_Avoid_: edge, stable value, optimal offset, result
+**Day offset (D)**:
+A CCD's applied offset on normal boots; 0 before its first step. Every core of the CCD receives it ([Day steps](docs/spec/tuner.md#day-steps)).
+_Avoid_: resident offset
 
-**Candidate solo limit**:
-An offset proposed as a core's solo limit, which still needs passing trials in its frozen R1 and R2 trial classes ([Search](docs/spec/tuner.md#search)). Search, configuration or carried evidence can supply it.
-_Avoid_: candidate edge
+**Cap (S)**:
+The deepest offset a CCD's night evidence supports: the shallower of the rate-limited offset and the edge plus five counts. 0 with no adequately exposed mapping class or an unknown edge ([Cap S](docs/spec/tuner.md#cap-s-margin-from-measured-slope)).
+_Avoid_: limit
 
-**Backoff**:
-Moving a core shallower after a failure.
+**Edge (U)**:
+The shallowest offset that failed in isolated mapping or reproduction of a CCD: *unknown*, *observed* or *censored* at the write limit when nothing failed ([Night edge U](docs/spec/tuner.md#night-edge-u)).
+_Avoid_: failure offset
 
-**Voltage-targeted backoff**:
-A backoff that raises a core's request to a voltage at which the load passed ([R7 voltage-targeted backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff)).
+**Slope**:
+How fast a class's failure rate grows with depth. *Fallback* until some class fails at two offsets, then *measured*: the conservative end of a fitted interval ([Measured slope](docs/spec/tuner.md#measured-slope)).
 
-**Proven backoff**:
-A backoff after attribution or a hunt identifies a failed offset or combination, recording the failure point or combination.
+**Coverage**:
+A class is *covered* for the cap when mapping adequately exposed it at the CCD; any other class is *uncovered* for the cap, which never means safe ([Adequate exposure](docs/spec/tuner.md#adequate-exposure)).
 
-**Yield**:
-A move back to a core's round baseline (the shallower of its last passed offset and its offset when the failed round began; [Phase 2](docs/spec/tuner.md#phase-2)), made by every deepened mover of that round that is not blamed, loaded or not. A yield does not finish its core: it remains eligible for another round, with only valid matching evidence counting toward its checks.
+**Hold**:
+The 50 applied daily hours at the current exact day offset that every later promotion needs ([Hold and next proposal](docs/spec/tuner.md#hold-and-next-proposal)).
+
+**Day step**:
+The cold-boot decision of the day policy: hold, promote, retreat or firmware-zero. A proposal commits only after a verified readback.
+
+**Veto**:
+The ban a CPU-suspect daily event puts on its whole profile and every profile at least as deep on all CCDs; it ends only when its event is reclassified ([Whole-profile veto](docs/spec/tuner.md#whole-profile-veto-and-escalation)).
+
+**Freeze**:
+A manual stop on promotions; it keeps the day offset and never blocks a retreat or a firmware reset.
+
+**Firmware validity**:
+Whether qualifications, slopes and caps still belong to the current BIOS, AGESA and microcode; a change invalidates them and sets the day offset to CO 0 ([Firmware](docs/spec/tuner.md#firmware)).
 
 **Ruleset**:
-The hardcoded strategy for search, hunts, the two phases, checking and backoffs.
+The hardcoded policy for per-CCD mapping, caps, qualification, reproduction and day steps.
 
 **Dead end**:
 A condition under which togi cannot make progress and stops itself.
-
-**All-zero rerun**:
-The failing trial run again with every core at offset 0 before a `failure_at_zero` dead end ([Dead ends](docs/spec/tuner.md#dead-ends)). The dashboard labels it `RERUN AT OFFSET 0`.
 
 ### Runtime
 

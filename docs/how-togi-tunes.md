@@ -1,169 +1,83 @@
 # How togi tunes
 
-This is the entry point to the tuning sequence. It explains the sequence and its cost; [the tuner spec](spec/tuner.md) owns the rules, [the workload spec](spec/workloads.md) owns what runs, and [the glossary](../GLOSSARY.md) owns the terms. The two-phase sequence below is the design of [#493](https://github.com/shgew/togi/issues/493) ([ADR 0054](adr/0054-two-phases-replace-the-deepening-loop.md)); the measured tables under [How long does it take?](#how-long-does-it-take) describe ruleset 10, before it.
+This is the entry point to the tuning policy. It explains the shape of the policy and what the screens show; [the tuner spec](spec/tuner.md) owns the rules and numbers, [the workload spec](spec/workloads.md) owns what runs, and [the glossary](../GLOSSARY.md) owns the terms. The design is [#1214](https://github.com/shgew/togi/issues/1214) with the owner's answers in [#1215](https://github.com/shgew/togi/issues/1215); [ADR 0079](adr/0079-day-observer-night-tester.md), [ADR 0080](adr/0080-per-ccd-first.md) and [ADR 0081](adr/0081-margin-from-measured-slope.md) record the decisions.
 
-Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More negative is **deeper**. A **profile** is all cores' offsets. It deliberately encounters failures, including crashes; a clean cycle is evidence of the workloads tested, not a promise that the machine cannot fail later.
+Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More negative is **deeper**. It deliberately encounters failures, including crashes; passing the workloads tested is evidence about those workloads, not a promise that the machine cannot fail later.
 
-The runner also supports explicitly managed controller placement for the coming Ruleset 13 schedules: capped isolation during mapping and host rotation when the load occupies the machine. Controller-host exclusions and process faults remain honest evidence rather than hidden load. This does not change the current sequence below; [controller placement](spec/workloads.md#controller-placement) owns the opt-in contract and [ADR 0078](adr/0078-controller-clock-and-rotation.md) explains it.
+## Days and nights
 
-## The sequence
+- **Nights test.** The operator starts a night (the tuning boot, or `togi run` by hand). It tests with workloads and runs until the operator ends it or the next normal boot begins; it has no end time. Ending it restores every core to CO 0.
+- **Days observe.** In normal boots togi applies one profile and watches it without running workloads: applied hours, faults, clean and unclean ends. [Daily observation](howto.md#daily-observation) says how to answer what happened after an unclean end.
+- **BIOS stays at CO 0.** Togi applies the day profile at boot ([ADR 0082](adr/0082-bios-stays-at-zero.md)); it never tells you to enter offsets in BIOS.
 
-```text
-Read the session baseline (or resume its journal)
-        |
-Search each core alone: R1 then R2, coarse then fine
-        |
-Check each candidate solo limit: five passes per class
-        |
-Apply all cores' offsets together, one count shallower
-than each solo limit (the margin)
-        |
-PHASE 1: checking cycle across R1–R7 <---------------+
-        |                                           |
-        +-- failure --> attribute or hunt           |
-        |                |                          |
-        |             backoff --> rerun ------------+
-        |             (only ever shallower)
-        |
-First passed full cycle: the first confirmed profile
-        |
-PHASE 2: rounds, while a core is shallower than its solo limit
-        |   each round: one count toward the solo limit, check the
-        |   moved cores; a failure blames a deepened core and rolls back
-        |
-Confirmation cycle (always runs, even when no core could move)
-        |
-        +-- failure --> deepened loaded cores return to their
-        |               phase-1 offsets, then the cycle continues
-        |
-First passed full confirmation cycle: the confirmed profile
-        |
-Clean cycles count from here. Stop after --cycles N clean cycles,
-or keep checking, never deepening again
-```
+A **profile** is one offset per CCD, expanded to every core of that CCD. Per-core refinement is outside this ruleset.
 
-A **trial** is one launch of one workload, under one fixed applied profile and one loaded set, for a specified duration. It passes, fails or is inconclusive. An inconclusive trial contributes no stability evidence; its retry follows the [scheduling rule](spec/tuner.md#scheduling) and is dropped if its context ends or its requirement changes. Five passes by default means five launches, not five minutes or five backend messages. The [pass rule](spec/tuner.md#evidence) tests a chosen failure-rate bound: with independent trials each failing with probability 0.5, five passes have probability 0.03125, below the configured miss probability 0.05. These defaults are a heuristic, not a fitted failure model or a guarantee about rare failures.
+## Three numbers per CCD
 
-### Search: a core alone
+| Name | Meaning | Who moves it |
+|---|---|---|
+| **D**, the day offset | The offset applied on normal boots; 0 before the first step | Day steps, retreats and a firmware reset |
+| **S**, the cap | The deepest offset the night evidence supports | Night evidence, recomputed whenever it changes |
+| **U**, the edge | The shallowest offset that actually failed with only that CCD tuned | Night mapping and reproduction, never a day event |
 
-Only the target core has its offset; every other core is at 0. A step is a 90-second R1 trial followed by a 90-second R2 trial. R1 exercises light single-thread boost; R2 exercises vector-heavy loads. The first failure rejects the step. Cores take turns so each can cool between its trials.
+**U** is *unknown* until mapping has looked, *fails at N* once a failure is observed, or *censored at −50* when nothing failed down to the write limit. Unknown is not zero.
 
-Before finding a failure, search moves five counts deeper after a passing step. Once it brackets a failure, it moves one count at a time. The candidate solo limit is −50 or the passed offset immediately shallower than the failure point. It then needs five passes in each of its frozen R1 and R2 classes. Ordinary search-step passes before that check do not count; eligible carried passes can count. [Search](spec/tuner.md#search) has a worked example and the exact rules.
+**S** is the shallower of two limits. One is the *rate limit*: togi budgets one added crash per 3,000 applied hours for the machine, split equally between CCDs, and projects each mapping class's failure rate to the offset where it reaches that share. The other keeps a margin of five counts from the edge, `min(U + 5, 0)`. With no adequately exposed mapping class, or U unknown, S is 0. The Poisson rate and the log-linear projection are modeling assumptions, not a proof about rare failures.
 
-The five-then-one stride and 90-second budget are heuristics: coarse steps reduce the number of launches before a failure is bracketed, then unit steps find the count boundary. There is no recorded comparison establishing them as optimal. Starting at the session baseline rather than at −50 is deliberate: [ADR 0006](adr/0006-start-from-bios-values.md) preserves the operator's chosen starting values unless configuration overrides them. BIOS CO 0 is recommended, not enforced.
+The projection needs a **slope**: how fast the failure rate grows with depth. Until some class has failures at two or more offsets, togi uses a labelled **fallback** slope (a rate 1.5 times higher per count). After that the **measured** slope is the conservative end of a fitted interval, and later non-mapping evidence cannot make S deeper.
 
-### Checking: all offsets together
+**Coverage.** Only mapping classes count towards S: single-core rotation, light core beside heavy neighbours, multi-core partial loads and all-threads serial positions. Everything else, such as load steps, duty-limited loads, SMT, idle, and qualification, control and reproduction exposure, is **uncovered for the cap** even when it passed. `togi status` lists those classes; uncovered is never read as safe.
 
-A **checking cycle** is one pass through a captured schedule. Its requirements are passing trials in particular classes. The default schedule covers all seven regimes, not just the R1/R2 loads used in search:
+## What a night does
 
-- R1 light; R2 vector heavy; R3 load steps; R4 medium duty; R5 both SMT threads; R6 idle and bursts; R7 multi-core vector-heavy loads.
-- R1, R2 and R7 occur three times to cover their three workload catalogs. R3 and R4 also occur three times since ruleset 10 ([#107](https://github.com/shgew/togi/issues/107)). R5 occurs once; R6 occurs twice.
-- Each R7 occurrence tests each CCD's full load, then a request-ordered chain of partial loads, then the all-core load. A partial idles the preceding load's top-request group, including ties, until fewer than two loaded cores would remain. Each part requires three short trials and one long trial.
+A night works through five queues. Each has a **share** of the night's elapsed observed time. Shares are soft: a queue at or over its share yields only while another queue with due work is under its own.
 
-The breadth is intentional ([ADR 0020](adr/0020-hunt-and-refine.md)); the precise composition, two R6 occurrences, and three-short-plus-one-long budgets are heuristics, not a measured optimum. Repeated short launches sample onset failures; the long launch adds sustained exposure. [Durations and checking schedule](spec/workloads.md#durations-and-checking-schedule) owns the allocations.
+| Queue | What it does | Share of elapsed observed time |
+|---|---|---|
+| reproduction | Re-runs the failed profile of the oldest CPU-suspect daily event, then each CCD alone; one night per event | up to 25% |
+| qualification | Runs the whole coverage matrix on the exact next day profile | up to 75% |
+| mapping | Descends each CCD alone from 0 by five counts, brackets the first failure in single counts, then sweeps from U towards S | 10% |
+| control | Runs the whole matrix at all-zero on the first night and after a firmware change; a conclusive failure there stops togi with `platform unstable at stock` | 5% |
+| requalification | Re-runs the matrix for the current D 30 days after its last full qualification, or at once when invalidated | 10% |
 
-**A failure or backoff does not restart or fail the cycle.** It invalidates contradicted evidence, repairs the profile and reruns the failed class. Uncontradicted passes on deeper profiles can still cover the now-shallower profile. The same cycle resumes its remaining requirements. It can pass after dozens of failures and backoffs. For example, cycle 1 can fail an R7 part, hunt and back off, rerun that part, and later end passed—all still cycle 1.
+Queues are visited in the order reproduction, qualification, mapping, control, requalification. When none has due work the **filler** runs: a cap probe one count deeper than S on the CCD whose S is furthest from its edge, otherwise exact repeats of D's qualification cells. A cell that needs an **unavailable backend** (one that stayed inconclusive through its retries) is skipped and the night records it. A night ends at the operator's stop, the next normal boot, a dead end, or when every cell it could run needs an unavailable backend.
 
-After a profile change, every R7 chain re-derives from its full load. A part whose loaded set is unchanged keeps its passes and runs no new trial; a part whose set changed needs its own three short and one long trial; a set that left the chain is no longer required. The cycle therefore passes only after the ending profile's riskiest loads have run ([ADR 0055](adr/0055-rederive-r7-chains-after-a-backoff.md), [Together trial sequence](spec/tuner.md#together-trial-sequence)).
+A **trial** is one launch of one workload under one applied profile for a stated duration. It passes, fails or is inconclusive; an inconclusive trial adds no evidence. Exposure is eligible measured execution time only, never intended time, downtime or an extrapolated crash tail. [The coverage matrix](spec/workloads.md#coverage-matrix) owns which classes a qualification needs.
 
-A **passed cycle** has fulfilled its requirements. A **full cycle** additionally has the required workload breadth. A **clean cycle** is a passed full cycle that ended at or after phase 2's conclusion. A passed cycle that is not clean ended before that, as phase 1's first confirmed cycle does, not because its trials failed. The exact rules are in [Checking](spec/tuner.md#checking).
+A **qualification** is complete only when every cell of the matrix has been witnessed on the exact profile under current content, epoch and firmware. Reproduction never qualifies. A night can end mid-matrix; the next one resumes the outstanding cells.
 
-### Hunts: identify an unattributed cause
+## What a day does
 
-A **hunt** repeats the failed workload and loaded set while changing which candidate cores retain their failing offsets. Other cores are held at parked offsets. This separates changing an offset from changing the load. Parts and complements narrow a failing subset; each group needs five passes by default and its first failure rejects it. Valid existing evidence can avoid launches ([ADR 0023](adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](adr/0024-schedule-from-uncontradicted-evidence.md), [ADR 0027](adr/0027-carry-trial-facts.md)).
+Day steps are decided at a cold boot and applied only after a verified readback.
 
-A hunt keeps its partition order across profile changes and resume. A crash while applying a group's parked profile is handled as parked, even before its trial starts; attribution naming one core ends the hunt naming that core ([Hunt](spec/tuner.md#hunt), [Crashes](spec/tuner.md#crashes)).
+- **Hold.** Every promotion after the first needs 50 applied daily hours at the current exact D since the latest CPU-suspect event. Paused, suspended, unknown and tuning time does not count.
+- **Step.** The CCD furthest from its S moves `max(1, ceil((D−S)/2))` counts towards S, never past it, and only to a profile that is qualified, not deeper than any S, not vetoed, with freeze off, no question pending and no unresolved event. A step that is not allowed is a *hold* that names its blocker.
+- **Veto.** A CPU-suspect daily event, including a crash recorded by hand, forbids that whole profile and anything at least as deep on every CCD. A veto never expires and no clean night clears it; only reclassifying its event does. At the next cold boot the newest promotion is reverted, and a further event at the stepped-back profile reverts each CCD's newest remaining step.
+- **Retreat.** If S becomes shallower than D, the day profile retreats without waiting for a hold. If the shallower profile is not qualified, D falls to CO 0 until it is.
+- **Freeze.** Keeps D and blocks promotions; it never blocks a retreat or a firmware reset.
+- **Firmware.** A BIOS, AGESA or microcode change invalidates qualifications, slopes and caps and sets D to CO 0. New controls and a new qualification must pass before a nonzero profile returns.
 
-A singleton records a failure point. Once a singleton group reproduces the failure, singleton probes can find the count boundary without paying for a full new hunt at every count: they first need a passing parked anchor in that same trial class, testing it explicitly if none is known, then move only the singleton between its reproduced failure and the anchor. CO 0 is not assumed stable; a failed anchor creates no bracket. Directly attributed failures retain their direct backoff. [ADR 0070](adr/0070-probe-reproduced-singleton-failures.md) records the decision and the `idle-limit` cost regression; [Hunt](spec/tuner.md#hunt) owns the rules. A failing multi-core subset records a combination: those offsets must not all be reached together. Member probes move each member separately to find usable backoff choices. A fallback combination records the conservative outcome when an ordinary hunt cannot reproduce a narrower failure; it is not proof that every member caused it.
+An unclean end raises a question; answering `frozen` makes it CPU-suspect, `graphics` or `power_off` makes it non-CPU, and `unsure` or no answer at a nonzero D forms a provisional CPU-suspect event. The rules are in [Daily events](spec/tuner.md#daily-events).
 
-Ordinary hunts handle unattributed failures outside multi-core R7, including idle crashes. Ruleset 10's **located hunts** test whether a multi-core R7 failure still occurs with unloaded cores at 0. They come from [#415](https://github.com/shgew/togi/issues/415) and [ADR 0040](adr/0040-located-hunts.md), not #107. [ADR 0053](adr/0053-escalation-only-located-hunts.md) makes them an escalation: such a failure is first charged by voltage-targeted backoff, and located only after its load has been backed off twice since its last passing trial or when no loaded core can step back. [ADR 0064](adr/0064-locate-when-passes-clear-the-loaded-cores.md) adds a third ground: the load already passed with its loaded cores as deep and an unloaded core shallower, so its loaded cores pass on their own. The exact partition order, evidence windows and outcomes are in [Hunt](spec/tuner.md#hunt).
+## What the screens show
 
-[ADR 0065](adr/0065-test-repeated-r7-charges.md) prevents a failed locate from becoming a crash loop: a `loaded` result is reused until that load passes or an unloaded tuning offset changes. Moving a loaded core alone does not rearm it.
+`togi watch` and `togi status` ask the tuner for these numbers; they calculate nothing themselves.
 
-### What happens after an R7 failure?
+`togi watch` has a header (clock, tuning time, session age, failures, crashes), a stage line, a narration line, one table per CCD and lower panels. Press `?` for the on-screen help and `l` for the log.
 
-There is no tolerated 5% R7 failure rate. Every applicable multi-core R7 failure requires a move or establishes a dead end, except that after phase 2 concludes, an eligible failure may be held and moves nothing until a second one pairs with it; the gate, the exceptions and the display are in [Later failures](spec/tuner.md#later-failures); a historical proposal to tolerate failures was rejected ([ADR 0038](adr/0038-self-sufficient-cores.md), [#386](https://github.com/shgew/togi/issues/386)).
+- **Stage line.** `NIGHT since 22:13 · 0h30m` with the task, for example `mapping CCD 1 at -20`, or `DAY`. It names no end time. After the night ended it shows `LAST NIGHT` times.
+- **CCD table.** Its title gives the CCD's load state. The first line reads `D -10 · S -26 fallback slope · bound by rate R1 · U fails at -31 · 16 counts to S`; the second `3 covered for the cap · 1 uncovered for the cap`. Each core row gives its offset and a gauge: applied depth, dots up to S, and a red mark at U (amber when censored).
+- **Night panel.** The open task, the mapping or qualification in progress, any reproduction, and each queue's `share` as used/target, such as `mapping 66%/10%`.
+- **Day panel.** `hold` (applied hours of the hours a step needs), the last step, freeze, firmware validity, pending questions, events and vetoes.
+- **Help.** Explains the words in the screen (offset, trial, D, S, U, slope, covered, hold, step, veto, freeze, qualifying, reproducing, share) and the kinds of load; the tuner spec owns the rules.
 
-The loaded cores share a voltage rail. Attribution groups are per CCD: a named core is charged directly; otherwise the affected CCD's highest requesters are the initial candidates for a voltage-targeted backoff. `stalled_core` selects a CCD, not a culprit core. The global rail maximum and per-CCD groups are distinct. Being reported **self-sufficient** means a core has passed as a top requester for that workload; it is evidence, not proof of future stability, and it does not excuse failures.
+`togi status` prints the same facts as text: the activity line (`night since 00:00, 11h55m elapsed: mapping (task mapping #2)`, or the day, a stop or a dead end); session and BIOS context; the trial in flight; a table `CCD CORES D S SLOPE BINDING U REMAINING COVERED UNCOVERED` with the uncovered classes below it; a **Day policy** part (applied profile, hold, latest step and what blocks it, freeze, firmware, events and vetoes); a **Night** part with the elapsed observed time and the queue table `QUEUE SHARE USED TIME`, current task, mapping cursors and qualification progress; and **Day** observation totals. Neither screen estimates a completion time.
 
-Backing off a top requester raises its request, so it can keep taking the blame without being the cause. After two unattributed charges of the same core for the same load, togi tests the part idling its tied request group **before rerunning the full load**, even if full-load passes occurred between the charges. For all-core failures it does this separately for each charged CCD while keeping the other CCD loaded. A stalled core outside the group brings that experiment forward, never becomes a culprit merely because it stalled. A failed partial follows its own normal attribution; a passing partial lets full-load reruns continue. [Testing a repeatedly charged requester](spec/tuner.md#testing-a-repeatedly-charged-requester) owns the duration, pass count, tie and minimum-load rules.
+## Costs
 
-| Situation | Next action |
-|---|---|
-| Live unattributed failure, with an unloaded core off CO 0 | Charge the loaded cores by voltage-targeted backoff, as in the rows below. Its reason says which backoff of this load it is since the load last passed. |
-| Such a failure that [escalates](spec/tuner.md#escalation-to-a-located-hunt): its load was backed off twice since it last passed, its load already passed with every loaded core as deep and an unloaded core shallower, or no loaded core on the affected CCDs can step back | Locate it, unless an earlier `loaded` result still answers it. Keep the loaded cores at their failing offsets; put unloaded cores at 0. Do not move a loaded core while the hunt is open. |
-| Locate fails | End `loaded`; charge the loaded-side failure. A group failure naming a loaded core charges that core. |
-| Locate passes | Narrow the unloaded candidates with parts and complements; a culprit or combination backs off those candidates. If no narrower group fails, rerun the full failing profile at the failed duration before deciding `loaded`. |
-| Failure charged to loaded cores | After phase 2 concludes, an eligible failure may be held instead and move nothing ([Later failures](spec/tuner.md#later-failures)). Otherwise choose a movable core in the affected request group, or the named core, and raise its request toward an eligible passing voltage target; without one, move one count shallower. Record its failure point. |
-| Unattributed top group at CO 0 | Step down the affected CCD's request order to a group with a movable loaded core. An all-core failure does not charge an all-zero CCD while another affected CCD can move. |
-| No movable affected loaded core, or a named top requester fails at 0 | Before stopping, rerun the same failed class with **every core** at 0, unless it already failed all-zero. A failed rerun establishes `failure_at_zero`; a passed rerun redirects attribution toward cores off CO 0 instead. When only unloaded cores are off 0, an all-zero locate performs this test. |
-| Backoff changes the tuning profile | Run any queued requester partial first, then rerun the failed class: five short trials, then one original-duration trial if different, with eligible evidence reusable. Continue the open cycle. |
+A qualification runs the whole matrix on one exact profile, so each step costs a night or several. Time already spent never counts twice: a pass at an unchanged CCD can be reused where [the workload spec](spec/workloads.md#coverage-matrix) allows. The simulated benchmarks for this policy are scored by [the registered day/night gate](benchmarking.md#daynight-gate); this document states no measured duration.
 
-This is the common path, not a second definition of edge cases. Carried failures, pending failures whose selected core is already shallower, CO-0 named non-top requesters, and all-zero-locate outcomes follow [R7 attribution](spec/tuner.md#r7-request-order-and-attribution), [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff) and [Dead ends](spec/tuner.md#dead-ends). The conversion of 3.6 mV per count used for estimated request shifts is an assumption, not a measured constant established for every core and operating point.
-
-Short crashes do not use a passing voltage target: their request summary may cover only an early, lower-request part of the launch. [ADR 0066](adr/0066-short-crashes-take-no-voltage-target.md) chooses a 60-second last-evidence floor, for named and unattributed crashes, with a one-count move unless existing step-down or failure-point safety requires more. This is a heuristic, not a measured settling time; non-crash failures keep their ordinary target rule. [The spec](spec/tuner.md#r7-voltage-targeted-backoff) owns the duration boundary and fallback rules.
-
-Named R7 failures borrow a voltage target only from a load wholly on the named core's CCD, never by pooling different loads to reach the pass count. Missing failure clocks use that load's latest measured clock; without either, togi takes the one-count fallback. [The target rule](spec/tuner.md#r7-voltage-targeted-backoff) owns the exact eligibility, invalidation and clock comparison; [ADR 0067](adr/0067-named-targets-stay-on-their-ccd.md) records the 25 MHz bench-candidate tolerance and its limits.
-
-Named computation errors and unexpected exits take smaller steps toward that voltage target instead of surrendering a large gap in one move ([ADR 0068](adr/0068-cap-named-non-crash-r7-backoffs.md)). This does not soften a failure point or the all-zero checks, and it does not cap crashes, MCEs, stalls or failures redirected to a request group. The exact cap and its boundaries belong to [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff). The target-machine motivation was five non-crash backoffs of 7–18 counts in runs 4–5 of session 20261012T225227Z; smaller steps trade extra reruns for retaining depth, not a measured safety improvement.
-
-### Phases: take the margin back, then confirm
-
-A **failure point** forbids that core's failing offset and deeper values. A **combination** forbids reaching all its members' recorded offsets together. These constraints apply to the tuning profile; a hunt deliberately tests a failed group profile.
-
-Checking starts each core one count shallower than its solo limit, the **margin**. The margin is a method constant of one count, not fitted to any machine; it avoids failures that would each cost a step back. **Phase 1** is checking from those offsets until the first passed full cycle. It never deepens: group failures only step cores back. That cycle's profile is the first confirmed profile.
-
-**Phase 2** follows by default. Its candidates are the cores shallower than their solo limit, whether by the margin or by a backoff of several counts. Each round moves every candidate one count toward its solo limit through offsets that reach no recorded failure point or combination, and checks only the moved cores' R1/R2 classes and affected R7 parts, with five short passes per class by default. A recorded failure point is never retried, so phase 2 can only take back margins and voltage-targeted backoffs; it barely deepens. When a round fails, the blamed deepened core backs off with a failure point. Every other mover, loaded or not, yields to its round baseline (the shallower of its last passed offset and its offset when the round began), but stays eligible for another round. A mover whose own checks passed keeps valid matching evidence; an untested mover still owes its checks. Retrying the same offset keeps its original alone workloads, and R7 checks follow the changed profile. Each failed blamed round forbids at least its blamed offset, so innocent retries cannot repeat it forever ([ADR 0069](adr/0069-yield-without-finishing-phase-two-movers.md)). The displayed rounds left assume no further failures, then one full confirmation cycle; [Phase 2](spec/tuner.md#phase-2) owns the exact rule.
-
-Phase 2 always ends with one full confirmation cycle, also when no core could move. A failure in it returns a loaded deepened core to its phase-1 offset first. Its first passed full end concludes phase 2; checking then continues without ever deepening again, and failures only step cores back. Once the profile has passed a cycle after the conclusion, a core steps back on its second failure within 5 cycles, not its first, so single background failures do not wear the profile down; the BIOS profile does not wait: it shows a held failure's core already stepped back, marked unconfirmed, and returns to the held offset if 5 cycles pass with no second failure. [Phase 1](spec/tuner.md#phase-1), [Phase 2](spec/tuner.md#phase-2) and [Later failures](spec/tuner.md#later-failures) own the rules; [ADR 0054](adr/0054-two-phases-replace-the-deepening-loop.md) and [ADR 0056](adr/0056-later-failures-step-back-in-pairs.md) record why.
-
-With `run --cycles 1`, togi stops right after the confirmation cycle; a larger N counts further cycles of indefinite checking. `run --first-result` stops earlier, right after phase 1's passed cycle, so the operator can enter the first confirmed profile before phase 2 moves anything. Without either flag, checking continues. Stopping and resuming uses the journal; the session can span many reboots.
-
-## How long does it take?
-
-### One default cycle on 16 cores, two full eight-core CCDs
-
-These are scheduled trial-duration totals with no failures, reruns or inconclusive retries, not real-machine wall-clock predictions. Request ties determine the R7 chains. The numbers are recorded in [#493's grilling measurements](https://github.com/shgew/togi/issues/493#issuecomment-6040930168).
-
-| Cycle work | Trials × duration | Trials | Load-hours |
-|---|---|---:|---:|
-| R1, R2, R3, R4: three occurrences each | 4 × 3 × 16 × 120 s | 192 | 6.40 |
-| R5: one occurrence per core | 16 × 120 s | 16 | 0.53 |
-| R6: two occurrences | 2 × 900 s | 2 | 0.50 |
-| R7: three occurrences, full CCDs and all cores | Per occurrence: 3 parts × 3 × 120 s, plus 300 + 300 + 600 s | 36 | 1.90 |
-| R7 partial chains | 0–12 additional parts per occurrence, each 3 × 120 + 300 s | 0–144 | 0–6.60 |
-| **Total** | | **246–390** | **9.3–15.9** |
-
-Each eight-core CCD can supply up to six partials (seven down to two loaded cores), or none when top-request ties end the chain at once. Startup, teardown, crashes, hunts, backoffs and phase-2 rounds add time. Search and hunts have variable numbers of steps/groups; a search step is two 90-second trials, a candidate check is five 90-second trials per class, a hunt group up to five trials at its selected duration, and a phase-2 round class five 120-second trials. Their rules determine how many are needed; they are not fixed-length phases.
-
-### Measured simulated sessions
-
-The following are **simulated**, not hardware measurements: `target-shared-voltage`, 24 seeds pooled, as recorded on 2026-10-07 in [#493's time-per-phase and convergence tables](https://github.com/shgew/togi/issues/493#issuecomment-6040930168). Ruleset 10 used commit `645f5296`; ruleset 9 used `84c2a011` with the common simulator and fitted anchor. The anchor was regenerated in [#461](https://github.com/shgew/togi/pull/461), merge `bf7230d7`. [Benchmarking](benchmarking.md) documents reproduction and why earlier gate numbers used a different anchor.
-
-| Activity | R9 median hours | R10 median hours | R10 p90 hours | R10 trials |
-|---|---:|---:|---:|---:|
-| Search | 13.4 | 13.4 | 13.5 | 553 |
-| Located hunt: locate | — | 16.5 | 22.3 | 474 |
-| Located hunt: parts and complements | — | 39.9 | 65.0 | 930 |
-| Located hunt: member probes | — | 28.3 | 50.9 | 738 |
-| Located hunt: full rerun | — | 4.1 | 6.1 | 124 |
-| Ordinary hunts | 0.4 | 0.2 | 0.6 | 6 |
-| Deepening rounds | 0.4 | 22.8 | 40.5 | 689 |
-| Cycles passed, then reopened | 10.6 | 84.7 | 153.1 | 2136 |
-| Final clean cycle | 11.6 | 14.5 | 15.1 | 358 |
-| Backoff reruns | 12.4 | 16.1 | 20.2 | 519 |
-| Crash reboots | 4.3 | 10.7 | 12.5 | — |
-| **Total** | **53.1** | **249.8** | **390.8** | **6529** |
-
-Each cell is a per-run statistic; medians of separate activities need not sum to the median total. R7 accounted for 158.5 simulated hours, **63%** of ruleset 10's time in the source analysis. The median final clean cycle was 14.5 hours, but most of the session came before it. The source recorded a median six cycles before the final clean one versus one for ruleset 9; no cycle in 252 across the analyzed 64 runs ended unpassed. That is why "not clean" must not be read as "failed cycle".
-
-| Whole profile's convergence to its own final offsets | R10 median hours | R9 median hours |
-|---|---:|---:|
-| Within ±2 counts on every core | 203.1 | 37.7 |
-| Within ±1 count on every core | 232.1 | 42.5 |
-| Exactly final | 241.2 | 46.5 |
-
-These are retrospective comparisons with each run's eventual profile, not an online stopping rule or accuracy against a known physical limit. On this anchor, ruleset 10's median total time was about **4.7×** ruleset 9's (249.8 / 53.1), not the pre-#461 gate's 1.90× figure.
+Earlier rulesets are recorded in [Ruleset history](#ruleset-history), the changelog and the [ADR index](adr/README.md). Historical ADRs keep their original terms and decisions; follow their supersession links rather than treating every old decision as active.
 
 ## Ruleset history
 
@@ -182,5 +96,3 @@ Merge commits below are where each numbered constant first reached `main`, not n
 | 9 | Request-ordered R7 chains, ordinary partial evidence, top-request attribution, voltage-targeted backoff and self-sufficiency reporting ([ADR 0038](adr/0038-self-sufficient-cores.md)) | Target machine: core 11 failed only without core 10 loaded; simulator gate | [`0ccbe089`](https://github.com/shgew/togi/commit/0ccbe089) |
 | 10 | Located hunts, full failing-duration rerun, all-zero rerun before zero-offset dead ends ([ADR 0040](adr/0040-located-hunts.md)); backend-identity pass validity; default R3/R4 three times ([#107](https://github.com/shgew/togi/issues/107)) | Simulator: `idle-limit`, `late-onset`, `target` and `target-nonmember-mce` exposed incorrect blame/dead ends; broader load-step/duty coverage | [`c660ba67`](https://github.com/shgew/togi/commit/c660ba67) |
 | 11 | Escalation-only located hunts ([ADR 0053](adr/0053-escalation-only-located-hunts.md)); crashes are a cost ([ADR 0052](adr/0052-crashes-are-a-cost.md)); one-way phase 1 with a one-count margin and a bounded phase 2 with a confirmation cycle ([ADR 0054](adr/0054-two-phases-replace-the-deepening-loop.md)); R7 chains re-derived after a backoff ([ADR 0055](adr/0055-rederive-r7-chains-after-a-backoff.md)); later failures step a core back in pairs ([ADR 0056](adr/0056-later-failures-step-back-in-pairs.md)); idle thermal-trip failures ([#494](https://github.com/shgew/togi/issues/494)); retry context ([#590](https://github.com/shgew/togi/issues/590)); fixed hunt order ([#591](https://github.com/shgew/togi/issues/591)); hunt-duration escalation ([#507](https://github.com/shgew/togi/issues/507)) | Simulator: 249.8 h median on `target-shared-voltage` under ruleset 10 ([#493](https://github.com/shgew/togi/issues/493)) | [#683](https://github.com/shgew/togi/pull/683) |
-
-Historical ADRs keep their original terms and decisions. The [ADR index](adr/README.md#adr-0020-terms-today) maps the old vocabulary to current rules; follow its supersession links rather than treating every old decision as active.

@@ -5,7 +5,7 @@ expression: "report(&journal, Some(cutoff))"
 Session
 field     value
 id        20260101T000000Z
-rulesets  2
+rulesets  3
 builds    1.2.3
 events    31
 first     2026-01-01T00:00:00Z

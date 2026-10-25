@@ -5,7 +5,7 @@ expression: log.report()
 Session
 field     value
 id        20260101T000000Z
-rulesets  2
+rulesets  3
 builds    1.2.3+abc
 events    29
 first     2026-01-01T00:00:00Z

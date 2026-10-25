@@ -436,7 +436,7 @@ Status:
 | `TestFlagErrorsSpellFlagsWithTwoDashes` | `togi::cli::tests::usage_errors_exit_2_with_stderr_only` | O(it pinned the rewording of Go's `flag` messages; clap words its own, pinned by the usage-error test listed) |
 | `TestFlagErrorsPreserveQuotedValues` | — | O(the same rewording, whose parser could mistake a submitted value for its own text; clap's errors carry the value as data) |
 | `TestConfigOnCommandsWithoutConfigIsAUsageError` | `togi::cli::tests::config_is_rejected_with_the_scope_error_wherever_it_is_written`<br>`togi::cli::tests::the_scope_error_shows_the_usage_of_the_command_it_names`<br>`togi::args::tests::config_is_rejected_where_it_is_not_attached`<br>`togi::cli::usage_errors_exit_2_on_stderr_with_nothing_on_stdout`<br>`togi::read::commands::config_is_a_usage_error_before_or_after_the_command_name` | A |
-| `TestStatusFitsEightyColumns` | `togi::read::status::status_fits_eighty_columns` | A |
+| `TestStatusFitsEightyColumns` | `togi::read::status::scenarios_render_the_status` | A |
 | `TestWrapLines` | `togi::table::tests::text_wraps_at_the_width_and_continues_under_the_rest_prefix`<br>`togi::table::tests::wide_text_wraps_by_terminal_cells`<br>`togi::table::tests::a_word_wider_than_the_room_overflows_instead_of_splitting` | A |
 | `TestStatusHuntLabelsAccumulatedPassEvidence` | `togi::read::status::scenarios_render_the_status`<br>`togi::read::status::pass_evidence_above_need_is_shown_uncapped` | A |
 | `TestStatusWideTablesWrapWithoutDroppingValues` | `togi::table::tests::a_row_wider_than_the_width_wraps_without_dropping_a_value`<br>`togi::table::tests::a_wide_cell_pads_to_its_cells_not_its_characters`<br>`togi::table::tests::wide_decision_notes_wrap_under_their_row_within_the_width` | A |
