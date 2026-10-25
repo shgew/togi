@@ -1182,6 +1182,83 @@ mod day {
         assert_eq!(proposal.profile, profile([-10, 0]));
     }
 
+    /// D at [-14, -15] after promotions [-12, -15] and [-14, -15], an unanswered Unknown end there,
+    /// and its provisional step back to the qualified [-12, -15] applied and held for 50 hours.
+    fn stepped_back_provisionally() -> Day {
+        let mut day = Day::new([-20, -20]);
+        day.promote([-12, -15]);
+        day.promote([-14, -15]);
+        day.crash("a", [-14, -15], EndClass::Unknown);
+        day.qualify(&[[-12, -15]]);
+        let decision = day.decide();
+        assert_eq!(retreat(decision.clone()).0, profile([-12, -15]));
+        day.apply(&decision);
+        day.close(&EventId::Boot(boot("a")));
+        day.run(HOURS_50);
+        day
+    }
+
+    #[test]
+    fn a_reclassified_applied_step_back_is_restored_before_the_half_distance_step() {
+        let mut day = stepped_back_provisionally();
+        day.qualify(&[[-14, -15], [-16, -15]]);
+        day.answer("a", DayAnswerKind::Graphics);
+        let decision = day.decide();
+        let DayDecision::Promote { proposal, hold, .. } = &decision else {
+            panic!("expected the restoration, got {decision:?}");
+        };
+        assert_eq!(proposal.profile, profile([-14, -15]));
+        let restores = proposal.restores.as_ref().unwrap();
+        assert_eq!(restores.events, [EventId::Boot(boot("a"))]);
+        assert_eq!(
+            *hold,
+            HoldCredit::Complete {
+                credited_secs: HOURS_50
+            },
+            "the restoration passes the ordinary hold at the stepped-back D"
+        );
+        // Applied, the restoration is consumed: the next step is the ordinary one.
+        day.apply(&decision);
+        day.run(HOURS_50);
+        day.qualify(&[[-17, -15]]);
+        let DayDecision::Promote { proposal, .. } = day.decide() else {
+            panic!("expected the half-distance step");
+        };
+        assert_eq!(proposal.profile, profile([-17, -15]));
+        assert_eq!(proposal.restores, None);
+    }
+
+    #[test]
+    fn a_blocked_restoration_holds_instead_of_taking_the_half_distance_step() {
+        let mut day = stepped_back_provisionally();
+        day.qualify(&[[-16, -15]]);
+        day.answer("a", DayAnswerKind::PowerOff);
+        let held = blockers(day.decide());
+        assert!(
+            matches!(
+                held.as_slice(),
+                [Blocker::NotQualified { proposal }] if proposal.profile == profile([-14, -15])
+            ),
+            "{held:?}"
+        );
+    }
+
+    #[test]
+    fn a_reclassification_before_its_step_back_applies_restores_nothing() {
+        let mut day = Day::new([-20, -20]);
+        day.promote([-12, -15]);
+        day.promote([-14, -15]);
+        day.run(HOURS_50);
+        day.crash("a", [-14, -15], EndClass::Unknown);
+        day.answer("a", DayAnswerKind::Graphics);
+        day.qualify(&[[-17, -15]]);
+        let DayDecision::Promote { proposal, .. } = day.decide() else {
+            panic!("expected the half-distance step");
+        };
+        assert_eq!(proposal.profile, profile([-17, -15]));
+        assert_eq!(proposal.restores, None);
+    }
+
     #[test]
     fn an_unsure_answer_stays_an_unresolved_event_after_its_question_is_answered() {
         let mut day = Day::new([-20, -20]);

@@ -117,7 +117,7 @@ impl State {
             }
             Payload::DayCleanStop(_) => self.record(event, Observed::CleanStop),
             Payload::DayUncleanEnd(p) => self.unclean(seq, event.time, p.clone()),
-            Payload::DayAnswer(p) => self.answer(p),
+            Payload::DayAnswer(p) => self.answer(seq, p),
             Payload::DayRecord(p) => self.manual(seq, event.time, p.clone()),
             Payload::DayFault(p) => self.live_fault(seq, event.time, event.boot.clone(), p.clone()),
             Payload::ExposureObserved(p) => self.exposure(seq, p),
@@ -416,7 +416,7 @@ impl State {
     }
 
     /// An answer counts only when it names a recorded unclean end's boot and that end's offsets.
-    fn answer(&mut self, answer: &togi_journal::DayAnswer) {
+    fn answer(&mut self, seq: Seq, answer: &togi_journal::DayAnswer) {
         let known = self
             .days
             .unclean
@@ -424,6 +424,7 @@ impl State {
             .any(|known| known.end.boot == answer.boot && known.end.offsets == answer.offsets);
         if known {
             self.days.answers.push(Answered {
+                seq,
                 boot: answer.boot.clone(),
                 answer: answer.answer,
             });
@@ -516,7 +517,7 @@ impl State {
             }
         } else if kind == EventKind::DayAnswer {
             if let Ok(answer) = serde_json::from_str::<togi_journal::DayAnswer>(&imported.raw) {
-                self.answer(&answer);
+                self.answer(seq, &answer);
             }
         } else if kind == EventKind::DayRecord {
             if let Ok(record) = serde_json::from_str::<togi_journal::DayRecord>(&imported.raw) {

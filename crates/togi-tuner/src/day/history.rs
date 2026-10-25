@@ -43,13 +43,17 @@ pub enum ApplicationKind {
 }
 
 /// A step-back application as the escalation chain reads it.
+#[derive(Clone)]
 pub(crate) struct RetreatRecord<'a> {
+    /// The journal position of the step-back application.
+    pub at: Seq,
     pub profile: &'a CcdProfile,
     pub events: &'a [EventId],
     pub reverted: &'a [Reverted],
     pub outcome: RetreatOutcome<'a>,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum RetreatOutcome<'a> {
     /// The retreat profile itself was applied.
     Reached,
@@ -196,6 +200,7 @@ impl DayHistory {
                 | ApplicationKind::Reapplication => return None,
             };
             Some(RetreatRecord {
+                at: application.at,
                 profile: &application.profile,
                 events,
                 reverted,

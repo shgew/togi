@@ -20,7 +20,7 @@ use super::ledger::{Sig, is_adequate};
 use super::night_query::NotReady;
 use super::plan::workloads_of;
 use crate::EVIDENCE_EPOCH;
-use crate::day::{CoreProfile, awaiting, propose, shallower, vetoes};
+use crate::day::{CoreProfile, awaiting, next_proposal, shallower, vetoes};
 use crate::night::{Cell, Layout, Matrix, Reuse, Source, qualification_cells};
 
 /// How long a complete qualification lasts before re-qualification is due.
@@ -682,7 +682,8 @@ impl State {
         (!blocked.is_empty()).then_some(blocked)
     }
 
-    /// The next admissible promotion proposal: D moved toward the committed cap S, unless an active veto
+    /// The next admissible promotion proposal: the restoration a reclassified step back owes, else D moved
+    /// toward the committed cap S, unless an active veto
     /// forbids it. A vetoed proposal is held, not replaced by another CCD or step, so there is nothing
     /// to qualify until a cap or a veto changes.
     pub(super) fn proposal(&self) -> Result<Option<CcdProfile>, NotReady> {
@@ -690,10 +691,11 @@ impl State {
             return Ok(None);
         };
         let caps = self.committed_caps()?;
-        let Some(proposal) = propose(&history.current().profile, &caps)? else {
+        let view = self.day_view()?;
+        let Some(proposal) = next_proposal(history, &view.events, &caps)? else {
             return Ok(None);
         };
-        let vetoes = vetoes(&self.day_view()?.events);
+        let vetoes = vetoes(&view.events);
         if !vetoes.is_empty() {
             let core = CoreProfile::of_ccd(&proposal.profile, &self.machine.cores)?;
             if vetoes.iter().any(|veto| veto.profile.forbids(&core)) {

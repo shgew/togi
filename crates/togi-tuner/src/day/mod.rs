@@ -29,7 +29,7 @@ pub use retreat::{
 pub(crate) use retreat::{awaiting, shallower};
 pub use step::{
     Blocker, DayDecision, DayInputs, Firmware, Freeze, HoldCredit, Invocation, Pause, Proposal,
-    day_step, propose,
+    Restoration, day_step, next_proposal, propose,
 };
 
 /// Applied daily seconds at the exact current D a promotion needs: 50 hours (`docs/spec/tuner.md`,

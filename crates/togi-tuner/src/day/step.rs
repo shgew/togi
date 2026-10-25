@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use togi_journal::Seq;
 use togi_machine::{CcdId, CcdProfile, CoreInfo, TargetOffset};
 
 use super::DayParams;
 use super::error::DayStepError;
 use super::events::{Classification, DailyEvent, EventId, QuestionState};
-use super::history::DayHistory;
+use super::history::{DayHistory, Promotion, RetreatOutcome, RetreatRecord};
 use super::hold::{DayInterval, credited_secs};
 use super::profile::CoreProfile;
 use super::retreat::{
@@ -80,6 +81,20 @@ pub struct Proposal {
     pub step: i64,
     /// The whole proposed profile.
     pub profile: CcdProfile,
+    /// The undone step back this proposal restores; `None` for an ordinary half-distance step.
+    pub restores: Option<Restoration>,
+}
+
+/// What a restoration proposal undoes: the step back of events since reclassified as no CPU
+/// evidence, and the original promotion it reverted.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Restoration {
+    /// The reclassified events the step back answered.
+    pub events: Vec<EventId>,
+    /// The original promotion's application.
+    pub promotion: Seq,
+    /// The step back's application.
+    pub retreat: Seq,
 }
 
 /// The next promotion proposal: among the CCDs with `D > S`, the largest `D - S` (ties to the
@@ -111,6 +126,90 @@ pub fn propose(applied: &CcdProfile, caps: &CcdProfile) -> Result<Option<Proposa
         remaining,
         step,
         profile: applied.with(ccd, to),
+        restores: None,
+    }))
+}
+
+/// The restoration a reclassification owes (`docs/spec/tuner.md`, Undoing a reclassified retreat):
+/// among the applied step backs whose events were all since reclassified as no CPU evidence, the
+/// newest original promotion they reverted (ties to the lower CCD id) that no later promotion
+/// restored, as `(promotion, CCD, step back)`. Promotions before a firmware reset are never restored.
+fn restoration<'a>(
+    history: &'a DayHistory,
+    events: &[DailyEvent],
+) -> Option<(Promotion<'a>, CcdId, RetreatRecord<'a>)> {
+    let promotions = history.promotions();
+    let reclassified = |id: &EventId| {
+        events
+            .iter()
+            .any(|event| &event.id == id && event.class == Classification::NonCpu)
+    };
+    let mut best: Option<(Promotion<'a>, CcdId, RetreatRecord<'a>)> = None;
+    for record in history.retreats() {
+        if !matches!(record.outcome, RetreatOutcome::Reached)
+            || record.events.is_empty()
+            || !record.events.iter().all(reclassified)
+        {
+            continue;
+        }
+        for reverted in record.reverted {
+            let Some(promotion) = promotions
+                .iter()
+                .find(|promotion| promotion.at == reverted.step)
+            else {
+                continue;
+            };
+            let Some(value) = promotion.to.get(reverted.ccd) else {
+                continue;
+            };
+            let restored = promotions.iter().any(|later| {
+                later.at > record.at
+                    && later.changed().any(|ccd| ccd == reverted.ccd)
+                    && later.to.get(reverted.ccd).is_some_and(|at| at <= value)
+            });
+            let newer = best.as_ref().is_none_or(|(chosen, ccd, _)| {
+                promotion.at > chosen.at || (promotion.at == chosen.at && reverted.ccd < *ccd)
+            });
+            if !restored && newer {
+                best = Some((*promotion, reverted.ccd, record.clone()));
+            }
+        }
+    }
+    best
+}
+
+/// The next promotion proposal the day rules make. A restoration a reclassification owes comes
+/// first: its CCD returns to the original promotion's value, never past the cap, and the other CCDs
+/// keep D; with no room left under the cap it proposes nothing rather than fall through to another
+/// CCD. Otherwise the half-distance step toward the caps.
+pub fn next_proposal(
+    history: &DayHistory,
+    events: &[DailyEvent],
+    caps: &CcdProfile,
+) -> Result<Option<Proposal>, DayStepError> {
+    let applied = &history.current().profile;
+    let Some((promotion, ccd, record)) = restoration(history, events) else {
+        return propose(applied, caps);
+    };
+    let value = promotion.to.get(ccd).ok_or(DayStepError::Ccd(ccd))?;
+    let cap = caps.get(ccd).ok_or(DayStepError::Ccd(ccd))?;
+    let from = applied.get(ccd).ok_or(DayStepError::Ccd(ccd))?;
+    let to = value.max(cap);
+    if from <= to {
+        return Ok(None);
+    }
+    Ok(Some(Proposal {
+        ccd,
+        from,
+        to,
+        remaining: from.get() - cap.get(),
+        step: from.get() - to.get(),
+        profile: applied.with(ccd, to),
+        restores: Some(Restoration {
+            events: record.events.to_vec(),
+            promotion: promotion.at,
+            retreat: record.at,
+        }),
     }))
 }
 
@@ -299,7 +398,7 @@ fn promotion(
         blockers.push(Blocker::UnresolvedEvents { events: unresolved });
     }
 
-    let proposal = propose(applied, inputs.caps)?;
+    let proposal = next_proposal(inputs.history, inputs.events, inputs.caps)?;
     match &proposal {
         None => blockers.push(Blocker::NothingToPromote),
         Some(proposal) => {

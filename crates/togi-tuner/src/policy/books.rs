@@ -280,6 +280,8 @@ pub(super) struct ManualRecord {
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct Answered {
+    /// The journal position of the answer, or of the import that carried it.
+    pub(super) seq: Seq,
     pub(super) boot: BootId,
     pub(super) answer: togi_journal::DayAnswerKind,
 }

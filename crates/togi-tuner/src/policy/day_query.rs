@@ -507,12 +507,14 @@ impl State {
                 .collect()
         };
         let cap_commits: Vec<Seq> = self.nights.caps.values().map(|cap| cap.seq).collect();
+        let mut restoring: Vec<Seq> = Vec::new();
         let (proposed, step, reason, causes, hours) = match decision {
             DayDecision::Hold { blockers } => {
                 if matches!(query.invocation, Invocation::SameBoot) {
                     return Ok(None);
                 }
-                let proposal_profile = crate::day::propose(applied, &caps)?.map(|p| p.profile);
+                let proposal_profile =
+                    crate::day::next_proposal(history, &view.events, &caps)?.map(|p| p.profile);
                 let blocked_by = self.hold_reasons(&blockers, proposal_profile.as_ref());
                 (
                     old.clone(),
@@ -525,24 +527,62 @@ impl State {
                     credited,
                 )
             }
-            DayDecision::Promote { proposal, .. } => (
-                self.ccd_vector(&proposal.profile)?,
-                StepKind::Promote {
-                    changed: proposal.ccd,
-                },
-                format!(
-                    "promote CCD {} from {} to {}",
-                    proposal.ccd,
-                    proposal.from.get(),
-                    proposal.to.get()
-                ),
-                StepCauses {
-                    caps: cap_commits,
-                    qualification: self.qualification_seq(&proposal.profile),
-                    ..StepCauses::default()
-                },
-                credited,
-            ),
+            DayDecision::Promote { proposal, .. } => {
+                // A restoration cites the reclassified events and their last answers, the original
+                // promotion and the step back it undoes (`docs/spec/tuner.md`, Undoing a
+                // reclassified retreat).
+                let (events, reason) = match &proposal.restores {
+                    None => (
+                        Vec::new(),
+                        format!(
+                            "promote CCD {} from {} to {}",
+                            proposal.ccd,
+                            proposal.from.get(),
+                            proposal.to.get()
+                        ),
+                    ),
+                    Some(restoration) => {
+                        restoring.extend([restoration.promotion, restoration.retreat]);
+                        restoring.extend(restoration.events.iter().filter_map(|event| {
+                            let EventId::Boot(boot) = event else {
+                                return None;
+                            };
+                            self.days
+                                .answers
+                                .iter()
+                                .rfind(|answer| &answer.boot == boot)
+                                .map(|answer| answer.seq)
+                        }));
+                        (
+                            restoration
+                                .events
+                                .iter()
+                                .filter_map(|event| self.event_commit(event))
+                                .collect(),
+                            format!(
+                                "restore CCD {} from {} to {}: the step back it undoes was reclassified",
+                                proposal.ccd,
+                                proposal.from.get(),
+                                proposal.to.get()
+                            ),
+                        )
+                    }
+                };
+                (
+                    self.ccd_vector(&proposal.profile)?,
+                    StepKind::Promote {
+                        changed: proposal.ccd,
+                    },
+                    reason,
+                    StepCauses {
+                        caps: cap_commits,
+                        qualification: self.qualification_seq(&proposal.profile),
+                        events,
+                        ..StepCauses::default()
+                    },
+                    credited,
+                )
+            }
             DayDecision::Retreat {
                 to,
                 causes,
@@ -636,6 +676,7 @@ impl State {
             cites.extend(causes.events.iter().copied());
             cites.extend(causes.vetoes.iter().copied());
             cites.extend(causes.qualification);
+            cites.extend(restoring);
             cites
         };
         Ok(Some(Decision::new(
