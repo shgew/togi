@@ -846,6 +846,47 @@ fn a_backend_missing_at_preflight_is_excluded_from_the_night_without_a_launch_or
 }
 
 #[test]
+fn a_stop_after_a_conclusive_stock_failure_keeps_the_failure_at_zero_dead_end() {
+    let sim = simulator_of(&MachineDefinition {
+        cores: 2,
+        script: vec![togi_sim::definition::ScriptDef {
+            trial: "0001".into(),
+            signal: Some(togi_machine::Signal::ComputationError),
+            ..togi_sim::definition::ScriptDef::default()
+        }],
+        ..MachineDefinition::default()
+    });
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let cancel = input.cancel.clone();
+    input.on_append = Some(Box::new(move |event| {
+        if matches!(&event.payload, Payload::TrialEnd(_)) {
+            cancel.cancel();
+        }
+    }));
+    let ended = run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let dead_ends: Vec<_> = ended
+        .journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::DeadEnd(dead_end) = &event.payload {
+                Some(dead_end.condition)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        dead_ends,
+        [togi_journal::DeadEndCondition::FailureAtZero],
+        "{:?}",
+        kinds(&ended.journal)
+    );
+}
+
+#[test]
 fn an_overflowing_duration_keeps_the_containment_dead_end_durable() {
     let sim = simulator();
     let mem = MemFs::new();

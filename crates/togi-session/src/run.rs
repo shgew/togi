@@ -1,7 +1,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use togi_machine::{ContentId, WorkloadId};
-use togi_tuner::policy::{Contents, NightQuery, NotReady};
+use togi_tuner::policy::{Contents, NightQuery, NotReady, State};
 
 use crate::SessionError;
 use crate::session::{Control, Ended, Outcome, Panic, RunInput, Session, Stop, message_of};
@@ -81,11 +81,12 @@ impl Session<'_> {
         Ok(content)
     }
 
-    fn tune(&mut self) -> Result<Stop, SessionError> {
+    /// Asks the night policy `question` with the query of this moment, finding each content it lacks first.
+    pub(crate) fn ask<T>(
+        &mut self,
+        question: impl Fn(&State, &NightQuery<'_>) -> Result<T, NotReady>,
+    ) -> Result<T, SessionError> {
         loop {
-            if let Some(stop) = self.check_dead_end()? {
-                return Ok(stop);
-            }
             let unavailable = self.unavailable_backends();
             let contents = Contents::new(
                 self.contents
@@ -97,14 +98,22 @@ impl Session<'_> {
                 contents: &contents,
                 unavailable: &unavailable,
             };
-            let action = match self.appender.tuner().next(&query) {
-                Ok(action) => action,
+            match question(self.appender.tuner(), &query) {
+                Ok(answer) => return Ok(answer),
                 Err(NotReady::UnknownContent(workload)) => {
                     self.content(workload)?;
-                    continue;
                 }
                 Err(error) => return Err(error.into()),
-            };
+            }
+        }
+    }
+
+    fn tune(&mut self) -> Result<Stop, SessionError> {
+        loop {
+            if let Some(stop) = self.check_dead_end()? {
+                return Ok(stop);
+            }
+            let action = self.ask(State::next)?;
             match self.execute(action)? {
                 Control::Continue => {}
                 Control::Stop(stop) => return Ok(stop),

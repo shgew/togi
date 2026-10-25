@@ -1,7 +1,7 @@
 //! Carrying out what the night policy asks next: a commitment to record, a trial to run or the end of the night.
 
 use togi_journal::{DeadEnd, DeadEndCondition};
-use togi_tuner::policy::{Action, Decision, EndReason, PolicyPayload};
+use togi_tuner::policy::{Action, Decision, EndReason, PolicyPayload, State};
 
 use crate::error::{Flow, Step};
 use crate::session::{Control, Fault, Outcome, Session, Stop};
@@ -64,10 +64,23 @@ impl Session<'_> {
             return Ok(Control::Stop(self.dead_end(dead_end, &causes)?));
         }
         if self.cancel.is_cancelled() {
-            return Ok(self.shut_down(Stop::Signal));
+            return self.signal_stop();
         }
         self.appender.append(payload.into(), &causes)?;
         Ok(Control::Continue)
+    }
+
+    /// A stop signal shuts the run down, unless a conclusive stock failure is already durable: the stock-control
+    /// dead end it established stands, though the commitments that would have led the policy to it are not appended.
+    pub(crate) fn signal_stop(&mut self) -> Step<Control> {
+        if let Some(Decision {
+            payload: PolicyPayload::DeadEnd(dead_end),
+            causes,
+        }) = self.ask(State::stock_dead_end)?
+        {
+            return Ok(Control::Stop(self.dead_end(dead_end, &causes)?));
+        }
+        Ok(self.shut_down(Stop::Signal))
     }
 }
 
