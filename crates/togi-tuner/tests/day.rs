@@ -1303,6 +1303,21 @@ mod day {
     }
 
     #[test]
+    fn a_restoration_with_no_room_under_its_cap_holds_instead_of_moving_another_ccd() {
+        let mut day = stepped_back_provisionally();
+        day.caps = profile([-12, -20]);
+        let ordinary = propose(&profile([-12, -15]), &day.caps).unwrap().unwrap();
+        assert_eq!(ordinary.ccd, ccd(1), "another CCD has an ordinary step");
+        day.qualify(&[[-14, -15], [-12, ordinary.to.get()]]);
+        day.answer("a", DayAnswerKind::Graphics);
+        assert_eq!(
+            blockers(day.decide()),
+            [Blocker::NothingToPromote],
+            "CCD 0 owes a restoration it has no room for under its cap"
+        );
+    }
+
+    #[test]
     fn a_reclassification_before_its_step_back_applies_restores_nothing() {
         let mut day = Day::new([-20, -20]);
         day.promote([-12, -15]);
