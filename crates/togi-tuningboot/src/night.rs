@@ -124,8 +124,8 @@ fn object_only<T: DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> 
     }
 }
 
-/// The boot loader's selection of the next boot, as the night switch uses it. This is the one seam
-/// a boot loader implements: [`GrubSelection`] keeps everything in GRUB's environment block.
+/// The boot loader's selection of the next boot, as the night switch uses it. [`BootSelection`]
+/// delegates to the selected boot loader, keeping loader details out of commands.
 pub trait Selection {
     /// Selects `tuning` for every following boot, remembering the selection it replaces. Beginning
     /// while `tuning` is already selected changes nothing, so a second beginning keeps the day the
@@ -146,50 +146,19 @@ pub trait Selection {
     fn end(&mut self) -> Result<SavedEntry, NightError>;
 }
 
-/// [`Selection`] in GRUB's environment block: `saved_entry` is the selection, `togi_day_entry` the
-/// one the night replaced and `togi_night` marks a night [`Selection::begin`] began.
-pub struct GrubSelection(Box<dyn Bootloader>);
+/// The night switch over the installed boot loader.
+pub struct BootSelection(Box<dyn Bootloader>);
 
-impl GrubSelection {
+impl BootSelection {
     #[must_use]
     pub fn new(bootloader: Box<dyn Bootloader>) -> Self {
         Self(bootloader)
     }
-
-    fn saved(&mut self) -> Result<Option<String>, NightError> {
-        self.0
-            .get(SAVED_ENTRY_VARIABLE)
-            .map(|value| value.filter(|value| !value.is_empty()))
-            .map_err(NightError::ReadSelection)
-    }
 }
 
-impl Selection for GrubSelection {
+impl Selection for BootSelection {
     fn begin(&mut self, tuning: &Entry) -> Result<(), NightError> {
-        let written = match self.saved()? {
-            Some(current) if current == tuning.as_str() => return Ok(()),
-            Some(day) => self.0.set(&[
-                (SAVED_ENTRY_VARIABLE, tuning.as_str()),
-                (DAY_ENTRY_VARIABLE, &day),
-                (NIGHT_VARIABLE, NIGHT_BEGUN),
-            ]),
-            None => self.0.unset(&[DAY_ENTRY_VARIABLE]).and_then(|()| {
-                self.0.set(&[
-                    (SAVED_ENTRY_VARIABLE, tuning.as_str()),
-                    (NIGHT_VARIABLE, NIGHT_BEGUN),
-                ])
-            }),
-        };
-        written.map_err(NightError::Select)?;
-        let found = self.saved()?;
-        if found.as_deref() == Some(tuning.as_str()) {
-            Ok(())
-        } else {
-            Err(NightError::NotSelected {
-                expected: tuning.to_string(),
-                found,
-            })
-        }
+        self.0.select_tuning_entry(tuning)
     }
 
     fn end(&mut self) -> Result<SavedEntry, NightError> {

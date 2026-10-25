@@ -6,7 +6,7 @@ use std::rc::Rc;
 use test_case::test_case;
 
 use super::{
-    DAY_ENTRY_VARIABLE, Entry, GrubSelection, NIGHT_BEGUN, NIGHT_VARIABLE, NightError,
+    DAY_ENTRY_VARIABLE, Entry, BootSelection, NIGHT_BEGUN, NIGHT_VARIABLE, NightError,
     SAVED_ENTRY_VARIABLE, Selection, Setup,
 };
 use crate::{Bootloader, Environment, SavedEntry};
@@ -113,10 +113,10 @@ impl Bootloader for Flaky {
     }
 }
 
-fn flaky(saved: Option<&str>, fault: Fault) -> (GrubSelection, Values) {
+fn flaky(saved: Option<&str>, fault: Fault) -> (BootSelection, Values) {
     let (_, values) = selection(saved);
     (
-        GrubSelection::new(Box::new(Flaky(Memory(Rc::clone(&values)), fault))),
+        BootSelection::new(Box::new(Flaky(Memory(Rc::clone(&values)), fault))),
         values,
     )
 }
@@ -124,7 +124,7 @@ fn flaky(saved: Option<&str>, fault: Fault) -> (GrubSelection, Values) {
 const TUNING: &str = "NixOS - togi";
 const DAY: &str = "NixOS - Configuration 7";
 
-fn selection(saved: Option<&str>) -> (GrubSelection, Values) {
+fn selection(saved: Option<&str>) -> (BootSelection, Values) {
     let values = Values::default();
     if let Some(saved) = saved {
         values
@@ -132,7 +132,7 @@ fn selection(saved: Option<&str>) -> (GrubSelection, Values) {
             .insert(SAVED_ENTRY_VARIABLE.to_owned(), saved.to_owned());
     }
     (
-        GrubSelection::new(Box::new(Memory(Rc::clone(&values)))),
+        BootSelection::new(Box::new(Memory(Rc::clone(&values)))),
         values,
     )
 }

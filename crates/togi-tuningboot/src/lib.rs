@@ -41,6 +41,42 @@ pub struct SavedEntry {
 }
 
 pub trait Bootloader: Environment {
+    /// Selects the tuning entry persistently, remembering the selection it replaces and reading
+    /// the result back. The default implements GRUB's environment-block selection.
+    fn select_tuning_entry(&mut self, tuning: &night::Entry) -> Result<(), night::NightError> {
+        use night::{DAY_ENTRY_VARIABLE, NIGHT_BEGUN, NIGHT_VARIABLE, SAVED_ENTRY_VARIABLE};
+        let current = self
+            .get(SAVED_ENTRY_VARIABLE)
+            .map_err(night::NightError::ReadSelection)?
+            .filter(|value| !value.is_empty());
+        match current {
+            Some(current) if current == tuning.as_str() => return Ok(()),
+            Some(day) => self.set(&[
+                (SAVED_ENTRY_VARIABLE, tuning.as_str()),
+                (DAY_ENTRY_VARIABLE, &day),
+                (NIGHT_VARIABLE, NIGHT_BEGUN),
+            ]),
+            None => self.unset(&[DAY_ENTRY_VARIABLE]).and_then(|()| {
+                self.set(&[
+                    (SAVED_ENTRY_VARIABLE, tuning.as_str()),
+                    (NIGHT_VARIABLE, NIGHT_BEGUN),
+                ])
+            }),
+        }
+        .map_err(night::NightError::Select)?;
+        let found = self
+            .get(SAVED_ENTRY_VARIABLE)
+            .map_err(night::NightError::ReadSelection)?
+            .filter(|value| !value.is_empty());
+        if found.as_deref() != Some(tuning.as_str()) {
+            return Err(night::NightError::NotSelected {
+                expected: tuning.to_string(),
+                found,
+            });
+        }
+        Ok(())
+    }
+
     /// Gives up the tuning selection, so the next boot is the day's. While a night begun with
     /// `night::Selection::begin` lasts (`night::NIGHT_VARIABLE`), the entry it remembered
     /// (`night::DAY_ENTRY_VARIABLE`) is selected again exactly, or none when the day had none, and
