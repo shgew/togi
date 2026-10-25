@@ -674,7 +674,7 @@ in
       # before the tuner starts. The console shows the guard's reboot and then the normal boot reaching multi-user;
       # that boot is then crashed too, so that a fresh shell connection reads the result (the shell of a boot
       # that reboots at once would answer with the old boot's connection).
-      machine.succeed("grub-editenv /boot/grub/grubenv set 'togi_night={\"until\":1,\"boots\":[]}' && sync")
+      machine.succeed("grub-editenv /boot/grub/grubenv set 'togi_night={\"until\":1}' && sync")
       machine.crash()
       machine.start(allow_reboot=True)
       machine.wait_for_console_text("reboot: Restarting system", timeout=180)

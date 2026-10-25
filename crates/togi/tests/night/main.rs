@@ -453,35 +453,17 @@ fn the_deadline_survives_crash_reboots_spread_over_the_night() {
     assert_eq!(night.value("saved_entry").as_deref(), Some(DAY));
 }
 
-#[test_case::test_case(5, false; "five boots go on")]
-#[test_case::test_case(6, true; "the sixth boot in the window returns")]
-fn a_crash_loop_returns_to_the_day(boots: usize, returns: bool) {
-    let night = Night::new();
-    night_begun_until(&night, "06:00");
-    let reboots = night.reboots();
-    for minute in 0..boots {
-        night.at(&format!("2026-01-01T01:{:02}:00Z", minute * 3));
-        assert_eq!(night.togi(&["night-guard"]).exit, Exit::Ok);
-    }
-    assert_eq!(night.reboots(), reboots + usize::from(returns));
-    let want = if returns { DAY } else { TUNING };
-    assert_eq!(night.value("saved_entry").as_deref(), Some(want));
-}
-
 #[test]
-fn boots_spread_wider_than_the_window_are_not_a_crash_loop() {
+fn many_boots_in_quick_succession_before_the_morning_keep_the_night() {
     let night = Night::new();
     night_begun_until(&night, "06:00");
     let reboots = night.reboots();
-    for step in 0..8 {
-        night.at(&format!(
-            "2026-01-01T0{}:{:02}:00Z",
-            1 + step / 2,
-            30 * (step % 2)
-        ));
+    for minute in 0..40 {
+        night.at(&format!("2026-01-01T01:{:02}:00Z", minute + 10));
         assert_eq!(night.togi(&["night-guard"]).exit, Exit::Ok);
     }
     assert_eq!(night.reboots(), reboots);
+    assert_eq!(night.value("saved_entry").as_deref(), Some(TUNING));
 }
 
 #[test]

@@ -12,17 +12,16 @@ use crate::report::fail;
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[(
         "sudo togi night-guard",
-        "Record this tuning boot, then end the night or let the tuner start",
+        "End the night if the morning has come, or let the tuner start",
     )])
 });
 
 /// Return to the day when the night is over, before the tuner starts
 ///
-/// Runs first in every tuning boot. It records the boot in the GRUB environment, where the
-/// count needs neither the tuner nor its journal. When the morning time has passed, or too many
-/// crash reboots came too fast, it restores the day's boot selection exactly and reboots; the
-/// tuner never starts. Otherwise it exits 0 and the tuner may start. A tuning boot entered from
-/// the boot menu gets a night that ends at the next morning time.
+/// Runs first in every tuning boot. When the morning time has passed it restores the day's boot
+/// selection exactly and reboots; the tuner never starts. Otherwise it exits 0 and the tuner may
+/// start, however many boots the night has had: a failure never ends a night. A tuning boot
+/// entered from the boot menu gets a night that ends at the next morning time.
 ///
 /// An error exits unsuccessfully, which keeps the tuner from starting unguarded.
 #[derive(clap::Args, Debug)]
@@ -31,7 +30,7 @@ pub struct Args {}
 
 const COMMAND: &str = "night-guard";
 
-/// Records this boot, then ends the night or lets it go on.
+/// Ends the night if the morning has come, or lets it go on.
 pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     let setup = match setup(ctx) {
         Ok(setup) => setup,
@@ -53,8 +52,12 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             );
             Exit::Ok
         }
-        Ok(Guard::Return(end)) => {
-            let _ = writeln!(ctx.err, "togi {COMMAND}: {end}; returning to the day");
+        Ok(Guard::Return(night)) => {
+            let _ = writeln!(
+                ctx.err,
+                "togi {COMMAND}: the morning time {} has passed; returning to the day",
+                night.until()
+            );
             match ctx.system.reboot() {
                 Ok(()) => Exit::Ok,
                 Err(error) => fail(ctx, COMMAND, togi_render::error_chain(&error)),

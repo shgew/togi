@@ -1,19 +1,20 @@
-//! Switching between night and day: the night record, its morning deadline and crash-loop count,
-//! and the boot loader's selection behind the one seam [`Selection`].
+//! Switching between night and day: the night record, its morning deadline and the boot loader's
+//! selection behind the one seam [`Selection`].
 //!
-//! A night is the tuning boot entered for a bounded time. Its record holds the morning deadline and
-//! the start times of its most recent boots, so a guard that runs early in every tuning boot can
-//! end the night when the morning has passed or the boots come too fast. Returning to the day
-//! restores the selection the night replaced, exactly, and never selects a particular generation.
+//! A night is the tuning boot entered for a bounded time. Its record holds the morning deadline, so
+//! a guard that runs early in every tuning boot can end the night once the morning has passed.
+//! Nothing else the guard sees ends a night: a failure is the tuner's to handle. Returning to the
+//! day restores the selection the night replaced, exactly, and never selects a particular
+//! generation.
 
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use jiff::Timestamp;
 use jiff::civil::Time;
 use jiff::tz::{AmbiguousOffset, TimeZone};
-use jiff::{SignedDuration, Timestamp};
 use serde::de::{self, DeserializeOwned};
 use serde::{Deserialize, Serialize};
 
@@ -27,12 +28,6 @@ pub const NIGHT_VARIABLE: &str = "togi_night";
 pub const DAY_ENTRY_VARIABLE: &str = "togi_day_entry";
 /// Where the NixOS module writes the [`Setup`].
 pub const SETUP_PATH: &str = "/etc/togi/night.json";
-
-/// Crash reboots within [`CRASH_LOOP_WINDOW`] that end the night: [`CRASH_LOOP_REBOOTS`] + 1 tuning
-/// boots, each after the first one a reboot.
-pub const CRASH_LOOP_REBOOTS: usize = 5;
-/// The span the crash reboots of a crash loop fall within.
-pub const CRASH_LOOP_WINDOW: SignedDuration = SignedDuration::from_mins(20);
 
 /// The longest entry name kept, so the night's variables leave room in GRUB's 1024-byte block.
 const MAX_ENTRY_BYTES: usize = 128;
@@ -75,8 +70,6 @@ pub enum RecordError {
     Syntax(#[source] serde_json::Error),
     #[error("a time is out of range")]
     Time(#[source] jiff::Error),
-    #[error("more than {} boots", CRASH_LOOP_REBOOTS + 1)]
-    Boots,
     #[error("entry must have 1 to 128 printable ASCII bytes")]
     Entry,
     #[error("morning must be HH:MM, 00:00 to 23:59")]
@@ -216,34 +209,10 @@ fn object_only<T: DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> 
     }
 }
 
-/// Why a night ends before its tuning boot tunes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum End {
-    /// The morning deadline has passed.
-    Morning { until: Timestamp },
-    /// [`CRASH_LOOP_REBOOTS`] reboots came within [`CRASH_LOOP_WINDOW`], the first of their boots
-    /// at `since`.
-    CrashLoop { since: Timestamp },
-}
-
-impl fmt::Display for End {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Morning { until } => write!(f, "the morning time {until} has passed"),
-            Self::CrashLoop { since } => write!(
-                f,
-                "{CRASH_LOOP_REBOOTS} crash reboots since {since}, within {} minutes",
-                CRASH_LOOP_WINDOW.as_mins()
-            ),
-        }
-    }
-}
-
-/// A night in progress: its morning deadline and the start times of its newest boots, oldest first.
+/// A night in progress: its morning deadline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Night {
     until: Timestamp,
-    boots: Vec<Timestamp>,
 }
 
 /// The record as it is stored: Unix seconds.
@@ -251,70 +220,37 @@ pub struct Night {
 #[serde(deny_unknown_fields)]
 struct Wire {
     until: i64,
-    boots: Vec<i64>,
 }
 
 impl Night {
-    /// A night that ends at `until` and has not booted yet.
+    /// A night that ends at `until`.
     #[must_use]
     pub fn new(until: Timestamp) -> Self {
-        Self {
-            until,
-            boots: Vec::new(),
-        }
+        Self { until }
     }
 
     pub fn until(&self) -> Timestamp {
         self.until
     }
 
-    pub fn boots(&self) -> &[Timestamp] {
-        &self.boots
-    }
-
-    /// Records a tuning boot that started at `at`, keeping the newest [`CRASH_LOOP_REBOOTS`] + 1.
-    pub fn boot(&mut self, at: Timestamp) {
-        self.boots.push(at);
-        let excess = self.boots.len().saturating_sub(CRASH_LOOP_REBOOTS + 1);
-        self.boots.drain(..excess);
-    }
-
-    /// Why the night ends at `now`, if it does: the morning first, then a crash loop, which needs
-    /// [`CRASH_LOOP_REBOOTS`] + 1 recorded boots no further apart than [`CRASH_LOOP_WINDOW`]. The
-    /// span is taken between the earliest and the latest, so a clock set back cannot shrink it below
-    /// what the boots recorded.
+    /// Whether the morning has come at `now`.
     #[must_use]
-    pub fn ended(&self, now: Timestamp) -> Option<End> {
-        if now >= self.until {
-            return Some(End::Morning { until: self.until });
-        }
-        if self.boots.len() <= CRASH_LOOP_REBOOTS {
-            return None;
-        }
-        let earliest = self.boots.iter().min()?;
-        let latest = self.boots.iter().max()?;
-        (latest.duration_since(*earliest) <= CRASH_LOOP_WINDOW)
-            .then_some(End::CrashLoop { since: *earliest })
+    pub fn ended(&self, now: Timestamp) -> bool {
+        now >= self.until
     }
 
     fn encode(&self) -> String {
         let wire = Wire {
             until: self.until.as_second(),
-            boots: self.boots.iter().map(|boot| boot.as_second()).collect(),
         };
-        // A struct of integers always serializes.
+        // A struct of one integer always serializes.
         serde_json::to_string(&wire).unwrap_or_default()
     }
 
     fn decode(record: &str) -> Result<Self, RecordError> {
         let wire: Wire = object_only(record).map_err(RecordError::Syntax)?;
-        if wire.boots.len() > CRASH_LOOP_REBOOTS + 1 {
-            return Err(RecordError::Boots);
-        }
-        let time = |second: i64| Timestamp::from_second(second).map_err(RecordError::Time);
         Ok(Self {
-            until: time(wire.until)?,
-            boots: wire.boots.into_iter().map(time).collect::<Result<_, _>>()?,
+            until: Timestamp::from_second(wire.until).map_err(RecordError::Time)?,
         })
     }
 }
@@ -439,45 +375,47 @@ impl Selection for GrubSelection {
 /// What the early-boot guard decided for this tuning boot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Guard {
-    /// The night goes on; this boot is recorded.
+    /// The night goes on.
     Tune(Night),
-    /// The night ended and the day's selection is restored; the caller reboots.
-    Return(End),
+    /// The morning has come and the day's selection is restored; the caller reboots.
+    Return(Night),
 }
 
-/// The early-boot guard of a tuning boot, before the tuner starts: records this boot at `now`, then
-/// returns to the day when [`Night::ended`] says so. A tuning boot without a night record was
-/// entered from the boot menu: it gets a night ending at the next `morning` in `zone`, and the day
-/// returns to the boot loader's default. The count never depends on the tuner or its journal.
+/// The early-boot guard of a tuning boot, before the tuner starts: returns to the day when the
+/// morning has come and otherwise lets the tuner start, however many boots the night has had. A
+/// tuning boot without a night record was entered from the boot menu: it gets a night ending at the
+/// next `morning` in `zone`, and the day returns to the boot loader's default. The guard needs
+/// neither the tuner nor its journal.
 ///
 /// # Errors
 ///
-/// Reading or writing the selection failed, or the stored record is invalid.
+/// Reading or writing the selection failed.
 pub fn guard(
     selection: &mut (impl Selection + ?Sized),
     now: Timestamp,
     morning: Morning,
     zone: &TimeZone,
 ) -> Result<Guard, NightError> {
-    let (mut night, adopted) = match selection.night() {
-        Ok(Some(night)) => (night, false),
-        Ok(None) => (Night::new(morning.next_after(now, zone)?), true),
+    match selection.night() {
+        Ok(Some(night)) if night.ended(now) => {
+            selection.end()?;
+            Ok(Guard::Return(night))
+        }
+        Ok(Some(night)) => Ok(Guard::Tune(night)),
+        Ok(None) => {
+            let night = Night::new(morning.next_after(now, zone)?);
+            selection.adopt(&night)?;
+            Ok(Guard::Tune(night))
+        }
         // A record the guard cannot read would otherwise hold the machine in the tuning boot with no tuner:
         // it is replaced by a night to the next morning, which keeps the day the night remembered.
-        Err(NightError::Invalid { .. }) => (Night::new(morning.next_after(now, zone)?), false),
-        Err(error) => return Err(error),
-    };
-    night.boot(now);
-    if let Some(end) = night.ended(now) {
-        selection.end()?;
-        return Ok(Guard::Return(end));
+        Err(NightError::Invalid { .. }) => {
+            let night = Night::new(morning.next_after(now, zone)?);
+            selection.store(&night)?;
+            Ok(Guard::Tune(night))
+        }
+        Err(error) => Err(error),
     }
-    if adopted {
-        selection.adopt(&night)?;
-    } else {
-        selection.store(&night)?;
-    }
-    Ok(Guard::Tune(night))
 }
 
 #[cfg(test)]

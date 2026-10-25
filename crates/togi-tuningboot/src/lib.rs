@@ -1,5 +1,5 @@
 //! Bounded restart-limit retries and leave reasons kept in GRUB's environment block, and the night
-//! switch ([`night`]): the morning deadline, the crash-loop count and the boot loader selection.
+//! switch ([`night`]): the morning deadline and the boot loader selection.
 //!
 //! The record types make an invalid leave reason unrepresentable, and `restart_limit` records an
 //! attempt before it grants either boot action, so a failure never grants a retry.

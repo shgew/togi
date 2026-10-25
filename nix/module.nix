@@ -239,8 +239,8 @@ in
               systemctl reboot
             '';
           };
-          # Runs before the tuner in every tuning boot and counts the boot in GRUB's environment, so neither the count
-          # nor the morning deadline depends on the tuner starting. togi requires it: a guard that fails keeps the
+          # Runs before the tuner in every tuning boot and checks the morning deadline kept in GRUB's environment, so
+          # the deadline does not depend on the tuner starting. togi requires it: a guard that fails keeps the
           # tuner from starting unguarded, and the guard's own failure unit returns to the normal system, because a
           # tuner start that fails on its dependency never reaches the restart limit.
           systemd.services.togi-night-guard-failed = {
@@ -269,7 +269,7 @@ in
             ];
             serviceConfig = {
               Type = "oneshot";
-              # Once per boot: a restart of the tuner finds the guard active and does not count as a boot.
+              # Once per boot: a restart of the tuner finds the guard active and does not check the morning again.
               RemainAfterExit = true;
               # A hung guard would hold the tuner back for good; the timeout fails it into the recovery above.
               TimeoutStartSec = "60s";

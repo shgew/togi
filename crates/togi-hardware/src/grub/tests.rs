@@ -254,7 +254,7 @@ const DAY: &str = "NixOS - Configuration 7";
 
 fn night(saved: &str) -> Fake {
     Fake::with(saved)
-        .value(NIGHT_VARIABLE, r#"{"until":1,"boots":[]}"#)
+        .value(NIGHT_VARIABLE, r#"{"until":1}"#)
         .value(DAY_ENTRY_VARIABLE, DAY)
 }
 
@@ -283,7 +283,7 @@ fn clearing_twice_selects_the_same_day_entry_again() {
 
 #[test]
 fn without_a_remembered_day_entry_clearing_unsets_and_forgets_the_night() {
-    let fake = Fake::with("NixOS - togi").value(NIGHT_VARIABLE, r#"{"until":1,"boots":[]}"#);
+    let fake = Fake::with("NixOS - togi").value(NIGHT_VARIABLE, r#"{"until":1}"#);
     assert_eq!(fake.grub().clear_saved().unwrap(), saved("NixOS - togi"));
     assert_eq!(fake.saved(), "");
     assert_eq!(fake.value_of(NIGHT_VARIABLE), None);

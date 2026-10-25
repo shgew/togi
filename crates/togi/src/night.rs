@@ -35,9 +35,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 ///
 /// The night ends at the next morning time, 07:00 unless the NixOS module sets another, or at
 /// the `--until` time. An early-boot guard in the tuning boot returns to the day once that time
-/// has passed, before the tuner starts, and also after repeated crash reboots; F10 on the tuning
-/// dashboard and the power button end the night too. Each restores the selection the night
-/// replaced exactly.
+/// has passed, before the tuner starts; F10 on the tuning dashboard and the power button end the
+/// night too. Each restores the selection the night replaced exactly. A crash never ends a night.
 ///
 /// Needs root, and the NixOS module's tuning boot, which writes /etc/togi/night.json.
 #[derive(ClapArgs, Debug)]
