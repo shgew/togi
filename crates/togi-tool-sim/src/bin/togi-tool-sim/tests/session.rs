@@ -145,6 +145,23 @@ fn a_finished_session_ends_its_journal_with_the_operators_shutdown() {
     );
 }
 
+#[test]
+fn a_rerun_after_a_closed_night_runs_a_fresh_night() {
+    let mut host = Host::default();
+    let args = ["--state-dir", "/state", "--night-hours", "1"];
+    assert_eq!(host.run(args).code, Some(0));
+    let first = host.events("/state").len();
+    let ran = host.run(args);
+    assert_eq!(ran.code, Some(0), "{}", ran.stderr);
+    let events = host.events("/state");
+    let second = &events[first..];
+    let elapsed = second.last().unwrap().time.duration_since(second[0].time);
+    assert!(
+        elapsed >= SignedDuration::from_hours(1),
+        "the second night ran only {elapsed:?}"
+    );
+}
+
 fn record(fs: MemFs, config: Config) {
     let simulator = Simulator::new(
         Model::new(&MachineDefinition::default(), 1).unwrap(),

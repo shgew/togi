@@ -4,9 +4,10 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
 use jiff::SignedDuration;
+use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_config::{Config, DEFAULT_PATH};
-use togi_journal::{Event, Seq};
+use togi_journal::{Event, Payload, Seq, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::{OutputFacts, Renderer, Style};
 use togi_session::{ConfigSource, Stop};
@@ -129,10 +130,9 @@ fn simulate(
     let persistence = persistence(args, log)?;
     let config = togi_simrun::recorded_config(&persistence, Config::default())?;
     let simulator = togi_simrun::resume_simulator(&persistence, model, seed, replay)?;
-    // The night ends a fixed time after it started, however many processes the machine's boots span.
-    let started = togi_simrun::events(&persistence)?
-        .first()
-        .map_or_else(|| simulator.now(), |first| first.time);
+    // The night ends a fixed time after it started, however many processes the machine's boots span. A night the
+    // operator already closed is over; a rerun opens a fresh one at the simulator's clock.
+    let started = night_started(&togi_simrun::events(&persistence)?, simulator.now());
     let stop_at = Some(started + night);
     let dir = match &persistence {
         Persistence::Files(dir) => dir.as_path(),
@@ -174,6 +174,18 @@ fn simulate(
         }
         SimOutcome::Stopped(finished) => report(&finished, &persistence, renderer, &zone, log, dir),
     })
+}
+
+/// When the night this run belongs to started: the first event after the operator's last closing signal stop, so an
+/// unfinished or crashed night keeps its original start and a closed one gives way to a fresh night at `now`.
+fn night_started(events: &[Event], now: Timestamp) -> Timestamp {
+    let opened = events
+        .iter()
+        .rposition(|event| {
+            matches!(&event.payload, Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal)
+        })
+        .map_or(0, |closed| closed + 1);
+    events.get(opened).map_or(now, |first| first.time)
 }
 
 fn temporary() -> Result<PathBuf, Error> {
