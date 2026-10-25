@@ -1533,3 +1533,28 @@ fn a_firmware_zero_message_names_the_reset_ccds_and_profiles() {
          (proposal; not applied)"
     );
 }
+
+#[test]
+fn a_hold_on_a_failed_qualification_names_the_blocked_profile_and_its_witnesses() {
+    let Payload::DayStep(sample) = sample(EventKind::DayStep) else {
+        unreachable!()
+    };
+    let profile = CcdVector {
+        ccd: ccd_profile(&[(0, -15), (1, -10)]),
+        cores: sample.old.cores,
+    };
+    let text = day_step_message(
+        StepKind::Hold {
+            blocked_by: vec![HoldReason::QualificationFailed {
+                profile,
+                witnesses: [12, 15].map(|seq| Seq::new(seq).unwrap()).to_vec(),
+            }],
+        },
+        &[(0, -10), (1, -10)],
+    );
+    assert_eq!(
+        text,
+        "decision 3: hold day profile CCD0 -10, CCD1 -10: CCD0 -15, CCD1 -10 failed qualification \
+         (witnesses #12, #15)"
+    );
+}

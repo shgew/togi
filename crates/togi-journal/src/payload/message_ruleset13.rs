@@ -287,6 +287,14 @@ pub(super) fn day_step(p: &DayStep) -> String {
                     HoldReason::Frozen {} => "frozen".to_owned(),
                     HoldReason::Paused {} => "paused".to_owned(),
                     HoldReason::Expired {} => "qualification expired".to_owned(),
+                    HoldReason::QualificationFailed { profile, witnesses } => {
+                        let witnesses: Vec<_> = witnesses.iter().map(ToString::to_string).collect();
+                        format!(
+                            "{} failed qualification (witnesses #{})",
+                            ccd_vector(profile),
+                            witnesses.join(", #")
+                        )
+                    }
                 })
                 .collect();
             format!(

@@ -1,6 +1,6 @@
 //! The day query: the intervals, events, vetoes, hold and step a day invocation owes.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 use jiff::Timestamp;
@@ -371,7 +371,7 @@ impl State {
         &self,
         blockers: &[Blocker],
         proposal_profile: Option<&CcdProfile>,
-    ) -> Vec<HoldReason> {
+    ) -> Result<Vec<HoldReason>, NotReady> {
         let mut reasons = Vec::new();
         for blocker in blockers {
             match blocker {
@@ -414,6 +414,14 @@ impl State {
                         HoldReason::NotQualified {}
                     });
                 }
+                Blocker::QualificationFailed { proposal } => {
+                    reasons.push(HoldReason::QualificationFailed {
+                        profile: self.ccd_vector(&proposal.profile)?,
+                        witnesses: self
+                            .qualification_blocked(&proposal.profile)
+                            .unwrap_or_default(),
+                    });
+                }
                 Blocker::HoldIncomplete {
                     credited_secs,
                     required_secs,
@@ -423,7 +431,22 @@ impl State {
                 }),
             }
         }
-        reasons
+        Ok(reasons)
+    }
+
+    /// The proposal a conclusive qualification failure durably blocks, if the next proposal is one:
+    /// the day policy asks about that exact profile only, so a genuinely different proposal is free.
+    fn blocked_proposals(
+        &self,
+        history: &crate::day::DayHistory,
+        view: &DayView,
+        caps: &CcdProfile,
+    ) -> Result<BTreeSet<CcdProfile>, NotReady> {
+        Ok(crate::day::next_proposal(history, &view.events, caps)?
+            .map(|proposal| proposal.profile)
+            .filter(|profile| self.qualification_blocked(profile).is_some())
+            .into_iter()
+            .collect())
     }
 
     fn event_commit(&self, id: &EventId) -> Option<Seq> {
@@ -468,6 +491,7 @@ impl State {
         let reproductions = self.reproduction_outcomes();
         let caps = self.committed_caps()?;
         let qualified = self.qualified_profiles(query.now);
+        let blocked = self.blocked_proposals(history, view, &caps)?;
         let decision = day_step(&DayInputs {
             topology: &self.machine.cores,
             history,
@@ -476,6 +500,7 @@ impl State {
             intervals: intervals.as_slice(),
             caps: &caps,
             qualified: &qualified,
+            blocked: &blocked,
             firmware: self.firmware_state(),
             freeze: self.days.freeze,
             invocation: query.invocation,
@@ -507,7 +532,8 @@ impl State {
                 .collect()
         };
         let cap_commits: Vec<Seq> = self.nights.caps.values().map(|cap| cap.seq).collect();
-        let mut restoring: Vec<Seq> = Vec::new();
+        // Witnesses a step cites beyond its `causes`: a restoration's and a blocking failure's.
+        let mut witnesses: Vec<Seq> = Vec::new();
         let (proposed, step, reason, causes, hours) = match decision {
             DayDecision::Hold { blockers } => {
                 if matches!(query.invocation, Invocation::SameBoot) {
@@ -515,7 +541,16 @@ impl State {
                 }
                 let proposal_profile =
                     crate::day::next_proposal(history, &view.events, &caps)?.map(|p| p.profile);
-                let blocked_by = self.hold_reasons(&blockers, proposal_profile.as_ref());
+                let blocked_by = self.hold_reasons(&blockers, proposal_profile.as_ref())?;
+                for reason in &blocked_by {
+                    if let HoldReason::QualificationFailed {
+                        witnesses: failures,
+                        ..
+                    } = reason
+                    {
+                        witnesses.extend(failures.iter().copied());
+                    }
+                }
                 (
                     old.clone(),
                     StepKind::Hold { blocked_by },
@@ -542,8 +577,8 @@ impl State {
                         ),
                     ),
                     Some(restoration) => {
-                        restoring.extend([restoration.promotion, restoration.retreat]);
-                        restoring.extend(restoration.events.iter().filter_map(|event| {
+                        witnesses.extend([restoration.promotion, restoration.retreat]);
+                        witnesses.extend(restoration.events.iter().filter_map(|event| {
                             let EventId::Boot(boot) = event else {
                                 return None;
                             };
@@ -676,7 +711,7 @@ impl State {
             cites.extend(causes.events.iter().copied());
             cites.extend(causes.vetoes.iter().copied());
             cites.extend(causes.qualification);
-            cites.extend(restoring);
+            cites.extend(witnesses);
             cites
         };
         Ok(Some(Decision::new(

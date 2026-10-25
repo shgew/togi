@@ -3,14 +3,14 @@
 
 use test_case::test_case;
 use togi_journal::{
-    Classification, DayEventId, HoldReason, Queue, ReproductionState, Resolution, SessionId,
-    StepKind, TaskId,
+    CcdVector, Classification, DayEventId, HoldReason, Queue, ReproductionState, Resolution,
+    SessionId, StepKind, TaskId,
 };
-use togi_machine::BootId;
+use togi_machine::{BootId, PerCore};
 use togi_tuner::policy::{EventProjection, FirmwareValidity, ReproductionProjection};
 
 use super::text;
-use crate::frames::hand::{Hand, Staged, ccd, step};
+use crate::frames::hand::{Hand, Staged, ccd, profile_of, step};
 use crate::frames::testing::FIXED_NOW;
 use crate::tests::kit::seq;
 
@@ -18,6 +18,17 @@ fn record() -> DayEventId {
     DayEventId::Record {
         session: SessionId::new(FIXED_NOW, None).expect("a session id"),
         seq: seq(12),
+    }
+}
+
+/// The reason a hold names when CCD 0 -15, CCD 1 -5 failed qualification.
+fn failed_qualification() -> HoldReason {
+    HoldReason::QualificationFailed {
+        profile: CcdVector {
+            ccd: profile_of(&[(0, -15), (1, -5)]),
+            cores: PerCore::default(),
+        },
+        witnesses: vec![seq(9)],
     }
 }
 
@@ -59,6 +70,12 @@ fn assert_shows(shown: &str, want: &str) {
     false,
     "last step   hold: frozen, paused, expired";
     "a frozen paused expired hold"
+)]
+#[test_case(
+    StepKind::Hold { blocked_by: vec![failed_qualification()] },
+    false,
+    "last step   hold: -15/-5 failed qualification";
+    "a hold on a failed qualification"
 )]
 #[test_case(StepKind::Promote { changed: ccd(1) }, true, "last step   promoted CCD 1"; "an applied promotion")]
 #[test_case(

@@ -1,14 +1,17 @@
-//! The day query through the journal: what a boot owes once it has a step, and which live machine checks
-//! are CPU evidence.
+//! The day query through the journal: what a boot owes once it has a step, which live machine checks are
+//! CPU evidence, and how a failed qualification holds its proposal.
 
 use test_case::test_case;
-use togi_journal::{Classification, DayFault, LiveFault, Payload, StepKind};
-use togi_machine::{BankType, BootId, CoreId, CpuId};
+use togi_journal::{
+    Activity, Classification, DayFault, HoldReason, LiveFault, Payload, QualificationPurpose,
+    QualificationState, StepKind,
+};
+use togi_machine::{BankType, BootId, CcdProfile, CoreId, CpuId};
 use togi_tuner::day::Invocation;
 use togi_tuner::policy::DayQuery;
 
 use crate::fixture::{Ending, Journal, at, firmware, offsets_of};
-use crate::flow::{cold_boot, promoted, steps};
+use crate::flow::{cold_boot, promoted, qualifications, steps};
 
 fn same_boot(boot: &str, second: i64) -> DayQuery {
     DayQuery {
@@ -128,4 +131,58 @@ fn a_live_machine_check_is_cpu_evidence_by_its_bank(
             "{committed:?}"
         );
     }
+}
+
+/// Runs the first night, failing every qualification trial, until a qualification fails conclusively; its
+/// profile is P.
+fn failed_qualification(journal: &mut Journal) -> CcdProfile {
+    for step in 0..3_500_i64 {
+        let plan = journal.until_trial(at(100 + step));
+        if let Some(failed) = qualifications(journal).into_iter().find(|record| {
+            record.purpose == QualificationPurpose::NextStep
+                && matches!(record.state, QualificationState::Failed { .. })
+        }) {
+            return failed.profile.ccd.clone();
+        }
+        let ending = if plan.activity == Activity::Qualification {
+            Ending::Fail(None)
+        } else {
+            Ending::Pass
+        };
+        journal.run(&plan, ending);
+    }
+    panic!("no qualification failed");
+}
+
+#[test]
+fn a_proposal_that_failed_qualification_holds_with_its_witnesses_and_no_daily_event() {
+    let mut journal = Journal::ready();
+    let failed = failed_qualification(&mut journal);
+    journal.boot_start("day1");
+    let committed = journal.settle_day(&cold_boot("day1", 60_000));
+    let [step] = steps(&committed)[..] else {
+        panic!("expected one step, got {committed:?}");
+    };
+    let StepKind::Hold { blocked_by } = &step.step else {
+        panic!("expected a hold, got {step:?}");
+    };
+    let witnesses = blocked_by
+        .iter()
+        .find_map(|reason| {
+            if let HoldReason::QualificationFailed { profile, witnesses } = reason
+                && profile.ccd == failed
+            {
+                Some(witnesses)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("no failed qualification in {blocked_by:?}"));
+    assert!(!witnesses.is_empty());
+    assert!(
+        committed
+            .iter()
+            .all(|payload| !matches!(payload, Payload::DayEvent(_) | Payload::DayVeto(_))),
+        "{committed:?}"
+    );
 }

@@ -63,6 +63,9 @@ pub struct DayInputs<'a> {
     pub caps: &'a CcdProfile,
     /// The exact profiles night-qualified under current content, epoch and firmware.
     pub qualified: &'a BTreeSet<CcdProfile>,
+    /// The exact proposed profiles a conclusive qualification failure durably blocks in this session
+    /// and firmware context (`docs/spec/tuner.md`, Failed next-step qualification).
+    pub blocked: &'a BTreeSet<CcdProfile>,
     pub firmware: Firmware,
     pub freeze: Freeze,
     pub invocation: Invocation,
@@ -249,6 +252,11 @@ pub enum Blocker {
     NotQualified {
         proposal: Proposal,
     },
+    /// A conclusive qualification failure durably blocks the exact proposed profile; no other CCD or
+    /// step is tried.
+    QualificationFailed {
+        proposal: Proposal,
+    },
     /// Fewer applied hours at the exact D than the hold needs.
     HoldIncomplete {
         credited_secs: u64,
@@ -408,7 +416,11 @@ fn promotion(
                     veto,
                 });
             }
-            if !inputs.qualified.contains(&proposal.profile) {
+            if inputs.blocked.contains(&proposal.profile) {
+                blockers.push(Blocker::QualificationFailed {
+                    proposal: proposal.clone(),
+                });
+            } else if !inputs.qualified.contains(&proposal.profile) {
                 blockers.push(Blocker::NotQualified {
                     proposal: proposal.clone(),
                 });

@@ -105,7 +105,8 @@ object_only! {
 }
 
 object_only! {
-    /// Why a proposal holds the current day profile.
+    /// Why a proposal holds the current day profile. `QualificationFailed` is the proposed profile a
+    /// conclusive qualification failure durably blocks, with the raw failure witnesses.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
     pub enum HoldReason {
@@ -118,6 +119,7 @@ object_only! {
         Frozen {},
         Paused {},
         Expired {},
+        QualificationFailed { profile: CcdVector, witnesses: Vec<Seq> },
     }
 }
 

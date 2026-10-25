@@ -440,11 +440,18 @@ fn a_held_step_names_every_blocker() {
             HoldReason::Frozen {},
             HoldReason::Paused {},
             HoldReason::Expired {},
+            HoldReason::QualificationFailed {
+                profile: togi_journal::CcdVector {
+                    ccd: profile(&[(0, -15), (1, -5)]),
+                    cores: togi_machine::PerCore::default(),
+                },
+                witnesses: vec![togi_journal::Seq::new(9).expect("a seq")],
+            },
         ],
     };
     assert_eq!(
         day_step(every, false),
-        "The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired."
+        "The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired, it failed qualification."
     );
 }
 

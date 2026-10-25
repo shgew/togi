@@ -499,6 +499,7 @@ fn hold_reason(reason: &HoldReason) -> &'static str {
         HoldReason::Frozen {} => "promotion is frozen",
         HoldReason::Paused {} => "the cold boot started paused",
         HoldReason::Expired {} => "the proposal expired",
+        HoldReason::QualificationFailed { .. } => "it failed qualification",
     }
 }
 

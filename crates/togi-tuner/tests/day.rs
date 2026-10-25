@@ -81,6 +81,7 @@ mod day {
         intervals: Vec<DayInterval>,
         caps: CcdProfile,
         qualified: BTreeSet<CcdProfile>,
+        blocked: BTreeSet<CcdProfile>,
         firmware: Firmware,
         freeze: Freeze,
         invocation: Invocation,
@@ -97,6 +98,7 @@ mod day {
                 intervals: Vec::new(),
                 caps: profile(caps),
                 qualified: BTreeSet::new(),
+                blocked: BTreeSet::new(),
                 firmware: Firmware::Current,
                 freeze: Freeze::Off,
                 invocation: Invocation::ColdBoot {
@@ -187,6 +189,7 @@ mod day {
                 intervals: &self.intervals,
                 caps: &self.caps,
                 qualified: &self.qualified,
+                blocked: &self.blocked,
                 firmware: self.firmware,
                 freeze: self.freeze,
                 invocation: self.invocation,
@@ -545,6 +548,29 @@ mod day {
             ),
             "{blockers:?}"
         );
+    }
+
+    #[test]
+    fn a_proposal_that_failed_qualification_holds_even_if_a_qualification_covers_it() {
+        let mut day = Day::new([-20, -20]);
+        day.qualify(&[[-10, 0]]);
+        day.blocked.insert(profile([-10, 0]));
+        let blockers = blockers(day.decide());
+        assert!(
+            matches!(
+                blockers.as_slice(),
+                [Blocker::QualificationFailed { proposal }] if proposal.profile == profile([-10, 0])
+            ),
+            "{blockers:?}"
+        );
+    }
+
+    #[test]
+    fn a_failed_qualification_blocks_only_its_exact_profile() {
+        let mut day = Day::new([-20, -20]);
+        day.qualify(&[[-10, 0]]);
+        day.blocked.insert(profile([-12, 0]));
+        assert!(matches!(day.decide(), DayDecision::Promote { .. }));
     }
 
     #[test]

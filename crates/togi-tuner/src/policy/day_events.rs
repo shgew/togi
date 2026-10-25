@@ -1,7 +1,7 @@
 //! Daily events and vetoes: the raw observer records classified by the day policy, and the `day.event`
 //! and `day.veto` commitments that carry them.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use jiff::Timestamp;
 use togi_journal::{
@@ -461,6 +461,8 @@ impl State {
             intervals: intervals.as_slice(),
             caps: &caps,
             qualified: &qualified,
+            // Only a promotion asks about failed qualifications, and this keeps only retreats.
+            blocked: &BTreeSet::new(),
             firmware: self.firmware_state(),
             freeze: self.days.freeze,
             invocation: Invocation::SameBoot,

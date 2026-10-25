@@ -78,7 +78,7 @@ fn apply(journal: &mut Journal, step: &DayStep, application: u64, boot: &str) {
 }
 
 /// The qualifications committed so far.
-fn qualifications(journal: &Journal) -> Vec<&NightQualification> {
+pub(crate) fn qualifications(journal: &Journal) -> Vec<&NightQualification> {
     journal
         .events
         .iter()

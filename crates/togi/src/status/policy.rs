@@ -376,6 +376,10 @@ fn hold_reason(reason: &HoldReason) -> String {
         HoldReason::Frozen {} => "promotion is frozen".to_owned(),
         HoldReason::Paused {} => "paused".to_owned(),
         HoldReason::Expired {} => "qualification expired".to_owned(),
+        HoldReason::QualificationFailed { profile, .. } => format!(
+            "{} failed qualification and stays blocked",
+            profile_word(&profile.ccd)
+        ),
     }
 }
 
