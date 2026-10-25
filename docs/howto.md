@@ -85,7 +85,7 @@ On Darwin, only copied-journal `reset` uses a private lock; [Host lock](spec/run
 
 ## 2. Rebuild, then boot fresh
 
-Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, set every Curve Optimizer offset to 0. This is a recommendation, not a check: [preflight](spec/runtime.md#preflight) only requires that every core's offset reads back, and a nonzero offset only produces a notice ([Session start](spec/tuner.md#session-start)). Do not run another tool that writes Curve Optimizer offsets in the boot you tune from.
+Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, set every Curve Optimizer offset to 0. [Session start](spec/tuner.md#session-start) requires a verified all-zero baseline; nonzero or incomplete readback is refused, not clamped or merely noted. Do not run another tool that writes Curve Optimizer offsets in the boot you tune from.
 
 How togi treats the BIOS values:
 
@@ -138,7 +138,7 @@ An unclean end alone does not say whether the CPU caused it: graphics undervolts
 togi day answer <boot> frozen
 ```
 
-`<boot>` is the boot id `status` prints. Answering needs no root shell, but it needs the day service running and your user allowed on its socket: name your user in `services.togi.day.users` (below). Run the same command again to change an answer; the last one counts. The answer is journaled against the crashed boot and its offset profile. It does not change any profile or tuning decision, and until you answer, togi's own reading of the evidence is shown but equally not acted on.
+`<boot>` is the boot id `status` prints. Answering needs no root shell, but it needs the day service running and your user allowed on its socket: name your user in `services.togi.day.users` (below). Run the same command again to change an answer; the last one counts. The answer is journaled against the crashed boot and its offset profile. Ruleset 13 consumes the answers and recorded evidence under [Daily events](spec/tuner.md#daily-events), including provisional CPU-suspect classification while an end remains unanswered. A later answer can reclassify that event; it is not merely an annotation. The observer itself never applies offsets.
 
 ### Recording a crash togi did not observe
 
@@ -244,7 +244,7 @@ Shut down or reboot. The next boot follows your restored normal selection; with 
 togi status
 ```
 
-`status` shows, for each CCD, its applied day offset `D`, its cap `S` with the slope (fallback or measured) and what binds it, its edge `U`, the counts still to go, and the trial classes covered and uncovered for the cap. Below the table it shows the Day policy (applied profile, hold, latest step and what blocks it, freeze, firmware, events and vetoes) and the Night (elapsed observed time and each queue's share used; [Commands](spec/runtime.md#commands)); [How togi tunes](how-togi-tunes.md) explains each. Picking "NixOS - togi" again continues the session.
+`status` shows, for each CCD, its applied day offset `D`, its cap `S` with the slope (fallback or measured) and what binds it, its edge `U`, the counts still to go, and the trial classes covered and uncovered for the cap. Below the table it shows the Day policy (applied profile, hold, latest step and what blocks it, freeze, firmware, events and vetoes) and the Night (elapsed observed time and each queue's share used; [Commands](spec/runtime.md#commands)); [How togi tunes](how-togi-tunes.md) explains each. Another tuning run continues the session.
 
 A night has no end time: `sudo togi run` tunes until you end it with Ctrl-C, F10 in the dashboard or a reboot (the power button included), and restores every core to CO 0 when it stops. A crash reboot into the tuning boot continues the same night; the next run after you end it opens a new one. The other stopping conditions are the tuner's [DeadEnd and Unavailable results](spec/tuner.md#night-query-results), including blocked stock controls with no other admissible work, and runtime safety dead ends.
 

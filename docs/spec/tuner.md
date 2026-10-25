@@ -149,7 +149,7 @@ Require a verified all-zero starting baseline and record topology, firmware cont
 
 ## Dead ends
 
-The existing hardware, containment, preflight, thermal and unanswered-defect stops remain runtime safety policy; backend exhaustion is narrowed under [night query results](#night-query-results). A stock failure uses [CO-0 controls](#co-0-controls). No per-core failure point, combination, hunt fallback or held-later-failure rule survives to reinterpret it. Journal failure follows the zero-only emergency contract, never an invented successful observation. Replay must stop before another write when durable evidence already establishes a stop, including a kill before its `deadend` event.
+The existing hardware, containment, preflight, thermal and unresolved-defect stops remain runtime safety policy; backend exhaustion is narrowed under [night query results](#night-query-results). A stock failure uses [CO-0 controls](#co-0-controls). No per-core failure point, combination, hunt fallback or held-later-failure rule survives to reinterpret it. Journal failure follows the zero-only emergency contract, never an invented successful observation. Replay must stop before another write when durable evidence already establishes a stop, including a kill before its `deadend` event.
 
 ## Historical rule anchors
 
