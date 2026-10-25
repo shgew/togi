@@ -27,15 +27,15 @@ fn fail_first_proposal(journal: &mut Journal, built: &ContentId) -> CcdProfile {
     panic!("no proposal was qualified");
 }
 
-/// The proposals qualified in the next `trials` trials, each run on `built`.
-fn qualified_next(journal: &mut Journal, trials: usize, built: &ContentId) -> Vec<CcdProfile> {
+/// The proposals qualified in the next `trials` trials.
+fn qualified_next(journal: &mut Journal, trials: usize) -> Vec<CcdProfile> {
     let mut qualified = Vec::new();
     for _ in 0..trials {
         let plan = journal.until_trial(journal.now());
         if qualifies_proposal(&plan) {
             qualified.push(plan.profile.clone());
         }
-        journal.run_built(&plan, Ending::Pass, built);
+        journal.run(&plan, Ending::Pass);
     }
     qualified
 }
@@ -57,7 +57,7 @@ fn a_failed_proposal_stays_blocked_across_a_new_night_and_a_rebuilt_backend() {
     let mut journal = Journal::ready();
     let failed = fail_first_proposal(&mut journal, &content());
     assert!(
-        qualified_next(&mut journal, 200, &content())
+        qualified_next(&mut journal, 200)
             .iter()
             .all(|q| q != &failed)
     );
@@ -86,7 +86,9 @@ fn a_failed_proposal_stays_blocked_across_a_new_night_and_a_rebuilt_backend() {
     );
     // The next night, on a rebuilt backend, still never qualifies it again.
     journal.reboot("tuning1");
-    let qualified = qualified_next(&mut journal, 600, &rebuilt());
+    journal.rebuild(rebuilt());
+    let qualified = qualified_next(&mut journal, 1_500);
+    assert!(!qualified.is_empty());
     assert!(qualified.iter().all(|q| q != &failed), "{qualified:?}");
 }
 
@@ -95,7 +97,9 @@ fn a_proposal_whose_failed_commitment_never_landed_stays_blocked() {
     let mut journal = Journal::ready();
     // The failing trial ran a rebuilt backend: its record went stale before its failure was committed.
     let failed = fail_first_proposal(&mut journal, &rebuilt());
-    let qualified = qualified_next(&mut journal, 600, &rebuilt());
+    journal.rebuild(rebuilt());
+    let qualified = qualified_next(&mut journal, 1_500);
+    assert!(!qualified.is_empty());
     assert_eq!(failed_commitments(&journal, &failed), 0);
     assert!(qualified.iter().all(|q| q != &failed), "{qualified:?}");
 }
@@ -104,11 +108,11 @@ fn a_proposal_whose_failed_commitment_never_landed_stays_blocked() {
 fn a_fresh_session_may_qualify_a_proposal_an_earlier_session_failed() {
     let mut journal = Journal::ready();
     let failed = fail_first_proposal(&mut journal, &content());
-    qualified_next(&mut journal, 1, &content());
+    qualified_next(&mut journal, 1);
     assert_eq!(failed_commitments(&journal, &failed), 1);
     journal.reboot("fresh");
     journal.start_session("20240101T000000Z");
-    let qualified = qualified_next(&mut journal, 600, &content());
+    let qualified = qualified_next(&mut journal, 600);
     assert_eq!(qualified.first(), Some(&failed), "{qualified:?}");
 }
 
@@ -134,7 +138,7 @@ fn a_failed_certificate_lends_no_witness_to_a_later_qualification() {
         lent |= qualifies_proposal(&plan) && ccd1_only(&plan);
         journal.run(&plan, Ending::Pass);
     };
-    qualified_next(&mut journal, 1_500, &content());
+    qualified_next(&mut journal, 1_500);
     let committed = |pick: fn(&QualificationState) -> bool| {
         journal.events.iter().filter_map(move |event| {
             if let Payload::NightQualification(record) = &event.payload
