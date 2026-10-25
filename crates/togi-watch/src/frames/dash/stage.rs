@@ -55,24 +55,21 @@ fn event_name(event: &DayEventId) -> String {
     }
 }
 
-/// What the night's current trial does, in words: the queue of its task, or the session's activity when no
-/// task is known; `None` when nothing runs under a Ruleset 13 activity.
+/// What the night's current trial does, in words: the queue of the trial's task, else the night's committed current
+/// task, else the trial's own activity; `None` when nothing runs under a Ruleset 13 activity. Between trials only
+/// the committed task counts: the previous trial's activity is history.
 fn activity_words(scene: &Scene<'_>, night: &NightProjection, short: bool) -> Option<String> {
     let trial = scene.s.trial;
     let queue = trial
         .and_then(|trial| trial.task)
+        .or_else(|| night.current.map(|(task, _)| task))
         .map(|task| task.queue)
-        .or_else(|| {
-            let activity = scene.s.session.and_then(|session| session.activity)?;
-            match activity {
-                Activity::Mapping => Some(Queue::Mapping),
-                Activity::Qualification => Some(Queue::Qualification),
-                Activity::Reproduction => Some(Queue::Reproduction),
-                Activity::Control => Some(Queue::Control),
-                Activity::Search | Activity::Checking | Activity::Hunt | Activity::Deepening => {
-                    None
-                }
-            }
+        .or_else(|| match trial?.activity? {
+            Activity::Mapping => Some(Queue::Mapping),
+            Activity::Qualification => Some(Queue::Qualification),
+            Activity::Reproduction => Some(Queue::Reproduction),
+            Activity::Control => Some(Queue::Control),
+            Activity::Search | Activity::Checking | Activity::Hunt | Activity::Deepening => None,
         })?;
     let words = match queue {
         Queue::Mapping => match trial.and_then(|trial| trial.tested) {

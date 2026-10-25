@@ -376,6 +376,31 @@ fn the_stage_line_names_the_filler_by_the_ccd_its_trial_tests(
 }
 
 #[test]
+fn between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity() {
+    let mut hand = night_hand();
+    hand.trial = None;
+    hand.session.activity = Some(Activity::Mapping);
+    if let Some(night) = hand.policy.night.as_mut() {
+        night.current = Some((
+            TaskId {
+                queue: Queue::Control,
+                ordinal: 3,
+            },
+            Some(Activity::Control),
+        ));
+    }
+    let now = FIXED_NOW + SignedDuration::from_secs(40);
+    let wide = stage_of(&hand.snapshot(), now, SizeClass::Wide);
+    assert!(wide.ends_with("controls at CO 0"), "{wide}");
+    assert!(!wide.contains("mapping"), "{wide}");
+    if let Some(night) = hand.policy.night.as_mut() {
+        night.current = None;
+    }
+    let wide = stage_of(&hand.snapshot(), now, SizeClass::Wide);
+    assert!(!wide.contains("mapping"), "no task is current: {wide}");
+}
+
+#[test]
 fn the_stage_line_names_the_day_once_a_later_boot_closes_the_night() {
     let mut hand = night_hand();
     hand.trial = Some(running_trial(Regime::R1, &[8]));
