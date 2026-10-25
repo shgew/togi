@@ -42,10 +42,36 @@ pub(super) struct Monotonicity {
     /// How many ledger records and ended trials it has read.
     records: usize,
     ended: usize,
-    /// The failures without a deeper pass yet, by CCD and class: each one's offset and trial index.
-    waiting: HashMap<(CcdId, Sig), Vec<(TargetOffset, usize)>>,
+    /// The failures without a deeper pass yet, by CCD and class, then by the offset they failed at: each
+    /// one's trial index.
+    waiting: HashMap<(CcdId, Sig), BTreeMap<TargetOffset, Vec<usize>>>,
     /// The failures with a deeper pass, by trial index.
     warnable: BTreeSet<usize>,
+}
+
+impl Monotonicity {
+    /// Parks the failure of trial `at` at `offset` until a deeper pass of its class on its CCD.
+    fn wait(&mut self, key: (CcdId, Sig), offset: TargetOffset, at: usize) {
+        self.waiting
+            .entry(key)
+            .or_default()
+            .entry(offset)
+            .or_default()
+            .push(at);
+    }
+
+    /// Releases the failures of `key` shallower than a pass at `offset`. Only the released offsets are
+    /// touched: failures at the pass's offset or deeper stay where they are.
+    fn pass(&mut self, key: &(CcdId, Sig), offset: TargetOffset) {
+        let Some(offsets) = self.waiting.get_mut(key) else {
+            return;
+        };
+        let mut released = offsets.split_off(&offset);
+        if let Some(equal) = released.remove(&offset) {
+            offsets.insert(offset, equal);
+        }
+        self.warnable.extend(released.into_values().flatten());
+    }
 }
 
 /// What makes two trials the same class: the matrix cell and the journal's exposure class both reduce
@@ -372,14 +398,7 @@ impl State {
                 ..Monotonicity::default()
             };
         }
-        let Monotonicity {
-            records,
-            ended,
-            waiting,
-            warnable,
-            ..
-        } = &mut *cache;
-        for record in self.ledger.records.get(*records..).unwrap_or_default() {
+        for record in self.ledger.records.get(cache.records..).unwrap_or_default() {
             let observed = &record.observed;
             let Tested::Isolated { ccd, offset } = observed.tested else {
                 continue;
@@ -387,18 +406,15 @@ impl State {
             if !is_adequate(observed, &self.machine.cores) || !self.is_current_exposure(observed) {
                 continue;
             }
-            if let Some(failures) = waiting.get_mut(&(ccd, Sig::of_class(&observed.class))) {
-                failures.retain(|&(failed, at)| {
-                    let released = offset < failed;
-                    if released {
-                        warnable.insert(at);
-                    }
-                    !released
-                });
-            }
+            cache.pass(&(ccd, Sig::of_class(&observed.class)), offset);
         }
-        *records = self.ledger.records.len();
-        for &at in self.trials.ended_order.get(*ended..).unwrap_or_default() {
+        cache.records = self.ledger.records.len();
+        for &at in self
+            .trials
+            .ended_order
+            .get(cache.ended..)
+            .unwrap_or_default()
+        {
             if !self.trials.unwarned.contains(&at) {
                 continue;
             }
@@ -413,14 +429,16 @@ impl State {
             };
             let sig = Sig::of_class(&failed.class);
             if self.deeper_passes(ccd, &sig, offset).is_empty() {
-                waiting.entry((ccd, sig)).or_default().push((offset, at));
+                cache.wait((ccd, sig), offset, at);
             } else {
-                warnable.insert(at);
+                cache.warnable.insert(at);
             }
         }
-        *ended = self.trials.ended_order.len();
-        warnable.retain(|at| self.trials.unwarned.contains(at));
-        let at = *warnable.first()?;
+        cache.ended = self.trials.ended_order.len();
+        cache
+            .warnable
+            .retain(|at| self.trials.unwarned.contains(at));
+        let at = *cache.warnable.first()?;
         drop(cache);
         let trial = self.trials.all.get(at)?;
         let ended = trial.end.as_ref()?;
@@ -509,4 +527,85 @@ pub(super) fn failures_on(
 /// A count too large for 32 bits stops at the largest one.
 pub(super) fn saturating_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use togi_journal::Placement;
+    use togi_machine::{CcdId, CoreSet, Regime, TargetOffset};
+
+    use super::{Monotonicity, Sig};
+
+    fn key() -> (CcdId, Sig) {
+        (
+            CcdId::try_from(0_u8).unwrap(),
+            Sig {
+                regime: Regime::R1,
+                workloads: Vec::new(),
+                cores: CoreSet::default(),
+                position: None,
+                duration_s: 90,
+                placement: Placement::Isolated,
+            },
+        )
+    }
+
+    fn offset(value: i64) -> TargetOffset {
+        TargetOffset::new(value).unwrap()
+    }
+
+    #[test]
+    fn a_pass_releases_the_failures_shallower_than_it_and_keeps_the_rest_waiting() {
+        let mut index = Monotonicity::default();
+        for (at, failed) in [(0, -2), (1, -5), (2, -7), (3, -2)] {
+            index.wait(key(), offset(failed), at);
+        }
+        index.pass(&key(), offset(-5));
+        assert_eq!(index.warnable.iter().copied().collect::<Vec<_>>(), [0, 3]);
+        index.pass(&key(), offset(-6));
+        assert_eq!(
+            index.warnable.iter().copied().collect::<Vec<_>>(),
+            [0, 1, 3]
+        );
+        index.pass(&key(), offset(-7));
+        assert_eq!(
+            index.warnable.iter().copied().collect::<Vec<_>>(),
+            [0, 1, 3]
+        );
+    }
+
+    /// The fastest of 30 passes at -5 into fresh copies of `index`.
+    fn fastest_pass(index: &Monotonicity) -> Duration {
+        (0..30)
+            .map(|_| {
+                let mut fresh = index.clone();
+                let started = Instant::now();
+                fresh.pass(&key(), offset(-5));
+                started.elapsed()
+            })
+            .min()
+            .unwrap_or(Duration::MAX)
+    }
+
+    /// A pass releases only what it releases: the failures still waiting at its own offset add nothing to
+    /// what folding it costs, however many repeated probes left them there.
+    #[test]
+    fn an_equal_offset_pass_costs_the_same_however_many_failures_wait_at_its_offset() {
+        let waiting = |failures: usize| {
+            let mut index = Monotonicity::default();
+            for at in 0..failures {
+                index.wait(key(), offset(-5), at);
+            }
+            index
+        };
+        let few = fastest_pass(&waiting(10));
+        let many = fastest_pass(&waiting(1_000_000));
+        let bound = few.max(Duration::from_micros(10)) * 3;
+        assert!(
+            many <= bound,
+            "with a million failures waiting a pass took {many:?}, against {few:?} with ten"
+        );
+    }
 }
