@@ -162,6 +162,34 @@ fn a_rerun_after_a_closed_night_runs_a_fresh_night() {
     );
 }
 
+#[test]
+fn a_restart_after_a_decided_stop_starts_a_fresh_night() {
+    let mut host = Host::default();
+    host.put("/machine.json", THERMAL_MACHINE);
+    let args = ["--machine", "/machine.json", "--state-dir", "/state"];
+    assert_eq!(host.run(args).code, Some(1));
+    let first = host.events("/state").len();
+    assert_eq!(host.run(args).code, Some(1));
+    let events = host.events("/state");
+    let Payload::Shutdown(stop) = &events[first - 1].payload else {
+        panic!("the first run does not end in a shutdown");
+    };
+    assert_eq!(stop.reason, ShutdownReason::DeadEnd);
+    let now = events.last().unwrap().time + SignedDuration::from_hours(1);
+    // The dead end's shutdown closed the first night: a run after it opens a fresh one.
+    assert_eq!(
+        crate::session::night_started(&events[..first], now).unwrap(),
+        now
+    );
+    // Until its own stop, the restart's night starts at the restart, not at the closed night's start.
+    let (last, unfinished) = events.split_last().unwrap();
+    assert!(matches!(last.payload, Payload::Shutdown(_)));
+    assert_eq!(
+        crate::session::night_started(unfinished, now).unwrap(),
+        events[first].time
+    );
+}
+
 fn record(fs: MemFs, config: Config) {
     let simulator = Simulator::new(
         Model::new(&MachineDefinition::default(), 1).unwrap(),
