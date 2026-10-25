@@ -111,6 +111,27 @@ fn cfg_items(src: &str, changed: &[(u32, u32)], measured: &[(u32, bool)], left_o
     );
 }
 
+const DAY: &str = "crates/a/tests/day.rs";
+const GATED: &str = "#![cfg(test)]\n\nfn t() {\n    1;\n}\n";
+
+#[test_case(DAY, GATED, &[DAY], false ; "an integration test with an inner cfg test that dep-info names")]
+#[test_case(DAY, GATED, &[LIB], true ; "an integration test with an inner cfg test that no dep-info names")]
+#[test_case(DAY, "#[cfg(test)]\nfn t() {\n    1;\n}\n", &[DAY], false ; "an integration test item under cfg test")]
+#[test_case("crates/a/tests/day/helpers.rs", GATED, &["crates/a/tests/day/helpers.rs"], false ; "a module of an integration test")]
+#[test_case(DAY, "#[cfg(not(test))]\nfn t() {\n    1;\n}\n", &[DAY], true ; "an integration test item under cfg not test is never compiled")]
+#[test_case(DAY, "#[cfg(target_os = \"macos\")]\nfn t() {\n    1;\n}\n", &[DAY], true ; "an integration test item for another target os")]
+#[test_case("crates/a/src/day.rs", GATED, &["crates/a/src/day.rs"], true ; "a source file with an inner cfg test the trace does not measure")]
+#[test_case("crates/a/src/tests/day.rs", GATED, &["crates/a/src/tests/day.rs"], true ; "a unit-test module is not an integration test")]
+fn integration_tests_are_built_with_cfg_test(
+    path: &str,
+    src: &str,
+    built: &[&str],
+    left_out: bool,
+) {
+    let want: &[&str] = if left_out { &[path] } else { &[] };
+    assert_eq!(not_built_one(path, src, &[(1, 5)], &set(built), &[]), want);
+}
+
 #[test_case(LIB, "mod b;\n#[cfg(test)]\nmod tests;\n", &[LIB, "crates/a/src/tests.rs"], false ; "a cfg test module the test build compiled from its own file")]
 #[test_case(LIB, "#[cfg(test)]\npub(crate) mod tests;\n", &[LIB, "crates/a/src/tests/mod.rs"], false ; "a module in a directory")]
 #[test_case(LIB, "#[cfg(test)]\nmod tests;\n", &[LIB], true ; "a cfg test module no dep-info names")]

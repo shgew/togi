@@ -61,7 +61,9 @@ pub fn built_sources(
 /// unknown for the host and none of whose lines the trace measures. A measured line inside the
 /// item shows some build compiled it, so the item is not claimed; this covers `cfg(not(test))` and
 /// `cfg(feature = "...")` code with executable lines. `measured` holds the lines the trace lists
-/// per file, reached or not.
+/// per file, reached or not. A file under a package's `tests/` is compiled only with `--test`, which
+/// the coverage run does for every test target, so `cfg(test)` holds there although the trace
+/// leaves `tests/` files out.
 pub fn not_built(
     tree: &dyn Tree,
     root: &Path,
@@ -84,7 +86,8 @@ pub fn not_built(
             })?;
         let lines: Vec<&[u8]> = src.split(|&b| b == b'\n').collect();
         let measured = measured.get(path);
-        for item in cfg_out(&src, cfg) {
+        let test_cfg = is_integration_test(path).then(|| cfg.with_test());
+        for item in cfg_out(&src, test_cfg.as_ref().unwrap_or(cfg)) {
             if measured.is_some_and(|lines| lines.keys().any(|&line| item.contains(line))) {
                 continue;
             }
@@ -191,6 +194,12 @@ fn has_path_attribute(attributes: &str) -> bool {
             .map(|i| after[i]);
         !before.is_some_and(word) && rest == Some(b'=')
     })
+}
+
+/// Whether `path` is a file of an integration-test target: under a `tests` directory outside `src`.
+fn is_integration_test(path: &str) -> bool {
+    let mut parts = path.split('/');
+    parts.clone().any(|part| part == "tests") && !parts.any(|part| part == "src")
 }
 
 #[cfg(test)]
