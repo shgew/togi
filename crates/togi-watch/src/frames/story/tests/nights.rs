@@ -256,6 +256,95 @@ fn a_recovery_says_the_journal_is_intact_and_what_the_night_does_next() {
     );
 }
 
+/// A filler trial of `activity` testing `tested`, at CCD 0 -20 and CCD 1 -15 on cores 0 and 8.
+fn filler(activity: Activity, tested: Tested) -> TrialView {
+    TrialView {
+        activity: Some(activity),
+        task: Some(task(Queue::Filler, 4)),
+        tested: Some(tested),
+        profile: [(core(0), off(-20)), (core(8), off(-15))]
+            .into_iter()
+            .collect(),
+        ..trial(Regime::R1, &[0, 8])
+    }
+}
+
+/// A night whose open qualification is another profile than the day's, with cells outstanding, and two cores.
+fn filler_night(fx: &mut Fx) {
+    let mut plan = night(vec![planned(Queue::Filler, 4, TaskStatus::Running)]);
+    plan.qualification = Some(QualificationProgress {
+        profile: profile(&[(0, -30), (1, -30)]),
+        outstanding: vec![crate::frames::hand::class(Regime::R1, &[0])],
+        witnessed: 1,
+    });
+    fx.policy.night = Some(plan);
+    fx.cores = vec![fixtures::core_view(0, 0), fixtures::core_view(8, 1)];
+}
+
+#[test]
+fn a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification() {
+    let mut fx = Fx::new();
+    filler_night(&mut fx);
+    let trial = filler(Activity::Qualification, Tested::Exact {});
+    let said = running(&mut fx, trial.clone());
+    assert_eq!(said.label, "FILLER");
+    assert_eq!(
+        said.lines[0],
+        "Filler repeat of the day profile, CCD 0 at -20, CCD 1 at -15: every CCD runs together at its offset, one exact qualification cell per trial."
+    );
+    assert!(
+        said.lines[1].starts_with("Filler runs only when nothing else can;"),
+        "{:?}",
+        said.lines
+    );
+    for other in ["-30", "outstanding", "witnessed"] {
+        assert!(
+            !super::said(&said).contains(other),
+            "{other}: {:?}",
+            said.lines
+        );
+    }
+    assert_eq!(
+        said.brief,
+        "Filler repeat of the day profile, CCD 0 at -20, CCD 1 at -15 (filler task 4)."
+    );
+    let scene = fx.scene(ts(1001));
+    assert_eq!(
+        plain(&operation(&scene, &trial), Colours::None),
+        "FILLER -20/-15"
+    );
+}
+
+#[test]
+fn a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step() {
+    let mut fx = Fx::new();
+    filler_night(&mut fx);
+    let trial = filler(
+        Activity::Mapping,
+        Tested::Isolated {
+            ccd: ccd_id(1),
+            offset: off(-16),
+        },
+    );
+    let said = running(&mut fx, trial.clone());
+    assert_eq!(said.label, "FILLER");
+    assert_eq!(
+        said.lines[0],
+        "Filler cap probe on CCD 1 at -16, one count deeper than its cap S: every other CCD stays at CO 0."
+    );
+    assert!(
+        said.lines[1].contains("never finishes a mapping step"),
+        "{:?}",
+        said.lines
+    );
+    assert_eq!(said.brief, "Filler probe on CCD 1 at -16 (filler task 4).");
+    let scene = fx.scene(ts(1001));
+    assert_eq!(
+        plain(&operation(&scene, &trial), Colours::None),
+        "FILLER CCD 1 AT -16"
+    );
+}
+
 /// The day lines between trials for a latest step of `kind`, applied when `applied`.
 fn day_step(kind: togi_journal::StepKind, applied: bool) -> String {
     let mut fx = Fx::new();

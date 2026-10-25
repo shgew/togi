@@ -368,10 +368,21 @@ pub(crate) fn trial_where(_scene: &Scene<'_>, trial: &TrialView) -> String {
 }
 
 /// What the trial in flight does, in capitals and painted: `MAPPING CCD 1 AT -15`, `QUALIFYING -10/-5`,
-/// `CONTROLS AT CO 0`, with `· RETRY` when it retries a trial that could not run.
+/// `FILLER CCD 0 AT -20`, `CONTROLS AT CO 0`, with `· RETRY` when it retries a trial that could not run.
 pub(crate) fn operation(scene: &Scene<'_>, trial: &TrialView) -> Line<'static> {
     let task = night::task_of(scene, trial);
     let mut text = match night::activity_of(scene, trial) {
+        Some(Activity::Mapping | Activity::Qualification) if night::is_filler(task) => {
+            match trial.tested {
+                Some(Tested::Isolated { ccd, offset }) => {
+                    format!("FILLER CCD {} AT {}", ccd.get(), offset.get())
+                }
+                Some(Tested::Exact {}) | None => night::trial_profile(scene, trial).map_or_else(
+                    || "FILLER".to_owned(),
+                    |profile| format!("FILLER {}", night::profile_offsets(&profile)),
+                ),
+            }
+        }
         Some(Activity::Mapping) => match trial.tested {
             Some(Tested::Isolated { ccd, offset }) => {
                 format!("MAPPING CCD {} AT {}", ccd.get(), offset.get())

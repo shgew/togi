@@ -54,6 +54,7 @@ pub(super) fn task_words(task: TaskId) -> String {
 /// The stage label of a trial: what it is for, in capitals; `None` for a historical per-core activity.
 pub(super) fn activity_label(activity: Activity, task: Option<TaskId>) -> Option<&'static str> {
     match activity {
+        Activity::Mapping | Activity::Qualification if is_filler(task) => Some("FILLER"),
         Activity::Mapping => Some("MAPPING"),
         Activity::Qualification
             if task.is_some_and(|task| task.queue == Queue::Requalification) =>
@@ -114,12 +115,104 @@ pub(super) fn running(scene: &Scene<'_>, trial: &TrialView) -> Story {
             Paint::Running,
         );
     };
-    let (what, brief) = purpose(policy, activity, task, trial.tested);
+    let actual = trial_profile(scene, trial);
+    let (what, brief) = purpose(policy, activity, task, trial.tested, actual.as_ref());
     let mut second = detail(policy, activity, task);
     if trial.retry {
         second.push_str(" This is a retry of a trial that could not run.");
     }
     Story::new(label, vec![what, second], brief, Paint::Running)
+}
+
+/// Whether a trial serves the filler task. Filler keeps its underlying mapping or qualification activity, so the
+/// task, not the activity, says what it is for.
+pub(super) fn is_filler(task: Option<TaskId>) -> bool {
+    task.is_some_and(|task| task.queue == Queue::Filler)
+}
+
+/// The CCD profile a trial runs at, from its intent's per-core offsets; `None` when no core of it has a known CCD.
+pub(super) fn trial_profile(scene: &Scene<'_>, trial: &TrialView) -> Option<CcdProfile> {
+    let mut ccds = std::collections::BTreeMap::new();
+    for (core, offset) in trial.profile.iter() {
+        if let Some(view) = scene.s.cores.iter().find(|view| view.id == core) {
+            ccds.entry(view.ccd).or_insert(offset);
+        }
+    }
+    CcdProfile::try_from(ccds).ok()
+}
+
+/// A filler trial's purpose and brief: a cap probe on one CCD, or a repeat of the day profile's exact cells at the
+/// profile the trial actually runs. `None` when the trial is neither, so the activity's own words stand.
+fn filler_purpose(
+    activity: Activity,
+    task: Option<TaskId>,
+    tested: Option<Tested>,
+    actual: Option<&CcdProfile>,
+    task_part: &str,
+) -> Option<(String, String)> {
+    if !is_filler(task) {
+        return None;
+    }
+    match (activity, tested) {
+        (Activity::Mapping, Some(Tested::Isolated { ccd, offset })) => Some((
+            format!(
+                "Filler cap probe on CCD {} at {}, one count deeper than its cap S: every other CCD stays at CO 0.",
+                ccd.get(),
+                offset.get()
+            ),
+            format!(
+                "Filler probe on CCD {} at {}{task_part}.",
+                ccd.get(),
+                offset.get()
+            ),
+        )),
+        (Activity::Qualification, Some(Tested::Exact {}) | None) => {
+            let named = actual.map_or_else(
+                || "the day profile".to_owned(),
+                |profile| format!("the day profile, {}", profile_words(profile)),
+            );
+            Some((
+                format!(
+                    "Filler repeat of {named}: every CCD runs together at its offset, one exact qualification cell per trial."
+                ),
+                format!("Filler repeat of {named}{task_part}."),
+            ))
+        }
+        (Activity::Mapping, Some(Tested::Exact {}) | None)
+        | (Activity::Qualification, Some(Tested::Isolated { .. }))
+        | (
+            Activity::Reproduction
+            | Activity::Control
+            | Activity::Search
+            | Activity::Checking
+            | Activity::Hunt
+            | Activity::Deepening,
+            _,
+        ) => None,
+    }
+}
+
+/// What a filler trial's result feeds; `None` when the trial is no filler cap probe or exact repeat.
+fn filler_detail(activity: Activity, task: Option<TaskId>) -> Option<String> {
+    if !is_filler(task) {
+        return None;
+    }
+    match activity {
+        Activity::Mapping => Some(
+            "Filler runs only when nothing else can; a probe can set the CCD's edge U but never finishes a mapping step."
+                .to_owned(),
+        ),
+        Activity::Qualification => Some(
+            "Filler runs only when nothing else can; a failure here is a re-qualification event against the day profile."
+                .to_owned(),
+        ),
+        Activity::Reproduction
+        | Activity::Control
+        | Activity::Search
+        | Activity::Checking
+        | Activity::Hunt
+        | Activity::Deepening => None,
+    }
 }
 
 /// The sentence for a trial's purpose and the brief line.
@@ -128,8 +221,12 @@ fn purpose(
     activity: Activity,
     task: Option<TaskId>,
     tested: Option<Tested>,
+    actual: Option<&CcdProfile>,
 ) -> (String, String) {
     let task_part = task.map_or_else(String::new, |task| format!(" ({})", task_words(task)));
+    if let Some(said) = filler_purpose(activity, task, tested, actual, &task_part) {
+        return said;
+    }
     match (activity, tested) {
         (Activity::Mapping, Some(Tested::Isolated { ccd, offset })) => (
             format!(
@@ -195,7 +292,7 @@ fn purpose(
 
 /// The second line of a running trial: its place in the plan and what its result feeds.
 fn detail(policy: &Projection, activity: Activity, task: Option<TaskId>) -> String {
-    let mut text = match activity {
+    let mut text = filler_detail(activity, task).unwrap_or_else(|| match activity {
         Activity::Mapping => {
             "Mapping exposure is what a cap S is computed from; a failure here can set the CCD's edge U."
                 .to_owned()
@@ -223,7 +320,7 @@ fn detail(policy: &Projection, activity: Activity, task: Option<TaskId>) -> Stri
         Activity::Search | Activity::Checking | Activity::Hunt | Activity::Deepening => {
             String::new()
         }
-    };
+    });
     if let (Some(task), Some(night)) = (task, open_night(policy)) {
         let waiting = pending(night).filter(|other| other.task != task).count();
         if waiting > 0 {
