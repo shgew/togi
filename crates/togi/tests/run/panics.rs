@@ -687,6 +687,14 @@ impl Child {
             .unwrap_or_else(|| panic!("no line with {needle:?}: {}", self.stderr))
     }
 
+    /// The index of the last stderr line containing `needle`.
+    fn last_at(&self, needle: &str) -> usize {
+        self.lines()
+            .iter()
+            .rposition(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("no line with {needle:?}: {}", self.stderr))
+    }
+
     fn count(&self, needle: &str) -> usize {
         self.lines()
             .iter()
@@ -915,7 +923,7 @@ fn real_process_a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run
     assert!(ended > 0, "{}", child.stderr);
     assert_eq!(child.count(" trial.end "), ended, "{}", child.stderr);
     assert!(
-        Some(fallback) < child.stderr.rfind(" trial.end "),
+        fallback < child.last_at(" trial.end "),
         "{}",
         child.stderr
     );
