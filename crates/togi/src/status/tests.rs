@@ -578,3 +578,29 @@ fn the_ccd_table_keeps_every_value_under_its_header_within_eighty_columns(
         assert!(row.len() <= 80, "{row:?} is wider than 80 columns");
     }
 }
+
+#[test]
+fn noncontiguous_cores_are_counted_in_the_ccd_table_and_listed_under_their_row() {
+    let mut policy = projection(None);
+    policy.ccds = vec![
+        ccd_projection(0, &[0, 2, 4, 6, 8, 10, 12, 14], None),
+        ccd_projection(1, &[1, 3, 5, 7, 9, 11, 13, 15], None),
+    ];
+    let out = shown(&policy, UTC);
+    let lines: Vec<&str> = out.lines().take(5).collect();
+    let columns = starts(lines[0]);
+    assert_eq!(columns.len(), 10, "{out}");
+    // `8 cores` is two words that start at the CORES column and inside it.
+    let cells = |row: &str| -> Vec<usize> {
+        starts(row)
+            .into_iter()
+            .filter(|&at| !(columns[1] < at && at < columns[2]))
+            .collect()
+    };
+    assert_eq!(cells(lines[1]), columns, "{out}");
+    assert_eq!(cells(lines[3]), columns, "{out}");
+    assert!(lines[1].starts_with("0   8 cores "), "{out}");
+    assert_eq!(lines[2], "  cores 0 2 4 6 8 10 12 14");
+    assert_eq!(lines[4], "  cores 1 3 5 7 9 11 13 15");
+    assert!(out.lines().all(|line| line.chars().count() <= 80), "{out}");
+}

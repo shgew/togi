@@ -229,20 +229,29 @@ const CCD_COLUMNS: [(&str, usize); 10] = [
     ("UNCOVERED", 9),
 ];
 
+/// The widest CORES cell: the other columns at their widths take 71 cells, so this keeps the row within 80. A CCD
+/// whose core ranges are wider, such as a noncontiguous `0 2 4 6 8 10 12 14`, counts its cores in the cell and lists
+/// them under its row.
+const CORES_WIDTH: usize = 9;
+
 pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
     if policy.ccds.is_empty() {
         return;
     }
     let header = CCD_COLUMNS.map(|(name, _)| name.to_owned());
-    let rows: Vec<([String; 10], Option<String>)> = policy.ccds.iter().map(ccd_row).collect();
+    let rows: Vec<([String; 10], Option<String>, Option<String>)> =
+        policy.ccds.iter().map(ccd_row).collect();
     let widths: [usize; 10] = std::array::from_fn(|column| {
         rows.iter()
-            .map(|(cells, _)| cells[column].chars().count())
+            .map(|(cells, _, _)| cells[column].chars().count())
             .fold(CCD_COLUMNS[column].1, usize::max)
     });
     ccd_line(out, &header, &widths);
-    for (cells, bound) in &rows {
+    for (cells, listed, bound) in &rows {
         ccd_line(out, cells, &widths);
+        if let Some(cores) = listed {
+            wrap(out, "  cores ", "        ", cores);
+        }
         if let Some(class) = bound {
             wrap(out, "  bound by ", "           ", class);
         }
@@ -307,8 +316,9 @@ fn ccd_line(out: &mut String, cells: &[String; 10], widths: &[usize; 10]) {
     out.push('\n');
 }
 
-/// A CCD's cells, in [`CCD_COLUMNS`] order, and the class its cap is bound by when a rate binds it.
-fn ccd_row(ccd: &CcdProjection) -> ([String; 10], Option<String>) {
+/// A CCD's cells, in [`CCD_COLUMNS`] order; its full core list when the CORES cell had to count the cores instead;
+/// and the class its cap is bound by when a rate binds it.
+fn ccd_row(ccd: &CcdProjection) -> ([String; 10], Option<String>, Option<String>) {
     let (cap, slope, binding, covered, uncovered) = match &ccd.cap {
         Some(cap) => (
             cap.offset.get().to_string(),
@@ -325,9 +335,15 @@ fn ccd_row(ccd: &CcdProjection) -> ([String; 10], Option<String>) {
             "-".to_owned(),
         ),
     };
+    let ranges = core_ranges(ccd.cores);
+    let (cores, listed) = if ranges.chars().count() > CORES_WIDTH {
+        (format!("{} cores", ccd.cores.len()), Some(ranges))
+    } else {
+        (ranges, None)
+    };
     let cells = [
         ccd.ccd.to_string(),
-        core_ranges(ccd.cores),
+        cores,
         ccd.day.get().to_string(),
         cap,
         slope,
@@ -342,7 +358,7 @@ fn ccd_row(ccd: &CcdProjection) -> ([String; 10], Option<String>) {
         Some(Binding::Rate { class }) => Some(class_word(class)),
         Some(Binding::EdgeMargin {} | Binding::Baseline {}) | None => None,
     };
-    (cells, bound)
+    (cells, listed, bound)
 }
 
 const fn reproduction_word(state: ReproductionState) -> &'static str {
