@@ -463,6 +463,54 @@ fn a_stopped_session_leads_with_stopped_before_any_night() {
     assert_eq!(activity(&policy, UTC), "stopped");
 }
 
+fn ccd_vector(offsets: &[(i64, i64)]) -> togi_journal::CcdVector {
+    togi_journal::CcdVector {
+        ccd: CcdProfile::try_from(
+            offsets
+                .iter()
+                .map(|&(ccd, offset)| {
+                    (CcdId::new(ccd).unwrap(), TargetOffset::new(offset).unwrap())
+                })
+                .collect::<std::collections::BTreeMap<_, _>>(),
+        )
+        .unwrap(),
+        cores: PerCore::default(),
+    }
+}
+
+#[test]
+fn a_fallback_retreat_names_the_profile_it_wants_and_why_it_holds_co_0() {
+    let mut policy = projection(None);
+    policy.day.last_step = Some((
+        Seq::new(12).unwrap(),
+        togi_journal::DayStep {
+            decision: togi_journal::DecisionId(3),
+            cold_boot: "boot-9".to_owned().into(),
+            old: ccd_vector(&[(0, -10), (1, -10)]),
+            proposed: ccd_vector(&[(0, 0), (1, 0)]),
+            step: togi_journal::StepKind::Retreat {
+                changed: vec![CcdId::new(0).unwrap(), CcdId::new(1).unwrap()],
+                cause: togi_journal::RetreatCause::ShallowerCap {},
+                wanted: Some(ccd_vector(&[(0, -5), (1, -5)])),
+            },
+            predecessor: None,
+            hours: Vec::new(),
+            hold_s: 0,
+            causes: togi_journal::StepCauses::default(),
+            reason: String::new(),
+        },
+    ));
+    let out = shown(&policy, UTC);
+    let step = out.split_once("latest step").unwrap().1;
+    let step = step.split_once("\nfreeze").unwrap().0;
+    let step = step.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert_eq!(
+        step,
+        "[#12] at cold boot boot-9: retreats CCD 0, 1 to CCD 0 0, CCD 1 0: a cap became shallower; the wanted CCD 0 -5, CCD 1 -5 is not qualified, so it falls back to CO 0 until it is",
+        "{out}"
+    );
+}
+
 fn ccd_projection(
     ccd: i64,
     cores: &[i64],

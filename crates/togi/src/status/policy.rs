@@ -381,11 +381,25 @@ fn step_lines(out: &mut String, seq: togi_journal::Seq, step: &DayStep) {
             }
         }
         StepKind::Promote { changed } => format!("promotes CCD {changed} to {proposed}"),
-        StepKind::Retreat { changed, cause, .. } => format!(
-            "retreats CCD {} to {proposed}: {}",
-            changed_word(changed),
-            retreat_cause(cause)
-        ),
+        StepKind::Retreat {
+            changed,
+            cause,
+            wanted,
+        } => {
+            let mut head = format!(
+                "retreats CCD {} to {proposed}: {}",
+                changed_word(changed),
+                retreat_cause(cause)
+            );
+            if let Some(wanted) = wanted {
+                let _ = write!(
+                    head,
+                    "; the wanted {} is not qualified, so it falls back to CO 0 until it is",
+                    profile_word(&wanted.ccd)
+                );
+            }
+            head
+        }
         StepKind::FirmwareZero { changed } => {
             format!(
                 "sets CCD {} to 0 after a firmware change",
