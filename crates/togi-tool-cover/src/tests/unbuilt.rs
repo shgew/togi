@@ -14,6 +14,13 @@ fn set(paths: &[&str]) -> HashSet<String> {
     paths.iter().map(|&path| path.to_owned()).collect()
 }
 
+fn sources(paths: &[&str]) -> Built {
+    Built {
+        sources: set(paths),
+        tested: HashSet::new(),
+    }
+}
+
 #[test]
 fn built_sources_are_the_dep_info_lines_ending_in_a_colon() {
     let tree = MemTree::new(
@@ -43,7 +50,7 @@ fn built_sources_are_the_dep_info_lines_ending_in_a_colon() {
     );
     let built = built_sources(&tree, Path::new("/repo/target/debug"), Path::new("/repo")).unwrap();
     assert_eq!(
-        built,
+        built.sources,
         set(&[
             "crates/togi-a/src/lib.rs",
             "crates/togi-a/build.rs",
@@ -64,11 +71,60 @@ fn a_build_directory_without_dep_info_is_refused() {
     );
 }
 
+#[test]
+fn integration_tests_are_the_sources_their_own_dep_info_names() {
+    let tree = MemTree::new(
+        "/repo",
+        &[
+            ("crates/a/Cargo.toml", ""),
+            (
+                "target/debug/deps/day-1.d",
+                "target/debug/deps/day-1: crates/a/tests/day.rs crates/a/tests/support/mod.rs\n\ncrates/a/tests/day.rs:\n\ncrates/a/tests/support/mod.rs:\n",
+            ),
+            (
+                "target/debug/deps/multi-2.d",
+                "crates/a/tests/multi/main.rs:\ncrates/a/tests/multi/util.rs:\n",
+            ),
+            (
+                "target/debug/deps/a-3.d",
+                "crates/a/src/lib.rs:\ncrates/a/tests/shared.rs:\n",
+            ),
+            (
+                "target/debug/build/a-4/build_script_build-5.d",
+                "crates/a/build.rs:\ncrates/a/tests/helper.rs:\n",
+            ),
+            (
+                "target/debug/deps/util-6.d",
+                "crates/a/tests/multi/util.rs:\ncrates/a/tests/multi/more.rs:\n",
+            ),
+            (
+                "target/debug/deps/main-7.d",
+                "crates/a/tests/main.rs:\ncrates/a/tests/main_support.rs:\n",
+            ),
+        ],
+    );
+    let built = built_sources(&tree, Path::new("/repo/target/debug"), Path::new("/repo")).unwrap();
+    assert_eq!(
+        built.tested,
+        set(&[
+            "crates/a/tests/day.rs",
+            "crates/a/tests/support/mod.rs",
+            "crates/a/tests/multi/main.rs",
+            "crates/a/tests/multi/util.rs",
+            "crates/a/tests/main.rs",
+            "crates/a/tests/main_support.rs",
+        ])
+    );
+    assert!(built.sources.contains("crates/a/tests/helper.rs"));
+    assert!(!built.tested.contains("crates/a/tests/helper.rs"));
+    assert!(!built.tested.contains("crates/a/tests/multi/more.rs"));
+}
+
 fn not_built_one(
     path: &str,
     src: &str,
     changed: &[(u32, u32)],
-    built: &HashSet<String>,
+    built: &Built,
     measured: &[(u32, bool)],
 ) -> Vec<String> {
     let tree = MemTree::new("/repo", &[(path, src), ("crates/a/Cargo.toml", "")]);
@@ -106,9 +162,39 @@ fn not_built_one(
 fn cfg_items(src: &str, changed: &[(u32, u32)], measured: &[(u32, bool)], left_out: bool) {
     let want: &[&str] = if left_out { &[LIB] } else { &[] };
     assert_eq!(
-        not_built_one(LIB, src, changed, &set(&[LIB]), measured),
+        not_built_one(LIB, src, changed, &sources(&[LIB]), measured),
         want
     );
+}
+
+const DAY: &str = "crates/a/tests/day.rs";
+const GATED: &str = "#![cfg(test)]\n\nfn t() {\n    1;\n}\n";
+const ITEM: &str = "#[cfg(test)]\nfn t() {\n    1;\n}\n";
+const NOT_TEST: &str = "#[cfg(not(test))]\nfn t() {\n    1;\n}\n";
+const MACOS: &str = "#[cfg(target_os = \"macos\")]\nfn t() {\n    1;\n}\n";
+const HELPER: &str = "crates/a/tests/day/helpers.rs";
+
+#[test_case(DAY, GATED, &[DAY], &[DAY], false ; "an integration test with an inner cfg test that its dep-info names")]
+#[test_case(DAY, GATED, &[LIB], &[], true ; "an integration test with an inner cfg test that no dep-info names")]
+#[test_case(DAY, ITEM, &[DAY], &[DAY], false ; "an integration test item under cfg test")]
+#[test_case(HELPER, GATED, &[DAY, HELPER], &[DAY, HELPER], false ; "a module of an integration test")]
+#[test_case(DAY, NOT_TEST, &[DAY], &[DAY], true ; "an integration test item under cfg not test is never compiled")]
+#[test_case(DAY, MACOS, &[DAY], &[DAY], true ; "an integration test item for another target os")]
+#[test_case(DAY, GATED, &[DAY], &[], true ; "a tests file only a non-test build names")]
+#[test_case("crates/a/src/day.rs", GATED, &["crates/a/src/day.rs"], &[], true ; "a source file with an inner cfg test the trace does not measure")]
+fn integration_tests_are_built_with_cfg_test(
+    path: &str,
+    src: &str,
+    compiled: &[&str],
+    tested: &[&str],
+    left_out: bool,
+) {
+    let built = Built {
+        sources: set(compiled),
+        tested: set(tested),
+    };
+    let want: &[&str] = if left_out { &[path] } else { &[] };
+    assert_eq!(not_built_one(path, src, &[(1, 5)], &built, &[]), want);
 }
 
 #[test_case(LIB, "mod b;\n#[cfg(test)]\nmod tests;\n", &[LIB, "crates/a/src/tests.rs"], false ; "a cfg test module the test build compiled from its own file")]
@@ -136,7 +222,10 @@ fn cfg_items(src: &str, changed: &[(u32, u32)], measured: &[(u32, bool)], left_o
 #[test_case(LIB, "mod outer {\n    #[cfg(feature = \"x\")]\n    mod tests;\n}\n", &[LIB, "crates/a/src/tests.rs"], true ; "a module declared inside an inline module is not proven by a top-level file")]
 fn module_declarations(path: &str, src: &str, built: &[&str], left_out: bool) {
     let want: &[&str] = if left_out { &[path] } else { &[] };
-    assert_eq!(not_built_one(path, src, &[(1, 3)], &set(built), &[]), want);
+    assert_eq!(
+        not_built_one(path, src, &[(1, 3)], &sources(built), &[]),
+        want
+    );
 }
 
 #[test]
@@ -165,7 +254,7 @@ fn files_no_dep_info_names_are_left_out_in_order() {
         &tree,
         Path::new("/repo"),
         &changed,
-        &set(&["crates/a/src/lib.rs"]),
+        &sources(&["crates/a/src/lib.rs"]),
         &measured,
         &linux_host(),
     )
@@ -180,7 +269,7 @@ fn an_unreadable_changed_source_is_refused() {
         &MemTree::default(),
         Path::new("/repo"),
         &changed,
-        &set(&[LIB]),
+        &sources(&[LIB]),
         &Measured::new(),
         &linux_host(),
     )
