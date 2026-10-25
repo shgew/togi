@@ -1,0 +1,71 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│
+│  ► NIGHT since 22:13 · 0h30m  ───  qualifying -10/-8
+│
+│  ▌  QUALIFYING   Qualifying the exact profile, CCD 0 at -10, CCD 1 at -8 (qualification task 4).
+│
+│
+│  NOW ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial t1
+│   R2   heavy vector load  on 00-15   mprime AVX2 36K-248K · 16 workers                                                                                                                                                     QUALIFYING -10/-8
+│
+│  ██████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          █▀█   ▀▀█ █▀█
+│  ██████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ▀▀█ ▀ █▀▀ █ █
+│                                                                                                                                                                                                                                ▀▀▀ ▀ ▀▀▀ ▀▀▀
+│  0:40 of 10:00                                                                                                                                                                                                                          left
+│
+│
+│
+│
+│
+│  CCD 0 all loaded    0       -10       -20       -30       -40       -50                                                 CCD 1 all loaded    0       -10       -20       -30       -40       -50
+│  D -10 · S -26 fallback slope · bound by rate R1 · U fails at -31 · 16 counts to S                                       D -8 · S -15 measured slope · bound by rate R1 · U censored at -50 · 7 counts to S
+│  3 covered for the cap · 1 uncovered for the cap                                                                         4 covered for the cap · 0 uncovered for the cap
+│  ► 00  -10  LOADED    ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                    ► 08   -8  LOADED    ▄▄▄▄▄▄▄▄·······                                  ▄
+│  ► 01  -10  LOADED    ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                    ► 09   -8  LOADED    ▄▄▄▄▄▄▄▄·······                                  ▄
+│  ► 02  -10  LOADED    ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                    ► 10   -8  LOADED    ▄▄▄▄▄▄▄▄·······                                  ▄
+│  ► 03  -10  LOADED    ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                    ► 11   -8  LOADED    ▄▄▄▄▄▄▄▄·······                                  ▄
+│  ► 04  -10  LOADED    ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                    ► 12   -8  LOADED    ▄▄▄▄▄▄▄▄·······                                  ▄
+│  ► 05  -10  LOADED    ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                    ► 13   -8  LOADED    ▄▄▄▄▄▄▄▄·······                                  ▄
+│  ► 06  -10  LOADED    ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                    ► 14   -8  LOADED    ▄▄▄▄▄▄▄▄·······                                  ▄
+│  ► 07  -10  LOADED    ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                    ► 15   -8  LOADED    ▄▄▄▄▄▄▄▄·······                                  ▄
+│
+│  NIGHT since 22:13 · 0h30m elapsed ─────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+│  task        qualification task 4 · 1 of 2 planned tasks done
+│  qualifying  -10/-8 · next step · 3 witnessed · 2 outstanding                                                            22:13  start    session started on 16 cores
+│  shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%
+│
+│  DAY ──────────────────────────────────────────────────────────────────────────────────────────────── applied -10/-8
+│  hold        3h00m of 8h00m · holding -10/-8
+│  firmware    valid
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│   ?  help    l  log    esc  back    q  exit dashboard

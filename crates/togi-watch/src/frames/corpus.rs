@@ -1,21 +1,22 @@
 //! The frame side of the narration corpus (#904): what each region of a drawn frame shows, and the sweep that
 //! draws every journal state the simulated sessions pass through.
 //!
-//! The sweep folds every prefix of every [`Base`] journal and of the cycle a rerun completes, each fold credited to
-//! the case of the prefix it makes. It draws each state at the widest main size at its last event and 40 seconds
-//! after, and at the other two sizes 40 seconds after. A state with a trial in flight that nothing holds is also
-//! drawn at the trial's planned end at the widest size only, and 90 seconds past it at all three sizes. An idle
-//! (R6) trial holds the frame frozen from its start, so it has no planned-end clocks and must report
-//! [`Hold::Frozen`]. The 18 [`Scenario`] cuts, each projected under its own case, the journal states and the help
-//! and journal views are drawn too.
+//! The sweep folds every prefix of every [`Base`] journal, each fold credited to the case of the prefix it makes,
+//! and draws every hand-built [`Staged`] frame. It draws each state at the widest main size at its last event and
+//! 40 seconds after, and at the other two sizes 40 seconds after. A state with a trial in flight that nothing holds
+//! is also drawn at the trial's planned end at the widest size only, and 90 seconds past it at all three sizes. An
+//! idle (R6) trial holds the frame frozen from its start, so it has no planned-end clocks and must report
+//! [`Hold::Frozen`]. The [`Scenario`] cuts, each projected under its own case, the journal states, the help view
+//! and the journal views of the journals and the staged frames are drawn too.
 
 use std::io;
 
 use jiff::{SignedDuration, Timestamp};
 use ratatui::buffer::Buffer;
 use togi_journal::Event;
-use togi_watchtest::{Base, Scenario, cycle_completed_by_rerun};
+use togi_watchtest::{Base, Scenario};
 
+use super::hand::Staged;
 use super::layout::{Layout, SizeClass};
 use super::measure::Measure;
 use super::scene::Scene;
@@ -39,7 +40,7 @@ const THREE_COLUMNS: u16 = 195;
 pub(crate) struct Swept {
     /// Each journal folded event by event, with its events and the frames drawn from its prefixes.
     pub(crate) journals: Vec<(String, usize, usize)>,
-    /// The scenarios drawn as whole frames at the main sizes.
+    /// The staged frames drawn.
     pub(crate) scenarios: usize,
     /// Every frame drawn.
     pub(crate) frames: usize,
@@ -278,6 +279,58 @@ pub(crate) fn views(swept: &mut Swept, name: &str, events: &[Event]) {
     }
 }
 
+/// Draws one hand-built frame at every main size and every clock of [`clocks`], credited to `sweep/staged/{name}`.
+fn staged(swept: &mut Swept, which: Staged) {
+    let hand = which.hand();
+    let journal = hand.journal();
+    let Journal::Ready { snapshot, .. } = &journal else {
+        unreachable!("a hand gives a ready journal")
+    };
+    for (clock, now) in clocks(snapshot, hand.now) {
+        for (n, &size) in SIZES.iter().enumerate() {
+            if n > 0 && clock != "plus40" && clock != "overdue" {
+                continue;
+            }
+            let id = format!(
+                "sweep/staged/{}/{}x{}/{clock}",
+                which.name(),
+                size.0,
+                size.1
+            );
+            let (_, hold) = draw(
+                swept,
+                &id,
+                &journal,
+                &screen_of(View::Main, size, false),
+                now,
+            );
+            if snapshot.idle_hold().is_some() {
+                assert_eq!(
+                    hold,
+                    Hold::Frozen,
+                    "{id}: a started idle trial holds the frame"
+                );
+            }
+        }
+    }
+    for size in VIEW_SIZES {
+        for (end, scroll) in [("top", 0), ("end", usize::MAX)] {
+            let id = format!(
+                "sweep/staged/{}/log-{end}/{}x{}",
+                which.name(),
+                size.0,
+                size.1
+            );
+            let sc = Screen {
+                scroll,
+                ..screen_of(View::Log, size, false)
+            };
+            draw(swept, &id, &journal, &sc, hand.now);
+        }
+    }
+    swept.scenarios += 1;
+}
+
 /// Draws everything the corpus draws, on the calling thread, which collects.
 pub(crate) fn run() -> Swept {
     let mut swept = Swept::default();
@@ -289,13 +342,6 @@ pub(crate) fn run() -> Swept {
         sweep_journal(&mut swept, &name, events);
         views(&mut swept, &name, events);
     }
-    let rerun =
-        cycle_completed_by_rerun().unwrap_or_else(|error| panic!("rerun journals: {error}"));
-    sweep_journal(&mut swept, "rerun-completes-cycle", &rerun.ended);
-    for (n, running) in rerun.running.iter().enumerate() {
-        whole(&mut swept, &format!("scenario/rerun-{n}"), running);
-    }
-    whole(&mut swept, "scenario/rerun-passed", &rerun.passed);
     for scenario in Scenario::ALL {
         let events = scenario
             .events()
@@ -306,6 +352,9 @@ pub(crate) fn run() -> Swept {
             &events,
         );
         swept.scenarios += 1;
+    }
+    for which in Staged::ALL {
+        staged(&mut swept, which);
     }
     states(&mut swept);
     swept
@@ -321,11 +370,9 @@ mod tests {
     #[test_case((160, 45), true; "medium frames draw the last outcome")]
     #[test_case((240, 67), true; "wide frames draw the last outcome")]
     fn the_last_outcome_region_is_recorded_only_where_it_is_drawn(size: (u16, u16), drawn: bool) {
-        let events = Base::Probe.events().expect("the probe journal");
-        let model = project(events);
-        let journal = ready(&model);
-        let now =
-            events.last().expect("a journal with events").time + SignedDuration::from_secs(40);
+        let hand = Staged::Between.hand();
+        let journal = hand.journal();
+        let now = hand.now;
         crate::corpus::start();
         draw(
             &mut Swept::default(),

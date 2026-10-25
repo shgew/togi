@@ -1,28 +1,18 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jiff::Timestamp;
+use test_case::test_case;
 use togi_journal::{
-    Activity, CorePhase, DeadEndCondition, Outcome, Payload, ProfileRestored, Shutdown,
-    ShutdownReason, TrialId,
+    Activity, ApplicationId, ApplyCause, CcdVector, DayApplied, DeadEndCondition, Outcome, Payload,
+    ProfileRestored, SessionBaseline, Shutdown, ShutdownReason, TrialId,
 };
-use togi_machine::{Condition, ObservedOffset, Regime};
-use togi_tuner::{Action, PhaseNo};
+use togi_machine::{BootId, CcdId, CcdProfile, Condition, ObservedOffset, PerCore, Regime};
 
 use super::kit::*;
 use crate::history::{LOG_LIMIT, LogEntry};
-use crate::model::{CoreState, FoldError, Model, project};
+use crate::model::{FoldError, Model, project};
 use crate::words::Tag;
-
-fn searching() -> Script {
-    Script::new(
-        &[(0, 0), (1, 0), (2, 1)],
-        &[Start::search(-25), Start::search(-5), Start::search(-5)],
-    )
-}
-
-fn at_limit() -> Script {
-    Script::new(&[(0, 0), (1, 0), (2, 1)], &[Start::at_limit(-20, -21); 3])
-}
 
 fn shutdown(reason: ShutdownReason) -> Payload {
     Shutdown {
@@ -41,6 +31,38 @@ fn restored() -> Payload {
     .into()
 }
 
+/// The firmware baseline the day profile history starts from: every core at 0.
+fn baseline(cores: &[u8]) -> Payload {
+    SessionBaseline {
+        offsets: cores
+            .iter()
+            .map(|&id| (core(id), ObservedOffset(0)))
+            .collect(),
+    }
+    .into()
+}
+
+/// A verified day application of `offsets`, one per CCD.
+fn day_applied(application: u64, offsets: &[(i64, i64)]) -> Payload {
+    let ccd: BTreeMap<_, _> = offsets
+        .iter()
+        .map(|&(ccd, offset)| (CcdId::new(ccd).unwrap(), off(offset)))
+        .collect();
+    DayApplied {
+        application: ApplicationId(application),
+        cause: ApplyCause::Reapplication {},
+        target: CcdVector {
+            ccd: CcdProfile::try_from(ccd).unwrap(),
+            cores: PerCore::default(),
+        },
+        readbacks: PerCore::default(),
+        transactions: Vec::new(),
+        boot: BootId::from("boot".to_owned()),
+        mono_ns: 0,
+    }
+    .into()
+}
+
 #[test]
 fn empty_model_has_no_session() {
     let model = Model::new();
@@ -49,14 +71,14 @@ fn empty_model_has_no_session() {
     assert!(snap.session.is_none());
     assert!(snap.cores.is_empty());
     assert!(snap.history.is_empty());
-    assert!(snap.trial.is_none() && snap.cycle.is_none() && snap.hunt.is_none());
+    assert!(snap.trial.is_none());
     assert_eq!((snap.log.len(), snap.log_total, snap.failures), (0, 0, 0));
     assert!(!snap.resting(), "nothing rests before a session starts");
 }
 
 #[test]
 fn a_refused_event_turns_the_model_into_a_problem() {
-    let mut script = at_limit();
+    let mut script = Script::three();
     let mut model = script.model();
     assert!(model.snapshot().session.is_some());
     let event = script.event(
@@ -92,7 +114,7 @@ fn a_refused_event_turns_the_model_into_a_problem() {
 
 #[test]
 fn an_event_that_does_not_follow_is_a_problem() {
-    let script = searching();
+    let script = Script::three();
     let mut model = Model::new();
     assert!(matches!(
         model.fold(&script.events[1]),
@@ -103,7 +125,7 @@ fn an_event_that_does_not_follow_is_a_problem() {
 
 #[test]
 fn project_folds_like_fold() {
-    let script = searching();
+    let script = Script::three();
     let projected = project(&script.events);
     assert!(projected.problem().is_none());
     assert_eq!(projected.snapshot().cores.len(), 3);
@@ -113,7 +135,7 @@ fn project_folds_like_fold() {
 
 #[test]
 fn a_batch_without_trial_ends_matches_incremental_folding() {
-    let script = searching();
+    let script = Script::three();
     let mut batch = Model::new();
     batch.fold_batch(&script.events).unwrap();
     let each = script.model();
@@ -126,7 +148,7 @@ fn a_batch_without_trial_ends_matches_incremental_folding() {
 
 #[test]
 fn a_refused_batch_reports_the_first_event_and_keeps_the_problem() {
-    let script = searching();
+    let script = Script::three();
     let mut model = Model::new();
     let error = model.fold_batch(&script.events[1..]).unwrap_err();
     assert_eq!(error.index, 0);
@@ -154,7 +176,7 @@ fn a_refused_batch_reports_the_first_event_and_keeps_the_problem() {
 
 #[test]
 fn a_batch_reports_the_failure_position_after_a_valid_prefix() {
-    let mut script = searching();
+    let mut script = Script::three();
     script.events[1] = script.events[0].clone();
     let mut model = Model::new();
     let error = model.fold_batch(&script.events).unwrap_err();
@@ -168,9 +190,8 @@ fn a_batch_reports_the_failure_position_after_a_valid_prefix() {
 
 #[test]
 fn trial_lifecycle() {
-    let mut script = searching();
-    let plan = script.plan();
-    let (intent, trial) = script.intent(&plan);
+    let mut script = Script::three();
+    let (intent, trial) = script.intent(Regime::R1, &[0]);
     script.append(smu_intent(0, -25), &[]);
     script.append(readback(0, -25), &[]);
     let started = script.start(&trial);
@@ -181,40 +202,39 @@ fn trial_lifecycle() {
     assert_eq!(running.started, Some(at(started)));
     assert_eq!(
         running.duration,
-        Duration::from_secs(u64::from(plan.duration.get())),
+        Duration::from_secs(120),
         "an SMU write after the intent does not hide the running trial"
     );
     let first = &snap.cores[0];
     assert!(first.loaded);
     assert_eq!(
         (first.applied, first.profile),
-        (Some(ObservedOffset(-25)), off(-25))
+        (Some(ObservedOffset(-25)), off(0))
     );
     let waiting = &snap.cores[1];
-    assert!(!waiting.loaded && waiting.state != CoreState::Parked);
-    assert!(!snap.cores[1].judged);
+    assert!(!waiting.loaded);
     script.end(intent, &trial, Outcome::Pass);
     let model = script.model();
     let snap = model.snapshot();
     assert!(snap.trial.is_none() && !snap.cores[0].loaded);
-    assert!(
-        snap.history.iter().all(|entry| entry.tag != Tag::Pass),
-        "a search pass does not crowd the account of what happened"
+    assert_eq!(
+        snap.history.first().map(|entry| entry.tag),
+        Some(Tag::Pass),
+        "the pass is told"
     );
 }
 
 #[test]
 fn trial_preparation_does_not_claim_load() {
-    let mut script = searching();
-    let plan = script.plan();
-    script.intent(&plan);
+    let mut script = Script::three();
+    script.intent(Regime::R1, &[0]);
     script.append(readback(0, -25), &[]);
     let model = script.model();
     let snap = model.snapshot();
     let trial = snap.trial.unwrap();
     assert!(trial.started.is_none());
     let first = &snap.cores[0];
-    assert!(!first.loaded && !first.judged);
+    assert!(!first.loaded);
     assert_eq!(first.applied, Some(ObservedOffset(-25)));
 }
 
@@ -231,7 +251,7 @@ enum TrialStartSelection {
 #[test_case::test_case(TrialStartSelection::Unrelated; "only unrelated start")]
 #[test_case::test_case(TrialStartSelection::Epoch; "epoch timestamp")]
 fn trial_start_selection(kind: TrialStartSelection) {
-    let mut script = searching();
+    let mut script = Script::three();
     let id = TrialId::from("0001".to_owned());
     let other = TrialId::from("other".to_owned());
     let mut want = if matches!(kind, TrialStartSelection::Before) {
@@ -239,8 +259,7 @@ fn trial_start_selection(kind: TrialStartSelection) {
     } else {
         None
     };
-    let plan = script.plan();
-    script.intent(&plan);
+    script.intent(Regime::R1, &[0]);
     match kind {
         TrialStartSelection::Before => {}
         TrialStartSelection::Latest => {
@@ -269,7 +288,6 @@ fn trial_start_selection(kind: TrialStartSelection) {
                 &[],
             );
             event.time = Timestamp::UNIX_EPOCH;
-            script.shadow.fold(&event).unwrap();
             script.events.push(event);
             want = Some(Timestamp::UNIX_EPOCH);
         }
@@ -280,8 +298,10 @@ fn trial_start_selection(kind: TrialStartSelection) {
 }
 
 #[test]
-fn stopped_shows_the_saved_profile_not_the_applied_offsets() {
-    let mut script = at_limit();
+fn stopped_shows_the_day_profile_not_the_applied_offsets() {
+    let mut script = Script::three();
+    script.append(baseline(&[0, 1, 2]), &[]);
+    script.append(day_applied(1, &[(0, -20), (1, -10)]), &[]);
     script.append(readback(0, -20), &[]);
     script.append(readback(0, 0), &[]);
     script.append(restored(), &[]);
@@ -297,7 +317,7 @@ fn stopped_shows_the_saved_profile_not_the_applied_offsets() {
 
 #[test]
 fn write_after_restoration_is_not_saved() {
-    let mut script = at_limit();
+    let mut script = Script::three();
     script.append(restored(), &[]);
     let mut cycles = shutdown(ShutdownReason::Cycles);
     if let Payload::Shutdown(shutdown) = &mut cycles {
@@ -329,7 +349,7 @@ fn write_after_restoration_is_not_saved() {
 
 #[test]
 fn smu_dead_end_keeps_the_readback() {
-    let mut script = searching();
+    let mut script = Script::three();
     script.append(smu_intent(0, -25), &[]);
     script.append(readback(0, 0), &[]);
     script.append(
@@ -347,13 +367,13 @@ fn smu_dead_end_keeps_the_readback() {
     let first = &model.snapshot().cores[0];
     assert_eq!(
         (first.applied, first.profile),
-        (Some(ObservedOffset(0)), off(-25))
+        (Some(ObservedOffset(0)), off(0))
     );
 }
 
 #[test]
 fn sparse_core_ids() {
-    let mut script = Script::new(&[(0, 0), (8, 1)], &[Start::search(-5), Start::search(-9)]);
+    let mut script = Script::new(&[(0, 0), (8, 1)]);
     script.append(
         ProfileRestored {
             offsets: [(core(0), off(-5)), (core(8), off(-9))]
@@ -368,12 +388,11 @@ fn sparse_core_ids() {
     let ids: Vec<u8> = snap.cores.iter().map(|c| c.id.get()).collect();
     assert_eq!(ids, [0, 8]);
     assert_eq!(snap.cores[1].applied, Some(ObservedOffset(-9)));
-    assert_eq!(snap.order, [core(0), core(8)]);
 }
 
 #[test]
 fn sparse_readbacks_do_not_fill_other_topology_cores() {
-    let mut script = Script::new(&[(0, 0), (8, 1)], &[Start::search(-5), Start::search(-9)]);
+    let mut script = Script::new(&[(0, 0), (8, 1)]);
     script.append(
         ProfileRestored {
             offsets: [(core(8), off(-9))].into_iter().collect(),
@@ -396,7 +415,7 @@ fn sparse_readbacks_do_not_fill_other_topology_cores() {
 #[test_case::test_case(false, true; "power reset")]
 #[test_case::test_case(true, false; "before offsets")]
 fn crash_classification(stray: bool, inconclusive: bool) {
-    let mut script = searching();
+    let mut script = Script::three();
     let mut crashed = crash("boot", None);
     crashed.stray = stray;
     crashed.inconclusive = inconclusive;
@@ -410,9 +429,8 @@ fn crash_classification(stray: bool, inconclusive: bool) {
 #[test_case::test_case("boot"; "same boot")]
 #[test_case::test_case("older"; "older boot")]
 fn a_crash_ends_only_its_boot_trial(previous: &str) {
-    let mut script = searching();
-    let plan = script.plan();
-    let (intent, trial) = script.intent(&plan);
+    let mut script = Script::three();
+    let (intent, trial) = script.intent(Regime::R1, &[0]);
     script.start(&trial);
     script.boot = "next".to_owned();
     script.append(crash(previous, Some(intent)).into(), &[]);
@@ -431,13 +449,12 @@ fn a_crash_ends_only_its_boot_trial(previous: &str) {
 
 #[test]
 fn recovery_ends_only_when_a_trial_starts() {
-    let mut script = searching();
+    let mut script = Script::three();
     script.boot = "next".to_owned();
     let mut crashed = crash("boot", None);
     crashed.stray = true;
     script.append(crashed.into(), &[]);
-    let plan = script.plan();
-    let (_, trial) = script.intent(&plan);
+    let (_, trial) = script.intent(Regime::R1, &[0]);
     assert!(
         script.model().snapshot().recover.is_some(),
         "preparing offsets does not hide recovery"
@@ -447,52 +464,8 @@ fn recovery_ends_only_when_a_trial_starts() {
 }
 
 #[test]
-fn a_reset_core_drops_its_solo_limit() {
-    let mut script = Script::new(&[(0, 0)], &[Start::search(0)]);
-    let mut exit = Start::at_limit(-20, -21);
-    exit.from = Some(CorePhase::Search);
-    exit.pass = Some(-20);
-    script.append(transition(0, exit).into(), &[]);
-    assert_eq!(script.model().snapshot().cores[0].solo, Some(off(-20)));
-    let mut again = Start::search(0);
-    again.from = Some(CorePhase::AtLimit);
-    script.append(transition(0, again).into(), &[]);
-    assert_eq!(script.model().snapshot().cores[0].solo, None);
-}
-
-#[test]
-fn solo_limit_is_the_offset_the_core_passed_alone() {
-    let mut exit = Start::solo(-19, -20);
-    exit.fail = Some(-21);
-    let mut bare = Start::has_room(-9);
-    bare.from = Some(CorePhase::Search);
-    let script = Script::new(&[(0, 0), (1, 0)], &[exit, bare]);
-    let model = script.model();
-    let snap = model.snapshot();
-    assert_eq!(
-        snap.cores[0].solo,
-        Some(off(-20)),
-        "the margin -19 is not the limit"
-    );
-    assert_eq!(
-        snap.cores[1].solo, None,
-        "the tuner counts no solo limit without a pass"
-    );
-}
-
-#[test]
-fn phase_and_bios_before_phase_one_ends() {
-    let script = Script::new(&[(0, 0), (1, 0), (2, 1)], &[Start::solo(-9, -10); 3]);
-    let model = script.model();
-    let snap = model.snapshot();
-    assert_eq!(snap.phases.unwrap().phase, PhaseNo::One);
-    assert!(snap.bios.is_none());
-}
-
-#[test]
 fn failure_counters_separate_observed_and_skipped() {
     let mut h = Hist::three();
-    h.push(transition(0, Start::has_room(-20)).into());
     let mut observed = failure(togi_machine::Signal::ComputationError, None);
     observed.attribution = togi_journal::Attribution::Attributed;
     observed.core = Some(core(0));
@@ -509,7 +482,7 @@ fn failure_counters_separate_observed_and_skipped() {
 
 #[test]
 fn the_log_counts_every_listed_event() {
-    let mut script = searching();
+    let mut script = Script::three();
     for i in 0..LOG_LIMIT + 30 {
         script.append(warning(&i.to_string()), &[]);
     }
@@ -534,7 +507,7 @@ fn the_log_counts_every_listed_event() {
 #[test_case::test_case(LOG_LIMIT + 1; "above limit")]
 #[test_case::test_case(3 * LOG_LIMIT + 5; "several limits")]
 fn the_raw_log_keeps_the_newest_eligible_events_in_order(count: usize) {
-    let mut script = searching();
+    let mut script = Script::three();
     for i in 0..count {
         script.append(smu_intent(0, -20), &[]);
         script.append(readback(0, -20), &[]);
@@ -573,7 +546,7 @@ fn the_raw_log_keeps_the_newest_eligible_events_in_order(count: usize) {
 
 #[test]
 fn history_counts_every_entry_it_leaves_out() {
-    let mut script = searching();
+    let mut script = Script::three();
     let entries = 2 * crate::history::HISTORY_LIMIT + 6;
     for i in 0..entries - 2 {
         script.append(warning(&i.to_string()), &[]);
@@ -586,75 +559,51 @@ fn history_counts_every_entry_it_leaves_out() {
 }
 
 #[test]
-fn a_cycle_opens_with_its_steps() {
-    let mut script = Script::at_limit();
-    script.step(|_| Outcome::Pass);
-    script.step(|_| Outcome::Pass);
-    let model = script.model();
-    let snap = model.snapshot();
-    let cycle = snap.cycle.expect("the cycle opened");
-    assert_eq!(cycle.plan.number.map(std::num::NonZeroU32::get), Some(1));
-    assert_eq!(cycle.step_hunts.len(), cycle.plan.steps.len());
-    assert!(script.shadow.next().is_ok());
-    let _ = (Action::ReadRanking, Condition::Alone, Regime::R1);
-}
-
-#[test]
-fn between_trials_the_last_outcome_and_the_forecast_stand() {
-    let mut script = Script::at_limit();
+fn between_trials_the_last_outcome_stands() {
+    let mut script = Script::three();
     assert!(
         script.model().snapshot().last.is_none(),
         "no trial has ended yet"
     );
-    let plan = script.next_trial();
-    let (intent, trial) = script.intent(&plan);
+    let (intent, trial) = script.intent(Regime::R1, &[0]);
     script.end(intent, &trial, Outcome::Pass);
     let model = script.model();
     let snap = model.snapshot();
     let last = snap.last.expect("the last trial");
     assert_eq!(last.id, trial);
     assert_eq!(last.outcome, Outcome::Pass);
-    assert_eq!(last.regime, Some(plan.regime));
-    assert_eq!(last.cores, plan.load.cores());
-    assert_eq!(
-        last.planned,
-        Some(Duration::from_secs(u64::from(plan.duration.get())))
-    );
+    assert_eq!(last.regime, Some(Regime::R1));
+    assert_eq!(last.cores, set(&[0]));
+    assert_eq!(last.planned, Some(Duration::from_secs(120)));
     assert!(snap.trial.is_none());
-    assert!(snap.forecast.branches.is_empty());
-    assert!(
-        snap.forecast.between.is_some(),
-        "what runs next is forecast between trials"
-    );
 }
 
-/// What a frame between trials shows of the trial that just ended: its id and what each outcome led to.
+/// What a frame between trials shows of the trial that just ended: its id and the policy as it stood.
 fn ended_of(model: &Model) -> Option<(String, String)> {
-    model
-        .snapshot()
-        .ended
-        .map(|ended| (ended.trial.id.to_string(), format!("{:?}", ended.forecast)))
+    model.snapshot().ended.map(|ended| {
+        (
+            ended.trial.id.to_string(),
+            format!("{:?}", ended.policy.night),
+        )
+    })
 }
 
 #[test]
 fn only_the_last_end_of_a_batch_keeps_its_outcomes_and_a_batch_without_one_keeps_the_last() {
-    let mut script = Script::at_limit();
+    let mut script = Script::three();
     let mut ends = Vec::new();
     for outcome in [Outcome::Pass, Outcome::Failure] {
-        let plan = script.next_trial();
-        let (intent, trial) = script.intent(&plan);
-        script.start(&trial);
-        script.append(ended(&trial, &plan, outcome), &[intent]);
+        script.run(Regime::R1, &[0], outcome);
         ends.push(script.events.len());
     }
-    let plan = script.next_trial();
+    script.append(warning("between trials"), &[]);
     let next_decided = script.events.len();
-    script.intent(&plan);
+    script.intent(Regime::R1, &[0]);
     let events = &script.events;
     let next_intent = events.len();
     assert!(
         next_decided > ends[1],
-        "the tuner decides something between the last end and the next intent"
+        "something is recorded between the last end and the next intent"
     );
 
     // Folding one event at a time keeps every end; the batch must show the same as the incremental fold at each
@@ -699,9 +648,8 @@ fn only_the_last_end_of_a_batch_keeps_its_outcomes_and_a_batch_without_one_keeps
 
 #[test]
 fn an_empty_batch_keeps_the_last_outcome_and_snapshot() {
-    let mut script = Script::at_limit();
-    let plan = script.next_trial();
-    let (intent, trial) = script.intent(&plan);
+    let mut script = Script::three();
+    let (intent, trial) = script.intent(Regime::R1, &[0]);
     script.end(intent, &trial, Outcome::Pass);
     let mut model = script.model();
     let kept = ended_of(&model);
@@ -714,9 +662,8 @@ fn an_empty_batch_keeps_the_last_outcome_and_snapshot() {
 
 #[test]
 fn a_batch_ending_in_shutdown_hides_the_retained_outcome() {
-    let mut script = Script::at_limit();
-    let plan = script.next_trial();
-    let (intent, trial) = script.intent(&plan);
+    let mut script = Script::three();
+    let (intent, trial) = script.intent(Regime::R1, &[0]);
     script.end(intent, &trial, Outcome::Pass);
     let after_end = script.events.len();
     script.append(shutdown(ShutdownReason::Signal), &[]);
@@ -738,14 +685,13 @@ fn a_batch_ending_in_shutdown_hides_the_retained_outcome() {
 
 #[test]
 fn a_reset_batch_retains_the_outcome_without_reopening_a_stop() {
-    let mut script = Script::at_limit();
-    let plan = script.next_trial();
-    let (intent, trial) = script.intent(&plan);
+    let mut script = Script::three();
+    let (intent, trial) = script.intent(Regime::R1, &[0]);
     script.end(intent, &trial, Outcome::Pass);
     let after_end = script.events.len();
     let mut batch = project(&script.events);
     let kept = ended_of(&batch);
-    let reset = script.append(
+    script.append(
         togi_journal::CommandReset {
             target: togi_journal::ResetTarget::Core(core(1)),
         }
@@ -755,7 +701,6 @@ fn a_reset_batch_retains_the_outcome_without_reopening_a_stop() {
     batch.fold_batch(&script.events[after_end..]).unwrap();
     assert!(kept.is_some());
     assert_eq!(ended_of(&batch), kept);
-    assert_eq!(batch.snapshot().cores[1].queued, Some(reset));
     let before_stop = script.events.len();
     script.append(shutdown(ShutdownReason::Signal), &[]);
     let after_stop = script.events.len();
@@ -778,10 +723,9 @@ fn a_reset_batch_retains_the_outcome_without_reopening_a_stop() {
 }
 
 #[test]
-fn a_recovered_trial_keeps_its_place_in_the_cycle() {
-    let mut script = Script::at_limit();
-    let plan = script.next_trial();
-    let (intent, trial) = script.intent(&plan);
+fn a_recovered_trial_keeps_its_start() {
+    let mut script = Script::three();
+    let (intent, trial) = script.intent(Regime::R1, &[0]);
     let started = script.start(&trial);
     script.boot = "next".to_owned();
     script.append(crash("boot", Some(intent)).into(), &[]);
@@ -791,21 +735,19 @@ fn a_recovered_trial_keeps_its_place_in_the_cycle() {
         .recover
         .and_then(|r| r.trial.as_ref())
         .expect("the crashed trial");
-    let place = recovered.cycle.expect("a cycle trial");
-    assert_eq!((place.cycle, place.step, place.part), (1, Some(1), Some(1)));
+    assert_eq!(recovered.id, trial);
     assert_eq!(
         recovered.started,
         Some(at(started)),
         "the crashed trial had started"
     );
-    assert!(!recovered.partial, "it loaded every core");
+    assert_eq!(recovered.idle, set(&[1, 2]), "it loaded core 00 alone");
 }
 
 #[test]
 fn a_prior_recovery_does_not_mask_a_later_boot_crash() {
-    let mut script = searching();
-    let first = script.plan();
-    let (first_intent, first_trial) = script.intent(&first);
+    let mut script = Script::three();
+    let (first_intent, first_trial) = script.intent(Regime::R1, &[0]);
     script.start(&first_trial);
     script.boot = "next".to_owned();
     let crashed = script.append(crash("boot", Some(first_intent)).into(), &[]);
@@ -818,8 +760,7 @@ fn a_prior_recovery_does_not_mask_a_later_boot_crash() {
         .into(),
         &[crashed],
     );
-    let second = script.next_trial();
-    let (_, second_trial) = script.intent(&second);
+    let (_, second_trial) = script.intent(Regime::R1, &[0]);
     let model = script.model();
     let snap = model.snapshot();
     let trial = snap.trial.expect("the next trial is intended");
@@ -846,10 +787,9 @@ fn a_prior_recovery_does_not_mask_a_later_boot_crash() {
 }
 
 #[test]
-fn a_crash_ending_a_cycle_trial_says_which_trial_of_its_part_it_was() {
-    let mut script = Script::at_limit();
-    let plan = script.next_trial();
-    let (intent, trial) = script.intent(&plan);
+fn a_crash_ending_a_trial_says_how_far_into_it_the_machine_went_down() {
+    let mut script = Script::three();
+    let (intent, trial) = script.intent(Regime::R1, &[0]);
     script.start(&trial);
     script.boot = "next".to_owned();
     let crashed = script.append(crash("boot", Some(intent)).into(), &[]);
@@ -860,72 +800,73 @@ fn a_crash_ending_a_cycle_trial_says_which_trial_of_its_part_it_was() {
     let history = model.snapshot().history;
     let ended = history
         .iter()
-        .find(|entry| entry.tag == crate::words::Tag::Crash)
+        .find(|entry| entry.tag == Tag::Crash)
         .expect("one crash line");
     assert!(
-        ended.text().contains(" · rebooted · late in trial 1 of "),
+        ended.text().contains("late in the trial"),
         "{}",
         ended.text()
     );
     assert_eq!(
         history
             .iter()
-            .filter(|entry| entry.tag == crate::words::Tag::Crash)
+            .filter(|entry| entry.tag == Tag::Crash)
             .count(),
         1,
         "the trial's end takes the place of the reboot line"
     );
 }
 
-#[test]
-fn only_an_idle_trial_holds_and_only_r7_names_requesters() {
-    let mut script = Script::at_limit();
-    let plan = script.next_trial();
-    let (_, trial) = script.intent(&plan);
-    script.start(&trial);
-    let model = script.model();
-    let snap = model.snapshot();
+#[test_case(Regime::R6, true; "an idle trial holds")]
+#[test_case(Regime::R7, false; "a loaded trial does not")]
+fn only_a_started_idle_trial_holds_the_frame(regime: Regime, holds: bool) {
+    let mut script = Script::three();
+    let (_, trial) = script.intent(regime, &[0, 1, 2]);
     assert!(
-        snap.idle_hold().is_none(),
-        "an R7 trial is not an idle hold"
+        script.model().snapshot().idle_hold().is_none(),
+        "nothing holds before the start"
     );
-    assert_eq!(snap.r7_workload(), Some(plan_workload(&snap)));
-    let search = searching();
-    let model = search.model();
-    let snap = model.snapshot();
-    assert_eq!(snap.r7_workload(), None);
-    assert!(snap.r7_top().is_empty());
-}
-
-fn plan_workload(snap: &crate::model::Snapshot<'_>) -> togi_machine::WorkloadId {
-    snap.trial.expect("the running trial").workload
+    let started = script.start(&trial);
+    let model = script.model();
+    let hold = model.snapshot().idle_hold();
+    assert_eq!(hold.is_some(), holds);
+    if let Some(hold) = hold {
+        assert_eq!(hold.started, at(started));
+        assert_eq!(
+            hold.planned_end,
+            at(started)
+                .checked_add(jiff::SignedDuration::from_secs(120))
+                .unwrap()
+        );
+    }
 }
 
 #[test]
-fn a_reset_queued_for_a_core_shows_on_that_core() {
-    let mut script = searching();
-    let seq = script.append(
+fn a_reset_command_is_told_in_the_history() {
+    let mut script = Script::three();
+    script.append(
         Payload::CommandReset(togi_journal::CommandReset {
             target: togi_journal::ResetTarget::Core(core(1)),
         }),
         &[],
     );
     let model = script.model();
-    let snap = model.snapshot();
-    assert_eq!(snap.cores[1].queued, Some(seq));
-    assert_eq!(snap.cores[0].queued, None);
     assert_eq!(
-        snap.history.first().map(|entry| entry.tag.word()),
+        model
+            .snapshot()
+            .history
+            .first()
+            .map(|entry| entry.tag.word()),
         Some("reset")
     );
 }
 
 #[test]
 fn only_a_new_config_loaded_reopens_a_stopped_session() {
-    let mut script = searching();
+    let mut script = Script::three();
     script.append(restored(), &[]);
     script.append(shutdown(ShutdownReason::Signal), &[]);
-    let reset = script.append(
+    script.append(
         Payload::CommandReset(togi_journal::CommandReset {
             target: togi_journal::ResetTarget::Core(core(1)),
         }),
@@ -939,118 +880,22 @@ fn only_a_new_config_loaded_reopens_a_stopped_session() {
         Some(ShutdownReason::Signal)
     );
     assert!(snap.resting() && !snap.between_trials());
-    assert_eq!(snap.cores[1].queued, Some(reset), "the reset stays queued");
     script.append(config_loaded(), &[]);
     let model = script.model();
     let snap = model.snapshot();
     assert!(snap.stopped.is_none(), "config.loaded reopens the session");
-    assert_eq!(
-        snap.cores[1].queued,
-        Some(reset),
-        "still queued for this run"
-    );
-}
-
-fn ended(trial: &TrialId, plan: &togi_tuner::TrialPlan, outcome: Outcome) -> Payload {
-    let signal = (outcome == Outcome::Failure).then_some(togi_machine::Signal::ComputationError);
-    let mut end = end_payload(trial, outcome, signal);
-    end.duration_s = plan.duration.get();
-    if outcome == Outcome::Failure {
-        end.core = plan.load.cores().iter().next();
-    }
-    end.into()
-}
-
-/// The step of the next cycle trial once every trial before it passes.
-fn next_cycle_step(script: &Script) -> Option<u32> {
-    let mut ahead = script.clone();
-    for _ in 0..200 {
-        match ahead.shadow.next().ok()? {
-            togi_tuner::Action::RunTrial(plan) => {
-                if let togi_tuner::TrialContext::Cycle { step, .. } = plan.requirement.context {
-                    return Some(step.get().get());
-                }
-                let (intent, trial) = ahead.intent(&plan);
-                ahead.append(ended(&trial, &plan, Outcome::Pass), &[intent]);
-            }
-            togi_tuner::Action::Decide(_) | togi_tuner::Action::ReadRanking => {
-                ahead.step(|_| Outcome::Pass);
-            }
-        }
-    }
-    None
-}
-
-#[test]
-fn a_running_rerun_names_the_step_checking_resumes_at() {
-    let cores: Vec<(u8, u8)> = (0..8).map(|id| (id, id / 4)).collect();
-    let mut script = Script::new(&cores, &[Start::has_room(-20); 8]);
-    script.ranking();
-    let (mut cycle_trials, mut checked, mut skipped) = (0, 0, 0);
-    for _ in 0..400 {
-        let Ok(action) = script.shadow.next() else {
-            break;
-        };
-        let togi_tuner::Action::RunTrial(plan) = action else {
-            script.step(|_| Outcome::Pass);
-            continue;
-        };
-        let (intent, trial) = script.intent(&plan);
-        let mut outcome = Outcome::Pass;
-        match plan.requirement.context {
-            togi_tuner::TrialContext::Cycle { .. } => {
-                cycle_trials += 1;
-                if cycle_trials % 3 == 0 {
-                    outcome = Outcome::Failure;
-                }
-            }
-            togi_tuner::TrialContext::Rerun { .. } => {
-                script.start(&trial);
-                let model = script.model();
-                let snap = model.snapshot();
-                let cycle = snap.cycle.expect("a rerun holds the cycle");
-                let mut passed = script.clone();
-                passed.append(ended(&trial, &plan, Outcome::Pass), &[intent]);
-                if let Some(step) = next_cycle_step(&passed) {
-                    checked += 1;
-                    if step as usize != cycle.plan.current + 1 {
-                        skipped += 1;
-                    }
-                    assert_eq!(
-                        cycle.resume_step() + 1,
-                        step as usize,
-                        "rerun {trial}: the step named differs from the next cycle trial's"
-                    );
-                }
-            }
-            togi_tuner::TrialContext::Search { .. }
-            | togi_tuner::TrialContext::SoloLimit { .. }
-            | togi_tuner::TrialContext::ZeroRerun { .. }
-            | togi_tuner::TrialContext::Round { .. }
-            | togi_tuner::TrialContext::Hunt { .. } => {}
-        }
-        script.append(ended(&trial, &plan, outcome), &[intent]);
-        if skipped > 0 {
-            break;
-        }
-    }
-    assert!(
-        checked > 0 && skipped > 0,
-        "the session must hold a rerun whose next cycle trial is past the plan's current step: {checked} reruns, {skipped} past it"
-    );
 }
 
 #[test]
 fn a_fold_after_a_snapshot_shows_the_new_event() {
-    let mut script = searching();
+    let mut script = Script::three();
     let mut model = script.model();
     let before = {
         let snap = model.snapshot();
         assert!(snap.trial.is_none());
         snap.log_total
     };
-    let plan = script.plan();
-    let (_, trial) = script.intent(&plan);
+    let (_, trial) = script.intent(Regime::R1, &[0]);
     model.fold(script.events.last().unwrap()).unwrap();
     let snap = model.snapshot();
     assert_eq!(snap.trial.map(|t| &t.id), Some(&trial), "the open trial");
@@ -1058,59 +903,42 @@ fn a_fold_after_a_snapshot_shows_the_new_event() {
 }
 
 #[test]
-fn the_session_does_what_its_last_intent_or_decision_did() {
+fn the_session_does_what_its_last_intent_did() {
     let mut h = Hist::three();
     assert_eq!(h.facts.session.as_ref().unwrap().activity, None);
-    h.push(
-        intent(
-            "c1",
-            Regime::R7,
-            Condition::Together,
-            &[-20, -30, -10],
-            &[0, 1, 2],
-        )
-        .into(),
+    let mut first = intent(
+        "c1",
+        Regime::R7,
+        Condition::Together,
+        &[-20, -30, -10],
+        &[0, 1, 2],
     );
+    first.activity = Some(Activity::Mapping);
+    h.push(first.into());
     assert_eq!(
         h.facts.session.as_ref().unwrap().activity,
-        Some(Activity::Checking)
+        Some(Activity::Mapping)
     );
-    h.push(
-        togi_journal::TunerDecision {
-            core: core(0),
-            activity: Activity::Search,
-            decision: togi_journal::Decision::StepDeeper,
-            from_offset: off(-20),
-            to_offset: off(-25),
-            pass: None,
-            failure_point: None,
-            workloads: Vec::new(),
-            reason: String::new(),
-        }
-        .into(),
-    );
+    let mut second = intent("c2", Regime::R1, Condition::Alone, &[-20], &[0]);
+    second.activity = Some(Activity::Qualification);
+    h.push(second.into());
     assert_eq!(
         h.facts.session.as_ref().unwrap().activity,
-        Some(Activity::Search)
+        Some(Activity::Qualification)
     );
 }
 
 #[test]
-fn an_event_the_tuner_refuses_is_a_problem() {
-    let mut script = searching();
-    let plan = script.plan();
-    let (intent, trial) = script.intent(&plan);
-    script.start(&trial);
+fn an_event_the_policy_refuses_is_a_problem() {
+    let mut script = Script::three();
+    script.append(baseline(&[0, 1, 2]), &[]);
     let mut model = script.model();
-    let unsigned = script.event(
-        end_payload(&trial, Outcome::Failure, None).into(),
-        &[intent],
-    );
-    let error = model.fold(&unsigned).unwrap_err();
+    let foreign = script.event(day_applied(1, &[(0, -10), (1, -10), (7, -10)]), &[]);
+    let error = model.fold(&foreign).unwrap_err();
     assert!(
         matches!(
             error,
-            FoldError::Tuner(togi_tuner::FoldError::MissingSignal)
+            FoldError::Tuner(togi_tuner::policy::FoldError::History(_))
         ),
         "{error:?}"
     );
@@ -1120,15 +948,14 @@ fn an_event_the_tuner_refuses_is_a_problem() {
     let later = script.event(warning("later"), &[]);
     assert!(matches!(
         model.fold(&later),
-        Err(FoldError::Tuner(togi_tuner::FoldError::MissingSignal))
+        Err(FoldError::Tuner(togi_tuner::policy::FoldError::History(_)))
     ));
 }
 
 #[test]
 fn a_reset_in_a_later_boot_leaves_the_crashed_trial_unrecovered() {
-    let mut script = searching();
-    let plan = script.plan();
-    let (_, trial) = script.intent(&plan);
+    let mut script = Script::three();
+    let (_, trial) = script.intent(Regime::R1, &[0]);
     script.start(&trial);
     script.boot = "reset-boot".to_owned();
     let reset = script.append(
@@ -1152,15 +979,11 @@ fn a_reset_in_a_later_boot_leaves_the_crashed_trial_unrecovered() {
 
 #[test]
 fn a_trial_reporting_progress_past_its_planned_end_is_still_running() {
-    let mut script = searching();
-    let plan = script.plan();
-    assert_ne!(plan.regime, Regime::R6);
-    let (_, trial) = script.intent(&plan);
+    let mut script = Script::three();
+    let (_, trial) = script.intent(Regime::R1, &[0]);
     let started = script.start(&trial);
     let planned_end = at(started)
-        .checked_add(jiff::SignedDuration::from_secs(i64::from(
-            plan.duration.get(),
-        )))
+        .checked_add(jiff::SignedDuration::from_secs(120))
         .unwrap();
     let mut progress = script.event(
         togi_journal::TrialProgress {
@@ -1177,7 +1000,6 @@ fn a_trial_reporting_progress_past_its_planned_end_is_still_running() {
     progress.time = planned_end
         .checked_add(jiff::SignedDuration::from_secs(10))
         .unwrap();
-    script.shadow.fold(&progress).unwrap();
     script.events.push(progress);
     let model = script.model();
     let snap = model.snapshot();
@@ -1193,32 +1015,56 @@ fn a_trial_reporting_progress_past_its_planned_end_is_still_running() {
 
 #[test]
 fn a_core_nobody_read_back_has_no_observed_offset() {
-    let model = searching().model();
+    let model = Script::three().model();
     let snap = model.snapshot();
     assert_eq!(snap.cores[0].applied, None);
-    assert_eq!(snap.cores[0].profile, off(-25));
+    assert_eq!(snap.cores[0].profile, off(0));
+}
+
+#[test_case(&[], (0, 0); "CO 0 before any day application")]
+#[test_case(&[(0, -20), (1, -10)], (-20, -10); "each core shows its CCD's day offset")]
+fn a_core_shows_the_day_offset_of_its_ccd(applied: &[(i64, i64)], want: (i64, i64)) {
+    let mut script = Script::three();
+    script.append(baseline(&[0, 1, 2]), &[]);
+    if !applied.is_empty() {
+        script.append(day_applied(1, applied), &[]);
+    }
+    let model = script.model();
+    let snap = model.snapshot();
+    let profiles: Vec<_> = snap.cores.iter().map(|core| core.profile).collect();
+    assert_eq!(profiles, [off(want.0), off(want.0), off(want.1)]);
+    let days: Vec<_> = snap
+        .policy
+        .ccds
+        .iter()
+        .map(|ccd| (ccd.ccd, ccd.day))
+        .collect();
+    assert_eq!(
+        days,
+        [
+            (CcdId::new(0).unwrap(), off(want.0)),
+            (CcdId::new(1).unwrap(), off(want.1)),
+        ],
+        "the snapshot carries the policy's projection"
+    );
 }
 
 #[test]
-fn a_named_failure_at_zero_dead_end_is_the_cores_zero_constraint_and_its_evidence() {
-    let mut script = at_limit();
-    let before = script.model().snapshot().cores[0].fail;
-    script.append(
-        togi_journal::DeadEnd {
-            condition: DeadEndCondition::FailureAtZero,
-            core: Some(core(1)),
-            detail: "core 01 failed at 0".to_owned(),
-            action: None,
-        }
-        .into(),
-        &[],
-    );
+fn the_ended_trial_keeps_the_policy_as_it_stood_before_its_end() {
+    let mut script = Script::three();
+    script.append(baseline(&[0, 1, 2]), &[]);
+    let (intent, trial) = script.intent(Regime::R1, &[0]);
+    script.start(&trial);
+    let before = script.model().snapshot().policy.clone();
+    script.end(intent, &trial, Outcome::Pass);
+    script.append(day_applied(1, &[(0, -5), (1, -5)]), &[]);
     let model = script.model();
     let snap = model.snapshot();
-    let named = &snap.cores[1];
-    assert_eq!(named.fail, Some(off(0)));
-    assert_eq!(
-        snap.cores[0].fail, before,
-        "the dead end names only core 01"
+    let ended = snap.ended.expect("the trial that just ended");
+    assert_eq!(ended.trial.id, trial);
+    assert_eq!(ended.policy, &before);
+    assert_ne!(
+        snap.policy, &before,
+        "the live projection moved on with the application"
     );
 }

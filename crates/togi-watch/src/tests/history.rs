@@ -4,17 +4,14 @@
 use jiff::Timestamp;
 use test_case::test_case;
 use togi_journal::{
-    CorePhase, CycleEvent, Decision, DeepeningRound, HuntOutcome, Inference, Mce, Member, Outcome,
-    Payload, ProfileApplied, RoundEvent, TrialId, TrialProgress, TunerDecision,
+    Activity, Mce, Outcome, Payload, ProfileApplied, QualificationState, TaskId, Tested, TrialId,
+    TrialProgress,
 };
-use togi_machine::{BankType, BootId, Condition, CpuId, Regime, Signal};
+use togi_machine::{BankType, BootId, CcdId, Condition, CpuId, Regime, Signal};
 
 use super::kit::*;
-use crate::history::{
-    Entry, Failed, Groups, HISTORY_LIMIT, KnownFailure, Named, PassedIn, Passes, Verdict, What,
-    fold_entry,
-};
-use crate::model::Count;
+use super::words::{edge_event, plan_event, qualification_event};
+use crate::history::{Entry, Failed, HISTORY_LIMIT, Named, Passes, Verdict, What, fold_entry};
 use crate::words::{Tag, Tone};
 
 fn trial_id(text: &str) -> TrialId {
@@ -58,7 +55,7 @@ fn reboot_history_during_smu_application() {
 #[test_case(
     Signal::Crash,
     None,
-    "crash: R2 heavy vector on core 00 at -20 · rebooted · no core named";
+    "crash: checking · R2 heavy vector on core 00 at -20 · rebooted";
     "ordinary crash"
 )]
 #[test_case(
@@ -74,19 +71,19 @@ fn reboot_history_during_smu_application() {
         }
         .into(),
     ),
-    "fail: R2 heavy vector on core 00 at -20 · wrong result · no core named";
+    "fail: checking · R2 heavy vector on core 00 at -20 · wrong result";
     "retained computation failure"
 )]
 #[test_case(
     Signal::CorrectedMce,
     Some(mce(true)),
-    "fail: R2 heavy vector on core 00 at -20 · corrected hardware error · no core named";
+    "fail: checking · R2 heavy vector on core 00 at -20 · corrected hardware error";
     "retained corrected MCE"
 )]
 #[test_case(
     Signal::UncorrectedMce,
     Some(mce(false)),
-    "fail: R2 heavy vector on core 00 at -20 · uncorrected hardware error · no core named";
+    "fail: checking · R2 heavy vector on core 00 at -20 · uncorrected hardware error";
     "retained uncorrected MCE"
 )]
 fn reboot_history_during_trial(signal: Signal, evidence: Option<Payload>, end_sentence: &str) {
@@ -215,7 +212,7 @@ fn multiple_reboots_stay_distinct() {
         [
             "start: session started on 3 cores",
             "crash: with the offsets applied, rebooted",
-            "crash: R2 heavy vector on core 00 at -20 · rebooted · no core named",
+            "crash: checking · R2 heavy vector on core 00 at -20 · rebooted",
         ]
     );
     let (entries, _) = h.facts.history.recent();
@@ -248,72 +245,6 @@ fn reboot_history_requires_matching_cause() {
     );
 }
 
-#[test_case(
-    HuntOutcome::Fallback,
-    true,
-    [
-        "start: session started on 3 cores",
-        "combo: C1 over 00 02 · hunt 3 unresolved",
-        "hunt: #3 done · 00 02 unresolved",
-    ];
-    "unresolved fallback"
-)]
-#[test_case(
-    HuntOutcome::Combination,
-    false,
-    [
-        "start: session started on 3 cores",
-        "combo: C1: 00 -20  02 -10",
-        "hunt: #3 done · 00 02 kept together",
-    ];
-    "proven combination"
-)]
-fn fallback_history(result: HuntOutcome, fallback: bool, want: [&str; 3]) {
-    let mut h = Hist::three();
-    h.push(combination(1, 3, &[(0, -20), (2, -10)], fallback).into());
-    h.push(hunt_end(3, result, &[0, 2]).into());
-    assert_eq!(h.sentences(), want);
-    let (entries, _) = h.facts.history.recent();
-    assert_eq!(entries[1].tone, Tone::Combo);
-    assert_eq!(entries[0].tone, Tone::Warn);
-}
-
-#[test]
-fn cycle_history() {
-    let mut h = Hist::three();
-    let start = |n| {
-        let mut c = cycle(n, CycleEvent::Start);
-        c.steps = vec![Regime::R1];
-        Payload::from(c)
-    };
-    h.push(start(1));
-    let mut c = cycle(1, CycleEvent::End);
-    c.passed = true;
-    c.missing = vec!["R2: 3 more steps".to_owned()];
-    h.push(c.into());
-    h.push(start(2));
-    let mut c = cycle(2, CycleEvent::End);
-    c.passed = true;
-    c.full = true;
-    h.push(c.into());
-    h.push(start(3));
-    let mut c = cycle(3, CycleEvent::End);
-    c.reason = Some("failure".to_owned());
-    h.push(c.into());
-    assert_eq!(
-        h.sentences(),
-        [
-            "start: session started on 3 cores",
-            "cycle: cycle 1 started · 1 step",
-            "cycle: cycle 1 passed but missing R2: 3 more steps",
-            "cycle: cycle 2 started · 1 step",
-            "cycle: cycle 2 passed, a full cycle",
-            "cycle: cycle 3 started · 1 step",
-            "cycle: cycle 3 ended early: failure",
-        ]
-    );
-}
-
 #[test]
 fn orphan_trial_id_stays_raw() {
     let id =
@@ -336,420 +267,10 @@ fn orphan_trial_id_stays_raw() {
     );
 }
 
-#[test]
-fn deepening_history_separates_deeper_and_yielded_members() {
-    let mut h = Hist::three();
-    for (id, to, offset) in [
-        (0, CorePhase::HasRoom, -20),
-        (1, CorePhase::AtLimit, -30),
-        (2, CorePhase::AtLimit, -10),
-    ] {
-        let mut start = Start::has_room(offset);
-        (start.from, start.pass) = (Some(CorePhase::Search), Some(offset));
-        start.to = to;
-        h.push(transition(id, start).into());
-    }
-    h.push(
-        DeepeningRound {
-            round: nz(2),
-            event: RoundEvent::Start,
-            base: offsets(&[]),
-            base_seq: None,
-            target: offsets(&[-22, -29, -10]),
-            profile: offsets(&[-21, -29, -10]),
-            cores: set(&[0, 1]),
-            ranking: Vec::new(),
-            trials: None,
-            trial_s: None,
-            passed: false,
-            reason: None,
-        }
-        .into(),
-    );
-    let decision = |core_id, kind, from, to| -> Payload {
-        TunerDecision {
-            core: core(core_id),
-            activity: togi_journal::Activity::Deepening,
-            decision: kind,
-            from_offset: off(from),
-            to_offset: off(to),
-            pass: None,
-            failure_point: None,
-            workloads: Vec::new(),
-            reason: String::new(),
-        }
-        .into()
-    };
-    h.push(decision(1, Decision::Yield, -30, -29));
-    h.push(decision(0, Decision::Deepen, -20, -21));
-    assert_eq!(
-        h.sentences(),
-        [
-            "start: session started on 3 cores",
-            "limit: core 00 solo limit -20",
-            "limit: core 01 solo limit -30",
-            "limit: core 02 solo limit -10",
-            "round: #2: core 00 goes deeper to -21, core 01 yields to -29",
-            "room: core 01 yields -30 → -29, back to its round baseline",
-            "room: core 00 -20 → -21",
-        ]
-    );
-}
-
-#[test]
-fn a_held_failure_says_tuning_stays_where_it_is() {
-    let mut h = Hist::three();
-    h.push(
-        TunerDecision {
-            core: core(2),
-            activity: togi_journal::Activity::Checking,
-            decision: Decision::Hold,
-            from_offset: off(-10),
-            to_offset: off(-10),
-            pass: None,
-            failure_point: None,
-            workloads: Vec::new(),
-            reason: String::new(),
-        }
-        .into(),
-    );
-    assert_eq!(
-        h.sentences().last().map(String::as_str),
-        Some("hold: core 02 failure held; tuning stays at -10")
-    );
-}
-
-#[test]
-fn inferred_group_answers_do_not_hide_outcome_changes() {
-    let mut h = Hist::three();
-    h.push(hunt_start(4, &[0, 1, 2]).into());
-    for (group, cores, answer) in [
-        (2, &[0][..], Inference::Pass),
-        (3, &[1], Inference::Pass),
-        (4, &[0, 1], Inference::Failure),
-    ] {
-        let mut g = hunt_group(4, group, cores);
-        g.inferred = Some(answer);
-        h.push(g.into());
-    }
-    h.push(hunt_start(5, &[0, 1]).into());
-    let mut g = hunt_group(5, 5, &[1]);
-    g.inferred = Some(Inference::Pass);
-    h.push(g.into());
-    assert_eq!(
-        h.sentences(),
-        [
-            "start: session started on 3 cores",
-            "hunt: #4 started · part 1: 00 at failing offsets, 01 02 parked",
-            "group: hunt 4 groups 2-3 · parts of 00 01 · all passed on existing evidence",
-            "group: hunt 4 group 4 · 00 01 · failed on existing evidence",
-            "hunt: #5 started · part 1: 01 at failing offsets, 00 parked",
-            "group: hunt 5 group 5 · 01 · passed on existing evidence",
-        ]
-    );
-}
-
-#[test_case(1, 4, 4, "4 of 4"; "a full requirement")]
-#[test_case(1, 3, 4, "trials 1-3 of 4"; "a range short of the requirement")]
-#[test_case(2, 1, 4, "trial 2 of 4"; "one later trial")]
-#[test_case(2, 4, 5, "trials 2-5 of 5"; "a range that ends at the requirement")]
-#[test_case(2, 5, 5, "5"; "a run past the requirement counts only the requirement")]
-#[test_case(1, 1, 1, "1"; "a single required trial")]
-fn tally_never_counts_past_the_requirement(first: u32, runs: u32, of: u32, want: &str) {
-    let passes = Passes {
-        subject: String::new(),
-        runs,
-        first,
-        of,
-        peak: None,
-        within: None,
-    };
-    assert_eq!(passes.tally(), want, "first {first}, runs {runs}, of {of}");
-}
-
-#[test]
-fn repeated_outcomes_fold_into_one_line() {
-    let clock = std::cell::Cell::new(Timestamp::UNIX_EPOCH);
-    let next = || {
-        clock.set(
-            clock
-                .get()
-                .checked_add(jiff::SignedDuration::from_secs(120))
-                .unwrap(),
-        );
-        clock.get()
-    };
-    let pass = |first, peak| {
-        let passes = Passes {
-            subject: "R7 full CCD 0 on 00-07".to_owned(),
-            runs: 1,
-            first,
-            of: 4,
-            peak: Some(peak),
-            within: None,
-        };
-        Entry::new(next(), Tag::Pass, What::Passes(passes), Tone::Good)
-    };
-    let limit = |id: u8, offset| {
-        let limits = What::Limits {
-            cores: std::iter::once(core(id)).collect(),
-            offset: off(offset),
-        };
-        Entry::new(next(), Tag::Limit, limits, Tone::Good)
-    };
-    let lines = vec![
-        pass(1, 70),
-        pass(2, 76),
-        pass(3, 62),
-        Entry::line(
-            next(),
-            Tag::Crash,
-            "R7 full CCD 0 on 00-07 · rebooted".to_owned(),
-            Tone::Bad,
-        ),
-        pass(4, 60),
-        limit(12, -50),
-        limit(14, -50),
-        limit(3, -34),
-    ];
-    let mut history = Vec::new();
-    for line in lines {
-        crate::history::fold_entry(&mut history, line);
-    }
-    let got: Vec<String> = history
-        .iter()
-        .map(|e| {
-            let minutes = e.at.as_second() / 60;
-            format!("{:02}:{:02} {}", minutes / 60, minutes % 60, sentence(e))
-        })
-        .collect();
-    assert_eq!(
-        got,
-        [
-            "00:06 pass: R7 full CCD 0 on 00-07 · trials 1-3 of 4 passed · Tctl max 76°C",
-            "00:08 crash: R7 full CCD 0 on 00-07 · rebooted",
-            "00:10 pass: R7 full CCD 0 on 00-07 · trial 4 of 4 passed · Tctl max 60°C",
-            "00:14 limit: cores 12, 14 solo limit -50, the deepest offset",
-            "00:16 limit: core 03 solo limit -34",
-        ]
-    );
-}
-
 fn warnings(h: &mut Hist, count: usize) {
     for i in 0..count {
         h.push(warning(&i.to_string()));
     }
-}
-
-fn probe_start(h: &mut Hist, trials: u32) {
-    let mut start = hunt_start(1, &[0, 1]);
-    start.regime = Regime::R2;
-    start.trials = trials;
-    start.trial_s = 90;
-    h.push(start.into());
-}
-
-/// One probe group of `trials` passing trials, in the order a session records them: the group, then each trial.
-fn probe_group(group: u32, trials: u32) -> Vec<(Payload, Option<Count>)> {
-    let probe_core = u8::try_from((group - 1) % 2).unwrap();
-    let mut g = hunt_group(1, group, &[0, 1]);
-    g.stage = togi_journal::HuntStage::Probe;
-    g.profile = offsets(&[-19, -19, 0]);
-    g.probe = Some(Member {
-        core: core(probe_core),
-        offset: off(-19),
-    });
-    g.held = vec![Member {
-        core: core(1 - probe_core),
-        offset: off(-19),
-    }];
-    let mut events = vec![(Payload::from(g), None)];
-    for trial in 1..=trials {
-        let id = format!("probe-{group}-{trial}");
-        let mut i = intent(&id, Regime::R2, Condition::Parked, &[-19, -19, 0], &[0, 1]);
-        i.hunt = Some(nz(1));
-        i.group = Some(nz(group));
-        i.activity = Some(togi_journal::Activity::Hunt);
-        events.push((i.into(), None));
-        let mut end = end_payload(&trial_id(&id), Outcome::Pass, None);
-        end.tctl_max_c = Some(i32::try_from(60 + group % 20).unwrap());
-        events.push((
-            end.into(),
-            Some(Count {
-                passed: trial - 1,
-                index: trial,
-                of: 0,
-            }),
-        ));
-    }
-    events
-}
-
-fn play(h: &mut Hist, events: &[(Payload, Option<Count>)], of: u32) {
-    for (payload, count) in events {
-        if let (Payload::TrialEnd(end), Some(count)) = (payload, count) {
-            h.facts.counts.insert(
-                end.trial.clone(),
-                Count {
-                    of,
-                    index: count.index.min(of),
-                    passed: count.passed.min(of),
-                },
-            );
-        }
-        h.push(payload.clone());
-    }
-}
-
-/// Builds the same journal twice, once keeping 200 entries and once keeping all of them, and checks that
-/// retention keeps exactly the newest folded lines of the reference and counts the rest.
-fn retained(build: impl Fn(&mut Hist)) -> (Vec<Entry>, usize) {
-    let mut kept = Hist::three();
-    let mut all = Hist::unbounded_three();
-    build(&mut kept);
-    build(&mut all);
-    let (reference, none) = all.facts.history.recent();
-    assert_eq!(none, 0);
-    let (entries, dropped) = kept.facts.history.recent();
-    assert!(
-        entries.len() <= HISTORY_LIMIT,
-        "kept {} entries",
-        entries.len()
-    );
-    assert_eq!(
-        dropped + entries.len(),
-        reference.len(),
-        "kept and dropped count every folded line"
-    );
-    assert_eq!(
-        entries,
-        reference[..entries.len()],
-        "retention keeps the reference's newest folded lines"
-    );
-    (entries, dropped)
-}
-
-#[test]
-fn probe_history_before_retention() {
-    let steps = |h: &mut Hist| {
-        probe_start(h, 1);
-        play(h, &probe_group(1, 1), 1);
-        play(h, &probe_group(2, 1), 1);
-        h.push(hunt_end(1, HuntOutcome::Combination, &[0, 1]).into());
-    };
-    let mut h = Hist::unbounded_three();
-    steps(&mut h);
-    assert_eq!(
-        h.sentences(),
-        [
-            "start: session started on 3 cores",
-            "hunt: #1 started · candidates 00 01",
-            "pass: hunt 1 groups 1-2 · member probes · each 1 passed",
-            "hunt: #1 done · 00 01 kept together, probed",
-        ]
-    );
-    let (entries, dropped) = retained(|h| {
-        steps(h);
-        warnings(h, 396);
-    });
-    assert_eq!((dropped, entries.len()), (200, 200));
-}
-
-#[test]
-fn probe_history_across_the_retention_boundary() {
-    let (entries, _) = retained(|h| {
-        warnings(h, 198);
-        probe_start(h, 1);
-        play(h, &probe_group(1, 1), 1);
-        play(h, &probe_group(2, 1), 1);
-        warnings(h, 199);
-    });
-    assert_eq!(
-        entries.last().unwrap().sentence().0,
-        "hunt 1 groups 1-2 · member probes · each 1 passed"
-    );
-}
-
-#[test]
-fn probe_history_long_run() {
-    let build = |h: &mut Hist| {
-        probe_start(h, 1);
-        for group in 1..=1205 {
-            play(h, &probe_group(group, 1), 1);
-        }
-        warnings(h, 150);
-    };
-    let (entries, dropped) = retained(build);
-    assert_eq!((dropped, entries.len()), (0, 153));
-    assert_eq!(
-        entries[150].sentence().0,
-        "hunt 1 groups 1-1205 · member probes · each 1 passed"
-    );
-    let mut bounded = Hist::three();
-    probe_start(&mut bounded, 1);
-    for group in 1..=1205 {
-        play(&mut bounded, &probe_group(group, 1), 1);
-        assert!(
-            bounded.facts.history.entries.len() <= 2 * HISTORY_LIMIT,
-            "periodic compaction keeps the history bounded at group {group}"
-        );
-    }
-}
-
-#[test]
-fn probe_history_completes_after_retention() {
-    let last = probe_group(3, 2);
-    let head = |h: &mut Hist| {
-        warnings(h, 396);
-        probe_start(h, 2);
-        play(h, &probe_group(1, 2), 2);
-        play(h, &probe_group(2, 2), 2);
-        play(h, &last[..3], 2);
-    };
-    let (pending, pending_dropped) = retained(head);
-    assert_eq!((passes(&pending[0]).runs, passes(&pending[0]).of), (1, 2));
-    assert_eq!(
-        hunt_groups(&pending[1]).last,
-        2,
-        "an incomplete probe stays apart"
-    );
-    let (complete, complete_dropped) = retained(|h| {
-        head(h);
-        play(h, &last[3..], 2);
-    });
-    assert_eq!(
-        complete[0].sentence().0,
-        "hunt 1 groups 1-3 · member probes · each 2 of 2 passed"
-    );
-    assert_eq!(complete_dropped, pending_dropped);
-    assert_eq!(complete.len(), pending.len() - 1);
-}
-
-#[test]
-fn probe_history_complete_tail_remains_mutable() {
-    let last = probe_group(2, 2);
-    let head = |h: &mut Hist| {
-        warnings(h, 397);
-        probe_start(h, 1);
-        play(h, &probe_group(1, 1), 1);
-        play(h, &last[..3], 1);
-    };
-    let (complete, dropped) = retained(head);
-    assert_eq!((dropped, complete.len()), (200, 200));
-    assert_eq!(
-        complete[0].sentence().0,
-        "hunt 1 groups 1-2 · member probes · each 1 passed"
-    );
-    let (extra, _) = retained(|h| {
-        head(h);
-        play(h, &last[3..], 1);
-    });
-    assert_eq!(
-        (hunt_groups(&extra[0]), passes(&extra[0]).runs),
-        (Groups::one(1, 2), 2),
-        "a later trial of the same group stays its own line"
-    );
-    assert_eq!(hunt_groups(&extra[1]).last, 1);
 }
 
 #[test]
@@ -763,23 +284,6 @@ fn history_bounds_and_counts_what_it_leaves_out() {
         entries[0].text(),
         warning(&(2 * HISTORY_LIMIT + 4).to_string()).message()
     );
-}
-
-#[test]
-fn a_single_pass_is_one_passed_line() {
-    let mut h = Hist::three();
-    h.push(
-        intent(
-            "p1",
-            Regime::R7,
-            Condition::Together,
-            &[-20, -30, -10],
-            &[0, 1, 2],
-        )
-        .into(),
-    );
-    h.push(end_payload(&TrialId::from("p1".to_owned()), Outcome::Pass, None).into());
-    assert_eq!(h.sentences()[1], "pass: R7 all-core on 00-02 · passed");
 }
 
 #[test]
@@ -810,24 +314,193 @@ fn a_reset_and_an_mce_have_lines() {
         }
         .into(),
     );
-    assert_eq!(h.sentences()[2], "reset: requested from the command line");
+    assert_eq!(
+        h.sentences()[2],
+        "reset: reset all: new session on next run"
+    );
 }
 
-fn plain(text: &str) -> Entry {
-    Entry::line(at(seq(1)), Tag::Note, text.to_owned(), Tone::Plain)
+/// A trial of a Ruleset 13 night: what it is for, what it tests and the task it belongs to.
+fn night_trial(id: &str, activity: Activity, tested: Tested) -> togi_journal::TrialIntent {
+    let mut trial = intent(
+        id,
+        Regime::R2,
+        Condition::Together,
+        &[-10, -10, -10],
+        &[0, 1, 2],
+    );
+    trial.activity = Some(activity);
+    trial.tested = Some(tested);
+    trial.night = Some(togi_journal::NightId(seq(4)));
+    trial.task = Some(TaskId {
+        queue: togi_journal::Queue::Mapping,
+        ordinal: 3,
+    });
+    trial
+}
+
+fn isolated() -> Tested {
+    Tested::Isolated {
+        ccd: CcdId::new(1).unwrap(),
+        offset: off(-15),
+    }
+}
+
+#[test]
+fn a_passed_night_trial_names_its_activity_what_it_tested_and_its_task() {
+    let mut h = Hist::three();
+    h.push(night_trial("m1", Activity::Mapping, isolated()).into());
+    h.push(end_payload(&trial_id("m1"), Outcome::Pass, None).into());
+    assert_eq!(
+        h.sentences()[1],
+        "pass: mapping · CCD 1 at -15 · mapping task 3 · R2 heavy vector on 00-02 · passed"
+    );
+}
+
+#[test_case(Activity::Qualification, Tested::Exact {}, false, "qualification · the exact profile · mapping task 3 · R2 heavy vector on 00-02"; "exact qualification")]
+#[test_case(Activity::Control, Tested::Exact {}, true, "control · the exact profile · mapping task 3 · retry · R2 heavy vector on 00-02"; "a retried control")]
+fn a_night_trial_says_whether_it_is_a_retry(
+    activity: Activity,
+    tested: Tested,
+    retry: bool,
+    subject: &str,
+) {
+    let mut h = Hist::three();
+    let mut trial = night_trial("t", activity, tested);
+    trial.retry = retry;
+    h.push(trial.into());
+    h.push(end_payload(&trial_id("t"), Outcome::Failure, Some(Signal::Stall)).into());
+    assert_eq!(
+        h.sentences()[1],
+        format!("fail: {subject} · the backend stalled")
+    );
+}
+
+#[test]
+fn passes_of_one_night_trial_merge_and_another_subject_starts_a_line() {
+    let mut h = Hist::three();
+    for id in ["a", "b"] {
+        h.push(night_trial(id, Activity::Mapping, isolated()).into());
+        let mut end = end_payload(&trial_id(id), Outcome::Pass, None);
+        end.tctl_max_c = Some(if id == "a" { 70 } else { 76 });
+        h.push(end.into());
+    }
+    h.push(
+        night_trial(
+            "c",
+            Activity::Mapping,
+            Tested::Isolated {
+                ccd: CcdId::new(0).unwrap(),
+                offset: off(-15),
+            },
+        )
+        .into(),
+    );
+    h.push(end_payload(&trial_id("c"), Outcome::Pass, None).into());
+    assert_eq!(
+        h.sentences()[1..],
+        [
+            "pass: mapping · CCD 1 at -15 · mapping task 3 · R2 heavy vector on 00-02 · 2 passed · Tctl max 76°C",
+            "pass: mapping · CCD 0 at -15 · mapping task 3 · R2 heavy vector on 00-02 · passed",
+        ]
+    );
+}
+
+#[test]
+fn a_crash_late_in_a_night_trial_says_how_far_it_got() {
+    let mut h = Hist::three();
+    h.push(night_trial("m", Activity::Mapping, isolated()).into());
+    let mut end = end_payload(&trial_id("m"), Outcome::Failure, Some(Signal::Crash));
+    end.last_sample_s = Some(100);
+    end.core = Some(core(1));
+    h.push(end.into());
+    assert_eq!(
+        h.sentences()[1],
+        "crash: mapping · CCD 1 at -15 · mapping task 3 · R2 heavy vector on 00-02 · rebooted · late in the trial · core 01 named"
+    );
+}
+
+#[test]
+fn an_unclear_night_trial_says_why() {
+    let mut h = Hist::three();
+    h.push(night_trial("m", Activity::Mapping, isolated()).into());
+    let mut end = end_payload(&trial_id("m"), Outcome::Inconclusive, None);
+    end.reason = Some("the backend was missing".to_owned());
+    h.push(end.into());
+    assert_eq!(
+        h.sentences()[1],
+        "unclear: mapping · CCD 1 at -15 · mapping task 3 · R2 heavy vector on 00-02 · the backend was missing"
+    );
+}
+
+#[test]
+fn a_trial_of_an_earlier_ruleset_is_named_by_its_load_and_offset() {
+    let mut h = Hist::three();
+    let mut trial = intent("old", Regime::R2, Condition::Alone, &[-20, 0, 0], &[0]);
+    trial.activity = Some(Activity::Search);
+    h.push(trial.into());
+    h.push(end_payload(&trial_id("old"), Outcome::Pass, None).into());
+    assert_eq!(
+        h.sentences()[1],
+        "pass: search · R2 heavy vector on core 00 at -20 · passed"
+    );
+}
+
+#[test]
+fn a_night_and_an_edge_are_in_the_history_and_a_resume_follows_the_second_config() {
+    let mut h = Hist::three();
+    h.push(config_loaded());
+    h.push(config_loaded());
+    h.push(plan_event());
+    h.push(edge_event(
+        togi_journal::Edge::Unknown {},
+        togi_journal::Edge::Observed {
+            offset: off(-23),
+            witness: seq(3),
+        },
+    ));
+    let sentences = h.sentences();
+    assert_eq!(sentences[0], "start: session started on 3 cores");
+    assert_eq!(sentences[1], "resume: session resumed");
+    assert_eq!(sentences[2], "night: night opened · 2 tasks");
+    assert_eq!(sentences[3], "edge: CCD1 edge unknown → fails at -23");
+}
+
+#[test]
+fn a_qualification_in_progress_adds_no_line() {
+    let mut h = Hist::three();
+    h.push(qualification_event(QualificationState::Progress {
+        witnesses: Vec::new(),
+        outstanding: Vec::new(),
+    }));
+    assert_eq!(h.sentences(), ["start: session started on 3 cores"]);
+}
+
+#[test]
+fn a_kind_of_an_earlier_ruleset_is_the_message_it_recorded() {
+    let mut h = Hist::three();
+    let hunt = hunt_start(1, &[0, 2]);
+    let message = Payload::from(hunt.clone()).message();
+    h.push(hunt.into());
+    let started = cycle(1, togi_journal::CycleEvent::Start);
+    let cycle_message = Payload::from(started.clone()).message();
+    h.push(started.into());
+    assert_eq!(
+        h.sentences()[1..],
+        [format!("note: {message}"), format!("note: {cycle_message}")]
+    );
 }
 
 #[test]
 fn a_failure_draws_its_own_signal_as_the_alarm() {
     let failure = |signal| {
         let failed = Failed {
-            subject: "wrong result rerun of R7 all-core".to_owned(),
+            subject: "mapping · CCD 1 at -15".to_owned(),
             verdict: Verdict {
                 signal: Some(signal),
                 when: None,
-                named: Some(Named::Nobody),
+                named: Some(Named::Core(core(1))),
             },
-            hunt: None,
             reboot: None,
         };
         Entry::new(at(seq(1)), Tag::Fail, What::Failed(failed), Tone::Bad)
@@ -835,15 +508,15 @@ fn a_failure_draws_its_own_signal_as_the_alarm() {
     assert_eq!(
         failure(Signal::ComputationError).sentence(),
         (
-            "wrong result rerun of R7 all-core · ".to_owned(),
+            "mapping · CCD 1 at -15 · ".to_owned(),
             "wrong result".to_owned(),
-            " · no core named".to_owned()
+            " · core 01 named".to_owned()
         )
     );
     assert_eq!(
         failure(Signal::Crash).sentence(),
         (
-            "wrong result rerun of R7 all-core · rebooted · no core named".to_owned(),
+            "mapping · CCD 1 at -15 · rebooted · core 01 named".to_owned(),
             String::new(),
             String::new()
         )
@@ -851,63 +524,53 @@ fn a_failure_draws_its_own_signal_as_the_alarm() {
 }
 
 #[test]
-fn lines_merge_only_with_a_line_that_continues_them() {
-    let mut history = Vec::new();
-    fold_entry(&mut history, plain("first"));
-    assert_eq!(history.len(), 1, "the first line has nothing to merge into");
-
-    let group = |first: u32| {
-        let answered = What::Answered {
-            groups: Groups::one(1, first),
-            cores: set(&[0]),
-            inferred: Inference::Pass,
+fn repeated_passes_fold_into_one_line_and_other_lines_never_merge() {
+    let pass = |subject: &str, peak| {
+        let passes = Passes {
+            subject: subject.to_owned(),
+            runs: 1,
+            peak: Some(peak),
         };
-        Entry::new(at(seq(1)), Tag::Group, answered, Tone::Hunt)
+        Entry::new(at(seq(1)), Tag::Pass, What::Passes(passes), Tone::Good)
     };
-    fold_entry(&mut history, group(1));
-    fold_entry(&mut history, group(2));
-    assert_eq!(history.len(), 2);
+    let plain = Entry::line(at(seq(1)), Tag::Note, "first".to_owned(), Tone::Plain);
+    let mut history = Vec::new();
+    fold_entry(&mut history, plain.clone());
+    assert_eq!(history.len(), 1, "the first line has nothing to merge into");
+    fold_entry(&mut history, plain);
+    assert_eq!(history.len(), 2, "a plain line never merges");
+    for (subject, peak) in [("a", 70), ("a", 76), ("a", 62), ("b", 60)] {
+        fold_entry(&mut history, pass(subject, peak));
+    }
+    assert_eq!(history.len(), 4);
     assert_eq!(
-        history[1].what,
-        What::Answered {
-            groups: Groups {
-                hunt: 1,
-                first: 1,
-                last: 2
-            },
-            cores: set(&[0]),
-            inferred: Inference::Pass,
-        }
+        history[2].what,
+        What::Passes(Passes {
+            subject: "a".to_owned(),
+            runs: 3,
+            peak: Some(76)
+        })
     );
-    fold_entry(&mut history, group(4));
-    assert_eq!(history.len(), 3, "group 4 does not continue group 2");
-
-    let known = Entry::new(
-        at(seq(1)),
-        Tag::Skip,
-        What::KnownFailure(KnownFailure {
-            regime: None,
-            crashed: false,
-            carried: false,
-            hunt: None,
-        }),
-        Tone::Plain,
-    );
-    fold_entry(&mut history, known.clone());
-    fold_entry(&mut history, known);
-    assert_eq!(history.len(), 5, "a plain line never merges");
+    assert_eq!(sentence(&history[2]), "pass: a · 3 passed · Tctl max 76°C");
+    assert_eq!(sentence(&history[3]), "pass: b · passed · Tctl max 60°C");
 }
 
-fn passes(entry: &Entry) -> &Passes {
-    let What::Passes(passes) = &entry.what else {
-        panic!("not passes: {entry:?}");
-    };
-    passes
-}
-
-fn hunt_groups(entry: &Entry) -> Groups {
-    let Some(PassedIn::Hunt { groups, .. }) = passes(entry).within else {
-        panic!("not passes in a hunt: {entry:?}");
-    };
-    groups
+#[test]
+fn a_single_pass_is_one_passed_line() {
+    let mut h = Hist::three();
+    h.push(
+        intent(
+            "p1",
+            Regime::R7,
+            Condition::Together,
+            &[-20, -30, -10],
+            &[0, 1, 2],
+        )
+        .into(),
+    );
+    h.push(end_payload(&trial_id("p1"), Outcome::Pass, None).into());
+    assert_eq!(
+        h.sentences()[1],
+        "pass: checking · R7 all-core on 00-02 · passed"
+    );
 }

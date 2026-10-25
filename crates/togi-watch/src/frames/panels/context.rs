@@ -1,440 +1,739 @@
-//! The context panel: the BIOS profile with the panel under it.
+//! The context panel: the night's task, progress and shares of its elapsed time, and the day's applied profile, hold, step and
+//! events, as the tuner's projection reports them. Nothing here decides what the tuner would do.
 
-use ratatui::text::Line;
-use togi_journal::Activity;
+use std::time::Duration;
 
-use super::super::dash::r7_lines;
+use ratatui::text::{Line, Span};
+use togi_journal::{Classification, DayEventId, DayStep, HoldReason, Queue, Resolution, StepKind};
+use togi_machine::CcdProfile;
+use togi_tuner::policy::{
+    DayProjection, EventProjection, FirmwareValidity, NightProjection, Projection,
+    QualificationProgress, ReproductionProjection,
+};
+
+use super::super::colours::Paint;
 use super::super::draw::bounded_rows;
+use super::super::fit::rule;
 use super::super::layout::SizeClass;
 use super::super::measure::Measure;
-use super::super::scene::Scene;
-use super::cycle::{combination_lines, cycle_lines};
-use super::hunt::hunt_lines;
-use super::search::{bios_lines, phase2_lines, turn_lines};
-use super::table::is_blank;
+use super::super::scene::{Scene, hm};
+use super::table::{cell, field_row};
+use crate::day_totals::unknown_intervals;
 
-/// The BIOS profile with the panel under it: a hunt, the search turns, or the activity. The profile is always
-/// shown; the panel under it keeps the rows it leaves.
+/// The panel's rows, at most `measure.context.height` of them: the open night first while one runs, then the
+/// day; the finished night comes after the day.
 pub(super) fn context(scene: &Scene<'_>, measure: &Measure) -> Vec<Line<'static>> {
-    let class = measure.layout.class;
     let width = usize::from(measure.context.width);
     let height = usize::from(measure.context.height);
-    let panel = if let Some(hunt) = &scene.s.hunt {
-        Some(hunt_lines(scene, hunt, &measure.tables, width, class))
-    } else if scene.s.turns.is_empty() {
-        None
-    } else {
-        Some(turn_lines(scene, &measure.tables, width, class))
-    };
-    let mut out = bios_lines(scene, width, class);
-    if out.is_empty() {
-        return panel.unwrap_or_else(|| activity(scene, measure));
-    }
-    let room = height.saturating_sub(out.len() + 1);
-    out.push(Line::default());
-    if let Some(mut panel) = panel {
-        if panel.len() > room && class == SizeClass::Compact {
-            panel.retain(|row| !is_blank(row, scene.colours));
+    let policy = scene.s.policy;
+    let night = policy
+        .night
+        .as_ref()
+        .map(|night| (night, night_lines(scene, night, policy, width)));
+    let day = day_lines(scene, policy, width);
+    let open = night
+        .as_ref()
+        .is_some_and(|(night, _)| night.closed_by.is_none());
+    let mut sections = Vec::new();
+    match night {
+        Some((_, lines)) if open => {
+            sections.push(lines);
+            sections.push(day);
         }
-        out.extend(bounded_rows(panel, room, scene.colours));
-    } else {
-        let mut below = measure.clone();
-        below.context.height = crate::numbers::saturating_cells(room);
-        out.extend(activity(scene, &below));
+        Some((_, lines)) => {
+            sections.push(day);
+            sections.push(lines);
+        }
+        None => sections.push(day),
     }
-    out
+    let blank = measure.layout.class != SizeClass::Compact;
+    let mut out = Vec::new();
+    for section in sections {
+        if blank && !out.is_empty() {
+            out.push(Line::default());
+        }
+        out.extend(section);
+    }
+    bounded_rows(out, height, scene.colours)
 }
 
-fn activity(scene: &Scene<'_>, measure: &Measure) -> Vec<Line<'static>> {
-    let r7 = r7_lines(scene, measure);
-    activity_under(scene, measure, &r7)
+/// Seconds as `12m` or `3h05m`.
+fn secs(seconds: u64) -> String {
+    hm(Duration::from_secs(seconds))
 }
 
-/// The panel below the BIOS profile in the context rectangle's rows: the open round, or the cycle, the
-/// combinations and the R7 lines `r7`.
-pub(super) fn activity_under(
+fn profile_text(profile: &CcdProfile) -> String {
+    profile
+        .iter()
+        .map(|(_, offset)| offset.get().to_string())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn value(scene: &Scene<'_>, paint: Paint, text: String) -> Line<'static> {
+    cell(scene, paint, text)
+}
+
+fn night_lines(
     scene: &Scene<'_>,
-    measure: &Measure,
-    r7: &[Line<'static>],
-) -> Vec<Line<'static>> {
-    let width = usize::from(measure.context.width);
-    let height = usize::from(measure.context.height);
-    let class = measure.layout.class;
-    let t = &measure.tables;
-    let deepening = scene
-        .s
-        .session
-        .is_some_and(|session| session.activity == Some(Activity::Deepening));
-    let open = scene
-        .s
-        .phases
-        .is_some_and(|phases| phases.round.is_some_and(|round| round > 0));
-    if deepening && open {
-        return round(scene, width, height, r7);
-    }
-    let room = if r7.is_empty() {
-        height
-    } else {
-        height.saturating_sub(r7.len() + 1)
-    };
-    let build = |rows: usize| {
-        let (mut out, focus) = if let Some(cycle) = &scene.s.cycle {
-            let cycle_rows = cycle_lines(scene, cycle, t, width, class, rows);
-            (cycle_rows.lines, cycle_rows.focus)
-        } else {
-            (Vec::new(), None)
-        };
-        if !scene.s.combos.is_empty() {
-            if !out.is_empty() {
-                out.push(Line::default());
-            }
-            out.extend(combination_lines(scene, t, width, class));
-        }
-        (out, focus)
-    };
-    let (mut out, _) = build(room);
-    if r7.is_empty() {
-        return out;
-    }
-    if out.len() > room {
-        let (bounded, focus) = build(room.saturating_sub(1));
-        if room > 0 && focus.is_none_or(|focus| focus + 1 < room) {
-            out = bounded_rows(bounded, room, scene.colours);
-        } else {
-            out.truncate(room);
-        }
-    }
-    if !out.is_empty() {
-        out.push(Line::default());
-    }
-    out.extend(r7.iter().cloned());
-    out
-}
-
-/// The open phase 2 round in `height` rows with the R7 lines under it. The round's heading, its bound and its
-/// candidates come first: R7 keeps its rows only when they fit under all of those, and the round's checks give
-/// up rows before it. Rows cut off the round end with a `+N more` row, so cutting any needs a row beyond the
-/// candidates.
-pub(super) fn round(
-    scene: &Scene<'_>,
+    night: &NightProjection,
+    policy: &Projection,
     width: usize,
-    height: usize,
-    r7: &[Line<'static>],
 ) -> Vec<Line<'static>> {
-    let (out, head) = phase2_lines(scene, width);
-    if r7.is_empty() {
-        return bounded_rows(out, height, scene.colours);
+    let since = scene.wall_minute(night.started);
+    let title = match night.closed_by {
+        None => Line::from(vec![
+            scene.paint(Paint::White, format!("NIGHT since {since}")),
+            scene.paint(Paint::Grey, format!(" · {} elapsed", secs(elapsed(night)))),
+        ]),
+        Some(closed_by) => {
+            let end = scene
+                .s
+                .log
+                .iter()
+                .find(|entry| entry.seq == closed_by)
+                .map_or_else(String::new, |entry| {
+                    format!("-{}", scene.wall_minute(entry.at))
+                });
+            cell(scene, Paint::White, format!("LAST NIGHT {since}{end}"))
+        }
+    };
+    let mut out = vec![rule(
+        width,
+        &title,
+        &Line::default(),
+        scene.style(Paint::Track),
+        scene.colours,
+    )];
+    out.push(field_row(scene, "task", task_value(scene, night), width));
+    let mut label = "mapping";
+    for step in &night.mapping {
+        let text = match (step.cursor, step.bracket) {
+            (_, Some((failing, bracket))) => format!(
+                "CCD {}: failed at {}, bracket at {}",
+                step.ccd.get(),
+                failing.get(),
+                bracket.get()
+            ),
+            (Some(cursor), None) => format!("CCD {} at {}", step.ccd.get(), cursor.get()),
+            (None, None) => continue,
+        };
+        out.push(field_row(
+            scene,
+            label,
+            value(scene, Paint::Text, text),
+            width,
+        ));
+        label = "";
     }
-    let room = height.saturating_sub(r7.len() + 1);
-    if room < out.len() && room < head + 1 {
-        return bounded_rows(out, height, scene.colours);
+    if let Some(progress) = &night.qualification {
+        out.push(field_row(
+            scene,
+            "qualifying",
+            qualification_value(scene, progress, policy),
+            width,
+        ));
     }
-    let mut rows = bounded_rows(out, room, scene.colours);
-    rows.push(Line::default());
-    rows.extend(r7.iter().cloned());
-    rows
+    let mut label = "reproducing";
+    for reproduction in &night.reproductions {
+        out.push(field_row(
+            scene,
+            label,
+            reproduction_value(scene, reproduction),
+            width,
+        ));
+        label = "";
+    }
+    if let Some(shares) = shares_value(scene, night) {
+        out.push(field_row(scene, "shares", shares, width));
+    }
+    if !night.unavailable.is_empty() {
+        let backends = night
+            .unavailable
+            .iter()
+            .map(|unavailable| unavailable.backend.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push(field_row(
+            scene,
+            "unavailable",
+            value(scene, Paint::Warn, backends),
+            width,
+        ));
+    }
+    out
+}
+
+/// The night's elapsed observed time E, in seconds: what its queues consumed, together.
+fn elapsed(night: &NightProjection) -> u64 {
+    night.budgets.iter().map(|budget| budget.consumed_s).sum()
+}
+
+/// Each queue's part of E against its soft share: `mapping 8%/10%`, the filler as `filler 3%`; a queue with no
+/// share that consumed nothing is left out. `None` when every queue is left out.
+fn shares_value(scene: &Scene<'_>, night: &NightProjection) -> Option<Line<'static>> {
+    let total = elapsed(night);
+    let mut spans = Vec::new();
+    for budget in &night.budgets {
+        if budget.share_pct == 0 && budget.consumed_s == 0 {
+            continue;
+        }
+        let used = budget
+            .consumed_s
+            .saturating_mul(100)
+            .checked_div(total)
+            .unwrap_or(0);
+        let text = match budget.queue {
+            Queue::Filler => format!("{} {used}%", budget.queue.as_str()),
+            Queue::Reproduction
+            | Queue::Qualification
+            | Queue::Mapping
+            | Queue::Control
+            | Queue::Requalification => {
+                format!("{} {used}%/{}%", budget.queue.as_str(), budget.share_pct)
+            }
+        };
+        if !spans.is_empty() {
+            spans.push(scene.paint(Paint::Grey, " · "));
+        }
+        spans.push(scene.paint(Paint::Text, text));
+    }
+    (!spans.is_empty()).then(|| Line::from(spans))
+}
+
+fn task_value(scene: &Scene<'_>, night: &NightProjection) -> Line<'static> {
+    let done = night
+        .tasks
+        .iter()
+        .filter(|planned| planned.status == togi_journal::TaskStatus::Complete)
+        .count();
+    let progress = format!("{done} of {} planned tasks done", night.tasks.len());
+    match &night.current {
+        Some((task, _)) => Line::from(vec![
+            scene.paint(
+                Paint::Running,
+                format!("{} task {}", task.queue.as_str(), task.ordinal),
+            ),
+            scene.paint(Paint::Grey, format!(" · {progress}")),
+        ]),
+        None => Line::from(vec![
+            scene.paint(Paint::Grey, "none running · ".to_owned()),
+            scene.paint(Paint::Grey, progress),
+        ]),
+    }
+}
+
+fn qualification_value(
+    scene: &Scene<'_>,
+    progress: &QualificationProgress,
+    policy: &Projection,
+) -> Line<'static> {
+    let purpose = policy
+        .qualifications
+        .iter()
+        .rev()
+        .find(|record| record.profile == progress.profile)
+        .map(|record| record.purpose.as_str().replace('_', " "));
+    let purpose = purpose.map_or_else(String::new, |purpose| format!(" · {purpose}"));
+    let text = format!(
+        "{}{purpose} · {} witnessed · {} outstanding",
+        profile_text(&progress.profile),
+        progress.witnessed,
+        progress.outstanding.len()
+    );
+    value(scene, Paint::Text, text)
+}
+
+fn event_name(event: &DayEventId) -> String {
+    match event {
+        DayEventId::Boot { boot } => {
+            let short: String = boot.as_str().chars().take(8).collect();
+            format!("boot {short}")
+        }
+        DayEventId::Record { seq, .. } => format!("record #{seq}"),
+        DayEventId::Requalification { night } => format!("requalification {night}"),
+    }
+}
+
+fn reproduction_value(scene: &Scene<'_>, reproduction: &ReproductionProjection) -> Line<'static> {
+    let text = format!(
+        "{} · {} · {} used · {} classes left",
+        event_name(&reproduction.source),
+        reproduction.state.as_str(),
+        secs(reproduction.consumed_s),
+        reproduction.remaining.len()
+    );
+    value(scene, Paint::Text, text)
+}
+
+fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'static>> {
+    let applied = policy.applied.as_ref().map_or_else(
+        || "applied CO 0".to_owned(),
+        |profile| format!("applied {}", profile_text(profile)),
+    );
+    let day = &policy.day;
+    let mut out = vec![rule(
+        width,
+        &cell(scene, Paint::White, "DAY".to_owned()),
+        &cell(scene, Paint::Grey, applied),
+        scene.style(Paint::Track),
+        scene.colours,
+    )];
+    out.push(field_row(scene, "hold", hold_value(scene, day), width));
+    if let Some((_, step)) = &day.last_step {
+        out.push(field_row(
+            scene,
+            "last step",
+            step_value(scene, step),
+            width,
+        ));
+    }
+    if day.freeze {
+        out.push(field_row(
+            scene,
+            "freeze",
+            value(scene, Paint::Warn, "on: nothing is applied".to_owned()),
+            width,
+        ));
+    }
+    out.push(field_row(
+        scene,
+        "firmware",
+        firmware_value(scene, &day.firmware),
+        width,
+    ));
+    if !day.pending_questions.is_empty() {
+        out.push(field_row(
+            scene,
+            "questions",
+            value(
+                scene,
+                Paint::Warn,
+                format!("{} pending", day.pending_questions.len()),
+            ),
+            width,
+        ));
+    }
+    let totals = scene.s.day_totals;
+    if !totals.is_empty() {
+        let unknown = unknown_intervals(totals.unknown_intervals());
+        out.push(field_row(
+            scene,
+            "all days",
+            value(
+                scene,
+                Paint::Text,
+                format!("{} · {unknown}", totals.all().describe()),
+            ),
+            width,
+        ));
+        out.push(field_row(
+            scene,
+            "stock CO 0",
+            value(
+                scene,
+                Paint::Text,
+                format!("{} · observations, not a bound", totals.stock().describe()),
+            ),
+            width,
+        ));
+    }
+    let mut label = "events";
+    for event in &policy.events {
+        out.push(field_row(scene, label, event_value(scene, event), width));
+        label = "";
+    }
+    let mut label = "vetoes";
+    for veto in &policy.vetoes {
+        out.push(field_row(
+            scene,
+            label,
+            value(
+                scene,
+                Paint::Text,
+                format!("{} · {}", event_name(&veto.event), veto.state.as_str()),
+            ),
+            width,
+        ));
+        label = "";
+    }
+    out
+}
+
+fn hold_value(scene: &Scene<'_>, day: &DayProjection) -> Line<'static> {
+    match &day.hold {
+        Some(hold) => Line::from(vec![
+            scene.paint(
+                Paint::White,
+                format!("{} of {}", secs(hold.eligible_s), secs(hold.required_s)),
+            ),
+            scene.paint(
+                Paint::Grey,
+                format!(" · holding {}", profile_text(&hold.profile)),
+            ),
+        ]),
+        None => value(scene, Paint::Grey, "no hold started".to_owned()),
+    }
+}
+
+fn reason_words(reason: &HoldReason) -> String {
+    match reason {
+        HoldReason::Incomplete {
+            credited_s,
+            required_s,
+        } => format!("incomplete, {} of {}", secs(*credited_s), secs(*required_s)),
+        HoldReason::AtCap {} => "at the cap".to_owned(),
+        HoldReason::NotQualified {} => "not qualified".to_owned(),
+        HoldReason::Vetoed { veto } => format!("vetoed by {}", event_name(veto)),
+        HoldReason::QuestionPending { .. } => "a question is pending".to_owned(),
+        HoldReason::EventUnresolved { event } => format!("{} is unresolved", event_name(event)),
+        HoldReason::Frozen {} => "frozen".to_owned(),
+        HoldReason::Paused {} => "paused".to_owned(),
+        HoldReason::Expired {} => "expired".to_owned(),
+    }
+}
+
+fn ccds_text(changed: &[togi_machine::CcdId]) -> String {
+    changed
+        .iter()
+        .map(|ccd| ccd.get().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn step_value(scene: &Scene<'_>, step: &DayStep) -> Line<'static> {
+    let (paint, text) = match &step.step {
+        StepKind::Hold { blocked_by } if blocked_by.is_empty() => {
+            (Paint::Text, "hold, nothing blocks it".to_owned())
+        }
+        StepKind::Hold { blocked_by } => (
+            Paint::Warn,
+            format!(
+                "hold: {}",
+                blocked_by
+                    .iter()
+                    .map(reason_words)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ),
+        StepKind::Promote { changed } => (Paint::Good, format!("promoted CCD {}", changed.get())),
+        StepKind::Retreat { changed, .. } => {
+            (Paint::Bad, format!("retreated CCD {}", ccds_text(changed)))
+        }
+        StepKind::FirmwareZero { changed } => (
+            Paint::Warn,
+            format!("reset CCD {} after firmware change", ccds_text(changed)),
+        ),
+    };
+    value(scene, paint, text)
+}
+
+fn firmware_value(scene: &Scene<'_>, firmware: &FirmwareValidity) -> Line<'static> {
+    match firmware {
+        FirmwareValidity::Valid => value(scene, Paint::Good, "valid".to_owned()),
+        FirmwareValidity::Invalidated { since } => value(
+            scene,
+            Paint::Warn,
+            format!("changed at #{since}; D awaits a reset"),
+        ),
+        FirmwareValidity::Unknown => value(scene, Paint::Grey, "not reported yet".to_owned()),
+    }
+}
+
+fn event_value(scene: &Scene<'_>, event: &EventProjection) -> Line<'static> {
+    let class = match &event.classification {
+        Classification::CpuSuspect { certainty } => format!("cpu suspect ({certainty})"),
+        Classification::NonCpu {} => "not the cpu".to_owned(),
+        Classification::Unexplained {} => "unexplained".to_owned(),
+    };
+    let (paint, resolution) = match event.resolution {
+        Resolution::Unresolved {} => (Paint::Warn, "unresolved"),
+        Resolution::Resolved { .. } => (Paint::Grey, "resolved"),
+    };
+    let spans: Vec<Span<'static>> = vec![
+        scene.paint(
+            Paint::Text,
+            format!("{} · {class} · ", event_name(&event.event)),
+        ),
+        scene.paint(paint, resolution.to_owned()),
+        scene.paint(
+            Paint::Grey,
+            format!(" · reproduction {}", event.reproduction.as_str()),
+        ),
+    ];
+    Line::from(spans)
 }
 
 #[cfg(test)]
 mod tests {
+    use jiff::SignedDuration;
     use jiff::tz::TimeZone;
-    use ratatui::text::Line;
-    use togi_journal::Activity;
-    use togi_machine::Regime;
-    use togi_tuner::{PhaseNo, PhasePlan, SearchTurn};
+    use togi_journal::{Activity, Queue, StepKind, UnavailableBackend};
+    use togi_machine::Backend;
 
-    use super::super::super::measure::{Measure, measure};
-    use super::super::super::scene::Scene;
-    use super::super::super::testing::screen;
-    use super::super::fixtures::{
-        at, bios, core_view, cycle_part, cycle_plan, cycle_step, hunt_facts, hunt_plan, part,
-        phases, scene, texts, trial_view,
-    };
-    use super::{activity_under, context, round};
-    use crate::model::{Confirm, CycleView, HuntView, Model, SessionView};
+    use super::context;
+    use crate::frames::fit::plain;
+    use crate::frames::hand::{Hand, bare, ccd, ccd_row, core_row, hold, night, profile_of, step};
+    use crate::frames::measure::measure;
+    use crate::frames::scene::Scene;
+    use crate::frames::testing::{FIXED_NOW, screen};
+    use crate::history::LogEntry;
     use crate::screen::{Colours, View};
-    use crate::tests::kit::{off, seq};
-    use togi_tuner::GroupState;
 
-    fn measured(scene: &Scene<'_>, width: u16, height: u16) -> Measure {
-        measure(
-            scene,
-            &screen(View::Main, width, height, Colours::None, false),
-        )
+    fn rows(hand: &Hand, after_s: i64, width: u16, height: u16) -> Vec<String> {
+        let zone = TimeZone::UTC;
+        let now = FIXED_NOW + SignedDuration::from_secs(after_s);
+        let scene = Scene::new(hand.snapshot(), now, &zone, Colours::None);
+        let measured = measure(
+            &scene,
+            &screen(View::Main, width, height, Colours::None, true),
+        );
+        context(&scene, &measured)
+            .iter()
+            .map(|line| plain(line, Colours::None))
+            .collect()
+    }
+
+    fn hand() -> Hand {
+        let mut hand = Hand::new(
+            vec![core_row(0, 0, Some(0), false)],
+            bare(vec![ccd_row(0, &[0], 0)]),
+        );
+        hand.policy.night = Some(night(Some((Queue::Mapping, 2, Activity::Mapping))));
+        hand.policy.day.hold = Some(hold(&[(0, -10)], 3600, 7200));
+        hand
+    }
+
+    /// The hand's night, closed by a boot six hours after it started.
+    fn closed(mut hand: Hand) -> Hand {
+        let boot = crate::tests::kit::seq(2);
+        if let Some(night) = hand.policy.night.as_mut() {
+            night.closed_by = Some(boot);
+        }
+        hand.log.push(LogEntry {
+            seq: boot,
+            at: FIXED_NOW + SignedDuration::from_hours(6),
+            tag: "day boot".into(),
+            msg: "a later boot".to_owned(),
+        });
+        hand
     }
 
     #[test]
-    fn the_turns_are_the_context_when_no_bios_profile_is_shown() {
-        let mut view = core_view(11, 1);
-        view.confirm = Some(Confirm {
-            offset: off(-7),
-            light: 1,
-            heavy: 0,
-            needed: 5,
-        });
-        let cores = [view];
-        let turns = [SearchTurn {
-            core: crate::tests::kit::core(11),
-            kind: togi_tuner::TurnKind::Confirm,
-            regimes: vec![Regime::R1],
-            offset: off(-7),
-            workload: togi_machine::workloads(Regime::R1)[0].id(),
-            light: 1,
-            heavy: 0,
-            needed: 5,
-            running: true,
-        }];
-        let model = Model::new();
-        let mut s = model.snapshot();
-        s.cores = &cores;
-        s.turns = &turns;
-        let zone = TimeZone::UTC;
-        let scene = scene(&s, &zone);
-        let m = measured(&scene, 160, 45);
-        let rows = texts(&context(&scene, &m), Colours::None);
-        assert!(rows[0].starts_with("TURNS"), "{rows:?}");
+    fn the_open_night_comes_first_and_the_day_after_it() {
+        let rows = rows(&hand(), 60, 240, 67);
+        assert!(
+            rows[0].starts_with("NIGHT since 22:13 · 0h30m elapsed ─"),
+            "{:?}",
+            rows[0]
+        );
+        assert!(
+            rows[1].starts_with("task        mapping task 2"),
+            "{:?}",
+            rows[1]
+        );
+        let day = rows
+            .iter()
+            .position(|row| row.starts_with("DAY"))
+            .expect("the day section");
+        assert!(
+            rows[day - 1].trim().is_empty(),
+            "a blank row separates the sections"
+        );
+        assert!(
+            rows[day].trim_end().ends_with("applied CO 0"),
+            "{:?}",
+            rows[day]
+        );
+        assert!(rows[day + 1].contains("holding -10"), "{:?}", rows[day + 1]);
         assert!(
             rows.iter()
-                .any(|row| row.contains("confirm: light trial 2 of 5"))
+                .any(|row| row
+                    == "shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%"),
+            "{rows:#?}"
         );
-    }
-
-    #[test]
-    fn the_compact_hunt_gives_up_its_blank_rows_under_the_bios_profile() {
-        let plan = hunt_plan(
-            Vec::new(),
-            vec![
-                part(&[0, 1], &[2], Some(4), Some(GroupState::Running), true),
-                part(&[2], &[0, 1], None, None, false),
-            ],
-        );
-        let facts = hunt_facts();
-        let phases = phases(None);
-        let held = bios(true);
-        let cores = [core_view(0, 0), core_view(1, 0), core_view(8, 1)];
-        let model = Model::new();
-        let mut s = model.snapshot();
-        s.cores = &cores;
-        s.hunt = Some(HuntView {
-            plan: &plan,
-            facts: &facts,
-        });
-        s.phases = Some(&phases);
-        s.bios = Some(&held);
-        let zone = TimeZone::UTC;
-        let scene = scene(&s, &zone);
-        let mut m = measured(&scene, 80, 24);
-        m.context.height = 30;
-        let all = texts(&context(&scene, &m), Colours::None);
-        assert!(all[0].starts_with("BIOS PROFILE"));
-        assert_eq!(all[5], "");
-        assert!(all[6].starts_with("HUNT 1"), "{all:?}");
-        m.context.height = 9;
-        let tight = texts(&context(&scene, &m), Colours::None);
-        assert!(tight.len() <= 9, "{tight:?}");
-        assert!(tight[6..].iter().all(|row| !row.is_empty()), "{tight:?}");
         assert!(
-            tight.last().is_some_and(|row| row.starts_with('+')),
-            "{tight:?}"
+            rows.iter().any(|row| row.starts_with("firmware")),
+            "{rows:#?}"
         );
     }
 
-    fn r7(n: usize) -> Vec<Line<'static>> {
-        (0..n).map(|i| Line::from(format!("R7 line {i}"))).collect()
-    }
-
-    fn cycle_scene_rows(height: u16, r7: &[Line<'static>]) -> Vec<String> {
-        let plan = cycle_plan(
-            vec![
-                cycle_step(
-                    Regime::R1,
-                    vec![cycle_part(&[0], None, true, false, true)],
-                    true,
-                    true,
-                ),
-                cycle_step(
-                    Regime::R3,
-                    vec![
-                        cycle_part(&[0], None, true, false, true),
-                        cycle_part(&[1], None, true, true, false),
-                    ],
-                    false,
-                    true,
-                ),
-            ],
-            1,
-            false,
+    #[test]
+    fn a_closed_night_follows_the_day_and_says_when_it_ran() {
+        let rows = rows(&closed(hand()), 7 * 3600, 240, 67);
+        assert!(rows[0].starts_with("DAY"), "{:?}", rows[0]);
+        assert!(
+            rows.iter()
+                .any(|row| row.starts_with("LAST NIGHT 22:13-04:13 ─")),
+            "{rows:#?}"
         );
-        let cores = [core_view(0, 0), core_view(1, 0)];
-        let model = Model::new();
-        let mut s = model.snapshot();
-        s.cores = &cores;
-        s.cycle = Some(CycleView {
-            plan: &plan,
-            step_hunts: &[],
-            resume: None,
-        });
-        let zone = TimeZone::UTC;
-        let scene = scene(&s, &zone);
-        let mut m = measured(&scene, 160, 45);
-        m.context.height = height;
-        texts(&activity_under(&scene, &m, r7), Colours::None)
+        assert!(!rows.iter().any(|row| row.contains("until")), "{rows:#?}");
     }
 
     #[test]
-    fn the_cycle_gives_the_last_rows_to_r7() {
-        let rows = cycle_scene_rows(20, &r7(2));
-        let n = rows.len();
-        assert_eq!(&rows[n - 3..], ["", "R7 line 0", "R7 line 1"]);
-        assert!(rows[0].starts_with("CYCLE"));
-        let tight = cycle_scene_rows(7, &r7(2));
-        assert_eq!(tight.len(), 7, "{tight:?}");
-        assert_eq!(&tight[4..], ["", "R7 line 0", "R7 line 1"]);
-        assert!(tight.iter().any(|row| row.contains("core 01")), "{tight:?}");
-        let none = cycle_scene_rows(20, &[]);
-        assert!(none.iter().all(|row| !row.starts_with("R7")));
+    fn a_closed_night_whose_boot_left_the_log_names_only_its_start() {
+        let mut hand = closed(hand());
+        hand.log.clear();
+        let rows = rows(&hand, 7 * 3600, 240, 67);
+        assert!(
+            rows.iter().any(|row| row.starts_with("LAST NIGHT 22:13 ─")),
+            "{rows:#?}"
+        );
     }
 
     #[test]
-    fn a_cut_finished_cycle_never_counts_more_than_its_steps() {
-        let steps: Vec<_> = (0..18)
-            .map(|_| {
-                cycle_step(
-                    Regime::R1,
-                    vec![cycle_part(&[0], None, true, false, true)],
-                    true,
-                    true,
-                )
-            })
-            .collect();
-        let plan = cycle_plan(steps, 18, false);
-        let cores = [core_view(0, 0)];
-        let model = Model::new();
-        let mut s = model.snapshot();
-        s.cores = &cores;
-        s.cycle = Some(CycleView {
-            plan: &plan,
-            step_hunts: &[],
-            resume: None,
-        });
-        let zone = TimeZone::UTC;
-        let scene = scene(&s, &zone);
-        let mut m = measured(&scene, 80, 24);
-        m.context.height = 5;
-        let rows = texts(&activity_under(&scene, &m, &r7(2)), Colours::None);
-        assert!(rows[0].starts_with("CYCLE 2"), "{rows:?}");
-        assert_eq!(rows[1], "+18 more", "{rows:?}");
-    }
-
-    fn round_fixture(r7: &[Line<'static>], height: usize) -> Vec<String> {
-        let candidates = (0..4u8)
-            .map(|id| togi_tuner::Candidate {
-                core: crate::tests::kit::core(id),
-                offset: off(-30 - i64::from(id)),
-                solo_limit: Some(off(-20)),
-                gap: u32::from(id) + 1,
-                carried: false,
-                moving: false,
-            })
-            .collect();
-        let phases = PhasePlan {
-            phase: PhaseNo::Two,
-            phase1_end: Some(seq(10)),
-            concluded: None,
-            confirming: false,
-            rounds_left: 2,
-            round: Some(1),
-            candidates,
-        };
-        let model = Model::new();
-        let mut s = model.snapshot();
-        s.phases = Some(&phases);
-        let zone = TimeZone::UTC;
-        let scene = scene(&s, &zone);
-        texts(&round(&scene, 100, height, r7), Colours::None)
-    }
-
-    #[test]
-    fn the_round_keeps_its_candidates_at_every_height() {
-        let r7 = r7(6);
-        for height in 8..60 {
-            let rows = round_fixture(&r7, height);
-            assert!(
-                rows.iter().any(|row| row.contains("gap ")),
-                "height {height}: the round lost its candidate rows:\n{}",
-                rows.join("\n")
-            );
-            assert!(rows.len() <= height, "height {height}: {} rows", rows.len());
+    fn the_filler_shows_its_part_without_a_share() {
+        let mut hand = hand();
+        if let Some(night) = hand.policy.night.as_mut() {
+            for budget in &mut night.budgets {
+                if budget.queue == Queue::Filler {
+                    budget.consumed_s = 200;
+                }
+            }
         }
-    }
-
-    #[test]
-    fn r7_keeps_its_rows_only_when_they_fit_under_the_candidates() {
-        let r7 = r7(3);
-        let roomy = round_fixture(&r7, 30);
-        assert_eq!(
-            &roomy[roomy.len() - 4..],
-            ["", "R7 line 0", "R7 line 1", "R7 line 2"]
-        );
-        assert!(roomy.iter().any(|row| row == "CHECKS"));
-        let cramped = round_fixture(&r7, 8);
+        let rows = rows(&hand, 60, 240, 67);
         assert!(
-            cramped.iter().all(|row| !row.starts_with("R7")),
-            "{cramped:?}"
-        );
-        assert!(
-            cramped.last().is_some_and(|row| row.starts_with('+')),
-            "{cramped:?}"
-        );
-        let nearly = round_fixture(&r7, 11);
-        assert!(
-            nearly.iter().all(|row| !row.starts_with("R7")),
-            "{nearly:?}"
-        );
-        let squeezed = round_fixture(&r7, 12);
-        assert!(
-            squeezed.iter().any(|row| row.starts_with("R7 line 0")),
-            "{squeezed:?}"
-        );
-        assert!(
-            squeezed.iter().any(|row| row.starts_with('+')),
-            "{squeezed:?}"
+            rows.iter().any(|row| row.starts_with("shares")
+                && row.trim_end().ends_with("control 0%/5% · filler 10%")),
+            "{rows:#?}"
         );
     }
 
     #[test]
-    fn a_deepening_session_with_an_open_round_shows_the_round() {
-        let candidates = vec![togi_tuner::Candidate {
-            core: crate::tests::kit::core(0),
-            offset: off(-30),
-            solo_limit: Some(off(-20)),
-            gap: 1,
-            carried: false,
-            moving: true,
-        }];
-        let phases = PhasePlan {
-            phase: PhaseNo::Two,
-            phase1_end: Some(seq(10)),
-            concluded: None,
-            confirming: false,
-            rounds_left: 1,
-            round: Some(2),
-            candidates,
+    fn the_backends_the_night_cannot_use_are_named() {
+        let mut hand = hand();
+        if let Some(night) = hand.policy.night.as_mut() {
+            night.unavailable = vec![UnavailableBackend {
+                backend: Backend::Mprime,
+                causes: vec![crate::tests::kit::seq(3)],
+            }];
+        }
+        let rows = rows(&hand, 60, 240, 67);
+        assert!(
+            rows.iter()
+                .any(|row| row.trim_end() == "unavailable mprime"),
+            "{rows:#?}"
+        );
+    }
+
+    #[test]
+    fn a_machine_with_no_night_shows_only_the_day() {
+        let mut hand = hand();
+        hand.policy.night = None;
+        let rows = rows(&hand, 60, 240, 67);
+        assert!(rows[0].starts_with("DAY"), "{:?}", rows[0]);
+        assert!(!rows.iter().any(|row| row.contains("NIGHT")), "{rows:#?}");
+    }
+
+    #[test]
+    fn the_last_step_the_freeze_and_the_applied_profile_are_named() {
+        let mut hand = closed(hand());
+        hand.policy.applied = Some(profile_of(&[(0, -10)]));
+        hand.policy.day.freeze = true;
+        hand.policy.day.last_step = Some((
+            crate::tests::kit::seq(5),
+            step(StepKind::Promote { changed: ccd(0) }),
+        ));
+        let rows = rows(&hand, 7 * 3600, 240, 67);
+        assert!(rows[0].trim_end().ends_with("applied -10"), "{:?}", rows[0]);
+        assert!(
+            rows.iter()
+                .any(|row| row.starts_with("last step   promoted CCD 0")),
+            "{rows:#?}"
+        );
+        assert!(
+            rows.iter().any(|row| row.starts_with("freeze")),
+            "{rows:#?}"
+        );
+    }
+
+    #[test]
+    fn the_compact_panel_keeps_no_blank_row_between_sections() {
+        let rows = rows(&hand(), 60, 120, 33);
+        assert!(rows.iter().all(|row| !row.trim().is_empty()), "{rows:#?}");
+    }
+
+    #[test]
+    fn the_day_shows_observed_totals_beside_stock_and_no_bound() {
+        use jiff::Timestamp;
+        use togi_journal::{DayBootStart, DayCheckpoint, DayUncleanEnd, Event, Stamp};
+        use togi_machine::{
+            BiosContext, EndEvidence, ObservedOffset, PerCore, ResetKind, ResetReason,
         };
-        let session = SessionView {
-            start: at(1000),
-            activity: Some(Activity::Deepening),
+
+        use crate::day_totals::DayTotals;
+        use crate::tests::kit::{core, seq};
+
+        let at = |offset: i64| -> PerCore<ObservedOffset> {
+            [(core(0), ObservedOffset(offset))].into_iter().collect()
         };
-        let model = Model::new();
-        let mut s = model.snapshot();
-        let trial = trial_view(1, 5);
-        s.session = Some(&session);
-        s.trial = Some(&trial);
-        s.phases = Some(&phases);
-        let zone = TimeZone::UTC;
-        let scene = scene(&s, &zone);
-        let m = measured(&scene, 160, 45);
-        let rows = texts(&activity_under(&scene, &m, &[]), Colours::None);
-        assert!(rows[0].starts_with("PHASE 2 · ROUND 2"), "{rows:?}");
+        let start = |offset: i64| DayBootStart {
+            build: crate::tests::kit::build(),
+            bios: BiosContext::default(),
+            offsets: at(offset),
+            watchdog: None,
+        };
+        let checkpoint = |applied_secs: u64| DayCheckpoint {
+            applied_secs,
+            load_mix: togi_journal::LoadMix::default(),
+            watchdog: None,
+        };
+        let end = DayUncleanEnd {
+            boot: "b".to_owned().into(),
+            last_checkpoint: None,
+            offsets: at(-10),
+            reset_reason: ResetReason {
+                kind: Some(ResetKind::Watchdog),
+                raw: Vec::new(),
+                supported: true,
+            },
+            evidence: EndEvidence::unknown(),
+        };
+        let events: Vec<Event> = [
+            ("a", start(0).into()),
+            ("a", checkpoint(7200).into()),
+            ("b", start(-10).into()),
+            ("b", checkpoint(3600).into()),
+            ("c", end.into()),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (boot, payload))| {
+            Event::new(
+                seq(u64::try_from(index).unwrap() + 1),
+                Stamp {
+                    time: Timestamp::UNIX_EPOCH,
+                    mono: None,
+                },
+                boot.to_owned().into(),
+                Vec::new(),
+                payload,
+            )
+        })
+        .collect();
+        let mut hand = hand();
+        hand.totals = DayTotals::of(&events);
+        let rows = rows(&hand, 60, 240, 67);
+        assert!(
+            rows.iter()
+                .any(|row| row.trim_end()
+                    == "all days    3.0h observed, 1 crash · 0 unknown intervals"),
+            "{rows:#?}"
+        );
+        assert!(
+            rows.iter().any(|row| row.trim_end()
+                == "stock CO 0  2.0h observed, 0 crashes · observations, not a bound"),
+            "{rows:#?}"
+        );
+    }
+
+    #[test]
+    fn a_day_with_no_observations_shows_no_totals() {
+        let rows = rows(&hand(), 60, 240, 67);
+        assert!(
+            !rows.iter().any(|row| row.starts_with("all days")),
+            "{rows:#?}"
+        );
     }
 }

@@ -2,35 +2,35 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   01:41:10   tuning 1h41m   session 1h41m   0 failures · 1 crash
-│ ○ SOLO  0 of 16 found ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│ ○ NIGHT 0h30m
 │
 │ ▌  I picked up from the journal after the reboot; nothing it recorded is lost.
 │
-│ RECOVERED FROM A CRASH  crash in core 08 · R1 light at -10
-│ detected 01:40:30 after a watchdog reset
-│ next trial: R1 light, core 01 alone at -10
+│ RECOVERED FROM A CRASH  crash in R1 light on 08-15
+│ detected 22:13:20 after a watchdog reset
+│ next trial: filler
 │
-│ CCD 0 waiting    0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
-│   00   0 SEARCH   ·····                           → -15       08 -10 SEARCH   ▄▄▄▄▄                           → -10
-│   01   0 SEARCH   ···                             → -10       09   0 SEARCH   ···                             → -10
-│   02   0 SEARCH   ···                             → -10       10   0 SEARCH   ···                             → -10
-│   03   0 SEARCH   ···                             → -10       11   0 SEARCH   ···                             → -10
-│   04   0 SEARCH   ···                             → -10       12   0 SEARCH   ···                             → -10
-│   05   0 SEARCH   ···                             → -10       13   0 SEARCH   ···                             → -10
-│   06   0 SEARCH   ···                             → -10       14   0 SEARCH   ···                             → -10
-│   07   0 SEARCH   ···                             → -10       15   0 SEARCH   ···                             → -10
+│ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
+│ D -10 · S -26 · rate R1 · U fails at -31 · 16 counts to S   D -8 · S -15 · rate R1 · U censored at -50 · 7 to S
+│ 3 covered for the cap · 1 uncovered for the cap             4 covered for the cap · 0 uncovered for the cap
+│   00 -10          ▄▄▄▄▄········  ▄                            08  -8          ▄▄▄▄····                ▄
+│   01 -10          ▄▄▄▄▄········  ▄                            09  -8          ▄▄▄▄····                ▄
+│   02 -10          ▄▄▄▄▄········  ▄                            10  -8          ▄▄▄▄····                ▄
+│   03 -10          ▄▄▄▄▄········  ▄                            11  -8          ▄▄▄▄····                ▄
+│   04 -10          ▄▄▄▄▄········  ▄                            12  -8          ▄▄▄▄····                ▄
+│   05 -10          ▄▄▄▄▄········  ▄                            13  -8          ▄▄▄▄····                ▄
+│   06 -10          ▄▄▄▄▄········  ▄                            14  -8          ▄▄▄▄····                ▄
+│   07 -10          ▄▄▄▄▄········  ▄                            15  -8          ▄▄▄▄····                ▄
 │
-│ TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ NIGHT since 22:13 · 0h30m elapsed ───────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ task        mapping task 2 · 1 of 2 planned tasks done
+│ mapping     CCD 1 at -20                                    22:13  start    session started on 16 cores
+│ shares      mapping 66%/10% · qualification 33%/75%...
+│ DAY ────────────────────────────────────── applied -10/-8
+│ hold        3h00m of 8h00m · holding -10/-8
+│ firmware    valid
 │
-│   01  search: light, then heavy  -10  p -5 · next -10       01:40  crash    with the offsets applied, rebooted
-│   09  search: light, then heavy  -10  p -5 · next -10       01:39  step     core 00 passed -10; searches -15 on...
-│   02  search: light, then heavy  -10  p -5 · next -10       01:36  step     core 15 passed -5; searches -10 on its...
-│   10  search: light, then heavy  -10  p -5 · next -10       01:33  step     core 07 passed -5; searches -10 on its...
-│   03  search: light, then heavy  -10  p -5 · next -10       01:30  step     core 14 passed -5; searches -10 on its...
-│   11  search: light, then heavy  -10  p -5 · next -10       01:27  step     core 06 passed -5; searches -10 on its...
-│   04  search: light, then heavy  -10  p -5 · next -10       01:24  step     core 13 passed -5; searches -10 on its...
-│   12  search: light, then heavy  -10  p -5 · next -10       01:21  step     core 05 passed -5; searches -10 on its...
-│ +8 more                                                     +27 more
+│
 │
 │  ?  help    l  log    esc  back    q  exit dashboard

@@ -1,80 +1,20 @@
+use jiff::tz::TimeZone;
 use test_case::test_case;
-use togi_journal::{DeadEndCondition, HuntStage, Member, Seq, TrialId};
-use togi_machine::{CoreId, CoreSet, PerCore, Regime, TargetOffset};
-use togi_tuner::{GroupState, HuntGroup};
-
-use super::{
-    GROUP_CORES_MAX, Parked, dead_end_label, group_cores, hunt_failure, missing_coverage,
-    parked_source, rounds, search_left, self_sufficiency, unconfirmed_note,
+use togi_journal::{
+    Activity, Budget, DayEventId, DeadEndCondition, NightId, Queue, ReproductionState, Seq, TaskId,
+    UnavailableBackend,
 };
+use togi_machine::{Backend, CcdId, CcdProfile, CoreId, PerCore, TargetOffset};
+use togi_tuner::policy::{
+    DayProjection, FirmwareValidity, MappingProjection, NightProjection, Projection,
+    QualificationProgress, ReproductionProjection,
+};
+
+use super::dead_end_label;
+use super::policy::{Where, activity, sections};
 
 fn core(id: i64) -> CoreId {
     CoreId::new(id).unwrap()
-}
-
-fn group(cores: &[i64], stage: HuntStage) -> HuntGroup {
-    HuntGroup {
-        number: 1,
-        cores: cores.iter().map(|&id| core(id)).collect(),
-        profile: PerCore::default(),
-        stage,
-        probe: None,
-        held: Vec::new(),
-        outcome: GroupState::Running,
-        passed: 0,
-        needed: 5,
-        carried: false,
-        running: true,
-    }
-}
-
-#[test]
-fn a_full_cycle_lacks_nothing() {
-    let steps = [
-        Regime::R1,
-        Regime::R1,
-        Regime::R1,
-        Regime::R2,
-        Regime::R2,
-        Regime::R2,
-        Regime::R3,
-        Regime::R4,
-        Regime::R5,
-        Regime::R6,
-        Regime::R7,
-        Regime::R7,
-        Regime::R7,
-    ];
-    assert!(missing_coverage(steps).is_empty());
-}
-
-#[test]
-fn a_short_cycle_names_each_regime_it_lacks() {
-    let steps = [Regime::R1, Regime::R2, Regime::R2, Regime::R2, Regime::R3];
-    assert_eq!(
-        missing_coverage(steps),
-        [
-            "R1: 2 more steps",
-            "R4: 1 more step",
-            "R5: 1 more step",
-            "R6: 1 more step",
-            "R7: 3 more steps",
-        ]
-    );
-}
-
-#[test]
-fn rounds_agree_with_their_count() {
-    assert_eq!(rounds(1), "1 round");
-    assert_eq!(rounds(2), "2 rounds");
-    assert_eq!(rounds(3), "3 rounds");
-}
-
-#[test]
-fn the_search_header_agrees_with_the_cores_left() {
-    assert_eq!(search_left(1), "search: 1 core left");
-    assert_eq!(search_left(2), "search: 2 cores left");
-    assert_eq!(search_left(16), "search: 16 cores left");
 }
 
 #[test]
@@ -106,86 +46,6 @@ fn every_dead_end_condition_has_its_own_display_label_and_fits_eighty_columns() 
         assert!(line.chars().count() <= 80, "{condition}: {line}");
         assert!(!label.contains('_'), "{condition}: wire token in {label}");
     }
-}
-
-#[test]
-fn the_unconfirmed_note_agrees_with_the_cores_and_scopes_the_confirmed_profile() {
-    let confirmed = Seq::new(7).unwrap();
-    let one = unconfirmed_note(9, [core(1)], confirmed);
-    assert!(
-        one.starts_with("* unconfirmed since [#9]: core 01 shows a stepped-back offset; other BIOS offsets come from the profile confirmed by the passed full cycle [#7]. "),
-        "{one}"
-    );
-    let many = unconfirmed_note(9, [core(1), core(2)], confirmed);
-    assert!(
-        many.starts_with("* unconfirmed since [#9]: cores 01 02 show stepped-back offsets; other BIOS offsets come from"),
-        "{many}"
-    );
-    assert!(
-        many.ends_with("which stays marked until the hold ends"),
-        "{many}"
-    );
-}
-
-#[test]
-fn the_self_sufficiency_count_agrees_with_its_noun() {
-    assert_eq!(self_sufficiency(0), "not yet demonstrated");
-    assert_eq!(self_sufficiency(1), "observed (1 passing trial)");
-    assert_eq!(self_sufficiency(2), "observed (2 passing trials)");
-}
-
-#[test]
-fn parked_offsets_say_where_they_come_from() {
-    let seq = Seq::new(12).unwrap();
-    assert_eq!(parked_source(&Parked::Zero), "parked offsets all-zero");
-    assert_eq!(
-        parked_source(&Parked::CycleEnd(seq)),
-        "parked offsets from cycle end #12"
-    );
-    let held: CoreSet = [core(0), core(1)].into_iter().collect();
-    assert_eq!(
-        parked_source(&Parked::Held(held)),
-        "loaded cores 00 01 held at their failing offsets, the rest parked at 0"
-    );
-}
-
-#[test]
-fn a_hunt_failure_without_a_trial_says_no_trial_was_in_flight() {
-    let trial = TrialId::from("0412".to_owned());
-    assert_eq!(
-        hunt_failure("crash", Regime::R6, Some(&trial)),
-        "unattributed crash in R6 trial 0412"
-    );
-    assert_eq!(
-        hunt_failure("crash", Regime::R6, None),
-        "unattributed crash with no trial in flight"
-    );
-}
-
-#[test]
-fn a_locate_group_is_identified_and_explained_unlike_an_ordinary_group() {
-    let (cell, note) = group_cores(&group(&[], HuntStage::Locate));
-    assert_eq!(cell, "locate");
-    let (label, text) = note.expect("a locate group carries a note");
-    assert_eq!(label, "locate");
-    assert!(text.contains("every unloaded core at 0"), "{text}");
-
-    let (cell, note) = group_cores(&group(&[0, 1], HuntStage::Part));
-    assert_eq!((cell.as_str(), note), ("00 01", None));
-
-    let wide: Vec<i64> = (0..16).collect();
-    let (cell, note) = group_cores(&group(&wide, HuntStage::Full));
-    assert_eq!(cell, "16 cores");
-    assert!(note.is_some_and(|(label, text)| label == "cores" && text.len() > GROUP_CORES_MAX));
-
-    let mut probe = group(&[0], HuntStage::Probe);
-    probe.probe = Some(Member {
-        core: core(0),
-        offset: TargetOffset::new(-5).unwrap(),
-    });
-    let (cell, note) = group_cores(&probe);
-    assert_eq!(cell, "probe");
-    assert_eq!(note.map(|(label, _)| label), Some("probe"));
 }
 
 fn armed() -> togi_machine::WatchdogState {
@@ -299,6 +159,41 @@ fn day_section_snapshot() {
     assert_eq!(out, include_str!("day-status.txt"));
 }
 
+#[test]
+fn the_day_totals_sit_beside_the_ledger_hours_and_say_they_are_not_a_bound() {
+    let events = day_events([]);
+    let mut out = String::new();
+    super::render_day(&mut out, &events);
+    for line in [
+        "all profiles: 1.5h observed, 1 crash (0 unknown intervals)\n",
+        "stock (CO 0): 0.0h observed, 0 crashes\n",
+        "totals are observations, not a bound\n",
+    ] {
+        assert!(out.contains(line), "{line:?} missing from\n{out}");
+    }
+    assert!(out.lines().all(|line| line.chars().count() <= 80), "{out}");
+    let ledger = crate::day::Ledger::of(&events);
+    let hours: u64 = ledger.profiles.values().sum();
+    let totals = togi_watch::day_totals::DayTotals::of(&events);
+    assert_eq!(totals.all().secs, hours);
+}
+
+#[test_case::test_case(togi_journal::DayAnswerKind::PowerOff, "0 crashes"; "a power-off answer is not a crash")]
+#[test_case::test_case(togi_journal::DayAnswerKind::Frozen, "1 crash"; "a frozen answer is a crash")]
+fn an_answer_changes_the_crash_total(kind: togi_journal::DayAnswerKind, crashes: &str) {
+    let mut out = String::new();
+    super::render_day(&mut out, &day_events([answer(kind)]));
+    let want = format!("all profiles: 1.5h observed, {crashes} (0 unknown intervals)\n");
+    assert!(out.contains(&want), "{want:?} missing from\n{out}");
+}
+
+#[test]
+fn no_day_boots_print_no_day_section() {
+    let mut out = String::new();
+    super::render_day(&mut out, &[]);
+    assert_eq!(out, "");
+}
+
 fn restart_with(
     watchdog: Option<togi_machine::WatchdogState>,
 ) -> (&'static str, togi_journal::Payload) {
@@ -393,4 +288,177 @@ fn a_changed_answer_replaces_the_earlier_one() {
     ]);
     super::render_questions(&mut out, &events);
     assert_eq!(out, include_str!("day-question-changed.txt"));
+}
+
+fn projection(night: Option<NightProjection>) -> Projection {
+    Projection {
+        applied: None,
+        ccds: Vec::new(),
+        day: DayProjection {
+            hold: None,
+            last_step: None,
+            freeze: false,
+            firmware: FirmwareValidity::Unknown,
+            pending_questions: Vec::new(),
+        },
+        events: Vec::new(),
+        vetoes: Vec::new(),
+        qualifications: Vec::new(),
+        night,
+        stopped: false,
+    }
+}
+
+fn budget(queue: Queue, share_pct: u8, consumed_s: u64) -> Budget {
+    Budget {
+        queue,
+        share_pct,
+        consumed_s,
+    }
+}
+
+fn night() -> NightProjection {
+    NightProjection {
+        night: NightId(Seq::new(40).unwrap()),
+        started: "2026-01-01T00:00:00Z".parse().unwrap(),
+        closed_by: None,
+        budgets: vec![
+            budget(Queue::Reproduction, 25, 1_800),
+            budget(Queue::Qualification, 75, 5_400),
+            budget(Queue::Mapping, 10, 0),
+            budget(Queue::Control, 0, 0),
+            budget(Queue::Filler, 0, 1_800),
+        ],
+        tasks: Vec::new(),
+        current: None,
+        mapping: vec![MappingProjection {
+            ccd: CcdId::new(1).unwrap(),
+            cursor: Some(TargetOffset::new(-12).unwrap()),
+            bracket: Some((
+                TargetOffset::new(-20).unwrap(),
+                TargetOffset::new(-10).unwrap(),
+            )),
+        }],
+        qualification: Some(QualificationProgress {
+            profile: CcdProfile::zero([CcdId::new(0).unwrap()]).unwrap(),
+            outstanding: Vec::new(),
+            witnessed: 3,
+        }),
+        reproductions: vec![ReproductionProjection {
+            source: DayEventId::Boot {
+                boot: "day-a".to_owned().into(),
+            },
+            state: ReproductionState::Pending,
+            consumed_s: 5_400,
+            remaining: Vec::new(),
+        }],
+        unavailable: vec![UnavailableBackend {
+            backend: Backend::Ycruncher,
+            causes: vec![Seq::new(31).unwrap(), Seq::new(35).unwrap()],
+        }],
+        filler: 4,
+    }
+}
+
+static ZONE: TimeZone = TimeZone::UTC;
+
+const UTC: Where<'static> = Where {
+    zone: &ZONE,
+    closed: None,
+};
+
+fn shown(policy: &Projection, at: Where<'_>) -> String {
+    let mut out = String::new();
+    sections(&mut out, policy, at);
+    out
+}
+
+#[test]
+fn the_night_part_shows_its_start_elapsed_time_shares_and_progress() {
+    let out = shown(&projection(Some(night())), UTC);
+    let night = out.split_once("\nNight since 00:00\n").unwrap().1;
+    assert!(night.starts_with("elapsed: 2h30m\n"), "{out}");
+    let table: Vec<&str> = night.lines().skip(1).take(5).collect();
+    assert_eq!(
+        table,
+        [
+            "QUEUE          SHARE  USED  TIME",
+            "reproduction   25%    20%   30m00s",
+            "qualification  75%    60%   1h30m",
+            "mapping        10%    0%    0s",
+            "filler         -      20%   30m00s",
+        ],
+        "{out}"
+    );
+    assert!(!out.contains("control"), "{out}");
+    assert!(
+        out.contains("\nunavailable: ycruncher, excluded by #31 #35\n"),
+        "{out}"
+    );
+    assert!(out.contains("current task: none"), "{out}");
+    assert!(
+        out.contains("mapping CCD 1: next offset -12, bracketing the failure at -20"),
+        "{out}"
+    );
+    assert!(out.contains("3 cells witnessed, 0 outstanding"), "{out}");
+    assert!(
+        out.contains("reproduction: boot day-a: reproduction pending, 1.5 h consumed"),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_closed_night_is_the_last_night_and_its_end_is_the_boot_that_closed_it() {
+    let mut closed = night();
+    closed.closed_by = Some(Seq::new(90).unwrap());
+    let policy = projection(Some(closed));
+    let ended = Where {
+        closed: Some("2026-01-01T07:15:00Z".parse().unwrap()),
+        ..UTC
+    };
+    assert!(
+        shown(&policy, ended).contains("\nLast night 00:00\u{2013}07:15\n"),
+        "{}",
+        shown(&policy, ended)
+    );
+    assert!(shown(&policy, UTC).contains("\nLast night 00:00\n"));
+    assert_eq!(activity(&policy, ended), "day");
+}
+
+#[test]
+fn an_open_night_leads_the_header_with_its_start_elapsed_time_and_task() {
+    let mut open = night();
+    assert_eq!(
+        activity(&projection(Some(open.clone())), UTC),
+        "night since 00:00, 2h30m elapsed: between tasks"
+    );
+    open.current = Some((
+        TaskId {
+            queue: Queue::Qualification,
+            ordinal: 2,
+        },
+        Some(Activity::Qualification),
+    ));
+    assert_eq!(
+        activity(&projection(Some(open.clone())), UTC),
+        "night since 00:00, 2h30m elapsed: qualification (task qualification #2)"
+    );
+    open.current = Some((
+        TaskId {
+            queue: Queue::Filler,
+            ordinal: 1,
+        },
+        None,
+    ));
+    assert_eq!(
+        activity(&projection(Some(open)), UTC),
+        "night since 00:00, 2h30m elapsed: filler (task filler #1)"
+    );
+}
+
+#[test]
+fn a_stopped_session_leads_with_stopped_before_any_night() {
+    let mut policy = projection(Some(night()));
+    policy.stopped = true;
+    assert_eq!(activity(&policy, UTC), "stopped");
 }

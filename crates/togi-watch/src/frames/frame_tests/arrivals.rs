@@ -3,20 +3,19 @@
 use jiff::tz::TimeZone;
 use ratatui::buffer::Buffer;
 
-use super::{draw_journal, some_time};
+use super::{draw_journal, journal, some_time};
 use crate::frames::layout::Layout;
 use crate::frames::testing::{rows_of, screen};
 use crate::history::LOG_LIMIT;
 use crate::model::Model;
 use crate::screen::{Colours, Journal, Log, Screen, View};
-use crate::tests::kit::{Script, Start, warning};
+use crate::tests::kit::warning;
 
 fn warned(count: usize) -> Model {
-    let mut script = Script::new(&[(0, 0)], &[Start::search(0)]);
-    for index in 0..count {
-        script.append(warning(&format!("warning {index}")), &[]);
-    }
-    script.model()
+    let warnings = (0..count)
+        .map(|index| warning(&format!("warning {index}")))
+        .collect();
+    crate::model::project(&journal(warnings))
 }
 
 fn rows_in(buf: &Buffer, y: u16, height: u16) -> Vec<String> {

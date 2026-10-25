@@ -1,5 +1,5 @@
-//! Journals the tests fold: a shadow tuner drives the intents so every journal is one the native tuner accepts,
-//! and a history harness feeds events to the facts alone for the tests of what the history says.
+//! Journals the tests fold: a script appends events as a session would, and a history harness feeds events to
+//! the facts alone for the tests of what the history says.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -14,7 +14,6 @@ use togi_machine::{
     BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, ObservedOffset, PerCore, Regime, Signal,
     TargetOffset, workloads,
 };
-use togi_tuner::{Action, State as TunerState, TrialPlan};
 
 use crate::facts::Facts;
 use crate::model::Model;
@@ -102,35 +101,6 @@ impl Start {
             fail: None,
         }
     }
-
-    pub(crate) fn at_limit(offset: i64, fail: i64) -> Self {
-        Self {
-            from: None,
-            to: togi_journal::CorePhase::AtLimit,
-            offset,
-            pass: None,
-            fail: Some(fail),
-        }
-    }
-
-    pub(crate) fn has_room(offset: i64) -> Self {
-        Self {
-            from: None,
-            to: togi_journal::CorePhase::HasRoom,
-            offset,
-            pass: None,
-            fail: None,
-        }
-    }
-
-    pub(crate) fn solo(offset: i64, solo: i64) -> Self {
-        Self {
-            from: Some(togi_journal::CorePhase::Search),
-            pass: Some(solo),
-            fail: (solo > -50).then_some(solo - 1),
-            ..Self::has_room(offset)
-        }
-    }
 }
 
 pub(crate) fn transition(id: u8, start: Start) -> CoreTransition {
@@ -148,63 +118,30 @@ pub(crate) fn transition(id: u8, start: Start) -> CoreTransition {
     }
 }
 
-/// An event journal that grows as a session would append it, every event folded into a shadow tuner first.
+/// An event journal that grows as a session would append it.
 #[derive(Clone)]
 pub(crate) struct Script {
     pub(crate) events: Vec<Event>,
-    pub(crate) shadow: TunerState,
     pub(crate) boot: String,
-    pub(crate) ids: Vec<u8>,
     trials: u32,
 }
 
 impl Script {
-    /// A session over `cores` (id, CCD), each core starting as `starts` says.
-    pub(crate) fn new(cores: &[(u8, u8)], starts: &[Start]) -> Self {
+    /// A session over `cores` (id, CCD) with its config loaded.
+    pub(crate) fn new(cores: &[(u8, u8)]) -> Self {
         let mut script = Self {
             events: Vec::new(),
-            shadow: TunerState::new(),
             boot: "boot".to_owned(),
-            ids: cores.iter().map(|&(id, _)| id).collect(),
             trials: 0,
         };
-        let begin = script.append(session_start(cores), &[]);
+        script.append(session_start(cores), &[]);
         script.append(config_loaded(), &[]);
-        for (&(id, _), start) in cores.iter().zip(starts) {
-            script.append(transition(id, *start).into(), &[begin]);
-        }
         script
     }
 
-    /// Three cores on two CCDs at a limit of -30, the way a hunt's session begins.
-    pub(crate) fn at_limit() -> Self {
-        let mut script = Self::new(&[(0, 0), (1, 0), (2, 1)], &[Start::at_limit(-30, -31); 3]);
-        script.append(
-            togi_journal::ProfileChange {
-                from: None,
-                to: [(0u8, -30i64), (1, -30), (2, -30)]
-                    .iter()
-                    .map(|&(id, offset)| (core(id), off(offset)))
-                    .collect(),
-            }
-            .into(),
-            &[],
-        );
-        script.ranking();
-        script
-    }
-
-    pub(crate) fn ranking(&mut self) -> Seq {
-        let ranking = self.ids.iter().map(|&id| core(id)).collect();
-        self.append(
-            togi_journal::HostRanking {
-                ranking,
-                values: PerCore::default(),
-                detail: None,
-            }
-            .into(),
-            &[],
-        )
+    /// Three cores on two CCDs.
+    pub(crate) fn three() -> Self {
+        Self::new(&[(0, 0), (1, 0), (2, 1)])
     }
 
     pub(crate) fn next_seq(&self) -> Seq {
@@ -226,65 +163,19 @@ impl Script {
 
     pub(crate) fn append(&mut self, payload: Payload, cause: &[Seq]) -> Seq {
         let event = self.event(payload, cause);
-        self.shadow.fold(&event).unwrap();
         let at = event.seq;
         self.events.push(event);
         at
     }
 
-    pub(crate) fn plan(&self) -> TrialPlan {
-        match self.shadow.next().expect("the tuner has a next action") {
-            Action::RunTrial(plan) => plan,
-            other @ (Action::Decide(_) | Action::ReadRanking) => {
-                panic!("expected a trial, the tuner asked for {other:?}")
-            }
-        }
-    }
-
-    /// Records the tuner\'s decisions until it asks for a trial, and returns that trial.
-    pub(crate) fn next_trial(&mut self) -> TrialPlan {
-        for _ in 0..50 {
-            match self.shadow.next().expect("the tuner has a next action") {
-                Action::RunTrial(plan) => return plan,
-                Action::Decide(_) | Action::ReadRanking => {
-                    self.step(|_| Outcome::Pass);
-                }
-            }
-        }
-        panic!("the tuner asks for no trial");
-    }
-
-    /// Records the tuner's next action: a decision is appended, a trial runs to `outcome`. Returns what was done.
-    pub(crate) fn step(&mut self, mut outcome: impl FnMut(&TrialPlan) -> Outcome) -> Action {
-        let action = self.shadow.next().expect("the tuner has a next action");
-        match &action {
-            Action::Decide(decision) => {
-                self.append(decision.payload.clone().into(), &decision.cause);
-            }
-            Action::RunTrial(plan) => {
-                let result = outcome(plan);
-                let (intent, trial) = self.intent(plan);
-                self.end(intent, &trial, result);
-            }
-            Action::ReadRanking => {
-                self.ranking();
-            }
-        }
-        action
-    }
-
-    /// The intent of `plan`: the first workload rotation the tuner accepts.
-    pub(crate) fn intent(&mut self, plan: &TrialPlan) -> (Seq, TrialId) {
+    /// Records the intent of the next trial: `regime` on `cores`, every core at -10.
+    pub(crate) fn intent(&mut self, regime: Regime, cores: &[u8]) -> (Seq, TrialId) {
         self.trials += 1;
-        let trial = TrialId::from(format!("{:04}", self.trials));
-        for rotation in 0..16 {
-            let payload: Payload = plan.intent(trial.clone(), rotation).into();
-            let event = self.event(payload.clone(), &plan.cause);
-            if self.shadow.clone().fold(&event).is_ok() {
-                return (self.append(payload, &plan.cause), trial);
-            }
-        }
-        panic!("the tuner accepts no workload rotation of {plan:?}");
+        let trial = format!("{:04}", self.trials);
+        let mut intent = intent(&trial, regime, Condition::Together, &[], cores);
+        intent.profile = cores.iter().map(|&id| (core(id), off(-10))).collect();
+        intent.activity = Some(Activity::Mapping);
+        (self.append(intent.into(), &[]), TrialId::from(trial))
     }
 
     pub(crate) fn start(&mut self, trial: &TrialId) -> Seq {
@@ -294,6 +185,14 @@ impl Script {
     pub(crate) fn end(&mut self, intent: Seq, trial: &TrialId, outcome: Outcome) -> Seq {
         let signal = (outcome == Outcome::Failure).then_some(Signal::ComputationError);
         self.append(end_payload(trial, outcome, signal).into(), &[intent])
+    }
+
+    /// Runs one trial from intent to end.
+    pub(crate) fn run(&mut self, regime: Regime, cores: &[u8], outcome: Outcome) -> TrialId {
+        let (intent, trial) = self.intent(regime, cores);
+        self.start(&trial);
+        self.end(intent, &trial, outcome);
+        trial
     }
 
     pub(crate) fn model(&self) -> Model {
@@ -373,7 +272,6 @@ pub(crate) fn warning(text: &str) -> Payload {
 /// Feeds events to the facts alone, so a test can say what the history makes of a journal the tuner would refuse.
 pub(crate) struct Hist {
     pub(crate) journal: JournalState,
-    pub(crate) tuner: TunerState,
     pub(crate) facts: Facts,
     pub(crate) boot: String,
     pub(crate) count: u64,
@@ -381,29 +279,14 @@ pub(crate) struct Hist {
 
 impl Hist {
     pub(crate) fn new(cores: &[(u8, u8)]) -> Self {
-        Self::with(cores, crate::history::History::default())
-    }
-
-    fn with(cores: &[(u8, u8)], history: crate::history::History) -> Self {
         let mut hist = Self {
             journal: JournalState::default(),
-            tuner: TunerState::new(),
-            facts: Facts {
-                history,
-                ..Facts::default()
-            },
+            facts: Facts::default(),
             boot: "boot".to_owned(),
             count: 0,
         };
         hist.push(session_start(cores));
         hist
-    }
-
-    pub(crate) fn unbounded_three() -> Self {
-        Self::with(
-            &[(0, 0), (1, 0), (2, 1)],
-            crate::history::History::unbounded(),
-        )
     }
 
     pub(crate) fn three() -> Self {
@@ -426,7 +309,7 @@ impl Hist {
             payload,
         );
         self.journal.apply(&event).unwrap();
-        self.facts.fold(&event, &self.journal, &self.tuner);
+        self.facts.fold(&event, &self.journal);
         at
     }
 
@@ -451,6 +334,11 @@ pub(crate) fn intent(
     cores: &[u8],
 ) -> TrialIntent {
     TrialIntent {
+        night: None,
+        task: None,
+        content: Vec::new(),
+        placement: None,
+        tested: None,
         trial: TrialId::from(trial.to_owned()),
         kernel_cursor: None,
         kernel_error: None,
@@ -538,64 +426,6 @@ pub(crate) fn hunt_start(hunt: u32, candidates: &[u8]) -> togi_journal::HuntStar
     }
 }
 
-pub(crate) fn hunt_group(hunt: u32, group: u32, cores: &[u8]) -> togi_journal::HuntGroup {
-    togi_journal::HuntGroup {
-        hunt: nz(hunt),
-        group: nz(group),
-        cores: set(cores),
-        profile: offsets(&[-20, -30, -10]),
-        set: set(cores),
-        granularity: 1,
-        stage: togi_journal::HuntStage::Part,
-        index: 0,
-        duration_s: 120,
-        escalated: false,
-        full_checked: false,
-        any_failed: false,
-        probe: None,
-        held: Vec::new(),
-        inferred: None,
-        skipped: false,
-        reason: None,
-    }
-}
-
-pub(crate) fn hunt_end(
-    hunt: u32,
-    result: togi_journal::HuntOutcome,
-    cores: &[u8],
-) -> togi_journal::HuntEnd {
-    togi_journal::HuntEnd {
-        hunt: nz(hunt),
-        result,
-        cores: set(cores),
-        members: Vec::new(),
-        groups: 0,
-        reason: String::new(),
-    }
-}
-
-pub(crate) fn combination(
-    id: u32,
-    hunt: u32,
-    members: &[(u8, i64)],
-    fallback: bool,
-) -> togi_journal::Combination {
-    togi_journal::Combination {
-        combination: nz(id),
-        members: members
-            .iter()
-            .map(|&(id, offset)| togi_journal::Member {
-                core: core(id),
-                offset: off(offset),
-            })
-            .collect(),
-        fallback,
-        hunt: nz(hunt),
-        reason: String::new(),
-    }
-}
-
 pub(crate) fn cycle(cycle: u32, event: togi_journal::CycleEvent) -> togi_journal::CheckingCycle {
     togi_journal::CheckingCycle {
         cycle: nz(cycle),
@@ -627,55 +457,4 @@ pub(crate) fn failure(signal: Signal, trial: Option<&str>) -> togi_journal::Fail
 /// When the event with this sequence number happened in a [`Script`].
 pub(crate) fn at(seq: Seq) -> Timestamp {
     Timestamp::from_second(1_700_000_000 + i64::try_from(seq.get()).unwrap()).unwrap()
-}
-
-pub(crate) fn fact_source() -> togi_journal::FactSource {
-    togi_journal::FactSource {
-        session: "20231114T221320Z".parse().unwrap(),
-        seq: seq(1),
-        build: build(),
-        trial: None,
-        time: Timestamp::UNIX_EPOCH,
-        boot: BootId::from("earlier".to_owned()),
-        backend: None,
-    }
-}
-
-pub(crate) fn carried_trial() -> togi_journal::TrialCarried {
-    togi_journal::TrialCarried {
-        source: fact_source(),
-        class: togi_journal::TrialClass {
-            regime: Regime::R7,
-            workload: Some(workloads(Regime::R7)[0].id()),
-            cores: set(&[0, 1, 2]),
-            duration_s: 120,
-        },
-        condition: Condition::Together,
-        activity: None,
-        rerun: false,
-        profile: offsets(&[-20, -30, -10]),
-        outcome: Outcome::Failure,
-        signal: Some(Signal::ComputationError),
-        duration_s: 30,
-        core: None,
-        stalled_core: None,
-        voltage_requests_v: PerCore::default(),
-        top_requesters: CoreSet::default(),
-        ccd_mhz: BTreeMap::new(),
-    }
-}
-
-pub(crate) fn carried_failure() -> togi_journal::FailureCarried {
-    let mut failure = failure(Signal::Crash, None);
-    failure.core = Some(core(1));
-    togi_journal::FailureCarried {
-        source: fact_source(),
-        class: togi_journal::TrialClass {
-            regime: Regime::R6,
-            workload: None,
-            cores: set(&[0, 1, 2]),
-            duration_s: 120,
-        },
-        failure,
-    }
 }

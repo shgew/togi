@@ -2,38 +2,33 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
 │
-│  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4  ───  1:20 left
+│  ► NIGHT since 22:13 · 0h30m  ───  mapping CCD 1 at -20  ───  9:20 left
 │
 │  █ READING THE SCREEN ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  █
-│  █ ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░▄                -36
-│  █                     at its limit: it cannot go deeper
+│  █ ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31
+│  █                     applied -12 under load; the dots run to the cap S at -26; the red mark is the edge U, failed at -31
 │  █
-│  █ ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····▄                    -32
-│  █                     has room: backed off after a hunt, may deepen
+│  █   09   -8           ▄▄▄▄▄▄▄▄······
+│  █                     idle, so grey; the cap S is -14 and its CCD has no edge yet, so there is no red mark
 │  █
-│  █   09    0  PARKED   ···············································▄    -48
-│  █                     parked at 0 by a hunt; returns to -47
-│  █
-│  █ ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ ▄                    -32
-│  █                     probe: the group failed with core 00 at -30, -29, -27
+│  █   11    ?           ······························                   ▄  -50
+│  █                     no readback yet; the cap S is -30 and the edge is censored: nothing failed down to -50
 │  █
 │  █ ►         the core carries load in this trial
-│  │ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial judges the core
-│  │ ?         no hardware offset has been read back for this core
-│  │ grey ▄▄▄  the same depth, grey when the core is not judged
-│  │ ···       depth it reached but does not use now: given back, parked, waiting
-│  │ ░░░       depth a combination blocks now
-│  │ red ▄     its failure point: the shallowest offset ruled out for this core, one count wide at Wide and Medium
-│  │ ▀         a group trial failed with this core at that offset
+│  █ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial loads the core
+│  █ ?         no hardware offset has been read back for this core
+│  █ grey ▄▄▄  the same depth, grey when the core is not loaded
+│  █ ···       the cap S: how far past the applied offset the night's evidence lets its CCD go
+│  █ red ▄     the night edge U of its CCD: the shallowest offset that failed in isolation, one count wide at Wide and Medium
+│  │ amber ▄   a censored edge: nothing failed down to the mapping limit
 │  │ cyan      running now
-│  │ amber     a hunt, and what it paused
+│  │ amber     a hold, a veto, a retreat, a crash, or classes uncovered for the cap
 │  │ red       failures, past and present
-│  │ green     passed, done
-│  │ magenta   combinations
-│  │ grey      idle, parked, still to come
+│  │ green     passed, done, covered
+│  │ grey      idle, still to come, unknown
 │  │
 │  │
 │  │ THE TOP LINE ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -44,5 +39,10 @@ expression: body
 │  │ q              exit dashboard; tuning itself keeps running
 │  │
 │  │
+│  │ WHAT TOGI DOES ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  │
+│  │ NIGHT       Until you end it, togi maps each CCD's edge, qualifies profiles, reproduces daily events and runs controls, and fills idle time with cap
+│  │             probes and exact repeats. The stage shows when the night started, its elapsed time and what the current trial tests; the night panel lists
+│  │             each queue's share of that time and the progress.
 │
 │   ?  help    l  log    esc  back    q  exit dashboard

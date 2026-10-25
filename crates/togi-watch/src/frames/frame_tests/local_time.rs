@@ -1,9 +1,9 @@
 //! Every time on screen is local to the reader's zone: the journal stores UTC.
 
 use jiff::tz::{self, TimeZone};
-use togi_watchtest::Scenario;
 
-use super::{Fixture, clock, draw_journal, text};
+use super::{clock, draw_journal, text};
+use crate::frames::hand::{Hand, Staged};
 use crate::frames::testing::screen;
 use crate::screen::{Colours, View};
 
@@ -11,7 +11,7 @@ fn tokyo() -> TimeZone {
     TimeZone::fixed(tz::offset(9))
 }
 
-fn frame(fx: &Fixture, view: View, zone: &TimeZone) -> String {
+fn frame(fx: &Hand, view: View, zone: &TimeZone) -> String {
     let sc = screen(view, 240, 67, Colours::None, false);
     text(&draw_journal(&fx.journal(), &sc, fx.now, zone).0)
 }
@@ -30,8 +30,8 @@ fn every_time_on_screen_is_local() {
     let zone = tokyo();
     let at = |time, format: &str| clock(time, &zone, format);
 
-    let stopped = Fixture::scenario(Scenario::Stopped);
-    let snapshot = stopped.model.snapshot();
+    let stopped = Staged::Stopped.hand();
+    let snapshot = stopped.snapshot();
     let stop = snapshot.stopped.expect("a stop");
     let failure = snapshot.last_failure.expect("a failure");
     require(
@@ -55,22 +55,16 @@ fn every_time_on_screen_is_local() {
         "the zone moves the header clock"
     );
 
-    let recovering = Fixture::scenario(Scenario::Recovering);
-    let crash_at = recovering
-        .model
-        .snapshot()
-        .recover
-        .expect("a recovery")
-        .crash_at;
+    let recovering = Staged::Recovering.hand();
+    let crash_at = recovering.snapshot().recover.expect("a recovery").crash_at;
     require(
         "recovering",
         &frame(&recovering, View::Main, &zone),
         &[format!("detected {}", at(crash_at, "%H:%M:%S"))],
     );
 
-    let crashed = Fixture::scenario(Scenario::Crashed);
+    let crashed = Staged::Crashed.hand();
     let started = crashed
-        .model
         .snapshot()
         .trial
         .expect("a trial")
@@ -82,23 +76,22 @@ fn every_time_on_screen_is_local() {
         &[format!(" · started {}", at(started, "%H:%M:%S"))],
     );
 
-    let hunt = Fixture::scenario(Scenario::Hunt);
-    let began = hunt
-        .model
+    let mapping = Staged::Mapping.hand();
+    let started = mapping
         .snapshot()
-        .hunt
-        .expect("a hunt")
-        .facts
-        .started
-        .expect("started");
+        .policy
+        .night
+        .as_ref()
+        .expect("a night")
+        .started;
     require(
-        "hunt",
-        &frame(&hunt, View::Main, &zone),
-        &[format!("started {}", at(began, "%H:%M"))],
+        "mapping",
+        &frame(&mapping, View::Main, &zone),
+        &[format!("NIGHT since {}", at(started, "%H:%M"))],
     );
 
-    let idle = Fixture::scenario(Scenario::Idle);
-    let hold = idle.model.snapshot().idle_hold().expect("an idle trial");
+    let idle = Staged::Idle.hand();
+    let hold = idle.snapshot().idle_hold().expect("an idle trial");
     require(
         "idle",
         &frame(&idle, View::Main, &zone),

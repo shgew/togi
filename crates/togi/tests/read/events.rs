@@ -8,7 +8,7 @@ use crate::support::{
 
 #[test]
 fn json_prints_the_journal_lines_unchanged() {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     let ran = togi(&dir, &["events", "--json"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
@@ -17,12 +17,12 @@ fn json_prints_the_journal_lines_unchanged() {
 }
 
 #[test_case::test_case(&[], true, "trial"; "trial")]
-#[test_case::test_case(&["--core", "3", "--kind", "tuner.decision,core.phase"], false, "core"; "core")]
+#[test_case::test_case(&["--core", "3"], false, "core"; "core")]
 #[test_case::test_case(&["--kind", "session.start, session.baseline,"], false, "kinds"; "kinds")]
 #[test_case::test_case(&["--kind", "session.start", "--kind", "session.baseline"], false, "kinds"; "repeated")]
 #[test_case::test_case(&["--kind", "session", "--until", "2026-01-01T00:00:00.5Z"], false, "group"; "group")]
 fn filters_narrow_the_readable_lines(extra: &[&str], select_trial: bool, golden: &str) {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     let trial = first_trial(&dir);
     let mut args = vec!["events"];
     args.extend_from_slice(extra);
@@ -103,7 +103,7 @@ fn kind_filters_select_the_carried_facts_they_name() {
 
 #[test]
 fn a_time_window_is_inclusive_since_and_exclusive_until() {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     let all = togi(&dir, &["events", "--json"]);
     let times: Vec<Timestamp> = text(&all.stdout)
         .lines()
@@ -130,7 +130,7 @@ fn a_time_window_is_inclusive_since_and_exclusive_until() {
 #[test_case::test_case(&["events", "--kind", "combination"]; "combination")]
 #[test_case::test_case(&["events", "--kind", "trial", "--trial", "absent"]; "absent trial")]
 fn a_valid_filter_with_no_match_prints_nothing_and_exits_zero(args: &[&str]) {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     let ran = togi(&dir, args);
     assert_eq!(ran.status.code(), Some(0), "{args:?}");
     assert_eq!(text(&ran.stdout), "", "{args:?}");
@@ -200,7 +200,7 @@ fn a_file_that_is_not_a_journal_is_an_error() {
 #[test_case::test_case("events"; "events")]
 #[test_case::test_case("status"; "status")]
 fn a_newer_schema_is_refused_with_advice(command: &str) {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     rewrite_first_line(&dir, |event| {
         event["data"]["build"]["schema"] = 99.into();
     });
@@ -214,16 +214,20 @@ fn a_newer_schema_is_refused_with_advice(command: &str) {
 
 #[test]
 fn an_older_schema_is_refused_too() {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     rewrite_first_line(&dir, |event| {
         event["data"]["build"]["schema"] = 0.into();
     });
     let ran = togi(&dir, &["events"]);
     assert_eq!(ran.status.code(), Some(1));
+    let stderr = text(&ran.stderr);
+    assert!(stderr.contains("uses schema 1"), "{stderr}");
     assert!(
-        text(&ran.stderr).contains("uses schema 1"),
-        "{}",
-        text(&ran.stderr)
+        stderr.contains(
+            "togi run archives it and starts a new session that maps from scratch, keeping the raw day \
+             observations; togi reset --all archives it and starts over."
+        ),
+        "{stderr}"
     );
 }
 
@@ -231,7 +235,7 @@ fn an_older_schema_is_refused_too() {
 #[test_case::test_case(&["events", "--kind=session"]; "session")]
 #[test_case::test_case(&["status"]; "status")]
 fn a_different_ruleset_warns_and_still_renders(args: &[&str]) {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     rewrite_first_line(&dir, |event| {
         event["data"]["build"]["ruleset"] = 7.into();
     });
@@ -248,7 +252,7 @@ fn a_different_ruleset_warns_and_still_renders(args: &[&str]) {
 #[test_case::test_case("events"; "events")]
 #[test_case::test_case("status"; "status")]
 fn a_torn_tail_is_reported_after_the_events(command: &str) {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     let whole = lines(&dir).len();
     crate::support::append_bytes(&dir, b"{\"seq\":");
     let ran = togi(&dir, &[command]);
@@ -270,7 +274,7 @@ fn a_torn_tail_is_reported_after_the_events(command: &str) {
 
 #[test]
 fn a_single_torn_byte_is_reported_in_the_singular() {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     crate::support::append_bytes(&dir, b"{");
     let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(0));
@@ -284,7 +288,7 @@ fn a_single_torn_byte_is_reported_in_the_singular() {
 
 #[test]
 fn state_dir_works_before_and_after_the_command() {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     let path = dir.path().to_str().unwrap();
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let exit = togi_cli::run_with(
@@ -309,7 +313,7 @@ fn events_help() {
 
 #[test]
 fn a_between_trial_mce_is_listed_and_its_controls_are_escaped() {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     append_between_trial_mce(&dir);
     let ran = togi(&dir, &["events", "--kind", "mce"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
@@ -329,7 +333,7 @@ fn a_between_trial_mce_is_listed_and_its_controls_are_escaped() {
 
 #[test]
 fn human_lines_are_styled_for_the_system_journal_and_json_is_not() {
-    let dir = session(Scenario::Search);
+    let dir = session(Scenario::Controls);
     append_event(
         &dir,
         "failure",

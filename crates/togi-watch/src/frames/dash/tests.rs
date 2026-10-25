@@ -6,32 +6,32 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 use test_case::test_case;
-use togi_journal::{DeadEndCondition, Event, Shutdown, ShutdownReason, Stamp};
-use togi_machine::{BootId, CcdId, CoreSet, ObservedOffset, Regime, WorkloadId};
-use togi_tuner::{
-    CombinationId, CyclePlan, CycleStep, HuntPlan, Limit, PhaseNo, PhasePlan, R7CoreStatus, Reached,
+use togi_journal::{
+    Activity, DeadEndCondition, Event, Queue, Shutdown, ShutdownReason, Stamp, TaskId,
 };
+use togi_machine::{BootId, Regime};
 
-use super::ccd::{ccd_role, gauge, note_line, state_word};
+use super::ccd::{ccd_role, coverage_line, draw_ccd, facts_line, gauge, marks, state_word};
 use super::header::{header, status_header};
-use super::now::{big_digits, filled, progress_bar, requirement_line};
-use super::r7::{r7_rows, top_cell};
+use super::now::{big_digits, filled, progress_bar};
 use super::stage::stage_line;
 use crate::frames::colours::Paint;
 use crate::frames::fit::{line_width, plain};
+use crate::frames::hand::{
+    Hand, bare, cap, ccd, ccd_row, censored, core_row, fallback, mapping_trial, measured, night,
+    observed, rate_bound, running_trial, with_cap,
+};
 use crate::frames::layout::SizeClass;
 use crate::frames::measure::{Ccd, CoreColumns, measure};
-use crate::frames::notes::top_note;
-use crate::frames::render;
 use crate::frames::scene::Scene;
-use crate::frames::testing::{draw_checked, rows_of, screen};
+use crate::frames::testing::{FIXED_NOW, draw_checked, rows_of, screen};
 use crate::model::{
-    CoreState, CoreView, Count, CycleView, DeadEndView, HuntFacts, HuntView, IdleHold, Model,
-    RecoveryView, SessionView, Snapshot, StopView, TrialView,
+    CoreView, DeadEndView, IdleHold, Model, RecoveryView, SessionView, Snapshot, StopView,
+    TrialView,
 };
-use crate::screen::{Colours, Journal, View};
-use crate::tests::fixtures::{core_view, trial_view};
-use crate::tests::kit::{Script, Start, config_loaded, core, off, readback, seq};
+use crate::screen::{Colours, View};
+use crate::tests::fixtures::trial_view;
+use crate::tests::kit::{config_loaded, seq};
 use crate::tuning::TuningClock;
 
 fn at(text: &str) -> Timestamp {
@@ -310,51 +310,126 @@ fn every_time_on_screen_is_local() {
     assert!(!stage.contains("paused until"), "{stage}");
 }
 
-#[test]
-fn the_stage_line_marks_what_runs_and_what_stopped() {
-    let model = Model::new();
-    let start = at("2026-10-12T10:00:00Z");
-    let view = session(start);
-    let cores = [
-        core_view(0, 0, CoreState::Search),
-        core_view(1, 0, CoreState::Waiting),
-    ];
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    s.cores = &cores;
-    let stage = |s: Snapshot<'_>, class| {
-        plain(
-            &stage_line(
-                &scene(&s, start, &TimeZone::UTC, Colours::Full),
-                class,
-                false,
-            ),
-            Colours::None,
-        )
-    };
-    let running = stage(s, SizeClass::Wide);
-    assert!(
-        running.starts_with("► SOLO LIMITS  0 of 2 found"),
-        "{running}"
+fn stage_of(s: &Snapshot<'_>, now: Timestamp, class: SizeClass) -> String {
+    plain(
+        &stage_line(&scene(s, now, &TimeZone::UTC, Colours::Full), class, false),
+        Colours::None,
+    )
+}
+
+/// A hand with a mapping trial of CCD 1 at -15 running inside a night that started at 22:13 UTC and has observed
+/// half an hour.
+fn night_hand() -> Hand {
+    let mut hand = Hand::new(
+        vec![
+            core_row(0, 0, Some(0), false),
+            core_row(8, 1, Some(0), true),
+        ],
+        bare(vec![ccd_row(0, &[0], 0), ccd_row(1, &[8], 0)]),
     );
-    assert!(running.contains("○ PHASE 1"), "{running}");
-    assert!(running.contains("CLEAN CYCLES 0"), "{running}");
-    let short = stage(s, SizeClass::Compact);
-    assert!(short.starts_with("► SOLO  0 of 2 found"), "{short}");
-    assert!(short.contains(" ─ "), "{short}");
+    hand.policy.night = Some(night(Some((Queue::Mapping, 2, Activity::Mapping))));
+    hand.trial = Some(mapping_trial(1, -15, &[8]));
+    hand
+}
+
+#[test]
+fn the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs() {
+    let hand = night_hand();
+    let now = FIXED_NOW + SignedDuration::from_secs(40);
+    let wide = stage_of(&hand.snapshot(), now, SizeClass::Wide);
+    assert!(wide.starts_with("► NIGHT since 22:13 · 0h30m"), "{wide}");
+    assert!(wide.contains("mapping CCD 1 at -15"), "{wide}");
+    let compact = stage_of(&hand.snapshot(), now, SizeClass::Compact);
+    assert!(compact.starts_with("► NIGHT 0h30m"), "{compact}");
+    assert!(compact.contains("mapping C1 -15"), "{compact}");
+    for old in ["SOLO", "PHASE", "CLEAN", "CYCLE", "HUNT", "until"] {
+        assert!(
+            !wide.contains(old) && !compact.contains(old),
+            "{wide} {compact}"
+        );
+    }
+}
+
+#[test_case(true, "filler on CCD 1", "filler C1"; "a filler trial on one CCD")]
+#[test_case(false, "filler", "filler"; "a filler task before its first trial")]
+fn the_stage_line_names_the_filler_by_the_ccd_its_trial_tests(
+    isolated: bool,
+    wide_words: &str,
+    compact_words: &str,
+) {
+    let mut hand = night_hand();
+    let filler = TaskId {
+        queue: Queue::Filler,
+        ordinal: 7,
+    };
+    if let Some(trial) = hand.trial.as_mut() {
+        trial.task = Some(filler);
+        if !isolated {
+            trial.tested = None;
+        }
+    }
+    let now = FIXED_NOW + SignedDuration::from_secs(40);
+    let wide = stage_of(&hand.snapshot(), now, SizeClass::Wide);
+    assert!(wide.ends_with(wide_words), "{wide}");
+    let compact = stage_of(&hand.snapshot(), now, SizeClass::Compact);
+    assert!(compact.ends_with(compact_words), "{compact}");
+}
+
+#[test]
+fn the_stage_line_names_the_day_once_a_later_boot_closes_the_night() {
+    let mut hand = night_hand();
+    hand.trial = Some(running_trial(Regime::R1, &[8]));
+    let late = FIXED_NOW + SignedDuration::from_hours(7);
+    let open = stage_of(&hand.snapshot(), late, SizeClass::Wide);
+    assert!(
+        open.starts_with("► NIGHT since 22:13"),
+        "a night has no deadline: {open}"
+    );
+    if let Some(night) = hand.policy.night.as_mut() {
+        night.closed_by = Some(crate::tests::kit::seq(2));
+    }
+    let wide = stage_of(&hand.snapshot(), late, SizeClass::Wide);
+    assert!(wide.starts_with("► DAY"), "{wide}");
+    assert!(!wide.contains("NIGHT"), "{wide}");
+}
+
+#[test]
+fn a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker() {
+    let hand = night_hand();
+    let now = FIXED_NOW + SignedDuration::from_secs(40);
     let stopped = StopView {
-        at: start,
+        at: FIXED_NOW,
         reason: ShutdownReason::Signal,
         saved: false,
     };
+    let mut s = hand.snapshot();
     s.stopped = Some(&stopped);
-    let after = stage(s, SizeClass::Wide);
-    assert!(after.starts_with("○ SOLO LIMITS"), "{after}");
-    assert!(!after.contains('►'), "{after}");
+    let text = stage_of(&s, now, SizeClass::Wide);
+    assert!(text.starts_with("○ STOPPED"), "{text}");
+    let dead = DeadEndView {
+        at: FIXED_NOW,
+        condition: DeadEndCondition::BootLoop,
+        detail: String::new(),
+    };
+    let mut s = hand.snapshot();
+    s.dead_end = Some(&dead);
+    let text = stage_of(&s, now, SizeClass::Wide);
+    assert!(text.starts_with("○ DEAD END"), "{text}");
+    let recovery = RecoveryView {
+        crash_at: FIXED_NOW,
+        reset: None,
+        trial: None,
+        end: None,
+    };
+    let mut s = hand.snapshot();
+    s.recover = Some(&recovery);
+    let text = stage_of(&s, now, SizeClass::Wide);
+    assert!(text.starts_with("○ NIGHT since 22:13"), "{text}");
+    assert!(!text.contains('►'), "{text}");
     let none = stage_line(
         &scene(
             &Model::new().snapshot(),
-            start,
+            FIXED_NOW,
             &TimeZone::UTC,
             Colours::Full,
         ),
@@ -362,165 +437,6 @@ fn the_stage_line_marks_what_runs_and_what_stopped() {
         false,
     );
     assert_eq!(line_width(&none, Colours::None), 0);
-}
-
-#[test]
-fn recovery_and_a_dead_end_suppress_the_running_marker() {
-    let model = Model::new();
-    let start = at("2026-10-12T10:00:00Z");
-    let view = session(start);
-    let cores = [
-        core_view(0, 0, CoreState::Search),
-        core_view(1, 0, CoreState::Waiting),
-    ];
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    s.cores = &cores;
-    let stage = |s: Snapshot<'_>| {
-        plain(
-            &stage_line(
-                &scene(&s, start, &TimeZone::UTC, Colours::Full),
-                SizeClass::Wide,
-                false,
-            ),
-            Colours::None,
-        )
-    };
-    let recovery = RecoveryView {
-        crash_at: start,
-        reset: None,
-        trial: None,
-        end: None,
-    };
-    let mut recovering = s;
-    recovering.recover = Some(&recovery);
-    let text = stage(recovering);
-    assert!(text.starts_with("○ SOLO LIMITS  0 of 2 found"), "{text}");
-    assert!(!text.contains('►'), "{text}");
-    let dead = DeadEndView {
-        at: start,
-        condition: DeadEndCondition::BootLoop,
-        detail: String::new(),
-    };
-    let mut ended = s;
-    ended.dead_end = Some(&dead);
-    let text = stage(ended);
-    assert!(text.starts_with("○ SOLO LIMITS  0 of 2 found"), "{text}");
-    assert!(!text.contains('►'), "{text}");
-}
-
-fn cycle_step(done: bool) -> CycleStep {
-    CycleStep {
-        regime: Regime::R1,
-        workload: WorkloadId::new(Regime::R1, 0).expect("a workload"),
-        parts: Vec::new(),
-        chains_complete: true,
-        done,
-    }
-}
-
-fn hunt_plan() -> HuntPlan {
-    let mut plan = crate::tests::fixtures::hunt_plan(&[]);
-    plan.rerun.lengths.short.secs = 1;
-    plan
-}
-
-fn hunt_facts() -> HuntFacts {
-    crate::tests::fixtures::hunt_facts(None)
-}
-
-fn cycle_stage_line(plan: &CyclePlan, class: SizeClass) -> String {
-    let model = Model::new();
-    let start = at("2026-10-12T10:00:00Z");
-    let view = session(start);
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    s.cycle = Some(CycleView {
-        plan,
-        step_hunts: &[],
-        resume: None,
-    });
-    plain(
-        &stage_line(
-            &scene(&s, start, &TimeZone::UTC, Colours::Full),
-            class,
-            false,
-        ),
-        Colours::None,
-    )
-}
-
-fn paused_cycle(steps: [bool; 2], current: usize) -> CyclePlan {
-    CyclePlan {
-        number: std::num::NonZeroU32::new(1),
-        open: true,
-        steps: steps.map(cycle_step).to_vec(),
-        current,
-        paused: true,
-    }
-}
-
-#[test_case(SizeClass::Wide; "wide")]
-#[test_case(SizeClass::Compact; "compact")]
-fn a_cycle_with_every_step_done_names_no_step_it_pauses_at(class: SizeClass) {
-    let done = cycle_stage_line(&paused_cycle([true, true], 2), class);
-    assert!(done.ends_with("■ CYCLE 1"), "{done}");
-    assert!(!done.contains("paused"), "{done}");
-}
-
-#[test]
-fn a_paused_cycle_with_an_open_step_names_it() {
-    let open = cycle_stage_line(&paused_cycle([true, false], 1), SizeClass::Wide);
-    assert!(open.ends_with("○ CYCLE 1  paused at step 2 of 2"), "{open}");
-}
-
-#[test]
-fn a_hunt_in_phase_two_holds_the_stage_without_running_it() {
-    let model = Model::new();
-    let start = at("2026-10-12T10:00:00Z");
-    let view = session(start);
-    let phases = PhasePlan {
-        phase: PhaseNo::Two,
-        phase1_end: Some(seq(10)),
-        concluded: None,
-        confirming: false,
-        rounds_left: 2,
-        round: Some(3),
-        candidates: Vec::new(),
-    };
-    let plan = hunt_plan();
-    let facts = hunt_facts();
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    s.phases = Some(&phases);
-    let line = |hunting: bool| {
-        let mut s = s;
-        if hunting {
-            s.hunt = Some(HuntView {
-                plan: &plan,
-                facts: &facts,
-            });
-        }
-        plain(
-            &stage_line(
-                &scene(&s, start, &TimeZone::UTC, Colours::Full),
-                SizeClass::Wide,
-                false,
-            ),
-            Colours::None,
-        )
-    };
-    let hunting = line(true);
-    assert!(
-        hunting.contains("○ PHASE 2  round 3 · 2 left if none fails"),
-        "{hunting}"
-    );
-    assert!(!hunting.contains("► PHASE 2"), "{hunting}");
-    let quiet = line(false);
-    assert!(
-        quiet.contains("► PHASE 2  round 3 · 2 left if none fails"),
-        "{quiet}"
-    );
 }
 
 #[test]
@@ -551,722 +467,379 @@ fn a_summary_stage_line_ends_in_the_trials_time() {
     assert!(line("2026-10-12T10:04:00Z", true).ends_with("trial crashed"));
 }
 
-fn held(combination: u32) -> Option<Limit> {
-    CombinationId::new(crate::tests::kit::nz(combination)).into_limit()
-}
-
-trait IntoLimit {
-    fn into_limit(self) -> Option<Limit>;
-}
-
-impl IntoLimit for CombinationId {
-    fn into_limit(self) -> Option<Limit> {
-        Some(Limit::Reached(Reached::Combination(self)))
-    }
-}
-
-#[test_case::test_case(false, "C4 · solo -31"; "at limit")]
-#[test_case::test_case(true, "C1 · solo -37"; "gave back")]
-fn medium_core_notes_retain_combination_and_solo_offsets(gave_back: bool, want: &str) {
-    let model = Model::new();
-    let s = model.snapshot();
-    let zone = TimeZone::UTC;
-    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-    let mut at_limit = core_view(0, 0, CoreState::AtLimit);
-    at_limit.solo = Some(off(-31));
-    at_limit.holder = held(4);
-    let mut gave = core_view(8, 1, CoreState::HasRoom);
-    gave.solo = Some(off(-37));
-    gave.gave_back = Some(CombinationId::new(crate::tests::kit::nz(1)));
-    let view = if gave_back { &gave } else { &at_limit };
-    let note = plain(&note_line(&scene, view, 25), Colours::None);
-    assert!(note.ends_with(want), "{note}");
-}
-
-#[test]
-fn a_note_follows_the_core_in_the_order_the_dashboard_prefers() {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let scene = scene(
-        &model.snapshot(),
-        Timestamp::UNIX_EPOCH,
-        &zone,
-        Colours::None,
-    );
-    let text = |view: &CoreView| plain(&note_line(&scene, view, 60), Colours::None);
-    let mut probe = core_view(0, 0, CoreState::Probe);
-    probe.group_fails = vec![off(-30), off(-28)];
-    assert_eq!(text(&probe), "group failed at -30 -28");
-    let mut parked = core_view(0, 0, CoreState::Parked);
-    parked.returns_to = Some(off(-25));
-    assert_eq!(text(&parked), "returns to -25");
-    let mut confirm = core_view(0, 0, CoreState::Confirm);
-    confirm.confirm = Some(crate::model::Confirm {
-        offset: off(-31),
-        light: 2,
-        heavy: 1,
-        needed: 3,
-    });
-    assert_eq!(text(&confirm), "-31: light 2/3, heavy 1/3");
-    let mut found = core_view(0, 0, CoreState::Found);
-    found.solo = Some(off(-33));
-    assert_eq!(text(&found), "solo -33");
-    let mut search = core_view(0, 0, CoreState::Search);
-    search.pass = Some(off(-20));
-    search.next = Some(off(-24));
-    assert_eq!(text(&search), "passed -20 · next -24");
-    let mut queued = core_view(0, 0, CoreState::AtLimit);
-    queued.queued = Some(crate::tests::kit::seq(9));
-    assert_eq!(text(&queued), "reset queued");
-    assert_eq!(text(&core_view(0, 0, CoreState::Waiting)), "");
-}
-
-#[test]
-fn every_state_has_its_word() {
-    assert_eq!(state_word(CoreState::Search), "SEARCH");
-    assert_eq!(state_word(CoreState::HasRoom), "HAS ROOM");
-    assert_eq!(state_word(CoreState::AtLimit), "AT LIMIT");
-    assert_eq!(state_word(CoreState::Probe), "PROBE");
-    assert_eq!(state_word(CoreState::Waiting), "WAITING");
-    assert_eq!(state_word(CoreState::Confirm), "CONFIRM");
-    assert_eq!(state_word(CoreState::Found), "FOUND");
-    assert_eq!(state_word(CoreState::Suspect), "SUSPECT");
-    assert_eq!(state_word(CoreState::Member), "MEMBER");
-    assert_eq!(state_word(CoreState::Parked), "PARKED");
-}
-
-fn role_of_ccd_zero(states: &[(CoreState, bool)]) -> (String, String) {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let cores: Vec<CoreView> = states
+fn role_of_ccd_zero(loaded: &[bool], runs: bool) -> String {
+    let cores: Vec<CoreView> = loaded
         .iter()
         .enumerate()
-        .map(|(id, &(state, loaded))| CoreView {
-            loaded,
-            ..core_view(u8::try_from(id).unwrap(), 0, state)
-        })
+        .map(|(i, &loaded)| core_row(u8::try_from(i).unwrap(), 0, Some(0), loaded))
         .collect();
-    let mut s = model.snapshot();
-    s.cores = &cores;
-    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-    ccd_role(&scene, CcdId::try_from(0_u8).unwrap())
-}
-
-#[test_case(
-    &[(CoreState::Parked, true), (CoreState::Parked, false)],
-    "parked at 0, 1 under load";
-    "parked with a load left"
-)]
-#[test_case(
-    &[(CoreState::Parked, false), (CoreState::Parked, false)],
-    "parked at 0, idle";
-    "parked and idle"
-)]
-#[test_case(
-    &[(CoreState::Member, true), (CoreState::Probe, true)],
-    "members, one probed shallower than its failing offset";
-    "a member probed"
-)]
-#[test_case(
-    &[(CoreState::Parked, true), (CoreState::Parked, true)],
-    "parked at 0, still under load";
-    "parked and every core still loaded"
-)]
-#[test_case(
-    &[(CoreState::Suspect, true), (CoreState::Suspect, true)],
-    "suspects at their failing offsets";
-    "every suspect loaded"
-)]
-#[test_case(
-    &[(CoreState::Member, true), (CoreState::Member, true)],
-    "members at their failing offsets";
-    "every member loaded and none probed"
-)]
-#[test_case(
-    &[(CoreState::Suspect, true), (CoreState::Member, true)],
-    "all under load";
-    "every core loaded in mixed states"
-)]
-fn a_ccd_role_counts_load_and_probes(states: &[(CoreState, bool)], want: &str) {
-    assert_eq!(role_of_ccd_zero(states).0, want);
-}
-
-#[test]
-fn a_ccd_with_no_cores_has_no_role() {
-    assert_eq!(role_of_ccd_zero(&[]), (String::new(), String::new()));
-}
-
-#[test]
-fn a_partly_loaded_ccd_counts_its_loaded_and_judged_cores() {
-    let model = Model::new();
+    let mut hand = Hand::new(cores, bare(vec![]));
+    hand.trial = runs.then(|| running_trial(Regime::R1, &[0]));
     let zone = TimeZone::UTC;
-    let cores = [
-        CoreView {
-            loaded: true,
-            ..core_view(0, 0, CoreState::Search)
-        },
-        CoreView {
-            loaded: true,
-            ..core_view(1, 0, CoreState::Search)
-        },
-        CoreView {
-            judged: true,
-            ..core_view(2, 0, CoreState::Search)
-        },
-        core_view(3, 0, CoreState::Search),
-    ];
-    let mut s = model.snapshot();
-    s.cores = &cores;
-    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
+    let snapshot = hand.snapshot();
+    ccd_role(&scene(&snapshot, FIXED_NOW, &zone, Colours::None), ccd(0))
+}
+
+#[test_case(&[true, true], "all loaded"; "every core loaded")]
+#[test_case(&[false, false], "idle"; "nothing loaded")]
+#[test_case(&[true, false], "one loaded"; "one loaded")]
+#[test_case(&[true, true, false], "2 loaded"; "two of three")]
+#[test_case(&[], ""; "no cores")]
+fn a_ccd_role_counts_what_the_running_trial_loads(loaded: &[bool], want: &str) {
+    assert_eq!(role_of_ccd_zero(loaded, true), want);
+}
+
+#[test]
+fn without_a_running_trial_no_core_is_loaded() {
+    assert_eq!(role_of_ccd_zero(&[true], false), "idle");
+    let hand = Hand::new(vec![core_row(0, 0, Some(0), true)], bare(vec![]));
+    let zone = TimeZone::UTC;
+    let snapshot = hand.snapshot();
+    let scene = scene(&snapshot, FIXED_NOW, &zone, Colours::None);
+    assert_eq!(state_word(&scene, &snapshot.cores[0]), "");
+}
+
+#[test_case(true, "LOADED"; "loaded")]
+#[test_case(false, ""; "not loaded")]
+fn a_running_trial_gives_each_core_its_word(loaded: bool, want: &str) {
+    let mut hand = Hand::new(vec![core_row(0, 0, Some(0), loaded)], bare(vec![]));
+    hand.trial = Some(running_trial(Regime::R1, &[0]));
+    let zone = TimeZone::UTC;
+    let snapshot = hand.snapshot();
+    let scene = scene(&snapshot, FIXED_NOW, &zone, Colours::None);
+    assert_eq!(state_word(&scene, &snapshot.cores[0]), want);
+}
+
+fn gauge_of(
+    colours: Colours,
+    loaded: bool,
+    projection: &togi_tuner::policy::CcdProjection,
+    applied: i64,
+    cells: usize,
+) -> Line<'static> {
+    let hand = Hand::new(
+        vec![core_row(0, 0, Some(applied), loaded)],
+        bare(vec![projection.clone()]),
+    );
+    let zone = TimeZone::UTC;
+    let snapshot = hand.snapshot();
+    let scene = scene(&snapshot, FIXED_NOW, &zone, colours);
+    gauge(
+        &scene,
+        &snapshot.cores[0],
+        Some(projection),
+        Some(applied),
+        cells,
+    )
+}
+
+fn gauge_text(
+    colours: Colours,
+    projection: &togi_tuner::policy::CcdProjection,
+    applied: i64,
+    cells: usize,
+) -> String {
+    plain(
+        &gauge_of(colours, true, projection, applied, cells),
+        colours,
+    )
+    .trim_end()
+    .to_owned()
+}
+
+fn capped(edge: Option<togi_journal::Edge>) -> togi_tuner::policy::CcdProjection {
+    with_cap(
+        ccd_row(0, &[0], -10),
+        cap(-26, rate_bound(), fallback(), 2, 0),
+        edge,
+        14,
+    )
+}
+
+#[test]
+fn a_gauge_shows_the_applied_depth_the_cap_track_and_the_edge() {
+    let mark = marks(Colours::None).applied;
+    let projection = capped(Some(observed(-31)));
+    let want = format!(
+        "{}{}    {mark}",
+        mark.to_string().repeat(12),
+        "·".repeat(14)
+    );
+    assert_eq!(gauge_text(Colours::None, &projection, -12, 50), want);
+    let line = gauge_of(Colours::Full, true, &projection, -12, 50);
+    let styles: Vec<_> = line.spans.iter().map(|span| span.style).collect();
+    let blank = ratatui::style::Style::new();
     assert_eq!(
-        ccd_role(&scene, CcdId::try_from(0_u8).unwrap()),
-        ("2 under load · 1 judged".to_owned(), "2 loaded".to_owned())
+        styles,
+        [
+            Paint::White.style(Colours::Full),
+            Paint::Grey.style(Colours::Full),
+            blank,
+            Paint::Bad.style(Colours::Full),
+            blank,
+        ],
+        "equal runs share one span; the observed edge is red"
     );
 }
 
-fn gauge_text(core: &CoreView, applied: i64) -> String {
-    let model = Model::new();
+#[test]
+fn a_censored_edge_is_amber_and_an_unknown_one_is_not_drawn() {
+    let censor = gauge_of(Colours::Full, true, &capped(Some(censored(-50))), -12, 50);
+    let last = censor.spans.last().expect("a span");
+    assert_eq!(last.style, Paint::Warn.style(Colours::Full));
+    assert_eq!(last.content.trim_end().chars().count(), 1);
+    let none = gauge_text(Colours::None, &capped(None), -12, 50);
+    assert_eq!(none, format!("{}{}", "▄".repeat(12), "·".repeat(14)));
+}
+
+#[test]
+fn an_unloaded_applied_depth_is_grey_not_white() {
+    let line = gauge_of(Colours::Full, false, &capped(None), -12, 50);
+    assert_eq!(line.spans[0].style, Paint::Grey.style(Colours::Full));
+}
+
+#[test]
+fn a_gauge_in_twenty_five_cells_takes_two_counts_to_a_cell() {
+    let projection = capped(Some(observed(-31)));
+    let want = format!("{}{}  ▄", "▄".repeat(6), "·".repeat(7));
+    assert_eq!(gauge_text(Colours::Full, &projection, -12, 25), want);
+    let rich = gauge_text(Colours::Rich, &projection, -12, 25);
+    assert_eq!(rich, want.replace('▄', "▆"));
+}
+
+#[test]
+fn the_edge_cell_is_the_edge_even_where_the_applied_depth_passes_it() {
+    let projection = capped(Some(observed(-31)));
+    let want = format!("{}▄{}", "▄".repeat(30), "▄".repeat(9));
+    assert_eq!(gauge_text(Colours::Full, &projection, -40, 50), want);
+}
+
+fn ccd_projection() -> togi_tuner::policy::CcdProjection {
+    with_cap(
+        ccd_row(0, &[0, 1], -10),
+        cap(-15, rate_bound(), fallback(), 2, 1),
+        Some(observed(-23)),
+        5,
+    )
+}
+
+fn facts_text(projection: &togi_tuner::policy::CcdProjection, width: usize) -> String {
+    let hand = Hand::new(vec![], bare(vec![projection.clone()]));
     let zone = TimeZone::UTC;
-    let scene = scene(
-        &model.snapshot(),
-        Timestamp::UNIX_EPOCH,
-        &zone,
+    let snapshot = hand.snapshot();
+    plain(
+        &facts_line(
+            &scene(&snapshot, FIXED_NOW, &zone, Colours::None),
+            projection,
+            width,
+        ),
         Colours::None,
-    );
-    plain(&gauge(&scene, core, Some(applied), 50), Colours::None)
-        .trim_end()
-        .to_owned()
+    )
+}
+
+fn coverage_text(projection: &togi_tuner::policy::CcdProjection, width: usize) -> String {
+    let hand = Hand::new(vec![], bare(vec![projection.clone()]));
+    let zone = TimeZone::UTC;
+    let snapshot = hand.snapshot();
+    plain(
+        &coverage_line(
+            &scene(&snapshot, FIXED_NOW, &zone, Colours::None),
+            projection,
+            width,
+        ),
+        Colours::None,
+    )
 }
 
 #[test]
-fn a_gauge_shows_the_depth_a_combination_holds() {
-    let core = |profile: i64, solo: i64| CoreView {
-        profile: off(profile),
-        solo: Some(off(solo)),
-        fail: Some(off(-45)),
-        holder: held(4),
-        ..core_view(0, 0, CoreState::AtLimit)
-    };
+fn the_facts_row_names_day_cap_binding_edge_and_distance() {
     assert_eq!(
-        gauge_text(&core(-43, -44), -43),
-        format!("{}░▄", "▄".repeat(43))
+        facts_text(&ccd_projection(), 115),
+        "D -10 · S -15 fallback slope · bound by rate R1 · U fails at -23 · 5 counts to S"
     );
-    assert_eq!(
-        gauge_text(&core(-43, -44), 0),
-        format!("{}░▄", "·".repeat(43))
+    let measured_cap = with_cap(
+        ccd_row(0, &[0, 1], -10),
+        cap(-15, rate_bound(), measured(), 2, 0),
+        Some(censored(-50)),
+        5,
     );
+    let text = facts_text(&measured_cap, 115);
+    assert!(text.contains("measured slope"), "{text}");
+    assert!(text.contains("U censored at -50"), "{text}");
+}
+
+#[test]
+fn a_ccd_with_no_cap_or_edge_says_so() {
+    let text = facts_text(&ccd_row(0, &[0], 0), 115);
+    assert!(text.starts_with("D 0 · "), "{text}");
+    assert!(text.contains("no cap"), "{text}");
+    assert!(text.contains("U unknown"), "{text}");
+    let covered = coverage_text(&ccd_row(0, &[0], 0), 115);
+    assert!(covered.contains("no cap"), "{covered}");
+}
+
+#[test]
+fn the_coverage_row_counts_what_the_cap_has_and_lacks() {
     assert_eq!(
-        gauge_text(&core(-43, -43), -43),
-        format!("{} ▄", "▄".repeat(43))
+        coverage_text(&ccd_projection(), 115),
+        "2 covered for the cap · 1 uncovered for the cap"
     );
 }
 
-#[test_case(50, Colours::None; "a wide cell, no colour")]
-#[test_case(25, Colours::None; "a narrow cell, no colour")]
-#[test_case(25, Colours::Full; "a narrow cell, full colour")]
-fn a_failure_point_is_a_half_height_bar_in_both_cell_widths(cells: usize, colours: Colours) {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let core = CoreView {
-        fail: Some(off(-8)),
-        ..core_view(0, 0, CoreState::AtLimit)
-    };
-    let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
-    let line = gauge(&scene, &core, Some(-4), cells);
-    let text = plain(&line, Colours::None);
-    assert_eq!(text.chars().nth(cells * 8 / 50 - 1), Some('▄'));
-    assert!(!text.contains('█'), "{cells} cells: {text:?}");
-    assert_eq!(text.matches('▄').count(), cells * 4 / 50 + 1);
-    if colours != Colours::None {
-        assert_eq!(
-            line.spans
-                .iter()
-                .filter(|span| span.style == Paint::Bad.style(colours))
-                .map(|span| span.content.as_ref())
-                .collect::<String>(),
-            "▄",
-            "one red failure segment, the same height as the applied bar"
-        );
+#[test]
+fn the_facts_row_never_cuts_a_value_whatever_the_width() {
+    let whole = [
+        "D -10",
+        "S -15 fallback slope",
+        "S -15",
+        "bound by rate R1",
+        "rate R1",
+        "U fails at -23",
+        "U -23",
+        "5 counts to S",
+        "5 to S",
+    ];
+    for width in 21..=120 {
+        let text = facts_text(&ccd_projection(), width);
+        assert!(text.chars().count() <= width, "width {width}: {text:?}");
+        for piece in text.split(" · ") {
+            assert!(
+                whole.contains(&piece),
+                "width {width}: {piece:?} in {text:?}"
+            );
+        }
     }
 }
 
-#[test]
-fn a_gauge_shows_group_failures_and_judging() {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let scene = scene(
-        &model.snapshot(),
-        Timestamp::UNIX_EPOCH,
-        &zone,
-        Colours::Full,
-    );
-    let mut core = core_view(0, 0, CoreState::Probe);
-    core.group_fails = vec![off(-4)];
-    let line = gauge(&scene, &core, Some(-2), 25);
-    assert!(
-        plain(&line, Colours::None).starts_with("▄▀"),
-        "{}",
-        plain(&line, Colours::None)
-    );
-    let painted = |judged: bool| {
-        let mut core = core.clone();
-        core.judged = judged;
-        gauge(&scene, &core, Some(-2), 25).spans[0].style
-    };
-    assert_eq!(painted(true), Paint::White.style(Colours::Full));
-    assert_eq!(painted(false), Paint::Grey.style(Colours::Full));
-    assert_eq!(
-        line_width(&gauge(&scene, &core, Some(0), 0), Colours::None),
-        0
-    );
-}
+const WIDE: CoreColumns = CoreColumns {
+    id: 2,
+    offset: 6,
+    state: 11,
+    gauge: 21,
+    cells: 50,
+};
 
-fn table(cores: &[CoreView], stopped: Option<&StopView>, width: u16, brief: bool) -> Vec<String> {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let view = session(Timestamp::UNIX_EPOCH);
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    s.cores = cores;
-    s.stopped = stopped;
-    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-    let columns = if brief {
-        CoreColumns {
-            id: 2,
-            offset: 5,
-            state: 9,
-            gauge: 18,
-            cells: 25,
-            failure: 44,
-            failure_width: 5,
-            note: 50,
-            brief: true,
-        }
-    } else {
-        CoreColumns {
-            id: 2,
-            offset: 6,
-            state: 11,
-            gauge: 21,
-            cells: 25,
-            failure: 48,
-            failure_width: 5,
-            note: 56,
-            brief: false,
-        }
-    };
-    let rect = Rect::new(0, 0, width, 6);
+fn table(hand: &Hand, width: u16, height: u16, colours: Colours) -> Vec<String> {
+    let rect = Rect::new(0, 0, width, height);
     let mut buf = Buffer::empty(rect);
-    super::draw_ccd(
+    let zone = TimeZone::UTC;
+    let snapshot = hand.snapshot();
+    let scene = scene(&snapshot, FIXED_NOW, &zone, colours);
+    draw_ccd(
         &mut buf,
         &Ccd {
-            id: CcdId::try_from(0_u8).unwrap(),
+            id: ccd(0),
             rect,
-            columns,
+            columns: WIDE,
         },
         &scene,
     );
     rows_of(&buf)
 }
 
+fn two_cores() -> Hand {
+    Hand::new(
+        vec![
+            core_row(0, 0, Some(-10), true),
+            core_row(1, 0, Some(-4), false),
+        ],
+        bare(vec![ccd_projection()]),
+    )
+}
+
 #[test]
-fn a_restored_session_shows_the_saved_profile_in_its_rows() {
-    let mut row = core_view(0, 0, CoreState::HasRoom);
-    row.profile = off(-25);
-    row.applied = Some(ObservedOffset(0));
-    let cores = [row];
-    let stopped = StopView {
-        at: Timestamp::UNIX_EPOCH,
-        reason: ShutdownReason::Signal,
-        saved: true,
-    };
-    let saved = table(&cores, Some(&stopped), 80, false);
-    assert!(saved[1].contains("00  -25"), "{:?}", saved[1]);
-    assert!(saved[1].contains('▄'), "{:?}", saved[1]);
-    let live = table(&cores, None, 80, false);
-    assert!(live[1].contains("00    0"), "{:?}", live[1]);
-    assert!(!live[1].contains('▄'), "{:?}", live[1]);
-    let model = Model::new();
-    let role = |stopped: Option<&StopView>| {
-        let mut s = model.snapshot();
-        s.cores = &cores;
-        s.stopped = stopped;
-        let zone = TimeZone::UTC;
-        ccd_role(
-            &scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None),
-            CcdId::try_from(0_u8).unwrap(),
-        )
-        .0
-    };
-    assert_eq!(role(None), "waiting at 0");
-    assert_eq!(role(Some(&stopped)), "not under load");
+fn a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core() {
+    let mut hand = two_cores();
+    hand.trial = Some(running_trial(Regime::R1, &[0]));
+    let rows = table(&hand, 115, 5, Colours::None);
+    assert!(rows[0].starts_with("CCD 0 one loaded"), "{:?}", rows[0]);
+    assert!(rows[0].contains("-50"), "{:?}", rows[0]);
+    assert!(rows[1].starts_with("D -10 · S -15"), "{:?}", rows[1]);
+    assert!(
+        rows[2].starts_with("2 covered for the cap"),
+        "{:?}",
+        rows[2]
+    );
+    assert!(rows[3].starts_with("► 00"), "{:?}", rows[3]);
+    assert!(
+        rows[3].contains("-10") && rows[3].contains("LOAD"),
+        "{:?}",
+        rows[3]
+    );
+    assert!(rows[4].starts_with("  01"), "{:?}", rows[4]);
+}
+
+#[test]
+fn a_core_with_no_readback_shows_a_question_mark_not_zero() {
+    let hand = Hand::new(
+        vec![core_row(0, 0, None, false)],
+        bare(vec![ccd_projection()]),
+    );
+    let rows = table(&hand, 115, 4, Colours::None);
+    assert!(rows[3][..WIDE.state].contains('?'), "{:?}", rows[3]);
 }
 
 #[test]
 fn a_readback_is_never_clamped() {
-    let mut row = core_view(0, 0, CoreState::HasRoom);
-    row.applied = Some(ObservedOffset(-73));
-    let text = table(&[row], None, 80, false);
-    assert!(text[1].contains("-73"), "{:?}", text[1]);
-}
-
-#[test_case(false; "full core row")]
-#[test_case(true; "compact core row")]
-fn an_unread_offset_is_not_the_profile_or_zero(brief: bool) {
-    let mut row = core_view(0, 0, CoreState::HasRoom);
-    row.profile = off(-25);
-    row.applied = None;
-    let text = table(&[row], None, 80, brief);
-    assert!(text[1].contains('?'), "{:?}", text[1]);
-    assert!(!text[1].contains('▄'), "{:?}", text[1]);
-    assert!(!text[1].contains("-25"), "{:?}", text[1]);
+    let hand = Hand::new(
+        vec![core_row(0, 0, Some(-60), false)],
+        bare(vec![ccd_projection()]),
+    );
+    let rows = table(&hand, 115, 4, Colours::None);
+    assert!(rows[3].contains("-60"), "{:?}", rows[3]);
 }
 
 #[test]
-fn a_ccd_table_names_its_columns_and_counts_what_it_leaves_out() {
-    let cores: Vec<_> = (0..6)
-        .map(|id| core_view(id, 0, CoreState::Waiting))
-        .collect();
-    let text = table(&cores, None, 80, false);
-    assert!(text[0].starts_with("CCD 0"), "{:?}", text[0]);
-    assert!(
-        text[0].contains("2 counts/cell") && text[0].contains("fail pt"),
-        "{:?}",
-        text[0]
+fn a_restored_session_shows_the_saved_profile_in_its_rows() {
+    let mut hand = Hand::new(
+        vec![CoreView {
+            profile: crate::tests::kit::off(-7),
+            ..core_row(0, 0, None, false)
+        }],
+        bare(vec![ccd_projection()]),
     );
-    assert!(text[5].starts_with("+2 more"), "{:?}", text[5]);
-    let brief = table(&cores[..2], None, 60, true);
-    assert!(brief[0].contains("fail"), "{:?}", brief[0]);
-}
-
-#[test_case(75, false, "top by offset"; "a wide row says top by offset")]
-#[test_case(60, true, "offset top"; "a brief row shortens it")]
-#[test_case(57, true, ""; "a brief row too narrow for it leaves it out")]
-fn core_rows_mark_the_running_workloads_top_requesters(width: u16, brief: bool, want: &str) {
-    let first = WorkloadId::new(Regime::R7, 0).expect("a workload");
-    let second = WorkloadId::new(Regime::R7, 1).expect("a workload");
-    let status = |core_id: u8, workload, proxy| R7CoreStatus {
-        core: core(core_id),
-        ccd: CcdId::try_from(0_u8).unwrap(),
-        workload,
-        top_requester: true,
-        offset_proxy: proxy,
-        self_sufficient: false,
-        passes: 0,
+    let stop = StopView {
+        at: FIXED_NOW,
+        reason: ShutdownReason::Signal,
+        saved: true,
     };
-    let statuses = [status(0, first, false), status(1, second, true)];
-    let cores = [
-        core_view(0, 0, CoreState::AtLimit),
-        core_view(1, 0, CoreState::AtLimit),
-    ];
-    let running = trial(Regime::R7, None, 120);
-    let mut running = running;
-    running.workload = second;
-    let model = Model::new();
     let zone = TimeZone::UTC;
-    let view = session(Timestamp::UNIX_EPOCH);
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    s.cores = &cores;
-    s.r7 = &statuses;
-    s.trial = Some(&running);
-    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-    let rect = Rect::new(0, 0, width, 4);
-    let mut buf = Buffer::empty(rect);
-    let columns = if brief {
-        CoreColumns {
-            id: 2,
-            offset: 5,
-            state: 9,
-            gauge: 18,
-            cells: 25,
-            failure: 44,
-            failure_width: 5,
-            note: 50,
-            brief: true,
-        }
-    } else {
-        CoreColumns {
-            id: 2,
-            offset: 6,
-            state: 11,
-            gauge: 21,
-            cells: 25,
-            failure: 48,
-            failure_width: 5,
-            note: 56,
-            brief: false,
-        }
-    };
-    super::draw_ccd(
+    let mut snapshot = hand.snapshot();
+    snapshot.stopped = Some(&stop);
+    let mut buf = Buffer::empty(Rect::new(0, 0, 115, 4));
+    let scene = scene(&snapshot, FIXED_NOW, &zone, Colours::None);
+    draw_ccd(
         &mut buf,
         &Ccd {
-            id: CcdId::try_from(0_u8).unwrap(),
-            rect,
-            columns,
+            id: ccd(0),
+            rect: Rect::new(0, 0, 115, 4),
+            columns: WIDE,
         },
         &scene,
     );
-    let rows = rows_of(&buf);
-    assert!(!rows[1].contains("top"), "{:?}", rows[1]);
-    if want.is_empty() {
-        assert!(!rows[2].contains("top"), "{width}: {:?}", rows[2]);
-    } else {
-        assert!(rows[2].trim_end().ends_with(want), "{width}: {:?}", rows[2]);
-    }
+    assert!(rows_of(&buf)[3].contains("-7"), "{:?}", rows_of(&buf)[3]);
+    hand.cores.clear();
 }
 
 #[test]
-fn the_top_note_fits_beside_a_note_at_its_exact_width() {
-    let note = Line::from("held by C4 · solo -31");
-    let width = line_width(&note, Colours::None) + 3 + "top requester".len();
-    assert_eq!(
-        plain(&top_note(&note, false, width, Colours::Full), Colours::None),
-        "held by C4 · solo -31 · top requester"
-    );
-    assert_eq!(
-        plain(
-            &top_note(&note, false, width - 1, Colours::Full),
-            Colours::None
-        ),
-        "held by C4 · solo -31"
-    );
+fn cores_that_do_not_fit_are_counted() {
+    let cores: Vec<CoreView> = (0..5).map(|i| core_row(i, 0, Some(0), false)).collect();
+    let hand = Hand::new(cores, bare(vec![ccd_projection()]));
+    let rows = table(&hand, 115, 6, Colours::None);
+    assert!(rows[3].starts_with("  00"), "{:?}", rows[3]);
+    assert!(rows[4].starts_with("  01"), "{:?}", rows[4]);
+    assert!(rows[5].starts_with("+3 more"), "{:?}", rows[5]);
 }
 
-fn r7_fixture(
-    statuses: &[R7CoreStatus],
-    class: SizeClass,
-    width: usize,
-    with_cycle: bool,
-) -> Vec<String> {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let plan = CyclePlan {
-        number: None,
-        open: true,
-        steps: Vec::new(),
-        current: 0,
-        paused: false,
-    };
-    let mut s = model.snapshot();
-    s.r7 = statuses;
-    if with_cycle {
-        s.cycle = Some(CycleView {
-            plan: &plan,
-            step_hunts: &[],
-            resume: None,
-        });
-    }
-    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-    r7_rows(&scene, class, width)
-        .iter()
-        .map(|line| plain(line, Colours::None))
-        .collect()
-}
-
-fn r7_status(core_id: u8, top: bool, proxy: bool, own: bool) -> R7CoreStatus {
-    R7CoreStatus {
-        core: core(core_id),
-        ccd: CcdId::try_from(core_id / 8).unwrap(),
-        workload: WorkloadId::new(Regime::R7, 0).expect("a workload"),
-        top_requester: top,
-        offset_proxy: proxy,
-        self_sufficient: own,
-        passes: 0,
-    }
-}
-
-#[test_case::test_case(SizeClass::Wide, 115; "wide")]
-#[test_case::test_case(SizeClass::Compact, 57; "compact")]
-fn r7_lines_name_top_requesters_and_self_sufficiency(class: SizeClass, width: usize) {
-    let statuses = [
-        r7_status(3, true, false, true),
-        r7_status(7, false, false, false),
-    ];
-    let lines = r7_fixture(&statuses, class, width, true);
-    assert_eq!(lines.len(), 2, "{lines:?}");
-    assert!(lines[0].contains("self-sufficient"), "{lines:?}");
-    assert!(lines[1].contains("mprime AVX2"), "{lines:?}");
-    assert_eq!(lines[1].matches("03").count(), 2, "{lines:?}");
-    assert!(!lines[1].contains("07"), "{lines:?}");
-    assert_eq!(
-        class == SizeClass::Wide,
-        lines[0].contains("not a guarantee"),
-        "{lines:?}"
-    );
-    let proxy = [r7_status(3, true, true, true)];
-    let lines = r7_fixture(&proxy, SizeClass::Compact, 57, true);
-    assert!(lines[1].contains("03 by offset"), "{lines:?}");
-    assert!(r7_fixture(&statuses, SizeClass::Compact, 57, false).is_empty());
-    let narrow = r7_fixture(&proxy, SizeClass::Compact, 24, true);
-    assert!(narrow[1].contains("by offset"), "{narrow:?}");
-    assert!(narrow[1].is_ascii(), "{narrow:?}");
-}
-
-#[test_case::test_case(SizeClass::Wide, 115; "wide")]
-#[test_case::test_case(SizeClass::Medium, 80; "medium")]
-#[test_case::test_case(SizeClass::Compact, 57; "compact")]
-fn cut_top_requesters_keep_their_offset_label(class: SizeClass, width: usize) {
-    let many: Vec<_> = (0..16)
-        .map(|id| r7_status(id, id % 2 == 0, true, false))
-        .collect();
-    let lines = r7_fixture(&many, class, width, true);
-    assert!(lines[1].contains("... by offset"), "{width}: {lines:?}");
-}
-
-#[test_case::test_case(SizeClass::Wide, 115; "wide")]
-#[test_case::test_case(SizeClass::Medium, 80; "medium")]
-#[test_case::test_case(SizeClass::Compact, 57; "compact")]
-fn mixed_top_requesters_keep_their_offset_label(class: SizeClass, width: usize) {
-    let mixed: Vec<_> = (0..16)
-        .map(|id| r7_status(id, (id % 2 == 0 && id < 8) || id == 8, id >= 8, false))
-        .collect();
-    let row = &r7_fixture(&mixed, class, width, true)[1];
+#[test]
+fn a_ccd_the_tuner_has_no_state_for_says_so() {
+    let hand = Hand::new(vec![core_row(0, 0, Some(0), false)], bare(vec![]));
+    let rows = table(&hand, 115, 4, Colours::None);
     assert!(
-        row.contains("08 by offset") && !row.contains("06 by offset"),
-        "{row:?}"
+        rows[1].starts_with("no tuner state for this CCD yet"),
+        "{:?}",
+        rows[1]
     );
-}
-
-#[test]
-fn top_cells_keep_offset_provenance_with_no_measured_requesters() {
-    assert_eq!(
-        top_cell(
-            crate::tests::kit::set(&[0]),
-            crate::tests::kit::set(&[8, 9, 10, 11, 12, 13, 14, 15]),
-            17,
-            Colours::None
-        ),
-        "08-15 by offset"
-    );
-    assert_eq!(
-        top_cell(CoreSet::default(), CoreSet::default(), 17, Colours::None),
-        "-"
-    );
-}
-
-#[test]
-fn r7_values_stay_whole() {
-    let rows = |measured: &[u8], proxies: &[u8], class, width, name: usize, top: usize| {
-        let mut statuses: Vec<_> = measured
-            .iter()
-            .map(|&id| r7_status(id, true, false, false))
-            .collect();
-        statuses.extend(proxies.iter().map(|&id| r7_status(id, true, true, false)));
-        let lines = r7_fixture(&statuses, class, width, true);
-        assert!(
-            line_width(&Line::from(lines[1].as_str()), Colours::None) <= width,
-            "{lines:?}"
-        );
-        lines[1][name + 1..name + 1 + top].trim().to_owned()
-    };
-    let all: Vec<u8> = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15];
-    let eight: Vec<u8> = (8..16).collect();
-    let seven: Vec<u8> = (0..7).collect();
-    assert_eq!(rows(&[], &all, SizeClass::Compact, 57, 17, 17), "by offset");
-    assert_eq!(
-        rows(&[], &all, SizeClass::Medium, 80, 24, 20),
-        "00-10... by offset"
-    );
-    assert_eq!(
-        rows(&[], &all, SizeClass::Wide, 115, 30, 24),
-        "00-10 12-15 by offset"
-    );
-    assert_eq!(
-        rows(&seven, &eight, SizeClass::Compact, 57, 17, 17),
-        "08-15 by offset"
-    );
-    assert_eq!(
-        rows(&seven, &eight, SizeClass::Medium, 80, 24, 20),
-        "08-15 by offset"
-    );
-    assert_eq!(
-        rows(&seven, &eight, SizeClass::Wide, 115, 30, 24),
-        "00-06; 08-15 by offset"
-    );
-    assert_eq!(
-        rows(
-            &[0, 2, 4, 6, 8, 10, 12, 14],
-            &[],
-            SizeClass::Compact,
-            57,
-            17,
-            17
-        ),
-        "00 02 04 06 08..."
-    );
-}
-
-#[test_case::test_case(24; "width 24")]
-#[test_case::test_case(30; "width 30")]
-#[test_case::test_case(35; "width 35")]
-#[test_case::test_case(40; "width 40")]
-fn narrow_r7_rows_keep_offset_provenance_and_fit(width: usize) {
-    let proxies: Vec<_> = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15]
-        .into_iter()
-        .map(|id| r7_status(id, true, true, false))
-        .collect();
-    let rows = r7_fixture(&proxies, SizeClass::Compact, width, true);
-    assert!(rows[1].contains("by offset"), "{width}: {:?}", rows[1]);
-    for cut in ["00-0...", "00-1...", "12-1..."] {
-        assert!(!rows[1].contains(cut), "{width}: {:?}", rows[1]);
-    }
-    for word in rows[0].split_whitespace() {
-        assert!(
-            word.trim_matches('─').is_empty()
-                || ["R7", "top", "requesters", "self-sufficient"].contains(&word),
-            "{width}: {:?}",
-            rows[0]
-        );
-    }
-    for row in &rows {
-        assert!(
-            line_width(&Line::from(row.as_str()), Colours::None) <= width,
-            "{width}: {row:?}"
-        );
-    }
-}
-
-#[test_case::test_case(8, ""; "eight")]
-#[test_case::test_case(9, "by offset"; "nine")]
-#[test_case::test_case(10, "by offset"; "ten")]
-fn tiny_r7_rows_keep_offset_provenance_or_leave_it_out(width: usize, want: &str) {
-    let proxies: Vec<_> = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15]
-        .into_iter()
-        .map(|id| r7_status(id, true, true, false))
-        .collect();
-    let rows = r7_fixture(&proxies, SizeClass::Compact, width, true);
-    assert_eq!(rows[1].trim(), want, "{width}");
-    for row in &rows {
-        assert!(
-            line_width(&Line::from(row.as_str()), Colours::None) <= width,
-            "{width}: {row:?}"
-        );
-    }
-}
-
-#[test]
-fn every_r7_workload_has_its_row() {
-    let ids: Vec<_> = (0..togi_machine::workloads(Regime::R7).len())
-        .filter_map(|i| WorkloadId::new(Regime::R7, i))
-        .collect();
-    let statuses: Vec<_> = ids
-        .iter()
-        .map(|&workload| R7CoreStatus {
-            core: core(0),
-            ccd: CcdId::try_from(0_u8).unwrap(),
-            workload,
-            top_requester: true,
-            offset_proxy: false,
-            self_sufficient: false,
-            passes: 0,
-        })
-        .collect();
-    let lines = r7_fixture(&statuses, SizeClass::Compact, 57, true);
-    assert_eq!(lines.len(), ids.len() + 1);
-    for row in &lines[1..] {
-        assert!(row.contains("none yet") && row.contains("00"), "{row:?}");
-    }
 }
 
 #[test]
@@ -1394,36 +967,6 @@ fn progress_arithmetic_keeps_its_terminal_bound(
 }
 
 #[test]
-fn the_requirement_line_counts_passes_and_marks_the_running_trial() {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let scene = scene(
-        &model.snapshot(),
-        Timestamp::UNIX_EPOCH,
-        &zone,
-        Colours::None,
-    );
-    let mut t = trial(Regime::R1, None, 60);
-    assert_eq!(
-        line_width(&requirement_line(&scene, &t, false), Colours::None),
-        0
-    );
-    t.count = Count {
-        passed: 1,
-        index: 2,
-        of: 4,
-    };
-    assert_eq!(
-        plain(&requirement_line(&scene, &t, false), Colours::None),
-        "1 passed · trial 2 of 4  ■ ► · ·"
-    );
-    assert_eq!(
-        plain(&requirement_line(&scene, &t, true), Colours::None),
-        "1/4 ■ ► · ·"
-    );
-}
-
-#[test]
 fn an_idle_hold_pins_the_clock_to_the_trials_start() {
     let start = at("2026-10-12T10:00:00Z");
     let running = trial(Regime::R6, Some(start), 600);
@@ -1448,185 +991,10 @@ fn an_idle_hold_pins_the_clock_to_the_trials_start() {
     assert!(!text.contains("ago"), "{text}");
 }
 
-#[test]
-fn an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events() {
-    use crate::tests::kit::{Script, warning};
-    use togi_journal::Outcome;
-    use togi_tuner::Action;
-
-    fn append_at(script: &mut Script, payload: togi_journal::Payload, time: Timestamp) {
-        let mut event = script.event(payload, &[]);
-        event.time = time;
-        script.shadow.fold(&event).unwrap();
-        script.events.push(event);
-    }
-    fn shown(script: &Script, now: Timestamp) -> String {
-        let model = script.model();
-        let zone = TimeZone::UTC;
-        let scene = scene(&model.snapshot(), now, &zone, Colours::None);
-        assert!(scene.hold.is_some(), "the idle trial holds the frame");
-        plain(&header(&scene, 160, false), Colours::None)
-    }
-
-    let mut script = Script::at_limit();
-    let mut idle = None;
-    for _ in 0..200 {
-        if let Ok(Action::RunTrial(plan)) = script.shadow.next() {
-            if plan.regime == Regime::R6 {
-                idle = Some(plan);
-                break;
-            }
-        }
-        script.step(|_| Outcome::Pass);
-    }
-    let plan = idle.expect("the cycle reaches its idle step");
-    let config = script
-        .events
-        .iter()
-        .find(|event| event.kind() == togi_journal::EventKind::ConfigLoaded)
-        .expect("the run's configuration")
-        .time;
-    let (intent, trial) = script.intent(&plan);
-    let hours = |n: i64| jiff::SignedDuration::from_secs(n * 3600);
-    let started = config.checked_add(hours(2)).unwrap();
-    script.start(&trial);
-    script.events.last_mut().unwrap().time = started;
-
-    let first = shown(&script, started);
-    assert!(
-        first.contains("tuning 2h00m") && first.contains("session 2h00m"),
-        "{first}"
-    );
-    let progress = togi_journal::TrialProgress {
-        trial: trial.clone(),
-        detail: "still running".to_owned(),
-        signal: None,
-        core: None,
-        fault: None,
-        pid: None,
-    };
-    append_at(
-        &mut script,
-        progress.into(),
-        started.checked_add(hours(1)).unwrap(),
-    );
-    append_at(
-        &mut script,
-        warning("a session event during the hold"),
-        started.checked_add(hours(3)).unwrap(),
-    );
-    assert!(script.model().snapshot().idle_hold().is_some());
-    for now in [started, started.checked_add(hours(5)).unwrap()] {
-        let held = shown(&script, now);
-        assert!(
-            held.contains("tuning 2h00m") && held.contains("session 2h00m"),
-            "both durations stay at the trial's start: {held}"
-        );
-    }
-
-    let ended = started.checked_add(hours(4)).unwrap();
-    let end = script.end(intent, &trial, Outcome::Pass);
-    script.events[usize::try_from(end.get()).unwrap() - 1].time = ended;
-    let model = script.model();
-    let snap = model.snapshot();
-    assert!(
-        snap.idle_hold().is_none(),
-        "the recorded end releases the hold"
-    );
-    assert_eq!(
-        snap.tuning.at(ended),
-        Duration::from_hours(6),
-        "the accumulator advanced behind the hold and counts through the trial's end"
-    );
-}
-
-fn gauge_in(colours: Colours, core: &CoreView, applied: i64, cells: usize) -> Line<'static> {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
-    gauge(&scene, core, Some(applied), cells)
-}
-
-fn gauge_text_in(colours: Colours, core: &CoreView, applied: i64, cells: usize) -> String {
-    plain(&gauge_in(colours, core, applied, cells), colours)
-        .trim_end()
-        .to_owned()
-}
-
-#[test_case(-27, -28; "an odd applied depth and an even failure")]
-#[test_case(-26, -27; "an even applied depth and an odd failure")]
-fn a_rich_gauge_marks_each_count_of_fifty_cells(applied: i64, fail: i64) {
-    let core = CoreView {
-        fail: Some(off(fail)),
-        judged: true,
-        ..core_view(0, 0, CoreState::AtLimit)
-    };
-    let line = gauge_in(Colours::Rich, &core, applied, 50);
-    let depth = usize::try_from(-applied).unwrap();
-    let mark = usize::try_from(-fail).unwrap() - 1;
-    let want = format!("{}{}▆", "▆".repeat(depth), " ".repeat(mark - depth));
-    assert_eq!(plain(&line, Colours::Rich).trim_end(), want);
-    let blank = ratatui::style::Style::new();
-    let mut spans = vec![Paint::White.style(Colours::Rich)];
-    if mark > depth {
-        spans.push(blank);
-    }
-    spans.extend([Paint::Bad.style(Colours::Rich), blank]);
-    let styles: Vec<_> = line.spans.iter().map(|span| span.style).collect();
-    assert_eq!(styles, spans, "equal runs share one span");
-}
-
-#[test]
-fn a_rich_gauge_keeps_the_gap_the_held_depth_and_the_group_marks() {
-    let held_core = CoreView {
-        profile: off(-43),
-        solo: Some(off(-44)),
-        fail: Some(off(-45)),
-        holder: held(4),
-        ..core_view(0, 0, CoreState::AtLimit)
-    };
-    let text = |applied| gauge_text_in(Colours::Rich, &held_core, applied, 50);
-    assert_eq!(text(-43).trim_end(), format!("{}░▆", "▆".repeat(43)));
-    assert_eq!(
-        text(0).trim_end(),
-        format!("{}░▆", "·".repeat(43)),
-        "the proven-pass gap stays a grey dot"
-    );
-    let probe = CoreView {
-        group_fails: vec![off(-3), off(-5), off(-6)],
-        fail: Some(off(-8)),
-        ..core_view(0, 0, CoreState::Probe)
-    };
-    let line = gauge_in(Colours::Rich, &probe, -2, 50);
-    assert_eq!(gauge_text_in(Colours::Rich, &probe, -2, 50), "▆▆┆ ┆┆ ▆");
-    assert!(
-        line.spans
-            .iter()
-            .filter(|span| span.content.contains('┆'))
-            .all(|span| span.style == Paint::Bad.style(Colours::Rich))
-    );
-}
-
-#[test]
-fn a_rich_gauge_in_twenty_five_cells_keeps_the_console_scale_with_rich_shapes() {
-    let core = CoreView {
-        fail: Some(off(-8)),
-        group_fails: vec![off(-4)],
-        ..core_view(0, 0, CoreState::Probe)
-    };
-    assert_eq!(gauge_text_in(Colours::Rich, &core, -2, 25), "▆┆ ▆");
-    assert_eq!(gauge_text_in(Colours::Full, &core, -2, 25), "▄▀ ▄");
-}
-
-fn frame_in(model: &Model, width: u16, height: u16, now: Timestamp, colours: Colours) -> Buffer {
+fn frame_in(hand: &Hand, width: u16, height: u16, now: Timestamp, colours: Colours) -> Buffer {
     let sc = screen(View::Main, width, height, colours, true);
-    let snapshot = model.snapshot();
-    let journal = Journal::Ready {
-        snapshot,
-        log: snapshot.log(),
-    };
     draw_checked(&sc, |sc, buf| {
-        render(&journal, sc, now, &TimeZone::UTC, buf)
+        crate::frames::render(&hand.journal(), sc, now, &TimeZone::UTC, buf)
     })
     .0
 }
@@ -1639,97 +1007,90 @@ fn foreground(buf: &Buffer, x: usize, y: usize) -> ratatui::style::Color {
     buf[(u16::try_from(x).unwrap(), u16::try_from(y).unwrap())].fg
 }
 
-/// The failure point occupies its own count, touching a matching-height applied segment.
-#[test_case(240, 67, Colours::Rich, 21, 75, 5, -27; "wide rich odd")]
-#[test_case(240, 67, Colours::Rich, 21, 75, 5, -28; "wide rich even")]
-#[test_case(160, 45, Colours::Rich, 20, 73, 4, -27; "medium rich odd")]
-#[test_case(160, 45, Colours::Rich, 20, 73, 4, -28; "medium rich even")]
-#[test_case(240, 67, Colours::Console, 21, 75, 5, -27; "wide console odd")]
-#[test_case(240, 67, Colours::Console, 21, 75, 5, -28; "wide console even")]
-#[test_case(160, 45, Colours::Console, 20, 73, 4, -27; "medium console odd")]
-#[test_case(160, 45, Colours::Console, 20, 73, 4, -28; "medium console even")]
-fn the_rendered_frame_puts_each_failure_on_its_count(
+fn edge_hand(applied: i64, edge: i64) -> Hand {
+    let projection = with_cap(
+        ccd_row(0, &[0], 0),
+        cap(-50, rate_bound(), fallback(), 1, 0),
+        Some(observed(edge)),
+        3,
+    );
+    let mut hand = Hand::new(
+        vec![core_row(0, 0, Some(applied), false)],
+        bare(vec![projection, ccd_row(1, &[8], 0)]),
+    );
+    hand.cores.push(core_row(8, 1, Some(0), false));
+    hand
+}
+
+/// The edge occupies its own count, touching a matching-height applied segment.
+#[test_case(240, 67, Colours::Rich, -27; "wide rich odd")]
+#[test_case(240, 67, Colours::Rich, -28; "wide rich even")]
+#[test_case(160, 45, Colours::Rich, -27; "medium rich odd")]
+#[test_case(160, 45, Colours::Rich, -28; "medium rich even")]
+#[test_case(240, 67, Colours::Console, -27; "wide console odd")]
+#[test_case(240, 67, Colours::Console, -28; "wide console even")]
+#[test_case(160, 45, Colours::Console, -27; "medium console odd")]
+#[test_case(160, 45, Colours::Console, -28; "medium console even")]
+fn the_rendered_frame_puts_each_edge_on_its_count(
     width: u16,
     height: u16,
     colours: Colours,
-    gauge_column: usize,
-    fail_column: usize,
-    field: usize,
-    fail: i64,
+    edge: i64,
 ) {
-    let applied = fail + 1;
-    let mut script = Script::new(&[(0, 0)], &[Start::at_limit(applied, fail)]);
-    script.append(readback(0, applied), &[]);
-    let model = script.model();
-    let now = script.events.last().expect("an event").time + SignedDuration::from_secs(40);
-    let buf = frame_in(&model, width, height, now, colours);
+    let applied = edge + 1;
+    let hand = edge_hand(applied, edge);
+    let zone = TimeZone::UTC;
+    let snapshot = hand.snapshot();
+    let probe = Scene::new(snapshot, FIXED_NOW, &zone, colours);
+    let measured = measure(&probe, &screen(View::Main, width, height, colours, true));
+    let table = measured.ccds[0];
+    let buf = frame_in(&hand, width, height, FIXED_NOW, colours);
     let rows = rows_of(&buf);
-    let heading = rows
-        .iter()
-        .position(|row| row.contains("CCD 0") && row.contains("fail"))
-        .expect("the CCD 0 table");
-    let bad = Paint::Bad.style(colours).fg.unwrap();
-    let glyph = super::ccd::marks(colours).applied.to_string();
-    let y = heading + 1;
-    let at = |depth: i64| 2 + gauge_column + usize::try_from(depth).unwrap() - 1;
-    let mark = at(-fail);
-    assert_eq!(symbol(&buf, mark, y), glyph, "failure {fail}");
-    assert_eq!(foreground(&buf, mark, y), bad, "failure {fail} is red");
+    let y = usize::from(table.rect.y) + 3;
+    let bad = Paint::Bad.style(colours).fg.expect("a colour");
+    let glyph = marks(colours).applied.to_string();
+    let at = |depth: i64| {
+        usize::from(table.rect.x) + table.columns.gauge + usize::try_from(depth).unwrap() - 1
+    };
+    let mark = at(-edge);
+    assert_eq!(symbol(&buf, mark, y), glyph, "edge {edge}: {:?}", rows[y]);
+    assert_eq!(foreground(&buf, mark, y), bad, "edge {edge} is red");
     assert_eq!(
         symbol(&buf, mark - 1, y),
         glyph,
         "applied {applied} touches it"
     );
     assert_ne!(foreground(&buf, mark - 1, y), bad, "applied is not red");
-    assert_eq!(
-        symbol(&buf, mark + 1, y),
-        " ",
-        "nothing deeper than the failure"
-    );
     assert_eq!(symbol(&buf, at(1), y), glyph);
-    let text: String = rows[y].chars().skip(fail_column).take(field).collect();
-    assert_eq!(text, format!("{fail:>field$}"), "failure point column");
 }
 
-#[test_case(240, 67, Colours::Rich, 21, 50, 73, 5; "wide rich")]
-#[test_case(160, 45, Colours::Rich, 20, 50, 71, 4; "medium rich")]
-#[test_case(240, 67, Colours::Console, 21, 50, 73, 5; "wide console")]
-#[test_case(160, 45, Colours::Console, 20, 50, 71, 4; "medium console")]
-#[test_case(80, 24, Colours::Rich, 20, 50, 71, 4; "compact rich where fifty cells fit")]
-#[test_case(70, 24, Colours::Rich, 21, 25, 48, 5; "compact rich where they do not")]
-#[test_case(80, 24, Colours::Console, 20, 50, 71, 4; "compact console where fifty cells fit")]
-#[test_case(70, 24, Colours::Console, 21, 25, 48, 5; "compact console where they do not")]
+#[test_case(240, 67, Colours::Rich, 21, 50; "wide rich")]
+#[test_case(160, 45, Colours::Rich, 20, 50; "medium rich")]
+#[test_case(240, 67, Colours::Console, 21, 50; "wide console")]
+#[test_case(160, 45, Colours::Console, 20, 50; "medium console")]
+#[test_case(80, 24, Colours::Rich, 20, 50; "compact rich where fifty cells fit")]
+#[test_case(70, 24, Colours::Rich, 21, 25; "compact rich where they do not")]
+#[test_case(80, 24, Colours::Console, 20, 50; "compact console where fifty cells fit")]
+#[test_case(70, 24, Colours::Console, 21, 25; "compact console where they do not")]
 fn gauge_geometry_depends_on_the_room_for_fifty_cells(
     width: u16,
     height: u16,
     colours: Colours,
     gauge: usize,
     cells: usize,
-    failure: usize,
-    failure_width: usize,
 ) {
-    let model = Script::at_limit().model();
+    let hand = edge_hand(-10, -20);
     let zone = TimeZone::UTC;
-    let scene = Scene::new(model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
+    let scene = Scene::new(hand.snapshot(), FIXED_NOW, &zone, colours);
     let measured = measure(&scene, &screen(View::Main, width, height, colours, true));
     let columns = measured.ccds[0].columns;
-    assert_eq!(
-        (
-            columns.gauge,
-            columns.cells,
-            columns.failure,
-            columns.failure_width
-        ),
-        (gauge, cells, failure, failure_width)
-    );
+    assert_eq!((columns.gauge, columns.cells), (gauge, cells));
 }
 
-fn running_model() -> Model {
-    let mut script = Script::at_limit();
-    let plan = script.next_trial();
-    let (_, trial) = script.intent(&plan);
-    script.start(&trial);
-    script.model()
+fn running_hand() -> Hand {
+    let mut hand = edge_hand(-10, -20);
+    hand.trial = Some(running_trial(Regime::R1, &[0]));
+    hand
 }
 
 /// The elapsed time that fills `eighths` eighths of a `cells`-cell bar of `total`.
@@ -1742,8 +1103,8 @@ fn elapsed_for(total: Duration, cells: usize, eighths: usize) -> SignedDuration 
 #[test_case(3; "three eighths")]
 #[test_case(7; "seven eighths")]
 fn the_rendered_wide_bar_has_two_full_height_rows_and_no_underline(extra: usize) {
-    let model = running_model();
-    let snapshot = model.snapshot();
+    let hand = running_hand();
+    let snapshot = hand.snapshot();
     let trial = snapshot.trial.expect("a running trial");
     let started = trial.started.expect("a started trial");
     let zone = TimeZone::UTC;
@@ -1754,7 +1115,7 @@ fn the_rendered_wide_bar_has_two_full_height_rows_and_no_underline(extra: usize)
     let eighths = cells * 8 / 3 + extra;
     let (whole, edge) = (eighths / 8, eighths % 8);
     let at = started + elapsed_for(trial.duration, cells, eighths);
-    let buf = frame_in(&model, 240, 67, at, Colours::Rich);
+    let buf = frame_in(&hand, 240, 67, at, Colours::Rich);
     let rows = rows_of(&buf);
     let (x, top) = (usize::from(now_rect.x) + whole, usize::from(now_rect.y) + 3);
     let edges = ['▏', '▎', '▍', '▌', '▋', '▊', '▉'];
@@ -1768,7 +1129,7 @@ fn the_rendered_wide_bar_has_two_full_height_rows_and_no_underline(extra: usize)
         };
         assert_eq!(
             foreground(&buf, x, y),
-            paint.style(Colours::Rich).fg.unwrap(),
+            paint.style(Colours::Rich).fg.expect("a colour"),
             "row {y}"
         );
     }
@@ -1787,14 +1148,14 @@ fn the_rendered_wide_bar_has_two_full_height_rows_and_no_underline(extra: usize)
 #[test_case(120, 33, Colours::Console; "compact console")]
 #[test_case(120, 33, Colours::Rich; "compact rich")]
 fn trial_bars_have_no_strip_under_their_track(width: u16, height: u16, colours: Colours) {
-    let model = running_model();
-    let snapshot = model.snapshot();
+    let hand = running_hand();
+    let snapshot = hand.snapshot();
     let trial = snapshot.trial.expect("a running trial");
     let now = trial.started.expect("a started trial") + SignedDuration::from_secs(10);
     let zone = TimeZone::UTC;
     let scene = Scene::new(snapshot, now, &zone, colours);
     let measured = measure(&scene, &screen(View::Main, width, height, colours, true));
-    let buf = frame_in(&model, width, height, now, colours);
+    let buf = frame_in(&hand, width, height, now, colours);
     let rows = rows_of(&buf);
     let r = measured.now;
     let (top, count, cells) = if measured.layout.class == SizeClass::Wide {

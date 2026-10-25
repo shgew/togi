@@ -27,14 +27,12 @@ pub enum Paint {
     White,
     /// What runs now.
     Running,
-    /// A hunt, and what it paused.
-    Hunt,
+    /// A hold, a veto, a retreat, a crash: attention without a failure.
+    Warn,
     /// Passed, done.
     Good,
     /// Failures, past and present.
     Bad,
-    /// Combinations.
-    Combination,
     /// Rules and unfilled tracks.
     Track,
     /// A key in the footer.
@@ -47,15 +45,14 @@ pub enum Paint {
 
 impl Paint {
     /// Every paint, for tests and legends.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 11] = [
         Self::Text,
         Self::Grey,
         Self::White,
         Self::Running,
-        Self::Hunt,
+        Self::Warn,
         Self::Good,
         Self::Bad,
-        Self::Combination,
         Self::Track,
         Self::Chip,
         Self::Lamp,
@@ -71,10 +68,9 @@ impl Paint {
             Self::Grey => (8, None),
             Self::White => (15, None),
             Self::Running => (14, None),
-            Self::Hunt => (11, None),
+            Self::Warn => (11, None),
             Self::Good => (10, None),
             Self::Bad => (9, None),
-            Self::Combination => (13, None),
             Self::Track => (5, None),
             Self::Chip => (15, Some(5)),
             Self::Lamp => (0, Some(3)),
@@ -110,8 +106,7 @@ impl From<Tone> for Paint {
             Tone::Plain => Self::Text,
             Tone::Good => Self::Good,
             Tone::Bad => Self::Bad,
-            Tone::Warn | Tone::Hunt => Self::Hunt,
-            Tone::Combo => Self::Combination,
+            Tone::Warn => Self::Warn,
         }
     }
 }

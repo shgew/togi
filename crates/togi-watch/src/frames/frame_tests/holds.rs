@@ -3,15 +3,12 @@
 
 use jiff::tz::TimeZone;
 use ratatui::style::Color;
-use togi_journal::{EventKind, Payload};
-use togi_machine::Regime;
-use togi_watchtest::{Scenario, cut_at};
 
 use super::bands::{stage_line, summary_screen};
 use super::{
-    ALL_SIZES, Fixture, SIZES, VIEWS, append, bar, clock, draw_journal, later, main_screen,
-    one_frame, text, words,
+    ALL_SIZES, SIZES, VIEWS, bar, clock, draw_journal, later, main_screen, one_frame, text, words,
 };
+use crate::frames::hand::Staged;
 use crate::frames::testing::screen;
 use crate::screen::{Colours, Hold, Journal, Screen, View};
 
@@ -19,12 +16,8 @@ use crate::screen::{Colours, Hold, Journal, Screen, View};
 #[test_case::test_case(false, false; "live no keys")]
 #[test_case::test_case(false, true; "one frame")]
 fn an_idle_trial_freezes_every_view_until_its_end_is_recorded(keys: bool, one_frame: bool) {
-    let fx = Fixture::scenario(Scenario::Idle);
-    let hold = fx
-        .model
-        .snapshot()
-        .idle_hold()
-        .expect("a started idle trial");
+    let fx = Staged::Idle.hand();
+    let hold = fx.snapshot().idle_hold().expect("a started idle trial");
     let planned_end = clock(hold.planned_end, &TimeZone::UTC, "%H:%M");
     let first_at = later(hold.started, 1);
     let times = [
@@ -82,12 +75,8 @@ fn an_idle_trial_freezes_every_view_until_its_end_is_recorded(keys: bool, one_fr
 
 #[test]
 fn an_idle_trial_shows_its_clock_at_the_trials_start_and_an_unfilled_bar() {
-    let fx = Fixture::scenario(Scenario::Idle);
-    let hold = fx
-        .model
-        .snapshot()
-        .idle_hold()
-        .expect("a started idle trial");
+    let fx = Staged::Idle.hand();
+    let hold = fx.snapshot().idle_hold().expect("a started idle trial");
     let started = clock(hold.started, &TimeZone::UTC, "%H:%M:%S");
     let planned_end = clock(hold.planned_end, &TimeZone::UTC, "%H:%M");
     for (width, height) in SIZES {
@@ -113,30 +102,14 @@ fn an_idle_trial_shows_its_clock_at_the_trials_start_and_an_unfilled_bar() {
 
 #[test]
 fn a_later_boot_releases_an_idle_trial_and_the_clock_moves_again() {
-    let mut events = Scenario::Idle.events().expect("the scenario's journal");
-    let hold = Fixture::of(&events)
-        .model
-        .snapshot()
-        .idle_hold()
-        .expect("a started idle trial");
-    let config = events
-        .iter()
-        .find(|event| event.kind() == EventKind::ConfigLoaded)
-        .expect("the configuration recorded before the trial")
-        .payload
-        .clone();
+    let mut fx = Staged::Idle.hand();
+    let hold = fx.snapshot().idle_hold().expect("a started idle trial");
     let planned_end = clock(hold.planned_end, &TimeZone::UTC, "%H:%M");
-    append(&mut events, config, 3600, "after-idle");
-    let fx = Fixture::of(&events);
-    let snapshot = fx.model.snapshot();
+    fx.trial.as_mut().expect("an idle trial").crashed = true;
+    let snapshot = fx.snapshot();
     assert!(snapshot.idle_hold().is_none());
     assert!(snapshot.crashed_trial());
-    let id = snapshot
-        .trial
-        .as_ref()
-        .expect("a released trial")
-        .id
-        .clone();
+    let id = snapshot.trial.expect("a released trial").id.clone();
     for (width, height) in ALL_SIZES {
         for view in VIEWS {
             let sc = Screen {
@@ -189,21 +162,9 @@ fn a_later_boot_releases_an_idle_trial_and_the_clock_moves_again() {
 
 #[test]
 fn a_trial_intent_before_its_start_does_not_freeze() {
-    let events = Scenario::Idle.events().expect("the scenario's journal");
-    let before_start = Scenario::Idle
-        .base()
-        .events()
-        .and_then(|base| {
-            cut_at(base, |event| {
-                matches!(&event.payload, Payload::TrialIntent(intent) if intent.regime == Regime::R6)
-            })
-            .map(<[_]>::to_vec)
-        })
-        .expect("the idle trial's intent");
-    assert!(before_start.len() < events.len());
-    let fx = Fixture::of(&before_start);
-    let snapshot = fx.model.snapshot();
-    assert!(snapshot.trial.is_some_and(|trial| trial.started.is_none()));
+    let mut fx = Staged::Idle.hand();
+    fx.trial.as_mut().expect("an idle trial").started = None;
+    let snapshot = fx.snapshot();
     assert!(snapshot.idle_hold().is_none());
     for (width, height) in ALL_SIZES {
         let (buf, drawn) = fx.main(width, height);
@@ -213,54 +174,49 @@ fn a_trial_intent_before_its_start_does_not_freeze() {
             shown.contains("preparing") || shown.contains("waiting") || shown.contains("starting"),
             "{width}x{height}: a trial intent is presented as running:\n{shown}"
         );
-        assert!(
-            !shown.contains("offsets are set"),
-            "{width}x{height}: an intent before its readback claims the offsets are set:\n{shown}"
-        );
         let (hour_later, _) = fx.draw(&main_screen(width, height), later(fx.now, 3600));
         assert_ne!(buf, hour_later, "{width}x{height}: the clock moves");
     }
 }
 
-#[test_case::test_case(Scenario::Search; "search")]
-#[test_case::test_case(Scenario::Checking; "checking")]
-#[test_case::test_case(Scenario::Crashed; "crashed")]
-#[test_case::test_case(Scenario::Recovering; "recovering")]
-#[test_case::test_case(Scenario::Between; "between")]
-#[test_case::test_case(Scenario::Deadend; "deadend")]
-#[test_case::test_case(Scenario::Stopped; "stopped")]
-fn every_other_frame_moves_with_the_clock(scenario: Scenario) {
-    let fx = Fixture::scenario(scenario);
+#[test_case::test_case(Staged::Mapping; "mapping")]
+#[test_case::test_case(Staged::Qualifying; "qualifying")]
+#[test_case::test_case(Staged::Day; "day")]
+#[test_case::test_case(Staged::Crashed; "crashed")]
+#[test_case::test_case(Staged::Recovering; "recovering")]
+#[test_case::test_case(Staged::Between; "between")]
+#[test_case::test_case(Staged::Deadend; "deadend")]
+#[test_case::test_case(Staged::Stopped; "stopped")]
+fn every_other_frame_moves_with_the_clock(staged: Staged) {
+    let fx = staged.hand();
+    let name = staged.name();
     for (width, height) in SIZES {
         let (now, drawn) = fx.main(width, height);
-        assert_eq!(drawn.hold, Hold::Never, "{scenario} {width}x{height}");
+        assert_eq!(drawn.hold, Hold::Never, "{name} {width}x{height}");
         let (later_frame, _) = fx.draw(&main_screen(width, height), later(fx.now, 61));
-        assert_ne!(
-            now, later_frame,
-            "{scenario} {width}x{height} shows the clock"
-        );
+        assert_ne!(now, later_frame, "{name} {width}x{height} shows the clock");
     }
 }
 
-#[test_case::test_case(Scenario::Search; "search")]
-#[test_case::test_case(Scenario::Checking; "checking")]
-#[test_case::test_case(Scenario::Hunt; "hunt")]
-#[test_case::test_case(Scenario::Idle; "idle")]
-#[test_case::test_case(Scenario::Crashed; "crashed")]
-#[test_case::test_case(Scenario::Between; "between")]
-#[test_case::test_case(Scenario::Deadend; "deadend")]
-#[test_case::test_case(Scenario::Stopped; "stopped")]
-fn a_one_frame_print_with_no_colour_styles_no_cell(scenario: Scenario) {
-    let fx = Fixture::scenario(scenario);
-    let at = Fixture::scenario(Scenario::Search).now;
-    assert_unstyled(&fx.journal(), at);
+#[test_case::test_case(Staged::Mapping; "mapping")]
+#[test_case::test_case(Staged::Qualifying; "qualifying")]
+#[test_case::test_case(Staged::Reproducing; "reproducing")]
+#[test_case::test_case(Staged::Day; "day")]
+#[test_case::test_case(Staged::Idle; "idle")]
+#[test_case::test_case(Staged::Crashed; "crashed")]
+#[test_case::test_case(Staged::Between; "between")]
+#[test_case::test_case(Staged::Deadend; "deadend")]
+#[test_case::test_case(Staged::Stopped; "stopped")]
+fn a_one_frame_print_with_no_colour_styles_no_cell(staged: Staged) {
+    let fx = staged.hand();
+    assert_unstyled(&fx.journal(), fx.now);
 }
 
 #[test_case::test_case(&Journal::Missing; "missing")]
 #[test_case::test_case(&Journal::Starting; "starting")]
 #[test_case::test_case(&Journal::Problem(&std::io::Error::other("read journal: permission denied")); "problem")]
 fn an_unavailable_journal_print_with_no_colour_styles_no_cell(journal: &Journal<'_>) {
-    let at = Fixture::scenario(Scenario::Search).now;
+    let at = Staged::Mapping.hand().now;
     assert_unstyled(journal, at);
 }
 

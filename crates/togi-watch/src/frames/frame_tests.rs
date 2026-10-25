@@ -10,6 +10,7 @@ mod holds;
 mod live_panels;
 mod local_time;
 mod panels;
+mod policy_states;
 mod without_journal;
 
 use jiff::tz::TimeZone;
@@ -92,6 +93,33 @@ pub(super) fn squash(text: &str) -> String {
 
 pub(super) fn clock(time: Timestamp, zone: &TimeZone, format: &str) -> String {
     time.to_zoned(zone.clone()).strftime(format).to_string()
+}
+
+/// A journal of a session on two cores with its configuration loaded, then `payloads`, a second apart.
+pub(in crate::frames) fn journal(payloads: Vec<Payload>) -> Vec<Event> {
+    let mut events: Vec<Event> = Vec::new();
+    let start = [
+        crate::tests::kit::session_start(&[(0, 0), (1, 0)]),
+        crate::tests::kit::config_loaded(),
+    ];
+    for (index, payload) in start.into_iter().chain(payloads).enumerate() {
+        if events.is_empty() {
+            debug_assert_eq!(index, 0);
+            events.push(Event::new(
+                crate::tests::kit::seq(1),
+                Stamp {
+                    time: some_time(),
+                    mono: None,
+                },
+                BootId::from("boot-1".to_owned()),
+                Vec::new(),
+                payload,
+            ));
+        } else {
+            append(&mut events, payload, 1, "boot-1");
+        }
+    }
+    events
 }
 
 pub(super) fn append(events: &mut Vec<Event>, payload: Payload, after_secs: i64, boot: &str) {

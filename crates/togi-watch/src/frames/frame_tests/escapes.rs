@@ -3,12 +3,12 @@
 use jiff::tz::TimeZone;
 use ratatui::buffer::Buffer;
 use togi_journal::{BackendRetry, DeadEnd, DeadEndCondition, Payload, RetryTarget, TrialId};
-use togi_watchtest::Scenario;
 
-use super::{Fixture, draw_journal, rows_of, some_time};
+use super::{Fixture, draw_journal, journal, rows_of, some_time};
+use crate::frames::hand::Staged;
 use crate::frames::testing::screen;
 use crate::screen::{Colours, Journal, Screen, View};
-use crate::tests::kit::{Script, warning};
+use crate::tests::kit::warning;
 
 const HOSTILE: &str =
     "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u{9b}31m\u{9d}0;title\u{9c}\u{2028}\u{2029}";
@@ -69,9 +69,7 @@ fn a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped(
     payload: Payload,
     view: View,
 ) {
-    let mut script = Script::at_limit();
-    script.append(payload, &[]);
-    let fx = Fixture::of(&script.events);
+    let fx = Fixture::of(&journal(vec![payload]));
     let sc = screen(view, 300, 40, Colours::Full, true);
     let (buf, _) = fx.draw(&sc, fx.now);
     assert_inert(&buf, &format!("{name} {view:?}"));
@@ -85,91 +83,14 @@ fn a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped(
 
 #[test]
 fn a_trial_id_with_controls_is_drawn_escaped() {
-    let mut events = Scenario::Crashed.events().expect("the scenario's journal");
-    let old = Fixture::of(&events)
-        .model
-        .snapshot()
-        .trial
-        .expect("a crashed trial")
-        .id
-        .clone();
+    let mut hand = Staged::Crashed.hand();
     let hostile = TrialId::from(HOSTILE_ID.to_owned());
-    for event in &mut events {
-        match &mut event.payload {
-            Payload::TrialIntent(intent) if intent.trial == old => intent.trial = hostile.clone(),
-            Payload::TrialStart(start) if start.trial == old => start.trial = hostile.clone(),
-            Payload::SessionStart(_)
-            | Payload::SessionContext(_)
-            | Payload::SessionBaseline(_)
-            | Payload::SessionNotice(_)
-            | Payload::SessionWarning(_)
-            | Payload::SessionArchived(_)
-            | Payload::SessionCarried(_)
-            | Payload::ConfigLoaded(_)
-            | Payload::PreflightCheck(_)
-            | Payload::SmuIntent(_)
-            | Payload::SmuWrite(_)
-            | Payload::SmuReadback(_)
-            | Payload::SmuError(_)
-            | Payload::ProfileApplied(_)
-            | Payload::ProfileChange(_)
-            | Payload::ProfileRestored(_)
-            | Payload::TrialIntent(_)
-            | Payload::TrialStart(_)
-            | Payload::TrialProgress(_)
-            | Payload::TrialSignal(_)
-            | Payload::TrialSample(_)
-            | Payload::TrialEnd(_)
-            | Payload::TrialCarried(_)
-            | Payload::Failure(_)
-            | Payload::FailureCarried(_)
-            | Payload::Mce(_)
-            | Payload::CrashDetected(_)
-            | Payload::TunerDecision(_)
-            | Payload::CorePhase(_)
-            | Payload::CheckingCycle(_)
-            | Payload::CheckingStep(_)
-            | Payload::CheckingChain(_)
-            | Payload::HostRanking(_)
-            | Payload::HuntStart(_)
-            | Payload::HuntGroup(_)
-            | Payload::HuntEnd(_)
-            | Payload::HuntSkipped(_)
-            | Payload::Combination(_)
-            | Payload::DeepeningRound(_)
-            | Payload::TunerWarning(_)
-            | Payload::BackendRetry(_)
-            | Payload::CommandReset(_)
-            | Payload::DefectFound(_)
-            | Payload::DefectAnswered(_)
-            | Payload::DeadEnd(_)
-            | Payload::BootSavedEntry(_)
-            | Payload::BootLeaveReason(_)
-            | Payload::Shutdown(_)
-            | Payload::JournalTorn(_)
-            | Payload::DayBootStart(_)
-            | Payload::DayCheckpoint(_)
-            | Payload::DayOffsetsChanged(_)
-            | Payload::DayCleanStop(_)
-            | Payload::DayUncleanEnd(_)
-            | Payload::DayAnswer(_)
-            | Payload::DayRecord(_)
-            | Payload::DayFault(_)
-            | Payload::StateRebuilt(_) => {}
-        }
-    }
-    let fx = Fixture::of(&events);
-    assert!(
-        fx.model
-            .snapshot()
-            .trial
-            .is_some_and(|trial| trial.id == hostile)
-    );
+    hand.trial.as_mut().expect("a crashed trial").id = hostile;
     for view in [View::Main, View::Log] {
-        let (buf, _) = fx.draw(&screen(view, 300, 40, Colours::Full, true), fx.now);
+        let (buf, _) = hand.draw(&screen(view, 300, 40, Colours::Full, true), hand.now);
         assert_inert(&buf, &format!("{view:?}"));
     }
-    let (main, _) = fx.draw(&screen(View::Main, 300, 40, Colours::Full, true), fx.now);
+    let (main, _) = hand.draw(&screen(View::Main, 300, 40, Colours::Full, true), hand.now);
     assert!(
         squashed(&main).contains(ESCAPED_ID),
         "the trial id is not visibly escaped:\n{}",

@@ -2,26 +2,26 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes
-│ ■ SOLO ─ ► P1 ─ ○ P2 ─ CLEAN 0 ─ ► CYCLE 1 ─ 1:20 left
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│ ► NIGHT 0h30m ─ mapping C1 -20 ─ 9:20 left
 │
 │ █ READING THE SCREEN ────────────────────────────────────────────────────────
 │ █
-│ │ ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░▄                -36
-│ │                     at its limit: it cannot go deeper
+│ █ ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31
+│ │                     applied -12 under load; the dots run to the cap S at
+│ │                     -26; the red mark is the edge U, failed at -31
 │ │
-│ │ ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····▄                    -32
-│ │                     has room: backed off after a hunt, may deepen
+│ │   09   -8           ▄▄▄▄▄▄▄▄······
+│ │                     idle, so grey; the cap S is -14 and its CCD has no edge
+│ │                     yet, so there is no red mark
 │ │
-│ │   09    0  PARKED   ···············································▄    -48
-│ │                     parked at 0 by a hunt; returns to -47
-│ │
-│ │ ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ ▄                    -32
-│ │                     probe: the group failed with core 00 at -30, -29, -27
+│ │   11    ?           ······························                   ▄  -50
+│ │                     no readback yet; the cap S is -30 and the edge is
+│ │                     censored: nothing failed down to -50
 │ │
 │ │ ►         the core carries load in this trial
 │ │ ▄▄▄       offset applied now, or saved after a stop restored the hardware;
-│ │           white when this trial judges the core
+│ │           white when this trial loads the core
 │ │ ?         no hardware offset has been read back for this core
 │
 │  ?  help    l  log    esc  back    q  exit dashboard

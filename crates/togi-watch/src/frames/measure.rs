@@ -14,135 +14,12 @@ use super::scene::Scene;
 use super::story::resting_band;
 use crate::screen::Screen;
 
-/// A table column inside its panel: the cell it starts at and how many cells it may use. A column of width 0
-/// is not shown at this size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct Column {
-    /// The first cell.
-    pub(crate) at: usize,
-    /// The cells it may use.
-    pub(crate) w: usize,
-}
+/// The narrowest CCD table, in cells, that fits a 50-cell gauge from cell 20.
+const DENSE_WIDTH: usize = 71;
 
-const fn col(at: usize, w: usize) -> Column {
-    Column { at, w }
-}
-
-const NONE: Column = col(0, 0);
-
-/// Every context table's columns for the screen size, so a header and its rows always share them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Tables {
-    /// Where the value of a label/value row starts.
-    pub(crate) field: usize,
-    /// Marker, number, kind, where, workload, schedule, result.
-    pub(crate) cycle: [Column; 7],
-    /// Hunt parts: marker, part, at failing offsets, parked, schedule, state.
-    pub(crate) parts: [Column; 6],
-    /// Hunt groups: which, what, outcome.
-    pub(crate) groups: [Column; 3],
-    /// Member, now, failed at, passed at, state.
-    pub(crate) probes: [Column; 5],
-    /// The numbered steps after a hunt: number, text.
-    pub(crate) steps: [Column; 2],
-    /// Marker, core, this turn, at, workload, so far.
-    pub(crate) turns: [Column; 6],
-    /// Name, member offsets, found by, against the profile now.
-    pub(crate) combos: [Column; 4],
-    /// Cells per member offset in the combinations table.
-    pub(crate) member: usize,
-}
-
-impl Tables {
-    /// The columns of `class` in a context panel `width` cells wide.
-    pub(crate) fn new(class: SizeClass, width: usize) -> Self {
-        let rest = |at: usize| col(at, width.saturating_sub(at));
-        match class {
-            SizeClass::Wide => Self {
-                field: 12,
-                cycle: [
-                    col(0, 1),
-                    col(2, 2),
-                    col(6, 21),
-                    col(28, 23),
-                    col(52, 28),
-                    col(82, 13),
-                    rest(97),
-                ],
-                parts: [
-                    col(10, 1),
-                    col(12, 10),
-                    col(24, 19),
-                    col(45, 12),
-                    col(59, 9),
-                    rest(70),
-                ],
-                groups: [col(12, 12), col(25, 44), rest(70)],
-                probes: [col(12, 7), col(20, 5), col(26, 19), col(46, 22), rest(69)],
-                steps: [col(12, 2), rest(15)],
-                turns: [
-                    col(0, 1),
-                    col(2, 6),
-                    col(9, 30),
-                    col(40, 6),
-                    col(47, 25),
-                    rest(73),
-                ],
-                combos: [col(0, 5), col(6, 40), col(48, 21), rest(70)],
-                member: 5,
-            },
-            SizeClass::Medium => Self {
-                field: 12,
-                cycle: [
-                    col(0, 1),
-                    col(2, 2),
-                    col(5, 17),
-                    col(23, 19),
-                    NONE,
-                    col(43, 13),
-                    rest(57),
-                ],
-                parts: [
-                    col(10, 1),
-                    col(12, 7),
-                    col(20, 12),
-                    col(33, 12),
-                    col(46, 8),
-                    rest(55),
-                ],
-                groups: [col(12, 12), col(25, 29), rest(55)],
-                probes: [col(12, 5), col(18, 5), col(24, 12), col(37, 17), rest(55)],
-                steps: [col(12, 2), rest(15)],
-                turns: [col(0, 1), col(2, 3), col(6, 27), col(34, 4), NONE, rest(39)],
-                combos: [col(0, 3), col(4, 32), col(37, 7), rest(45)],
-                member: 4,
-            },
-            SizeClass::Compact => Self {
-                field: 11,
-                cycle: [
-                    col(0, 1),
-                    col(2, 2),
-                    col(5, 17),
-                    col(23, 13),
-                    NONE,
-                    NONE,
-                    rest(37),
-                ],
-                parts: [col(0, 1), col(2, 8), col(11, 25), NONE, NONE, rest(37)],
-                groups: [col(0, 12), col(13, 23), rest(37)],
-                probes: [col(2, 5), col(8, 4), col(13, 11), col(25, 11), rest(37)],
-                steps: [col(11, 2), rest(14)],
-                turns: [col(0, 1), col(2, 3), col(6, 26), col(33, 4), NONE, rest(38)],
-                combos: [col(0, 3), NONE, col(4, 7), rest(12)],
-                member: 0,
-            },
-        }
-    }
-}
-
-/// The narrowest CCD table, in cells, that fits a 50-cell gauge: the gauge from cell 20, a four-cell failure
-/// point from cell 71, and no per-core note.
-const DENSE_WIDTH: usize = 75;
+/// The rows a CCD table spends above its cores: the heading with the scale, the distance row and the coverage
+/// row.
+const CCD_HEAD_ROWS: usize = 3;
 
 /// The columns of a CCD's core table, as cells from the table's left edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,14 +34,6 @@ pub(crate) struct CoreColumns {
     pub(crate) gauge: usize,
     /// The gauge's cells.
     pub(crate) cells: usize,
-    /// The failure point.
-    pub(crate) failure: usize,
-    /// The cells the failure point is right-aligned in.
-    pub(crate) failure_width: usize,
-    /// The note.
-    pub(crate) note: usize,
-    /// The role sits beside the CCD name and notes are bare numbers.
-    pub(crate) brief: bool,
 }
 
 /// One CCD's core table.
@@ -189,12 +58,10 @@ pub(crate) struct Measure {
     pub(crate) outcomes: Rect,
     /// A table per CCD, in CCD order.
     pub(crate) ccds: Vec<Ccd>,
-    /// The context panel: BIOS, cycle, hunt, turns, round, combinations, R7.
+    /// The context panel: the night's task, progress and shares, or the day's hold, step and events.
     pub(crate) context: Rect,
     /// What happened; no rows when the CCD tables do not sit side by side.
     pub(crate) history: Rect,
-    /// The context tables' columns.
-    pub(crate) tables: Tables,
 }
 
 fn rect(x: u16, y: u16, w: usize, h: usize) -> Rect {
@@ -241,9 +108,9 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
         } else {
             (usize::from(margin), low_y, full)
         };
-        let mut height = (cores + 1).min(hint.saturating_sub(y + 1));
+        let mut height = (cores + CCD_HEAD_ROWS).min(hint.saturating_sub(y + 1));
         if !side {
-            let share = (hint.saturating_sub(ccd_y + 3) / ids.len().max(1)).max(1);
+            let share = (hint.saturating_sub(ccd_y + 3) / ids.len().max(1)).max(CCD_HEAD_ROWS);
             height = height.min(share);
         }
         let mut columns = match class {
@@ -253,10 +120,6 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 state: 11,
                 gauge: 20,
                 cells: 50,
-                failure: 71,
-                failure_width: 4,
-                note: w,
-                brief: true,
             },
             SizeClass::Wide => CoreColumns {
                 id: 2,
@@ -264,10 +127,6 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 state: 11,
                 gauge: 21,
                 cells: 50,
-                failure: 73,
-                failure_width: 5,
-                note: 81,
-                brief: false,
             },
             SizeClass::Medium => CoreColumns {
                 id: 2,
@@ -275,10 +134,6 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 state: 11,
                 gauge: 21,
                 cells: 25,
-                failure: 48,
-                failure_width: 5,
-                note: 56,
-                brief: false,
             },
             SizeClass::Compact if !side => CoreColumns {
                 id: 2,
@@ -286,10 +141,6 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 state: 11,
                 gauge: 21,
                 cells: 25,
-                failure: 48,
-                failure_width: 5,
-                note: 56,
-                brief: false,
             },
             SizeClass::Compact => CoreColumns {
                 id: 2,
@@ -297,10 +148,6 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 state: 9,
                 gauge: 18,
                 cells: 25,
-                failure: 44,
-                failure_width: 5,
-                note: 50,
-                brief: true,
             },
         };
         columns.cells = columns.cells.min(w.saturating_sub(columns.gauge + 1));
@@ -331,7 +178,6 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
         now: rect(margin, rows.now, full, now_height),
         outcomes: rect(margin, rows.outcomes, full, outcomes_height),
         ccds,
-        tables: Tables::new(class, usize::from(context.width)),
         context,
         history,
         layout,

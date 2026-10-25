@@ -32,20 +32,15 @@ macro_rules! determinism {
 }
 
 determinism! {
-    session_and_its_scenarios_build_byte_identical_journals_twice: Session,
-    concluded_and_its_scenarios_build_byte_identical_journals_twice: Concluded,
-    unconfirmed_and_its_scenarios_build_byte_identical_journals_twice: Unconfirmed,
-    later_hunt_and_its_scenarios_build_byte_identical_journals_twice: LaterHunt,
-    first_result_and_its_scenarios_build_byte_identical_journals_twice: FirstResult,
-    probe_and_its_scenarios_build_byte_identical_journals_twice: Probe,
-    combination_and_its_scenarios_build_byte_identical_journals_twice: Combination,
-    crashed_cycle_and_its_scenarios_build_byte_identical_journals_twice: CrashedCycle,
+    night_and_its_scenarios_build_byte_identical_journals_twice: Night,
+    mapped_and_its_scenarios_build_byte_identical_journals_twice: Mapped,
+    filler_and_its_scenarios_build_byte_identical_journals_twice: Filler,
     dead_end_and_its_scenarios_build_byte_identical_journals_twice: DeadEnd,
 }
 
-#[test_case::test_case(Scenario::Search; "search")]
+#[test_case::test_case(Scenario::Controls; "controls")]
 #[test_case::test_case(Scenario::Recovering; "recovering")]
-#[test_case::test_case(Scenario::Confirm; "confirm")]
+#[test_case::test_case(Scenario::Stopped; "stopped")]
 fn every_scenario_names_the_fixed_build(scenario: Scenario) {
     let want = togi_watchtest::build();
     assert_eq!(want.version, "0.0.0");
@@ -108,6 +103,21 @@ fn every_scenario_names_the_fixed_build(scenario: Scenario) {
         | Payload::DayAnswer(_)
         | Payload::DayRecord(_)
         | Payload::DayFault(_)
+        | Payload::SessionImported(_)
+        | Payload::ExposureObserved(_)
+        | Payload::CcdEdge(_)
+        | Payload::CcdCap(_)
+        | Payload::NightPlan(_)
+        | Payload::NightQualification(_)
+        | Payload::NightReproduction(_)
+        | Payload::DayStep(_)
+        | Payload::DayApplied(_)
+        | Payload::DayEvent(_)
+        | Payload::DayVeto(_)
+        | Payload::DayHold(_)
+        | Payload::DayFreeze(_)
+        | Payload::DayInterval(_)
+        | Payload::DayImported(_)
         | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => None,
     });

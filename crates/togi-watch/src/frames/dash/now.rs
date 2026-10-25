@@ -89,40 +89,6 @@ pub(super) fn progress_bar(
     ])
 }
 
-/// `1 passed · trial 2 of 4  ■ ► · ·`, or its short form.
-pub(super) fn requirement_line(
-    scene: &Scene<'_>,
-    trial: &TrialView,
-    compact: bool,
-) -> Line<'static> {
-    let count = trial.count;
-    if count.of == 0 {
-        return Line::default();
-    }
-    let label = if compact {
-        format!("{}/{} ", count.passed, count.of)
-    } else {
-        format!(
-            "{} passed · trial {} of {}  ",
-            count.passed, count.index, count.of
-        )
-    };
-    let mut spans = vec![scene.paint(Paint::Text, label)];
-    for i in 0..count.of {
-        spans.push(if i < count.passed {
-            scene.paint(Paint::Good, "■")
-        } else if i + 1 == count.index {
-            scene.paint(Paint::Running, "►")
-        } else {
-            scene.paint(Paint::Grey, "·")
-        });
-        if i + 1 < count.of {
-            spans.push(Span::raw(" "));
-        }
-    }
-    Line::from(spans)
-}
-
 fn draw_resting(buf: &mut Buffer, r: Rect, class: SizeClass, scene: &Scene<'_>) {
     let band = resting_band(scene);
     let title = Line::from(scene.paint(band.paint, band.title));
@@ -291,7 +257,7 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
         let cells = width.saturating_sub(23);
         let (mut digits, mut style, mut label) = (clock(remaining), Paint::White, "left");
         if !past.is_zero() {
-            (digits, style, label) = (clock(past), Paint::Hunt, "past end");
+            (digits, style, label) = (clock(past), Paint::Warn, "past end");
         }
         if let Some(hold) = quiet {
             (digits, style) = (scene.wall_minute(hold.planned_end), Paint::Grey);
@@ -350,15 +316,6 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
                 paint(Paint::Grey, format!(" of {}", clock(trial.duration))),
             ]);
             put(buf, r, 0, 6, &progress, colours);
-            let trials = requirement_line(scene, trial, false);
-            put(
-                buf,
-                r,
-                saturating_cells(cells.saturating_sub(line_width(&trials, colours))),
-                6,
-                &trials,
-                colours,
-            );
             put(
                 buf,
                 r,
@@ -370,26 +327,19 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
         }
         return;
     }
-    let requirement = requirement_line(scene, trial, true);
-    let mut label = vec![
-        paint(Paint::White, clock(remaining)),
-        paint(Paint::Grey, " left".into()),
-        Span::raw("  "),
-    ];
-    label.extend(requirement.spans.iter().cloned());
-    if !past.is_zero() {
-        label = vec![
-            paint(Paint::Hunt, format!("{} past its end", clock(past))),
-            Span::raw("  "),
-        ];
-        label.extend(requirement.spans);
-    }
-    if let Some(hold) = quiet {
-        label = vec![
+    let label = if let Some(hold) = quiet {
+        vec![
             paint(Paint::Grey, "screen paused · planned end ".into()),
             paint(Paint::Text, scene.wall_minute(hold.planned_end)),
-        ];
-    }
+        ]
+    } else if past.is_zero() {
+        vec![
+            paint(Paint::White, clock(remaining)),
+            paint(Paint::Grey, " left".into()),
+        ]
+    } else {
+        vec![paint(Paint::Warn, format!("{} past its end", clock(past)))]
+    };
     let label = Line::from(label);
     let cells = width.saturating_sub(line_width(&label, colours) + 2);
     let mut bar = progress_bar(scene, cells, done, trial.duration).spans;

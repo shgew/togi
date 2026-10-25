@@ -7,7 +7,7 @@ use togi_machine::{InvalidCcd, InvalidCore, InvalidTarget};
 use togi_session::SessionError;
 use togi_sim::{InvalidMachine, ScriptError};
 use togi_simrun::{HistoryError, SimError};
-use togi_tuner::{FoldError, NotReady};
+use togi_tuner::policy::FoldError;
 
 use crate::Scenario;
 
@@ -15,6 +15,8 @@ use crate::Scenario;
 pub enum Error {
     #[error("simulate")]
     Simulate(#[from] SimError),
+    #[error("run the calendar simulation")]
+    Calendar(#[from] togi_simrun::day_night::RunError),
     #[error("the simulated run ended with errors: {}", listed(.0))]
     Session(Vec<SessionError>),
     #[error("read the simulated journal")]
@@ -56,8 +58,6 @@ pub enum Error {
     Stamp(#[from] jiff::Error),
     #[error("index the fixture journal")]
     Index(#[from] TryFromIntError),
-    #[error("ask the tuner for its next step")]
-    Next(#[from] NotReady),
     #[error("install the journal in {}", dir.display())]
     Install {
         dir: PathBuf,
@@ -75,6 +75,12 @@ pub enum InstallError {
     #[error("append {kind} #{seq}")]
     Append {
         kind: &'static str,
+        seq: u64,
+        #[source]
+        source: AppendError,
+    },
+    #[error("reboot the journal into the boot at #{seq}")]
+    Reboot {
         seq: u64,
         #[source]
         source: AppendError,

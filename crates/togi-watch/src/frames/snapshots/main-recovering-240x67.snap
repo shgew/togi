@@ -2,65 +2,65 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   01:41:10   tuning 1h41m   session 1h41m   0 failures · 1 crash
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
 │
-│  ○ SOLO LIMITS  0 of 16 found  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
+│  ○ NIGHT since 22:13 · 0h30m
 │
-│  ▌  RECOVERED   I picked up from the journal after the reboot; nothing it recorded is lost.                              last trial      PASS  1:30 on core 00 · Tctl max 62°C
-│
+│  ▌  RECOVERED   I picked up from the journal after the reboot; nothing it recorded is lost.
+│  ▌              Every planned task is done; filler work runs until you end the night.
 │
 │  RECOVERED FROM A CRASH ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-│  crash in core 08 · R1 light at -10
-│  detected 01:40:30 after a watchdog reset
-│  next trial: R1 light, core 01 alone at -10
+│  crash in R1 light on 08-15
+│  detected 22:13:20 after a watchdog reset
+│  next trial: filler
 │
-│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  waiting at 0                           CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
-│    00    0  SEARCH    ··········                                                  passed -10 · next -15                    08  -10  SEARCH    ▄▄▄▄▄▄▄▄▄▄                                                  passed -5 · next -10
-│    01    0  SEARCH    ·····                                                       passed -5 · next -10                     09    0  SEARCH    ·····                                                       passed -5 · next -10
-│    02    0  SEARCH    ·····                                                       passed -5 · next -10                     10    0  SEARCH    ·····                                                       passed -5 · next -10
-│    03    0  SEARCH    ·····                                                       passed -5 · next -10                     11    0  SEARCH    ·····                                                       passed -5 · next -10
-│    04    0  SEARCH    ·····                                                       passed -5 · next -10                     12    0  SEARCH    ·····                                                       passed -5 · next -10
-│    05    0  SEARCH    ·····                                                       passed -5 · next -10                     13    0  SEARCH    ·····                                                       passed -5 · next -10
-│    06    0  SEARCH    ·····                                                       passed -5 · next -10                     14    0  SEARCH    ·····                                                       passed -5 · next -10
-│    07    0  SEARCH    ·····                                                       passed -5 · next -10                     15    0  SEARCH    ·····                                                       passed -5 · next -10
+│  CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
+│  D -10 · S -26 fallback slope · bound by rate R1 · U fails at -31 · 16 counts to S                                       D -8 · S -15 measured slope · bound by rate R1 · U censored at -50 · 7 counts to S
+│  3 covered for the cap · 1 uncovered for the cap                                                                         4 covered for the cap · 0 uncovered for the cap
+│    00  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      08   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
+│    01  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      09   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
+│    02  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      10   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
+│    03  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      11   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
+│    04  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      12   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
+│    05  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      13   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
+│    06  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      14   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
+│    07  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      15   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
 │
-│  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
-│  none confirmed yet: phase 1 has not passed a full cycle
-│                                                                                                                          01:40  crash    with the offsets applied, rebooted
-│  TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     01:39  step     core 00 passed -10; searches -15 on its next turn
-│                                                                                                                          01:36  step     core 15 passed -5; searches -10 on its next turn
-│    core   this turn                      at     workload                  so far                                         01:33  step     core 07 passed -5; searches -10 on its next turn
-│    01     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:30  step     core 14 passed -5; searches -10 on its next turn
-│    09     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:27  step     core 06 passed -5; searches -10 on its next turn
-│    02     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:24  step     core 13 passed -5; searches -10 on its next turn
-│    10     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:21  step     core 05 passed -5; searches -10 on its next turn
-│    03     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:18  step     core 12 passed -5; searches -10 on its next turn
-│    11     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:15  step     core 04 passed -5; searches -10 on its next turn
-│    04     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:12  step     core 11 passed -5; searches -10 on its next turn
-│    12     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:09  step     core 03 passed -5; searches -10 on its next turn
-│    05     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:06  step     core 10 passed -5; searches -10 on its next turn
-│    13     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:03  step     core 02 passed -5; searches -10 on its next turn
-│    06     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:00  step     core 09 passed -5; searches -10 on its next turn
-│    14     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:57  step     core 01 passed -5; searches -10 on its next turn
-│    07     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:54  step     core 08 passed -5; searches -10 on its next turn
-│    15     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:51  step     core 00 passed -5; searches -10 on its next turn
-│    00     search: light, then heavy      -15    mprime SSE 4K-21K         passed -10 · next -15                          00:48  step     core 15 passed 0; searches -5 on its next turn
-│    08     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:45  step     core 07 passed 0; searches -5 on its next turn
-│                                                                                                                          00:42  step     core 14 passed 0; searches -5 on its next turn
-│                                                                                                                          00:39  step     core 06 passed 0; searches -5 on its next turn
-│                                                                                                                          00:36  step     core 13 passed 0; searches -5 on its next turn
-│                                                                                                                          00:33  step     core 05 passed 0; searches -5 on its next turn
-│                                                                                                                          00:30  step     core 12 passed 0; searches -5 on its next turn
-│                                                                                                                          00:27  step     core 04 passed 0; searches -5 on its next turn
-│                                                                                                                          00:24  step     core 11 passed 0; searches -5 on its next turn
-│                                                                                                                          00:21  step     core 03 passed 0; searches -5 on its next turn
-│                                                                                                                          00:18  step     core 10 passed 0; searches -5 on its next turn
-│                                                                                                                          00:15  step     core 02 passed 0; searches -5 on its next turn
-│                                                                                                                          00:12  step     core 09 passed 0; searches -5 on its next turn
-│                                                                                                                          00:09  step     core 01 passed 0; searches -5 on its next turn
-│                                                                                                                          00:06  step     core 08 passed 0; searches -5 on its next turn
-│                                                                                                                          00:03  step     core 00 passed 0; searches -5 on its next turn
-│                                                                                                                          00:00  start    session started on 16 cores
+│  NIGHT since 22:13 · 0h30m elapsed ─────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+│  task        mapping task 2 · 1 of 2 planned tasks done
+│  mapping     CCD 1 at -20                                                                                                22:13  start    session started on 16 cores
+│  shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%
+│
+│  DAY ──────────────────────────────────────────────────────────────────────────────────────────────── applied -10/-8
+│  hold        3h00m of 8h00m · holding -10/-8
+│  firmware    valid
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
 │
 │
 │

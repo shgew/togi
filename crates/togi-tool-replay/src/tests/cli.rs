@@ -94,9 +94,9 @@ fn console_and_rich_frame_profiles_are_mutually_exclusive() {
 
 #[test]
 fn rich_prints_unicode_and_truecolour_from_the_recording() {
-    let events = Scenario::Checking.events().unwrap();
+    let events = Scenario::Recovering.events().unwrap();
     let at = events.last().unwrap().seq.get().to_string();
-    let bytes = recording(Scenario::Checking);
+    let bytes = recording(Scenario::Recovering);
     let cli = parse(&["--at", &at, "--rich", "--after", "40s"]).unwrap();
     let mut out = Vec::new();
     assert!(run(&cli, &bytes, &mut out).is_empty());
@@ -139,8 +139,8 @@ fn run(cli: &Cli, bytes: &str, out: &mut impl std::io::Write) -> Vec<u8> {
 
 #[test]
 fn at_prints_one_frame_of_the_recording_in_the_supplied_time_zone() {
-    let bytes = recording(Scenario::Checking);
-    let events = Scenario::Checking.events().unwrap();
+    let bytes = recording(Scenario::Mapping);
+    let events = Scenario::Mapping.events().unwrap();
     let at = events[events.len() / 2].seq.get();
     let cli = parse(&[
         "--at",
@@ -187,8 +187,8 @@ fn at_prints_one_frame_of_the_recording_in_the_supplied_time_zone() {
 #[test_case("help", View::Help; "help view")]
 #[test_case("log", View::Log; "log view")]
 fn every_view_can_be_printed(name: &str, view: View) {
-    let bytes = recording(Scenario::Checking);
-    let events = Scenario::Checking.events().unwrap();
+    let bytes = recording(Scenario::Controls);
+    let events = Scenario::Controls.events().unwrap();
     let cli = parse(&["--at", "30", "--view", name]).unwrap();
     let mut out = Vec::new();
     assert!(run(&cli, &bytes, &mut out).is_empty());
@@ -205,7 +205,7 @@ fn every_view_can_be_printed(name: &str, view: View) {
 
 #[test]
 fn at_a_sequence_number_beyond_the_recording_prints_its_last_frame() {
-    let bytes = recording(Scenario::Checking);
+    let bytes = recording(Scenario::Controls);
     let cli = parse(&["--at", "99999999"]).unwrap();
     let mut out = Vec::new();
     assert!(run(&cli, &bytes, &mut out).is_empty());
@@ -215,10 +215,10 @@ fn at_a_sequence_number_beyond_the_recording_prints_its_last_frame() {
 #[test]
 fn at_draws_a_recording_with_an_unknown_kind_and_fields_as_the_known_events_alone_and_leaves_it_as_it_is()
  {
-    let mut bytes = recording(Scenario::Checking);
+    let mut bytes = recording(Scenario::Between);
     let planted = plant(&mut bytes);
     let before = bytes.clone();
-    let all = Scenario::Checking.events().unwrap();
+    let all = Scenario::Between.events().unwrap();
     let known: Vec<_> = all
         .iter()
         .filter(|event| event.seq.get() != planted.kind_line as u64)
@@ -271,7 +271,7 @@ fn run_reports_an_unreadable_recording_and_a_failed_write() {
     .unwrap_err();
     assert!(matches!(error, Error::Read(_)));
 
-    let bytes = recording(Scenario::Checking);
+    let bytes = recording(Scenario::Controls);
     let error = run_with(
         &cli,
         &mut Broken,

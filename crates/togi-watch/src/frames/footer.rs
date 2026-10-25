@@ -100,7 +100,7 @@ pub fn key_hints(
 #[must_use]
 pub(super) fn skipped_clause(skipped: &str, colours: Colours) -> Clause {
     let amber =
-        |text: &str| Line::styled(escape_text(text).to_string(), Paint::Hunt.style(colours));
+        |text: &str| Line::styled(escape_text(text).to_string(), Paint::Warn.style(colours));
     Clause::new(
         "   ",
         vec![
@@ -119,7 +119,7 @@ pub(super) fn skipped_clause(skipped: &str, colours: Colours) -> Clause {
 #[must_use]
 pub(super) fn question_clause(pending: usize, colours: Colours) -> Clause {
     let amber =
-        |text: String| Line::styled(escape_text(&text).to_string(), Paint::Hunt.style(colours));
+        |text: String| Line::styled(escape_text(&text).to_string(), Paint::Warn.style(colours));
     let noun = if pending == 1 {
         "question"
     } else {
@@ -167,7 +167,7 @@ fn asking_line(direction: Direction, width: usize, colours: Colours) -> Line<'st
         Direction::Night => ("Reboot into the night tuning?", "Reboot into the night?"),
         Direction::Day => ("Reboot into the day cycle?", "Reboot into the day?"),
     };
-    let amber = |text: String| Line::styled(text, Paint::Hunt.style(colours));
+    let amber = |text: String| Line::styled(text, Paint::Warn.style(colours));
     let clause = Clause::new(
         "",
         vec![
@@ -350,7 +350,7 @@ mod tests {
             let last = line.spans.last().expect("a footer");
             assert_eq!(
                 last.style,
-                Paint::Hunt.style(Colours::Full),
+                Paint::Warn.style(Colours::Full),
                 "{view:?} {width}: the warning lost its amber"
             );
         }

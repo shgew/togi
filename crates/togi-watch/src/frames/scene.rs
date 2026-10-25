@@ -11,12 +11,10 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use ratatui::style::Style;
 use ratatui::text::Span;
-use togi_machine::{CoreId, Regime};
 
 use super::colours::Paint;
-use crate::model::{CoreView, IdleHold, Snapshot};
+use crate::model::{IdleHold, Snapshot};
 use crate::screen::Colours;
-use crate::words::kind_words;
 
 /// One frame's facts and clock.
 #[derive(Debug, Clone, Copy)]
@@ -36,10 +34,6 @@ pub(crate) struct Scene<'a> {
 impl<'a> Scene<'a> {
     /// The scene of `s` at `now`. A started idle trial holds the frame at its start, so nothing on it moves with
     /// the clock until a later event releases it.
-    #[expect(
-        clippy::large_types_passed_by_value,
-        reason = "the scene keeps the snapshot, a Copy bag of references"
-    )]
     pub(crate) fn new(
         s: Snapshot<'a>,
         now: Timestamp,
@@ -64,11 +58,6 @@ impl<'a> Scene<'a> {
     /// `text` in `paint`.
     pub(crate) fn paint(&self, paint: Paint, text: impl Into<Cow<'static, str>>) -> Span<'static> {
         paint.span(self.colours, text)
-    }
-
-    /// The core `id`, if the session knows it.
-    pub(crate) fn core(&self, id: CoreId) -> Option<&'a CoreView> {
-        self.s.cores.iter().find(|core| core.id == id)
     }
 
     /// Whether a trial runs on the hardware: false once the session stopped, met a dead end, or its trial
@@ -134,29 +123,10 @@ pub(crate) fn ago(span: Duration) -> String {
     }
 }
 
-/// A trial length in its shortest unit: `10m` for whole minutes, `45s` otherwise.
-pub(crate) fn short_duration(span: Duration) -> String {
-    let secs = span.as_secs();
-    if secs > 0 && secs.is_multiple_of(60) {
-        format!("{}m", secs / 60)
-    } else {
-        format!("{secs}s")
-    }
-}
-
 /// The span from `from` to `to`, or zero when `to` is earlier.
 pub(crate) fn between(from: Timestamp, to: Timestamp) -> Duration {
     let nanos = to.as_nanosecond() - from.as_nanosecond();
     crate::numbers::nonnegative_elapsed(nanos)
-}
-
-/// Regimes by their kind of load, in order: `light, then heavy`.
-pub(crate) fn regime_list(regimes: &[Regime]) -> String {
-    regimes
-        .iter()
-        .map(|&regime| kind_words(regime).trim_end_matches(" vector"))
-        .collect::<Vec<_>>()
-        .join(", then ")
 }
 
 #[cfg(test)]
@@ -165,9 +135,8 @@ mod tests {
 
     use jiff::Timestamp;
     use jiff::tz::{TimeZone, offset};
-    use togi_machine::Regime;
 
-    use super::{ago, between, clock, hm, regime_list, short_duration, wall_minute, wall_second};
+    use super::{ago, between, clock, hm, wall_minute, wall_second};
 
     #[test]
     fn times_of_day_are_local() {
@@ -189,18 +158,9 @@ mod tests {
         assert_eq!(ago(s(59)), "a moment ago");
         assert_eq!(ago(s(12 * 60)), "12m ago");
         assert_eq!(ago(s(3 * 3600)), "3h00m ago");
-        assert_eq!(short_duration(s(600)), "10m");
-        assert_eq!(short_duration(s(45)), "45s");
-        assert_eq!(short_duration(s(0)), "0s");
         let at: Timestamp = "2026-10-12T21:04:05Z".parse().expect("a timestamp");
         let later = at + jiff::SignedDuration::from_secs(5);
         assert_eq!(between(at, later), s(5));
         assert_eq!(between(later, at), Duration::ZERO);
-    }
-
-    #[test]
-    fn regimes_list_by_their_kind_of_load() {
-        assert_eq!(regime_list(&[]), "");
-        assert!(regime_list(&[Regime::R1, Regime::R2]).contains(", then "));
     }
 }

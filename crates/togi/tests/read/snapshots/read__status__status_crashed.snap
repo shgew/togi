@@ -2,161 +2,100 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-search: 16 cores left | phase 1
+night since 00:00, 15h30m elapsed: mapping (task mapping #5)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#674] trial 0067 core 08 offset -10 R1 y-cruncher SNT + SVT 90 s
-  alone
+in flight: [#2659] trial 0522 core 08 offset -10 R1 mprime SSE 4K-21K 90 s
+  together mapping task mapping #5 night #30 testing CCD1 at -10
 
-CORE  CCD  SLOT  OFFSET  BIOS  PHASE   FAILURE  QUEUED
-00    0    0     -15     -     SEARCH  -        -
-  last decision [#673] core 00 passed R1+R2 at -10; searches -15 on its next
-                turn (coarse, no failure point yet)
-01    0    1     -10     -     SEARCH  -        -
-  last decision [#407] core 01 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-02    0    2     -10     -     SEARCH  -        -
-  last decision [#445] core 02 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-03    0    3     -10     -     SEARCH  -        -
-  last decision [#483] core 03 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-04    0    4     -10     -     SEARCH  -        -
-  last decision [#521] core 04 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-05    0    5     -10     -     SEARCH  -        -
-  last decision [#559] core 05 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-06    0    6     -10     -     SEARCH  -        -
-  last decision [#597] core 06 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-07    0    7     -10     -     SEARCH  -        -
-  last decision [#635] core 07 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-08    1    0     -10     -     SEARCH  -        -
-  last decision [#388] core 08 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-09    1    1     -10     -     SEARCH  -        -
-  last decision [#426] core 09 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-10    1    2     -10     -     SEARCH  -        -
-  last decision [#464] core 10 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-11    1    3     -10     -     SEARCH  -        -
-  last decision [#502] core 11 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-12    1    4     -10     -     SEARCH  -        -
-  last decision [#540] core 12 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-13    1    5     -10     -     SEARCH  -        -
-  last decision [#578] core 13 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-14    1    6     -10     -     SEARCH  -        -
-  last decision [#616] core 14 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-15    1    7     -10     -     SEARCH  -        -
-  last decision [#654] core 15 passed R1+R2 at -5; searches -10 on its next turn
-                (coarse, no failure point yet)
-BIOS profile: none confirmed yet; phase 1 has not passed a full cycle
+CCD  CORES  D  S  SLOPE     BINDING   U          REMAINING  COVERED  UNCOVERED
+0    0-7    0  0  fallback  rate      fails -10  0          80       129
+  bound by R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
+           120s isolated
+1    8-15   0  0  fallback  baseline  unknown    0          80       135
+  CCD 0 uncovered for the cap: R1 mprime-sse-4k-21k 90s exact x8; R1
+    ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s exact x8; R2
+    mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k 90s exact x8;
+    R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3 mprime-sse-4k-21k-steps 120s
+    exact x8; R3 ycruncher-bkt-sftv4-steps 120s exact x8; R3
+    ycruncher-snt-svt-steps 120s exact x8; R4 mprime-sse-4k-21k-duty25 120s
+    exact x8; R4 ycruncher-bkt-sftv4-duty50 120s exact x8; R4
+    ycruncher-snt-svt-duty75 120s exact x8; R5 mprime-sse-4k-21k-smt 120s exact
+    x8; R7 mprime-avx2-36k-248k-allcore 120s exact x7; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    3 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 4 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 5 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
+    600s exact; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 0 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 1 120s
+    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 2 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 3 120s
+    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 4 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 5 120s
+    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 6 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 7 120s
+    isolated; R9 ycruncher-snt-svt-all-threads serial cpu 21 120s isolated
+  CCD 1 uncovered for the cap: R1 mprime-sse-4k-21k 90s exact x8; R1
+    ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s exact x8; R2
+    mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k 90s exact x8;
+    R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3 mprime-sse-4k-21k-steps 120s
+    exact x8; R3 ycruncher-bkt-sftv4-steps 120s exact x8; R3
+    ycruncher-snt-svt-steps 120s exact x8; R4 mprime-sse-4k-21k-duty25 120s
+    exact x8; R4 ycruncher-bkt-sftv4-duty50 120s exact x8; R4
+    ycruncher-snt-svt-duty75 120s exact x8; R5 mprime-sse-4k-21k-smt 120s exact
+    x8; R7 mprime-avx2-36k-248k-allcore 120s exact x7; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 9 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 10
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    11 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 12 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 13 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 15 120s
+    exact; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light
+    core 8 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 9 120s
+    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 10 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 11
+    120s isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 12 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 13
+    120s isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 14 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 15
+    120s isolated; R7 ycruncher-fftv4-n63-vt3-allcore 120s isolated x7; R9
+    ycruncher-snt-svt-all-threads serial cpu 29 120s isolated
+  A class is uncovered for the cap when mapping has not adequately exposed it or
+    it lies outside the mapping projection; uncovered is never read as safe.
 
-R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a
-  guarantee)
-CORE  CCD  SELF-SUFFICIENT       TOP REQUESTER
-00    0    not yet demonstrated  no (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-01    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-02    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-03    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-04    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-05    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-06    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-07    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-08    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-09    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-10    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-11    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-12    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-13    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-14    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-15    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx2-36k-248k-allcore
-00    0    not yet demonstrated  no (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-01    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-02    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-03    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-04    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-05    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-06    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-07    0    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-08    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-09    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-10    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-11    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-12    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-13    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-14    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-15    1    not yet demonstrated  yes (offset fallback)
-  workload mprime-avx512-36k-248k-allcore
-00    0    not yet demonstrated  no (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-01    0    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-02    0    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-03    0    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-04    0    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-05    0    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-06    0    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-07    0    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-08    1    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-09    1    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-10    1    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-11    1    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-12    1    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-13    1    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-14    1    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
-15    1    not yet demonstrated  yes (offset fallback)
-  workload ycruncher-fftv4-n63-vt3-allcore
+Day policy
+applied profile: CCD 0 0, CCD 1 0
+hold: none recorded
+latest step: none
+freeze: off
+firmware: valid
 
+Night since 00:00
+elapsed: 15h30m
+QUEUE            SHARE  USED  TIME
+reproduction     25%    0%    0s
+qualification    75%    0%    0s
+mapping          10%    45%   7h03m
+control          5%     54%   8h27m
+requalification  10%    0%    0s
+current task: mapping (task mapping #5)
+mapping CCD 0: next offset -6, bracketing the failure at -10
+mapping CCD 1: next offset -10
