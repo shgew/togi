@@ -1,8 +1,8 @@
 use crate::object_only;
 use crate::{
-    BankType, BiosContext, BootId, CancellationToken, Condition, CoreId, CoreInfo, CpuId, Error,
-    KernelCursor, LoadSchedule, ObservedOffset, Partial, PerCore, Regime, ResetKind, Signal,
-    TargetOffset, TrialConditions, TrialRole, WorkloadId,
+    BankType, BiosContext, BootId, CancellationToken, Condition, ContentId, CoreId, CoreInfo,
+    CpuId, Error, KernelCursor, LoadSchedule, ObservedOffset, Partial, PerCore, Regime, ResetKind,
+    Signal, TargetOffset, TrialConditions, TrialRole, WorkloadId,
 };
 use jiff::Timestamp;
 use serde::Serialize;
@@ -238,6 +238,11 @@ pub trait Trials {
         ready: Stopped,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>>;
     fn ended(&mut self, id: &str) -> Result<(), Error>;
+    /// What `workload` actually runs: its backend, the bytes of the executable the backend
+    /// launches and the configuration togi generates for it, independent of instance directory
+    /// and CPUs. The same workload on the same executable and configuration always has the same
+    /// identity.
+    fn content(&mut self, workload: WorkloadId) -> Result<ContentId, Error>;
     fn samples<'a>(
         &'a self,
         id: &'a str,

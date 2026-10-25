@@ -1020,6 +1020,10 @@ struct FinalBudget {
 }
 
 impl Backend for FinalBudget {
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, togi_backend::Error> {
+        self.inner.configuration(workload)
+    }
+
     fn kind(&self) -> togi_machine::Backend {
         self.inner.kind()
     }
@@ -1123,6 +1127,10 @@ struct Naps {
 }
 
 impl Backend for Naps {
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, togi_backend::Error> {
+        self.inner.configuration(workload)
+    }
+
     fn kind(&self) -> togi_machine::Backend {
         self.inner.kind()
     }

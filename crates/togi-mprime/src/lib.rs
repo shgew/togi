@@ -5,7 +5,9 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use regex::Regex;
-use togi_backend::{Backend, Error, FileName, Input, Line, Plan, Ready, check_executable};
+use togi_backend::{
+    Backend, Error, FileName, Input, Line, Plan, Ready, check_executable, configuration_bytes,
+};
 use togi_machine::{CpuId, Workload};
 
 const NAME: &str = "mprime";
@@ -64,6 +66,29 @@ fn prime_txt(settings: &str) -> String {
 
 fn local_txt(settings: &str) -> String {
     format!("ErrorCheck=1\nSumInputsErrorCheck=1\n{settings}")
+}
+
+/// How mprime launches in `dir`, the directory it runs in; with no directory the arguments are
+/// the directory-independent part of the configuration.
+fn launch_args(dir: &Path) -> Vec<OsString> {
+    let mut work_dir = OsString::from("-W");
+    work_dir.push(dir);
+    vec![OsString::from("-t"), work_dir]
+}
+
+/// The input files for `threads` torture threads.
+fn inputs(variant: Variant, threads: usize) -> Vec<Input> {
+    let settings = variant.settings(threads);
+    vec![
+        Input {
+            name: PRIME,
+            contents: prime_txt(&settings).into_bytes(),
+        },
+        Input {
+            name: LOCAL,
+            contents: local_txt(&settings).into_bytes(),
+        },
+    ]
 }
 
 /// The output patterns, compiled once when the adapter is built.
@@ -150,22 +175,10 @@ impl Mprime {
         }
         let program = self.binary();
         check(NAME, &program)?;
-        let settings = variant.settings(cpus.len());
-        let mut work_dir = OsString::from("-W");
-        work_dir.push(dir);
         Ok(Plan {
             program,
-            args: vec![OsString::from("-t"), work_dir],
-            inputs: vec![
-                Input {
-                    name: PRIME,
-                    contents: prime_txt(&settings).into_bytes(),
-                },
-                Input {
-                    name: LOCAL,
-                    contents: local_txt(&settings).into_bytes(),
-                },
-            ],
+            args: launch_args(dir),
+            inputs: inputs(variant, cpus.len()),
             watched: vec![RESULTS],
         })
     }
@@ -182,6 +195,17 @@ impl Backend for Mprime {
 
     fn plan(&self, workload: &Workload, dir: &Path, cpus: &[CpuId]) -> Result<Plan, Error> {
         self.plan_with(workload, dir, cpus, check_executable)
+    }
+
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, Error> {
+        let variant = Variant::of(workload.base).ok_or(Error::Unsupported {
+            backend: self.kind(),
+            workload: workload.id(),
+        })?;
+        Ok(configuration_bytes(
+            &launch_args(Path::new("")),
+            &inputs(variant, usize::from(workload.threads)),
+        ))
     }
 
     fn classify(&self, line: &str) -> Line {

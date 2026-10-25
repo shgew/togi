@@ -1,4 +1,7 @@
-use togi_journal::{CorePhase, CycleEvent, Decision, HuntOutcome, Outcome, Payload, RoundEvent};
+use togi_journal::{
+    Certainty, Classification, CorePhase, CycleEvent, Decision, Edge, HuntOutcome, Outcome,
+    Payload, QualificationState, RoundEvent, StepKind, VetoState,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Style {
@@ -38,7 +41,10 @@ impl Style {
 /// starts, a failed or non-full cycle end, a failed deepening end,
 /// core transitions other than reaching the limit or leaving search with room, the `check_solo_limit`
 /// and `hold` decisions, `defect.answered`, `command.reset` and every session, boot and journal
-/// event except `session.warning`. A new kind lands here by naming its arm.
+/// event except `session.warning`. Ruleset 13 kinds are plain except a `ccd.edge` with an observed failure, a failed
+/// qualification and a CPU-suspect `day.event` (red), a shallower `ccd.cap`, a retreat or firmware-zero
+/// `day.step` and an active `day.veto` (yellow), and a complete qualification and promoting step (green).
+/// A new kind lands here by naming its arm.
 #[must_use]
 pub fn style_for(payload: &Payload) -> Style {
     match payload {
@@ -89,6 +95,37 @@ pub fn style_for(payload: &Payload) -> Style {
         | Payload::TunerWarning(_)
         | Payload::SessionWarning(_) => Style::Yellow,
         Payload::BackendRetry(_) => Style::Dim,
+        Payload::CcdEdge(edge) => match edge.edge {
+            Edge::Observed { .. } => Style::Red,
+            Edge::Unknown {} | Edge::Censored { .. } => Style::Plain,
+        },
+        Payload::CcdCap(cap) => {
+            if cap.new > cap.old {
+                Style::Yellow
+            } else {
+                Style::Plain
+            }
+        }
+        Payload::NightQualification(qualification) => match qualification.state {
+            QualificationState::Failed { .. } => Style::Red,
+            QualificationState::Complete { .. } => Style::Green,
+            QualificationState::Start { .. } | QualificationState::Progress { .. } => Style::Plain,
+        },
+        Payload::DayStep(step) => match step.step {
+            StepKind::Promote { .. } => Style::Green,
+            StepKind::Retreat { .. } | StepKind::FirmwareZero { .. } => Style::Yellow,
+            StepKind::Hold { .. } => Style::Plain,
+        },
+        Payload::DayEvent(event) => match event.classification {
+            Classification::CpuSuspect {
+                certainty: Certainty::Definite | Certainty::Provisional,
+            } => Style::Red,
+            Classification::NonCpu {} | Classification::Unexplained {} => Style::Plain,
+        },
+        Payload::DayVeto(veto) => match veto.state {
+            VetoState::Active => Style::Yellow,
+            VetoState::Cleared => Style::Plain,
+        },
         Payload::SessionStart(_)
         | Payload::SessionContext(_)
         | Payload::SessionBaseline(_)
@@ -131,6 +168,15 @@ pub fn style_for(payload: &Payload) -> Style {
         | Payload::DayRecord(_)
         | Payload::DayFault(_)
         | Payload::DayUncleanEnd(_)
+        | Payload::SessionImported(_)
+        | Payload::ExposureObserved(_)
+        | Payload::NightPlan(_)
+        | Payload::NightReproduction(_)
+        | Payload::DayApplied(_)
+        | Payload::DayHold(_)
+        | Payload::DayFreeze(_)
+        | Payload::DayInterval(_)
+        | Payload::DayImported(_)
         | Payload::StateRebuilt(_) => Style::Plain,
     }
 }

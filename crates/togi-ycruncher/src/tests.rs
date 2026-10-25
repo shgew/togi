@@ -799,3 +799,90 @@ fn spliced_errors_are_not_erased_by_earlier_success() {
     );
     assert!(lines.contains(&progress("BKT")));
 }
+
+fn ycruncher_workloads() -> impl Iterator<Item = &'static Workload> {
+    REGIMES
+        .into_iter()
+        .flat_map(workloads)
+        .filter(|workload| workload.backend == togi_machine::Backend::Ycruncher)
+}
+
+#[test]
+fn configuration_is_the_plan_without_the_directory_for_the_workloads_threads() {
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
+    let args = [
+        "skip-warnings",
+        "pause:-2",
+        "status:none",
+        "config",
+        "stress.cfg",
+    ]
+    .map(OsString::from);
+    for workload in ycruncher_workloads() {
+        let plan = ycruncher
+            .plan_with(
+                workload,
+                Path::new("/anywhere"),
+                &togi_backend::numbered_cpus(workload.threads),
+                memory_binaries,
+            )
+            .unwrap();
+        assert_eq!(
+            ycruncher.configuration(workload).unwrap(),
+            configuration_bytes(&args, &plan.inputs),
+            "{}",
+            workload.id
+        );
+    }
+}
+
+#[test]
+fn configuration_names_neither_a_directory_nor_a_cpu_list_of_a_plan() {
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
+    let workload = workload("ycruncher-bkt-sftv4");
+    let configuration = ycruncher.configuration(workload).unwrap();
+    for named in ["/one", "/two", "/pkg", "LogicalCores : [7 23]"] {
+        assert!(
+            !configuration
+                .windows(named.len())
+                .any(|window| window == named.as_bytes()),
+            "{named}"
+        );
+    }
+    let here = ycruncher
+        .plan_with(
+            workload,
+            Path::new("/one"),
+            &cpus(&[7, 23]),
+            memory_binaries,
+        )
+        .unwrap();
+    let planned = String::from_utf8(here.inputs[0].contents.clone()).unwrap();
+    assert!(planned.contains("LogicalCores : [7 23]"));
+    assert_eq!(configuration, ycruncher.configuration(workload).unwrap());
+}
+
+#[test]
+fn configuration_differs_exactly_between_workloads_that_generate_different_input() {
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
+    let mut by_input = std::collections::BTreeMap::new();
+    for workload in ycruncher_workloads() {
+        let configuration = ycruncher.configuration(workload).unwrap();
+        let known = by_input
+            .entry((workload.base, workload.threads))
+            .or_insert_with(|| configuration.clone());
+        assert_eq!(*known, configuration, "{}", workload.id);
+    }
+    let distinct: BTreeSet<_> = by_input.values().collect();
+    assert_eq!(distinct.len(), by_input.len());
+    assert!(by_input.len() >= 4, "{by_input:?}");
+}
+
+#[test]
+fn a_workload_of_another_backend_has_no_configuration() {
+    let other = workload_by_id("mprime-sse-4k-21k").unwrap();
+    assert!(matches!(
+        Ycruncher::new("/pkg").unwrap().configuration(other),
+        Err(Error::Unsupported { .. })
+    ));
+}

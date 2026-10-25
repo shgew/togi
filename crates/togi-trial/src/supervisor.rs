@@ -230,9 +230,7 @@ async fn confine<O: Os>(
         controller::select(&env.topology, &spec.cores, &spec.cpus, &spec.offsets).map(|cpus| {
             controller::Placement {
                 cpus,
-                host: None,
-                capped: false,
-                excluded: None,
+                contract: controller::Contract::Legacy,
             }
         })
     };
@@ -244,9 +242,10 @@ async fn confine<O: Os>(
         };
     };
     let mut evidence = PlacementEvidence::default();
-    if placement.capped {
+    if placement.contract.capped() {
         let excluded_cpus = placement
-            .excluded
+            .contract
+            .excluded()
             .and_then(|host| env.topology.iter().find(|info| info.core == host));
         let workers: Vec<_> = spec
             .cpus
@@ -275,11 +274,10 @@ async fn confine<O: Os>(
     if let Some(moved) = moved {
         let line = if managed {
             format!(
-                "togi controller CPUs {} while the trial loads {}; host {:?}; capped {}; {}",
+                "togi controller CPUs {} while the trial loads {}; {}; {}",
                 launch::cpus_list(&placement.cpus),
                 launch::cpus_list(&spec.cpus),
-                placement.host,
-                placement.capped,
+                placement.contract.describe(),
                 moved.describe(),
             )
         } else if moved.complete() {
@@ -304,7 +302,7 @@ async fn confine<O: Os>(
         let _ = events.send(Event::Progress(format!(
             "controller placement inconclusive: {reason}"
         )));
-    } else if let Some(host) = placement.excluded {
+    } else if let Some(host) = placement.contract.excluded() {
         evidence.excluded.insert(host);
         let _ = events.send(Event::Progress(format!(
             "controller host core {host} is excluded from passing exposure; its failure evidence remains"

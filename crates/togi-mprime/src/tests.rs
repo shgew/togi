@@ -313,6 +313,88 @@ fn every_catalog_workload_plans() {
     );
 }
 
+fn mprime_workloads() -> impl Iterator<Item = &'static Workload> {
+    REGIMES
+        .into_iter()
+        .flat_map(workloads)
+        .filter(|workload| workload.backend == togi_machine::Backend::Mprime)
+}
+
+#[test]
+fn configuration_is_the_plan_without_the_directory_for_the_workloads_threads() {
+    let mprime = Mprime::new("/pkg").unwrap();
+    let args = [OsString::from("-t"), OsString::from("-W")];
+    for workload in mprime_workloads() {
+        let plan = mprime
+            .plan_with(
+                workload,
+                Path::new("/anywhere"),
+                &togi_backend::numbered_cpus(workload.threads),
+                executable,
+            )
+            .unwrap();
+        assert_eq!(
+            mprime.configuration(workload).unwrap(),
+            configuration_bytes(&args, &plan.inputs),
+            "{}",
+            workload.id
+        );
+    }
+}
+
+#[test]
+fn configuration_names_neither_a_directory_nor_a_cpu() {
+    let mprime = Mprime::new("/pkg").unwrap();
+    let workload = workload("mprime-sse-4k-21k");
+    let here = mprime
+        .plan_with(workload, Path::new("/one"), &cpus(&[2, 18]), executable)
+        .unwrap();
+    let there = mprime
+        .plan_with(
+            workload,
+            Path::new("/two/deeper"),
+            &cpus(&[7, 23]),
+            executable,
+        )
+        .unwrap();
+    assert_eq!(here.inputs, there.inputs);
+    let configuration = mprime.configuration(workload).unwrap();
+    for directory in ["/one", "/two", "/pkg"] {
+        assert!(
+            !configuration
+                .windows(directory.len())
+                .any(|window| window == directory.as_bytes()),
+            "{directory}"
+        );
+    }
+    assert_eq!(configuration, mprime.configuration(workload).unwrap());
+}
+
+#[test]
+fn configuration_differs_exactly_between_workloads_that_generate_different_input() {
+    let mprime = Mprime::new("/pkg").unwrap();
+    let mut by_input = std::collections::BTreeMap::new();
+    for workload in mprime_workloads() {
+        let configuration = mprime.configuration(workload).unwrap();
+        let known = by_input
+            .entry((workload.base, workload.threads))
+            .or_insert_with(|| configuration.clone());
+        assert_eq!(*known, configuration, "{}", workload.id);
+    }
+    let distinct: BTreeSet<_> = by_input.values().collect();
+    assert_eq!(distinct.len(), by_input.len());
+    assert!(by_input.len() >= 4, "{by_input:?}");
+}
+
+#[test]
+fn a_workload_of_another_backend_has_no_configuration() {
+    let other = workload_by_id("ycruncher-bkt-sftv4").unwrap();
+    assert!(matches!(
+        Mprime::new("/pkg").unwrap().configuration(other),
+        Err(Error::Unsupported { .. })
+    ));
+}
+
 fn classify(line: &str) -> Line {
     Mprime::new("").unwrap().classify(line)
 }

@@ -1726,6 +1726,10 @@ async fn a_handle_dropped_after_the_last_abandon_check_still_reports_an_unconfir
 struct BoomBackend(TestBackend);
 
 impl Backend for BoomBackend {
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, togi_backend::Error> {
+        self.0.configuration(workload)
+    }
+
     fn kind(&self) -> togi_machine::Backend {
         self.0.kind()
     }
@@ -2080,4 +2084,110 @@ fn stopping_without_waiting_has_terminated_the_workload_before_it_returns() {
         terminated.load(Ordering::SeqCst),
         "stop returned before the workload ended"
     );
+}
+
+/// SHA-256 of `abc`, from FIPS 180-2, so the expectation does not come from the code under test.
+const ABC_SHA256: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+fn mprime_workload() -> togi_machine::WorkloadId {
+    togi_machine::WorkloadId::by_id("mprime-sse-4k-21k").unwrap()
+}
+
+fn sha256_of(bytes: &[u8]) -> togi_machine::Digest {
+    use sha2::Digest as _;
+    togi_machine::Digest::from_bytes(sha2::Sha256::digest(bytes).into())
+}
+
+#[test]
+fn content_is_the_hash_of_the_executable_and_of_the_configuration() {
+    let (mut runner, fs) = runner(|_| {}, fast());
+    fs.put("/bin/true", "abc");
+    let content = runner.content(mprime_workload()).unwrap();
+    assert_eq!(content.backend, togi_machine::Backend::Mprime);
+    assert_eq!(content.executable.as_str(), ABC_SHA256);
+    assert_eq!(
+        content.configuration,
+        sha256_of(&togi_backend::configuration_bytes(&[], &[]))
+    );
+}
+
+#[test]
+fn content_reads_each_executable_once_for_the_runners_life() {
+    let (mut runner, fs) = runner(|_| {}, fast());
+    fs.put("/bin/true", "abc");
+    fs.record_history();
+    let first = runner.content(mprime_workload()).unwrap();
+    fs.put("/bin/true", "replaced after the first read");
+    let again = runner.content(mprime_workload()).unwrap();
+    let other = togi_machine::WorkloadId::by_id("mprime-avx2-36k-248k").unwrap();
+    let elsewhere = runner.content(other).unwrap();
+    assert_eq!(first, again);
+    assert_eq!(first.executable, elsewhere.executable);
+    let reads = fs
+        .reads()
+        .into_iter()
+        .filter(|path| path == Path::new("/bin/true"))
+        .count();
+    assert_eq!(reads, 1);
+}
+
+#[test]
+fn content_of_an_unreadable_executable_is_an_error_and_is_retried() {
+    let (mut runner, fs) = runner(|_| {}, fast());
+    let missing = runner.content(mprime_workload()).unwrap_err();
+    assert!(
+        togi_machine::error_chain(&missing).contains("read the backend executable /bin/true"),
+        "{missing}"
+    );
+    fs.put("/bin/true", "abc");
+    assert_eq!(
+        runner
+            .content(mprime_workload())
+            .unwrap()
+            .executable
+            .as_str(),
+        ABC_SHA256
+    );
+}
+
+#[test]
+fn content_of_a_backend_that_is_not_configured_is_backend_missing() {
+    let (mut runner, _fs) = runner(|_| {}, fast());
+    let ycruncher = togi_machine::WorkloadId::by_id("ycruncher-bkt-sftv4").unwrap();
+    assert!(matches!(
+        runner.content(ycruncher),
+        Err(togi_machine::Error::BackendMissing)
+    ));
+}
+
+#[test]
+fn content_is_refused_inside_an_async_runtime() {
+    let (mut runner, fs) = runner(|_| {}, fast());
+    fs.put("/bin/true", "abc");
+    let refused = crate::testing::runtime(true)
+        .block_on(async { runner.content(mprime_workload()) })
+        .unwrap_err();
+    assert!(
+        togi_machine::error_chain(&refused).contains("content blocks"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn real_fs_content_hashes_the_executable_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let program = dir.path().join("stress");
+    std::fs::write(&program, "abc").unwrap();
+    let options = Options {
+        dir: dir.path().join("trials"),
+        backends: Backends::new().with(Arc::new(TestBackend::new(&program))),
+        topology: topology(),
+        identity: None,
+        pm_table: None,
+    };
+    let mut runner = Runner::new(options).unwrap();
+    let content = runner.content(mprime_workload()).unwrap();
+    assert_eq!(content.executable.as_str(), ABC_SHA256);
+    std::fs::write(&program, "changed on disk").unwrap();
+    assert_eq!(runner.content(mprime_workload()).unwrap(), content);
 }

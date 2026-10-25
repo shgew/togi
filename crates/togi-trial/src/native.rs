@@ -1,22 +1,25 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, sync_channel};
 use std::time::{Duration, Instant};
 
+use togi_backend::numbered_cpus;
 use togi_machine::{
-    CancellationToken, OnCancel, Partial, Reporter, Running, Started, Stopped, Swept,
-    TrialConditions, TrialResult, TrialSpec, Trials,
+    CancellationToken, ContentId, Digest, OnCancel, Partial, Reporter, Running, Started, Stopped,
+    Swept, TrialConditions, TrialResult, TrialSpec, Trials, WorkloadId,
 };
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::clock::Clock;
+use crate::content::{bytes_digest, file_digest};
 use crate::controller::Controller;
 use crate::error::InvalidTrial;
 use crate::error::{Error, Shared};
 use crate::files::TrialsRoot;
 use crate::id::TrialId;
-use crate::runner::Options;
+use crate::runner::{Backends, Options};
 use crate::runtime::{Command, Runtime, outside_runtime};
 use crate::sensors::Roots;
 use crate::supervisor::{Env, Event, Finished, Handle, TrialCommand};
@@ -44,6 +47,9 @@ pub struct Runner {
     runtime: Runtime,
     durability: crate::samples::Durability,
     fs: Option<Arc<dyn togi_journal::fs::Fs>>,
+    backends: Backends,
+    /// The digest of each executable already read, by path.
+    executables: HashMap<PathBuf, Digest>,
 }
 
 struct MemoryCompression<'a>(&'a dyn togi_journal::fs::Fs);
@@ -186,6 +192,7 @@ impl Runner {
         let timing = settings.timing;
         let clock = settings.clock.clone();
         let env_dir = dir.clone();
+        let configured = backends.clone();
         let durability = settings.durability;
         let fs = settings.fs.clone();
         let timer_only = fs.is_some();
@@ -223,6 +230,8 @@ impl Runner {
             Runtime::spawn(make_env, clock.clone())?
         };
         Ok(Self {
+            backends: configured,
+            executables: HashMap::new(),
             dir,
             timing,
             clock,
@@ -355,6 +364,42 @@ impl Trials for Runner {
             crate::samples::Durability::Unsynced => compress_pinned_unsynced,
         };
         compress(&trial).map_err(|errors| Error::Compress(errors).into())
+    }
+
+    /// Synchronous like `ended`, which also reads the disk on the calling thread. The read is
+    /// bounded: each distinct executable is hashed once for the runner's life and every later
+    /// call is answered from memory.
+    fn content(&mut self, workload: WorkloadId) -> Result<ContentId, togi_machine::Error> {
+        outside_runtime("content")?;
+        let workload = workload.runs().workload();
+        let kind = workload.backend;
+        let backend = self.backends.get(kind).ok_or(Error::BackendMissing(kind))?;
+        let configuration = backend.configuration(workload).map_err(Error::Backend)?;
+        // The program is the same whatever the directory and CPUs, so any plan names it.
+        let program = backend
+            .plan(
+                workload,
+                std::path::Path::new("/"),
+                &numbered_cpus(workload.threads),
+            )
+            .map_err(Error::Backend)?
+            .program;
+        let executable = if let Some(digest) = self.executables.get(&program) {
+            digest.clone()
+        } else {
+            let digest =
+                file_digest(self.fs.as_deref(), &program).map_err(|source| Error::Executable {
+                    path: program.clone(),
+                    source,
+                })?;
+            self.executables.insert(program, digest.clone());
+            digest
+        };
+        Ok(ContentId {
+            backend: kind,
+            executable,
+            configuration: bytes_digest(&configuration),
+        })
     }
 
     fn samples<'a>(

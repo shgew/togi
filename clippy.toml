@@ -24,7 +24,6 @@ disallowed-methods = [
     { path = "togi_trialfiles::compress_with", reason = "Only tests inject trial-file storage; production uses the durable compression adapter" },
     { path = "togi_trial::Runner::new_unsynced", reason = "Only kernel and hardware tests skip sample and trial-file durability" },
     { path = "togi_tool_trialfacts::write_unsynced", reason = "Only kernel filesystem tests skip facts-output durability" },
-    { path = "togi_tool_bench::forecast::execute_unsynced", reason = "Only kernel filesystem tests skip forecast-record durability" },
     { path = "togi_machine::Smu::set_offset", reason = "Only the session write transaction writes a core offset through the SMU seam" },
     { path = "togi_machine::Smu::set_all_offsets", reason = "Only the session write transaction writes every offset through the SMU seam" },
     { path = "togi_machine::Smu::emergency_zero", reason = "Only the session's emergency zeroing, shared by the journal-failure emergency and togi emergency-stop, zeroes every core, after a confirmed teardown" },
