@@ -69,17 +69,19 @@ pub fn built_sources(tree: &dyn Tree, build_dir: &Path, root: &Path) -> Result<B
 /// Whether the repository-relative `path` is the crate root of an integration test:
 /// `<package>/tests/<name>.rs` or `<package>/tests/<name>/main.rs` with a `Cargo.toml` in `<package>`.
 fn is_integration_test_root(tree: &dyn Tree, root: &Path, path: &str) -> bool {
-    let target = path.strip_suffix("/main.rs").unwrap_or(path);
-    let Some((tests, _)) = target.rsplit_once('/') else {
-        return false;
-    };
-    let package = match tests.strip_suffix("/tests") {
-        Some(package) => package,
-        None if tests == "tests" => "",
-        None => return false,
-    };
-    tree.list(&root.join(package))
-        .is_ok_and(|entries| entries.iter().any(|entry| entry == "Cargo.toml"))
+    fn package_of(target: &str) -> Option<&str> {
+        let (tests, _) = target.rsplit_once('/')?;
+        if tests == "tests" {
+            Some("")
+        } else {
+            tests.strip_suffix("/tests")
+        }
+    }
+    let package = package_of(path).or_else(|| package_of(path.strip_suffix("/main.rs")?));
+    package.is_some_and(|package| {
+        tree.list(&root.join(package))
+            .is_ok_and(|entries| entries.iter().any(|entry| entry == "Cargo.toml"))
+    })
 }
 
 /// The changed files, sorted, that the coverage build leaves out in part or whole: a file no

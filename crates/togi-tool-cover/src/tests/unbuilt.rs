@@ -97,6 +97,10 @@ fn integration_tests_are_the_sources_their_own_dep_info_names() {
                 "target/debug/deps/util-6.d",
                 "crates/a/tests/multi/util.rs:\ncrates/a/tests/multi/more.rs:\n",
             ),
+            (
+                "target/debug/deps/main-7.d",
+                "crates/a/tests/main.rs:\ncrates/a/tests/main_support.rs:\n",
+            ),
         ],
     );
     let built = built_sources(&tree, Path::new("/repo/target/debug"), Path::new("/repo")).unwrap();
@@ -107,6 +111,8 @@ fn integration_tests_are_the_sources_their_own_dep_info_names() {
             "crates/a/tests/support/mod.rs",
             "crates/a/tests/multi/main.rs",
             "crates/a/tests/multi/util.rs",
+            "crates/a/tests/main.rs",
+            "crates/a/tests/main_support.rs",
         ])
     );
     assert!(built.sources.contains("crates/a/tests/helper.rs"));
