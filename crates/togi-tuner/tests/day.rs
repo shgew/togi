@@ -18,7 +18,7 @@ mod day {
         DayStepError, EventId, Firmware, Freeze, HistoryError, HoldCredit, IntervalKind,
         Invocation, MceKind, Observation, Pause, ProvisionalCause, QuestionState, Readback,
         ReproductionOutcome, RetreatCause, Reverted, Witness, classify, credited_secs,
-        daily_events, day_step, propose, vetoes,
+        daily_events, day_step, next_proposal, propose, vetoes,
     };
 
     const HOURS_50: u64 = 50 * 3600;
@@ -1285,6 +1285,55 @@ mod day {
         );
         let restores = proposal.restores.as_ref().unwrap();
         assert_eq!(restores.events, [EventId::Boot(boot("a"))]);
+    }
+
+    #[test]
+    fn a_completion_restores_its_fallback_only_once_every_fallback_event_is_reclassified() {
+        let mut day = Day::new([-20, -20]);
+        day.promote([-12, -15]);
+        day.promote([-14, -15]);
+        day.crash("a", [-14, -15], EndClass::Unknown);
+        day.crash("b", [-14, -15], EndClass::Unknown);
+        let fallback = day.decide();
+        assert_eq!(retreat(fallback.clone()).0, profile([0, 0]));
+        day.apply(&fallback);
+        // Only `b`'s completion reaches [-12, -15]; `a` is answered graphics, then revised to frozen.
+        let at = day.tick();
+        day.history
+            .push(DayApplication {
+                at,
+                profile: profile([-12, -15]),
+                kind: ApplicationKind::Retreat {
+                    events: vec![EventId::Boot(boot("b"))],
+                    reverted: Vec::new(),
+                },
+            })
+            .unwrap();
+        day.answer("a", DayAnswerKind::Graphics);
+        day.answer("a", DayAnswerKind::Frozen);
+        day.answer("b", DayAnswerKind::Graphics);
+        let events = day.events();
+        assert!(events[0].class.is_cpu_suspect(), "{:?}", events[0]);
+        assert_eq!(events[1].class, Classification::NonCpu);
+
+        day.caps = profile([-13, -30]);
+        let proposal = next_proposal(&day.history, &events, &day.caps)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            proposal.restores, None,
+            "`a` still blames the fallback's consumed step"
+        );
+        assert_eq!(proposal.ccd, ccd(1), "{proposal:?}");
+
+        // Once `a` is reclassified as well, the completion owns the fallback's step again.
+        day.answer("a", DayAnswerKind::Graphics);
+        let events = day.events();
+        let proposal = next_proposal(&day.history, &events, &day.caps)
+            .unwrap()
+            .unwrap();
+        assert!(proposal.restores.is_some(), "{proposal:?}");
+        assert_eq!(proposal.profile, profile([-13, -15]));
     }
 
     #[test]

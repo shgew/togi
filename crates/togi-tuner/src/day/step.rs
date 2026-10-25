@@ -137,8 +137,8 @@ pub fn propose(applied: &CcdProfile, caps: &CcdProfile) -> Result<Option<Proposa
 /// among the applied step backs whose events were all since reclassified as no CPU evidence, the
 /// newest original promotion they reverted (ties to the lower CCD id) that no later promotion
 /// restored, as `(promotion, CCD, step back)`. A step back that first fell back to CO 0 is applied
-/// once its wanted profile qualifies, and owns the steps its fallback consumed. Promotions before a
-/// firmware reset are never restored.
+/// once its wanted profile qualifies, and owns the steps its fallback consumed only when every event
+/// of that fallback was reclassified too. Promotions before a firmware reset are never restored.
 fn restoration<'a>(
     history: &'a DayHistory,
     events: &[DailyEvent],
@@ -161,7 +161,10 @@ fn restoration<'a>(
         }
         let completed = fallbacks
             .iter()
-            .filter(|fallback| fallback.events.iter().any(|id| record.events.contains(id)))
+            .filter(|fallback| {
+                fallback.events.iter().any(|id| record.events.contains(id))
+                    && fallback.events.iter().all(reclassified)
+            })
             .flat_map(|fallback| fallback.reverted);
         for reverted in record.reverted.iter().chain(completed) {
             let Some(promotion) = promotions
