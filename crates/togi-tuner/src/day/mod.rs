@@ -26,6 +26,7 @@ pub use retreat::{
     EventStatus, ReproductionOutcome, RetreatCause, RetreatEvent, RetreatState, Veto,
     event_statuses, vetoes,
 };
+pub(crate) use retreat::{awaiting, shallower};
 pub use step::{
     Blocker, DayDecision, DayInputs, Firmware, Freeze, HoldCredit, Invocation, Pause, Proposal,
     day_step, propose,

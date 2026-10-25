@@ -147,7 +147,11 @@ fn filler_state_of_night(nights: u32) -> ((State, Timestamp), u32) {
         );
         let now = at(i64::try_from(journal.events.len()).unwrap() + 1);
         let plan = journal.until_trial(now);
-        assert_eq!(plan.task.queue, Queue::Filler, "the night reopens at its filler");
+        assert_eq!(
+            plan.task.queue,
+            Queue::Filler,
+            "the night reopens at its filler"
+        );
     }
     let now = at(i64::try_from(journal.events.len()).unwrap() + 1);
     journal.until_trial(now);

@@ -449,7 +449,11 @@ fn until_mapping_of_ccd0(journal: &mut Journal) -> TrialPlan {
         {
             return plan;
         }
-        assert_ne!(plan.task.queue, Queue::Filler, "the night never mapped CCD0");
+        assert_ne!(
+            plan.task.queue,
+            Queue::Filler,
+            "the night never mapped CCD0"
+        );
         journal.run(&plan, Ending::Pass);
     }
     panic!("the night never mapped CCD0");

@@ -18,7 +18,7 @@ use super::ledger::{Sig, is_adequate};
 use super::night_query::NotReady;
 use super::plan::workloads_of;
 use crate::EVIDENCE_EPOCH;
-use crate::day::{CoreProfile, propose, vetoes};
+use crate::day::{CoreProfile, awaiting, propose, shallower, vetoes};
 use crate::night::{Cell, Layout, Matrix, Reuse, Source, qualification_cells};
 
 /// How long a complete qualification lasts before re-qualification is due.
@@ -618,8 +618,22 @@ impl State {
         Ok(Some(proposal.profile))
     }
 
-    /// What the two qualification queues want: the next promotion proposal's qualification, and the
-    /// re-qualification of D.
+    /// The retreat profile CO 0 is holding for a required step back, as the day would restore it under
+    /// the committed caps; `None` when CO 0 holds nothing or the restoration would be CO 0 itself.
+    fn fallback_target(&self) -> Result<Option<CcdProfile>, NotReady> {
+        let view = self.day_view()?;
+        let Some(statuses) = self.statuses(&view)? else {
+            return Ok(None);
+        };
+        let Some((_, wanted)) = awaiting(&statuses)? else {
+            return Ok(None);
+        };
+        let target = shallower(&wanted, &self.committed_caps()?)?;
+        Ok((!target.is_zero()).then_some(target))
+    }
+
+    /// What the two qualification queues want: an outstanding fallback retreat's profile first, then the
+    /// next promotion proposal's qualification, and the re-qualification of D.
     pub(super) fn qualification_work(
         &self,
         now: jiff::Timestamp,
@@ -629,13 +643,21 @@ impl State {
             return Ok((QualWork::None, QualWork::None, None));
         };
         let applied = &history.current().profile;
+        // A required step back whose profile lacked qualification holds CO 0 until that profile
+        // qualifies, and its unresolved event blocks every promotion meanwhile: it goes first.
+        let fallback = match self.fallback_target()? {
+            Some(profile) if profile != *applied => {
+                self.work_for(&records, profile, QualificationPurpose::NextStep, now)?
+            }
+            Some(_) | None => QualWork::None,
+        };
         // After a firmware change the profile D held before is re-qualified exactly, in the new context,
         // before it is restored; until that qualification stands or fails the ordinary proposal waits.
         let retained = match Self::retained_profile(history) {
-            Some(profile) => {
+            Some(profile) if matches!(fallback, QualWork::None) => {
                 self.work_for(&records, profile, QualificationPurpose::Firmware, now)?
             }
-            None => QualWork::None,
+            Some(_) | None => fallback,
         };
         let next = if matches!(retained, QualWork::None) {
             match self.proposal()? {

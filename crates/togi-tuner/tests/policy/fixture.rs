@@ -85,14 +85,18 @@ pub(crate) struct Journal {
     pub(crate) state: State,
     /// The boot new events are recorded in.
     boot: String,
+    /// Seconds every later event's time is shifted by, as after the days `advance` skipped.
+    shift: i64,
 }
 
 impl Journal {
-    pub(crate) fn bare() -> Self {
+    /// An empty journal folded by a policy with `params`.
+    pub(crate) fn bare_with(params: Params) -> Self {
         Self {
             events: Vec::new(),
-            state: State::new(Params::SPEC),
+            state: State::new(params),
             boot: "boot".to_owned(),
+            shift: 0,
         }
     }
 
@@ -106,13 +110,23 @@ impl Journal {
         boot.clone_into(&mut self.boot);
     }
 
+    /// Moves the clock of every later event `secs` ahead.
+    pub(crate) fn advance(&mut self, secs: i64) {
+        self.shift += secs;
+    }
+
+    /// The time just after the latest event.
+    pub(crate) fn now(&self) -> Timestamp {
+        at(i64::try_from(self.events.len()).unwrap() + 1 + self.shift)
+    }
+
     /// Appends `payload` as recorded in `boot`.
     fn append_in(&mut self, boot: &str, payload: Payload, cause: &[Seq]) -> Seq {
         let seq = Seq::new(self.events.len() as u64 + 1).unwrap();
         let event = Event::new(
             seq,
             Stamp {
-                time: at(i64::try_from(seq.get()).unwrap()),
+                time: at(i64::try_from(seq.get()).unwrap() + self.shift),
                 mono: None,
             },
             BootId::from(boot.to_owned()),
@@ -125,7 +139,11 @@ impl Journal {
     }
 
     pub(crate) fn started() -> Self {
-        let mut journal = Self::bare();
+        Self::started_with(Params::SPEC)
+    }
+
+    fn started_with(params: Params) -> Self {
+        let mut journal = Self::bare_with(params);
         journal.append(
             SessionStart {
                 build: build(),
@@ -139,7 +157,11 @@ impl Journal {
     }
 
     pub(crate) fn contextual() -> Self {
-        let mut journal = Self::started();
+        Self::contextual_with(Params::SPEC)
+    }
+
+    fn contextual_with(params: Params) -> Self {
+        let mut journal = Self::started_with(params);
         journal.append(context().into(), &[]);
         journal
     }
@@ -188,7 +210,12 @@ impl Journal {
     }
 
     pub(crate) fn ready() -> Self {
-        let mut journal = Self::contextual();
+        Self::ready_with(Params::SPEC)
+    }
+
+    /// A journal ready for its first night, folded by a policy with `params`.
+    pub(crate) fn ready_with(params: Params) -> Self {
+        let mut journal = Self::contextual_with(params);
         journal.append(
             SessionBaseline {
                 offsets: offsets_of(&zero()),
@@ -258,7 +285,9 @@ impl Journal {
     /// session prepared the profile and waited for a backend first.
     pub(crate) fn run_after_wait(&mut self, plan: &TrialPlan, waited: i64) -> Seq {
         let intent_at = at(i64::try_from(self.events.len()).unwrap() + 1);
-        let task_start = intent_at.checked_sub(jiff::SignedDuration::from_secs(waited)).unwrap();
+        let task_start = intent_at
+            .checked_sub(jiff::SignedDuration::from_secs(waited))
+            .unwrap();
         self.run_from(plan, Ending::Pass, &content(), Some(task_start))
     }
 

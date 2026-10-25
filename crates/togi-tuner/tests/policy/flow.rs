@@ -5,15 +5,17 @@
 use std::collections::BTreeMap;
 
 use togi_journal::{
-    Activity, ApplicationId, ApplyCause, Classification, DayApplied, DayStep, DayUncleanEnd,
-    NightQualification, Payload, QualificationPurpose, QualificationState, Queue,
-    ReproductionState, RetreatCause, StepKind, Tested,
+    Activity, ApplicationId, ApplyCause, Classification, DayApplied, DayCheckpoint, DayCleanStop,
+    DayOffsetsChanged, DayStep, DayUncleanEnd, LoadMix, NightQualification, Payload,
+    QualificationPurpose, QualificationState, Queue, ReproductionState, RetreatCause, StepKind,
+    Tested,
 };
 use togi_machine::{BootId, CcdProfile, EndEvidence, ResetReason};
+use togi_tuner::cap::Rate;
 use togi_tuner::day::{Invocation, Pause};
-use togi_tuner::policy::{DayQuery, EndReason};
+use togi_tuner::policy::{DayQuery, EndReason, Params, TrialPlan};
 
-use crate::fixture::{Ending, Journal, at, firmware, offsets_of, zero};
+use crate::fixture::{Ending, Journal, at, ccd, firmware, offsets_of, zero};
 
 fn cold_boot(boot: &str, second: i64) -> DayQuery {
     DayQuery {
@@ -22,6 +24,16 @@ fn cold_boot(boot: &str, second: i64) -> DayQuery {
             pause: Pause::Running,
         },
         now: at(second),
+    }
+}
+
+fn cold_boot_at(boot: &str, now: jiff::Timestamp) -> DayQuery {
+    DayQuery {
+        boot: BootId::from(boot.to_owned()),
+        invocation: Invocation::ColdBoot {
+            pause: Pause::Running,
+        },
+        now,
     }
 }
 
@@ -83,7 +95,12 @@ fn qualifications(journal: &Journal) -> Vec<&NightQualification> {
 /// Runs the first night until the filler, closes it at the cold boot `day1`, settles the day and applies
 /// its promotion: D is then the qualified proposal.
 fn promoted() -> (Journal, CcdProfile) {
-    let mut journal = Journal::ready();
+    promoted_with(Params::SPEC)
+}
+
+/// [`promoted`] under a policy with `params`.
+fn promoted_with(params: Params) -> (Journal, CcdProfile) {
+    let mut journal = Journal::ready_with(params);
     journal.until_filler(|_| Ending::Pass);
     let qualified = qualifications(&journal)
         .into_iter()
@@ -348,4 +365,148 @@ fn the_projection_after_a_provisional_retreat_matches_its_snapshot() {
     let golden: serde_json::Value =
         serde_json::from_str(include_str!("snapshots/provisional_projection.json")).unwrap();
     assert_eq!(pinned, golden);
+}
+
+/// Ends the boot `ended` uncleanly at `at_profile`, with nothing explaining the end, and starts the cold
+/// boot `next`.
+fn unexplained_end_of(journal: &mut Journal, ended: &str, next: &str, at_profile: &CcdProfile) {
+    journal.boot_start_at(next, "1", &zero());
+    journal.append(
+        DayUncleanEnd {
+            boot: BootId::from(ended.to_owned()),
+            last_checkpoint: None,
+            offsets: offsets_of(at_profile),
+            reset_reason: ResetReason {
+                kind: None,
+                raw: Vec::new(),
+                supported: false,
+            },
+            evidence: EndEvidence::unknown(),
+        }
+        .into(),
+        &[],
+    );
+}
+
+/// Runs a night in `boot` until it asks for its filler, each trial passing.
+fn night_until_filler(journal: &mut Journal, boot: &str) -> Vec<TrialPlan> {
+    journal.reboot(boot);
+    let mut plans = Vec::new();
+    for _ in 0..3_500 {
+        let plan = journal.until_trial(journal.now());
+        if plan.task.queue == Queue::Filler {
+            return plans;
+        }
+        journal.run(&plan, Ending::Pass);
+        plans.push(plan);
+    }
+    panic!("the night never reached its filler");
+}
+
+/// The committed cap's offset on `ccd`.
+fn cap_of(journal: &Journal, ccd: usize) -> i64 {
+    serde_json::to_value(journal.state.project()).unwrap()["ccds"][ccd]["cap"]["offset"]
+        .as_i64()
+        .unwrap()
+}
+
+#[test]
+fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores_it() {
+    // A budget generous enough for caps several steps deep.
+    let params = Params {
+        machine_budget: Rate::per_hour(1.0).unwrap(),
+        ..Params::SPEC
+    };
+    let (mut journal, first) = promoted_with(params);
+    // The first D runs a full hold, then a night qualifies the next proposal and a cold boot promotes it.
+    journal.append(
+        DayOffsetsChanged {
+            offsets: offsets_of(&first),
+        }
+        .into(),
+        &[],
+    );
+    journal.advance(51 * 3_600);
+    journal.append(
+        DayCheckpoint {
+            applied_secs: 51 * 3_600,
+            load_mix: LoadMix::default(),
+            watchdog: None,
+        }
+        .into(),
+        &[],
+    );
+    journal.append(DayCleanStop {}.into(), &[]);
+    night_until_filler(&mut journal, "tuning1");
+    journal.boot_start_at("day2", "1", &first);
+    let committed = journal.settle_day(&cold_boot_at("day2", journal.now()));
+    let second = steps(&committed)
+        .into_iter()
+        .find(|step| matches!(step.step, StepKind::Promote { .. }))
+        .cloned()
+        .unwrap_or_else(|| panic!("no second promotion in {committed:?}"));
+    apply(&mut journal, &second, 2, "day2");
+    // A month later the first D's certificate has lapsed, and deep mapping failures on CCD 0 pull its
+    // cap in: the ordinary proposal from CO 0 is no longer the first D.
+    journal.advance(31 * 24 * 3_600);
+    journal.reboot("tuning2");
+    let deep = cap_of(&journal, 0);
+    while cap_of(&journal, 0) == deep {
+        let plan = journal.until_trial(journal.now());
+        let fails = plan.activity == Activity::Mapping
+            && plan
+                .profile
+                .get(ccd(0))
+                .is_some_and(|offset| offset.get() <= -19);
+        journal.run(
+            &plan,
+            if fails {
+                Ending::Fail(None)
+            } else {
+                Ending::Pass
+            },
+        );
+    }
+    let pulled = cap_of(&journal, 0);
+    let wanted_ccd0 = first.get(ccd(0)).unwrap().get();
+    assert!((deep..wanted_ccd0).contains(&pulled), "{pulled}");
+    // An unexplained end at the second D steps back to the first, which unqualified is held at CO 0.
+    unexplained_end_of(&mut journal, "day2", "day3", &second.proposed.ccd);
+    let committed = journal.settle_day(&cold_boot_at("day3", journal.now()));
+    let fallback = steps(&committed)
+        .into_iter()
+        .find(|step| matches!(step.step, StepKind::Retreat { .. }))
+        .cloned()
+        .unwrap_or_else(|| panic!("no retreat in {committed:?}"));
+    let StepKind::Retreat { wanted, .. } = &fallback.step else {
+        unreachable!();
+    };
+    assert_eq!(wanted.as_ref().map(|wanted| &wanted.ccd), Some(&first));
+    assert!(fallback.proposed.ccd.is_zero());
+    apply(&mut journal, &fallback, 3, "day3");
+    // The next night qualifies the wanted profile, not the ordinary proposal from CO 0.
+    let plans = night_until_filler(&mut journal, "tuning3");
+    let qualified: Vec<&CcdProfile> = plans
+        .iter()
+        .filter(|plan| plan.activity == Activity::Qualification && !plan.profile.is_zero())
+        .map(|plan| &plan.profile)
+        .collect();
+    assert_eq!(qualified.first(), Some(&&first), "{qualified:?}");
+    // The next cold boot restores it: a retreat completing the event, not a promotion.
+    journal.boot_start("day4");
+    let committed = journal.settle_day(&cold_boot_at("day4", journal.now()));
+    let restored = steps(&committed)
+        .into_iter()
+        .find(|step| step.proposed.ccd == first)
+        .unwrap_or_else(|| panic!("the wanted profile was never restored: {committed:?}"));
+    assert!(
+        matches!(
+            restored.step,
+            StepKind::Retreat {
+                cause: RetreatCause::Completion { .. },
+                ..
+            }
+        ),
+        "{restored:?}"
+    );
 }
