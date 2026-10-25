@@ -9,6 +9,8 @@ use crate::watchdog::{Active, Ready, arming_with};
 fn device(root: &Tree, index: usize, state: &str, identity: Option<&str>) {
     let dir = format!("sys/class/watchdog/watchdog{index}");
     root.put(&format!("{dir}/state"), state);
+    root.put(&format!("{dir}/timeout"), "60\n");
+    root.put(&format!("{dir}/timeleft"), "58\n");
     if let Some(identity) = identity {
         root.put(&format!("{dir}/identity"), identity);
     }
@@ -66,6 +68,33 @@ fn an_active_hardware_device_is_ready() {
         root.watchdog(),
         ready("watchdog0 (SP5100 TCO timer) active")
     );
+}
+
+#[test_case(Some("58\n"), true; "counting")]
+#[test_case(Some("60\n"), true; "at timeout")]
+#[test_case(Some("0\n"), true; "at expiry")]
+#[test_case(Some("4294967295\n"), false; "all ones after deep sleep")]
+#[test_case(Some("61\n"), false; "larger than timeout")]
+#[test_case(None, false; "unreadable")]
+#[test_case(Some("invalid\n"), false; "malformed")]
+fn only_a_readable_counter_within_its_timeout_is_ready(timeleft: Option<&str>, counting: bool) {
+    let root = Tree::empty();
+    device(&root, 0, "active\n", Some("SP5100 TCO timer\n"));
+    if let Some(value) = timeleft {
+        root.put("sys/class/watchdog/watchdog0/timeleft", value);
+    } else {
+        root.remove("sys/class/watchdog/watchdog0/timeleft");
+    }
+    let check = root.watchdog();
+    assert_eq!(check.ok, counting, "{}", check.detail);
+    if !counting {
+        assert!(
+            check.detail.contains("open but not counting"),
+            "{}",
+            check.detail
+        );
+        assert!(!arming_with(&Err(check), Ok(held(&["/dev/watchdog0"]))).is_armed());
+    }
 }
 
 #[test]

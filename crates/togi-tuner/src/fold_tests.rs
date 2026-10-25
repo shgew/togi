@@ -1125,6 +1125,7 @@ fn day_events() -> Vec<Payload> {
         DayCheckpoint {
             applied_secs: 60,
             load_mix: togi_journal::LoadMix::default(),
+            watchdog: None,
         }
         .into(),
         DayOffsetsChanged {

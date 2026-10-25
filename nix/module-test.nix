@@ -240,9 +240,13 @@ assert watched.systemd.services.togi-day-watchdog-sleep.unitConfig.StopWhenUnnee
 assert lib.hasSuffix "RuntimeWatchdogUSec t 0" (
   builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStart
 );
-assert lib.hasSuffix "RuntimeWatchdogUSec t 18446744073709551615" (
-  builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStopPost
-);
+assert
+  map builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStopPost
+  == [
+    "-${builtins.unsafeDiscardStringContext "${pkgs.kmod}/bin/modprobe"} -r sp5100_tco"
+    "-${builtins.unsafeDiscardStringContext "${pkgs.kmod}/bin/modprobe"} sp5100_tco"
+    "${builtins.unsafeDiscardStringContext "${watched.systemd.package}/bin/busctl"} set-property org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager RuntimeWatchdogUSec t 18446744073709551615"
+  ];
 assert !(watched.systemd.services.togi-day-watchdog-sleep.serviceConfig ? ExecStop);
 assert !(day.systemd.services ? togi-day-watchdog-sleep);
 assert !(watchedTuning.systemd.services ? togi-day-watchdog-sleep);

@@ -80,7 +80,7 @@ impl Payload {
             Self::JournalTorn(p) => journal_torn(p),
             Self::StateRebuilt(p) => state_rebuilt(p),
             Self::DayBootStart(p) => day_boot_start(p),
-            Self::DayCheckpoint(p) => day_checkpoint(*p),
+            Self::DayCheckpoint(p) => day_checkpoint(p),
             Self::DayOffsetsChanged(p) => day_offsets_changed(p),
             Self::DayCleanStop(_) => "day observer stopped on request".to_owned(),
             Self::DayUncleanEnd(p) => day_unclean_end(p),
@@ -1156,7 +1156,7 @@ fn day_boot_start(p: &DayBootStart) -> String {
     text
 }
 
-fn day_checkpoint(p: DayCheckpoint) -> String {
+fn day_checkpoint(p: &DayCheckpoint) -> String {
     let mut text = format!(
         "day observer has been active {} s in total this boot",
         p.applied_secs
@@ -1173,6 +1173,14 @@ fn day_checkpoint(p: DayCheckpoint) -> String {
             mix.quiet_ms / 1000,
             mix.other_ms / 1000
         );
+    }
+    if let Some(state) = &p.watchdog {
+        let armed = if state.is_armed() {
+            "armed"
+        } else {
+            "not armed"
+        };
+        let _ = write!(text, "; hardware watchdog {armed}: {}", state.detail());
     }
     text
 }

@@ -30,11 +30,24 @@ enum Refusal {
     },
     #[error("{name} is not a hardware watchdog ({identity:?})")]
     NotHardware { name: String, identity: String },
+    #[error("{name} open but not counting: read {attribute}")]
+    ReadCounter {
+        name: String,
+        attribute: &'static str,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{name} open but not counting: timeleft {timeleft} s exceeds timeout {timeout} s")]
+    NotCounting {
+        name: String,
+        timeleft: u64,
+        timeout: u64,
+    },
     #[error("read PID 1 descriptors")]
     ReadPid1(#[source] io::Error),
 }
 
-/// The watchdog device the sysfs probe validated as active hardware.
+/// The watchdog device the sysfs probe validated as active, counting hardware.
 pub(crate) struct Ready {
     pub(crate) name: String,
     pub(crate) identity: String,
@@ -55,7 +68,7 @@ impl Ready {
     }
 }
 
-/// Every watchdog device the sysfs probe validated as active hardware, in name order; never empty.
+/// Every watchdog device the sysfs probe validated as active, counting hardware, in name order; never empty.
 pub(crate) struct Active {
     pub(crate) first: Ready,
     pub(crate) rest: Vec<Ready>,
@@ -112,14 +125,36 @@ fn examine(
             identity: identity.to_owned(),
         });
     }
+    let counter = |attribute| {
+        read_attribute(&dir.join(attribute))
+            .and_then(|text| {
+                text.trim()
+                    .parse::<u64>()
+                    .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))
+            })
+            .map_err(|source| Refusal::ReadCounter {
+                name: name.to_owned(),
+                attribute,
+                source,
+            })
+    };
+    let timeout = counter("timeout")?;
+    let timeleft = counter("timeleft")?;
+    if timeleft > timeout {
+        return Err(Refusal::NotCounting {
+            name: name.to_owned(),
+            timeleft,
+            timeout,
+        });
+    }
     Ok(Some(Ready {
         name: name.to_owned(),
         identity: identity.to_owned(),
     }))
 }
 
-/// Whether some watchdog under `root` is active and not the software one. Only observes the
-/// kernel's report: an identity other than `Software Watchdog` is not proof of a physical timer.
+/// Whether some hardware watchdog under `root` is active with a readable counter within its timeout.
+/// This rejects a lost MMIO decode; a single plausible reading cannot prove future progress.
 pub(crate) fn probe(root: &Path) -> Check {
     probe_with(root, devices, read_attribute)
 }
@@ -215,8 +250,8 @@ pub(crate) fn pid1_descriptors(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(targets)
 }
 
-/// Whether PID 1's hardware watchdog is armed under `root`: a hardware watchdog is active (`scan`) and PID 1
-/// holds one of the active devices, which is what feeds it. Observes only what the kernel reports.
+/// Whether PID 1 holds an active, counting hardware watchdog under `root` (`scan`).
+/// The shared probe also supplies preflight, so every armed check rejects a stopped MMIO timer.
 pub(crate) fn arming(root: &Path) -> WatchdogState {
     arming_with(&scan(root), pid1_descriptors(root))
 }

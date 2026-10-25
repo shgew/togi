@@ -566,6 +566,56 @@ fn a_checkpoint_with_a_load_mix_names_each_share_in_seconds() {
     );
 }
 
+#[test_case(true; "counting")]
+#[test_case(false; "open but not counting")]
+fn checkpoints_record_and_describe_the_latest_watchdog_check(counting: bool) {
+    let detail = "watchdog0 open but not counting: timeleft 4294967295 s exceeds timeout 60 s";
+    let watchdog = if counting {
+        togi_machine::WatchdogState::Armed {
+            detail: "watchdog0 counting, held by PID 1".into(),
+        }
+    } else {
+        togi_machine::WatchdogState::Unarmed {
+            detail: detail.into(),
+        }
+    };
+    let checkpoint = crate::DayCheckpoint {
+        applied_secs: 600,
+        load_mix: crate::LoadMix::default(),
+        watchdog: Some(watchdog.clone()),
+    };
+    let encoded = serde_json::to_value(&checkpoint).unwrap();
+    assert_eq!(
+        encoded["watchdog"],
+        serde_json::to_value(&watchdog).unwrap()
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::DayCheckpoint>(encoded).unwrap(),
+        checkpoint
+    );
+    let armed = if counting { "armed" } else { "not armed" };
+    assert_eq!(
+        Payload::from(checkpoint).message(),
+        format!(
+            "day observer has been active 600 s in total this boot; hardware watchdog {armed}: {}",
+            watchdog.detail()
+        )
+    );
+}
+
+#[test]
+fn an_older_checkpoint_has_no_watchdog_check() {
+    let checkpoint: crate::DayCheckpoint = serde_json::from_str(r#"{"applied_secs":600}"#).unwrap();
+    assert_eq!(checkpoint.watchdog, None);
+    assert_eq!(
+        serde_json::to_value(checkpoint).unwrap(),
+        serde_json::json!({"applied_secs":600,"load_mix":{
+            "single_thread_ms":0,"light_beside_busy_ms":0,"all_threads_ms":0,
+            "idle_transition_ms":0,"quiet_ms":0,"other_ms":0
+        }})
+    );
+}
+
 fn hunt_end(result: HuntOutcome, cores: &[u8], groups: u32, reason: &str) -> String {
     Payload::from(HuntEnd {
         hunt: ord(3),

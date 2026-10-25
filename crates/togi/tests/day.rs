@@ -273,6 +273,7 @@ mod record {
                 DayCheckpoint {
                     applied_secs: 600,
                     load_mix: togi_journal::LoadMix::default(),
+                    watchdog: None,
                 }
                 .into(),
                 &[],
