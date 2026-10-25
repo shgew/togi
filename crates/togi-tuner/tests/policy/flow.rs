@@ -1,6 +1,6 @@
 //! Day and night through the journal: a qualified proposal promoted and applied, the firmware zero and the
 //! retained profile's re-qualification, an unexplained end's provisional veto and retreat, its one-night
-//! reproduction, and a stock failure's dead end.
+//! reproduction, a reclassified step back's restoration, and a stock failure's dead end.
 
 use std::collections::BTreeMap;
 
@@ -577,6 +577,108 @@ fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores
         ),
         "{restored:?}"
     );
+}
+
+/// Runs `d` for a full hold in the current boot, then stops the boot cleanly.
+fn held_at(journal: &mut Journal, d: &CcdProfile) {
+    journal.append(
+        DayOffsetsChanged {
+            offsets: offsets_of(d),
+        }
+        .into(),
+        &[],
+    );
+    journal.advance(51 * 3_600);
+    journal.append(
+        DayCheckpoint {
+            applied_secs: 51 * 3_600,
+            load_mix: LoadMix::default(),
+            watchdog: None,
+        }
+        .into(),
+        &[],
+    );
+    journal.append(DayCleanStop {}.into(), &[]);
+}
+
+/// The only step of `payloads` that `kind` matches.
+fn step_of(payloads: &[Payload], kind: impl Fn(&StepKind) -> bool) -> DayStep {
+    steps(payloads)
+        .into_iter()
+        .find(|step| kind(&step.step))
+        .cloned()
+        .unwrap_or_else(|| panic!("no such step in {payloads:?}"))
+}
+
+#[test]
+fn a_reclassified_step_back_commits_a_restoration_citing_its_answer_event_promotion_and_retreat() {
+    let (mut journal, first) = promoted_with(deep());
+    held_at(&mut journal, &first);
+    night_until_filler(&mut journal, "tuning1");
+    journal.boot_start_at("day2", "1", &first);
+    let committed = journal.settle_day(&cold_boot_at("day2", journal.now()));
+    let promotion = step_of(&committed, |step| matches!(step, StepKind::Promote { .. }));
+    apply(&mut journal, &promotion, 2, "day2");
+    let promoted_at = journal.events.last().unwrap().seq;
+
+    // An unexplained end at the second D steps back to the qualified, nonzero first D.
+    unexplained_end_of(&mut journal, "day2", "day3", &promotion.proposed.ccd);
+    let committed = journal.settle_day(&cold_boot_at("day3", journal.now()));
+    let retreat = step_of(&committed, |step| matches!(step, StepKind::Retreat { .. }));
+    assert_eq!(retreat.proposed.ccd, first, "{retreat:?}");
+    apply(&mut journal, &retreat, 3, "day3");
+    let retreated_at = journal.events.last().unwrap().seq;
+    held_at(&mut journal, &first);
+
+    // A graphics answer reclassifies the end: the next cold boot owes the restoration.
+    let answered_at = journal.append(
+        togi_journal::DayAnswer {
+            boot: BootId::from("day2".to_owned()),
+            offsets: offsets_of(&promotion.proposed.ccd),
+            answer: togi_journal::DayAnswerKind::Graphics,
+            uid: 1000,
+        }
+        .into(),
+        &[],
+    );
+    journal.boot_start_at("day4", "1", &first);
+    let committed = journal.settle_day(&cold_boot_at("day4", journal.now()));
+    let restoration = step_of(&committed, |step| matches!(step, StepKind::Promote { .. }));
+    assert_eq!(restoration.old, retreat.proposed);
+    assert_eq!(restoration.proposed, promotion.proposed);
+    assert_eq!(restoration.step, promotion.step, "the same CCD changes");
+    assert!(
+        restoration.reason.starts_with("restore CCD"),
+        "{restoration:?}"
+    );
+    let event = journal
+        .events
+        .iter()
+        .rev()
+        .find(|event| matches!(&event.payload, Payload::DayEvent(_)))
+        .map(|event| event.seq)
+        .unwrap();
+    assert_eq!(restoration.causes.events, [event]);
+    let cited = &journal
+        .events
+        .iter()
+        .rev()
+        .find(|committed| {
+            matches!(&committed.payload, Payload::DayStep(step) if *step == restoration)
+        })
+        .unwrap()
+        .cause;
+    for (witness, seq) in [
+        ("answer", answered_at),
+        ("event", event),
+        ("original promotion", promoted_at),
+        ("applied retreat", retreated_at),
+    ] {
+        assert!(
+            cited.contains(&seq),
+            "the restoration cites its {witness} {seq:?}: {cited:?}"
+        );
+    }
 }
 
 /// A budget generous enough for caps several steps deep.
