@@ -5,8 +5,8 @@
 use std::collections::BTreeMap;
 
 use togi_journal::{
-    Activity, ApplicationId, ApplyCause, Classification, DayApplied, DayCheckpoint, DayCleanStop,
-    DayOffsetsChanged, DayStep, DayUncleanEnd, LoadMix, NightQualification, Payload,
+    Activity, ApplicationId, ApplyCause, CellEvidence, Classification, DayApplied, DayCheckpoint,
+    DayCleanStop, DayOffsetsChanged, DayStep, DayUncleanEnd, LoadMix, NightQualification, Payload,
     QualificationPurpose, QualificationState, Queue, ReproductionState, RetreatCause, StepKind,
     Tested,
 };
@@ -363,6 +363,32 @@ fn a_stock_failure_whose_commitments_are_still_owed_already_establishes_the_dead
     assert_eq!(PolicyPayload::DeadEnd(committed.clone()), dead_end.payload);
     // Once recorded, nothing more is established.
     assert_eq!(journal.stock_dead_end(at(400)).unwrap(), None);
+}
+
+#[test]
+fn a_monthly_requalification_of_d_runs_every_cell_afresh() {
+    let (mut journal, d) = promoted();
+    journal.advance(31 * 24 * 3_600);
+    night_until_filler(&mut journal, "tuning2");
+    let requalified = qualifications(&journal)
+        .into_iter()
+        .rev()
+        .find(|record| {
+            record.purpose == QualificationPurpose::Requalification
+                && record.profile.ccd == d
+                && matches!(record.state, QualificationState::Complete { .. })
+        })
+        .unwrap_or_else(|| panic!("D was never re-qualified"));
+    let QualificationState::Complete { witnesses } = &requalified.state else {
+        unreachable!();
+    };
+    assert!(!witnesses.is_empty());
+    assert!(
+        witnesses
+            .iter()
+            .all(|witness| matches!(witness.evidence, CellEvidence::Fresh { .. })),
+        "{witnesses:?}"
+    );
 }
 
 /// The projection after an unexplained end's provisional retreat, pinned except for the cap's class lists

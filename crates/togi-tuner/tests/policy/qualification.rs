@@ -1,12 +1,12 @@
 //! A failed next-step qualification: the exact proposal stays blocked for the session and firmware
 //! (`docs/spec/tuner.md`, Failed next-step qualification).
 
-use togi_journal::{Activity, DayStep, Payload, QualificationState, Queue, StepKind};
+use togi_journal::{Activity, CellEvidence, DayStep, Payload, QualificationState, Queue, StepKind};
 use togi_machine::{Backend, BootId, CcdProfile, ContentId, Digest};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, TrialPlan};
 
-use crate::fixture::{Ending, Journal, content};
+use crate::fixture::{Ending, Journal, ccd, content, cores};
 
 /// Whether `plan` qualifies a proposal other than D.
 fn qualifies_proposal(plan: &TrialPlan) -> bool {
@@ -119,4 +119,63 @@ fn a_fresh_session_may_qualify_a_proposal_an_earlier_session_failed() {
     journal.start_session("20240101T000000Z");
     let qualified = qualified_next(&mut journal, 600, &content());
     assert_eq!(qualified.first(), Some(&failed), "{qualified:?}");
+}
+
+#[test]
+fn a_failed_certificate_lends_no_witness_to_a_later_qualification() {
+    let mut journal = Journal::ready();
+    // The first proposal moves CCD 0 only. It passes a cell loading CCD 1 alone, at D's offset there, then
+    // fails on a core of CCD 0, which leaves that pass uncontradicted.
+    let ccd1_only = |plan: &TrialPlan| {
+        !plan.cell.loaded.is_empty()
+            && cores()
+                .iter()
+                .filter(|info| plan.cell.loaded.contains(info.core))
+                .all(|info| info.ccd == ccd(1))
+    };
+    let mut lent = false;
+    let failed = loop {
+        let plan = journal.until_trial(journal.now());
+        if qualifies_proposal(&plan) && lent {
+            journal.run(&plan, Ending::Fail(Some(0)));
+            break plan.profile;
+        }
+        lent |= qualifies_proposal(&plan) && ccd1_only(&plan);
+        journal.run(&plan, Ending::Pass);
+    };
+    qualified_next(&mut journal, 1_500, &content());
+    let committed = |pick: fn(&QualificationState) -> bool| {
+        journal.events.iter().filter_map(move |event| {
+            if let Payload::NightQualification(record) = &event.payload
+                && pick(&record.state)
+            {
+                Some((event.seq, record))
+            } else {
+                None
+            }
+        })
+    };
+    let (started, _) = committed(|state| matches!(state, QualificationState::Start { .. }))
+        .find(|(_, record)| record.profile.ccd == failed)
+        .unwrap();
+    let (concluded, _) = committed(|state| matches!(state, QualificationState::Failed { .. }))
+        .find(|(_, record)| record.profile.ccd == failed)
+        .unwrap();
+    let mut completed = 0;
+    for (_, record) in committed(|state| matches!(state, QualificationState::Complete { .. })) {
+        let QualificationState::Complete { witnesses } = &record.state else {
+            unreachable!();
+        };
+        completed += 1;
+        for witness in witnesses {
+            if let CellEvidence::Reused { exposure } = witness.evidence {
+                assert!(
+                    !(started..=concluded).contains(&exposure),
+                    "{:?} reused {exposure:?} from the failed {failed:?}",
+                    record.profile.ccd
+                );
+            }
+        }
+    }
+    assert!(completed > 0);
 }

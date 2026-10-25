@@ -9,7 +9,9 @@ use togi_journal::{
     Activity, CcdVector, CellEvidence, CellWitness, ExposureClass, NightQualification, Outcome,
     QualificationPurpose, QualificationState, Queue, Seq, TaskId, Tested, WorkloadContent,
 };
-use togi_machine::{BiosContext, CcdId, CcdProfile, ContentId, Digest, WorkloadId};
+use togi_machine::{
+    BiosContext, CcdId, CcdProfile, ContentId, CoreSet, Digest, TargetOffset, WorkloadId,
+};
 
 use super::State;
 use super::books::Committed;
@@ -230,39 +232,48 @@ impl State {
             .map(|application| &application.profile)
     }
 
-    /// The matrix the qualification of `profile` freezes at `ordinal`, with reuse witnesses drawn from
-    /// the exposures journaled at or before `cutoff`, and the evidence seq of each reused cell.
-    /// The matrix of `profile` as the journal up to `cutoff` derives it, partial chains included.
+    /// The matrix the qualification of `profile` for `purpose` freezes at `ordinal`, as the journal up to
+    /// `cutoff` derives it, partial chains included, and the evidence seq of each reused cell.
     fn matrix_at(
         &self,
         profile: &CcdProfile,
+        purpose: QualificationPurpose,
         ordinal: u32,
         cutoff: Seq,
         applied: Option<&CcdProfile>,
     ) -> Result<(Matrix, HashMap<Cell, Seq>), NotReady> {
         self.layout_at(Some(cutoff), |layout| {
-            self.matrix_in(layout, profile, ordinal, cutoff, applied)
+            self.matrix_in(layout, profile, purpose, ordinal, cutoff, applied)
         })
     }
 
+    /// A monthly re-qualification runs every cell afresh. Otherwise a cell on one CCD whose offset `profile`
+    /// leaves at D's reuses the exposure a completed certificate at that offset cites for it, unless a
+    /// later failure at that offset or deeper contradicts it (`docs/spec/workloads.md`, Reuse).
     fn matrix_in(
         &self,
         layout: &Layout<'_>,
         profile: &CcdProfile,
+        purpose: QualificationPurpose,
         ordinal: u32,
         cutoff: Seq,
         applied: Option<&CcdProfile>,
     ) -> Result<(Matrix, HashMap<Cell, Seq>), NotReady> {
+        if purpose == QualificationPurpose::Requalification {
+            let matrix = qualification_cells(layout, profile, ordinal, &Reuse::AllFresh)?;
+            return Ok((matrix, HashMap::new()));
+        }
         let changed: BTreeSet<CcdId> = profile
             .iter()
             .filter(|&(ccd, offset)| applied.is_none_or(|applied| applied.get(ccd) != Some(offset)))
             .map(|(ccd, _)| ccd)
             .collect();
+        let certified = self.certified_witnesses(cutoff);
         let candidates = qualification_cells(layout, profile, ordinal, &Reuse::AllFresh)?;
         let mut witnesses: HashMap<Cell, Seq> = HashMap::new();
         for planned in &candidates.cells {
             let cell = planned.cell;
-            let Some(ccd) = self.single_ccd(&cell) else {
+            let Some(ccd) = self.single_ccd(cell.loaded) else {
                 continue;
             };
             if changed.contains(&ccd) {
@@ -271,14 +282,7 @@ impl State {
             let Some(offset) = profile.get(ccd) else {
                 continue;
             };
-            let sig = Sig::of_cell(&cell);
-            let Some(witness) = self
-                .current_groups()
-                .filter_map(|group| group.qual_witness.get(&(ccd, offset, sig.clone())))
-                .copied()
-                .filter(|&seq| seq <= cutoff)
-                .min()
-            else {
+            let Some(&witness) = certified.get(&(ccd, offset, Sig::of_cell(&cell))) else {
                 continue;
             };
             let contradicted = self.current_groups().any(|group| {
@@ -305,9 +309,39 @@ impl State {
         Ok((matrix, witnesses))
     }
 
-    /// The one CCD a cell's loaded cores sit on.
-    fn single_ccd(&self, cell: &Cell) -> Option<CcdId> {
-        let mut ccds = cell.loaded.iter().filter_map(|core| {
+    /// What the current certificates completed by `cutoff` witnessed: for each cell on one CCD, at the
+    /// offset its certificate qualified there, the earliest exposure that satisfied it.
+    fn certified_witnesses(&self, cutoff: Seq) -> HashMap<(CcdId, TargetOffset, Sig), Seq> {
+        let mut certified: HashMap<(CcdId, TargetOffset, Sig), Seq> = HashMap::new();
+        for record in self
+            .qualification_records()
+            .iter()
+            .filter(|record| record.latest.seq <= cutoff && self.is_current_record(record))
+        {
+            let QualificationState::Complete { witnesses } = &record.latest.payload.state else {
+                continue;
+            };
+            for witness in witnesses {
+                let Some(ccd) = self.single_ccd(witness.cell.cores) else {
+                    continue;
+                };
+                let Some(offset) = record.start.payload.profile.ccd.get(ccd) else {
+                    continue;
+                };
+                let (CellEvidence::Fresh { exposure } | CellEvidence::Reused { exposure }) =
+                    witness.evidence;
+                certified
+                    .entry((ccd, offset, Sig::of_class(&witness.cell)))
+                    .and_modify(|earliest| *earliest = (*earliest).min(exposure))
+                    .or_insert(exposure);
+            }
+        }
+        certified
+    }
+
+    /// The one CCD `cores` sit on.
+    fn single_ccd(&self, cores: CoreSet) -> Option<CcdId> {
+        let mut ccds = cores.iter().filter_map(|core| {
             self.machine
                 .cores
                 .iter()
@@ -331,6 +365,7 @@ impl State {
         let cutoff = start.causes.iter().copied().max().unwrap_or(start.seq);
         let (matrix, reused) = self.matrix_at(
             &start.payload.profile.ccd,
+            start.payload.purpose,
             record.index,
             cutoff,
             self.applied_before(start.seq),
@@ -809,6 +844,7 @@ impl State {
         let cutoff = self.last.ok_or(NotReady::NoSession)?;
         let (matrix, _) = self.matrix_at(
             profile,
+            purpose,
             ordinal,
             cutoff,
             self.days

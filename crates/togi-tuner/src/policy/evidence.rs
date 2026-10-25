@@ -65,9 +65,6 @@ pub(super) struct Group {
     /// The adequate isolated passes of a class on a CCD, with their offsets.
     #[serde(with = "togi_machine::serde_pairs")]
     pub(super) isolated_passes: HashMap<(CcdId, Sig), Vec<(TargetOffset, Seq)>>,
-    /// The first adequate exact qualification pass of a class under a CCD's offset.
-    #[serde(with = "togi_machine::serde_pairs")]
-    pub(super) qual_witness: HashMap<(CcdId, TargetOffset, Sig), Seq>,
     /// The failures that count against a CCD, with the offset they count at.
     #[serde(with = "super::wire::pairs")]
     pub(super) scoped_failures: BTreeMap<CcdId, Vec<(Seq, TargetOffset)>>,
@@ -119,7 +116,6 @@ impl Group {
             zero_core_failures: Vec::new(),
             zero_control_latest: HashMap::new(),
             isolated_passes: HashMap::new(),
-            qual_witness: HashMap::new(),
             scoped_failures: BTreeMap::new(),
             latest_scoped: BTreeMap::new(),
         }
@@ -183,17 +179,6 @@ impl Group {
             })
         {
             self.zero_core_failures.push(index);
-        }
-        if observed.activity == Activity::Qualification
-            && observed.tested == (Tested::Exact {})
-            && observed.outcome == Outcome::Pass
-            && adequate
-        {
-            for (ccd, offset) in observed.profile.ccd.iter() {
-                self.qual_witness
-                    .entry((ccd, offset, sig.clone()))
-                    .or_insert(seq);
-            }
         }
         for &ccd in ccds {
             let Some(offset) = cap_scope(cores, observed, ccd) else {
