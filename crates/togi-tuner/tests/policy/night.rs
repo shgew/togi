@@ -160,6 +160,25 @@ fn the_operators_stop_closes_the_night_and_a_restart_opens_a_new_one() {
 }
 
 #[test]
+fn a_dead_end_shutdown_closes_the_night_and_a_restart_opens_a_new_one() {
+    let mut journal = Journal::ready();
+    let night = run_trials(&mut journal, 3);
+    let stop = journal.append(
+        Shutdown {
+            reason: ShutdownReason::DeadEnd,
+            kernel_cursor: None,
+            kernel_error: None,
+            cycles: None,
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!(journal.state.project().night.unwrap().closed_by, Some(stop));
+    let plan = journal.until_trial(at(5_000));
+    assert_ne!(plan.night, night);
+}
+
+#[test]
 fn a_reset_of_every_core_closes_the_night() {
     let mut journal = Journal::ready();
     run_trials(&mut journal, 2);

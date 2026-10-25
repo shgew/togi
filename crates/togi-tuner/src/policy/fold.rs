@@ -127,9 +127,13 @@ impl State {
             Payload::CcdCap(p) => {
                 self.nights.caps.insert(p.ccd, committed(event, p.clone()));
             }
-            // The operator's stop (signal, F10, the power button) is the durable record that tuning was left.
+            // A completed stop is the durable record that tuning was left: the operator's (signal,
+            // F10, the power button) or the dead end's (`docs/spec/runtime.md`, Night declaration).
             Payload::Shutdown(p) => {
-                if p.reason == togi_journal::ShutdownReason::Signal {
+                if matches!(
+                    p.reason,
+                    togi_journal::ShutdownReason::Signal | togi_journal::ShutdownReason::DeadEnd
+                ) {
                     self.close_night(seq);
                 }
             }
