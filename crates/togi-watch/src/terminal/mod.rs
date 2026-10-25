@@ -476,7 +476,8 @@ fn drive_with<B: console::Console>(
                 |screen, buf| {
                     let mut feed = feed.borrow_mut();
                     let journal = feed.journal(screen);
-                    render(&journal, screen, now(), buf)
+                    let at = now();
+                    (render(&journal, screen, at, buf), at)
                 },
                 || {
                     let mut feed = feed.borrow_mut();
@@ -1272,6 +1273,59 @@ mod tests {
                 assert_eq!(at, now.get(), "frame {frames} must use its journal's clock");
                 if frames == 2 {
                     stop.stop();
+                }
+                plain(journal, screen, at, buf)
+            },
+            silent_listener,
+        );
+        assert_eq!(result.unwrap(), Outcome::Ended);
+        assert_eq!(frames, 2);
+    }
+
+    #[test]
+    fn a_second_crossed_during_paint_is_redrawn_immediately() {
+        use std::cell::Cell;
+        use std::time::Duration;
+
+        let before = Timestamp::UNIX_EPOCH + Duration::from_millis(999);
+        let after = Timestamp::UNIX_EPOCH + Duration::from_millis(1001);
+        let now = Cell::new(before);
+        let recorder = Recorder::new(120, 33);
+        let state = MemoryJournal::new();
+        let stop = Stop::new();
+        let mut painted_at = None;
+        let mut frames = 0;
+        let live = Config {
+            watch: None,
+            tick: None,
+            stop: Some(&stop),
+            terminating: false,
+            quit: Quit::Keys,
+            switch: None,
+        };
+        let result = drive_with(
+            &timer_runtime(),
+            recorder.backend(),
+            Source::memory(&state, None),
+            &live,
+            None,
+            Colours::None,
+            || now.get(),
+            |journal, screen, at, buf| {
+                frames += 1;
+                if let Some(painted_at) = painted_at {
+                    assert_eq!(at, after);
+                    assert!(
+                        tokio::time::Instant::now().duration_since(painted_at)
+                            <= Duration::from_millis(1),
+                        "the boundary crossed while painting must not wait for second 2"
+                    );
+                    stop.stop();
+                } else {
+                    assert_eq!(at, before);
+                    painted_at = Some(tokio::time::Instant::now());
+                    // The wall clock crosses a second boundary during synchronous painting.
+                    now.set(after);
                 }
                 plain(journal, screen, at, buf)
             },

@@ -44,8 +44,8 @@ impl Painter {
         &mut self,
         session: &mut Session<B>,
         screen: &mut Screen,
-        frame: &mut impl FnMut(&Screen, &mut Buffer) -> Drawn,
-    ) -> Result<Drawn, Error> {
+        frame: &mut impl FnMut(&Screen, &mut Buffer) -> (Drawn, Timestamp),
+    ) -> Result<(Drawn, Timestamp), Error> {
         session
             .terminal
             .size()
@@ -84,11 +84,14 @@ impl Painter {
 ///
 /// The screen is cleared once on entry and again, whole, on a resize or a view change. It is redrawn on a journal
 /// change, a key and a resize, and for the clock as the frame's [`Hold`] says.
+///
+/// `frame` returns the wall reading it rendered with, sampled after obtaining its journal. A separate fresh
+/// reading reconciles deadlines after painting without changing which second that frame actually showed.
 pub(super) async fn show<B, N>(
     backend: B,
     options: Options<N>,
     events: &mut mpsc::UnboundedReceiver<Event>,
-    mut frame: impl FnMut(&Screen, &mut Buffer) -> Drawn,
+    mut frame: impl FnMut(&Screen, &mut Buffer) -> (Drawn, Timestamp),
     mut reload: impl FnMut() -> bool,
 ) -> Result<Outcome, Error>
 where
@@ -117,8 +120,9 @@ where
             session.repaint()?;
             repaint = false;
         }
-        let drawn = painter.paint(&mut session, &mut screen, &mut frame)?;
-        clock.schedule(drawn.hold, (options.now)());
+        let (drawn, at) = painter.paint(&mut session, &mut screen, &mut frame)?;
+        clock.reconcile((options.now)());
+        clock.schedule(drawn.hold, at);
         if let Some(frozen) = &options.frozen {
             frozen.send_if_modified(|frozen| {
                 let now = drawn.hold == Hold::Frozen;
@@ -289,7 +293,7 @@ mod tests {
                     move |screen, buf: &mut Buffer| {
                         let now = EPOCH + SignedDuration::try_from(Instant::now() - start).unwrap();
                         frame_script.times.borrow_mut().push(now);
-                        frame(&frame_script, screen, buf)
+                        (frame(&frame_script, screen, buf), now)
                     },
                     move || {
                         reload_script.reloads.set(reload_script.reloads.get() + 1);
@@ -1098,7 +1102,7 @@ mod tests {
                     frozen: None,
                 },
                 &mut queue,
-                |_: &Screen, _: &mut Buffer| -> Drawn { panic!("session panic") },
+                |_: &Screen, _: &mut Buffer| -> (Drawn, Timestamp) { panic!("session panic") },
                 || false,
             ))
         }));
@@ -1187,10 +1191,13 @@ mod tests {
                                 }
                             };
                             frame_shown.borrow_mut().push(text);
-                            Drawn {
-                                scroll: 0,
-                                hold: Hold::Frozen,
-                            }
+                            (
+                                Drawn {
+                                    scroll: 0,
+                                    hold: Hold::Frozen,
+                                },
+                                EPOCH,
+                            )
                         },
                         move || reload_source.borrow_mut().reload(),
                     )

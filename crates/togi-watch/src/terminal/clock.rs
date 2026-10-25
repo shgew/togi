@@ -8,6 +8,11 @@ use tokio::time::{Instant, Interval, MissedTickBehavior, Sleep};
 
 use crate::screen::Hold;
 
+fn next_second(at: Timestamp) -> Timestamp {
+    let nanos = 1_000_000_000 - at.subsec_nanosecond().rem_euclid(1_000_000_000);
+    at + SignedDuration::from_nanos(i64::from(nanos))
+}
+
 /// What wakes the loop for the clock. Nothing is armed until a frame says how long it stays true, and a paced clock
 /// also wakes at a steady interval whatever the frame says.
 #[derive(Debug)]
@@ -17,6 +22,7 @@ pub(super) struct Clock {
     ticker: Option<Interval>,
     timer: Option<Pin<Box<Sleep>>>,
     pace: Option<Interval>,
+    redraw: bool,
 }
 
 impl Clock {
@@ -33,6 +39,7 @@ impl Clock {
             ticker: None,
             timer: None,
             pace,
+            redraw: false,
         }
     }
 
@@ -41,11 +48,8 @@ impl Clock {
         self.wall + self.start.elapsed()
     }
 
-    /// Arms the clock for a frame that stays true for `hold`, as of `now`.
-    ///
-    /// A frozen frame arms nothing at all. A frame held until a future instant wakes once at that instant. Any
-    /// other frame shows the clock, so it wakes every second.
-    pub(super) fn schedule(&mut self, hold: Hold, now: Timestamp) {
+    /// Reconciles the deadline anchor with a fresh wall reading, independently of the drawn frame's time.
+    pub(super) fn reconcile(&mut self, now: Timestamp) {
         // Wall and monotonic readings are not atomic. Ignore sub-millisecond sampling jitter, but
         // re-anchor after a clock step, suspend or accelerated playback changes the wall phase.
         if now.duration_since(self.now()).unsigned_abs() > Duration::from_millis(1) {
@@ -54,6 +58,11 @@ impl Clock {
             self.ticker = None;
             self.timer = None;
         }
+    }
+
+    /// Arms the next deadline from the time the frame actually showed, before painting took any time.
+    pub(super) fn schedule(&mut self, hold: Hold, now: Timestamp) {
+        self.redraw = false;
         match hold {
             Hold::Frozen => {
                 self.ticker = None;
@@ -61,15 +70,21 @@ impl Clock {
             }
             Hold::Until(until) if until.duration_since(now).is_positive() => {
                 self.ticker = None;
-                let deadline = self.start + until.duration_since(self.wall).unsigned_abs();
+                let deadline = if until > self.wall {
+                    self.start + until.duration_since(self.wall).unsigned_abs()
+                } else {
+                    self.start
+                };
                 self.timer = Some(Box::pin(tokio::time::sleep_until(deadline)));
             }
             Hold::Never | Hold::Until(_) => {
                 self.timer = None;
                 if self.ticker.is_none() {
                     let second = Duration::from_secs(1);
-                    let nanos = 1_000_000_000 - now.subsec_nanosecond().rem_euclid(1_000_000_000);
-                    let next = now + SignedDuration::from_nanos(i64::from(nanos));
+                    let next = next_second(self.now());
+                    // If painting crossed a boundary (or a clock correction), redraw the stale frame
+                    // now, but keep subsequent ticks on the current wall clock's second phase.
+                    self.redraw = next_second(now) != next;
                     let deadline = self.start + next.duration_since(self.wall).unsigned_abs();
                     let mut ticker = tokio::time::interval_at(deadline, second);
                     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -87,6 +102,9 @@ impl Clock {
 
     /// Completes when the armed timer or ticker fires, or the pace does; never completes when nothing is armed.
     pub(super) async fn wake(&mut self) {
+        if std::mem::take(&mut self.redraw) {
+            return;
+        }
         let Self {
             ticker,
             timer,
@@ -146,6 +164,28 @@ mod tests {
         });
     }
 
+    #[test_case::test_case(None; "startup")]
+    #[test_case::test_case(Some(Hold::Frozen); "leaving a frozen hold")]
+    #[test_case::test_case(Some(Hold::Until(Timestamp::constant(2, 0))); "leaving a timed hold")]
+    fn painting_past_a_boundary_redraws_now_then_keeps_the_wall_phase(previous: Option<Hold>) {
+        crate::terminal::testing::paused(async {
+            let rendered = NOW + SignedDuration::from_millis(999);
+            let mut clock = Clock::paced(None, rendered);
+            if let Some(hold) = previous {
+                clock.schedule(hold, rendered);
+            }
+            tokio::time::advance(Duration::from_millis(2)).await;
+            clock.reconcile(NOW + SignedDuration::from_millis(1001));
+            clock.schedule(Hold::Never, rendered);
+            assert!(
+                wakes(&mut clock, Duration::ZERO).await,
+                "the crossed boundary is already due"
+            );
+            assert!(!wakes(&mut clock, Duration::from_millis(998)).await);
+            assert!(wakes(&mut clock, Duration::from_millis(2)).await);
+        });
+    }
+
     #[test]
     fn late_rendering_skips_missed_ticks_without_shifting_the_phase() {
         crate::terminal::testing::paused(async {
@@ -171,6 +211,7 @@ mod tests {
             tokio::time::advance(Duration::from_millis(elapsed_ms)).await;
             let wall =
                 wall + Duration::from_millis(elapsed_ms) + SignedDuration::from_millis(step_ms);
+            clock.reconcile(wall);
             clock.schedule(Hold::Never, wall);
             assert_eq!(
                 clock.now(),
