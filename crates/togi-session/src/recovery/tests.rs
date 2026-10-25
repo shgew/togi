@@ -1079,6 +1079,81 @@ fn a_backend_inconclusive_through_every_retry_is_exhausted_until_a_no_evidence_d
     assert!(log.state().exhausted_backends(k).is_empty());
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Witness {
+    Signal,
+    DeadEnd,
+    Cycles,
+    Crash,
+    DayBootSameBoot,
+    DayBootLaterBoot,
+}
+
+#[test_case(Witness::Signal, true; "signal shutdown")]
+#[test_case(Witness::DeadEnd, true; "dead end shutdown")]
+#[test_case(Witness::Cycles, false; "cycles shutdown")]
+#[test_case(Witness::Crash, false; "crash without shutdown")]
+#[test_case(Witness::DayBootSameBoot, false; "day boot in the night's boot")]
+#[test_case(Witness::DayBootLaterBoot, true; "day boot in a later boot")]
+fn a_closed_night_carries_no_backend_exclusion_into_the_next(witness: Witness, closes: bool) {
+    let k = togi_config::DeadEndThreshold::new(1).unwrap();
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    log.add(
+        Payload::NightPlan(togi_journal::NightPlan {
+            night: None,
+            budgets: Vec::new(),
+            tasks: Vec::new(),
+            unavailable: Vec::new(),
+        }),
+        &[],
+    );
+    for n in 1..=4 {
+        let id = format!("{n:04}");
+        log.trial_intent(&id, Some(0), Regime::R1);
+        log.ended(&id, Outcome::Inconclusive, &[]);
+    }
+    log.trial_intent("0005", Some(0), Regime::R1);
+    let mut missing = trial_end("0005", Outcome::Inconclusive);
+    missing.backend_missing = true;
+    log.add(Payload::TrialEnd(missing), &[]);
+    assert_eq!(log.state().exhausted_backends(k).len(), 1);
+    assert!(log.state().missing_evidence().is_some());
+    let day_boot = Payload::DayBootStart(togi_journal::DayBootStart {
+        build: build(),
+        bios: togi_machine::BiosContext::default(),
+        offsets: PerCore::default(),
+        watchdog: None,
+    });
+    let closing = match witness {
+        Witness::Signal => Some(shutdown(ShutdownReason::Signal)),
+        Witness::DeadEnd => Some(shutdown(ShutdownReason::DeadEnd)),
+        Witness::Cycles => Some(shutdown(ShutdownReason::Cycles)),
+        Witness::Crash => {
+            log.at("b1", 0);
+            None
+        }
+        Witness::DayBootSameBoot => Some(day_boot),
+        Witness::DayBootLaterBoot => {
+            log.at("b1", 0);
+            Some(day_boot)
+        }
+    };
+    if let Some(payload) = closing {
+        log.add(payload, &[]);
+    }
+    assert_eq!(
+        log.state().exhausted_backends(k).is_empty(),
+        closes,
+        "{witness:?}"
+    );
+    assert_eq!(
+        log.state().missing_evidence().is_none(),
+        closes,
+        "{witness:?}"
+    );
+}
+
 #[test]
 fn a_missing_backend_is_evidence_until_the_no_evidence_dead_end() {
     let mut log = Log::new();

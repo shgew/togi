@@ -922,11 +922,7 @@ fn real_process_a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run
         .count();
     assert!(ended > 0, "{}", child.stderr);
     assert_eq!(child.count(" trial.end "), ended, "{}", child.stderr);
-    assert!(
-        fallback < child.last_at(" trial.end "),
-        "{}",
-        child.stderr
-    );
+    assert!(fallback < child.last_at(" trial.end "), "{}", child.stderr);
     assert_eq!(child.count(" profile.restored "), 1, "{}", child.stderr);
     assert!(
         fallback < child.at(" profile.restored "),

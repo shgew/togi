@@ -612,6 +612,146 @@ fn a_trial_after_a_retry_wait_starts_its_task_before_the_wait() {
     assert!(checked > 0);
 }
 
+/// Trials whose `failing` backend cannot set up, and which ask the run to stop at a start `stop` picks: given the
+/// backend about to start and the failed setups so far.
+struct BackendGate {
+    inner: Box<dyn togi_machine::Trials>,
+    failing: Option<togi_machine::Backend>,
+    cancel: CancellationToken,
+    failed: usize,
+    starts: usize,
+    stop: Box<dyn Fn(togi_machine::Backend, usize, usize) -> bool>,
+}
+
+impl togi_machine::Trials for BackendGate {
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, togi_machine::Error> {
+        self.inner.content(workload)
+    }
+
+    fn sweep(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> Result<togi_machine::Swept, togi_machine::Error> {
+        self.inner.sweep(cancel)
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: togi_machine::TrialSpec,
+        ready: togi_machine::Stopped,
+    ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
+    {
+        let backend = spec.workload.backend();
+        self.starts += 1;
+        if (self.stop)(backend, self.failed, self.starts) {
+            self.cancel.cancel();
+        }
+        if self.failing == Some(backend) {
+            self.failed += 1;
+            return Err(togi_machine::Partial {
+                value: Some(ready),
+                error: togi_machine::Error::Other(Box::new(io::Error::other("setup unavailable"))),
+            });
+        }
+        self.inner.start(cancel, spec, ready)
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
+        self.inner.ended(id)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
+        self.inner.samples(id)
+    }
+}
+
+/// The trial intents of `events` that run `backend`.
+fn intents_of(events: &[togi_journal::Event], backend: togi_machine::Backend) -> usize {
+    events
+        .iter()
+        .filter(|event| {
+            matches!(&event.payload, Payload::TrialIntent(intent) if intent.workload.backend() == backend)
+        })
+        .count()
+}
+
+#[test_case(true; "after a completed stop")]
+#[test_case(false; "after a crash")]
+fn a_backend_a_closed_night_excluded_is_tried_again_by_a_same_boot_restart(stopped: bool) {
+    use togi_machine::Backend;
+    // A backend is excluded once it stays inconclusive through the threshold and all three retries.
+    let exhausted = usize::try_from(
+        togi_config::Config::default()
+            .dead_ends()
+            .inconclusive_in_a_row()
+            .get(),
+    )
+    .unwrap()
+        + 3;
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut first = input(&sim, &mem);
+    first.machine.trials = Box::new(BackendGate {
+        inner: first.machine.trials,
+        failing: Some(Backend::Mprime),
+        cancel: first.cancel.clone(),
+        failed: 0,
+        starts: 0,
+        stop: Box::new(move |backend, failed, starts| {
+            backend == Backend::Ycruncher && failed >= exhausted || starts > 200
+        }),
+    });
+    let ended = run(first);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let events = ended.journal.events();
+    assert!(intents_of(events, Backend::Mprime) >= exhausted);
+    let excluded = events.iter().any(|event| {
+        matches!(&event.payload, Payload::NightPlan(plan)
+            if plan.unavailable.iter().any(|unavailable| unavailable.backend == Backend::Mprime))
+    });
+    assert!(excluded, "{:?}", kinds(&ended.journal));
+    let journal = ended.journal;
+    let shutdown = journal
+        .events()
+        .iter()
+        .rposition(|event| matches!(event.payload, Payload::Shutdown(_)))
+        .unwrap();
+    assert_eq!(shutdown + 1, journal.events().len());
+    drop(journal.close().unwrap());
+    if !stopped {
+        // A run that never recorded its shutdown left no closing witness: the night and its exclusion go on.
+        let bytes = mem.contents("/state/events.jsonl").unwrap();
+        let last = bytes[..bytes.len() - 1]
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .unwrap();
+        mem.put("/state/events.jsonl", bytes[..=last].to_vec());
+    }
+    let mut second = input(&sim, &mem);
+    let before = second.journal.events().len();
+    second.machine.trials = Box::new(BackendGate {
+        inner: second.machine.trials,
+        failing: None,
+        cancel: second.cancel.clone(),
+        failed: 0,
+        starts: 0,
+        stop: Box::new(|backend, _, starts| backend == Backend::Mprime || starts > 20),
+    });
+    let ended = run(second);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let after = &ended.journal.events()[before..];
+    assert_eq!(intents_of(after, Backend::Mprime) > 0, stopped);
+}
+
 #[test]
 fn an_overflowing_duration_keeps_the_containment_dead_end_durable() {
     let sim = simulator();

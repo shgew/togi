@@ -242,6 +242,9 @@ pub(crate) struct RecoveryState {
     stray: Vec<Seq>,
     trials: u32,
     dead_end: Option<PendingDeadEnd>,
+    /// The boot the open night's first plan was made in: a day boot in another boot closes that night.
+    #[serde(default)]
+    night_boot: Option<BootId>,
 }
 
 impl RecoveryState {
@@ -297,11 +300,19 @@ impl RecoveryState {
                     loaded.kernel_error.as_deref(),
                 );
             }
-            Payload::Shutdown(shutdown) => self.kernel_boundary(
-                event,
-                shutdown.kernel_cursor.as_ref(),
-                shutdown.kernel_error.as_deref(),
-            ),
+            Payload::Shutdown(shutdown) => {
+                self.kernel_boundary(
+                    event,
+                    shutdown.kernel_cursor.as_ref(),
+                    shutdown.kernel_error.as_deref(),
+                );
+                if matches!(
+                    shutdown.reason,
+                    ShutdownReason::Signal | ShutdownReason::DeadEnd
+                ) {
+                    self.close_night();
+                }
+            }
             Payload::SessionContext(context) => self.context = Some(context.bios_context()),
             Payload::SessionBaseline(baseline) => {
                 self.baseline = Some((seq, baseline.offsets));
@@ -421,6 +432,20 @@ impl RecoveryState {
                 RetryTarget::Ycruncher => self.backend_retried(Backend::Ycruncher, retry),
             },
             Payload::DeadEnd(dead_end) => self.dead_ended(seq, &event.cause, dead_end),
+            Payload::DayBootStart(_) => {
+                if self
+                    .night_boot
+                    .as_ref()
+                    .is_some_and(|boot| *boot != event.boot)
+                {
+                    self.close_night();
+                }
+            }
+            Payload::NightPlan(plan) => {
+                if plan.night.is_none() {
+                    self.night_boot = Some(event.boot.clone());
+                }
+            }
             Payload::SessionWarning(_)
             | Payload::SessionNotice(_)
             | Payload::Failure(_)
@@ -446,7 +471,6 @@ impl RecoveryState {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
-            | Payload::DayBootStart(_)
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
@@ -457,7 +481,6 @@ impl RecoveryState {
             | Payload::ExposureObserved(_)
             | Payload::CcdEdge(_)
             | Payload::CcdCap(_)
-            | Payload::NightPlan(_)
             | Payload::NightQualification(_)
             | Payload::NightReproduction(_)
             | Payload::DayStep(_)
@@ -813,6 +836,14 @@ impl RecoveryState {
         let state = self.backend(backend);
         state.retry = Some((retry.attempt, retry.wait_s));
         state.followed = false;
+    }
+
+    /// A closing witness ends the night: its backend exclusions, retries and missing-backend evidence do not carry
+    /// into the next one.
+    fn close_night(&mut self) {
+        self.backends.clear();
+        self.missing = None;
+        self.night_boot = None;
     }
 
     fn dead_ended(&mut self, seq: Seq, causes: &[Seq], dead_end: &DeadEnd) {
