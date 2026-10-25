@@ -46,6 +46,26 @@ pub enum Quit {
     Ignored,
 }
 
+/// Which way the machine's next reboot goes across the night switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    /// From the day into the tuning boot: offered in a normal boot.
+    Night,
+    /// From the tuning boot back into the day: offered in the night.
+    Day,
+}
+
+/// The reboot the dashboard offers and whether it is asking about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Switch {
+    /// No reboot is offered: the dashboard has no night setup to switch with.
+    Off,
+    /// The key for `Direction` is shown and asks the question when pressed.
+    Offered(Direction),
+    /// The question for `Direction` is on screen: `y` answers it, any other key withdraws it.
+    Asking(Direction),
+}
+
 /// Everything the frames need to know about the terminal and the reader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Screen {
@@ -66,6 +86,8 @@ pub struct Screen {
     pub colours: Colours,
     /// What the quit keys do, and so whether the hints name them.
     pub quit: Quit,
+    /// The night switch the footer offers and the question it may be asking.
+    pub switch: Switch,
 }
 
 /// How long a drawn frame stays true without a new journal event.

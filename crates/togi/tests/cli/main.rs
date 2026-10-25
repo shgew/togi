@@ -487,6 +487,16 @@ fn emergency_stop_help() {
     snapshot!(emergency_stop_help, help("emergency-stop"));
 }
 
+#[test]
+fn night_help() {
+    snapshot!(night_help, help("night"));
+}
+
+#[test]
+fn night_end_help() {
+    snapshot!(night_end_help, help("night-end"));
+}
+
 #[test_case("doctor" ; "doctor")]
 #[test_case("reset" ; "reset")]
 fn doctor_and_reset_list_config(command: &str) {

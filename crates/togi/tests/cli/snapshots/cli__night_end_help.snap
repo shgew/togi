@@ -1,0 +1,21 @@
+---
+source: crates/togi/tests/cli/main.rs
+expression: "help(\"night-end\")"
+---
+Restore the day's boot selection
+
+Selects again exactly the boot entry `togi night` replaced, or none when the day had none or the tuning boot was picked from the boot menu, and ends the night. It never selects a generation of its own. It does not reboot: the tuning boot's shutdown hook runs it when the power button or a reboot ends the night. Repeating it changes nothing.
+
+Usage: togi night-end [OPTIONS]
+
+Options:
+      --state-dir <path>
+          State directory
+          
+          [default: /var/lib/togi]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  sudo togi night-end   Select again the boot entry the night replaced

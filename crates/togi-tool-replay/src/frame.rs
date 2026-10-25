@@ -7,7 +7,7 @@ use ratatui::style::{Color, Modifier};
 use togi_journal::Event;
 use togi_watch::frames::{frame_area, render};
 use togi_watch::model::Model;
-use togi_watch::screen::{Colours, Journal, Quit, Screen, View};
+use togi_watch::screen::{Colours, Journal, Quit, Screen, Switch, View};
 
 use crate::Error;
 use crate::playback::offset;
@@ -52,6 +52,7 @@ pub fn draw(
         one_frame: true,
         colours: frame.colours,
         quit: Quit::Keys,
+        switch: Switch::Off,
     };
     let last = events
         .last()

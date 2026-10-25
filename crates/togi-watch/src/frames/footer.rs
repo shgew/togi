@@ -8,7 +8,7 @@ use super::colours::Paint;
 use super::draw::put;
 use super::fit::{Clause, Form, fit_clauses};
 use super::layout::Layout;
-use crate::screen::{Colours, Quit, Screen, View};
+use crate::screen::{Colours, Direction, Quit, Screen, Switch, View};
 
 /// The footer's keys in `view`, in `width` display cells, followed by `after` (the held journal's arrival
 /// count, then the skipped report).
@@ -139,12 +139,66 @@ pub(super) fn question_clause(pending: usize, colours: Colours) -> Clause {
     )
 }
 
-/// Draws the footer row: the key hints when the reader has keys, with `after` following them; without keys,
-/// `after` alone.
+/// The footer clause that offers the night switch: its key and where it goes, then the key alone, then nothing.
+fn offer_clause(direction: Direction, colours: Colours) -> Clause {
+    let (key, label) = match direction {
+        Direction::Night => ("n", "night"),
+        Direction::Day => ("F10", "day"),
+    };
+    let pair = Line::from(vec![
+        Paint::Chip.span(colours, format!(" {key} ")),
+        Span::raw(" "),
+        Paint::Grey.span(colours, label),
+    ]);
+    Clause::new(
+        "   ",
+        vec![
+            Form::new(pair, 10),
+            Form::new(Paint::Chip.span(colours, key), 1),
+            Form::empty(),
+        ],
+    )
+}
+
+/// The footer line while the night switch asks its question, which takes the whole row: the question the switch
+/// puts, then `y/N`, then the answer keys alone.
+fn asking_line(direction: Direction, width: usize, colours: Colours) -> Line<'static> {
+    let (question, short) = match direction {
+        Direction::Night => ("Reboot into the night tuning?", "Reboot into the night?"),
+        Direction::Day => ("Reboot into the day cycle?", "Reboot into the day?"),
+    };
+    let amber = |text: String| Line::styled(text, Paint::Hunt.style(colours));
+    let clause = Clause::new(
+        "",
+        vec![
+            Form::new(amber(format!("{question} y: yes, any other key: no")), 10),
+            Form::new(amber(format!("{question} y/N")), 4),
+            Form::new(amber(format!("{short} y/N")), 3),
+            Form::new(amber("y/N".to_owned()), 1),
+            Form::empty(),
+        ],
+    );
+    fit_clauses(width, &[clause], colours)
+}
+
+/// Draws the footer row: the key hints when the reader has keys, with the night switch's key and then `after`
+/// following them, or the switch's question alone while it asks; without keys, `after` alone.
 pub fn footer(screen: &Screen, after: &[Clause], buf: &mut Buffer) {
     let layout = Layout::new(screen);
     let width = usize::from(layout.footer.width);
-    let line = if screen.keys {
+    let offered: Vec<Clause>;
+    let after = match screen.switch {
+        Switch::Offered(direction) if screen.keys => {
+            offered = std::iter::once(offer_clause(direction, screen.colours))
+                .chain(after.iter().cloned())
+                .collect();
+            &offered[..]
+        }
+        Switch::Off | Switch::Offered(_) | Switch::Asking(_) => after,
+    };
+    let line = if let Switch::Asking(direction) = screen.switch {
+        asking_line(direction, width, screen.colours)
+    } else if screen.keys {
         key_hints(screen.view, width, after, screen.colours, screen.quit)
     } else if after.is_empty() {
         return;
@@ -165,7 +219,7 @@ mod tests {
     use crate::frames::fit::{Clause, Form, display_width, plain};
     use crate::frames::layout::Layout;
     use crate::frames::testing::{assert_frame_bounds, draw_checked, screen};
-    use crate::screen::{Colours, Drawn, Hold, Quit, Screen, View};
+    use crate::screen::{Colours, Direction, Drawn, Hold, Quit, Screen, Switch, View};
 
     const VIEWS: [View; 3] = [View::Main, View::Help, View::Log];
 
@@ -501,6 +555,77 @@ mod tests {
             }
         });
         assert!(buf.content().iter().all(|cell| cell.symbol() == " "));
+    }
+
+    fn drawn_footer(sc: &Screen) -> String {
+        let (buf, _) = draw_checked(sc, |sc, buf| {
+            footer(sc, &[], buf);
+            Drawn {
+                scroll: 0,
+                hold: Hold::Never,
+            }
+        });
+        buf.content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect()
+    }
+
+    #[test]
+    fn an_offered_switch_names_its_key_after_the_view_keys() {
+        for (direction, key, label) in [
+            (Direction::Night, "n", "night"),
+            (Direction::Day, "F10", "day"),
+        ] {
+            let sc = Screen {
+                switch: Switch::Offered(direction),
+                ..screen(View::Main, 100, 24, Colours::None, true)
+            };
+            let text = drawn_footer(&sc);
+            assert!(text.contains(&format!(" {key}  {label}")), "{text}");
+            assert!(text.contains("help"), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_dashboard_without_keys_offers_no_switch() {
+        let sc = Screen {
+            switch: Switch::Offered(Direction::Day),
+            ..screen(View::Main, 100, 24, Colours::None, false)
+        };
+        assert!(drawn_footer(&sc).trim().is_empty());
+    }
+
+    #[test]
+    fn the_question_replaces_the_key_hints_and_names_the_day_cycle() {
+        let sc = Screen {
+            switch: Switch::Asking(Direction::Day),
+            ..screen(View::Main, 100, 24, Colours::None, true)
+        };
+        let text = drawn_footer(&sc);
+        assert!(
+            text.contains("Reboot into the day cycle? y: yes, any other key: no"),
+            "{text}"
+        );
+        assert!(!text.contains("help"), "{text}");
+    }
+
+    #[test]
+    fn the_question_shortens_to_fit_and_stays_in_bounds() {
+        for direction in [Direction::Night, Direction::Day] {
+            for width in 0..=80 {
+                let sc = Screen {
+                    switch: Switch::Asking(direction),
+                    ..screen(View::Main, width, 10, Colours::Full, true)
+                };
+                drawn_footer(&sc);
+            }
+        }
+        let narrow = Screen {
+            switch: Switch::Asking(Direction::Night),
+            ..screen(View::Main, 12, 10, Colours::None, true)
+        };
+        assert!(drawn_footer(&narrow).contains("y/N"));
     }
 
     #[test]

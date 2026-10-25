@@ -7,10 +7,11 @@ use tokio::sync::{mpsc, watch};
 
 use super::Error;
 use super::Event;
+use super::Outcome;
 use super::clock::Clock;
 use super::console::{Console, Session, terminal_error};
-use super::keys::press;
-use crate::screen::{Colours, Drawn, Hold, Quit, Screen, View};
+use super::keys::{Step, press, switch};
+use crate::screen::{Colours, Direction, Drawn, Hold, Quit, Screen, Switch, View};
 
 /// What the loop is told about its surroundings.
 pub(super) struct Options<N> {
@@ -20,6 +21,8 @@ pub(super) struct Options<N> {
     pub(super) keys: bool,
     /// What the quit keys do.
     pub(super) quit: Quit,
+    /// The night switch to offer.
+    pub(super) switch: Option<Direction>,
     pub(super) colours: Colours,
     /// The wall clock, from which holds are measured.
     pub(super) now: N,
@@ -87,7 +90,7 @@ pub(super) async fn show<B, N>(
     events: &mut mpsc::UnboundedReceiver<Event>,
     mut frame: impl FnMut(&Screen, &mut Buffer) -> Drawn,
     mut reload: impl FnMut() -> bool,
-) -> Result<(), Error>
+) -> Result<Outcome, Error>
 where
     B: Console,
     N: Fn() -> Timestamp,
@@ -106,6 +109,7 @@ where
         one_frame: false,
         colours: options.colours,
         quit: options.quit,
+        switch: options.switch.map_or(Switch::Off, Switch::Offered),
     };
     let mut repaint = false;
     loop {
@@ -125,11 +129,15 @@ where
             tokio::select! {
                 biased;
                 event = events.recv() => match event {
-                    None | Some(Event::Cancel | Event::InputClosed) => return Ok(()),
+                    None | Some(Event::Cancel | Event::InputClosed) => return Ok(Outcome::Ended),
                     Some(Event::Key(key)) => {
-                        let (next, quit) = press(screen, key, drawn.scroll);
+                        let (next, quit) = match switch(screen, key) {
+                            Step::Confirmed(direction) => return Ok(Outcome::Switch(direction)),
+                            Step::Screen(next) => (next, false),
+                            Step::Pass => press(screen, key, drawn.scroll),
+                        };
                         if quit {
-                            return Ok(());
+                            return Ok(Outcome::Ended);
                         }
                         repaint = next.view != screen.view;
                         screen = next;
@@ -174,10 +182,10 @@ mod tests {
     use tokio::time::{Instant, advance, timeout};
 
     use super::{Options, show};
-    use crate::screen::{Colours, Drawn, Hold, Quit, Screen, View};
+    use crate::screen::{Colours, Direction, Drawn, Hold, Quit, Screen, Switch, View};
     use crate::terminal::keys::Key;
     use crate::terminal::testing::{Faults, Op, Recorder};
-    use crate::terminal::{Error, Event, WatchError};
+    use crate::terminal::{Error, Event, Outcome, WatchError};
 
     const EPOCH: Timestamp = Timestamp::UNIX_EPOCH;
 
@@ -199,7 +207,7 @@ mod tests {
         events: mpsc::UnboundedSender<Event>,
         acknowledged: mpsc::UnboundedReceiver<()>,
         frozen: watch::Receiver<bool>,
-        task: JoinHandle<Result<(), Error>>,
+        task: JoinHandle<Result<Outcome, Error>>,
         start: Instant,
     }
 
@@ -208,6 +216,7 @@ mod tests {
         keys: bool,
         colours: Colours,
         quit: Quit,
+        switch: Option<Direction>,
     }
 
     impl Default for Setup {
@@ -217,6 +226,7 @@ mod tests {
                 keys: true,
                 colours: Colours::None,
                 quit: Quit::Keys,
+                switch: None,
             }
         }
     }
@@ -259,6 +269,7 @@ mod tests {
                 palette: setup.palette,
                 keys: setup.keys,
                 quit: setup.quit,
+                switch: setup.switch,
                 colours: setup.colours,
                 now: move || EPOCH + SignedDuration::try_from(Instant::now() - start).unwrap(),
                 tick: None,
@@ -312,7 +323,7 @@ mod tests {
             self.send(Event::Key(key)).await;
         }
 
-        async fn finish(self) -> Result<(), Error> {
+        async fn finish(self) -> Result<Outcome, Error> {
             self.task.await.unwrap()
         }
     }
@@ -359,7 +370,7 @@ mod tests {
                 let h = Harness::start(&recorder, &Setup::default());
                 h.script.fill.set(true);
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
                 let ops = recorder.ops();
                 assert_eq!(ops[0], Op::HideCursor);
                 assert_eq!(ops[1], Op::Clear("All".into()));
@@ -395,7 +406,7 @@ mod tests {
                     "a repaint after a clear writes the whole frame"
                 );
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -424,7 +435,7 @@ mod tests {
                     Rect::new(0, 0, width - 1, height - 1)
                 );
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -465,7 +476,7 @@ mod tests {
                     "an unchanged frame wrote cells"
                 );
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -490,7 +501,7 @@ mod tests {
                 assert_eq!((h.last().width, h.last().height), (100, 20));
                 assert_eq!(recorder.draws().last().unwrap().len(), 99 * 19);
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -513,7 +524,7 @@ mod tests {
                 settle().await;
                 assert_eq!(recorder.clears(), 2, "the next tick did not clear again");
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -544,7 +555,7 @@ mod tests {
                 assert_eq!(recorder.draws().len(), draws);
                 assert!(*h.frozen.borrow());
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -569,7 +580,7 @@ mod tests {
                 settle().await;
                 assert_eq!(h.frames(), frames + 2);
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -613,7 +624,7 @@ mod tests {
                 settle().await;
                 check(8, 2);
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -636,7 +647,7 @@ mod tests {
                 assert!(h.acknowledged.try_recv().is_ok());
                 assert!(h.acknowledged.try_recv().is_err());
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -705,7 +716,7 @@ mod tests {
                 let frames = h.frames();
                 h.key(Key::Char('q')).await;
                 assert_eq!(h.frames(), frames, "quitting redrew");
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
                 assert!(recorder.restored());
             })
             .await;
@@ -738,8 +749,87 @@ mod tests {
                     }
                 }
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
                 assert!(recorder.restored());
+            })
+            .await;
+        });
+    }
+
+    #[test_case(Direction::Day, Quit::Ignored, Key::F10; "f10 in the night")]
+    #[test_case(Direction::Night, Quit::Keys, Key::Char('n'); "n in the day")]
+    #[test_case(Direction::Night, Quit::Keys, Key::F10; "f10 in the day")]
+    fn confirming_the_question_ends_the_dashboard_with_the_switch(
+        direction: Direction,
+        quit: Quit,
+        key: Key,
+    ) {
+        crate::terminal::testing::paused(async move {
+            local(async move {
+                let recorder = Recorder::new(80, 24);
+                let h = Harness::start(
+                    &recorder,
+                    &Setup {
+                        quit,
+                        switch: Some(direction),
+                        ..Setup::default()
+                    },
+                );
+                settle().await;
+                assert_eq!(h.last().switch, Switch::Offered(direction));
+                h.key(key).await;
+                assert_eq!(h.last().switch, Switch::Asking(direction));
+                assert!(!h.task.is_finished());
+                h.key(Key::Char('y')).await;
+                assert_eq!(h.finish().await.unwrap(), Outcome::Switch(direction));
+                assert!(recorder.restored());
+            })
+            .await;
+        });
+    }
+
+    #[test_case(Key::Char('n'); "n")]
+    #[test_case(Key::Esc; "esc")]
+    #[test_case(Key::Char('q'); "q")]
+    #[test_case(Key::Char('\r'); "enter")]
+    fn declining_the_question_keeps_the_dashboard_and_the_offer(answer: Key) {
+        crate::terminal::testing::paused(async move {
+            local(async move {
+                let recorder = Recorder::new(80, 24);
+                let h = Harness::start(
+                    &recorder,
+                    &Setup {
+                        quit: Quit::Ignored,
+                        switch: Some(Direction::Day),
+                        ..Setup::default()
+                    },
+                );
+                settle().await;
+                h.key(Key::F10).await;
+                h.key(answer).await;
+                assert!(!h.task.is_finished());
+                assert_eq!(h.last().switch, Switch::Offered(Direction::Day));
+                h.send(Event::Cancel).await;
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
+            })
+            .await;
+        });
+    }
+
+    #[test]
+    fn a_dashboard_without_a_switch_ignores_its_keys() {
+        crate::terminal::testing::paused(async {
+            local(async {
+                let recorder = Recorder::new(80, 24);
+                let h = Harness::start(&recorder, &Setup::default());
+                settle().await;
+                for key in [Key::F10, Key::Char('n'), Key::Char('y')] {
+                    h.key(key).await;
+                }
+                assert!(!h.task.is_finished());
+                assert_eq!(h.last().switch, Switch::Off);
+                h.key(Key::Char('q')).await;
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -759,6 +849,7 @@ mod tests {
                         keys: false,
                         colours,
                         quit: Quit::Keys,
+                        switch: None,
                     },
                 );
                 settle().await;
@@ -774,7 +865,7 @@ mod tests {
                     (90, 30, false, false, colours)
                 );
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -829,7 +920,7 @@ mod tests {
                 settle().await;
                 let Harness { events, task, .. } = h;
                 drop(events);
-                task.await.unwrap().unwrap();
+                assert_eq!(task.await.unwrap().unwrap(), Outcome::Ended);
                 assert!(recorder.restored());
             })
             .await;
@@ -958,6 +1049,7 @@ mod tests {
                     keys: false,
                     colours: Colours::Console,
                     quit: Quit::Keys,
+                    switch: None,
                     now: || EPOCH,
                     tick: None,
                     reloaded: None,
@@ -1000,7 +1092,7 @@ mod tests {
                     "the tick after the resize cleared again"
                 );
                 h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
             })
             .await;
         });
@@ -1028,6 +1120,7 @@ mod tests {
                     keys: false,
                     colours: Colours::None,
                     quit: Quit::Keys,
+                    switch: None,
                     now: || EPOCH,
                     tick: None,
                     reloaded: None,
@@ -1069,7 +1162,7 @@ mod tests {
                 events.send(Event::Changed).unwrap();
                 settle().await;
                 events.send(Event::Cancel).unwrap();
-                task.await.unwrap().unwrap();
+                assert_eq!(task.await.unwrap().unwrap(), Outcome::Ended);
                 let shown = shown.borrow();
                 assert_eq!(shown.len(), 3, "one frame per journal change: {shown:?}");
                 assert_eq!(shown[0], "no session yet");

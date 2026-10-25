@@ -142,6 +142,13 @@ let
   # abnormal result.
   stopHook = togiService.postStop;
   generatedConfig = one.environment.etc."togi/config.json";
+  nightSetup = one.environment.etc."togi/night.json";
+  expectedNight = hostPkgs.writeText "togi-module-night.json" (
+    builtins.toJSON {
+      grubenv = "/boot/grub/grubenv";
+      entry = "NixOS - togi";
+    }
+  );
   expectedSettings = hostPkgs.writeText "togi-module-settings.json" (
     builtins.toJSON one.services.togi.settings
   );
@@ -271,9 +278,14 @@ assert !lib.hasInfix "--force" restartLimitScript;
 assert !lib.hasInfix "next_entry" restartLimitScript;
 assert builtins.elem pkgs.coreutils tuning.systemd.services.togi-restart-limit.path;
 assert lib.hasInfix "[ ! -e /run/togi-retry-tuning-boot ] || exit 0" leaveTuningBoot.preStop;
+# The power button restores the day's selection exactly; the plain unset is only the fallback when that command fails.
 assert lib.hasInfix
-  (builtins.unsafeDiscardStringContext "${pkgs.grub2}/bin/grub-editenv /boot/grub/grubenv unset saved_entry")
+  (builtins.unsafeDiscardStringContext "${lib.getExe package} night-end || ${pkgs.grub2}/bin/grub-editenv /boot/grub/grubenv unset saved_entry")
   leaveTuningBoot.preStop;
+assert builtins.elem pkgs.grub2 consoleWatch.path;
+assert builtins.elem pkgs.grub2 kmsconService.path;
+assert builtins.elem pkgs.grub2 one.environment.systemPackages;
+assert nightSetup.target == "togi/night.json";
 assert builtins.elem "f /run/lock/togi.lock :0600 :root :root - -" one.systemd.tmpfiles.rules;
 assert builtins.elem "f /run/lock/togi.lock :0660 :root :togi-hardware - -"
   delegated.systemd.tmpfiles.rules;
@@ -384,5 +396,7 @@ assert lib.hasInfix
 hostPkgs.runCommand "togi-module-check" { nativeBuildInputs = [ hostPkgs.jq ]; } ''
   jq --exit-status --slurpfile expected ${expectedSettings} \
     '. == $expected[0]' ${generatedConfig.source}
+  jq --exit-status --slurpfile expected ${expectedNight} \
+    '. == $expected[0]' ${nightSetup.source}
   touch "$out"
 ''

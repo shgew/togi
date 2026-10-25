@@ -7,6 +7,7 @@ use std::string::FromUtf8Error;
 use std::time::Duration;
 
 use togi_command::Invocation;
+use togi_tuningboot::night::{DAY_ENTRY_VARIABLE, NIGHT_VARIABLE};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
 const PROGRAM: &str = "grub-editenv";
@@ -180,6 +181,21 @@ pub enum ClearError {
     },
     #[error("{SAVED_ENTRY} is still {after:?} after the unset, which found it {before:?}")]
     Remains { before: String, after: String },
+    #[error("restore {SAVED_ENTRY} to the day's {day:?}, which was {before:?}")]
+    Restore {
+        before: String,
+        day: String,
+        #[source]
+        source: Box<GrubError>,
+    },
+    #[error(
+        "{SAVED_ENTRY} is {after:?} after restoring the day's {day:?}, which found it {before:?}"
+    )]
+    NotRestored {
+        before: String,
+        day: String,
+        after: String,
+    },
 }
 
 impl ClearError {
@@ -189,15 +205,20 @@ impl ClearError {
             Self::ReadBefore(_) => None,
             Self::Unset { before, .. }
             | Self::ReadAfter { before, .. }
-            | Self::Remains { before, .. } => Some(before),
+            | Self::Remains { before, .. }
+            | Self::Restore { before, .. }
+            | Self::NotRestored { before, .. } => Some(before),
         }
     }
 
     /// What the variable held after the unset, when a read after it succeeded.
     pub fn after(&self) -> Option<&str> {
         match self {
-            Self::Remains { after, .. } => Some(after),
-            Self::ReadBefore(_) | Self::Unset { .. } | Self::ReadAfter { .. } => None,
+            Self::Remains { after, .. } | Self::NotRestored { after, .. } => Some(after),
+            Self::ReadBefore(_)
+            | Self::Unset { .. }
+            | Self::ReadAfter { .. }
+            | Self::Restore { .. } => None,
         }
     }
 }
@@ -277,13 +298,54 @@ impl Grub {
         Ok(lookup(&self.edit(&Edit::List)?, name))
     }
 
-    /// Reads `saved_entry`, unsets it and reads it again to verify it is gone.
+    /// Gives up the tuning selection and reads it back. While a night `togi night` began lasts, and
+    /// it remembered the day's entry, `saved_entry` becomes that entry exactly, never a generation of
+    /// its own choosing, and the night ends; the remembered entry stays, so a repeat finds it
+    /// selected and changes nothing. Otherwise `saved_entry` is unset, so the menu's first entry
+    /// boots, and a remembered entry of an earlier night goes with it: a tuning boot picked from the
+    /// menu has no day of its own to return to.
     pub fn clear_saved(&mut self) -> Result<SavedEntry, ClearError> {
-        let before = self
-            .read(SAVED_ENTRY)
-            .map_err(ClearError::ReadBefore)?
-            .unwrap_or_default();
-        if let Err(source) = self.edit(&Edit::Unset(vec![SAVED_ENTRY.to_owned()])) {
+        let listing = self.edit(&Edit::List).map_err(ClearError::ReadBefore)?;
+        let before = lookup(&listing, SAVED_ENTRY).unwrap_or_default();
+        let day = lookup(&listing, DAY_ENTRY_VARIABLE).filter(|day| !day.is_empty());
+        let begun = lookup(&listing, NIGHT_VARIABLE).is_some_and(|night| !night.is_empty());
+        match (day, begun) {
+            (Some(day), true) => self.restore(before, day),
+            (Some(day), false) if day == before => Ok(SavedEntry { before, after: day }),
+            (Some(_) | None, _) => self.unset_saved(before),
+        }
+    }
+
+    fn restore(&mut self, before: String, day: String) -> Result<SavedEntry, ClearError> {
+        let set = Edit::Set(vec![(SAVED_ENTRY.to_owned(), day.clone())]);
+        if let Err(source) = self.edit(&set) {
+            return Err(ClearError::Restore {
+                before,
+                day,
+                source: Box::new(source),
+            });
+        }
+        let after = match self.read(SAVED_ENTRY) {
+            Ok(after) => after.unwrap_or_default(),
+            Err(source) => return Err(ClearError::ReadAfter { before, source }),
+        };
+        if after != day {
+            return Err(ClearError::NotRestored { before, day, after });
+        }
+        let forget = Edit::Unset(vec![NIGHT_VARIABLE.to_owned()]);
+        if let Err(source) = self.edit(&forget) {
+            return Err(ClearError::Unset { before, source });
+        }
+        Ok(SavedEntry { before, after })
+    }
+
+    fn unset_saved(&mut self, before: String) -> Result<SavedEntry, ClearError> {
+        let unset = Edit::Unset(vec![
+            SAVED_ENTRY.to_owned(),
+            NIGHT_VARIABLE.to_owned(),
+            DAY_ENTRY_VARIABLE.to_owned(),
+        ]);
+        if let Err(source) = self.edit(&unset) {
             return Err(ClearError::Unset { before, source });
         }
         let after = match self.read(SAVED_ENTRY) {

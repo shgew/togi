@@ -155,6 +155,20 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
 ;;
+(night)
+_arguments "${_arguments_options[@]}" : \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(night-end)
+_arguments "${_arguments_options[@]}" : \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
 (reset)
 _arguments "${_arguments_options[@]}" : \
 '--core=[Reset core N\: clear its failure point and every combination that includes it, and restart its search from the baseline]:N:' \
@@ -253,6 +267,14 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(night)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(night-end)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (reset)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -294,6 +316,8 @@ _togi_commands() {
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
+'night:Reboot into the tuning boot for the night' \
+'night-end:Restore the day'\''s boot selection' \
 'reset:Reset one core, or archive the whole session' \
 'restart-limit:Recover after the tuning service reaches its restart limit' \
 'emergency-stop:Internal emergency recovery that stops leftover trials and sets every core to offset 0' \
@@ -386,6 +410,8 @@ _togi__subcmd__help_commands() {
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
+'night:Reboot into the tuning boot for the night' \
+'night-end:Restore the day'\''s boot selection' \
 'reset:Reset one core, or archive the whole session' \
 'restart-limit:Recover after the tuning service reaches its restart limit' \
 'emergency-stop:Internal emergency recovery that stops leftover trials and sets every core to offset 0' \
@@ -444,6 +470,16 @@ _togi__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'togi help help commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__help__subcmd__night_commands] )) ||
+_togi__subcmd__help__subcmd__night_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help night commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__night-end_commands] )) ||
+_togi__subcmd__help__subcmd__night-end_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help night-end commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__help__subcmd__reset_commands] )) ||
 _togi__subcmd__help__subcmd__reset_commands() {
     local commands; commands=()
@@ -468,6 +504,16 @@ _togi__subcmd__help__subcmd__status_commands() {
 _togi__subcmd__help__subcmd__watch_commands() {
     local commands; commands=()
     _describe -t commands 'togi help watch commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__night_commands] )) ||
+_togi__subcmd__night_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi night commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__night-end_commands] )) ||
+_togi__subcmd__night-end_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi night-end commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__reset_commands] )) ||
 _togi__subcmd__reset_commands() {

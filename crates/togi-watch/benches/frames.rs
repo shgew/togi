@@ -14,7 +14,7 @@ use ratatui::buffer::Buffer;
 use togi_journal::Event;
 use togi_watch::frames::{frame_area, render};
 use togi_watch::model::project;
-use togi_watch::screen::{Colours, Journal, Quit, Screen, View};
+use togi_watch::screen::{Colours, Journal, Quit, Screen, Switch, View};
 use togi_watchtest::Scenario;
 
 const SCREEN: Screen = Screen {
@@ -26,6 +26,7 @@ const SCREEN: Screen = Screen {
     one_frame: false,
     colours: Colours::Full,
     quit: Quit::Keys,
+    switch: Switch::Off,
 };
 
 fn events(scenario: Scenario) -> Vec<Event> {

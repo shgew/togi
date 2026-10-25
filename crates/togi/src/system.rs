@@ -22,7 +22,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use rustix::time::{ClockId, clock_gettime};
 use togi_config::Config;
-use togi_hardware::{Diagnosis, Grub, RebootError};
+use togi_hardware::{Diagnosis, Grub, RebootError, StopError};
 use togi_hostlock::{HostLock, Policy};
 use togi_journal::fs::Fs;
 use togi_journal::{Build, DirError, FileError, LockError, Recording, StateDir};
@@ -144,6 +144,20 @@ pub trait System {
 
     /// Asks systemd for a plain reboot.
     fn reboot(&self) -> Result<(), RebootError>;
+
+    /// Stops the tuning service and waits until its run has ended.
+    fn stop_tuning(&self) -> Result<(), StopError> {
+        togi_hardware::stop_tuning()
+    }
+
+    /// Reads what the operator types after the question just written, dropping what was typed
+    /// ahead of it; `None` when the input ended with nothing typed.
+    fn answer(&self) -> io::Result<Option<String>> {
+        crate::dashboard::discard_typed_ahead();
+        let mut line = String::new();
+        let read = io::stdin().read_line(&mut line)?;
+        Ok((read > 0).then_some(line))
+    }
 
     /// What decides whether stderr is coloured.
     fn stderr_facts(&self) -> OutputFacts;

@@ -109,11 +109,13 @@ pub(crate) fn play(
             stop: None,
             terminating: true,
             quit: Quit::Keys,
+            switch: None,
         },
         clock,
         stdout.as_fd(),
         Some(stdin.as_fd()),
     )
+    .map(drop)
     .map_err(Error::Watch)
 }
 
@@ -155,6 +157,7 @@ mod tests {
             one_frame: false,
             colours: togi_watch::screen::Colours::None,
             quit: Quit::Keys,
+            switch: togi_watch::screen::Switch::Off,
         }
     }
 

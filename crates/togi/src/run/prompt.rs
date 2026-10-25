@@ -86,7 +86,7 @@ fn read_line(
 
 /// Whether `line` is a complete line that says yes: `y` or `yes`, in any case, after trimming.
 #[must_use]
-pub(super) fn parse_answer(line: &str) -> bool {
+pub(crate) fn parse_answer(line: &str) -> bool {
     line.ends_with('\n') && {
         let answer = line.trim();
         answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes")

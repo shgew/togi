@@ -259,6 +259,33 @@ fn render_model(events: &[Event], model: &togi_watch::model::Model) -> Result<St
     Ok(out)
 }
 
+/// The line `togi status` opens with, which says what the tuner is doing and the plan it follows; `None` when the
+/// journal has no session yet. `togi night` shows it as what the night will do.
+pub(crate) fn plan(
+    events: &[Event],
+    model: &togi_watch::model::Model,
+) -> Result<Option<String>, FoldError> {
+    if let Some(problem) = model.problem() {
+        return Err(problem.clone());
+    }
+    let journal = model.journal_state();
+    if journal.session.is_none() {
+        return Ok(None);
+    }
+    let projection = model.tuner_state().project();
+    let scan = Scan::of(events);
+    let mut out = String::new();
+    let line = Status {
+        out: &mut out,
+        journal,
+        projection: &projection,
+        snap: model.snapshot(),
+        scan: &scan,
+    }
+    .header();
+    Ok(Some(line))
+}
+
 /// The unclean ends still waiting for an answer and the ones answered, in journal order. A pending question
 /// shows what togi saw and the four choices with the command that records each; an answered one shows the
 /// current answer and how to change it.

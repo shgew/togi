@@ -40,6 +40,8 @@ pub mod doctor;
 pub mod emergency_stop;
 pub mod events;
 pub mod exit;
+pub mod night;
+pub mod night_end;
 pub mod panics;
 pub mod read;
 pub mod report;
