@@ -4,14 +4,14 @@ Every phrase below is text a renderer produced in this run; none is typed in. Wo
 
 ## How it was collected
 
-- **Unit tests.** 1637 unit tests ran in the same binary; 752 of them rendered at least one phrase. Each phrase is credited to the test (`tests`) that rendered it.
-- **Sweep.** 5 journals were folded one event at a time, each fold credited to its prefix's case, and every prefix was drawn at 240x67 at the event's own time, 40 s later, and, when a trial runs that nothing holds, at the trial's planned end and 90 s past it; at 160x45 and 120x33 only 40 s later and 90 s past the planned end. A started idle (R6) trial freezes its frame, so no planned-end clocks are sampled for it: it is drawn at 240x67 at the event's own time and 40 s later, and at the other two sizes 40 s later only, and the sweep asserts the frame reports itself held. 22 scenario cuts and hand-built staged frames, each under its own case, were drawn at the three sizes too, with the journal states, help and the journal view (144031 frames in all). Credited as `sweep`.
+- **Unit tests.** 1657 unit tests ran in the same binary; 761 of them rendered at least one phrase. Each phrase is credited to the test (`tests`) that rendered it.
+- **Sweep.** 5 journals were folded one event at a time, each fold credited to its prefix's case, and every prefix was drawn at 240x67 at the event's own time, 40 s later, and, when a trial runs that nothing holds, at the trial's planned end and 90 s past it; at 160x45 and 120x33 only 40 s later and 90 s past the planned end. A started idle (R6) trial freezes its frame, so no planned-end clocks are sampled for it: it is drawn at 240x67 at the event's own time and 40 s later, and at the other two sizes 40 s later only, and the sweep asserts the frame reports itself held. 22 scenario cuts and hand-built staged frames, each under its own case, were drawn at the three sizes too, with the journal states, help and the journal view (144059 frames in all). Credited as `sweep`.
 - **Clauses and templates.** A rendered phrase is cut into clauses at ` · `, ` ─ `, ` │ `, ` → ` and runs of two spaces, and a clause with no letter is dropped. A clause becomes a template by folding its digits, lists and ranges of numbers to `#`, the signs before offsets, hexadecimal ids, gauge and rule glyphs and runs of spaces. The numbers, core lists and error strings a phrase can carry are unbounded, so only the finite templates, forms and branches are claimed as covered.
 - **Cuts.** A template that is only a cut of a longer one of the same producer, a truncation ending in `...`, a wrapped row or a column cut, is folded into the longer one; its forms, cases and texts stay on it. A truncation no other template holds whole stays and is marked.
 - **Alternatives.** Templates of one producer that differ in one run of up to 3 tokens and agree on every token around it are one line, `before {a | b} after`. Each alternative was rendered in exactly that context, and two positions never vary at once.
 - **Provenance.** Each line names its forms, the two least case names that rendered it, and how many renderings there were. A manifest literal is `file:line`.
 
-1563 templates from 27 producers, reduced from 2297 shapes and 67367 distinct texts: 438 cuts folded in, 494 templates merged into alternatives, 70 truncations with no full form.
+1564 templates from 27 producers, reduced from 2298 shapes and 67411 distinct texts: 438 cuts folded in, 494 templates merged into alternatives, 70 truncations with no full form.
 
 ## Regenerating
 
@@ -24,11 +24,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 
 ### Sweep journals
 
-- `night`: 1226 events, 6668 frames
-- `mapped`: 2674 events, 13552 frames
-- `filler`: 8987 events, 43964 frames
+- `night`: 1227 events, 6672 frames
+- `mapped`: 2676 events, 13560 frames
+- `filler`: 8989 events, 43972 frames
 - `calendar`: 16172 events, 79312 frames
-- `deadend`: 64 events, 280 frames
+- `deadend`: 66 events, 288 frames
 
 ### Phrases by producer
 
@@ -41,7 +41,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - `footer.question`: 4 templates
 - `frame.body`: 14 templates
 - `frame.ccd`: 38 templates, 1 truncation with no full form
-- `frame.context`: 72 templates, 5 truncations with no full form
+- `frame.context`: 73 templates, 5 truncations with no full form
 - `frame.footer`: 22 templates, 1 truncation with no full form
 - `frame.header`: 36 templates, 7 truncations with no full form
 - `frame.help`: 272 templates
@@ -80,7 +80,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` R# {all threads | both threads | heavy vector | load steps | partial load} on core # ` ×80
   - forms ` BETWEEN TRIALS `; 5 templates merged; tests frames::story::tests::the_simulated_sessions::between_trials_the_last_outcome_and_the_next_trial_are_named (1 renders); sweep scenario/between/120x33, scenario/between/160x45 (16051 renders)
 - ` Rows show the saved profile, not applied now. ` ×1
-  - forms ` DEAD END `, ` STOPPED `; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (22 renders); sweep sweep/filler/8986-shutdown/120x33/plus40, sweep/filler/8986-shutdown/160x45/plus40 (46 renders)
+  - forms ` DEAD END `, ` STOPPED `; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (22 renders); sweep sweep/filler/8988-shutdown/120x33/plus40, sweep/filler/8988-shutdown/160x45/plus40 (46 renders)
 - ` Tctl max #°C ` ×15
   - forms ` BETWEEN TRIALS `; tests frames::story::tests::the_simulated_sessions::between_trials_the_last_outcome_and_the_next_trial_are_named (1 renders); sweep scenario/between/120x33, scenario/between/160x45 (27887 renders)
 - ` containment: termination unconfirmed ` ×1
@@ -88,13 +88,13 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` containment: 日本語[#J]#;c;data  #m#;title ` ×1
   - forms ` DEAD END `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_1_dead_end_main, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_2_dead_end_log (2 renders)
 - ` core # named ` ×2
-  - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders); sweep sweep/filler/2603-trial.end/120x33/plus40, sweep/filler/2603-trial.end/160x45/plus40 (664 renders)
+  - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders); sweep sweep/filler/2604-trial.end/120x33/plus40, sweep/filler/2604-trial.end/160x45/plus40 (664 renders)
 - ` core #'s worker had stalled by then ` ×1
   - forms ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders)
 - ` corrected hardware error ` ×1
-  - forms ` BETWEEN TRIALS `; sweep sweep/filler/3668-trial.end/120x33/plus40, sweep/filler/3668-trial.end/160x45/plus40 (224 renders)
+  - forms ` BETWEEN TRIALS `; sweep sweep/filler/3670-trial.end/120x33/plus40, sweep/filler/3670-trial.end/160x45/plus40 (224 renders)
 - ` crash in R# {all-core | light} on # ` ×19
-  - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; 1 cuts folded in; 2 templates merged; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (22 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (3084 renders)
+  - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; 1 cuts folded in; 2 templates merged; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (22 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (3108 renders)
 - ` crash with no trial in flight ` ×1
   - forms ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders)
 - ` detected # ` ×1
@@ -102,7 +102,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` detected # after a power loss reset ` ×1
   - forms ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders)
 - ` detected # after a watchdog reset ` ×4
-  - forms ` RECOVERED FROM A CRASH `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (15 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (724 renders)
+  - forms ` RECOVERED FROM A CRASH `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (15 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (748 renders)
 - ` during the trial ` ×1
   - forms ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_4_no_planned_length, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_5_a_zero_planned_length (2 renders)
 - ` failure at zero: a control failed at CO # ` ×1
@@ -114,13 +114,13 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` last sample # ` ×1
   - forms ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_4_no_planned_length (1 renders)
 - ` last sample # of # ` ×6
-  - forms ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (5 renders); sweep sweep/deadend/0049-trial.end/120x33/plus40, sweep/deadend/0049-trial.end/160x45/plus40 (680 renders)
+  - forms ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (5 renders); sweep sweep/deadend/0050-trial.end/120x33/plus40, sweep/deadend/0050-trial.end/160x45/plus40 (704 renders)
 - ` last: {FAILURE | INCONCLUSIVE | PASS} after # ` ×8
   - forms ` BETWEEN TRIALS `; 3 templates merged; tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_not_a_countdown (13 renders); sweep scenario/between/120x33, scenario/between/160x45 (29887 renders)
 - ` next trial: mapping task # ` ×1
   - forms ` BETWEEN TRIALS `; tests frames::story::tests::the_resting_band::between_trials_names_the_last_outcome_and_what_comes_next_not_a_countdown (1 renders)
 - ` next trial: {deciding | filler} ` ×2
-  - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; 2 templates merged; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (58 renders); sweep scenario/between/120x33, scenario/between/160x45 (31175 renders)
+  - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; 2 templates merged; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (58 renders); sweep scenario/between/120x33, scenario/between/160x45 (31215 renders)
 - ` no evidence: bad [#J ` ×1
   - forms ` DEAD END `; tests frames::story::tests::the_story::a_dead_end_detail_stays_raw_in_the_band_and_out_of_the_narration (1 renders)
 - ` no evidence: kernel log unreadable: permission denied ` ×1
@@ -138,7 +138,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` stopped by a signal ` ×1
   - forms ` STOPPED `; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (21 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (148694 renders)
 - ` the backend quit ` ×1
-  - forms ` BETWEEN TRIALS `; sweep sweep/filler/2603-trial.end/120x33/plus40, sweep/filler/2603-trial.end/160x45/plus40 (440 renders)
+  - forms ` BETWEEN TRIALS `; sweep sweep/filler/2604-trial.end/120x33/plus40, sweep/filler/2604-trial.end/160x45/plus40 (440 renders)
 - ` thermal trip: firmware reported a thermal trip ` ×1
   - forms ` DEAD END `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_3_thermal_trip, frames::story::tests::the_story::a_dead_end_preserves_the_recorded_cause::test_case_3_thermal_trip (2 renders)
 - ` togi run records the crash and picks up from the journal. ` ×1
@@ -148,24 +148,24 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` tuning stopped at a dead end ` ×1
   - forms ` STOPPED `; tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not (1 renders)
 - ` wrong result ` ×1
-  - forms ` BETWEEN TRIALS `; sweep sweep/filler/4397-trial.end/120x33/plus40, sweep/filler/4397-trial.end/160x45/plus40 (224 renders)
+  - forms ` BETWEEN TRIALS `; sweep sweep/filler/4399-trial.end/120x33/plus40, sweep/filler/4399-trial.end/160x45/plus40 (224 renders)
 - ` {boot loop: | no evidence: | thermal trip:} the recorded detail ` ×3
   - forms ` DEAD END `; 3 templates merged; tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (3 renders)
 - ` {containment: | defect: | preflight: | smu:} the recorded detail ` ×4
   - forms ` DEAD END `; 4 templates merged; tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (4 renders)
 - ` {early in | late in | midway through} the trial ` ×3
-  - forms ` RECOVERED FROM A CRASH `; 3 templates merged; tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (4 renders); sweep sweep/deadend/0049-trial.end/120x33/plus40, sweep/deadend/0049-trial.end/160x45/plus40 (680 renders)
+  - forms ` RECOVERED FROM A CRASH `; 3 templates merged; tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (4 renders); sweep sweep/deadend/0050-trial.end/120x33/plus40, sweep/deadend/0050-trial.end/160x45/plus40 (704 renders)
 
 ### `band.title`
 
 - ` BETWEEN TRIALS ` ×1
-  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/120x33, scenario/between/160x45 (30451 renders)
+  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/120x33, scenario/between/160x45 (30467 renders)
 - ` CRASHED, NOT YET RECOVERED ` ×1
   - forms (none); tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (24 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (92 renders)
 - ` DEAD END ` ×1
   - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (28 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (60 renders)
 - ` RECOVERED FROM A CRASH ` ×1
-  - forms (none); tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (21 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (724 renders)
+  - forms (none); tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (21 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (748 renders)
 - ` STOCK FAILURE ` ×1
   - forms (none); tests frames::story::tests::nights::a_stock_failure_is_not_blamed_on_curve_optimizer (1 renders)
 - ` STOPPED ` ×1
@@ -174,15 +174,15 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 ### `dash.header`
 
 - ` # crash ` ×2
-  - forms ` compact `, ` full `; tests frames::dash::tests::header_counts_agree_in_number::test_case_2_singular, frames::dash::tests::header_counts_agree_in_number::test_case_3_plural (26 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (30610 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::header_counts_agree_in_number::test_case_2_singular, frames::dash::tests::header_counts_agree_in_number::test_case_3_plural (34 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (30622 renders)
 - ` # crashes ` ×1
-  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (414 renders); sweep scenario/between/120x33, scenario/between/160x45 (113357 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (453 renders); sweep scenario/between/120x33, scenario/between/160x45 (113373 renders)
 - ` # fail ` ×3
   - forms ` compact `, ` full `; tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (7 renders); sweep sweep/deadend/skipped/60x30, sweep/night/skipped/60x30 (2 renders)
 - ` # failure ` ×1
-  - forms ` compact `, ` full `; tests frames::dash::tests::header_counts_agree_in_number::test_case_2_singular (2 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (611 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::header_counts_agree_in_number::test_case_2_singular (2 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (619 renders)
 - ` # failures ` ×8
-  - forms ` compact `, ` full `; 1 cuts folded in; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (437 renders); sweep scenario/between/120x33, scenario/between/160x45 (143359 renders)
+  - forms ` compact `, ` full `; 1 cuts folded in; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (484 renders); sweep scenario/between/120x33, scenario/between/160x45 (143379 renders)
 - ` age #m ` ×8
   - forms ` compact `, ` full `; tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (19 renders); sweep sweep/calendar/skipped/60x30, sweep/deadend/skipped/50x30 (7 renders)
 - ` age #m... ` ×6 — truncated, no full form rendered
@@ -191,8 +191,8 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
   - forms ` compact `, ` full `; example ` age... `; tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (4 renders); sweep sweep/calendar/skipped/40x30, sweep/calendar/skipped/45x30 (8 renders)
 - ` last observed failure #, a moment ago ` ×8
   - forms ` compact `, ` full `; 1 cuts folded in; tests frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_2_medium (38 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (1137 renders)
-- ` last observed failure #m ago ` ×2105
-  - forms ` compact `, ` full `; tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (12 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (29902 renders)
+- ` last observed failure #m ago ` ×2102
+  - forms ` compact `, ` full `; tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (20 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (29910 renders)
 - ` paused ` ×1
   - forms ` compact `; tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::header_counts_agree_in_number::test_case_1_zero (24 renders); sweep scenario/idle/120x33, sweep/calendar/0846-trial.start/120x33/plus40 (12 renders)
 - ` planned end # ` ×8
@@ -200,9 +200,9 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` screen paused ` ×1
   - forms ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (24 renders); sweep scenario/idle/160x45, scenario/idle/240x67 (39 renders)
 - ` session #m ` ×3009
-  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (432 renders); sweep scenario/between/120x33, scenario/between/160x45 (143967 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (479 renders); sweep scenario/between/120x33, scenario/between/160x45 (143995 renders)
 - ` togi ` ×1
-  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (468 renders); sweep scenario/between/120x33, scenario/between/160x45 (144002 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (515 renders); sweep scenario/between/120x33, scenario/between/160x45 (144030 renders)
 - ` togi... ` ×1 — truncated, no full form rendered
   - forms ` compact `; example ` togi... `; sweep sweep/calendar/skipped/20x30, sweep/deadend/skipped/20x30 (5 renders)
 - ` tune #m ` ×7
@@ -212,14 +212,14 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` tune... ` ×1 — truncated, no full form rendered
   - forms ` compact `, ` full `; example ` tune... `; tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (3 renders); sweep sweep/calendar/skipped/28x30, sweep/calendar/skipped/32x30 (10 renders)
 - ` tuning #m ` ×2988
-  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (434 renders); sweep scenario/between/120x33, scenario/between/160x45 (143967 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (481 renders); sweep scenario/between/120x33, scenario/between/160x45 (143995 renders)
 
 ### `dash.role`
 
 - ` idle ` ×1
-  - forms ` short `; tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_2_nothing_loaded, frames::dash::tests::a_ccd_the_tuner_has_no_state_for_says_so (106 renders); sweep scenario/between/120x33, scenario/between/160x45 (260347 renders)
+  - forms ` short `; tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_2_nothing_loaded, frames::dash::tests::a_ccd_the_tuner_has_no_state_for_says_so (114 renders); sweep scenario/between/120x33, scenario/between/160x45 (260403 renders)
 - ` {# | all | one} loaded ` ×8
-  - forms ` short `; 3 templates merged; tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_1_every_core_loaded, frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_3_one_loaded (52 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (27487 renders)
+  - forms ` short `; 3 templates merged; tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_1_every_core_loaded, frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_3_one_loaded (61 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (27487 renders)
 
 ### `dash.stage`
 
@@ -228,21 +228,21 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # past its end ` ×2
   - forms ` Medium summary `, ` Wide summary `; tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (2 renders)
 - ` #m ` ×31
-  - forms ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (284 renders); sweep scenario/between/160x45, scenario/between/240x67 (51810 renders)
+  - forms ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (294 renders); sweep scenario/between/160x45, scenario/between/240x67 (51819 renders)
 - ` controls at CO # ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity, terminal::real_process::real_process_helper (4 renders); sweep scenario/between/120x33, scenario/between/160x45 (25157 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls (5 renders); sweep scenario/between/120x33, scenario/between/160x45 (25161 renders)
 - ` filler ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (2 renders); sweep sweep/filler/8932-night.plan/120x33/plus40, sweep/filler/8932-night.plan/160x45/plus40 (208 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (2 renders); sweep sweep/filler/8934-night.plan/120x33/plus40, sweep/filler/8934-night.plan/160x45/plus40 (208 renders)
 - ` filler C# ` ×2
-  - forms ` Compact `; tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd (1 renders); sweep scenario/filler/120x33, sweep/filler/8958-trial.intent/120x33/plus40 (4 renders)
+  - forms ` Compact `; tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd (1 renders); sweep scenario/filler/120x33, sweep/filler/8960-trial.intent/120x33/plus40 (4 renders)
 - ` filler on CCD # ` ×2
-  - forms ` Medium `, ` Wide `; tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd (1 renders); sweep scenario/filler/160x45, scenario/filler/240x67 (11 renders)
+  - forms ` Medium `, ` Wide `; tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (2 renders); sweep scenario/filler/160x45, scenario/filler/240x67 (11 renders)
 - ` mapping ` ×1
-  - forms ` Compact `, ` Compact summary `, ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; tests frames::dash::tests::the_stage_line_names_the_day_once_a_later_boot_closes_the_night, frames::frame_tests::bounds::recovering::screens (47 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (21817 renders)
+  - forms ` Compact `, ` Compact summary `, ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; tests frames::dash::tests::the_stage_line_names_the_day_once_a_later_boot_closes_the_night, frames::frame_tests::bounds::recovering::screens (47 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (21825 renders)
 - ` mapping C# ` ×22
-  - forms ` Compact `, ` Compact summary `; tests frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (43 renders); sweep scenario/crashed/120x33, scenario/mapping/120x33 (5457 renders)
+  - forms ` Compact `, ` Compact summary `; tests frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (44 renders); sweep scenario/crashed/120x33, scenario/mapping/120x33 (5457 renders)
 - ` mapping CCD # at # ` ×22
-  - forms ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (95 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (16365 renders)
+  - forms ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (103 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (16365 renders)
 - ` planned end # ` ×2
   - forms ` Compact summary `, ` Medium summary `, ` Wide summary `; tests frames::dash::tests::every_time_on_screen_is_local, frames::frame_tests::bounds::idle::screens (37 renders); sweep sweep/staged/idle/log-end/160x45, sweep/staged/idle/log-end/240x67 (6 renders)
 - ` qualifying # ` ×1
@@ -258,11 +258,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` trial crashed ` ×1
   - forms ` Compact summary `, ` Medium summary `, ` Wide summary `; tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (35 renders); sweep sweep/staged/crashed/log-end/160x45, sweep/staged/crashed/log-end/240x67 (6 renders)
 - ` {► | ○} NIGHT #m ` ×35
-  - forms ` Compact `, ` Compact summary `; 2 templates merged; tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (132 renders); sweep scenario/between/120x33, scenario/controls/120x33 (17277 renders)
-- ` {► | ○} NIGHT since # ` ×7
-  - forms ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; 2 templates merged; tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (284 renders); sweep scenario/between/160x45, scenario/between/240x67 (51810 renders)
+  - forms ` Compact `, ` Compact summary `; 2 templates merged; tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (133 renders); sweep scenario/between/120x33, scenario/controls/120x33 (17280 renders)
+- ` {► | ○} NIGHT since # ` ×13
+  - forms ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; 2 templates merged; tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (294 renders); sweep scenario/between/160x45, scenario/between/240x67 (51819 renders)
 - ` ► DAY ` ×1
-  - forms ` Compact `, ` Compact summary `, ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (111 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (522 renders)
+  - forms ` Compact `, ` Compact summary `, ` Medium `, ` Medium summary `, ` Wide `, ` Wide summary `; tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (112 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (538 renders)
 - ` ○ DAY ` ×1
   - forms ` Medium summary `; tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (1 renders)
 - ` ○ DEAD END ` ×1
@@ -277,35 +277,35 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # cells witnessed ` ×2
   - forms ` night.qualification `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion (1 renders); sweep scenario/day-step, scenario/reproduction (8 renders)
 - ` # task ` ×1
-  - forms ` night.plan `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (8 renders); sweep scenario/between, scenario/controls (83 renders)
+  - forms ` night.plan `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (16 renders); sweep scenario/between, scenario/controls (83 renders)
 - ` # tasks ` ×30
-  - forms ` night.plan `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (16 renders); sweep scenario/between, scenario/controls (748 renders)
+  - forms ` night.plan `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (71 renders); sweep scenario/between, scenario/controls (748 renders)
 - ` #m eligible ` ×2
   - forms ` day.hold `; tests tests::describe::a_hold_that_waits_adds_no_line_and_a_reset_hold_does (1 renders); sweep scenario/reproduction, sweep/calendar/15013-day.hold (3 renders)
 - ` CCD # at # ` ×53
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::history::a_crash_late_in_a_night_trial_says_how_far_it_got (140 renders); sweep scenario/crashed, scenario/day-step (19109 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1305 renders); sweep scenario/crashed, scenario/day-step (19109 renders)
 - ` CCD# cap # ` ×6
-  - forms ` ccd.cap `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::describe::a_night_reads_in_order_from_plan_to_promotion (4 renders); sweep scenario/crashed, scenario/day-step (6259 renders)
+  - forms ` ccd.cap `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (24 renders); sweep scenario/crashed, scenario/day-step (6259 renders)
 - ` CCD# edge unknown ` ×2
-  - forms ` ccd.edge `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::describe::a_night_reads_in_order_from_plan_to_promotion (3 renders); sweep scenario/crashed, scenario/day-step (20 renders)
+  - forms ` ccd.edge `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (5 renders); sweep scenario/crashed, scenario/day-step (20 renders)
 - ` CPU-suspect, {resolved | unresolved} ` ×2
   - forms ` day.event `; 2 templates merged; sweep scenario/reproduction, sweep/calendar/15011-day.event (5 renders)
 - ` R# all-core on # ` ×15
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (59 renders); sweep scenario/crashed, scenario/day-step (2481 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (416 renders); sweep scenario/crashed, scenario/day-step (2481 renders)
 - ` R# heavy vector on # ` ×1
   - forms ` trial.end `; tests tests::history::a_crash_late_in_a_night_trial_says_how_far_it_got, tests::history::a_night_trial_says_whether_it_is_a_retry::test_case_1_exact_qualification (8 renders)
 - ` R# heavy vector on core # at # ` ×17
-  - forms ` trial.end `; 1 cuts folded in; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (132 renders); sweep scenario/between, scenario/crashed (8381 renders)
+  - forms ` trial.end `; 1 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (532 renders); sweep scenario/between, scenario/crashed (8381 renders)
 - ` R# idle + bursts on # ` ×1
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (2 renders); sweep scenario/crashed, scenario/day-step (30 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (9 renders); sweep scenario/crashed, scenario/day-step (30 renders)
 - ` R# light core + heavy neighbours on core # ` ×16
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (64 renders); sweep scenario/crashed, scenario/day-step (2791 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (464 renders); sweep scenario/crashed, scenario/day-step (2791 renders)
 - ` R# light on core # at # ` ×17
-  - forms ` trial.end `; 1 cuts folded in; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (146 renders); sweep scenario/between, scenario/crashed (8505 renders)
+  - forms ` trial.end `; 1 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (559 renders); sweep scenario/between, scenario/crashed (8505 renders)
 - ` R# {all threads | both threads | load steps | partial load} on core # ` ×64
-  - forms ` trial.end `; 4 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (269 renders); sweep scenario/between, scenario/crashed (3514 renders)
+  - forms ` trial.end `; 4 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (753 renders); sweep scenario/between, scenario/crashed (3514 renders)
 - ` Tctl max #°C ` ×15
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (659 renders); sweep scenario/between, scenario/crashed (8948 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (2717 renders); sweep scenario/between, scenario/crashed (8948 renders)
 - ` applied day profile CCD#, CCD# ` ×5
   - forms ` day.applied `; tests tests::model::a_core_shows_the_day_offset_of_its_ccd::test_case_2_each_core_shows_its_ccd_s_day_offset, tests::model::only_an_application_caused_by_a_step_marks_that_step_applied (5 renders); sweep scenario/day-step, scenario/qualification (140 renders)
 - ` backend mprime: retry # of # after # s: 日本語[#J]#;c;data  #m#;title ` ×1
@@ -323,15 +323,15 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` checking cycle # start: ` ×1
   - forms ` checking.cycle `; tests tests::history::a_kind_of_an_earlier_ruleset_is_the_message_it_recorded (1 renders)
 - ` control ` ×1
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (526 renders); sweep scenario/between, scenario/crashed (4439 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1422 renders); sweep scenario/between, scenario/crashed (4439 renders)
 - ` core # named ` ×2
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::history::a_crash_late_in_a_night_trial_says_how_far_it_got (2 renders); sweep scenario/crashed, scenario/filler (10 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (4 renders); sweep scenario/crashed, scenario/filler (10 renders)
 - ` core # {corrected | uncorrected} error between trials (recorded only) ` ×2
   - forms ` mce `; 2 templates merged; tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden, tests::history::a_reset_and_an_mce_have_lines (2 renders)
 - ` dead end: core # read back # instead of # ` ×1
   - forms ` deadend `; tests tests::model::smu_dead_end_keeps_the_readback, tests::model::write_after_restoration_is_not_saved (2 renders)
 - ` dead end: platform unstable at stock under R# ` ×1
-  - forms ` deadend `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0062-deadend (3 renders)
+  - forms ` deadend `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0064-deadend (3 renders)
 - ` dead end: the SMU refused ` ×1
   - forms ` deadend `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders)
 - ` dead end: 日本語[#J]#;c;data  #m#;title ` ×1
@@ -339,7 +339,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` edge margin ` ×1
   - forms ` ccd.cap `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion (1 renders)
 - ` fails at # ` ×4
-  - forms ` ccd.edge `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::describe::a_night_reads_in_order_from_plan_to_promotion (3 renders); sweep scenario/crashed, scenario/filler (16 renders)
+  - forms ` ccd.edge `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (7 renders); sweep scenario/crashed, scenario/filler (16 renders)
 - ` hold at CCD# reset ` ×1
   - forms ` day.hold `; tests tests::describe::a_hold_that_waits_adds_no_line_and_a_reset_hold_does (1 renders)
 - ` hold at CCD#, CCD# reset ` ×1
@@ -347,7 +347,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` hunt #: unattributed failure in idle; loaded cores # held at their failing offsets, the rest parked at #; candidates #; groups of # × # s ` ×1
   - forms ` hunt.start `; tests tests::history::a_kind_of_an_earlier_ruleset_is_the_message_it_recorded (1 renders)
 - ` idle with the offsets applied, rebooted ` ×2
-  - forms ` crash.detected `; 1 cuts folded in; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (17 renders); sweep scenario/deadend, scenario/filler (9 renders)
+  - forms ` crash.detected `; 1 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (18 renders); sweep scenario/deadend, scenario/filler (9 renders)
 - ` idle with the offsets applied, the backend stalled ` ×2
   - forms ` failure `, ` trial.end `; 1 cuts folded in; tests tests::describe::a_failure_says_which_core_failed_where_or_that_the_machine_idled, tests::history::a_night_trial_says_whether_it_is_a_retry::test_case_1_exact_qualification (3 renders)
 - ` late in the trial ` ×1
@@ -355,13 +355,13 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` logical CPU # corrected error between trials (recorded only) ` ×1
   - forms ` mce `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders)
 - ` mapping ` ×1
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::history::a_crash_late_in_a_night_trial_says_how_far_it_got (148 renders); sweep scenario/crashed, scenario/day-step (19109 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1313 renders); sweep scenario/crashed, scenario/day-step (19109 renders)
 - ` night {opened | replanned} ` ×2
-  - forms ` night.plan `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (24 renders); sweep scenario/between, scenario/controls (831 renders)
+  - forms ` night.plan `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (87 renders); sweep scenario/between, scenario/controls (831 renders)
 - ` no cap yet ` ×1
-  - forms ` ccd.cap `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (2 renders); sweep scenario/crashed, scenario/day-step (5008 renders)
+  - forms ` ccd.cap `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (16 renders); sweep scenario/crashed, scenario/day-step (5008 renders)
 - ` passed ` ×1
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (670 renders); sweep scenario/between, scenario/crashed (25647 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (2728 renders); sweep scenario/between, scenario/crashed (25647 renders)
 - ` power loss or reset, which says nothing about the offsets ` ×1
   - forms ` crash.detected `; tests tests::model::crash_classification::test_case_2_power_reset (1 renders)
 - ` projection: a later boot wrote this; continuing the session ` ×1
@@ -375,9 +375,9 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` qualification ` ×1
   - forms ` trial.end `; tests tests::history::a_night_trial_says_whether_it_is_a_retry::test_case_1_exact_qualification (1 renders); sweep scenario/day-step, scenario/reproduction (1696 renders)
 - ` rate of R# all threads ` ×1
-  - forms ` ccd.cap `; sweep scenario/day-step, scenario/filler (1127 renders)
+  - forms ` ccd.cap `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (3 renders); sweep scenario/day-step, scenario/filler (1127 renders)
 - ` rate of R# light core + heavy neighbours ` ×1
-  - forms ` ccd.cap `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (1 renders); sweep scenario/crashed, scenario/filler (124 renders)
+  - forms ` ccd.cap `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (4 renders); sweep scenario/crashed, scenario/filler (124 renders)
 - ` rebooted ` ×1
   - forms ` trial.end `; tests tests::history::a_crash_late_in_a_night_trial_says_how_far_it_got, tests::history::reboot_history_requires_matching_cause (2 renders)
 - ` reproduction ` ×1
@@ -391,17 +391,17 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` search ` ×1
   - forms ` trial.end `; tests tests::history::a_trial_of_an_earlier_ruleset_is_named_by_its_load_and_offset (1 renders)
 - ` session resumed ` ×1
-  - forms ` config.loaded `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (5 renders); sweep scenario/crashed, scenario/deadend (10 renders)
+  - forms ` config.loaded `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (6 renders); sweep scenario/crashed, scenario/deadend (10 renders)
 - ` session started on # cores ` ×4
-  - forms ` session.start `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (151 renders); sweep scenario/between, scenario/controls (22 renders)
+  - forms ` session.start `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (159 renders); sweep scenario/between, scenario/controls (22 renders)
 - ` stopped ` ×1
   - forms ` shutdown `; tests frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them, tests::describe::the_kinds_with_a_line_of_their_own (9 renders); sweep scenario/day-step, scenario/qualification (68 renders)
 - ` the backend quit ` ×1
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (1 renders); sweep scenario/crashed, scenario/filler (7 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (2 renders); sweep scenario/crashed, scenario/filler (7 renders)
 - ` the backend was missing ` ×1
   - forms ` trial.end `; tests tests::history::an_unclear_night_trial_says_why (1 renders)
 - ` the exact profile ` ×1
-  - forms ` trial.end `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (527 renders); sweep scenario/between, scenario/crashed (6593 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1423 renders); sweep scenario/between, scenario/crashed (6593 renders)
 - ` trial ended before its full duration; stopped by signal ` ×1
   - forms ` trial.end `; sweep scenario/day-step, scenario/qualification (39 renders)
 - ` trial {orphan]#;c;payload  	#Jtitle  ‮ | unrelated} ` ×2
@@ -421,17 +421,17 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` write state projection: {another arrival; | latest arrival; | old arrival; | ordinary arrival; | rewritten #; | this run; | warning #;} continuing the session ` ×747
   - forms ` session.warning `; 1 cuts folded in; 7 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (8764 renders)
 - ` wrong result ` ×1
-  - forms ` trial.end `; tests tests::history::orphan_trial_id_stays_raw, tests::history::reboot_history_during_trial::test_case_2_retained_computation_failure (3 renders); sweep scenario/filler, sweep/filler/4397-trial.end (3 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, tests::history::orphan_trial_id_stays_raw (4 renders); sweep scenario/filler, sweep/filler/4399-trial.end (3 renders)
 - ` {#m | #s} elapsed ` ×157
-  - forms ` night.plan `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (14 renders); sweep scenario/between, scenario/controls (753 renders)
+  - forms ` night.plan `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (69 renders); sweep scenario/between, scenario/controls (753 renders)
 - ` {CCD# edge | core #} fails at # ` ×6
-  - forms ` ccd.edge `, ` failure `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::describe::a_failure_says_which_core_failed_where_or_that_the_machine_idled (3 renders); sweep scenario/crashed, scenario/filler (16 renders)
+  - forms ` ccd.edge `, ` failure `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (7 renders); sweep scenario/crashed, scenario/filler (16 renders)
 - ` {control | filler | mapping | qualification | reproduction} task # ` ×48
-  - forms ` trial.end `; 5 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (667 renders); sweep scenario/between, scenario/crashed (25702 renders)
+  - forms ` trial.end `; 5 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (2728 renders); sweep scenario/between, scenario/crashed (25702 renders)
 - ` {corrected | uncorrected} hardware error ` ×2
-  - forms ` trial.end `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail, tests::history::reboot_history_during_trial::test_case_3_retained_corrected_mce (3 renders); sweep scenario/deadend, scenario/filler (6 renders)
+  - forms ` trial.end `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (4 renders); sweep scenario/deadend, scenario/filler (6 renders)
 - ` {fallback | measured} slope ` ×2
-  - forms ` ccd.cap `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::describe::a_night_reads_in_order_from_plan_to_promotion (4 renders); sweep scenario/crashed, scenario/day-step (6259 renders)
+  - forms ` ccd.cap `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (24 renders); sweep scenario/crashed, scenario/day-step (6259 renders)
 - ` {promote | retreat} CCD# to CCD#, CCD# ` ×3
   - forms ` day.step `; 2 templates merged; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion (1 renders); sweep scenario/day-step, scenario/reproduction (7 renders)
 - ` {qualified | qualifying} CCD#, CCD# (next step) ` ×6
@@ -482,7 +482,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 ### `frame.ccd`
 
 - ` # counts to S ` ×5
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (405 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (37120 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (407 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (37120 renders)
 - ` # counts/c-# ` ×1
   - forms ` Compact `; tests frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (1 renders); sweep sweep/calendar/skipped/40x30, sweep/deadend/skipped/40x30 (10 renders)
 - ` # counts/ce-# ` ×1
@@ -490,7 +490,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # counts/cel-# ` ×1
   - forms ` Compact `; tests frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (1 renders)
 - ` # counts/cell ` ×1
-  - forms ` Compact `; tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (136 renders); sweep scenario/between/120x33, scenario/controls/120x33 (71982 renders)
+  - forms ` Compact `; tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (138 renders); sweep scenario/between/120x33, scenario/controls/120x33 (71996 renders)
 - ` # counts/cell # ` ×1
   - forms ` Compact `; tests frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (1 renders)
 - ` # counts/cell-# ` ×1
@@ -508,21 +508,21 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # uncovered ` ×6
   - forms ` Compact `; sweep sweep/calendar/skipped/32x30, sweep/calendar/skipped/35x30 (30 renders)
 - ` # {covered | uncovered} for the cap ` ×188
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (838 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (461868 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (870 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (461900 renders)
 - ` CCD # idle ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (380 renders); sweep scenario/between/120x33, scenario/between/160x45 (260347 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (388 renders); sweep scenario/between/120x33, scenario/between/160x45 (260403 renders)
 - ` CCD # loaded ` ×12
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/calendar/0858-trial.start/120x33/overdue, sweep/calendar/0858-trial.start/120x33/plus40 (1728 renders)
 - ` CCD # {all | one} loaded # ` ×8
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (156 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (25759 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (166 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (25759 renders)
 - ` D # ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (499 renders); sweep scenario/between/120x33, scenario/between/160x45 (287834 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (510 renders); sweep scenario/between/120x33, scenario/between/160x45 (287890 renders)
 - ` LOADED ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (977 renders); sweep scenario/controls/160x45, scenario/controls/240x67 (28034 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (1000 renders); sweep scenario/controls/160x45, scenario/controls/240x67 (28034 renders)
 - ` S # ` ×6
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (154 renders); sweep scenario/between/120x33, scenario/between/160x45 (81792 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (155 renders); sweep scenario/between/120x33, scenario/between/160x45 (81834 renders)
 - ` S # {fallback | measured} slope ` ×7
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (345 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (206026 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (355 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (206040 renders)
 - ` U # ` ×3
   - forms ` Compact `; sweep sweep/filler/skipped/20x30, sweep/mapped/skipped/20x30 (4 renders)
 - ` U ># ` ×1
@@ -530,33 +530,33 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` U ? ` ×1
   - forms ` Compact `; sweep sweep/deadend/skipped/28x30, sweep/mapped/skipped/20x30 (5 renders)
 - ` U censored at # ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (223 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (86006 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (224 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (86006 renders)
 - ` U fails at # ` ×7
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (240 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (61475 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (243 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (61483 renders)
 - ` U unknown ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/120x33, scenario/between/160x45 (140334 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (43 renders); sweep scenario/between/120x33, scenario/between/160x45 (140382 renders)
 - ` U... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` U... `; sweep sweep/calendar/skipped/20x30 (2 renders)
 - ` at S ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (193815 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (8 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (193831 renders)
 - ` baseline ` ×1
-  - forms ` Compact `; sweep scenario/crashed/120x33, scenario/mapping/120x33 (20880 renders)
+  - forms ` Compact `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_3_mapping_compact (1 renders); sweep scenario/crashed/120x33, scenario/mapping/120x33 (20882 renders)
 - ` bound by baseline ` ×1
-  - forms ` Medium `, ` Wide `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (62624 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (5 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (62630 renders)
 - ` bound by rate R# ` ×3
-  - forms ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (181 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (101280 renders)
+  - forms ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (185 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (101286 renders)
 - ` cap coverage: no cap yet ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/120x33, scenario/between/160x45 (56858 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (37 renders); sweep scenario/between/120x33, scenario/between/160x45 (56898 renders)
 - ` no cap yet ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/120x33, scenario/between/160x45 (56858 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (37 renders); sweep scenario/between/120x33, scenario/between/160x45 (56898 renders)
 - ` no tuner state for this CCD yet ` ×1
   - forms ` Wide `; tests frames::frame_tests::policy_states::a_ccd_the_tuner_has_no_state_for_says_so (1 renders)
 - ` rate R# ` ×3
-  - forms ` Compact `, ` Medium `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_3_medium_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_4_medium_rich_even (282 renders); sweep scenario/crashed/120x33, scenario/day-step/120x33 (46157 renders)
+  - forms ` Compact `, ` Medium `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_3_medium_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_4_medium_rich_even (282 renders); sweep scenario/crashed/120x33, scenario/day-step/120x33 (46159 renders)
 - ` {# | ?} LOADED ` ×11
-  - forms ` Compact `; 2 templates merged; tests frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_1_mapping_whose_clocks_run (216 renders); sweep scenario/controls/120x33, scenario/filler/120x33 (9275 renders)
+  - forms ` Compact `; 2 templates merged; tests frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_3_mapping_compact (217 renders); sweep scenario/controls/120x33, scenario/filler/120x33 (9275 renders)
 - ` ► # LOADED ` ×9
-  - forms ` Compact `; tests frames::frame_tests::bounds::day::screens, frames::frame_tests::bounds::qualifying::screens (136 renders); sweep sweep/filler/2580-trial.start/120x33/overdue, sweep/filler/2580-trial.start/120x33/plus40 (76 renders)
+  - forms ` Compact `; tests frames::frame_tests::bounds::day::screens, frames::frame_tests::bounds::qualifying::screens (136 renders); sweep sweep/filler/2581-trial.start/120x33/overdue, sweep/filler/2581-trial.start/120x33/plus40 (76 renders)
 
 ### `frame.context`
 
@@ -565,7 +565,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # more ` ×6
   - forms ` Compact `; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_1_mapping_whose_clocks_run (15 renders); sweep scenario/qualification/120x33, scenario/reproduction/120x33 (5078 renders)
 - ` # of # planned tasks done ` ×44
-  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (239 renders); sweep scenario/between/120x33, scenario/between/160x45 (143369 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (248 renders); sweep scenario/between/120x33, scenario/between/160x45 (143381 renders)
 - ` # outstanding ` ×259
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (17 renders); sweep scenario/qualification/160x45, scenario/qualification/240x67 (7193 renders)
 - ` # pending ` ×1
@@ -579,23 +579,23 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` #h observed, # crashes... ` ×122 — truncated, no full form rendered
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; example ` 0.0h observed, 0 crashes `; tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (6 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (144364 renders)
 - ` #m elapsed ▮ ` ×464
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (181 renders); sweep scenario/between/120x33, scenario/between/160x45 (141675 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (192 renders); sweep scenario/between/120x33, scenario/between/160x45 (141682 renders)
 - ` #m of #m ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (202 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5744 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (203 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5744 renders)
 - ` #m used ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (18 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5536 renders)
 - ` CCD # at # ` ×52
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (79 renders); sweep scenario/between/120x33, scenario/between/160x45 (272887 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (95 renders); sweep scenario/between/120x33, scenario/between/160x45 (272895 renders)
 - ` CCD #: failed at #, bracket at # ` ×6
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (13648 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (13664 renders)
 - ` DAY ▮ applied # ` ×11
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (206 renders); sweep scenario/between/120x33, scenario/between/160x45 (143421 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (215 renders); sweep scenario/between/120x33, scenario/between/160x45 (143433 renders)
 - ` DAY ▮ applied CO # ` ×13
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (40 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (456 renders)
-- ` LAST NIGHT # ▮ ` ×16
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (37 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (1694 renders)
-- ` NIGHT since # ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (181 renders); sweep scenario/between/120x33, scenario/between/160x45 (141675 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (40 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (472 renders)
+- ` LAST NIGHT # ▮ ` ×19
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (38 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (1699 renders)
+- ` NIGHT since # ` ×10
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (192 renders); sweep scenario/between/120x33, scenario/between/160x45 (141682 renders)
 - ` active ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (4316 renders)
 - ` all days ` ×1
@@ -605,19 +605,21 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` changed at #; D awaits a reset ` ×1
   - forms ` Wide `; tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders)
 - ` control #%/#% ` ×29
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (146 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71691 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (151 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71697 renders)
 - ` cpu suspect (definite)... ` ×2 — truncated, no full form rendered
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; example ` cpu suspect (definite) `; sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (4320 renders)
 - ` events ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (19 renders); sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (4328 renders)
 - ` firmware ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (238 renders); sweep scenario/between/120x33, scenario/between/160x45 (142627 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (247 renders); sweep scenario/between/120x33, scenario/between/160x45 (142655 renders)
 - ` freeze ` ×1
   - forms ` Wide `; tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders)
 - ` hold ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (238 renders); sweep scenario/between/120x33, scenario/between/160x45 (143877 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (247 renders); sweep scenario/between/120x33, scenario/between/160x45 (143905 renders)
 - ` hold, nothing blocks it ` ×1
   - forms ` Wide `; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_1_an_unblocked_hold (1 renders)
+- ` hold: # failed qualification ` ×1
+  - forms ` Wide `; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_6_a_hold_on_a_failed_qualification (1 renders)
 - ` hold: at the cap, not qualified ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_3_a_hold_at_the_cap_and_unqualified (1 renders); sweep scenario/qualification/120x33, scenario/qualification/160x45 (61005 renders)
 - ` hold: boot calendar is unresolved, vetoed by boot calendar ` ×2
@@ -633,19 +635,19 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` hold: vetoed by record #, record # is unresolved ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (7 renders); sweep scenario/reproduction/160x45, sweep/calendar/15011-day.event/160x45/plus40 (1418 renders)
 - ` holding # ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (202 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5744 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (203 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5744 renders)
 - ` mapping ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (76 renders); sweep scenario/between/120x33, scenario/between/160x45 (143278 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (84 renders); sweep scenario/between/120x33, scenario/between/160x45 (143290 renders)
 - ` mapping #%/#% ` ×44
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (214 renders); sweep scenario/between/240x67, scenario/controls/240x67 (86398 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (219 renders); sweep scenario/between/240x67, scenario/controls/240x67 (86404 renders)
 - ` mapping #%/#%... ` ×31 — truncated, no full form rendered
-  - forms ` Medium `; 1 cuts folded in; example ` mapping 0%/10%... `; tests terminal::real_process::real_process_helper (2 renders); sweep scenario/between/160x45, scenario/controls/160x45 (21137 renders)
+  - forms ` Medium `; 1 cuts folded in; example ` mapping 0%/10%... `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls (5 renders); sweep scenario/between/160x45, scenario/controls/160x45 (21140 renders)
 - ` no hold started ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/120x33, scenario/between/160x45 (138133 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (44 renders); sweep scenario/between/120x33, scenario/between/160x45 (138161 renders)
 - ` none running ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (120 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (1648 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (121 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (1648 renders)
 - ` not reported yet ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (33 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (456 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (33 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (472 renders)
 - ` not the cpu ` ×1
   - forms ` Wide `; tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders)
 - ` observations, not a bound ` ×2
@@ -657,11 +659,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` promoted CCD # ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (26 renders); sweep sweep/calendar/15003-day.applied/120x33/plus40, sweep/calendar/15003-day.applied/160x45/plus40 (52 renders)
 - ` proposed resetting CCD # after firmware change, not applied ` ×1
-  - forms ` Wide `; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_11_a_proposed_firmware_reset (1 renders)
+  - forms ` Wide `; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_12_a_proposed_firmware_reset (1 renders)
 - ` proposed {promoting | retreating} CCD #, not applied ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_7_a_proposed_promotion, frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_9_a_proposed_retreat (2 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (11 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_10_a_proposed_retreat, frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_8_a_proposed_promotion (2 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (11 renders)
 - ` qualification #%/#%... ` ×23 — truncated, no full form rendered
-  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; example ` qualification 0%/75% `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (217 renders); sweep scenario/between/120x33, scenario/between/160x45 (143259 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; example ` qualification 0%/75% `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (226 renders); sweep scenario/between/120x33, scenario/between/160x45 (143271 renders)
 - ` qualifying ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (25 renders); sweep scenario/qualification/120x33, scenario/qualification/160x45 (9533 renders)
 - ` questions ` ×1
@@ -673,23 +675,23 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` reproducing {boot | record} # ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (18 renders); sweep sweep/staged/reproducing/120x33/overdue, sweep/staged/reproducing/120x33/plus40 (8 renders)
 - ` reproduction {#%/#% | pending | unreproduced | untestable} ` ×12
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (16 renders); sweep scenario/between/120x33, scenario/between/160x45 (146050 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (24 renders); sweep scenario/between/120x33, scenario/between/160x45 (146062 renders)
 - ` requalification #%/#% ` ×1
-  - forms ` Wide `; sweep scenario/between/240x67, scenario/controls/240x67 (71646 renders)
+  - forms ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (4 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71652 renders)
 - ` reset CCD # after firmware change ` ×1
-  - forms ` Wide `; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_10_an_applied_firmware_reset (1 renders)
+  - forms ` Wide `; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_11_an_applied_firmware_reset (1 renders)
 - ` resolved ` ×1
   - forms ` Wide `; tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders); sweep sweep/calendar/16165-day.event/240x67/event, sweep/calendar/16165-day.event/240x67/plus40 (14 renders)
 - ` resolved... ` ×1 — truncated, no full form rendered
   - forms ` Medium `; example ` resolved... `; sweep sweep/calendar/16165-day.event/160x45/plus40, sweep/calendar/16166-day.step/160x45/plus40 (7 renders)
 - ` retreated CCD # ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_8_an_applied_retreat (1 renders); sweep sweep/calendar/15015-day.applied/120x33/plus40, sweep/calendar/15015-day.applied/160x45/plus40 (44 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_9_an_applied_retreat (1 renders); sweep sweep/calendar/15015-day.applied/120x33/plus40, sweep/calendar/15015-day.applied/160x45/plus40 (44 renders)
 - ` shares ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (217 renders); sweep scenario/between/120x33, scenario/between/160x45 (143259 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (226 renders); sweep scenario/between/120x33, scenario/between/160x45 (143271 renders)
 - ` stock CO # ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (4 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (74350 renders)
 - ` task ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (239 renders); sweep scenario/between/120x33, scenario/between/160x45 (143369 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (248 renders); sweep scenario/between/120x33, scenario/between/160x45 (143381 renders)
 - ` unexplained ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (18 renders); sweep sweep/staged/reproducing/120x33/overdue, sweep/staged/reproducing/120x33/plus40 (8 renders)
 - ` unreproduced ` ×1
@@ -697,13 +699,13 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` unresolved ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (12 renders); sweep scenario/reproduction/240x67, sweep/calendar/15011-day.event/240x67/event (2837 renders)
 - ` valid ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (204 renders); sweep scenario/between/120x33, scenario/between/160x45 (142171 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (213 renders); sweep scenario/between/120x33, scenario/between/160x45 (142183 renders)
 - ` vetoes ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (4316 renders)
 - ` {control | filler | mapping | qualification | reproduction} task # ` ×50
-  - forms ` Compact `, ` Medium `, ` Wide `; 5 templates merged; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (119 renders); sweep scenario/between/120x33, scenario/between/160x45 (141721 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 5 templates merged; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (127 renders); sweep scenario/between/120x33, scenario/between/160x45 (141733 renders)
 - ` {last | next} step ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (61 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (87597 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (62 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (87597 renders)
 
 ### `frame.footer`
 
@@ -718,25 +720,25 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` End: latest ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (10 renders)
 - ` back ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (515 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (143982 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (521 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144010 renders)
 - ` day question ` ×1
   - forms ` Compact `; tests frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (1 renders)
 - ` day question: togi status ` ×1
   - forms ` Compact `; tests frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (1 renders)
 - ` esc ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (526 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144017 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (532 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144045 renders)
 - ` exit ` ×1
   - forms ` Compact `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_2_50x33_arrived_123 (5 renders)
 - ` exit dashboard ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (509 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (143982 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (515 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144010 renders)
 - ` help ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (520 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (143982 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (526 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144010 renders)
 - ` l ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (527 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144022 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (533 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144050 renders)
 - ` log ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (518 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (143982 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (524 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144010 renders)
 - ` q ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (525 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144022 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (531 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144050 renders)
 - ` q yet ` ×1
   - forms ` Compact `; tests frames::help::tests::help_stays_in_bounds_at_every_small_width (1 renders)
 - ` q. ` ×1
@@ -755,15 +757,15 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 ### `frame.header`
 
 - ` # crash ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/deadend/120x33, scenario/deadend/160x45 (30610 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (8 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (30622 renders)
 - ` # crashes ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (554 renders); sweep scenario/between/120x33, scenario/between/160x45 (113357 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (593 renders); sweep scenario/between/120x33, scenario/between/160x45 (113373 renders)
 - ` # fail ` ×2
   - forms ` Compact `; sweep sweep/deadend/skipped/60x30, sweep/night/skipped/60x30 (2 renders)
 - ` # failure ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (611 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (619 renders)
 - ` # failures ` ×7
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (554 renders); sweep scenario/between/120x33, scenario/between/160x45 (143359 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (601 renders); sweep scenario/between/120x33, scenario/between/160x45 (143379 renders)
 - ` age #m ` ×6
   - forms ` Compact `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_2_50x33_arrived_123 (2 renders); sweep sweep/calendar/skipped/60x30, sweep/deadend/skipped/50x30 (7 renders)
 - ` age #m... ` ×4 — truncated, no full form rendered
@@ -786,8 +788,8 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
   - forms ` Compact `; tests frames::help::tests::help_stays_in_bounds_at_every_small_width (11 renders)
 - ` last observed failure #, a moment ago ` ×7
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (50 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (1137 renders)
-- ` last observed failure #m ago ` ×2101
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_8_stopped (6 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (29902 renders)
+- ` last observed failure #m ago ` ×2098
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (14 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (29910 renders)
 - ` log ` ×1
   - forms ` Compact `; tests frames::help::tests::help_stays_in_bounds_at_every_small_width (6 renders)
 - ` no session yet ` ×2
@@ -811,11 +813,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` screen paused ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (39 renders); sweep scenario/idle/160x45, scenario/idle/240x67 (39 renders)
 - ` session #m ` ×3009
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (554 renders); sweep scenario/between/120x33, scenario/between/160x45 (143967 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (601 renders); sweep scenario/between/120x33, scenario/between/160x45 (143995 renders)
 - ` starting ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_2_starting, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (13 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (6 renders)
 - ` togi ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (716 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144026 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (763 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144054 renders)
 - ` togi... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` togi... `; tests frames::help::tests::help_stays_in_bounds_at_every_small_width, frames::help::tests::the_help_view_examples_keep_whole_values::test_case_1_13_expects (3 renders); sweep sweep/calendar/skipped/20x30, sweep/deadend/skipped/20x30 (5 renders)
 - ` tune #m ` ×6
@@ -825,7 +827,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` tune... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` tune... `; sweep sweep/calendar/skipped/28x30, sweep/calendar/skipped/32x30 (10 renders)
 - ` tuning #m ` ×2988
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (554 renders); sweep scenario/between/120x33, scenario/between/160x45 (143967 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (601 renders); sweep scenario/between/120x33, scenario/between/160x45 (143995 renders)
 
 ### `frame.help`
 
@@ -1381,49 +1383,49 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # cells witnessed ` ×1
   - forms ` Medium `, ` Wide `; sweep sweep/calendar/12878-night.qualification/160x45/plus40, sweep/calendar/12878-night.qualification/240x67/event (920 renders)
 - ` # more ` ×4819
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::panels::a_history_too_short_for_its_entries_counts_every_one_it_leaves_out::test_case_1_120x24, frames::frame_tests::panels::a_history_too_short_for_its_entries_counts_every_one_it_leaves_out::test_case_2_120x25 (8 renders); sweep scenario/between/120x33, scenario/between/160x45 (141701 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (15 renders); sweep scenario/between/120x33, scenario/between/160x45 (141710 renders)
 - ` # passed ` ×1
   - forms ` Wide `; sweep scenario/stopped/240x67, sweep/calendar/0911-trial.end/240x67/event (1893 renders)
 - ` # task ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper (1 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7170 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, terminal::real_process::real_process_helper (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7174 renders)
 - ` # tasks ` ×30
-  - forms ` Compact `, ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper (1 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (88690 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (11 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (88705 renders)
 - ` #m eligible ` ×1
   - forms ` Medium `, ` Wide `; sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (436 renders)
 - ` #m... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` 1h00m... `; sweep scenario/reproduction/120x33, sweep/calendar/15013-day.hold/120x33/plus40 (43 renders)
 - ` CCD # at # ` ×53
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (1859162 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (114 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1859246 renders)
 - ` CCD # at #... ` ×4 — truncated, no full form rendered
-  - forms ` Compact `, ` Medium `; 1 cuts folded in; example ` CCD 0 at -9... `; sweep scenario/crashed/160x45, scenario/recovering/160x45 (445 renders)
+  - forms ` Compact `, ` Medium `; 1 cuts folded in; example ` CCD 0 at -9... `; sweep scenario/crashed/160x45, scenario/recovering/160x45 (449 renders)
 - ` CCD# cap # ` ×6
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (464711 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (115 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464781 renders)
 - ` CCD# edge unknown ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (2150 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (2158 renders)
 - ` CPU-suspect, {resolved | unresolved} ` ×2
   - forms ` Medium `, ` Wide `; 2 templates merged; sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (433 renders)
 - ` R# all-core on # ` ×17
-  - forms ` Medium `, ` Wide `; 2 cuts folded in; sweep scenario/crashed/240x67, scenario/day-step/240x67 (209949 renders)
+  - forms ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (49 renders); sweep scenario/crashed/240x67, scenario/day-step/240x67 (209977 renders)
 - ` R# all-core on... ` ×1 — truncated, no full form rendered
-  - forms ` Medium `; example ` R7 all-core on... `; sweep scenario/filler/160x45, scenario/mapping/160x45 (19046 renders)
+  - forms ` Medium `; example ` R7 all-core on... `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (11 renders); sweep scenario/filler/160x45, scenario/mapping/160x45 (19046 renders)
 - ` R# idle + bursts on # ` ×2
   - forms ` Medium `, ` Wide `; 1 cuts folded in; sweep sweep/calendar/0847-trial.end/160x45/plus40, sweep/calendar/0847-trial.end/240x67/event (2600 renders)
 - ` R# light core + heavy neighbours on core #... ` ×33 — truncated, no full form rendered
-  - forms ` Wide `; 2 cuts folded in; example ` R8 light core + heavy neighbours on core 00 `; sweep scenario/crashed/240x67, scenario/day-step/240x67 (201433 renders)
+  - forms ` Wide `; 2 cuts folded in; example ` R8 light core + heavy neighbours on core 00 `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (42 renders); sweep scenario/crashed/240x67, scenario/day-step/240x67 (201445 renders)
 - ` R# light on core # ` ×19
-  - forms ` Medium `, ` Wide `; 2 cuts folded in; sweep scenario/crashed/160x45, scenario/crashed/240x67 (784106 renders)
+  - forms ` Medium `, ` Wide `; 2 cuts folded in; sweep scenario/crashed/160x45, scenario/crashed/240x67 (784155 renders)
 - ` R# light on core... ` ×1 — truncated, no full form rendered
   - forms ` Medium `; example ` R1 light on core... `; sweep sweep/calendar/1085-trial.end/160x45/plus40, sweep/calendar/1086-exposure.observed/160x45/plus40 (5876 renders)
 - ` R# {all threads | both threads | heavy vector | load steps | partial load} on core # ` ×85
-  - forms ` Medium `, ` Wide `; 5 cuts folded in; 5 templates merged; tests terminal::real_process::real_process_helper (12 renders); sweep scenario/between/160x45, scenario/between/240x67 (1110498 renders)
+  - forms ` Medium `, ` Wide `; 5 cuts folded in; 5 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::real_process::real_process_helper (19 renders); sweep scenario/between/160x45, scenario/between/240x67 (1110502 renders)
 - ` R#... ` ×3 — truncated, no full form rendered
-  - forms ` Medium `; example ` R1... `; sweep sweep/calendar/0591-trial.end/160x45/plus40, sweep/calendar/0592-exposure.observed/160x45/plus40 (21438 renders)
+  - forms ` Medium `; example ` R1... `; sweep sweep/calendar/0591-trial.end/160x45/plus40, sweep/calendar/0592-exposure.observed/160x45/plus40 (21440 renders)
 - ` Tctl max #°C ` ×15
-  - forms ` Wide `; sweep scenario/between/240x67, scenario/crashed/240x67 (733492 renders)
+  - forms ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (56 renders); sweep scenario/between/240x67, scenario/crashed/240x67 (733550 renders)
 - ` WHAT HAPPENED ▮ l: last # ` ×3
-  - forms ` Compact `, ` Medium `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_3_medium_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_4_medium_rich_even (137 renders); sweep scenario/between/120x33, scenario/between/160x45 (71947 renders)
+  - forms ` Compact `, ` Medium `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_3_medium_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_4_medium_rich_even (141 renders); sweep scenario/between/120x33, scenario/between/160x45 (71961 renders)
 - ` WHAT HAPPENED ▮ newest first ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (102 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71930 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (107 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71944 renders)
 - ` applied day profile CCD#, CCD# ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/qualification/240x67, scenario/reproduction/120x33 (13373 renders)
 - ` apply ` ×1
@@ -1435,17 +1437,17 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` boot calendar not reproduced on exact profile CCD#, CCD# ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; sweep sweep/calendar/16159-night.reproduction/120x33/plus40, sweep/calendar/16159-night.reproduction/160x45/plus40 (53 renders)
 - ` cap ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (464711 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (115 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464781 renders)
 - ` censored at # ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/calendar/7291-ccd.edge/120x33/plus40, sweep/calendar/7291-ccd.edge/160x45/plus40 (733 renders)
 - ` control ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (478039 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (478054 renders)
 - ` core # corrected error between trials (recorded only) ` ×1
   - forms ` Wide `; tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden (1 renders)
 - ` core # named ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (1361 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (1369 renders)
 - ` crash ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/deadend/120x33, scenario/deadend/160x45 (641 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/deadend/120x33, scenario/deadend/160x45 (653 renders)
 - ` day ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (479 renders)
 - ` dead end: \u#e#\u#c\u#a#e\x#b[#J\x#b]#;c;data\x#\r\n\u#b#m\u#d#;title\u#c\u#\u# ` ×1
@@ -1453,41 +1455,41 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` dead end: platform unstable at stock under R# ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; sweep scenario/deadend/120x33, scenario/deadend/160x45 (12 renders)
 - ` early in the trial ` ×1
-  - forms ` Wide `; sweep sweep/filler/2662-trial.end/240x67/event, sweep/filler/2662-trial.end/240x67/plus40 (384 renders)
+  - forms ` Wide `; sweep sweep/filler/2663-trial.end/240x67/event, sweep/filler/2663-trial.end/240x67/plus40 (388 renders)
 - ` edge ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (3154 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (3162 renders)
 - ` fail ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (3354 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (3374 renders)
 - ` fails at # ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (2421 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (2429 renders)
 - ` filler task #... ` ×1 — truncated, no full form rendered
-  - forms ` Compact `; example ` filler task 0... `; sweep sweep/filler/8960-trial.end/120x33/plus40, sweep/filler/8961-smu.intent/120x33/plus40 (28 renders)
+  - forms ` Compact `; example ` filler task 0... `; sweep sweep/filler/8962-trial.end/120x33/plus40, sweep/filler/8963-smu.intent/120x33/plus40 (28 renders)
 - ` hold ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (479 renders)
 - ` hold at CCD#, CCD# reset ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (479 renders)
 - ` l: last # events ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (102 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71930 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (107 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71944 renders)
 - ` mapping ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (1859607 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (114 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1859695 renders)
 - ` mapping task #... ` ×10 — truncated, no full form rendered
-  - forms ` Compact `; 1 cuts folded in; example ` mapping task 0... `; sweep scenario/day-step/120x33, scenario/filler/120x33 (136282 renders)
+  - forms ` Compact `; 1 cuts folded in; example ` mapping task 0... `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_3_mapping_compact (2 renders); sweep scenario/day-step/120x33, scenario/filler/120x33 (136282 renders)
 - ` mce ` ×1
   - forms ` Wide `; tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden (1 renders)
 - ` night ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98477 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (14 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98498 renders)
 - ` night {opened | replanned} ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests terminal::real_process::real_process_helper (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98477 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (14 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98498 renders)
 - ` no cap yet ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (336097 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (113 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (336159 renders)
 - ` note ` ×1
   - forms ` Compact `, ` Medium `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_3_backend_retry_main, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_5_session_warning_main (22 renders)
 - ` pass ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (2625807 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (131 renders); sweep scenario/between/120x33, scenario/between/160x45 (2625893 renders)
 - ` passed ` ×1
-  - forms ` Wide `; sweep scenario/between/240x67, scenario/crashed/240x67 (1916533 renders)
+  - forms ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (56 renders); sweep scenario/between/240x67, scenario/crashed/240x67 (1916591 renders)
 - ` passed... ` ×1 — truncated, no full form rendered
-  - forms ` Wide `; example ` passed... `; sweep scenario/crashed/240x67, scenario/filler/240x67 (68472 renders)
+  - forms ` Wide `; example ` passed... `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (42 renders); sweep scenario/crashed/240x67, scenario/filler/240x67 (68484 renders)
 - ` projection: \u#e#\u#c\u#a#e\x#b[#J\x#b]#;c;data\x#\r\n\u#b#m\u#d#;title\u#c\u#\u#; continuing the session ` ×1
   - forms ` Medium `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_5_session_warning_main (1 renders)
 - ` projection: warning #; continuing the session ` ×6
@@ -1503,11 +1505,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` qualifying CCD#, CCD# (next step)... ` ×4 — truncated, no full form rendered
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; example ` qualifying CCD0 -1, CCD1 0 (next step) `; sweep scenario/qualification/120x33, scenario/qualification/160x45 (993 renders)
 - ` rate of R# all threads ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; sweep scenario/day-step/240x67, scenario/filler/160x45 (116376 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (2 renders); sweep scenario/day-step/240x67, scenario/filler/160x45 (116376 renders)
 - ` rate of R# light core + heavy neighbours ` ×5
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; sweep scenario/crashed/120x33, scenario/crashed/160x45 (48467 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (3 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (48475 renders)
 - ` rebooted ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/2662-trial.end/120x33/plus40, sweep/filler/2662-trial.end/160x45/plus40 (562 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/2663-trial.end/120x33/plus40, sweep/filler/2663-trial.end/160x45/plus40 (570 renders)
 - ` repro ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/calendar/16159-night.reproduction/120x33/plus40, sweep/calendar/16159-night.reproduction/160x45/plus40 (53 renders)
 - ` reproduction ` ×1
@@ -1519,9 +1521,9 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` session resumed ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (27 renders)
 - ` session started on # cores ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (213 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2176 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (215 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2195 renders)
 - ` start ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (213 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2176 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (215 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2195 renders)
 - ` step ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/day-step/120x33, scenario/day-step/160x45 (944 renders)
 - ` stop ` ×1
@@ -1529,9 +1531,9 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` stopped ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/day-step/120x33, scenario/day-step/160x45 (5630 renders)
 - ` the backend quit ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (932 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (940 renders)
 - ` the exact profile... ` ×2 — truncated, no full form rendered
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; example ` the exact profile `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (771963 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; example ` the exact profile `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (771978 renders)
 - ` trial ended before its full... ` ×3 — truncated, no full form rendered
   - forms ` Wide `; 2 cuts folded in; example ` trial ended before its full... `; sweep scenario/day-step/240x67, scenario/qualification/240x67 (1655 renders)
 - ` trial... ` ×1 — truncated, no full form rendered
@@ -1543,21 +1545,21 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` veto on CCD#, CCD# from boot calendar ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (466 renders)
 - ` with the offsets applied, rebooted ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/deadend/120x33, scenario/deadend/160x45 (79 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/deadend/120x33, scenario/deadend/160x45 (83 renders)
 - ` write state projection: w#; continuing... ` ×3 — truncated, no full form rendered
   - forms ` Compact `; example ` write state projection: w2; continuing... `; tests terminal::tests::one_frame_of_a_journal_shows_its_session, terminal::tests::the_frame_is_drawn_from_the_journal (5 renders)
 - ` wrong result ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/4397-trial.end/120x33/plus40, sweep/filler/4397-trial.end/160x45/plus40 (429 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/4399-trial.end/120x33/plus40, sweep/filler/4399-trial.end/160x45/plus40 (429 renders)
 - ` {#m | #s} elapsed ` ×157
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests terminal::real_process::real_process_helper (1 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (91951 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (12 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (91969 renders)
 - ` {CCD# edge | core #} fails at # ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; sweep scenario/crashed/120x33, scenario/crashed/160x45 (2436 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; sweep scenario/crashed/120x33, scenario/crashed/160x45 (2444 renders)
 - ` {control | filler | mapping} task # ` ×47
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; 3 templates merged; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (2200957 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; 3 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (129 renders); sweep scenario/between/120x33, scenario/between/160x45 (2201056 renders)
 - ` {corrected | uncorrected} hardware error ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; sweep scenario/deadend/120x33, scenario/deadend/160x45 (561 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; sweep scenario/deadend/120x33, scenario/deadend/160x45 (565 renders)
 - ` {fallback | measured} slope ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; 2 templates merged; sweep scenario/crashed/160x45, scenario/crashed/240x67 (453771 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (113 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (453837 renders)
 - ` {promote | retreat} CCD# to CCD#, CCD# ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; sweep scenario/day-step/120x33, scenario/day-step/160x45 (944 renders)
 
@@ -1566,33 +1568,33 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # on # ` ×18
   - forms ` Medium `, ` Wide `; sweep sweep/calendar/0847-trial.end/160x45/plus40, sweep/calendar/0847-trial.end/240x67/event (10047 renders)
 - ` # on core # ` ×44
-  - forms ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (45 renders); sweep scenario/between/160x45, scenario/between/240x67 (97247 renders)
+  - forms ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (51 renders); sweep scenario/between/160x45, scenario/between/240x67 (97250 renders)
 - ` CRASH ` ×1
-  - forms ` Medium `, ` Wide `; sweep sweep/filler/2662-trial.end/160x45/plus40, sweep/filler/2662-trial.end/240x67/event (225 renders)
+  - forms ` Medium `, ` Wide `; sweep sweep/filler/2663-trial.end/160x45/plus40, sweep/filler/2663-trial.end/240x67/event (231 renders)
 - ` FAILURE ` ×1
-  - forms ` Medium `, ` Wide `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (771 renders)
+  - forms ` Medium `, ` Wide `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (774 renders)
 - ` INCONCLUSIVE ` ×1
   - forms ` Medium `, ` Wide `; sweep scenario/day-step/160x45, scenario/day-step/240x67 (1027 renders)
 - ` PASS ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (45 renders); sweep scenario/between/160x45, scenario/between/240x67 (105372 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (51 renders); sweep scenario/between/160x45, scenario/between/240x67 (105372 renders)
 - ` Tctl max #°C ` ×15
-  - forms ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper (1 renders); sweep scenario/between/160x45, scenario/between/240x67 (47430 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (7 renders); sweep scenario/between/160x45, scenario/between/240x67 (47430 renders)
 - ` core # named ` ×1
   - forms ` Wide `; sweep scenario/crashed/240x67, scenario/recovering/240x67 (364 renders)
 - ` core # named... ` ×1 — truncated, no full form rendered
-  - forms ` Medium `; example ` core 05 named... `; sweep sweep/filler/4397-trial.end/160x45/plus40, sweep/filler/4398-failure/160x45/plus40 (59 renders)
+  - forms ` Medium `; example ` core 05 named... `; sweep sweep/filler/4399-trial.end/160x45/plus40, sweep/filler/4400-failure/160x45/plus40 (59 renders)
 - ` corrected hardware error... ` ×2 — truncated, no full form rendered
-  - forms ` Medium `, ` Wide `; 1 cuts folded in; example ` corrected hardware error `; sweep sweep/filler/3668-trial.end/160x45/plus40, sweep/filler/3668-trial.end/240x67/event (177 renders)
+  - forms ` Medium `, ` Wide `; 1 cuts folded in; example ` corrected hardware error `; sweep sweep/filler/3670-trial.end/160x45/plus40, sweep/filler/3670-trial.end/240x67/event (177 renders)
 - ` last trial ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (45 renders); sweep scenario/between/160x45, scenario/between/240x67 (107395 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (51 renders); sweep scenario/between/160x45, scenario/between/240x67 (107404 renders)
 - ` on core # ` ×1
-  - forms ` Medium `, ` Wide `; sweep sweep/filler/2662-trial.end/160x45/plus40, sweep/filler/2662-trial.end/240x67/event (225 renders)
+  - forms ` Medium `, ` Wide `; sweep sweep/filler/2663-trial.end/160x45/plus40, sweep/filler/2663-trial.end/240x67/event (231 renders)
 - ` the backend quit ` ×1
   - forms ` Medium `, ` Wide `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (370 renders)
 - ` uncorrected hardware error ` ×1
-  - forms ` Medium `, ` Wide `; sweep scenario/deadend/160x45, scenario/deadend/240x67 (47 renders)
+  - forms ` Medium `, ` Wide `; sweep scenario/deadend/160x45, scenario/deadend/240x67 (50 renders)
 - ` wrong result ` ×1
-  - forms ` Medium `, ` Wide `; sweep sweep/filler/4397-trial.end/160x45/plus40, sweep/filler/4397-trial.end/240x67/event (177 renders)
+  - forms ` Medium `, ` Wide `; sweep sweep/filler/4399-trial.end/160x45/plus40, sweep/filler/4399-trial.end/240x67/event (177 renders)
 
 ### `frame.log`
 
@@ -1641,7 +1643,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` crash ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/deadend/log-end/160x45, sweep/deadend/log-end/240x67 (11 renders)
 - ` crash: boot # ended without a clean shutdown; in flight: seq #; the current profile was applied; reset reason: x#/amd: Previous system reset reason [#x#]: hardware watchdog timer... ` ×5 — truncated, no full form rendered
-  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; example ` crash: boot b1a8cebe ended without a clean shutdown; in flight: seq 2659; the current profile was applied; reset reason: x86/amd: Previous system reset reason [0x00000001]: hardware watchdog timer... `; sweep sweep/deadend/log-end/160x45, sweep/deadend/log-end/240x67 (8 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; example ` crash: boot b1a8cebe ended without a clean shutdown; in flight: seq 2660; the current profile was applied; reset reason: x86/amd: Previous system reset reason [0x00000001]: hardware watchdog timer... `; sweep sweep/deadend/log-end/160x45, sweep/deadend/log-end/240x67 (8 renders)
 - ` day ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/calendar/log-end/160x45, sweep/calendar/log-end/240x67 (3 renders)
 - ` day boot ` ×1
@@ -1752,10 +1754,10 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; sweep sweep/night/log-top/160x45, sweep/night/log-top/240x67 (19 renders)
 - ` trial # load steps: #% duty, # ms period ` ×13
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; sweep sweep/night/log-top/160x45, sweep/night/log-top/240x67 (19 renders)
-- ` trial # started pid # in scope togi-trial-# on cpus... ` ×9 — truncated, no full form rendered
-  - forms ` Medium `; example ` trial 0243 started pid 1243 in scope togi-trial-0243 on cpus... `; sweep sweep/filler/log-end/160x45, sweep/night/log-end/160x45 (9 renders)
+- ` trial # started pid # in scope togi-trial-# on cpus... ` ×8 — truncated, no full form rendered
+  - forms ` Medium `; example ` trial 0243 started pid 1243 in scope togi-trial-0243 on cpus... `; sweep sweep/night/log-end/160x45 (8 renders)
 - ` trial # started pid # in scope togi-trial-# on {cpu | cpus} # ` ×102
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; 2 templates merged; sweep sweep/deadend/log-end/160x45, sweep/deadend/log-end/240x67 (152 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; 2 templates merged; sweep sweep/deadend/log-end/160x45, sweep/deadend/log-end/240x67 (153 renders)
 - ` trial night-trial-# INCONCLUSIVE after # s: trial ended before its full duration; stopped by signal ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; sweep sweep/calendar/log-end/160x45, sweep/calendar/log-end/240x67 (15 renders)
 - ` trial night-trial-# PASS # s ` ×23
@@ -1789,38 +1791,38 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 
 ### `frame.now`
 
-- ` # left ` ×8
-  - forms ` Compact `, ` Medium `; tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_3_medium_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_4_medium_rich (74 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (6254 renders)
-- ` # of # ` ×18
-  - forms ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (53 renders); sweep scenario/controls/240x67, scenario/filler/240x67 (13659 renders)
-- ` # past its end ` ×8
+- ` # left ` ×16
+  - forms ` Compact `, ` Medium `; tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_3_medium_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_4_medium_rich (106 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (6254 renders)
+- ` # of # ` ×29
+  - forms ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (65 renders); sweep scenario/controls/240x67, scenario/filler/240x67 (13659 renders)
+- ` # past its end ` ×10
   - forms ` Compact `, ` Medium `; tests frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash, terminal::real_process::real_process_helper (6 renders); sweep sweep/calendar/0014-trial.start/120x33/overdue, sweep/calendar/0014-trial.start/160x45/overdue (7408 renders)
 - ` # worker ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (10 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (34725 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (18 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (34725 renders)
 - ` # workers ` ×8
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (123 renders); sweep sweep/calendar/0781-trial.intent/120x33/plus40, sweep/calendar/0781-trial.intent/160x45/plus40 (3936 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (124 renders); sweep sweep/calendar/0781-trial.intent/120x33/plus40, sweep/calendar/0781-trial.intent/160x45/plus40 (3936 renders)
 - ` A later boot has written events, so the machine restarted before this trial recorded its end. ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (36 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (43 renders)
 - ` BETWEEN TRIALS ` ×1
-  - forms ` Compact `; tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (20 renders); sweep scenario/between/120x33, sweep/calendar/0000-session.start/120x33/plus40 (7613 renders)
+  - forms ` Compact `; tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (20 renders); sweep scenario/between/120x33, sweep/calendar/0000-session.start/120x33/plus40 (7617 renders)
 - ` BETWEEN TRIALS ▮ ` ×3
-  - forms ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/160x45, scenario/between/240x67 (22838 renders)
+  - forms ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/160x45, scenario/between/240x67 (22850 renders)
 - ` CONTROLS AT CO # ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (3 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (16886 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, terminal::real_process::real_process_helper (4 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (16886 renders)
 - ` CRASHED, NOT YET RECOVERED ▮ ` ×4
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (34 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (43 renders)
 - ` DEAD END ` ×1
-  - forms ` Compact `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_4_dead_end, frames::frame_tests::bounds::deadend::screens (7 renders); sweep scenario/deadend/120x33, sweep/deadend/0062-deadend/120x33/plus40 (12 renders)
+  - forms ` Compact `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_4_dead_end, frames::frame_tests::bounds::deadend::screens (7 renders); sweep scenario/deadend/120x33, sweep/deadend/0064-deadend/120x33/plus40 (12 renders)
 - ` DEAD END ▮ ` ×3
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (19 renders); sweep scenario/deadend/160x45, scenario/deadend/240x67 (11 renders)
 - ` DEAD END... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` DEAD END... `; sweep sweep/deadend/skipped/20x30 (1 renders)
 - ` NOW ▮ trial {# | night-trial-# | t#} ` ×4122
-  - forms ` Medium `, ` Wide `; 3 templates merged; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (94 renders); sweep scenario/controls/160x45, scenario/controls/240x67 (29030 renders)
+  - forms ` Medium `, ` Wide `; 3 templates merged; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (102 renders); sweep scenario/controls/160x45, scenario/controls/240x67 (29030 renders)
 - ` QUALIFYING # ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (24 renders); sweep sweep/staged/qualifying/120x33/overdue, sweep/staged/qualifying/120x33/plus40 (8 renders)
 - ` R# ` ×9
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (184 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (38708 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (193 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (38708 renders)
 - ` R# all-core on # ` ×15
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/calendar/0851-trial.end/120x33/plus40, sweep/calendar/0851-trial.end/160x45/plus40 (2360 renders)
 - ` R# idle + bursts on # ` ×1
@@ -1836,7 +1838,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` R# {all threads | both threads | heavy vector | load steps | partial load} on core # ` ×80
   - forms ` Compact `, ` Medium `, ` Wide `; 5 templates merged; sweep scenario/between/120x33, scenario/between/160x45 (16051 renders)
 - ` RECOVERED FROM A CRASH ▮ ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (19 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (359 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (19 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (371 renders)
 - ` REPRODUCING EXACT PROFILE ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (18 renders); sweep sweep/staged/reproducing/120x33/overdue, sweep/staged/reproducing/120x33/plus40 (8 renders)
 - ` REQUALIFYING # ` ×1
@@ -1844,7 +1846,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` RETRY ` ×1
   - forms ` Wide `; tests frames::frame_tests::policy_states::a_retried_re_qualification_says_so (1 renders)
 - ` Rows show the saved profile, not applied now. ` ×5
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (26 renders); sweep sweep/filler/8986-shutdown/120x33/plus40, sweep/filler/8986-shutdown/160x45/plus40 (17 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (26 renders); sweep sweep/filler/8988-shutdown/120x33/plus40, sweep/filler/8988-shutdown/160x45/plus40 (17 renders)
 - ` STOPPED ` ×1
   - forms ` Compact `; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (8 renders); sweep scenario/day-step/120x33, scenario/qualification/120x33 (18607 renders)
 - ` STOPPED ▮ ` ×2
@@ -1860,15 +1862,15 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` containment: termination unconfirmed ` ×1
   - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (1 renders)
 - ` core # named ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/2603-trial.end/120x33/plus40, sweep/filler/2603-trial.end/160x45/plus40 (664 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/2604-trial.end/120x33/plus40, sweep/filler/2604-trial.end/160x45/plus40 (664 renders)
 - ` corrected hardware error ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/3668-trial.end/120x33/plus40, sweep/filler/3668-trial.end/160x45/plus40 (224 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/3670-trial.end/120x33/plus40, sweep/filler/3670-trial.end/160x45/plus40 (224 renders)
 - ` crash in R# light on # ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (19 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (359 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (19 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (371 renders)
 - ` detected # after a watchdog reset ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (19 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (359 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (19 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (371 renders)
 - ` early in the trial ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/deadend/0049-trial.end/120x33/plus40, sweep/deadend/0049-trial.end/160x45/plus40 (340 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/deadend/0050-trial.end/120x33/plus40, sweep/deadend/0050-trial.end/160x45/plus40 (352 renders)
 - ` ends at ` ×1
   - forms ` Wide `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (13 renders); sweep scenario/idle/240x67, sweep/calendar/0846-trial.start/240x67/event (23 renders)
 - ` every thread, alternating with one thread ` ×1
@@ -1880,11 +1882,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` idle + bursts ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (46 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (63 renders)
 - ` last sample # of # ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/deadend/0049-trial.end/120x33/plus40, sweep/deadend/0049-trial.end/160x45/plus40 (340 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/deadend/0050-trial.end/120x33/plus40, sweep/deadend/0050-trial.end/160x45/plus40 (352 renders)
 - ` last: {FAILURE | INCONCLUSIVE | PASS} after # ` ×8
   - forms ` Compact `, ` Medium `, ` Wide `; 3 templates merged; tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_not_a_countdown (29 renders); sweep scenario/between/120x33, scenario/between/160x45 (29887 renders)
 - ` left ` ×1
-  - forms ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (52 renders); sweep scenario/controls/240x67, scenario/filler/240x67 (9955 renders)
+  - forms ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (64 renders); sweep scenario/controls/240x67, scenario/filler/240x67 (9955 renders)
 - ` light core beside heavy neighbours ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/calendar/0913-trial.intent/120x33/plus40, sweep/calendar/0913-trial.intent/160x45/plus40 (3504 renders)
 - ` load steps ` ×1
@@ -1892,11 +1894,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` mprime {AVX#K-#K | AVX-#K-#K} ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (25 renders); sweep sweep/calendar/0205-trial.intent/120x33/plus40, sweep/calendar/0205-trial.intent/160x45/plus40 (9284 renders)
 - ` next trial: {deciding | filler} ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (66 renders); sweep scenario/between/120x33, scenario/between/160x45 (30810 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (66 renders); sweep scenario/between/120x33, scenario/between/160x45 (30838 renders)
 - ` no evidence: kernel log unreadable: permission denied ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_4_dead_end (23 renders); sweep sweep/staged/deadend/120x33/plus40, sweep/staged/deadend/160x45/plus40 (4 renders)
 - ` on # ` ×31
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (138 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (38661 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (147 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (38661 renders)
 - ` on all # cores ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (2 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (43 renders)
 - ` on no cores ` ×1
@@ -1920,7 +1922,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` stopped by a signal ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (27 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (74320 renders)
 - ` the backend quit ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/2603-trial.end/120x33/plus40, sweep/filler/2603-trial.end/160x45/plus40 (440 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/2604-trial.end/120x33/plus40, sweep/filler/2604-trial.end/160x45/plus40 (440 renders)
 - ` thermal trip: firmware reported a thermal trip ` ×1
   - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_3_thermal_trip (1 renders)
 - ` togi run records the crash and picks up from the journal. ` ×1
@@ -1930,7 +1932,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` workload has not started yet ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::holds::a_trial_intent_before_its_start_does_not_freeze, frames::frame_tests::live_panels::live_panels_keep_their_rectangles_from_a_running_trial_to_the_next (6 renders); sweep sweep/calendar/0013-trial.intent/120x33/plus40, sweep/calendar/0013-trial.intent/160x45/plus40 (11340 renders)
 - ` wrong result ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/4397-trial.end/120x33/plus40, sweep/filler/4397-trial.end/160x45/plus40 (224 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/4399-trial.end/120x33/plus40, sweep/filler/4399-trial.end/160x45/plus40 (224 renders)
 - ` y-cruncher BKT + SFTv# ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/calendar/0077-trial.intent/120x33/plus40, sweep/calendar/0077-trial.intent/160x45/plus40 (7692 renders)
 - ` y-cruncher FFTv# + N# + VT# ` ×1
@@ -1938,11 +1940,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` y-cruncher SNT + SVT ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/calendar/0141-trial.intent/120x33/plus40, sweep/calendar/0141-trial.intent/160x45/plus40 (7212 renders)
 - ` {FILLER | MAPPING} CCD # AT # ` ×22
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (47 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (21794 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (54 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (21794 renders)
 - ` {MPRIME | mprime} SSE #K-#K ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (208 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (10273 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (218 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (10273 renders)
 - ` {all-core | light | partial} load ` ×3
-  - forms ` Compact `, ` Medium `, ` Wide `; 3 templates merged; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (113 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (18453 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 3 templates merged; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (122 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (18453 renders)
 
 ### `frame.say`
 
@@ -1952,7 +1954,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
   - forms ` Medium `; tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (2 renders)
 - ` # it froze ` ×1
   - forms ` Medium `; tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (2 renders)
-- ` # past its planned end, no trial end recorded. Its deadline or watchdog may still be running. ` ×16
+- ` # past its planned end, no trial end recorded. Its deadline or watchdog may still be running. ` ×20
   - forms ` Compact `, ` Medium `, ` Wide `; 6 cuts folded in; tests frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash, terminal::real_process::real_process_helper (9 renders); sweep sweep/calendar/0014-trial.start/120x33/overdue, sweep/calendar/0014-trial.start/160x45/overdue (14816 renders)
 - ` A trial failed conclusively with every CCD at CO #, so the platform is unstable at stock and Curve Optimizer is... ` ×9 — truncated, no full form rendered
   - forms ` Compact `, ` Medium `, ` Wide `; 8 cuts folded in; example ` A trial failed conclusively with every CCD at CO 0, so the platform is unstable at stock and Curve `; sweep scenario/deadend/120x33, scenario/deadend/160x45 (20 renders)
@@ -1963,17 +1965,17 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` Boot calendar ended unclean: togi day answer calendar-boot-# frozen|graphics|power-off|unsure ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; sweep sweep/calendar/15007-day.unclean_end/120x33/plus40, sweep/calendar/15007-day.unclean_end/160x45/plus40 (5 renders)
 - ` CONTROLS ` ×1
-  - forms ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper (1 renders); sweep scenario/controls/160x45, scenario/controls/240x67 (5834 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, terminal::real_process::real_process_helper (2 renders); sweep scenario/controls/160x45, scenario/controls/240x67 (5834 renders)
 - ` CRASHED ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (23 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (32 renders)
 - ` Control at CO # (control task #). ` ×1
-  - forms ` Compact `, ` Medium `; sweep scenario/controls/120x33, scenario/controls/160x45 (2614 renders)
+  - forms ` Compact `, ` Medium `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls (1 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2614 renders)
 - ` Control trial with every CCD at CO #. A failure here is a failure at stock, not Curve Optimizer's. ` ×1
   - forms ` Wide `; sweep scenario/controls/240x67, sweep/calendar/0014-trial.start/240x67/event (4495 renders)
 - ` Controls establish how the machine behaves at stock before any nonzero test. ` ×1
   - forms ` Wide `; sweep scenario/controls/240x67, sweep/calendar/0014-trial.start/240x67/event (4495 renders)
 - ` DAY ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (28 renders); sweep sweep/calendar/0002-session.baseline/160x45/plus40, sweep/calendar/0002-session.baseline/240x67/event (45 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (29 renders); sweep sweep/calendar/0002-session.baseline/160x45/plus40, sweep/calendar/0002-session.baseline/240x67/event (45 renders)
 - ` DAY QUESTION ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (2 renders); sweep sweep/calendar/15007-day.unclean_end/160x45/plus40, sweep/calendar/15007-day.unclean_end/240x67/event (3 renders)
 - ` DEAD END ` ×1
@@ -1981,39 +1983,39 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` Every core idle with short wake-ups; this screen holds still. ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (37 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (47 renders)
 - ` Every planned task is done; filler work runs until you end the night. ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (39 renders); sweep scenario/between/120x33, scenario/between/160x45 (30122 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (39 renders); sweep scenario/between/120x33, scenario/between/160x45 (30128 renders)
 - ` FILLER ` ×1
-  - forms ` Medium `, ` Wide `; sweep scenario/filler/160x45, scenario/filler/240x67 (6 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (1 renders); sweep scenario/filler/160x45, scenario/filler/240x67 (6 renders)
 - ` Filler probe on CCD # at # (filler task #). ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (1 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
 - ` I couldn't confirm that the stress programs were contained and cleaned up safely, so tuning can't continue. Check the recorded ` ×2
   - forms ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_1_dead_end_main (2 renders)
 - ` I couldn't obtain conclusive trial evidence, so I can't continue testing safely. Check the recorded details... ` ×7 — truncated, no full form rendered
   - forms ` Compact `, ` Medium `, ` Wide `; 6 cuts folded in; example ` I couldn't obtain conclusive trial evidence, so I can't continue testing safely. Check the recorded `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_4_dead_end (28 renders); sweep sweep/staged/deadend/120x33/plus40, sweep/staged/deadend/160x45/plus40 (4 renders)
 - ` I picked up from the journal after the reboot; nothing it recorded is lost. ` ×5
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (27 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (449 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (27 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (464 renders)
 - ` I restored baseline or shallower offsets before stopping. togi run picks up where I left off. ` ×10
-  - forms ` Compact `, ` Medium `, ` Wide `; 9 cuts folded in; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (30 renders); sweep sweep/filler/8986-shutdown/120x33/plus40, sweep/filler/8986-shutdown/160x45/plus40 (17 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 9 cuts folded in; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (30 renders); sweep sweep/filler/8988-shutdown/120x33/plus40, sweep/filler/8988-shutdown/160x45/plus40 (17 renders)
 - ` I've stopped. Everything I learned is in the journal; togi run picks up where I left off. ` ×9
   - forms ` Compact `, ` Medium `, ` Wide `; 8 cuts folded in; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (8 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (92882 renders)
 - ` I've... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` I've... `; sweep sweep/calendar/skipped/20x30, sweep/mapped/skipped/20x30 (3 renders)
 - ` MAPPING ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (30 renders); sweep scenario/mapping/160x45, scenario/mapping/240x67 (7262 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (35 renders); sweep scenario/mapping/160x45, scenario/mapping/240x67 (7262 renders)
 - ` Mapping CCD # at # (mapping task #). ` ×29
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (44 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (50 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
 - ` NIGHT ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (57 renders); sweep scenario/between/160x45, scenario/between/240x67 (38371 renders)
 - ` No trial has run yet; the tuner records what it decides before the first one starts. ` ×5
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (29 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (663 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (29 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (683 renders)
 - ` Optimizer is not the cause. Check the rest of the system before tuning again. ` ×1
-  - forms ` Wide `; sweep scenario/deadend/240x67, sweep/deadend/0062-deadend/240x67/event (5 renders)
+  - forms ` Wide `; sweep scenario/deadend/240x67, sweep/deadend/0064-deadend/240x67/event (5 renders)
 - ` QUALIFYING ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (16 renders); sweep sweep/staged/qualifying/160x45/plus40, sweep/staged/qualifying/240x67/event (4 renders)
 - ` Qualifying the exact profile, CCD # at #, CCD # at # {(qualification | (requalification} task #). ` ×6
   - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; 2 templates merged; tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (33 renders); sweep sweep/staged/qualifying/120x33/plus40, sweep/staged/qualifying/160x45/plus40 (6 renders)
 - ` RECOVERED ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (13 renders); sweep scenario/recovering/160x45, scenario/recovering/240x67 (269 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (13 renders); sweep scenario/recovering/160x45, scenario/recovering/240x67 (278 renders)
 - ` REPRODUCING ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (12 renders); sweep sweep/staged/reproducing/160x45/plus40, sweep/staged/reproducing/240x67/event (4 renders)
 - ` REQUALIFYING ` ×1
@@ -2023,15 +2025,15 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` STOPPED ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (18 renders); sweep scenario/day-step/160x45, scenario/day-step/240x67 (55718 renders)
 - ` TOGI ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (20 renders); sweep sweep/calendar/0000-session.start/160x45/plus40, sweep/calendar/0000-session.start/240x67/event (342 renders)
+  - forms ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (20 renders); sweep sweep/calendar/0000-session.start/160x45/plus40, sweep/calendar/0000-session.start/240x67/event (354 renders)
 - ` The CPU shut down from heat. Check the cooling before tuning again. ` ×1
   - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_3_thermal_trip (1 renders)
 - ` The trial's intent is recorded; its offsets are being applied and its workload is starting. ` ×4
   - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; tests frames::frame_tests::holds::a_trial_intent_before_its_start_does_not_freeze, frames::frame_tests::live_panels::live_panels_keep_their_rectangles_from_a_running_trial_to_the_next (9 renders); sweep sweep/calendar/0013-trial.intent/120x33/plus40, sweep/calendar/0013-trial.intent/160x45/plus40 (14175 renders)
 - ` The trial's intent names no night task, so all I can say is what its band shows. ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (47 renders); sweep sweep/staged/day/120x33/plus40, sweep/staged/day/160x45/plus40 (5 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (48 renders); sweep sweep/staged/day/120x33/plus40, sweep/staged/day/160x45/plus40 (5 renders)
 - ` Trial # ended: failure. ` ×3
-  - forms ` Wide `; sweep sweep/filler/2603-trial.end/240x67/event, sweep/filler/2603-trial.end/240x67/plus40 (444 renders)
+  - forms ` Wide `; sweep sweep/filler/2604-trial.end/240x67/event, sweep/filler/2604-trial.end/240x67/plus40 (444 renders)
 - ` Trial night-trial-# ended: inconclusive. ` ×1
   - forms ` Wide `; sweep sweep/calendar/1011-trial.end/240x67/event, sweep/calendar/1011-trial.end/240x67/plus40 (2 renders)
 - ` Trial {# | \u#e#\u#c\u#a#e\x#b]#;title\x#\r\n\u#b#J | t#} crashed: a later boot has written events. togi run records the crash. ` ×10
@@ -2052,21 +2054,21 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 ### `frame.stage`
 
 - ` #m ` ×31
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one (137 renders); sweep scenario/between/160x45, scenario/between/240x67 (51782 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one (147 renders); sweep scenario/between/160x45, scenario/between/240x67 (51791 renders)
 - ` controls at CO # ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (3 renders); sweep scenario/between/120x33, scenario/between/160x45 (25157 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, terminal::real_process::real_process_helper (4 renders); sweep scenario/between/120x33, scenario/between/160x45 (25161 renders)
 - ` filler ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/8932-night.plan/120x33/plus40, sweep/filler/8932-night.plan/160x45/plus40 (208 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/filler/8934-night.plan/120x33/plus40, sweep/filler/8934-night.plan/160x45/plus40 (208 renders)
 - ` filler C# ` ×1
-  - forms ` Compact `; sweep scenario/filler/120x33, sweep/filler/8958-trial.intent/120x33/plus40 (4 renders)
+  - forms ` Compact `; sweep scenario/filler/120x33, sweep/filler/8960-trial.intent/120x33/plus40 (4 renders)
 - ` filler on CCD # ` ×1
-  - forms ` Medium `, ` Wide `; sweep scenario/filler/160x45, scenario/filler/240x67 (11 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (1 renders); sweep scenario/filler/160x45, scenario/filler/240x67 (11 renders)
 - ` mapping ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (22 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (21811 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (22 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (21819 renders)
 - ` mapping C# ` ×21
-  - forms ` Compact `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (22 renders); sweep scenario/crashed/120x33, scenario/mapping/120x33 (5453 renders)
+  - forms ` Compact `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (23 renders); sweep scenario/crashed/120x33, scenario/mapping/120x33 (5453 renders)
 - ` mapping CCD # at # ` ×21
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (49 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (16357 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (57 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (16357 renders)
 - ` qualifying # ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (23 renders); sweep sweep/staged/qualifying/120x33/overdue, sweep/staged/qualifying/120x33/plus40 (8 renders)
 - ` reproducing ` ×1
@@ -2076,11 +2078,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` requalifying # ` ×1
   - forms ` Wide `; tests frames::frame_tests::policy_states::a_retried_re_qualification_says_so (1 renders)
 - ` {► | ○} NIGHT #m ` ×35
-  - forms ` Compact `; 2 templates merged; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one (61 renders); sweep scenario/between/120x33, scenario/controls/120x33 (17263 renders)
-- ` {► | ○} NIGHT since # ` ×7
-  - forms ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one (137 renders); sweep scenario/between/160x45, scenario/between/240x67 (51782 renders)
+  - forms ` Compact `; 2 templates merged; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one (62 renders); sweep scenario/between/120x33, scenario/controls/120x33 (17266 renders)
+- ` {► | ○} NIGHT since # ` ×13
+  - forms ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one (147 renders); sweep scenario/between/160x45, scenario/between/240x67 (51791 renders)
 - ` ► DAY ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (68 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (516 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (69 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (532 renders)
 - ` ○ DEAD END ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (26 renders); sweep sweep/staged/deadend/120x33/plus40, sweep/staged/deadend/160x45/plus40 (4 renders)
 - ` ○ STOPPED ` ×1
@@ -2188,21 +2190,21 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # passed ` ×2
   - forms ` Passes `; tests tests::history::passes_of_one_night_trial_merge_and_another_subject_starts_a_line, tests::history::repeated_passes_fold_into_one_line_and_other_lines_never_merge (2 renders); sweep scenario/stopped/240x67, sweep/calendar/0911-trial.end/120x33/plus40 (2488 renders)
 - ` # task ` ×1
-  - forms ` Said `; tests terminal::real_process::real_process_helper (1 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7170 renders)
+  - forms ` Said `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, terminal::real_process::real_process_helper (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7174 renders)
 - ` # tasks ` ×30
-  - forms ` Said `; tests terminal::real_process::real_process_helper, tests::describe::a_night_reads_in_order_from_plan_to_promotion (5 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (91307 renders)
+  - forms ` Said `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (13 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (91324 renders)
 - ` # {cell | cells} witnessed ` ×3
   - forms ` Said `; 2 templates merged; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::words::a_qualification_speaks_when_it_starts_ends_or_fails_and_not_between (2 renders); sweep sweep/calendar/12878-night.qualification/120x33/plus40, sweep/calendar/12878-night.qualification/160x45/plus40 (990 renders)
 - ` #m eligible ` ×2
   - forms ` Said `; tests tests::describe::a_hold_that_waits_adds_no_line_and_a_reset_hold_does, tests::words::a_hold_speaks_when_its_credit_resets_or_is_recomputed::test_case_2_reset (3 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (479 renders)
 - ` CCD # at # ` ×52
-  - forms ` Failed `, ` Passes `, ` Said `; tests tests::history::a_crash_late_in_a_night_trial_says_how_far_it_got, tests::history::a_failure_draws_its_own_signal_as_the_alarm (7 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1857402 renders)
+  - forms ` Failed `, ` Passes `, ` Said `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (79 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1857476 renders)
 - ` CCD# cap # ` ×6
-  - forms ` Said `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::words::a_cap_names_what_fixed_it_and_its_slope::test_case_1_rate_and_fallback (4 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464711 renders)
+  - forms ` Said `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (11 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464781 renders)
 - ` CCD# edge unknown ` ×2
-  - forms ` Said `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::history::a_night_and_an_edge_are_in_the_history_and_a_resume_follows_the_second_config (3 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2150 renders)
+  - forms ` Said `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::history::a_night_and_an_edge_are_in_the_history_and_a_resume_follows_the_second_config (3 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2158 renders)
 - ` R# all-core on # ` ×15
-  - forms ` Passes `; tests tests::history::a_single_pass_is_one_passed_line (1 renders); sweep scenario/crashed/240x67, scenario/day-step/240x67 (246962 renders)
+  - forms ` Passes `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (41 renders); sweep scenario/crashed/240x67, scenario/day-step/240x67 (246990 renders)
 - ` R# heavy vector on # ` ×1
   - forms ` Failed `, ` Passes `, ` Said `; tests tests::history::a_crash_late_in_a_night_trial_says_how_far_it_got, tests::history::a_night_trial_says_whether_it_is_a_retry::test_case_1_exact_qualification (7 renders)
 - ` R# heavy vector on core # at # ` ×17
@@ -2210,13 +2212,13 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` R# idle + bursts on # ` ×1
   - forms ` Passes `, ` Said `; sweep sweep/calendar/0847-trial.end/120x33/plus40, sweep/calendar/0847-trial.end/160x45/plus40 (3078 renders)
 - ` R# light core + heavy neighbours on core # ` ×16
-  - forms ` Passes `, ` Said `; sweep scenario/crashed/240x67, scenario/day-step/240x67 (259502 renders)
+  - forms ` Passes `, ` Said `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (25 renders); sweep scenario/crashed/240x67, scenario/day-step/240x67 (259514 renders)
 - ` R# light on core # ` ×16
-  - forms ` Passes `, ` Said `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (855946 renders)
+  - forms ` Passes `, ` Said `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (855988 renders)
 - ` R# {all threads | both threads | load steps | partial load} on core # ` ×64
-  - forms ` Passes `, ` Said `; 4 templates merged; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (443199 renders)
+  - forms ` Passes `, ` Said `; 4 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (24 renders); sweep scenario/between/120x33, scenario/between/160x45 (443203 renders)
 - ` Tctl max #°C ` ×16
-  - forms ` Passes `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (20 renders); sweep scenario/between/120x33, scenario/between/160x45 (1046261 renders)
+  - forms ` Passes `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (92 renders); sweep scenario/between/120x33, scenario/between/160x45 (1046347 renders)
 - ` a ` ×1
   - forms ` Passes `; tests tests::history::repeated_passes_fold_into_one_line_and_other_lines_never_merge (1 renders)
 - ` applied day profile CCD#, CCD# ` ×3
@@ -2242,7 +2244,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` checking cycle # start: ` ×1
   - forms ` Said `; tests tests::history::a_kind_of_an_earlier_ruleset_is_the_message_it_recorded, tests::words::a_kind_of_an_earlier_ruleset_says_its_recorded_message_and_nothing_else (2 renders)
 - ` control ` ×1
-  - forms ` Failed `, ` Passes `, ` Said `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (18 renders); sweep scenario/between/120x33, scenario/between/160x45 (477992 renders)
+  - forms ` Failed `, ` Passes `, ` Said `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (18 renders); sweep scenario/between/120x33, scenario/between/160x45 (478004 renders)
 - ` core # backed off from # to # () ` ×1
   - forms ` Said `; tests tests::words::a_kind_of_an_earlier_ruleset_says_its_recorded_message_and_nothing_else (1 renders)
 - ` core # named ` ×1
@@ -2260,7 +2262,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` edge margin ` ×1
   - forms ` Said `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::words::a_cap_names_what_fixed_it_and_its_slope::test_case_2_edge_margin_and_measured (2 renders)
 - ` fails at # ` ×4
-  - forms ` Said `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::history::a_night_and_an_edge_are_in_the_history_and_a_resume_follows_the_second_config (3 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2421 renders)
+  - forms ` Said `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::history::a_night_and_an_edge_are_in_the_history_and_a_resume_follows_the_second_config (3 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2429 renders)
 - ` hold at CCD# {recomputed | reset} ` ×2
   - forms ` Said `; 2 templates merged; tests tests::describe::a_hold_that_waits_adds_no_line_and_a_reset_hold_does, tests::words::a_hold_speaks_when_its_credit_resets_or_is_recomputed::test_case_2_reset (3 renders)
 - ` hold at CCD#, CCD# reset ` ×1
@@ -2268,7 +2270,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` hunt #: unattributed failure in idle; loaded cores # held at their failing offsets, the rest parked at #; candidates #; groups of # × # s ` ×1
   - forms ` Said `; tests tests::history::a_kind_of_an_earlier_ruleset_is_the_message_it_recorded, tests::words::a_kind_of_an_earlier_ruleset_says_its_recorded_message_and_nothing_else (2 renders)
 - ` idle with the offsets applied, rebooted ` ×2
-  - forms ` Reboot `; 1 cuts folded in; tests tests::describe::a_resumed_session_is_not_a_resumed_session_when_it_crashed, tests::history::multiple_reboots_stay_distinct (8 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (79 renders)
+  - forms ` Reboot `; 1 cuts folded in; tests tests::describe::a_resumed_session_is_not_a_resumed_session_when_it_crashed, tests::history::multiple_reboots_stay_distinct (8 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (83 renders)
 - ` idle with the offsets applied, the backend stalled ` ×2
   - forms ` Failed `, ` Said `; 1 cuts folded in; tests tests::describe::a_failure_says_which_core_failed_where_or_that_the_machine_idled, tests::history::a_night_trial_says_whether_it_is_a_retry::test_case_1_exact_qualification (3 renders)
 - ` imported # of # selected records from # sessions ` ×1
@@ -2278,15 +2280,15 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` logical CPU # corrected error between trials (recorded only) ` ×1
   - forms ` Said `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders)
 - ` mapping ` ×1
-  - forms ` Failed `, ` Passes `, ` Said `; tests tests::history::a_crash_late_in_a_night_trial_says_how_far_it_got, tests::history::a_failure_draws_its_own_signal_as_the_alarm (7 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1857402 renders)
+  - forms ` Failed `, ` Passes `, ` Said `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (79 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1857476 renders)
 - ` night {opened | replanned} ` ×2
-  - forms ` Said `; 2 templates merged; tests terminal::real_process::real_process_helper, tests::describe::a_night_reads_in_order_from_plan_to_promotion (6 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98477 renders)
+  - forms ` Said `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (15 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98498 renders)
 - ` no cap yet ` ×1
-  - forms ` Said `; tests tests::words::a_cap_names_what_fixed_it_and_its_slope::test_case_3_baseline (1 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (336097 renders)
+  - forms ` Said `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (7 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (336159 renders)
 - ` not CPU, resolved ` ×1
   - forms ` Said `; tests tests::words::a_daily_event_names_its_boot_profile_and_class::test_case_3_not_cpu (1 renders)
 - ` passed ` ×1
-  - forms ` Passes `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (22 renders); sweep scenario/between/120x33, scenario/between/160x45 (2623319 renders)
+  - forms ` Passes `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (94 renders); sweep scenario/between/120x33, scenario/between/160x45 (2623405 renders)
 - ` projection: an earlier event; continuing the session ` ×1
   - forms ` Said `; tests tests::describe::a_failure_that_names_a_known_failure_is_worded_like_any_other (1 renders)
 - ` projection: warning #; continuing the session ` ×3
@@ -2304,7 +2306,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` qualifying CCD#, CCD# (re-qualification) ` ×1
   - forms ` Said `; tests tests::words::a_re_qualification_says_what_it_qualifies_for (1 renders)
 - ` rate of R# light core + heavy neighbours ` ×1
-  - forms ` Said `; sweep scenario/crashed/120x33, scenario/crashed/160x45 (15213 renders)
+  - forms ` Said `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (1 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (15221 renders)
 - ` rate of R# {all threads | heavy vector} ` ×2
   - forms ` Said `; 2 templates merged; tests tests::words::a_cap_names_what_fixed_it_and_its_slope::test_case_1_rate_and_fallback (1 renders); sweep scenario/day-step/240x67, scenario/qualification/120x33 (113401 renders)
 - ` re-qualification of night # at per-core [core #: #, core #: #] ` ×1
@@ -2324,13 +2326,13 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` session resumed ` ×1
   - forms ` Said `; tests tests::describe::a_resumed_session_is_not_a_resumed_session_when_it_crashed, tests::history::a_night_and_an_edge_are_in_the_history_and_a_resume_follows_the_second_config (2 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (27 renders)
 - ` session started on # cores ` ×4
-  - forms ` Said `, ` Session `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (126 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2176 renders)
+  - forms ` Said `, ` Session `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (128 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2195 renders)
 - ` stopped ` ×1
   - forms ` Said `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (5630 renders)
 - ` the backend was missing ` ×1
   - forms ` Said `; tests tests::history::an_unclear_night_trial_says_why (1 renders)
 - ` the exact profile ` ×1
-  - forms ` Failed `, ` Passes `, ` Said `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (19 renders); sweep scenario/between/120x33, scenario/between/160x45 (771916 renders)
+  - forms ` Failed `, ` Passes `, ` Said `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (19 renders); sweep scenario/between/120x33, scenario/between/160x45 (771928 renders)
 - ` trial ended before its full duration; stopped by signal ` ×1
   - forms ` Said `; sweep scenario/day-step/120x33, scenario/day-step/160x45 (3511 renders)
 - ` trial {orphan]#;c;payload  	#Jtitle  ‮ | unrelated} ` ×2
@@ -2354,17 +2356,17 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` x[#Jy #m ` ×1
   - forms ` Said `; tests frames::panels::history::tests::a_sentence_with_controls_is_escaped_at_output (1 renders)
 - ` {#m | #s} elapsed ` ×158
-  - forms ` Said `; 2 templates merged; tests terminal::real_process::real_process_helper, tests::words::a_night_plan_says_whether_it_opens_the_night_the_time_observed_and_the_tasks::test_case_2_a_replan (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (91951 renders)
+  - forms ` Said `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (10 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (91969 renders)
 - ` {CCD# edge | core #} fails at # ` ×6
-  - forms ` Said `; 2 templates merged; tests tests::describe::a_failure_says_which_core_failed_where_or_that_the_machine_idled, tests::words::an_edge_change_names_both_edges::test_case_2_censored (3 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2436 renders)
+  - forms ` Said `; 2 templates merged; tests tests::describe::a_failure_says_which_core_failed_where_or_that_the_machine_idled, tests::words::an_edge_change_names_both_edges::test_case_2_censored (3 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2444 renders)
 - ` {CPU-suspect, | unexplained,} unresolved ` ×2
   - forms ` Said `; 2 templates merged; tests tests::words::a_daily_event_names_its_boot_profile_and_class::test_case_1_suspect, tests::words::a_daily_event_names_its_boot_profile_and_class::test_case_4_unexplained (3 renders); sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (450 renders)
 - ` {control | filler | mapping | qualification | reproduction} task # ` ×48
-  - forms ` Failed `, ` Passes `, ` Said `; 5 templates merged; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (24 renders); sweep scenario/between/120x33, scenario/between/160x45 (2629318 renders)
+  - forms ` Failed `, ` Passes `, ` Said `; 5 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (96 renders); sweep scenario/between/120x33, scenario/between/160x45 (2629404 renders)
 - ` {corrected | uncorrected} hardware error ` ×2
   - forms ` Failed `; 2 templates merged; tests tests::history::reboot_history_during_trial::test_case_3_retained_corrected_mce, tests::history::reboot_history_during_trial::test_case_4_retained_uncorrected_mce (2 renders)
 - ` {fallback | measured} slope ` ×2
-  - forms ` Said `; 2 templates merged; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::words::a_cap_names_what_fixed_it_and_its_slope::test_case_1_rate_and_fallback (4 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464711 renders)
+  - forms ` Said `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (11 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464781 renders)
 - ` {firmware changed: | retreat CCD#,} CCD# to CCD#, CCD# ` ×2
   - forms ` Said `; 2 templates merged; tests tests::words::a_hold_proposal_is_silent_and_a_move_is_not (2 renders)
 - ` {promote | retreat} CCD# to CCD#, CCD# ` ×3
@@ -2379,51 +2381,51 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # cells witnessed ` ×1
   - forms (none); sweep sweep/calendar/12878-night.qualification/160x45/plus40, sweep/calendar/12878-night.qualification/240x67/event (920 renders)
 - ` # more ` ×4820
-  - forms (none); tests frames::frame_tests::panels::a_history_too_short_for_its_entries_counts_every_one_it_leaves_out::test_case_1_120x24, frames::frame_tests::panels::a_history_too_short_for_its_entries_counts_every_one_it_leaves_out::test_case_2_120x25 (27 renders); sweep scenario/between/120x33, scenario/between/160x45 (141701 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (34 renders); sweep scenario/between/120x33, scenario/between/160x45 (141710 renders)
 - ` # passed ` ×1
   - forms (none); sweep scenario/stopped/240x67, sweep/calendar/0911-trial.end/240x67/event (1893 renders)
 - ` # task ` ×1
-  - forms (none); tests terminal::real_process::real_process_helper (1 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7170 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, terminal::real_process::real_process_helper (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7174 renders)
 - ` # tasks ` ×30
-  - forms (none); tests terminal::real_process::real_process_helper (1 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (88690 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (11 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (88705 renders)
 - ` #m eligible ` ×1
   - forms (none); sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (436 renders)
 - ` #m... ` ×1 — truncated, no full form rendered
   - forms (none); example ` 1h00m... `; sweep scenario/reproduction/120x33, sweep/calendar/15013-day.hold/120x33/plus40 (43 renders)
 - ` CCD # at # ` ×53
-  - forms (none); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1859162 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (114 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1859246 renders)
 - ` CCD # at #... ` ×4 — truncated, no full form rendered
-  - forms (none); 1 cuts folded in; example ` CCD 0 at -9... `; sweep scenario/crashed/160x45, scenario/recovering/160x45 (445 renders)
+  - forms (none); 1 cuts folded in; example ` CCD 0 at -9... `; sweep scenario/crashed/160x45, scenario/recovering/160x45 (449 renders)
 - ` CCD# cap # ` ×6
-  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464711 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (115 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464781 renders)
 - ` CCD# edge unknown ` ×2
-  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2150 renders)
+  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2158 renders)
 - ` CPU-suspect, {resolved | unresolved} ` ×2
   - forms (none); 2 templates merged; sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (433 renders)
 - ` R# all-core on # ` ×17
-  - forms (none); 2 cuts folded in; sweep scenario/crashed/240x67, scenario/day-step/240x67 (209949 renders)
+  - forms (none); 2 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (49 renders); sweep scenario/crashed/240x67, scenario/day-step/240x67 (209977 renders)
 - ` R# all-core on... ` ×1 — truncated, no full form rendered
-  - forms (none); example ` R7 all-core on... `; sweep scenario/filler/160x45, scenario/mapping/160x45 (19046 renders)
+  - forms (none); example ` R7 all-core on... `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (11 renders); sweep scenario/filler/160x45, scenario/mapping/160x45 (19046 renders)
 - ` R# idle + bursts on # ` ×2
   - forms (none); 1 cuts folded in; sweep sweep/calendar/0847-trial.end/160x45/plus40, sweep/calendar/0847-trial.end/240x67/event (2600 renders)
 - ` R# light core + heavy neighbours on core #... ` ×33 — truncated, no full form rendered
-  - forms (none); 2 cuts folded in; example ` R8 light core + heavy neighbours on core 00 `; sweep scenario/crashed/240x67, scenario/day-step/240x67 (201433 renders)
+  - forms (none); 2 cuts folded in; example ` R8 light core + heavy neighbours on core 00 `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (42 renders); sweep scenario/crashed/240x67, scenario/day-step/240x67 (201445 renders)
 - ` R# light on core # ` ×19
-  - forms (none); 2 cuts folded in; sweep scenario/crashed/160x45, scenario/crashed/240x67 (784106 renders)
+  - forms (none); 2 cuts folded in; sweep scenario/crashed/160x45, scenario/crashed/240x67 (784155 renders)
 - ` R# light on core... ` ×1 — truncated, no full form rendered
   - forms (none); example ` R1 light on core... `; sweep sweep/calendar/1085-trial.end/160x45/plus40, sweep/calendar/1086-exposure.observed/160x45/plus40 (5876 renders)
 - ` R# {all threads | both threads | heavy vector | load steps | partial load} on core # ` ×84
-  - forms (none); 4 cuts folded in; 5 templates merged; tests terminal::real_process::real_process_helper (12 renders); sweep scenario/between/160x45, scenario/between/240x67 (1110498 renders)
+  - forms (none); 4 cuts folded in; 5 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::real_process::real_process_helper (19 renders); sweep scenario/between/160x45, scenario/between/240x67 (1110502 renders)
 - ` R#... ` ×3 — truncated, no full form rendered
-  - forms (none); example ` R1... `; sweep sweep/calendar/0591-trial.end/160x45/plus40, sweep/calendar/0592-exposure.observed/160x45/plus40 (21438 renders)
+  - forms (none); example ` R1... `; sweep sweep/calendar/0591-trial.end/160x45/plus40, sweep/calendar/0592-exposure.observed/160x45/plus40 (21440 renders)
 - ` Tctl max #°C ` ×15
-  - forms (none); sweep scenario/between/240x67, scenario/crashed/240x67 (733492 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (56 renders); sweep scenario/between/240x67, scenario/crashed/240x67 (733550 renders)
 - ` WHAT HAPPENED ` ×1
   - forms (none); tests frames::panels::history::tests::a_row_is_the_local_minute_the_tag_and_the_sentence (1 renders)
 - ` WHAT HAPPENED ▮ l: last # ` ×4
-  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_3_medium_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_4_medium_rich_even (138 renders); sweep scenario/between/120x33, scenario/between/160x45 (71947 renders)
+  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_3_medium_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_4_medium_rich_even (142 renders); sweep scenario/between/120x33, scenario/between/160x45 (71961 renders)
 - ` WHAT HAPPENED ▮ newest first ` ×4
-  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (133 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71930 renders)
+  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (138 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71944 renders)
 - ` applied day profile CCD#, CCD# ` ×2
   - forms (none); sweep scenario/qualification/240x67, scenario/reproduction/120x33 (13373 renders)
 - ` apply ` ×1
@@ -2435,19 +2437,19 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` boot calendar not reproduced on exact profile CCD#, CCD# ` ×3
   - forms (none); 2 cuts folded in; sweep sweep/calendar/16159-night.reproduction/120x33/plus40, sweep/calendar/16159-night.reproduction/160x45/plus40 (53 renders)
 - ` cap ` ×1
-  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464711 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (115 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (464781 renders)
 - ` censored at # ` ×1
   - forms (none); sweep sweep/calendar/7291-ccd.edge/120x33/plus40, sweep/calendar/7291-ccd.edge/160x45/plus40 (733 renders)
 - ` control ` ×1
-  - forms (none); tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (478039 renders)
+  - forms (none); tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (478054 renders)
 - ` core # ` ×1
   - forms (none); tests frames::panels::history::tests::the_alarm_in_a_sentence_is_red (1 renders)
 - ` core # corrected error between trials (recorded only) ` ×1
   - forms (none); tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden (1 renders)
 - ` core # named ` ×1
-  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1361 renders)
+  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1369 renders)
 - ` crash ` ×1
-  - forms (none); sweep scenario/deadend/120x33, scenario/deadend/160x45 (641 renders)
+  - forms (none); sweep scenario/deadend/120x33, scenario/deadend/160x45 (653 renders)
 - ` day ` ×1
   - forms (none); sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (479 renders)
 - ` dead end: \u#e#\u#c\u#a#e\x#b[#J\x#b]#;c;data\x#\r\n\u#b#m\u#d#;title\u#c\u#\u# ` ×1
@@ -2455,15 +2457,15 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` dead end: platform unstable at stock under R# ` ×2
   - forms (none); 1 cuts folded in; sweep scenario/deadend/120x33, scenario/deadend/160x45 (12 renders)
 - ` early in the trial ` ×1
-  - forms (none); sweep sweep/filler/2662-trial.end/240x67/event, sweep/filler/2662-trial.end/240x67/plus40 (384 renders)
+  - forms (none); sweep sweep/filler/2663-trial.end/240x67/event, sweep/filler/2663-trial.end/240x67/plus40 (388 renders)
 - ` edge ` ×1
-  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (3154 renders)
+  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (3162 renders)
 - ` fail ` ×1
-  - forms (none); tests frames::panels::history::tests::the_alarm_in_a_sentence_is_red (1 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (3354 renders)
+  - forms (none); tests frames::panels::history::tests::the_alarm_in_a_sentence_is_red (1 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (3374 renders)
 - ` fails at # ` ×3
-  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2421 renders)
+  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2429 renders)
 - ` filler task #... ` ×1 — truncated, no full form rendered
-  - forms (none); example ` filler task 0... `; sweep sweep/filler/8960-trial.end/120x33/plus40, sweep/filler/8961-smu.intent/120x33/plus40 (28 renders)
+  - forms (none); example ` filler task 0... `; sweep sweep/filler/8962-trial.end/120x33/plus40, sweep/filler/8963-smu.intent/120x33/plus40 (28 renders)
 - ` hold ` ×1
   - forms (none); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (479 renders)
 - ` hold at CCD#, CCD# reset ` ×1
@@ -2471,27 +2473,27 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` l: last # ` ×1
   - forms (none); tests frames::panels::history::tests::a_row_is_the_local_minute_the_tag_and_the_sentence (1 renders)
 - ` l: last # events ` ×1
-  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (133 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71930 renders)
+  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (138 renders); sweep scenario/between/240x67, scenario/controls/240x67 (71944 renders)
 - ` mapping ` ×1
-  - forms (none); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1859607 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (114 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (1859695 renders)
 - ` mapping task #... ` ×10 — truncated, no full form rendered
-  - forms (none); 1 cuts folded in; example ` mapping task 0... `; sweep scenario/day-step/120x33, scenario/filler/120x33 (136282 renders)
+  - forms (none); 1 cuts folded in; example ` mapping task 0... `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_3_mapping_compact (2 renders); sweep scenario/day-step/120x33, scenario/filler/120x33 (136282 renders)
 - ` mce ` ×1
   - forms (none); tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden (1 renders)
 - ` night ` ×1
-  - forms (none); tests terminal::real_process::real_process_helper (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98477 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (14 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98498 renders)
 - ` night {opened | replanned} ` ×2
-  - forms (none); 2 templates merged; tests terminal::real_process::real_process_helper (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98477 renders)
+  - forms (none); 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (14 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (98498 renders)
 - ` no cap yet ` ×1
-  - forms (none); sweep scenario/crashed/160x45, scenario/crashed/240x67 (336097 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (113 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (336159 renders)
 - ` note ` ×1
   - forms (none); tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_3_backend_retry_main, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_5_session_warning_main (897 renders)
 - ` pass ` ×1
-  - forms (none); tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (2625807 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (131 renders); sweep scenario/between/120x33, scenario/between/160x45 (2625893 renders)
 - ` passed ` ×1
-  - forms (none); sweep scenario/between/240x67, scenario/crashed/240x67 (1916533 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (56 renders); sweep scenario/between/240x67, scenario/crashed/240x67 (1916591 renders)
 - ` passed... ` ×1 — truncated, no full form rendered
-  - forms (none); example ` passed... `; sweep scenario/crashed/240x67, scenario/filler/240x67 (68472 renders)
+  - forms (none); example ` passed... `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, terminal::tests::trials_recorded_after_clock_changes_use_the_journals_wall_time::test_case_1_forward_clock_step (42 renders); sweep scenario/crashed/240x67, scenario/filler/240x67 (68484 renders)
 - ` projection: warning #; continuing the session ` ×7
   - forms (none); 2 cuts folded in; tests frames::frame_tests::panels::a_history_too_short_for_its_entries_counts_every_one_it_leaves_out::test_case_1_120x24, frames::frame_tests::panels::a_history_too_short_for_its_entries_counts_every_one_it_leaves_out::test_case_2_120x25 (16 renders)
 - ` projection: {#; | \u#e#\u#c\u#a#e\x#b[#J\x#b]#;c;data\x#\r\n\u#b#m\u#d#;title\u#c\u#\u#;} continuing the session ` ×205
@@ -2507,11 +2509,11 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` qualifying CCD#, CCD# (next step)... ` ×4 — truncated, no full form rendered
   - forms (none); 1 cuts folded in; example ` qualifying CCD0 -1, CCD1 0 (next step) `; sweep scenario/qualification/120x33, scenario/qualification/160x45 (993 renders)
 - ` rate of R# all threads ` ×3
-  - forms (none); 2 cuts folded in; sweep scenario/day-step/240x67, scenario/filler/160x45 (116376 renders)
+  - forms (none); 2 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (2 renders); sweep scenario/day-step/240x67, scenario/filler/160x45 (116376 renders)
 - ` rate of R# light core + heavy neighbours ` ×5
-  - forms (none); 4 cuts folded in; sweep scenario/crashed/120x33, scenario/crashed/160x45 (48467 renders)
+  - forms (none); 4 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (3 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (48475 renders)
 - ` rebooted ` ×1
-  - forms (none); sweep sweep/filler/2662-trial.end/120x33/plus40, sweep/filler/2662-trial.end/160x45/plus40 (562 renders)
+  - forms (none); sweep sweep/filler/2663-trial.end/120x33/plus40, sweep/filler/2663-trial.end/160x45/plus40 (570 renders)
 - ` repro ` ×1
   - forms (none); sweep sweep/calendar/16159-night.reproduction/120x33/plus40, sweep/calendar/16159-night.reproduction/160x45/plus40 (53 renders)
 - ` reproduction ` ×1
@@ -2523,9 +2525,9 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` session resumed ` ×1
   - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (27 renders)
 - ` session started on # cores ` ×3
-  - forms (none); tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (101 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2176 renders)
+  - forms (none); tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (103 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2195 renders)
 - ` start ` ×1
-  - forms (none); tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (101 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2176 renders)
+  - forms (none); tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (103 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (2195 renders)
 - ` step ` ×1
   - forms (none); sweep scenario/day-step/120x33, scenario/day-step/160x45 (944 renders)
 - ` stop ` ×1
@@ -2533,9 +2535,9 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` stopped ` ×1
   - forms (none); sweep scenario/day-step/120x33, scenario/day-step/160x45 (5630 renders)
 - ` the backend quit ` ×1
-  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (932 renders)
+  - forms (none); sweep scenario/crashed/120x33, scenario/crashed/160x45 (940 renders)
 - ` the exact profile... ` ×2 — truncated, no full form rendered
-  - forms (none); 1 cuts folded in; example ` the exact profile `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (771963 renders)
+  - forms (none); 1 cuts folded in; example ` the exact profile `; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (771978 renders)
 - ` trial ended before its full... ` ×3 — truncated, no full form rendered
   - forms (none); 2 cuts folded in; example ` trial ended before its full... `; sweep scenario/day-step/240x67, scenario/qualification/240x67 (1655 renders)
 - ` trial... ` ×1 — truncated, no full form rendered
@@ -2549,25 +2551,25 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` warning # ` ×200
   - forms (none); tests frames::panels::history::tests::a_row_is_the_local_minute_the_tag_and_the_sentence, frames::panels::history::tests::one_entry_leaves_nothing_uncounted::test_case_4_three_rows (616 renders)
 - ` with the offsets applied, rebooted ` ×1
-  - forms (none); sweep scenario/deadend/120x33, scenario/deadend/160x45 (79 renders)
+  - forms (none); sweep scenario/deadend/120x33, scenario/deadend/160x45 (83 renders)
 - ` write state projection: w#; continuing... ` ×3 — truncated, no full form rendered
   - forms (none); example ` write state projection: w2; continuing... `; tests terminal::tests::one_frame_of_a_journal_shows_its_session, terminal::tests::the_frame_is_drawn_from_the_journal (5 renders)
 - ` wrong result ` ×1
-  - forms (none); tests frames::panels::history::tests::the_alarm_in_a_sentence_is_red (1 renders); sweep sweep/filler/4397-trial.end/120x33/plus40, sweep/filler/4397-trial.end/160x45/plus40 (429 renders)
+  - forms (none); tests frames::panels::history::tests::the_alarm_in_a_sentence_is_red (1 renders); sweep sweep/filler/4399-trial.end/120x33/plus40, sweep/filler/4399-trial.end/160x45/plus40 (429 renders)
 - ` x ` ×1
   - forms (none); tests frames::panels::history::tests::a_tag_is_painted_by_its_entry_s_tone::test_case_1_plain, frames::panels::history::tests::a_tag_is_painted_by_its_entry_s_tone::test_case_2_good (4 renders)
 - ` x\x#b[#Jy \u#b#m ` ×1
   - forms (none); tests frames::panels::history::tests::a_sentence_with_controls_is_escaped_at_output (1 renders)
 - ` {#m | #s} elapsed ` ×157
-  - forms (none); 2 templates merged; tests terminal::real_process::real_process_helper (1 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (91951 renders)
+  - forms (none); 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (12 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (91969 renders)
 - ` {CCD# edge | core #} fails at # ` ×4
-  - forms (none); 2 templates merged; sweep scenario/crashed/120x33, scenario/crashed/160x45 (2436 renders)
+  - forms (none); 2 templates merged; sweep scenario/crashed/120x33, scenario/crashed/160x45 (2444 renders)
 - ` {control | filler | mapping} task # ` ×47
-  - forms (none); 2 cuts folded in; 3 templates merged; tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (17 renders); sweep scenario/between/120x33, scenario/between/160x45 (2200957 renders)
+  - forms (none); 2 cuts folded in; 3 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (129 renders); sweep scenario/between/120x33, scenario/between/160x45 (2201056 renders)
 - ` {corrected | uncorrected} hardware error ` ×2
-  - forms (none); 2 templates merged; sweep scenario/deadend/120x33, scenario/deadend/160x45 (561 renders)
+  - forms (none); 2 templates merged; sweep scenario/deadend/120x33, scenario/deadend/160x45 (565 renders)
 - ` {fallback | measured} slope ` ×3
-  - forms (none); 1 cuts folded in; 2 templates merged; sweep scenario/crashed/160x45, scenario/crashed/240x67 (453771 renders)
+  - forms (none); 1 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (113 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (453837 renders)
 - ` {promote | retreat} CCD# to CCD#, CCD# ` ×2
   - forms (none); 2 templates merged; sweep scenario/day-step/120x33, scenario/day-step/160x45 (944 renders)
 
@@ -2586,7 +2588,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` Boot calendar ended unclean: togi day answer calendar-boot-# frozen|graphics|power-off|unsure ` ×1
   - forms ` DAY QUESTION `; sweep sweep/calendar/15007-day.unclean_end/120x33/plus40, sweep/calendar/15007-day.unclean_end/160x45/plus40 (4 renders)
 - ` Control at CO # {(control | (mapping} task #). ` ×2
-  - forms ` CONTROLS `; 2 templates merged; tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (1 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7109 renders)
+  - forms ` CONTROLS `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7109 renders)
 - ` Control at CO #. ` ×1
   - forms ` CONTROLS `; tests frames::story::tests::nights::a_reproduction_and_a_control_say_what_they_do_not_do (1 renders)
 - ` Every core idle with short wake-ups; this screen holds still. ` ×1
@@ -2596,21 +2598,21 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` Failure at CO #: the platform is unstable at stock, so tuning stopped. ` ×1
   - forms ` STOCK FAILURE `; tests frames::story::tests::nights::a_stock_failure_is_not_blamed_on_curve_optimizer (1 renders)
 - ` Filler probe on CCD # at # (filler task #). ` ×2
-  - forms ` FILLER `; tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (1 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
+  - forms ` FILLER `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (2 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
 - ` Filler repeat of the day profile, CCD # at #, CCD # at # (filler task #). ` ×1
   - forms ` FILLER `; tests frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (1 renders)
 - ` I picked up from the journal after the reboot; nothing it recorded is lost. ` ×1
-  - forms ` RECOVERED `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (8 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (359 renders)
+  - forms ` RECOVERED `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (8 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (371 renders)
 - ` Mapping (mapping task #). ` ×1
   - forms ` MAPPING `; tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (1 renders)
 - ` Mapping CCD # at # (mapping task #). ` ×32
-  - forms ` MAPPING `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (21 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
+  - forms ` MAPPING `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (27 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
 - ` Mapping. ` ×1
   - forms ` MAPPING `; tests frames::story::tests::the_story::a_trial_past_its_end_says_how_long_without_claiming_a_crash (1 renders)
 - ` No day profile has been applied; every CCD stays at CO #. ` ×1
   - forms ` NIGHT OVER `, ` TOGI `; tests frames::story::tests::nights::an_open_night_with_no_task_left_runs_filler_and_a_closed_one_gives_way_to_the_day, frames::story::tests::nights::the_day_state_names_the_applied_profile_and_what_the_latest_proposal_says (3 renders)
 - ` No trial has run yet; the tuner records what it decides before the first one starts. ` ×1
-  - forms ` DAY `, ` TOGI `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (25 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (508 renders)
+  - forms ` DAY `, ` TOGI `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (25 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (524 renders)
 - ` Promotion is frozen: the day profile stays, and retreats and firmware resets still apply. ` ×1
   - forms ` DAY `; tests frames::story::tests::nights::the_day_state_names_the_applied_profile_and_what_the_latest_proposal_says (1 renders)
 - ` Qualifying CCD # alone at # (mapping task #). ` ×1
@@ -2627,7 +2629,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
   - forms ` REPRODUCING `; tests frames::story::tests::nights::a_reproduction_and_a_control_say_what_they_do_not_do (1 renders)
 - ` The latest proposal keeps the profile. ` ×1
   - forms ` DAY `; tests frames::story::tests::nights::a_held_step_names_every_blocker (1 renders)
-- ` The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired. ` ×1
+- ` The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired, it failed qualification. ` ×1
   - forms ` DAY `; tests frames::story::tests::nights::a_held_step_names_every_blocker (1 renders)
 - ` The latest proposal promotes CCD #; it counts once it is applied. ` ×1
   - forms ` DAY `; tests frames::story::tests::nights::the_day_says_whether_its_latest_step_was_applied_or_only_proposed (1 renders)
@@ -2645,21 +2647,21 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 ### `story.label`
 
 - ` CONTROLS ` ×1
-  - forms (none); tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, frames::story::tests::nights::a_reproduction_and_a_control_say_what_they_do_not_do (5 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7152 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (6 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7152 renders)
 - ` CRASHED ` ×1
   - forms (none); tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (20 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (43 renders)
 - ` DAY ` ×1
-  - forms (none); tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (26 renders); sweep sweep/calendar/0002-session.baseline/120x33/plus40, sweep/calendar/0002-session.baseline/160x45/plus40 (60 renders)
+  - forms (none); tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (27 renders); sweep sweep/calendar/0002-session.baseline/120x33/plus40, sweep/calendar/0002-session.baseline/160x45/plus40 (60 renders)
 - ` DAY QUESTION ` ×1
   - forms (none); tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (3 renders); sweep sweep/calendar/15007-day.unclean_end/120x33/plus40, sweep/calendar/15007-day.unclean_end/160x45/plus40 (4 renders)
 - ` DEAD END ` ×1
   - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (20 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (24 renders)
 - ` FILLER ` ×1
-  - forms (none); tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step, frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (2 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
+  - forms (none); tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (3 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
 - ` JOURNAL UNREADABLE ` ×1
   - forms (none); tests frames::frame_tests::escapes::a_problem_with_controls_in_its_text_draws_them_visibly_escaped_live_and_in_one_frame, frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_3_problem (10 renders); sweep journal/problem-once/120x33, journal/problem-once/160x45 (6 renders)
 - ` MAPPING ` ×1
-  - forms (none); tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (25 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
+  - forms (none); tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (31 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
 - ` NIGHT ` ×1
   - forms (none); tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (29 renders); sweep scenario/between/120x33, scenario/between/160x45 (52396 renders)
 - ` NIGHT OVER ` ×1
@@ -2669,7 +2671,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` QUALIFYING ` ×1
   - forms (none); tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (11 renders); sweep sweep/staged/qualifying/120x33/plus40, sweep/staged/qualifying/160x45/plus40 (5 renders)
 - ` RECOVERED ` ×1
-  - forms (none); tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (8 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (359 renders)
+  - forms (none); tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (8 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (371 renders)
 - ` REPRODUCING ` ×1
   - forms (none); tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (9 renders); sweep sweep/staged/reproducing/120x33/plus40, sweep/staged/reproducing/160x45/plus40 (5 renders)
 - ` REQUALIFYING ` ×1
@@ -2681,7 +2683,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` STOPPED ` ×1
   - forms (none); tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (17 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (74328 renders)
 - ` TOGI ` ×1
-  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (38 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (456 renders)
+  - forms (none); tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (38 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (472 renders)
 
 ### `story.last`
 
@@ -2690,31 +2692,31 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` # on # ` ×19
   - forms ` FAILURE `, ` INCONCLUSIVE `, ` PASS `; tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_1_a_wrong_result (4 renders); sweep sweep/calendar/0847-trial.end/160x45/plus40, sweep/calendar/0847-trial.end/240x67/event (10047 renders)
 - ` # on core # ` ×43
-  - forms ` FAILURE `, ` INCONCLUSIVE `, ` PASS `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (28 renders); sweep scenario/between/160x45, scenario/between/240x67 (97123 renders)
+  - forms ` FAILURE `, ` INCONCLUSIVE `, ` PASS `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (34 renders); sweep scenario/between/160x45, scenario/between/240x67 (97126 renders)
 - ` CRASH ` ×1
-  - forms ` CRASH `; tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_2_a_crash (2 renders); sweep sweep/filler/2662-trial.end/160x45/plus40, sweep/filler/2662-trial.end/240x67/event (225 renders)
+  - forms ` CRASH `; tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_2_a_crash (2 renders); sweep sweep/filler/2663-trial.end/160x45/plus40, sweep/filler/2663-trial.end/240x67/event (231 renders)
 - ` FAILURE ` ×1
-  - forms ` FAILURE `; tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_1_a_wrong_result (2 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (771 renders)
+  - forms ` FAILURE `; tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_1_a_wrong_result (2 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (774 renders)
 - ` INCONCLUSIVE ` ×1
   - forms ` INCONCLUSIVE `; tests frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_3_an_inconclusive_trial (1 renders); sweep scenario/day-step/160x45, scenario/day-step/240x67 (1027 renders)
 - ` PASS ` ×1
-  - forms ` PASS `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (29 renders); sweep scenario/between/160x45, scenario/between/240x67 (105372 renders)
+  - forms ` PASS `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (35 renders); sweep scenario/between/160x45, scenario/between/240x67 (105372 renders)
 - ` Tctl max #°C ` ×16
-  - forms ` FAILURE `, ` PASS `; tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_simulated_sessions::between_trials_the_last_outcome_and_the_next_trial_are_named (3 renders); sweep scenario/between/160x45, scenario/between/240x67 (47672 renders)
+  - forms ` FAILURE `, ` PASS `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (9 renders); sweep scenario/between/160x45, scenario/between/240x67 (47672 renders)
 - ` core # named ` ×1
   - forms ` FAILURE `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (547 renders)
 - ` last trial ` ×1
-  - forms ` CRASH `, ` FAILURE `, ` INCONCLUSIVE `, ` PASS `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (34 renders); sweep scenario/between/160x45, scenario/between/240x67 (107395 renders)
+  - forms ` CRASH `, ` FAILURE `, ` INCONCLUSIVE `, ` PASS `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (40 renders); sweep scenario/between/160x45, scenario/between/240x67 (107404 renders)
 - ` on # ` ×1
   - forms ` CRASH `; tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_2_a_crash (2 renders)
 - ` on core # ` ×1
-  - forms ` CRASH `; sweep sweep/filler/2662-trial.end/160x45/plus40, sweep/filler/2662-trial.end/240x67/event (225 renders)
+  - forms ` CRASH `; sweep sweep/filler/2663-trial.end/160x45/plus40, sweep/filler/2663-trial.end/240x67/event (231 renders)
 - ` the backend quit ` ×1
   - forms ` FAILURE `; sweep scenario/crashed/160x45, scenario/crashed/240x67 (370 renders)
 - ` wrong result ` ×1
-  - forms ` FAILURE `; tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_1_a_wrong_result (2 renders); sweep sweep/filler/4397-trial.end/160x45/plus40, sweep/filler/4397-trial.end/240x67/event (177 renders)
+  - forms ` FAILURE `; tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_1_a_wrong_result (2 renders); sweep sweep/filler/4399-trial.end/160x45/plus40, sweep/filler/4399-trial.end/240x67/event (177 renders)
 - ` {corrected | uncorrected} hardware error ` ×2
-  - forms ` FAILURE `; 2 templates merged; sweep scenario/deadend/160x45, scenario/deadend/240x67 (224 renders)
+  - forms ` FAILURE `; 2 templates merged; sweep scenario/deadend/160x45, scenario/deadend/240x67 (227 renders)
 
 ### `story.line`
 
@@ -2730,7 +2732,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
   - forms ` DAY QUESTION `; tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (3 renders); sweep sweep/calendar/15007-day.unclean_end/120x33/plus40, sweep/calendar/15007-day.unclean_end/160x45/plus40 (4 renders)
 - ` # not sure. Answer: togi status ` ×1
   - forms ` DAY QUESTION `; tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (3 renders); sweep sweep/calendar/15007-day.unclean_end/120x33/plus40, sweep/calendar/15007-day.unclean_end/160x45/plus40 (4 renders)
-- ` # past its planned end, no trial end recorded. Its deadline or watchdog may still be running. ` ×8
+- ` # past its planned end, no trial end recorded. Its deadline or watchdog may still be running. ` ×10
   - forms ` DAY `, ` NIGHT `, ` TOGI `; tests frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash, frames::story::tests::the_story::a_trial_past_its_end_says_how_long_without_claiming_a_crash (6 renders); sweep sweep/calendar/0014-trial.start/120x33/overdue, sweep/calendar/0014-trial.start/160x45/overdue (11112 renders)
 - ` # task left in the night's plan; the next listed is mapping task #. Unavailable this night: ycruncher. ` ×3
   - forms ` NIGHT `, ` RECOVERED `; 1 cuts folded in; tests frames::story::tests::nights::a_recovery_says_the_journal_is_intact_and_what_the_night_does_next, frames::story::tests::nights::an_open_night_names_the_backends_it_cannot_use (3 renders)
@@ -2757,29 +2759,29 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` Checking the machine and the journal before the first trial; this screen follows the run as soon as it records something. ` ×1
   - forms ` STARTING `; tests frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_2_starting, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (6 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (6 renders)
 - ` Control trial with every CCD at CO #. A failure here is a failure at stock, not Curve Optimizer's. ` ×1
-  - forms ` CONTROLS `; tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, frames::story::tests::nights::a_reproduction_and_a_control_say_what_they_do_not_do (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7109 renders)
+  - forms ` CONTROLS `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (3 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7109 renders)
 - ` Controls establish how the machine behaves at stock before any nonzero test. This is a retry of a trial that could not run. ` ×2
-  - forms ` CONTROLS `; 1 cuts folded in; tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, frames::story::tests::nights::a_reproduction_and_a_control_say_what_they_do_not_do (3 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7109 renders)
+  - forms ` CONTROLS `; 1 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (4 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (7109 renders)
 - ` Every core idles for # minutes, with short wake-ups, to test idle and boost states. ` ×2
   - forms ` CONTROLS `, ` MAPPING `, ` NIGHT `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (19 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (47 renders)
 - ` Every planned task is done; filler work runs until you end the night. ` ×1
-  - forms ` NIGHT `, ` RECOVERED `; tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (20 renders); sweep scenario/between/120x33, scenario/between/160x45 (30302 renders)
+  - forms ` NIGHT `, ` RECOVERED `; tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (20 renders); sweep scenario/between/120x33, scenario/between/160x45 (30314 renders)
 - ` Filler cap probe on CCD # at #, one count deeper than its cap S: every other CCD stays at CO #. ` ×2
-  - forms ` FILLER `; tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (1 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
+  - forms ` FILLER `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (2 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
 - ` Filler repeat of the day profile, CCD # at #, CCD # at #: every CCD runs together at its offset, one exact qualification cell per trial. ` ×1
   - forms ` FILLER `; tests frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (1 renders)
 - ` Filler runs only when nothing else can; a failure here is a re-qualification event against the day profile. ` ×1
   - forms ` FILLER `; tests frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (1 renders)
 - ` Filler runs only when nothing else can; a probe can set the CCD's edge U but never finishes a mapping step. ` ×1
-  - forms ` FILLER `; tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (1 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
+  - forms ` FILLER `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (2 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
 - ` I couldn't confirm that the stress programs were contained and cleaned up safely, so tuning can't continue. Check the recorded details. ` ×1
   - forms ` DEAD END `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_1_dead_end_main (4 renders)
 - ` I couldn't obtain conclusive trial evidence, so I can't continue testing safely. Check the recorded details before tuning again. ` ×1
   - forms ` DEAD END `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_4_dead_end (12 renders); sweep sweep/staged/deadend/120x33/plus40, sweep/staged/deadend/160x45/plus40 (4 renders)
 - ` I picked up from the journal after the reboot; nothing it recorded is lost. ` ×1
-  - forms ` RECOVERED `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (8 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (359 renders)
+  - forms ` RECOVERED `; tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (8 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (371 renders)
 - ` I restored baseline or shallower offsets before stopping. togi run picks up where I left off. ` ×1
-  - forms ` STOPPED `; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (12 renders); sweep sweep/filler/8986-shutdown/120x33/plus40, sweep/filler/8986-shutdown/160x45/plus40 (17 renders)
+  - forms ` STOPPED `; tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (12 renders); sweep sweep/filler/8988-shutdown/120x33/plus40, sweep/filler/8988-shutdown/160x45/plus40 (17 renders)
 - ` I stopped at a run limit an earlier version supported and restored baseline or shallower offsets. togi run picks up where I left off. ` ×1
   - forms ` STOPPED `; tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not, frames::story::tests::the_story::a_stopped_session_says_why_and_whether_the_offsets_were_restored (2 renders)
 - ` I stopped at a run limit an earlier version supported. Everything I learned is in the journal; togi run picks up where I left off. ` ×1
@@ -2791,9 +2793,9 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` It closes only this night's reproduction task, never the veto. This is a retry of a trial that could not run. ` ×2
   - forms ` REPRODUCING `; 1 cuts folded in; tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (10 renders); sweep sweep/staged/reproducing/120x33/plus40, sweep/staged/reproducing/160x45/plus40 (5 renders)
 - ` Mapping CCD # at #: only that CCD runs at #, every other CCD stays at CO #, so a failure belongs to it. ` ×22
-  - forms ` MAPPING `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (21 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
+  - forms ` MAPPING `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (27 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
 - ` Mapping exposure is what a cap S is computed from; a failure here can set the CCD's edge U. # tasks wait behind it. ` ×2
-  - forms ` MAPPING `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (22 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
+  - forms ` MAPPING `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (28 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
 - ` Mapping exposure is what a cap S is computed from; a failure here can set the CCD's edge U. This is a retry of a trial that could not run. ` ×1
   - forms ` MAPPING `; tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, frames::story::tests::nights::a_retried_trial_says_it_could_not_run_before (2 renders)
 - ` Mapping: one CCD at a time runs at the tested offset while the others stay at CO #. ` ×1
@@ -2801,7 +2803,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` No day profile has been applied; every CCD stays at CO #. ` ×1
   - forms ` NIGHT OVER `, ` TOGI `; tests frames::story::tests::nights::an_open_night_with_no_task_left_runs_filler_and_a_closed_one_gives_way_to_the_day, frames::story::tests::nights::the_day_state_names_the_applied_profile_and_what_the_latest_proposal_says (4 renders)
 - ` No trial has run yet; the tuner records what it decides before the first one starts. ` ×1
-  - forms ` DAY `, ` NIGHT `, ` TOGI `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (28 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (564 renders)
+  - forms ` DAY `, ` NIGHT `, ` TOGI `; tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (28 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (580 renders)
 - ` Nothing has been recorded yet. Start with togi run, or boot the togi entry, and I'll tell you what I'm doing here. ` ×1
   - forms ` NO SESSION YET `; tests frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_1_missing, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (8 renders); sweep journal/missing-once/120x33, journal/missing-once/160x45 (6 renders)
 - ` Only a complete qualification lets the profile be applied by day. This is a retry of a trial that could not run. ` ×2
@@ -2828,7 +2830,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
   - forms ` DAY `; tests frames::story::tests::nights::a_firmware_change_says_the_day_profile_goes_back_to_zero (1 renders)
 - ` The latest proposal keeps the profile. ` ×1
   - forms ` DAY `; tests frames::story::tests::nights::a_held_step_names_every_blocker (1 renders)
-- ` The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired. ` ×1
+- ` The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired, it failed qualification. ` ×1
   - forms ` DAY `; tests frames::story::tests::nights::a_held_step_names_every_blocker (1 renders)
 - ` The latest proposal promotes CCD #; it counts once it is applied. ` ×1
   - forms ` DAY `; tests frames::story::tests::nights::the_day_says_whether_its_latest_step_was_applied_or_only_proposed (1 renders)
@@ -2847,7 +2849,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` The trial's intent is recorded; its offsets are being applied and its workload is starting. ` ×1
   - forms ` NIGHT `, ` TOGI `; tests frames::frame_tests::holds::a_trial_intent_before_its_start_does_not_freeze, frames::frame_tests::live_panels::live_panels_keep_their_rectangles_from_a_running_trial_to_the_next (3 renders); sweep sweep/calendar/0013-trial.intent/120x33/plus40, sweep/calendar/0013-trial.intent/160x45/plus40 (11340 renders)
 - ` The trial's intent names no night task, so all I can say is what its band shows. ` ×1
-  - forms ` DAY `, ` TOGI `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (31 renders); sweep sweep/staged/day/120x33/plus40, sweep/staged/day/160x45/plus40 (5 renders)
+  - forms ` DAY `, ` TOGI `; tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (32 renders); sweep sweep/staged/day/120x33/plus40, sweep/staged/day/160x45/plus40 (5 renders)
 - ` This screen holds still while the idle trial is in flight, clock included, so drawing it cannot wake the cores. ` ×1
   - forms ` CONTROLS `, ` MAPPING `, ` NIGHT `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (19 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (47 renders)
 - ` Trial night-trial-# ended: inconclusive. ` ×1
@@ -2857,7 +2859,7 @@ TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \
 - ` Trial {# | t# | trial-B | 日本語]#;title  #J} crashed: a later boot has written events. togi run records the crash. ` ×5
   - forms ` CRASHED `; 4 templates merged; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (20 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (43 renders)
 - ` Trial {# | t#} ended: failure. ` ×4
-  - forms ` NIGHT `; 2 templates merged; tests frames::story::tests::nights::between_trials_the_night_names_its_next_task_and_never_a_forecast (1 renders); sweep sweep/filler/2603-trial.end/120x33/plus40, sweep/filler/2603-trial.end/160x45/plus40 (888 renders)
+  - forms ` NIGHT `; 2 templates merged; tests frames::story::tests::nights::between_trials_the_night_names_its_next_task_and_never_a_forecast (1 renders); sweep sweep/filler/2604-trial.end/120x33/plus40, sweep/filler/2604-trial.end/160x45/plus40 (888 renders)
 - ` can't read journal: bad [#m byte ` ×1
   - forms ` JOURNAL UNREADABLE `; tests frames::story::tests::the_story::the_error_text_is_escaped_visibly_at_output (1 renders)
 - ` can't read journal: events.jsonl: unexpected end of file ` ×1
@@ -2882,31 +2884,31 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` # s unobserved at CCD#, CCD#; after the last checkpoint, before the clean stop ` ×1
   - forms ` day interval `; sweep scenario/day-step, scenario/qualification (74 renders)
 - ` CCD# R# core # at #: # s eligible, # failure (# before warm-up ended) ` ×4
-  - forms ` exposure observed `; 1 cuts folded in; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (1 renders); sweep scenario/crashed, scenario/filler (16 renders)
+  - forms ` exposure observed `; 1 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (5 renders); sweep scenario/crashed, scenario/filler (16 renders)
 - ` CCD# R# core # at #: # s eligible, inconclusive, no failure ` ×4
   - forms ` exposure observed `; sweep scenario/day-step, scenario/qualification (18 renders)
 - ` CCD# R# light core # at #: # s eligible, inconclusive, no failure ` ×1
   - forms ` exposure observed `; sweep scenario/day-step, scenario/qualification (5 renders)
 - ` CCD# R# {core | cores} # at #: # s eligible, no failure ` ×1171
-  - forms ` exposure observed `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (97 renders); sweep scenario/crashed, scenario/day-step (16409 renders)
+  - forms ` exposure observed `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (751 renders); sweep scenario/crashed, scenario/day-step (16409 renders)
 - ` CCD# R# {light core | serial cpu} # at #: # s eligible, no failure ` ×464
-  - forms ` exposure observed `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (36 renders); sweep scenario/crashed, scenario/day-step (2661 renders)
+  - forms ` exposure observed `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (295 renders); sweep scenario/crashed, scenario/day-step (2661 renders)
 - ` CCD# cap S # -> #: # classs adequate, # uncovered; fallback slope #; bound by rate of R# serial cpu # s; edge censored at the write limit # ` ×91
   - forms ` cap `; sweep scenario/day-step, scenario/qualification (860 renders)
 - ` CCD# cap S # -> #: # classs adequate, # uncovered; fallback slope #; bound by rate of R# {light core | serial cpu} # s; edge failing at # ` ×77
-  - forms ` cap `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (1 renders); sweep scenario/crashed, scenario/filler (271 renders)
+  - forms ` cap `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (78 renders); sweep scenario/crashed, scenario/filler (271 renders)
 - ` CCD# cap S # -> #: # classs adequate, # uncovered; fallback slope #; bound by the edge margin; edge unknown ` ×1
   - forms ` cap `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion (1 renders)
 - ` CCD# cap S # -> #: # classs adequate, # uncovered; measured slope lower endpoint #; bound by rate of R# {light core | serial cpu} # s; edge failing at # ` ×32
-  - forms ` cap `; 2 templates merged; sweep scenario/filler, sweep/filler/4401-ccd.cap (120 renders)
+  - forms ` cap `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (32 renders); sweep scenario/filler, sweep/filler/4403-ccd.cap (120 renders)
 - ` CCD# cap S # -> #: # {class | classs} adequate, # uncovered; fallback slope #; bound by no justified depth, CO #; edge unknown ` ×352
-  - forms ` cap `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (163 renders); sweep scenario/crashed, scenario/day-step (5008 renders)
+  - forms ` cap `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1094 renders); sweep scenario/crashed, scenario/day-step (5008 renders)
 - ` CCD# edge U failing at # -> failing at #; first observed failure at # ` ×2
-  - forms ` edge `; sweep scenario/filler, sweep/filler/3671-ccd.edge (6 renders)
+  - forms ` edge `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (2 renders); sweep scenario/filler, sweep/filler/3673-ccd.edge (6 renders)
 - ` CCD# edge U unknown -> censored at the write limit #; no failure down to the write limit # ` ×2
   - forms ` edge `; sweep scenario/day-step, scenario/qualification (10 renders)
 - ` CCD# edge U unknown -> failing at #; first observed failure at # ` ×3
-  - forms ` edge `; 1 cuts folded in; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::describe::a_night_reads_in_order_from_plan_to_promotion (3 renders); sweep scenario/crashed, scenario/filler (10 renders)
+  - forms ` edge `; 1 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (5 renders); sweep scenario/crashed, scenario/filler (10 renders)
 - ` after ` ×1
   - forms ` session warning `; tests terminal::source::tests::an_event_of_an_unknown_kind_is_skipped_and_reported_in_the_snapshot (1 renders)
 - ` appended ` ×1
@@ -2920,7 +2922,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` backend mprime: retry # of # after # s: 日本語[#J]#;c;data  #m#;title ` ×1
   - forms ` backend retry `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_3_backend_retry_main, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_4_backend_retry_log (2 renders)
 - ` baseline profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×1
-  - forms ` session baseline `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (8 renders); sweep scenario/between, scenario/controls (22 renders)
+  - forms ` session baseline `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (16 renders); sweep scenario/between, scenario/controls (22 renders)
 - ` baseline profile [#: #: #: #] ` ×1
   - forms ` session baseline `; tests tests::model::a_core_shows_the_day_offset_of_its_ccd::test_case_1_co_0_before_any_day_application, tests::model::a_core_shows_the_day_offset_of_its_ccd::test_case_2_each_core_shows_its_ccd_s_day_offset (6 renders)
 - ` boot calendar at CCD#, CCD#: CPU-suspect, {resolved; | unresolved;} CPU-suspect on definite evidence ` ×2
@@ -2934,15 +2936,15 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` core # failure at CO #: computation_error with no trial recorded ` ×1
   - forms ` fail `; tests tests::model::failure_counters_separate_observed_and_skipped (1 renders)
 - ` core # failure at CO #: {computation_error | unexpected_exit} in together R# trial # ` ×2
-  - forms ` fail `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (1 renders); sweep scenario/crashed, scenario/filler (10 renders)
+  - forms ` fail `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (3 renders); sweep scenario/crashed, scenario/filler (10 renders)
 - ` corrected MCE on cpu # (core #), bank # l#_cache (core-local) ` ×1
-  - forms ` mce `; sweep scenario/filler, sweep/filler/3667-mce (3 renders)
+  - forms ` mce `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (1 renders); sweep scenario/filler, sweep/filler/3669-mce (3 renders)
 - ` corrected MCE on cpu # (core #), bank # load_store (core-local) between trials (recorded only) ` ×1
   - forms ` mce `; tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden (1 renders)
 - ` corrected MCE on cpu # (no core), bank # execution_unit (core-local) between trials (recorded only) ` ×1
   - forms ` mce `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders)
 - ` crash: boot # ended without a clean shutdown; in flight: seq #; the current profile was applied; reset reason: x#/amd: Previous system reset reason [#x#]: hardware watchdog timer expired ` ×2
-  - forms ` crash `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (2 renders); sweep scenario/deadend, scenario/filler (9 renders)
+  - forms ` crash `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (3 renders); sweep scenario/deadend, scenario/filler (9 renders)
 - ` crash: boot boot ended without a clean shutdown; nothing in flight; stray: the profile was never applied in that boot; the current profile was applied ` ×1
   - forms ` crash `; tests tests::model::crash_classification::test_case_3_before_offsets, tests::model::recovery_ends_only_when_a_trial_starts (2 renders)
 - ` crash: boot boot ended without a clean shutdown; nothing in flight; the current profile was applied; inconclusive: reset does not establish a tuning failure ` ×2
@@ -2956,13 +2958,13 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` day observer of boot calendar ended without a clean stop; last checkpoint seq #; last offsets [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; reset reason unavailable on this kernel; machine checks: unknown in that boot, unknown in the next; kernel log tail: missing ` ×1
   - forms ` day unclean_end `; sweep scenario/reproduction, sweep/calendar/15007-day.unclean_end (3 renders)
 - ` day observer started by togi #: BIOS SIM.# on togi simulator, Simulated Zen #-Core Processor, microcode #x#, boost limit # MHz; offsets [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×3
-  - forms ` day boot_start `, ` session context `; 1 cuts folded in; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (8 renders); sweep scenario/between, scenario/controls (163 renders)
+  - forms ` day boot_start `, ` session context `; 1 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (16 renders); sweep scenario/between, scenario/controls (163 renders)
 - ` day observer stopped on request ` ×1
   - forms ` day clean_stop `; sweep scenario/day-step, scenario/qualification (135 renders)
 - ` dead end containment: 日本語[#J]#;c;data  #m#;title ` ×1
   - forms ` stop `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_1_dead_end_main, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_2_dead_end_log (2 renders)
 - ` dead end failure_at_zero: platform unstable at stock under R# ` ×1
-  - forms ` stop `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0062-deadend (3 renders)
+  - forms ` stop `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0064-deadend (3 renders)
 - ` dead end smu: core # read back # instead of # ` ×1
   - forms ` stop `; tests tests::model::smu_dead_end_keeps_the_readback, tests::model::write_after_restoration_is_not_saved (2 renders)
 - ` dead end smu: the SMU refused ` ×1
@@ -2980,15 +2982,15 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` decision #: retreat CCD# from CCD#, CCD# to CCD#, CCD# because boot calendar, reverting the newest step (decision #) (proposal; not applied); step the day profile back ` ×1
   - forms ` step `; sweep scenario/reproduction, sweep/calendar/15014-day.step (3 renders)
 - ` exact profile R# core #: # s eligible, # failure (# before warm-up ended) ` ×1
-  - forms ` exposure observed `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0061-exposure.observed (3 renders)
+  - forms ` exposure observed `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0063-exposure.observed (3 renders)
 - ` exact profile R# cores #: # s eligible, inconclusive, no failure ` ×1
   - forms ` exposure observed `; sweep scenario/day-step, scenario/reproduction (4 renders)
 - ` exact profile R# {core | cores} #: # s eligible, no failure ` ×97
-  - forms ` exposure observed `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (469 renders); sweep scenario/between, scenario/crashed (5779 renders)
+  - forms ` exposure observed `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1148 renders); sweep scenario/between, scenario/crashed (5779 renders)
 - ` exact profile R# {light core | serial cpu} #: # s eligible, inconclusive, no failure ` ×2
   - forms ` exposure observed `; 2 templates merged; sweep scenario/day-step, scenario/qualification (9 renders)
 - ` exact profile R# {light core | serial cpu} #: # s eligible, no failure ` ×52
-  - forms ` exposure observed `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (58 renders); sweep scenario/crashed, scenario/day-step (792 renders)
+  - forms ` exposure observed `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (296 renders); sweep scenario/crashed, scenario/day-step (792 renders)
 - ` from an earlier run ` ×1
   - forms ` session warning `; tests terminal::source::tests::a_run_in_progress_starts_with_the_run_not_the_journal_it_found (1 renders)
 - ` hold at CCD# {credited: | reset:} # s eligible from # intervals ` ×2
@@ -3008,17 +3010,17 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` modified ` ×1
   - forms ` session warning `; tests terminal::source::tests::reload_follows_a_replaced_grown_rewritten_removed_and_restored_journal (1 renders)
 - ` night #: consumed reproduction # s (#%), qualification # s (#%), mapping # s (#%), control # s (#%), requalification # s (#%), filler # s (#%); # task ` ×15
-  - forms ` night `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (8 renders); sweep scenario/between, scenario/controls (83 renders)
+  - forms ` night `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (16 renders); sweep scenario/between, scenario/controls (83 renders)
 - ` night opens: consumed mapping # s (#%), qualification # s (#%); # tasks ` ×1
   - forms ` night `; tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::history::a_night_and_an_edge_are_in_the_history_and_a_resume_follows_the_second_config (2 renders)
 - ` night {#: | opens:} consumed reproduction # s (#%), qualification # s (#%), mapping # s (#%), control # s (#%), requalification # s (#%), filler # s (#%); # tasks ` ×190
-  - forms ` night `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (14 renders); sweep scenario/between, scenario/controls (748 renders)
+  - forms ` night `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (69 renders); sweep scenario/between, scenario/controls (748 renders)
 - ` no config at /etc/togi/config.json; using defaults with togi # (schema #, ruleset #, fixes #) ` ×2
-  - forms ` config loaded `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (87 renders); sweep scenario/between, scenario/controls (27 renders)
+  - forms ` config loaded `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (95 renders); sweep scenario/between, scenario/controls (27 renders)
 - ` offsets read back changed to [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; the time since the previous record is not credited to any offset profile ` ×2
   - forms ` day offsets_changed `; sweep scenario/reproduction, sweep/calendar/15004-day.offsets_changed (6 renders)
 - ` offsets restored before stopping: [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] (each core's baseline, or its current offset where that is shallower) ` ×1
-  - forms ` profile restored `; sweep sweep/filler/8985-profile.restored, sweep/filler/projected (2 renders)
+  - forms ` profile restored `; sweep sweep/filler/8987-profile.restored, sweep/filler/projected (2 renders)
 - ` offsets restored before stopping: [#: #: #: #] (each core's baseline, or its current offset where that is shallower) ` ×1
   - forms ` profile restored `; tests tests::model::only_a_new_config_loaded_reopens_a_stopped_session, tests::model::stopped_shows_the_day_profile_not_the_applied_offsets (3 renders)
 - ` offsets restored before stopping: [#: #: #] (each core's baseline, or its current offset where that is shallower) ` ×1
@@ -3029,14 +3031,14 @@ The log view and `togi status` pass these through as the journal wrote them, so 
   - forms ` trial start `; tests tests::history::multiple_reboots_stay_distinct, tests::history::reboot_history_during_trial::test_case_1_ordinary_crash (6 renders)
 - ` on cpu # ` ×16
   - forms ` trial start `; sweep scenario/day-step, scenario/qualification (12491 renders)
-- ` on cpus # ` ×32
+- ` on cpus # ` ×34
   - forms ` trial start `; sweep scenario/day-step, scenario/qualification (4249 renders)
 - ` original ` ×1
   - forms ` session warning `; tests terminal::source::tests::an_event_of_an_unknown_kind_is_skipped_and_reported_in_the_snapshot, terminal::source::tests::an_unchanged_journal_and_an_unchanged_absence_are_not_reloaded (4 renders)
 - ` phase # is confirmed and the profile passed the requested clean cycle; stopping ` ×1
   - forms ` stop `; tests tests::model::write_after_restoration_is_not_saved (1 renders)
 - ` profile applied: [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×19
-  - forms ` profile applied `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (12 renders); sweep scenario/between, scenario/controls (115 renders)
+  - forms ` profile applied `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (44 renders); sweep scenario/between, scenario/controls (115 renders)
 - ` profile applied: [#: #: #: #] ` ×2
   - forms ` profile applied `; tests tests::history::multiple_reboots_stay_distinct, tests::history::reboot_history_during_smu_application (6 renders)
 - ` projection: a later boot wrote this; continuing the session ` ×1
@@ -3068,63 +3070,63 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` rewritten # ` ×40
   - forms ` session warning `; tests terminal::source::tests::a_journal_rewritten_in_place_to_a_longer_one_builds_a_fresh_model_and_drops_the_held_list (40 renders)
 - ` session #T#Z started by togi # (schema #, ruleset #, evidence epoch #, fixes # cores) ` ×4
-  - forms ` start `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (151 renders); sweep scenario/between, scenario/controls (22 renders)
+  - forms ` start `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (159 renders); sweep scenario/between, scenario/controls (22 renders)
 - ` stopped at a dead end ` ×1
-  - forms ` stop `; tests tests::model::smu_dead_end_keeps_the_readback, tests::model::write_after_restoration_is_not_saved (2 renders); sweep sweep/deadend/0063-shutdown, sweep/deadend/projected (2 renders)
+  - forms ` stop `; tests tests::model::smu_dead_end_keeps_the_readback, tests::model::write_after_restoration_is_not_saved (2 renders); sweep sweep/deadend/0065-shutdown, sweep/deadend/projected (2 renders)
 - ` this run ` ×1
   - forms ` session warning `; tests terminal::source::tests::a_run_in_progress_starts_with_the_run_not_the_journal_it_found (1 renders)
 - ` trial # FAIL corrected_mce after # s | Tctl max #°C ` ×1
-  - forms ` fail `; sweep scenario/filler, sweep/filler/3668-trial.end (3 renders)
+  - forms ` fail `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (1 renders); sweep scenario/filler, sweep/filler/3670-trial.end (3 renders)
 - ` trial # FAIL crash, last evidence # s after start, last sample # s ` ×3
-  - forms ` crash `; 1 cuts folded in; tests tests::model::a_crash_ending_a_trial_says_how_far_into_it_the_machine_went_down, tests::model::a_prior_recovery_does_not_mask_a_later_boot_crash (2 renders); sweep scenario/filler, sweep/filler/2662-trial.end (5 renders)
+  - forms ` crash `; 1 cuts folded in; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, tests::model::a_crash_ending_a_trial_says_how_far_into_it_the_machine_went_down (3 renders); sweep scenario/filler, sweep/filler/2663-trial.end (5 renders)
 - ` trial # FAIL uncorrected_mce after # s, last sample # s ` ×1
-  - forms ` fail `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0049-trial.end (3 renders)
+  - forms ` fail `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0050-trial.end (3 renders)
 - ` trial # FAIL {computation_error | unexpected_exit} on core # after # s | Tctl max #°C ` ×2
-  - forms ` fail `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (1 renders); sweep scenario/crashed, scenario/filler (10 renders)
+  - forms ` fail `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (3 renders); sweep scenario/crashed, scenario/filler (10 renders)
 - ` trial # bursts: # continues, # stops ` ×1
-  - forms ` trial progress `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (2 renders); sweep scenario/crashed, scenario/filler (11 renders)
+  - forms ` trial progress `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (9 renders); sweep scenario/crashed, scenario/filler (11 renders)
 - ` trial # core # R# mprime SSE #K-#K # s together mapping ` ×3
   - forms ` trial intent `; tests tests::model::a_batch_ending_in_shutdown_hides_the_retained_outcome, tests::model::a_crash_ending_a_trial_says_how_far_into_it_the_machine_went_down (24 renders)
 - ` trial # core # R# mprime SSE #K-#K light core beside R# neighbours # s together control task control # night # ` ×17
-  - forms ` trial intent `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (34 renders); sweep scenario/crashed, scenario/filler (187 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (153 renders); sweep scenario/crashed, scenario/filler (187 renders)
 - ` trial # core # computation error: simulated computation error on core # ` ×1
-  - forms ` trial progress `; sweep scenario/filler, sweep/filler/4396-trial.progress (3 renders)
+  - forms ` trial progress `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (1 renders); sweep scenario/filler, sweep/filler/4398-trial.progress (3 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K # s together control task control # night # ` ×16
-  - forms ` trial intent `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (101 renders); sweep scenario/between, scenario/controls (221 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (214 renders); sweep scenario/between, scenario/controls (221 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K # s together mapping task filler # night # testing CCD# at # ` ×1
-  - forms ` trial intent `; sweep scenario/filler, sweep/filler/8958-trial.intent (3 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (1 renders); sweep scenario/filler, sweep/filler/8960-trial.intent (3 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K {#% duty | SMT pair | load steps} # s together control task control # night # ` ×48
-  - forms ` trial intent `; 3 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (241 renders); sweep scenario/between, scenario/crashed (577 renders)
+  - forms ` trial intent `; 3 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (577 renders); sweep scenario/between, scenario/crashed (577 renders)
 - ` trial # core # offset # R# mprime {AVX#K-#K | AVX-#K-#K} # s together control task control # night # ` ×32
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (192 renders); sweep scenario/between, scenario/crashed (416 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (416 renders); sweep scenario/between, scenario/crashed (416 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# load steps # s together control task control # night # ` ×16
-  - forms ` trial intent `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (80 renders); sweep scenario/crashed, scenario/filler (192 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (192 renders); sweep scenario/crashed, scenario/filler (192 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# s together control task control # night # ` ×16
-  - forms ` trial intent `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (96 renders); sweep scenario/between, scenario/crashed (208 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (208 renders); sweep scenario/between, scenario/crashed (208 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv#% duty # s together control task control # night # ` ×16
-  - forms ` trial intent `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (80 renders); sweep scenario/crashed, scenario/filler (192 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (192 renders); sweep scenario/crashed, scenario/filler (192 renders)
 - ` trial # core # offset # R# y-cruncher FFTv# + N# + VT# s together control task control # night # ` ×16
-  - forms ` trial intent `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (96 renders); sweep scenario/between, scenario/crashed (208 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (208 renders); sweep scenario/between, scenario/crashed (208 renders)
 - ` trial # core # offset # R# y-cruncher SNT + SVT # s together control task control # night # ` ×16
-  - forms ` trial intent `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (96 renders); sweep scenario/between, scenario/crashed (208 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (208 renders); sweep scenario/between, scenario/crashed (208 renders)
 - ` trial # core # offset # R# y-cruncher SNT + SVT {#% duty | load steps} # s together control task control # night # ` ×32
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (160 renders); sweep scenario/crashed, scenario/filler (384 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (384 renders); sweep scenario/crashed, scenario/filler (384 renders)
 - ` trial # cores # R# mprime AVX#K-#K all-core # s together control task control # night # ` ×16
-  - forms ` trial intent `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (32 renders); sweep scenario/crashed, scenario/filler (176 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (144 renders); sweep scenario/crashed, scenario/filler (176 renders)
 - ` trial # cores # R# mprime SSE #K-#K idle then bursts # s together control task control # night # ` ×1
-  - forms ` trial intent `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (5 renders); sweep scenario/crashed, scenario/filler (12 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (12 renders); sweep scenario/crashed, scenario/filler (12 renders)
 - ` trial # cores # R# mprime SSE #K-#K idle then bursts # s together mapping ` ×1
   - forms ` trial intent `; tests tests::model::only_a_started_idle_trial_holds_the_frame::test_case_1_an_idle_trial_holds (1 renders)
 - ` trial # first half idle, then #ms bursts every #s, one core at a time ` ×1
-  - forms ` trial progress `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (2 renders); sweep scenario/crashed, scenario/filler (11 renders)
+  - forms ` trial progress `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (9 renders); sweep scenario/crashed, scenario/filler (11 renders)
 - ` trial # load steps: # stops, # continues ` ×96
-  - forms ` trial signal `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (481 renders); sweep scenario/between, scenario/crashed (1153 renders)
+  - forms ` trial signal `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1153 renders); sweep scenario/between, scenario/crashed (1153 renders)
 - ` trial # load steps: #% duty, # ms period ` ×48
-  - forms ` trial signal `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (240 renders); sweep scenario/crashed, scenario/filler (576 renders)
+  - forms ` trial signal `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (576 renders); sweep scenario/crashed, scenario/filler (576 renders)
 - ` trial # load steps: random on/off periods from # ms, # ms, # ms, # s, # s ` ×48
-  - forms ` trial signal `; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight (241 renders); sweep scenario/between, scenario/crashed (577 renders)
+  - forms ` trial signal `; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (577 renders); sweep scenario/between, scenario/crashed (577 renders)
 - ` trial # started pid # in scope togi-trial-# on {cpu | cpus} # ` ×1810
-  - forms ` trial start `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1501 renders); sweep scenario/between, scenario/controls (8975 renders)
+  - forms ` trial start `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (5640 renders); sweep scenario/between, scenario/controls (8975 renders)
 - ` trial # still running ` ×1
   - forms ` trial progress `; tests tests::model::a_trial_reporting_progress_past_its_planned_end_is_still_running (1 renders)
 - ` trial c# core # R# mprime SSE #K-#K # s alone qualification ` ×1
@@ -3196,45 +3198,45 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` trial {# FAIL computation_error | orphan]#;c;payload  	#Jtitle  ‮ FAIL computation_error | t FAIL stall | trial FAIL computation_error | trial FAIL corrected_mce | trial FAIL uncorrected_mce} after # s ` ×6
   - forms ` fail `; 6 templates merged; tests tests::history::a_night_trial_says_whether_it_is_a_retry::test_case_1_exact_qualification, tests::history::a_night_trial_says_whether_it_is_a_retry::test_case_2_a_retried_control (7 renders)
 - ` trial {# | a | b} PASS # s | Tctl max #°C ` ×1809
-  - forms ` pass `; 1 cuts folded in; 3 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1503 renders); sweep scenario/between, scenario/crashed (8948 renders)
+  - forms ` pass `; 1 cuts folded in; 3 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (5630 renders); sweep scenario/between, scenario/crashed (8948 renders)
 - ` trial {# | night-trial-#} core # R# mprime SSE #K-#K light core beside R# neighbours # s together mapping task mapping # night # testing CCD# at # ` ×91
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (8 renders); sweep scenario/crashed, scenario/day-step (422 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (88 renders); sweep scenario/crashed, scenario/day-step (422 renders)
 - ` trial {# | night-trial-#} core # R# mprime SSE #K-#K load-step light core beside R# neighbours # s together mapping task mapping # night # testing CCD# at # ` ×96
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (8 renders); sweep scenario/crashed, scenario/day-step (432 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (96 renders); sweep scenario/crashed, scenario/day-step (432 renders)
 - ` trial {# | night-trial-#} core # R# mprime SSE #K-#K on every thread # s together control task control # night # ` ×35
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (25 renders); sweep scenario/crashed, scenario/day-step (250 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (144 renders); sweep scenario/crashed, scenario/day-step (250 renders)
 - ` trial {# | night-trial-#} core # R# mprime SSE #K-#K on every thread # s together mapping task mapping # night # testing CCD# at # ` ×22
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (2 renders); sweep scenario/crashed, scenario/day-step (102 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (16 renders); sweep scenario/crashed, scenario/day-step (102 renders)
 - ` trial {# | night-trial-#} core # R# y-cruncher BKT + SFTv# light core beside R# neighbours # s together mapping task mapping # night # testing CCD# at # ` ×96
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (8 renders); sweep scenario/crashed, scenario/day-step (424 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (48 renders); sweep scenario/crashed, scenario/day-step (424 renders)
 - ` trial {# | night-trial-#} core # R# y-cruncher BKT + SFTv# load-step light core beside R# neighbours # s together mapping task mapping # night # testing CCD# at # ` ×88
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (8 renders); sweep scenario/crashed, scenario/day-step (400 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (40 renders); sweep scenario/crashed, scenario/day-step (400 renders)
 - ` trial {# | night-trial-#} core # R# y-cruncher BKT + SFTv# on every thread # s together mapping task mapping # night # testing CCD# at # ` ×22
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (1 renders); sweep scenario/crashed, scenario/day-step (97 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (15 renders); sweep scenario/crashed, scenario/day-step (97 renders)
 - ` trial {# | night-trial-#} core # R# y-cruncher SNT + SVT light core beside R# neighbours # s together mapping task mapping # night # testing CCD# at # ` ×81
-  - forms ` trial intent `; 2 templates merged; sweep scenario/day-step, scenario/filler (349 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (24 renders); sweep scenario/day-step, scenario/filler (349 renders)
 - ` trial {# | night-trial-#} core # R# y-cruncher SNT + SVT load-step light core beside R# neighbours # s together mapping task mapping # night # testing CCD# at # ` ×80
-  - forms ` trial intent `; 2 templates merged; sweep scenario/day-step, scenario/filler (344 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (24 renders); sweep scenario/day-step, scenario/filler (344 renders)
 - ` trial {# | night-trial-#} core # R# y-cruncher SNT + SVT on every thread # s together mapping task mapping # night # testing CCD# at # ` ×22
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (1 renders); sweep scenario/crashed, scenario/day-step (96 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (9 renders); sweep scenario/crashed, scenario/day-step (96 renders)
 - ` trial {# | night-trial-#} core # offset # R# mprime AVX#K-#K # s together mapping task mapping # night # testing CCD# at # ` ×536
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (32 renders); sweep scenario/crashed, scenario/day-step (2376 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (320 renders); sweep scenario/crashed, scenario/day-step (2376 renders)
 - ` trial {# | night-trial-#} core # offset # R# mprime AVX-#K-#K # s together mapping task mapping # night # testing CCD# at # ` ×536
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (32 renders); sweep scenario/crashed, scenario/day-step (2376 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (320 renders); sweep scenario/crashed, scenario/day-step (2376 renders)
 - ` trial {# | night-trial-#} core # offset # R# mprime SSE #K-#K # s together mapping task mapping # night # testing CCD# at # ` ×551
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (39 renders); sweep scenario/crashed, scenario/day-step (2468 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (347 renders); sweep scenario/crashed, scenario/day-step (2468 renders)
 - ` trial {# | night-trial-#} core # offset # R# y-cruncher BKT + SFTv# s together mapping task mapping # night # testing CCD# at # ` ×537
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (32 renders); sweep scenario/crashed, scenario/day-step (2397 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (320 renders); sweep scenario/crashed, scenario/day-step (2397 renders)
 - ` trial {# | night-trial-#} core # offset # R# y-cruncher FFTv# + N# + VT# s together mapping task mapping # night # testing CCD# at # ` ×537
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (32 renders); sweep scenario/crashed, scenario/day-step (2381 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (320 renders); sweep scenario/crashed, scenario/day-step (2381 renders)
 - ` trial {# | night-trial-#} core # offset # R# y-cruncher SNT + SVT # s together mapping task mapping # night # testing CCD# at # ` ×537
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (32 renders); sweep scenario/crashed, scenario/day-step (2386 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (320 renders); sweep scenario/crashed, scenario/day-step (2386 renders)
 - ` trial {# | night-trial-#} cores # R# mprime AVX#K-#K all-core # s together mapping task mapping # night # testing CCD# at # ` ×155
-  - forms ` trial intent `; 1 cuts folded in; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::model::only_a_started_idle_trial_holds_the_frame::test_case_2_a_loaded_trial_does_not (15 renders); sweep scenario/crashed, scenario/day-step (714 renders)
+  - forms ` trial intent `; 1 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (113 renders); sweep scenario/crashed, scenario/day-step (714 renders)
 - ` trial {# | night-trial-#} cores # R# mprime AVX-#K-#K all-core # s together mapping task mapping # night # testing CCD# at # ` ×154
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (7 renders); sweep scenario/crashed, scenario/day-step (679 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (105 renders); sweep scenario/crashed, scenario/day-step (679 renders)
 - ` trial {# | night-trial-#} cores # R# y-cruncher FFTv# + N# + VT# all-core # s together mapping task mapping # night # testing CCD# at # ` ×154
-  - forms ` trial intent `; 2 templates merged; tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (7 renders); sweep scenario/crashed, scenario/day-step (672 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (63 renders); sweep scenario/crashed, scenario/day-step (672 renders)
 - ` trial {# | other} started pid # in scope scope on cpu ` ×4
   - forms ` trial start `; 1 cuts folded in; 2 templates merged; tests tests::model::a_crash_ending_a_trial_says_how_far_into_it_the_machine_went_down, tests::model::a_crash_ends_only_its_boot_trial::test_case_1_same_boot (19 renders)
 - ` trial {a | b | c | m | m#} cores # R# mprime AVX#K-#K # s together mapping task mapping # night # testing CCD# at # ` ×5
@@ -3254,11 +3256,11 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` unattributed {computation_error | corrected_mce | crash | uncorrected_mce} failure in R# trial trial: no evidence names a single core ` ×4
   - forms ` fail `; 4 templates merged; tests tests::history::reboot_history_during_trial::test_case_1_ordinary_crash, tests::history::reboot_history_during_trial::test_case_2_retained_computation_failure (4 renders)
 - ` unattributed {corrected_mce | crash | uncorrected_mce} failure in together R# trial #: no evidence names a single core ` ×3
-  - forms ` fail `; 3 templates merged; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, scenario/filler (9 renders)
+  - forms ` fail `; 3 templates merged; tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (3 renders); sweep scenario/deadend, scenario/filler (9 renders)
 - ` uncorrected MCE on cpu # (core #), bank # execution_unit (core-local) between trials (recorded only) ` ×1
   - forms ` mce `; tests tests::history::a_reset_and_an_mce_have_lines (1 renders)
 - ` uncorrected MCE on cpu # (core #), bank # instruction_fetch (core-local) from boot # ` ×1
-  - forms ` mce `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0046-mce (3 renders)
+  - forms ` mce `; tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (1 renders); sweep scenario/deadend, sweep/deadend/0047-mce (3 renders)
 - ` veto on CCD#, CCD# from boot calendar: active; CPU-suspect event vetoes its profile ` ×1
   - forms ` veto `; sweep scenario/reproduction, sweep/calendar/15012-day.veto (3 renders)
 - ` w# ` ×450
@@ -3274,124 +3276,124 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 
 ## Source-phrase manifest
 
-Every string literal of a renderer's production source that holds words (592 of them), read from the source this binary was built from. A literal is *covered* when one recorded phrase carries every piece of it that sits between placeholders; the cases that rendered it follow. Literals the renderers format from several pieces are covered by the pieces' own literals. A literal listed as silent shows its reason first, and any phrase that happens to carry its words after it as substring evidence only.
+Every string literal of a renderer's production source that holds words (594 of them), read from the source this binary was built from. A literal is *covered* when one recorded phrase carries every piece of it that sits between placeholders; the cases that rendered it follow. Literals the renderers format from several pieces are covered by the pieces' own literals. A literal listed as silent shows its reason first, and any phrase that happens to carry its words after it as substring evidence only.
 
 ### `describe.rs`: 9 of 9 covered
 
-- `describe.rs:56` ` session resumed ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (7 renders); sweep scenario/crashed, scenario/crashed/120x33 (91 renders)
+- `describe.rs:56` ` session resumed ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (8 renders); sweep scenario/crashed, scenario/crashed/120x33 (91 renders)
 - `describe.rs:68` ` before any offsets were applied, rebooted ` — tests tests::model::crash_classification::test_case_3_before_offsets, tests::model::recovery_ends_only_when_a_trial_starts (2 renders)
 - `describe.rs:75` ` power loss or reset, which says nothing about the offsets ` — tests tests::model::crash_classification::test_case_2_power_reset (1 renders)
-- `describe.rs:109` ` trial {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (9737 renders); sweep journal/help/160x45, journal/help/240x67 (457234 renders)
-- `describe.rs:187` ` CCD {ccd} at {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (3619 renders); sweep journal/help/160x45, journal/help/240x67 (6410016 renders)
-- `describe.rs:189` ` the exact profile ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (632 renders); sweep scenario/between, scenario/between/120x33 (2322450 renders)
-- `describe.rs:193` ` {} task {} ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (2823 renders); sweep scenario/between, scenario/between/120x33 (8387354 renders)
+- `describe.rs:109` ` trial {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (23532 renders); sweep journal/help/160x45, journal/help/240x67 (457412 renders)
+- `describe.rs:187` ` CCD {ccd} at {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (9445 renders); sweep journal/help/160x45, journal/help/240x67 (6410338 renders)
+- `describe.rs:189` ` the exact profile ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1528 renders); sweep scenario/between, scenario/between/120x33 (2322492 renders)
+- `describe.rs:193` ` {} task {} ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (9507 renders); sweep scenario/between, scenario/between/120x33 (8387719 renders)
 - `describe.rs:196` ` retry ` — tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_3_backend_retry_main, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_4_backend_retry_log (39 renders); sweep journal/problem/120x33, journal/problem/160x45 (6 renders)
-- `describe.rs:209` ` {when} the trial ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (8 renders); sweep sweep/deadend/0049-trial.end/120x33/plus40, sweep/deadend/0049-trial.end/160x45/plus40 (1788 renders)
+- `describe.rs:209` ` {when} the trial ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (8 renders); sweep sweep/deadend/0050-trial.end/120x33/plus40, sweep/deadend/0050-trial.end/160x45/plus40 (1832 renders)
 
 ### `frames/dash/ccd.rs`: 29 of 29 covered
 
-- `frames/dash/ccd.rs:26` ` LOADED ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (1616 renders); sweep journal/help/160x45, journal/help/80x24 (37387 renders)
-- `frames/dash/ccd.rs:133` ` fallback ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (890 renders); sweep journal/help/160x45, journal/help/240x67 (1527524 renders)
-- `frames/dash/ccd.rs:134` ` measured ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (704 renders); sweep journal/help/160x45, journal/help/240x67 (63312 renders)
-- `frames/dash/ccd.rs:140` ` rate {} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1542 renders); sweep journal/help/160x45, journal/help/240x67 (535795 renders)
+- `frames/dash/ccd.rs:26` ` LOADED ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (1640 renders); sweep journal/help/160x45, journal/help/80x24 (37387 renders)
+- `frames/dash/ccd.rs:133` ` fallback ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (2156 renders); sweep journal/help/160x45, journal/help/240x67 (1527740 renders)
+- `frames/dash/ccd.rs:134` ` measured ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (741 renders); sweep journal/help/160x45, journal/help/240x67 (63312 renders)
+- `frames/dash/ccd.rs:140` ` rate {} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1666 renders); sweep journal/help/160x45, journal/help/240x67 (535827 renders)
 - `frames/dash/ccd.rs:141` ` edge margin ` — tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::words::a_cap_names_what_fixed_it_and_its_slope::test_case_2_edge_margin_and_measured (4 renders)
-- `frames/dash/ccd.rs:142` ` baseline ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (601 renders); sweep journal/help/160x45, journal/help/240x67 (83570 renders)
-- `frames/dash/ccd.rs:153` ` U unknown ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (39 renders); sweep scenario/between/120x33, scenario/between/160x45 (140357 renders)
-- `frames/dash/ccd.rs:155` ` U fails at {} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (240 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (61475 renders)
-- `frames/dash/ccd.rs:159` ` U censored at {} ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (223 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (86006 renders)
-- `frames/dash/ccd.rs:169` ` S {s} {} slope ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (686 renders); sweep scenario/crashed, scenario/crashed/120x33 (212318 renders)
-- `frames/dash/ccd.rs:199` ` bound by {bound} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (522 renders); sweep scenario/crashed, scenario/crashed/160x45 (170196 renders)
-- `frames/dash/ccd.rs:208` ` S 0 · no cap yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/120x33, scenario/between/160x45 (56842 renders)
-- `frames/dash/ccd.rs:209` ` no cap yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (75 renders); sweep scenario/between/120x33, scenario/between/160x45 (1127007 renders)
-- `frames/dash/ccd.rs:228` ` at S ` — sweep scenario/crashed/120x33, scenario/crashed/160x45 (193815 renders)
-- `frames/dash/ccd.rs:228` ` at S ` — sweep scenario/crashed/120x33, scenario/crashed/160x45 (193815 renders)
-- `frames/dash/ccd.rs:231` ` {remaining} counts to S ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (405 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (37120 renders)
-- `frames/dash/ccd.rs:232` ` {remaining} to S ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (463 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (37139 renders)
-- `frames/dash/ccd.rs:255` ` cap coverage: no cap yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/120x33, scenario/between/160x45 (56854 renders)
-- `frames/dash/ccd.rs:276` ` {covered} covered for the cap · {uncovered} uncovered for the cap ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (419 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (230934 renders)
+- `frames/dash/ccd.rs:142` ` baseline ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide (615 renders); sweep journal/help/160x45, journal/help/240x67 (83578 renders)
+- `frames/dash/ccd.rs:153` ` U unknown ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (48 renders); sweep scenario/between/120x33, scenario/between/160x45 (140405 renders)
+- `frames/dash/ccd.rs:155` ` U fails at {} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (243 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (61483 renders)
+- `frames/dash/ccd.rs:159` ` U censored at {} ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (224 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (86006 renders)
+- `frames/dash/ccd.rs:169` ` S {s} {} slope ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1736 renders); sweep scenario/crashed, scenario/crashed/120x33 (212332 renders)
+- `frames/dash/ccd.rs:199` ` bound by {bound} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1571 renders); sweep scenario/crashed, scenario/crashed/160x45 (170208 renders)
+- `frames/dash/ccd.rs:208` ` S 0 · no cap yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (37 renders); sweep scenario/between/120x33, scenario/between/160x45 (56882 renders)
+- `frames/dash/ccd.rs:209` ` no cap yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (323 renders); sweep scenario/between/120x33, scenario/between/160x45 (1127273 renders)
+- `frames/dash/ccd.rs:228` ` at S ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (8 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (193831 renders)
+- `frames/dash/ccd.rs:228` ` at S ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (8 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (193831 renders)
+- `frames/dash/ccd.rs:231` ` {remaining} counts to S ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (407 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (37120 renders)
+- `frames/dash/ccd.rs:232` ` {remaining} to S ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (465 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (37139 renders)
+- `frames/dash/ccd.rs:255` ` cap coverage: no cap yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (37 renders); sweep scenario/between/120x33, scenario/between/160x45 (56894 renders)
+- `frames/dash/ccd.rs:276` ` {covered} covered for the cap · {uncovered} uncovered for the cap ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (435 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (230950 renders)
 - `frames/dash/ccd.rs:282` ` {covered} covered · {uncovered} uncovered ` — sweep sweep/calendar/skipped/32x30, sweep/calendar/skipped/35x30 (30 renders)
 - `frames/dash/ccd.rs:285` ` {covered} cov · {uncovered} unc ` — sweep sweep/calendar/skipped/20x30, sweep/calendar/skipped/28x30 (12 renders)
-- `frames/dash/ccd.rs:303` ` all loaded ` — tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_1_every_core_loaded, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (203 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (1100 renders)
-- `frames/dash/ccd.rs:304` ` idle ` — tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_2_nothing_loaded, frames::dash::tests::a_ccd_the_tuner_has_no_state_for_says_so (3151 renders); sweep journal/help/160x45, journal/help/240x67 (529398 renders)
-- `frames/dash/ccd.rs:305` ` one loaded ` — tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_3_one_loaded, frames::dash::tests::a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core (4 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (50418 renders)
-- `frames/dash/ccd.rs:306` ` {loaded} loaded ` — tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_1_every_core_loaded, frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_3_one_loaded (821 renders); sweep journal/help/160x45, journal/help/240x67 (54991 renders)
-- `frames/dash/ccd.rs:319` ` CCD {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (5888 renders); sweep journal/help/160x45, journal/help/240x67 (7781869 renders)
-- `frames/dash/ccd.rs:352` ` 2 counts/cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (138 renders); sweep scenario/between/120x33, scenario/controls/120x33 (71982 renders)
+- `frames/dash/ccd.rs:303` ` all loaded ` — tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_1_every_core_loaded, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night (206 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (1100 renders)
+- `frames/dash/ccd.rs:304` ` idle ` — tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_2_nothing_loaded, frames::dash::tests::a_ccd_the_tuner_has_no_state_for_says_so (3188 renders); sweep journal/help/160x45, journal/help/240x67 (529510 renders)
+- `frames/dash/ccd.rs:305` ` one loaded ` — tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_3_one_loaded, frames::dash::tests::a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core (20 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (50418 renders)
+- `frames/dash/ccd.rs:306` ` {loaded} loaded ` — tests frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_1_every_core_loaded, frames::dash::tests::a_ccd_role_counts_what_the_running_trial_loads::test_case_3_one_loaded (840 renders); sweep journal/help/160x45, journal/help/240x67 (54991 renders)
+- `frames/dash/ccd.rs:319` ` CCD {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (11988 renders); sweep journal/help/160x45, journal/help/240x67 (7782433 renders)
+- `frames/dash/ccd.rs:352` ` 2 counts/cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (140 renders); sweep scenario/between/120x33, scenario/controls/120x33 (71996 renders)
 - `frames/dash/ccd.rs:382` ` no tuner state for this CCD yet ` — tests frames::frame_tests::policy_states::a_ccd_the_tuner_has_no_state_for_says_so (1 renders)
-- `frames/dash/ccd.rs:391` ` +{} more ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_1_mapping_whose_clocks_run (608 renders); sweep journal/help/160x45, journal/help/240x67 (288563 renders)
+- `frames/dash/ccd.rs:391` ` +{} more ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide (622 renders); sweep journal/help/160x45, journal/help/240x67 (288581 renders)
 
 ### `frames/dash/header.rs`: 14 of 14 covered
 
-- `frames/dash/header.rs:15` ` togi ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (5045 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (446290 renders)
+- `frames/dash/header.rs:15` ` togi ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (9302 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (446346 renders)
 - `frames/dash/header.rs:36` ` no session yet ` — tests frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_1_missing, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (124 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (12 renders)
 - `frames/dash/header.rs:55` ` paused · planned end {} ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (185 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (155 renders)
-- `frames/dash/header.rs:83` ` tuning ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (1504 renders); sweep journal/help/160x45, journal/help/240x67 (287969 renders)
-- `frames/dash/header.rs:83` ` tune ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (576 renders); sweep journal/help/160x45, journal/help/240x67 (1681 renders)
-- `frames/dash/header.rs:84` ` session ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (31552 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (294688 renders)
-- `frames/dash/header.rs:84` ` age ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (567 renders); sweep journal/help/160x45, journal/help/240x67 (56898 renders)
-- `frames/dash/header.rs:91` ` failure ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (4374 renders); sweep journal/help/160x45, journal/help/240x67 (345041 renders)
-- `frames/dash/header.rs:93` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (1935 renders); sweep journal/help/160x45, journal/help/240x67 (439271 renders)
+- `frames/dash/header.rs:83` ` tuning ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (1598 renders); sweep journal/help/160x45, journal/help/240x67 (288025 renders)
+- `frames/dash/header.rs:83` ` tune ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (576 renders); sweep journal/help/160x45, journal/help/240x67 (1729 renders)
+- `frames/dash/header.rs:84` ` session ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (31669 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (294801 renders)
+- `frames/dash/header.rs:84` ` age ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (568 renders); sweep journal/help/160x45, journal/help/240x67 (56938 renders)
+- `frames/dash/header.rs:91` ` failure ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (6323 renders); sweep journal/help/160x45, journal/help/240x67 (345097 renders)
+- `frames/dash/header.rs:93` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (2032 renders); sweep journal/help/160x45, journal/help/240x67 (439387 renders)
 - `frames/dash/header.rs:100` `  fail ·  ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both::test_case_1_wide (7 renders); sweep sweep/deadend/skipped/60x30, sweep/night/skipped/60x30 (4 renders)
-- `frames/dash/header.rs:102` `  crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (1935 renders); sweep journal/help/160x45, journal/help/240x67 (439271 renders)
-- `frames/dash/header.rs:110` ` last observed failure  ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (106 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (62078 renders)
+- `frames/dash/header.rs:102` `  crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (2032 renders); sweep journal/help/160x45, journal/help/240x67 (439387 renders)
+- `frames/dash/header.rs:110` ` last observed failure  ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (122 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (62094 renders)
 - `frames/dash/header.rs:132` ` screen paused · planned end {minute} ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (142 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (131 renders)
 - `frames/dash/header.rs:136` ` paused · planned end {minute} ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (185 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (155 renders)
 
 ### `frames/dash/now.rs`: 14 of 14 covered
 
-- `frames/dash/now.rs:136` ` idle + bursts ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::between::scrolling::test_case_1_one (271 renders); sweep scenario/crashed, scenario/day-step (7955 renders)
+- `frames/dash/now.rs:136` ` idle + bursts ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (278 renders); sweep scenario/crashed, scenario/day-step (7955 renders)
 - `frames/dash/now.rs:146` ` short wake-ups, no workers in between ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (37 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (47 renders)
-- `frames/dash/now.rs:170` `  · {workers} worker{suffix} ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (171 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (38708 renders)
-- `frames/dash/now.rs:198` ` NOW ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (94 renders); sweep scenario/controls/160x45, scenario/controls/240x67 (29030 renders)
-- `frames/dash/now.rs:199` ` trial {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (9737 renders); sweep journal/help/160x45, journal/help/240x67 (457234 renders)
+- `frames/dash/now.rs:170` `  · {workers} worker{suffix} ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (180 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (38708 renders)
+- `frames/dash/now.rs:198` ` NOW ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (102 renders); sweep scenario/controls/160x45, scenario/controls/240x67 (29030 renders)
+- `frames/dash/now.rs:199` ` trial {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (23532 renders); sweep journal/help/160x45, journal/help/240x67 (457412 renders)
 - `frames/dash/now.rs:234` ` preparing · workload has not started yet · planned {} ` — tests frames::frame_tests::holds::a_trial_intent_before_its_start_does_not_freeze, frames::frame_tests::live_panels::live_panels_keep_their_rectangles_from_a_running_trial_to_the_next (6 renders); sweep sweep/calendar/0013-trial.intent/120x33/plus40, sweep/calendar/0013-trial.intent/160x45/plus40 (11340 renders)
-- `frames/dash/now.rs:258` ` left ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell (1176 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (169109 renders)
+- `frames/dash/now.rs:258` ` left ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell (1220 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (169109 renders)
 - `frames/dash/now.rs:260` ` past end ` — tests frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (1 renders); sweep sweep/calendar/0014-trial.start/240x67/overdue, sweep/calendar/0018-trial.start/240x67/overdue (3704 renders)
 - `frames/dash/now.rs:288` `   screen paused · planned end {digits}, so it cannot wake the idle cores   ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (13 renders); sweep scenario/idle/240x67, sweep/calendar/0846-trial.start/240x67/event (23 renders)
-- `frames/dash/now.rs:300` ` started  ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (3232 renders); sweep journal/help/160x45, journal/help/240x67 (182479 renders)
+- `frames/dash/now.rs:300` ` started  ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (7401 renders); sweep journal/help/160x45, journal/help/240x67 (182564 renders)
 - `frames/dash/now.rs:310` ` ends at ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (13 renders); sweep scenario/idle/240x67, sweep/calendar/0846-trial.start/240x67/event (23 renders)
 - `frames/dash/now.rs:332` ` screen paused · planned end  ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (142 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (131 renders)
-- `frames/dash/now.rs:338` `  left ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell (1176 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (169109 renders)
+- `frames/dash/now.rs:338` `  left ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell (1220 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (169109 renders)
 - `frames/dash/now.rs:341` ` {} past its end ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (8 renders); sweep sweep/calendar/0014-trial.start/120x33/overdue, sweep/calendar/0014-trial.start/160x45/overdue (7408 renders)
 
 ### `frames/dash/stage.rs`: 23 of 23 covered
 
-- `frames/dash/stage.rs:51` ` boot {short} ` — tests frames::footer::tests::the_question_replaces_the_key_hints_and_names_the_day_cycle, frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (841 renders); sweep journal/help/160x45, journal/help/240x67 (26151 renders)
+- `frames/dash/stage.rs:51` ` boot {short} ` — tests frames::footer::tests::the_question_replaces_the_key_hints_and_names_the_day_cycle, frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (843 renders); sweep journal/help/160x45, journal/help/240x67 (26215 renders)
 - `frames/dash/stage.rs:53` ` record #{seq} ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named, frames::frame_tests::policy_states::a_reproduction_of_a_recorded_event_names_the_record (5 renders)
-- `frames/dash/stage.rs:54` ` requalification {night} ` — tests frames::frame_tests::policy_states::a_retried_re_qualification_says_so, frames::story::tests::nights::a_qualification_trial_names_the_profile_and_its_progress (25 renders); sweep scenario/between, scenario/between/240x67 (72493 renders)
-- `frames/dash/stage.rs:77` ` mapping C{} {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (209 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (43632 renders)
-- `frames/dash/stage.rs:80` ` mapping CCD {} at {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (144 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (32722 renders)
-- `frames/dash/stage.rs:82` ` mapping ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_day_once_a_later_boot_closes_the_night (1824 renders); sweep journal/help/160x45, journal/help/240x67 (6074661 renders)
+- `frames/dash/stage.rs:54` ` requalification {night} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (92 renders); sweep scenario/between, scenario/between/240x67 (72499 renders)
+- `frames/dash/stage.rs:77` ` mapping C{} {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (227 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (43632 renders)
+- `frames/dash/stage.rs:80` ` mapping CCD {} at {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (160 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (32722 renders)
+- `frames/dash/stage.rs:82` ` mapping ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_day_once_a_later_boot_closes_the_night (5730 renders); sweep journal/help/160x45, journal/help/240x67 (6074956 renders)
 - `frames/dash/stage.rs:86` ` requalifying ` — tests frames::frame_tests::policy_states::a_retried_re_qualification_says_so (2 renders)
 - `frames/dash/stage.rs:88` ` qualifying ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (296 renders); sweep scenario/day-step, scenario/qualification (12543 renders)
 - `frames/dash/stage.rs:102` ` reproducing {} ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (345 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5558 renders)
 - `frames/dash/stage.rs:104` ` reproducing ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (345 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5558 renders)
-- `frames/dash/stage.rs:107` ` controls at CO 0 ` — tests frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity, terminal::real_process::real_process_helper (7 renders); sweep scenario/between/120x33, scenario/between/160x45 (50314 renders)
-- `frames/dash/stage.rs:109` ` filler C{} ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd (1 renders); sweep scenario/filler/120x33, sweep/filler/8958-trial.intent/120x33/plus40 (8 renders)
-- `frames/dash/stage.rs:110` ` filler on CCD {} ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd (1 renders); sweep scenario/filler/160x45, scenario/filler/240x67 (22 renders)
-- `frames/dash/stage.rs:111` ` filler ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (172 renders); sweep scenario/between, scenario/between/120x33 (153207 renders)
+- `frames/dash/stage.rs:107` ` controls at CO 0 ` — tests frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls (9 renders); sweep scenario/between/120x33, scenario/between/160x45 (50322 renders)
+- `frames/dash/stage.rs:109` ` filler C{} ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd (1 renders); sweep scenario/filler/120x33, sweep/filler/8960-trial.intent/120x33/plus40 (8 renders)
+- `frames/dash/stage.rs:110` ` filler on CCD {} ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (3 renders); sweep scenario/filler/160x45, scenario/filler/240x67 (22 renders)
+- `frames/dash/stage.rs:111` ` filler ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (241 renders); sweep scenario/between, scenario/between/120x33 (153261 renders)
 - `frames/dash/stage.rs:129` ` STOPPED ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage (173 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (501812 renders)
 - `frames/dash/stage.rs:134` ` DEAD END ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (175 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (133 renders)
-- `frames/dash/stage.rs:139` ` NIGHT {spent} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (1046 renders); sweep journal/help/160x45, scenario/between/120x33 (372269 renders)
-- `frames/dash/stage.rs:141` ` NIGHT since {} · {spent} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (602 renders); sweep scenario/between/120x33, scenario/between/160x45 (245267 renders)
-- `frames/dash/stage.rs:153` ` DAY ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (531 renders); sweep scenario/between/120x33, scenario/between/160x45 (145027 renders)
+- `frames/dash/stage.rs:139` ` NIGHT {spent} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (1080 renders); sweep journal/help/160x45, scenario/between/120x33 (372305 renders)
+- `frames/dash/stage.rs:141` ` NIGHT since {} · {spent} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (633 renders); sweep scenario/between/120x33, scenario/between/160x45 (245292 renders)
+- `frames/dash/stage.rs:153` ` DAY ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (544 renders); sweep scenario/between/120x33, scenario/between/160x45 (145087 renders)
 - `frames/dash/stage.rs:166` ` screen paused · planned end {} ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (142 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (131 renders)
 - `frames/dash/stage.rs:171` ` trial crashed ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (35 renders); sweep sweep/staged/crashed/log-end/160x45, sweep/staged/crashed/log-end/240x67 (6 renders)
 - `frames/dash/stage.rs:175` ` {} past its end ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (8 renders); sweep sweep/calendar/0014-trial.start/120x33/overdue, sweep/calendar/0014-trial.start/160x45/overdue (7408 renders)
-- `frames/dash/stage.rs:181` ` {} left ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell (1176 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (169109 renders)
+- `frames/dash/stage.rs:181` ` {} left ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell (1220 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (169109 renders)
 
 ### `frames/draw.rs`: 1 of 1 covered
 
-- `frames/draw.rs:101` ` +{hidden} more ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_1_mapping_whose_clocks_run (608 renders); sweep journal/help/160x45, journal/help/240x67 (288563 renders)
+- `frames/draw.rs:101` ` +{hidden} more ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide (622 renders); sweep journal/help/160x45, journal/help/240x67 (288581 renders)
 
 ### `frames/footer.rs`: 21 of 21 covered
 
-- `frames/footer.rs:37` ` help ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (528 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (143982 renders)
-- `frames/footer.rs:43` ` log ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (569 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144003 renders)
-- `frames/footer.rs:48` ` esc ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (536 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144017 renders)
-- `frames/footer.rs:49` ` back ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (4027 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (1675164 renders)
-- `frames/footer.rs:55` ` exit dashboard ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (983 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (143986 renders)
-- `frames/footer.rs:81` ` exit ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (991 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144005 renders)
+- `frames/footer.rs:37` ` help ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (534 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144010 renders)
+- `frames/footer.rs:43` ` log ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (575 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144031 renders)
+- `frames/footer.rs:48` ` esc ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (542 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144045 renders)
+- `frames/footer.rs:49` ` back ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (5300 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (1675424 renders)
+- `frames/footer.rs:55` ` exit dashboard ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (989 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144014 renders)
+- `frames/footer.rs:81` ` exit ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (999 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (144033 renders)
 - `frames/footer.rs:108` ` skipped journal content: togi events ` — sweep sweep/calendar/skipped/60x30, sweep/deadend/skipped/60x30 (5 renders)
 - `frames/footer.rs:109` ` skipped: togi events ` — sweep sweep/calendar/skipped/45x30, sweep/calendar/skipped/50x30 (10 renders)
 - `frames/footer.rs:110` ` skipped ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (496 renders); sweep journal/help/160x45, journal/help/240x67 (44 renders)
@@ -3400,7 +3402,7 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `frames/footer.rs:132` ` {pending} day {noun} pending: togi status ` — tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (2 renders); sweep sweep/calendar/15007-day.unclean_end/120x33/plus40, sweep/calendar/15007-day.unclean_end/160x45/plus40 (4 renders)
 - `frames/footer.rs:135` ` day question: togi status ` — tests frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (1 renders)
 - `frames/footer.rs:136` ` day question ` — tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (6 renders); sweep sweep/calendar/15007-day.unclean_end/120x33/plus40, sweep/calendar/15007-day.unclean_end/160x45/plus40 (4 renders)
-- `frames/footer.rs:145` ` night ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (5186 renders); sweep journal/help/160x45, journal/help/240x67 (452235 renders)
+- `frames/footer.rs:145` ` night ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (9486 renders); sweep journal/help/160x45, journal/help/240x67 (452316 renders)
 - `frames/footer.rs:146` ` day ` — tests frames::footer::tests::the_question_replaces_the_key_hints_and_names_the_day_cycle, frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (2073 renders); sweep journal/help/160x45, journal/help/240x67 (116748 renders)
 - `frames/footer.rs:167` ` Reboot into the night tuning? ` — tests frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (2 renders)
 - `frames/footer.rs:167` ` Reboot into the night? ` — tests frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (1 renders)
@@ -3428,24 +3430,24 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `frames/help.rs:54` ` running now ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (588 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:56` ` amber ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (478 renders); sweep journal/help/160x45 (2 renders)
 - `frames/help.rs:57` ` a hold, a veto, a retreat, a crash, or classes uncovered for the cap ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (588 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
-- `frames/help.rs:59` ` red ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (7144 renders); sweep journal/help/160x45, journal/help/240x67 (388718 renders)
+- `frames/help.rs:59` ` red ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (8206 renders); sweep journal/help/160x45, journal/help/240x67 (388734 renders)
 - `frames/help.rs:59` ` failures, past and present ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (588 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:60` ` green ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (213 renders); sweep journal/help/160x45 (1 renders)
 - `frames/help.rs:60` ` passed, done, covered ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (578 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:61` ` grey ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (1164 renders); sweep journal/help/160x45, journal/help/240x67 (7 renders)
 - `frames/help.rs:61` ` idle, still to come, unknown ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (578 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:66` ` THE TOP LINE ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (133 renders); sweep journal/help/160x45 (1 renders)
-- `frames/help.rs:69` ` failures ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (1709 renders); sweep journal/help/160x45, journal/help/240x67 (286717 renders)
+- `frames/help.rs:69` ` failures ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (1803 renders); sweep journal/help/160x45, journal/help/240x67 (286757 renders)
 - `frames/help.rs:70` ` failure decisions, including trials skipped because they already failed ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (496 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
-- `frames/help.rs:72` ` crashes ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (1091 renders); sweep journal/help/160x45, scenario/between/120x33 (371079 renders)
+- `frames/help.rs:72` ` crashes ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (1169 renders); sweep journal/help/160x45, scenario/between/120x33 (371111 renders)
 - `frames/help.rs:72` ` boots that ended without a clean shutdown ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (480 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
-- `frames/help.rs:74` ` last observed ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (223 renders); sweep journal/help/160x45, scenario/crashed/120x33 (62079 renders)
+- `frames/help.rs:74` ` last observed ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (239 renders); sweep journal/help/160x45, scenario/crashed/120x33 (62095 renders)
 - `frames/help.rs:75` ` the last failure seen in this session that changed what togi does; skips do not count ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (480 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:81` ` exit dashboard; tuning itself keeps running ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (473 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:84` ` WHAT TOGI DOES ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (127 renders); sweep journal/help/160x45 (1 renders)
-- `frames/help.rs:87` ` NIGHT ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (1046 renders); sweep journal/help/160x45, scenario/between/120x33 (372269 renders)
+- `frames/help.rs:87` ` NIGHT ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (1080 renders); sweep journal/help/160x45, scenario/between/120x33 (372305 renders)
 - `frames/help.rs:88` ` Until you end it, togi maps each CCD's edge, qualifies profiles, reproduces daily events and runs co… ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (363 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:91` ` DAY ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (531 renders); sweep scenario/between/120x33, scenario/between/160x45 (145027 renders)
+- `frames/help.rs:91` ` DAY ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (544 renders); sweep scenario/between/120x33, scenario/between/160x45 (145087 renders)
 - `frames/help.rs:92` ` The applied profile holds for a number of applied hours before it takes one step. The day panel show… ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (363 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:95` ` CCD TABLES ` — tests frames::frame_tests::bounds::between::scrolling::test_case_3_half, frames::frame_tests::bounds::between::scrolling::test_case_4_before_end (43 renders)
 - `frames/help.rs:96` ` One table per CCD: its applied offset D, its cap S, its edge U and how far D is from S, then the cla… ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (363 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
@@ -3455,22 +3457,22 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `frames/help.rs:107` ` RULES ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (100 renders)
 - `frames/help.rs:108` ` How togi decides what to do: https://github.com/shgew/togi/blob/main/docs/spec/tuner.md ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (463 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:114` ` WORDS ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (90 renders)
-- `frames/help.rs:117` ` offset ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (6274 renders); sweep journal/help/160x45, journal/help/240x67 (42995 renders)
+- `frames/help.rs:117` ` offset ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide (9481 renders); sweep journal/help/160x45, journal/help/240x67 (43007 renders)
 - `frames/help.rs:118` ` Curve Optimizer counts, 0 to -50; deeper is more negative ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (538 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:120` ` trial ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (9737 renders); sweep journal/help/160x45, journal/help/240x67 (457234 renders)
+- `frames/help.rs:120` ` trial ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (23532 renders); sweep journal/help/160x45, journal/help/240x67 (457412 renders)
 - `frames/help.rs:120` ` one launch of one workload on its target ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (538 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:123` ` the CCD's applied day offset; 0 before the first day step ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (538 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:127` ` the cap: the deepest offset the night's evidence supports, with its slope and what binds it ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (538 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:131` ` the night edge: the shallowest offset that failed in isolation; unknown until mapped, censored when … ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (452 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:134` ` slope ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1232 renders); sweep journal/help/160x45, journal/help/240x67 (1543133 renders)
+- `frames/help.rs:134` ` slope ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (2531 renders); sweep journal/help/160x45, journal/help/240x67 (1543349 renders)
 - `frames/help.rs:135` ` how fast a class's failure rate grows with depth: a fallback until enough is measured ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (538 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:138` ` bound by ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (522 renders); sweep scenario/crashed, scenario/crashed/160x45 (170196 renders)
+- `frames/help.rs:138` ` bound by ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1571 renders); sweep scenario/crashed, scenario/crashed/160x45 (170208 renders)
 - `frames/help.rs:139` ` what limits S: a class's failure rate, the margin from the edge, or the baseline ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (538 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:142` ` covered ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (2315 renders); sweep journal/help/160x45, journal/help/240x67 (237267 renders)
+- `frames/help.rs:142` ` covered ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (3371 renders); sweep journal/help/160x45, journal/help/240x67 (237283 renders)
 - `frames/help.rs:143` ` a class whose evidence backs the cap; an uncovered class does not yet ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (551 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:145` ` hold ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (3038 renders); sweep journal/help/160x45, journal/help/240x67 (223571 renders)
+- `frames/help.rs:145` ` hold ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (3048 renders); sweep journal/help/160x45, journal/help/240x67 (223599 renders)
 - `frames/help.rs:145` ` applied hours at D out of the hours a step needs ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (551 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:147` ` step ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::between::screens (3697 renders); sweep journal/help/160x45, journal/help/240x67 (555662 renders)
+- `frames/help.rs:147` ` step ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide (5635 renders); sweep journal/help/160x45, journal/help/240x67 (555662 renders)
 - `frames/help.rs:148` ` what the day decided: hold, promote one CCD, retreat, or reset after a firmware change ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (538 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:150` ` veto ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (1144 renders); sweep journal/help/160x45, journal/help/240x67 (11374 renders)
 - `frames/help.rs:150` ` a profile an event forbids until the veto clears ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (541 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
@@ -3480,66 +3482,66 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `frames/help.rs:157` ` running a whole profile until every class has witnessed it ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (554 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:160` ` reproducing ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (345 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5558 renders)
 - `frames/help.rs:161` ` re-running a daily event's conditions to see whether it comes back ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (538 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:164` ` share ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (983 renders); sweep journal/help/160x45, journal/help/240x67 (143263 renders)
+- `frames/help.rs:164` ` share ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (992 renders); sweep journal/help/160x45, journal/help/240x67 (143275 renders)
 - `frames/help.rs:165` ` the part of the night's elapsed time a queue has used, against the part it is meant to take ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (538 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:171` ` KINDS OF LOAD ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (276 renders)
-- `frames/help.rs:173` ` R1 light ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one (540 renders); sweep scenario/between, scenario/crashed (2454541 renders)
+- `frames/help.rs:173` ` R1 light ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one (953 renders); sweep scenario/between, scenario/crashed (2454717 renders)
 - `frames/help.rs:173` ` one light thread: compiling, browsing ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (629 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:175` ` R2 heavy vector ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (420 renders); sweep scenario/between, scenario/between/120x33 (2133892 renders)
+- `frames/help.rs:175` ` R2 heavy vector ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (820 renders); sweep scenario/between, scenario/between/120x33 (2133892 renders)
 - `frames/help.rs:176` ` one AVX2/AVX-512 thread: encoding, rendering ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (629 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:178` ` R3 load steps ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (351 renders); sweep scenario/between, scenario/between/120x33 (450683 renders)
+- `frames/help.rs:178` ` R3 load steps ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (463 renders); sweep scenario/between, scenario/between/120x33 (450683 renders)
 - `frames/help.rs:178` ` load switching on and off: current steps ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (632 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:179` ` R4 partial load ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (349 renders); sweep scenario/crashed, scenario/day-step (406160 renders)
+- `frames/help.rs:179` ` R4 partial load ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (461 renders); sweep scenario/crashed, scenario/day-step (406160 renders)
 - `frames/help.rs:179` ` light load at 25-75% duty: bursty work ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (632 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:180` ` R5 both threads ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (289 renders); sweep scenario/crashed, scenario/day-step (114568 renders)
+- `frames/help.rs:180` ` R5 both threads ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (401 renders); sweep scenario/crashed, scenario/day-step (114568 renders)
 - `frames/help.rs:180` ` both threads of one core: SMT pressure ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (555 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:182` ` R6 idle + bursts ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (225 renders); sweep scenario/crashed, scenario/day-step (7892 renders)
+- `frames/help.rs:182` ` R6 idle + bursts ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (232 renders); sweep scenario/crashed, scenario/day-step (7892 renders)
 - `frames/help.rs:183` ` idle with short wake-ups: idle and boost ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (581 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:186` ` R7 all-core ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (259 renders); sweep scenario/crashed, scenario/crashed/240x67 (701819 renders)
+- `frames/help.rs:186` ` R7 all-core ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (776 renders); sweep scenario/crashed, scenario/crashed/240x67 (701903 renders)
 - `frames/help.rs:187` ` a CCD, part of one, or every core: power and heat ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (555 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:327` ` LOADED ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (1616 renders); sweep journal/help/160x45, journal/help/80x24 (37387 renders)
+- `frames/help.rs:327` ` LOADED ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (1640 renders); sweep journal/help/160x45, journal/help/80x24 (37387 renders)
 - `frames/help.rs:329` ` applied -12 under load; the dots run to the cap S at -26; the red mark is the edge U, failed at -31 ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (117 renders); sweep journal/help/160x45 (1 renders)
 - `frames/help.rs:346` ` idle, so grey; the cap S is -14 and its CCD has no edge yet, so there is no red mark ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (213 renders); sweep journal/help/160x45 (1 renders)
 - `frames/help.rs:358` ` no readback yet; the cap S is -30 and the edge is censored: nothing failed down to -50 ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (223 renders); sweep journal/help/160x45 (1 renders)
 
-### `frames/panels/context.rs`: 62 of 62 covered
+### `frames/panels/context.rs`: 63 of 63 covered
 
-- `frames/panels/context.rs:86` ` NIGHT since {since} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (602 renders); sweep scenario/between/120x33, scenario/between/160x45 (245267 renders)
-- `frames/panels/context.rs:87` `  · {} elapsed ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (1327 renders); sweep journal/help/160x45, journal/help/240x67 (418288 renders)
-- `frames/panels/context.rs:98` ` LAST NIGHT {since}{end} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (37 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (1694 renders)
-- `frames/panels/context.rs:108` ` task ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (2823 renders); sweep scenario/between, scenario/between/120x33 (8387354 renders)
-- `frames/panels/context.rs:109` ` mapping ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_day_once_a_later_boot_closes_the_night (1824 renders); sweep journal/help/160x45, journal/help/240x67 (6074661 renders)
-- `frames/panels/context.rs:113` ` CCD {}: failed at {}, bracket at {} ` — sweep scenario/crashed/120x33, scenario/crashed/160x45 (13648 renders)
-- `frames/panels/context.rs:118` ` CCD {} at {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (3619 renders); sweep journal/help/160x45, journal/help/240x67 (6410016 renders)
+- `frames/panels/context.rs:86` ` NIGHT since {since} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (633 renders); sweep scenario/between/120x33, scenario/between/160x45 (245292 renders)
+- `frames/panels/context.rs:87` `  · {} elapsed ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (1423 renders); sweep journal/help/160x45, journal/help/240x67 (418349 renders)
+- `frames/panels/context.rs:98` ` LAST NIGHT {since}{end} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (38 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (1699 renders)
+- `frames/panels/context.rs:108` ` task ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (9507 renders); sweep scenario/between, scenario/between/120x33 (8387719 renders)
+- `frames/panels/context.rs:109` ` mapping ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_day_once_a_later_boot_closes_the_night (5730 renders); sweep journal/help/160x45, journal/help/240x67 (6074956 renders)
+- `frames/panels/context.rs:113` ` CCD {}: failed at {}, bracket at {} ` — sweep scenario/crashed/120x33, scenario/crashed/160x45 (13664 renders)
+- `frames/panels/context.rs:118` ` CCD {} at {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (9445 renders); sweep journal/help/160x45, journal/help/240x67 (6410338 renders)
 - `frames/panels/context.rs:132` ` qualifying ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (296 renders); sweep scenario/day-step, scenario/qualification (12543 renders)
 - `frames/panels/context.rs:137` ` reproducing ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (345 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5558 renders)
-- `frames/panels/context.rs:148` ` shares ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (217 renders); sweep scenario/between/120x33, scenario/between/160x45 (143259 renders)
+- `frames/panels/context.rs:148` ` shares ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (226 renders); sweep scenario/between/120x33, scenario/between/160x45 (143271 renders)
 - `frames/panels/context.rs:159` ` unavailable ` — sweep scenario/reproduction, sweep/calendar/15007-day.unclean_end (3 renders)
-- `frames/panels/context.rs:210` ` {done} of {} planned tasks done ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (225 renders); sweep scenario/between/120x33, scenario/between/160x45 (139968 renders)
-- `frames/panels/context.rs:215` ` {} task {} ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (2823 renders); sweep scenario/between, scenario/between/120x33 (8387354 renders)
-- `frames/panels/context.rs:220` ` none running ·  ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (120 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (1648 renders)
+- `frames/panels/context.rs:210` ` {done} of {} planned tasks done ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (234 renders); sweep scenario/between/120x33, scenario/between/160x45 (139980 renders)
+- `frames/panels/context.rs:215` ` {} task {} ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (9507 renders); sweep scenario/between, scenario/between/120x33 (8387719 renders)
+- `frames/panels/context.rs:220` ` none running ·  ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (121 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (1648 renders)
 - `frames/panels/context.rs:239` ` {}{purpose} · {} witnessed · {} outstanding ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (17 renders); sweep scenario/qualification/160x45, scenario/qualification/240x67 (7193 renders)
-- `frames/panels/context.rs:251` ` boot {short} ` — tests frames::footer::tests::the_question_replaces_the_key_hints_and_names_the_day_cycle, frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (841 renders); sweep journal/help/160x45, journal/help/240x67 (26151 renders)
+- `frames/panels/context.rs:251` ` boot {short} ` — tests frames::footer::tests::the_question_replaces_the_key_hints_and_names_the_day_cycle, frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (843 renders); sweep journal/help/160x45, journal/help/240x67 (26215 renders)
 - `frames/panels/context.rs:253` ` record #{seq} ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named, frames::frame_tests::policy_states::a_reproduction_of_a_recorded_event_names_the_record (5 renders)
-- `frames/panels/context.rs:254` ` requalification {night} ` — tests frames::frame_tests::policy_states::a_retried_re_qualification_says_so, frames::story::tests::nights::a_qualification_trial_names_the_profile_and_its_progress (25 renders); sweep scenario/between, scenario/between/240x67 (72493 renders)
+- `frames/panels/context.rs:254` ` requalification {night} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (92 renders); sweep scenario/between, scenario/between/240x67 (72499 renders)
 - `frames/panels/context.rs:260` ` {} · {} · {} used · {} classes left ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (12 renders); sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (4163 renders)
-- `frames/panels/context.rs:271` ` applied CO 0 ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (40 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (456 renders)
-- `frames/panels/context.rs:272` ` applied {} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (4004 renders); sweep journal/help/160x45, journal/help/240x67 (207998 renders)
-- `frames/panels/context.rs:277` ` DAY ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (531 renders); sweep scenario/between/120x33, scenario/between/160x45 (145027 renders)
-- `frames/panels/context.rs:282` ` hold ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (3038 renders); sweep journal/help/160x45, journal/help/240x67 (223571 renders)
-- `frames/panels/context.rs:286` ` last step ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::between::screens (445 renders); sweep journal/help/160x45, journal/help/240x67 (78067 renders)
+- `frames/panels/context.rs:271` ` applied CO 0 ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (40 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (472 renders)
+- `frames/panels/context.rs:272` ` applied {} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (4047 renders); sweep journal/help/160x45, journal/help/240x67 (208038 renders)
+- `frames/panels/context.rs:277` ` DAY ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (544 renders); sweep scenario/between/120x33, scenario/between/160x45 (145087 renders)
+- `frames/panels/context.rs:282` ` hold ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (3048 renders); sweep journal/help/160x45, journal/help/240x67 (223599 renders)
+- `frames/panels/context.rs:286` ` last step ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::between::screens (446 renders); sweep journal/help/160x45, journal/help/240x67 (78067 renders)
 - `frames/panels/context.rs:294` ` freeze ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (267 renders)
 - `frames/panels/context.rs:298` ` on: D kept, no promotion; retreats and firmware resets still apply ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders)
-- `frames/panels/context.rs:305` ` firmware ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1419 renders); sweep journal/help/160x45, journal/help/240x67 (142633 renders)
+- `frames/panels/context.rs:305` ` firmware ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1428 renders); sweep journal/help/160x45, journal/help/240x67 (142661 renders)
 - `frames/panels/context.rs:312` ` questions ` — tests frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form, frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (2 renders)
 - `frames/panels/context.rs:316` ` {} pending ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered (36 renders); sweep scenario/reproduction, scenario/reproduction/120x33 (8341 renders)
 - `frames/panels/context.rs:326` ` all days ` — tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (5 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (74351 renders)
 - `frames/panels/context.rs:336` ` stock CO 0 ` — tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (4 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (74350 renders)
 - `frames/panels/context.rs:340` ` {} · observations, not a bound ` — tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (2 renders); sweep scenario/day-step/160x45, scenario/day-step/240x67 (59481 renders)
-- `frames/panels/context.rs:345` ` events ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (945 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (148466 renders)
+- `frames/panels/context.rs:345` ` events ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (955 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (148494 renders)
 - `frames/panels/context.rs:350` ` vetoes ` — sweep scenario/reproduction, scenario/reproduction/160x45 (4319 renders)
-- `frames/panels/context.rs:376` `  · holding {} ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (202 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5744 renders)
-- `frames/panels/context.rs:379` ` no hold started ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (36 renders); sweep scenario/between/120x33, scenario/between/160x45 (138133 renders)
+- `frames/panels/context.rs:376` `  · holding {} ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (203 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5744 renders)
+- `frames/panels/context.rs:379` ` no hold started ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (44 renders); sweep scenario/between/120x33, scenario/between/160x45 (138161 renders)
 - `frames/panels/context.rs:388` ` incomplete, {} of {} ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_2_a_hold_blocked_by_its_hours_and_a_question (1 renders)
 - `frames/panels/context.rs:389` ` at the cap ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_3_a_hold_at_the_cap_and_unqualified, frames::story::tests::nights::a_held_step_names_every_blocker (3 renders); sweep scenario/day-step, scenario/qualification (61115 renders)
 - `frames/panels/context.rs:390` ` not qualified ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_3_a_hold_at_the_cap_and_unqualified (1 renders); sweep scenario/day-step, scenario/reproduction (11336 renders)
@@ -3548,38 +3550,39 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `frames/panels/context.rs:393` ` {} is unresolved ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_4_a_hold_behind_a_veto_and_an_unresolved_event, frames::story::tests::nights::a_held_step_names_every_blocker (3 renders); sweep scenario/reproduction/120x33, scenario/reproduction/160x45 (5607 renders)
 - `frames/panels/context.rs:394` ` frozen ` — tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (11 renders); sweep sweep/calendar/15007-day.unclean_end/120x33/plus40, sweep/calendar/15007-day.unclean_end/160x45/plus40 (8 renders)
 - `frames/panels/context.rs:395` ` paused ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (188 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (155 renders)
-- `frames/panels/context.rs:396` ` expired ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_5_a_frozen_paused_expired_hold, frames::story::tests::nights::a_held_step_names_every_blocker (5 renders); sweep scenario/deadend, scenario/filler (9 renders)
-- `frames/panels/context.rs:412` ` hold, nothing blocks it ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_1_an_unblocked_hold (1 renders)
-- `frames/panels/context.rs:417` ` hold: {} ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_2_a_hold_blocked_by_its_hours_and_a_question, frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_3_a_hold_at_the_cap_and_unqualified (4 renders); sweep scenario/qualification/120x33, scenario/qualification/160x45 (77957 renders)
-- `frames/panels/context.rs:426` ` promoted CCD {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (28 renders); sweep sweep/calendar/15003-day.applied/120x33/plus40, sweep/calendar/15003-day.applied/160x45/plus40 (52 renders)
-- `frames/panels/context.rs:430` ` proposed promoting CCD {}, not applied ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_7_a_proposed_promotion (1 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (7 renders)
-- `frames/panels/context.rs:433` ` retreated CCD {} ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_8_an_applied_retreat (1 renders); sweep sweep/calendar/15015-day.applied/120x33/plus40, sweep/calendar/15015-day.applied/160x45/plus40 (44 renders)
-- `frames/panels/context.rs:438` ` proposed retreating CCD {}, not applied ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_9_a_proposed_retreat (1 renders); sweep sweep/calendar/15014-day.step/120x33/plus40, sweep/calendar/15014-day.step/160x45/plus40 (4 renders)
-- `frames/panels/context.rs:444` ` reset CCD {} after firmware change ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_10_an_applied_firmware_reset (1 renders)
-- `frames/panels/context.rs:449` ` proposed resetting CCD {} after firmware change, not applied ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_11_a_proposed_firmware_reset (1 renders)
-- `frames/panels/context.rs:459` ` valid ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (214 renders); sweep scenario/between/120x33, scenario/between/160x45 (142171 renders)
-- `frames/panels/context.rs:463` ` changed at #{since}; D awaits a reset ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders)
-- `frames/panels/context.rs:465` ` not reported yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (33 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (456 renders)
-- `frames/panels/context.rs:471` ` cpu suspect ({certainty}) ` — sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (4320 renders)
-- `frames/panels/context.rs:472` ` not the cpu ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders)
-- `frames/panels/context.rs:473` ` unexplained ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (20 renders); sweep sweep/staged/reproducing/120x33/overdue, sweep/staged/reproducing/120x33/plus40 (8 renders)
-- `frames/panels/context.rs:476` ` unresolved ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (24 renders); sweep scenario/reproduction, scenario/reproduction/120x33 (11148 renders)
-- `frames/panels/context.rs:477` ` resolved ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (27 renders); sweep scenario/reproduction, scenario/reproduction/120x33 (11246 renders)
-- `frames/panels/context.rs:487` `  · reproduction {} ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (13 renders); sweep scenario/reproduction/240x67, sweep/calendar/15011-day.event/240x67/event (274468 renders)
+- `frames/panels/context.rs:396` ` expired ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_5_a_frozen_paused_expired_hold (6 renders); sweep scenario/deadend, scenario/filler (9 renders)
+- `frames/panels/context.rs:398` ` {} failed qualification ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_6_a_hold_on_a_failed_qualification, frames::story::tests::nights::a_held_step_names_every_blocker (3 renders)
+- `frames/panels/context.rs:415` ` hold, nothing blocks it ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_1_an_unblocked_hold (1 renders)
+- `frames/panels/context.rs:420` ` hold: {} ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_2_a_hold_blocked_by_its_hours_and_a_question, frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_3_a_hold_at_the_cap_and_unqualified (5 renders); sweep scenario/qualification/120x33, scenario/qualification/160x45 (77957 renders)
+- `frames/panels/context.rs:429` ` promoted CCD {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::day::screens (28 renders); sweep sweep/calendar/15003-day.applied/120x33/plus40, sweep/calendar/15003-day.applied/160x45/plus40 (52 renders)
+- `frames/panels/context.rs:433` ` proposed promoting CCD {}, not applied ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_8_a_proposed_promotion (1 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (7 renders)
+- `frames/panels/context.rs:436` ` retreated CCD {} ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_9_an_applied_retreat (1 renders); sweep sweep/calendar/15015-day.applied/120x33/plus40, sweep/calendar/15015-day.applied/160x45/plus40 (44 renders)
+- `frames/panels/context.rs:441` ` proposed retreating CCD {}, not applied ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_10_a_proposed_retreat (1 renders); sweep sweep/calendar/15014-day.step/120x33/plus40, sweep/calendar/15014-day.step/160x45/plus40 (4 renders)
+- `frames/panels/context.rs:447` ` reset CCD {} after firmware change ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_11_an_applied_firmware_reset (1 renders)
+- `frames/panels/context.rs:452` ` proposed resetting CCD {} after firmware change, not applied ` — tests frames::frame_tests::policy_states::the_day_names_its_last_step::test_case_12_a_proposed_firmware_reset (1 renders)
+- `frames/panels/context.rs:462` ` valid ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (223 renders); sweep scenario/between/120x33, scenario/between/160x45 (142183 renders)
+- `frames/panels/context.rs:466` ` changed at #{since}; D awaits a reset ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders)
+- `frames/panels/context.rs:468` ` not reported yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (33 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (472 renders)
+- `frames/panels/context.rs:474` ` cpu suspect ({certainty}) ` — sweep scenario/reproduction/160x45, scenario/reproduction/240x67 (4320 renders)
+- `frames/panels/context.rs:475` ` not the cpu ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders)
+- `frames/panels/context.rs:476` ` unexplained ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (20 renders); sweep sweep/staged/reproducing/120x33/overdue, sweep/staged/reproducing/120x33/plus40 (8 renders)
+- `frames/panels/context.rs:479` ` unresolved ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (24 renders); sweep scenario/reproduction, scenario/reproduction/120x33 (11148 renders)
+- `frames/panels/context.rs:480` ` resolved ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (27 renders); sweep scenario/reproduction, scenario/reproduction/120x33 (11246 renders)
+- `frames/panels/context.rs:490` `  · reproduction {} ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (13 renders); sweep scenario/reproduction/240x67, sweep/calendar/15011-day.event/240x67/event (274468 renders)
 
 ### `frames/panels/history.rs`: 4 of 4 covered
 
-- `frames/panels/history.rs:36` ` l: last {LOG_LIMIT} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (511 renders); sweep scenario/between/120x33, scenario/between/160x45 (287754 renders)
-- `frames/panels/history.rs:38` ` newest first · l: last {LOG_LIMIT} events ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (235 renders); sweep scenario/between/240x67, scenario/controls/240x67 (143860 renders)
-- `frames/panels/history.rs:42` ` WHAT HAPPENED ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (511 renders); sweep scenario/between/120x33, scenario/between/160x45 (287754 renders)
-- `frames/panels/history.rs:55` ` +{hidden} more ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_1_mapping_whose_clocks_run (608 renders); sweep journal/help/160x45, journal/help/240x67 (288563 renders)
+- `frames/panels/history.rs:36` ` l: last {LOG_LIMIT} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (529 renders); sweep scenario/between/120x33, scenario/between/160x45 (287810 renders)
+- `frames/panels/history.rs:38` ` newest first · l: last {LOG_LIMIT} events ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (245 renders); sweep scenario/between/240x67, scenario/controls/240x67 (143888 renders)
+- `frames/panels/history.rs:42` ` WHAT HAPPENED ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (529 renders); sweep scenario/between/120x33, scenario/between/160x45 (287810 renders)
+- `frames/panels/history.rs:55` ` +{hidden} more ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide (622 renders); sweep journal/help/160x45, journal/help/240x67 (288581 renders)
 
 ### `frames/panels/log.rs`: 10 of 10 covered
 
 - `frames/panels/log.rs:34` ` No journal entries yet. ` — tests frames::frame_tests::escapes::a_problem_with_controls_in_its_text_draws_them_visibly_escaped_live_and_in_one_frame, frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_1_missing (13 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (3 renders)
-- `frames/panels/log.rs:49` ` event ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (2462 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (148534 renders)
+- `frames/panels/log.rs:49` ` event ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (2472 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (148562 renders)
 - `frames/panels/log.rs:53` ` last {LOG_LIMIT} of {} · SMU and preflight left out ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_3_80x33_arrived_1 (8 renders); sweep sweep/calendar/log-top/160x45, sweep/calendar/log-top/240x67 (12 renders)
-- `frames/panels/log.rs:56` ` last {LOG_LIMIT} of {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (408 renders); sweep journal/help/160x45, journal/help/240x67 (1038 renders)
+- `frames/panels/log.rs:56` ` last {LOG_LIMIT} of {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (408 renders); sweep journal/help/160x45, journal/help/240x67 (1074 renders)
 - `frames/panels/log.rs:60` ` {} · SMU and preflight left out ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_3_80x33_arrived_1 (397 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (80 renders)
 - `frames/panels/log.rs:66` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (428 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (92 renders)
 - `frames/panels/log.rs:67` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (428 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (92 renders)
@@ -3589,14 +3592,14 @@ Every string literal of a renderer's production source that holds words (592 of 
 
 ### `frames/render.rs`: 2 of 2 covered
 
-- `frames/render.rs:49` ` starting ` — tests frames::frame_tests::holds::a_trial_intent_before_its_start_does_not_freeze, frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_2_starting (22 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (22686 renders)
-- `frames/render.rs:52` ` can't read journal ` — tests frames::frame_tests::escapes::a_problem_with_controls_in_its_text_draws_them_visibly_escaped_live_and_in_one_frame, frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_3_problem (47 renders); sweep journal/problem-once/120x33, journal/problem-once/160x45 (18 renders)
+- `frames/render.rs:52` ` starting ` — tests frames::frame_tests::holds::a_trial_intent_before_its_start_does_not_freeze, frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_2_starting (22 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (22686 renders)
+- `frames/render.rs:55` ` can't read journal ` — tests frames::frame_tests::escapes::a_problem_with_controls_in_its_text_draws_them_visibly_escaped_live_and_in_one_frame, frames::frame_tests::holds::an_unavailable_journal_print_with_no_colour_styles_no_cell::test_case_3_problem (47 renders); sweep journal/problem-once/120x33, journal/problem-once/160x45 (18 renders)
 
 ### `frames/scene.rs`: 3 of 3 covered
 
 - `frames/scene.rs:118` ` a moment ago ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (84 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (2274 renders)
-- `frames/scene.rs:120` ` {}m ago ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (18 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (59804 renders)
-- `frames/scene.rs:122` ` {} ago ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (102 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (62078 renders)
+- `frames/scene.rs:120` ` {}m ago ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (34 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (59820 renders)
+- `frames/scene.rs:122` ` {} ago ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (118 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (62094 renders)
 
 ### `frames/story/mod.rs`: 49 of 49 covered
 
@@ -3624,7 +3627,7 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `frames/story/mod.rs:221` ` Failure at CO 0: the platform is unstable at stock, so tuning stopped. ` — tests frames::story::tests::nights::a_stock_failure_is_not_blamed_on_curve_optimizer (1 renders)
 - `frames/story/mod.rs:230` ` I stopped at a run limit an earlier version supported and restored baseline or shallower offsets. to… ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not, frames::story::tests::the_story::a_stopped_session_says_why_and_whether_the_offsets_were_restored (2 renders)
 - `frames/story/mod.rs:233` ` I stopped at a run limit an earlier version supported. Everything I learned is in the journal; togi … ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not, frames::story::tests::the_story::a_stopped_session_preserves_its_reason::test_case_1_first_result (3 renders)
-- `frames/story/mod.rs:236` ` I restored baseline or shallower offsets before stopping. togi run picks up where I left off. ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (30 renders); sweep sweep/filler/8986-shutdown/120x33/plus40, sweep/filler/8986-shutdown/160x45/plus40 (24 renders)
+- `frames/story/mod.rs:236` ` I restored baseline or shallower offsets before stopping. togi run picks up where I left off. ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (30 renders); sweep sweep/filler/8988-shutdown/120x33/plus40, sweep/filler/8988-shutdown/160x45/plus40 (24 renders)
 - `frames/story/mod.rs:239` ` I've stopped. Everything I learned is in the journal; togi run picks up where I left off. ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (3 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (130026 renders)
 - `frames/story/mod.rs:242` ` STOPPED ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage (173 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (501812 renders)
 - `frames/story/mod.rs:248` ` A trial failed conclusively with every CCD at CO 0, so the platform is unstable at stock and Curve O… ` — tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (3 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (20 renders)
@@ -3636,78 +3639,78 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `frames/story/mod.rs:266` ` An earlier build may have moved offsets deeper than proven. Run togi reset --all to start a fresh se… ` — tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (1 renders)
 - `frames/story/mod.rs:269` ` The CPU shut down from heat. Check the cooling before tuning again. ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_3_thermal_trip, frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (4 renders)
 - `frames/story/mod.rs:272` ` DEAD END ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (175 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (133 renders)
-- `frames/story/mod.rs:278` ` I picked up from the journal after the reboot; nothing it recorded is lost. ` — tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (29 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (987 renders)
-- `frames/story/mod.rs:285` ` RECOVERED ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (119 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1846 renders)
+- `frames/story/mod.rs:278` ` I picked up from the journal after the reboot; nothing it recorded is lost. ` — tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::holds::every_other_frame_moves_with_the_clock::test_case_5_recovering (29 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (1020 renders)
+- `frames/story/mod.rs:285` ` RECOVERED ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (119 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1903 renders)
 - `frames/story/mod.rs:292` ` minute ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (19 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (47 renders)
 - `frames/story/mod.rs:294` ` second ` — sweep scenario/day-step, scenario/qualification (540 renders)
-- `frames/story/mod.rs:378` ` FILLER CCD {} AT {} ` — sweep scenario/filler/120x33, scenario/filler/160x45 (15 renders)
-- `frames/story/mod.rs:381` ` FILLER ` — tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step, frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (2 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (29 renders)
-- `frames/story/mod.rs:382` ` FILLER {} ` — tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step, frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (2 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (29 renders)
-- `frames/story/mod.rs:388` ` MAPPING CCD {} AT {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (47 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (21779 renders)
-- `frames/story/mod.rs:390` ` MAPPING ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (102 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (38118 renders)
-- `frames/story/mod.rs:396` ` {label} CCD {} AT {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (47 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (21794 renders)
+- `frames/story/mod.rs:378` ` FILLER CCD {} AT {} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler (1 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (15 renders)
+- `frames/story/mod.rs:381` ` FILLER ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (5 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (29 renders)
+- `frames/story/mod.rs:382` ` FILLER {} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (5 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (29 renders)
+- `frames/story/mod.rs:388` ` MAPPING CCD {} AT {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (53 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (21779 renders)
+- `frames/story/mod.rs:390` ` MAPPING ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (119 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (38118 renders)
+- `frames/story/mod.rs:396` ` {label} CCD {} AT {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (54 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (21794 renders)
 - `frames/story/mod.rs:408` ` {label} EXACT PROFILE ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (18 renders); sweep sweep/staged/reproducing/120x33/overdue, sweep/staged/reproducing/120x33/plus40 (8 renders)
-- `frames/story/mod.rs:411` ` CONTROLS AT CO 0 ` — tests terminal::real_process::real_process_helper, terminal::tests::one_frame_prints_the_dashboard_frame_without_styling (3 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (16886 renders)
+- `frames/story/mod.rs:411` ` CONTROLS AT CO 0 ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, terminal::real_process::real_process_helper (4 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (16886 renders)
 - `frames/story/mod.rs:416` `  · RETRY ` — tests frames::frame_tests::policy_states::a_retried_re_qualification_says_so (1 renders)
 
-### `frames/story/night.rs`: 86 of 86 covered
+### `frames/story/night.rs`: 87 of 87 covered
 
-- `frames/story/night.rs:40` ` reproduction ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (90 renders); sweep scenario/between, scenario/between/120x33 (438833 renders)
-- `frames/story/night.rs:41` ` qualification ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (344 renders); sweep scenario/between, scenario/between/120x33 (752059 renders)
-- `frames/story/night.rs:42` ` mapping ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_day_once_a_later_boot_closes_the_night (1824 renders); sweep journal/help/160x45, journal/help/240x67 (6074661 renders)
-- `frames/story/night.rs:43` ` control ` — tests frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2497 renders); sweep journal/help/160x45, journal/help/240x67 (1601018 renders)
-- `frames/story/night.rs:44` ` requalification ` — tests frames::frame_tests::policy_states::a_retried_re_qualification_says_so, frames::story::tests::nights::a_qualification_trial_names_the_profile_and_its_progress (25 renders); sweep scenario/between, scenario/between/240x67 (72493 renders)
-- `frames/story/night.rs:45` ` filler ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (172 renders); sweep scenario/between, scenario/between/120x33 (153207 renders)
-- `frames/story/night.rs:51` ` {} task {} ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (2823 renders); sweep scenario/between, scenario/between/120x33 (8387354 renders)
-- `frames/story/night.rs:57` ` FILLER ` — tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step, frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (2 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (29 renders)
-- `frames/story/night.rs:58` ` MAPPING ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (102 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (38118 renders)
+- `frames/story/night.rs:40` ` reproduction ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (161 renders); sweep scenario/between, scenario/between/120x33 (438845 renders)
+- `frames/story/night.rs:41` ` qualification ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (417 renders); sweep scenario/between, scenario/between/120x33 (752071 renders)
+- `frames/story/night.rs:42` ` mapping ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_day_once_a_later_boot_closes_the_night (5730 renders); sweep journal/help/160x45, journal/help/240x67 (6074956 renders)
+- `frames/story/night.rs:43` ` control ` — tests frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (5280 renders); sweep journal/help/160x45, journal/help/240x67 (1601080 renders)
+- `frames/story/night.rs:44` ` requalification ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (92 renders); sweep scenario/between, scenario/between/240x67 (72499 renders)
+- `frames/story/night.rs:45` ` filler ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (241 renders); sweep scenario/between, scenario/between/120x33 (153261 renders)
+- `frames/story/night.rs:51` ` {} task {} ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (9507 renders); sweep scenario/between, scenario/between/120x33 (8387719 renders)
+- `frames/story/night.rs:57` ` FILLER ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (5 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (29 renders)
+- `frames/story/night.rs:58` ` MAPPING ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (119 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (38118 renders)
 - `frames/story/night.rs:62` ` REQUALIFYING ` — tests frames::frame_tests::policy_states::a_retried_re_qualification_says_so, frames::story::tests::nights::a_qualification_trial_names_the_profile_and_its_progress (4 renders)
 - `frames/story/night.rs:64` ` QUALIFYING ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (55 renders); sweep sweep/staged/qualifying/120x33/overdue, sweep/staged/qualifying/120x33/plus40 (17 renders)
 - `frames/story/night.rs:65` ` REPRODUCING ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (39 renders); sweep sweep/staged/reproducing/120x33/overdue, sweep/staged/reproducing/120x33/plus40 (17 renders)
-- `frames/story/night.rs:66` ` CONTROLS ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, frames::story::tests::nights::a_reproduction_and_a_control_say_what_they_do_not_do (9 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (29872 renders)
-- `frames/story/night.rs:75` ` CCD {} at {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (3619 renders); sweep journal/help/160x45, journal/help/240x67 (6410016 renders)
-- `frames/story/night.rs:92` ` NIGHT ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (1046 renders); sweep journal/help/160x45, scenario/between/120x33 (372269 renders)
-- `frames/story/night.rs:97` ` DAY ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (531 renders); sweep scenario/between/120x33, scenario/between/160x45 (145027 renders)
-- `frames/story/night.rs:99` ` TOGI ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (185 renders); sweep journal/help/160x45, sweep/calendar/0000-session.start/120x33/plus40 (799 renders)
-- `frames/story/night.rs:113` ` The trial's intent names no night task, so all I can say is what its band shows. ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (66 renders); sweep sweep/staged/day/120x33/plus40, sweep/staged/day/160x45/plus40 (9 renders)
+- `frames/story/night.rs:66` ` CONTROLS ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (12 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (29872 renders)
+- `frames/story/night.rs:75` ` CCD {} at {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_stage_line_names_the_night_its_start_its_elapsed_time_and_what_runs (9445 renders); sweep journal/help/160x45, journal/help/240x67 (6410338 renders)
+- `frames/story/night.rs:92` ` NIGHT ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_activity (1080 renders); sweep journal/help/160x45, scenario/between/120x33 (372305 renders)
+- `frames/story/night.rs:97` ` DAY ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::every_time_on_screen_is_local (544 renders); sweep scenario/between/120x33, scenario/between/160x45 (145087 renders)
+- `frames/story/night.rs:99` ` TOGI ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (185 renders); sweep journal/help/160x45, sweep/calendar/0000-session.start/120x33/plus40 (827 renders)
+- `frames/story/night.rs:113` ` The trial's intent names no night task, so all I can say is what its band shows. ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (68 renders); sweep sweep/staged/day/120x33/plus40, sweep/staged/day/160x45/plus40 (9 renders)
 - `frames/story/night.rs:122` `  This is a retry of a trial that could not run. ` — tests frames::frame_tests::policy_states::a_retried_re_qualification_says_so, frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (6 renders)
-- `frames/story/night.rs:159` ` Filler cap probe on CCD {} at {}, one count deeper than its cap S: every other CCD stays at CO 0. ` — tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (1 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
-- `frames/story/night.rs:164` ` Filler probe on CCD {} at {}{task_part}. ` — tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (1 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (16 renders)
+- `frames/story/night.rs:159` ` Filler cap probe on CCD {} at {}, one count deeper than its cap S: every other CCD stays at CO 0. ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (2 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
+- `frames/story/night.rs:164` ` Filler probe on CCD {} at {}{task_part}. ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (3 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (16 renders)
 - `frames/story/night.rs:171` ` the day profile ` — tests frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification, frames::story::tests::nights::a_firmware_change_says_the_day_profile_goes_back_to_zero (7 renders); sweep scenario/day-step, scenario/qualification (139 renders)
 - `frames/story/night.rs:172` ` the day profile, {} ` — tests frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (2 renders)
 - `frames/story/night.rs:176` ` Filler repeat of {named}: every CCD runs together at its offset, one exact qualification cell per tr… ` — tests frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (1 renders)
 - `frames/story/night.rs:178` ` Filler repeat of {named}{task_part}. ` — tests frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (2 renders)
-- `frames/story/night.rs:202` ` Filler runs only when nothing else can; a probe can set the CCD's edge U but never finishes a mappin… ` — tests frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (1 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
+- `frames/story/night.rs:202` ` Filler runs only when nothing else can; a probe can set the CCD's edge U but never finishes a mappin… ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::nights::a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step (2 renders); sweep scenario/filler/120x33, scenario/filler/160x45 (8 renders)
 - `frames/story/night.rs:206` ` Filler runs only when nothing else can; a failure here is a re-qualification event against the day p… ` — tests frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification (1 renders)
-- `frames/story/night.rs:233` ` Mapping CCD {} at {}: only that CCD runs at {}, every other CCD stays at CO 0, so a failure belongs … ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (21 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
-- `frames/story/night.rs:238` ` Mapping CCD {} at {}{task_part}. ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (86 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (27231 renders)
+- `frames/story/night.rs:233` ` Mapping CCD {} at {}: only that CCD runs at {}, every other CCD stays at CO 0, so a failure belongs … ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (27 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
+- `frames/story/night.rs:238` ` Mapping CCD {} at {}{task_part}. ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (104 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (27231 renders)
 - `frames/story/night.rs:242` ` Qualifying with CCD {} alone at {}. ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (1 renders)
 - `frames/story/night.rs:246` ` Qualifying CCD {} alone at {}{task_part}. ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (1 renders)
 - `frames/story/night.rs:250` ` Reproducing a day failure on CCD {} alone at {}. A clean run clears nothing and earns no qualificati… ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (1 renders)
 - `frames/story/night.rs:254` ` Reproducing on CCD {} alone at {}{task_part}. ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (1 renders)
 - `frames/story/night.rs:257` ` Mapping: one CCD at a time runs at the tested offset while the others stay at CO 0. ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, frames::story::tests::the_story::a_trial_past_its_end_says_how_long_without_claiming_a_crash (2 renders)
-- `frames/story/night.rs:258` ` Mapping{task_part}. ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (114 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (36308 renders)
-- `frames/story/night.rs:267` ` the exact profile ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (632 renders); sweep scenario/between, scenario/between/120x33 (2322450 renders)
+- `frames/story/night.rs:258` ` Mapping{task_part}. ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (138 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (36308 renders)
+- `frames/story/night.rs:267` ` the exact profile ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1528 renders); sweep scenario/between, scenario/between/120x33 (2322492 renders)
 - `frames/story/night.rs:268` ` the exact profile, {} ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (50 renders); sweep sweep/staged/qualifying/120x33/plus40, sweep/staged/qualifying/160x45/plus40 (15 renders)
 - `frames/story/night.rs:272` ` Qualifying {named}: every CCD runs together at its profile offset, one matrix cell per trial. ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (13 renders); sweep sweep/staged/qualifying/120x33/plus40, sweep/staged/qualifying/160x45/plus40 (5 renders)
 - `frames/story/night.rs:274` ` Qualifying {named}{task_part}. ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (54 renders); sweep sweep/staged/qualifying/120x33/plus40, sweep/staged/qualifying/160x45/plus40 (15 renders)
 - `frames/story/night.rs:278` ` Reproducing a day failure on the exact failed profile. A clean run clears nothing and earns no quali… ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (9 renders); sweep sweep/staged/reproducing/120x33/plus40, sweep/staged/reproducing/160x45/plus40 (5 renders)
 - `frames/story/night.rs:280` ` Reproducing on the exact failed profile{task_part}. ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (26 renders); sweep sweep/staged/reproducing/120x33/plus40, sweep/staged/reproducing/160x45/plus40 (10 renders)
-- `frames/story/night.rs:283` ` Control trial with every CCD at CO 0. A failure here is a failure at stock, not Curve Optimizer's. ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, frames::story::tests::nights::a_reproduction_and_a_control_say_what_they_do_not_do (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (11604 renders)
-- `frames/story/night.rs:285` ` Control at CO 0{task_part}. ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, frames::story::tests::nights::a_reproduction_and_a_control_say_what_they_do_not_do (2 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (9723 renders)
-- `frames/story/night.rs:297` ` Mapping exposure is what a cap S is computed from; a failure here can set the CCD's edge U. ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (24 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
+- `frames/story/night.rs:283` ` Control trial with every CCD at CO 0. A failure here is a failure at stock, not Curve Optimizer's. ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (3 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (11604 renders)
+- `frames/story/night.rs:285` ` Control at CO 0{task_part}. ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (4 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (9723 renders)
+- `frames/story/night.rs:297` ` Mapping exposure is what a cap S is computed from; a failure here can set the CCD's edge U. ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (30 renders); sweep scenario/mapping/120x33, scenario/mapping/160x45 (9077 renders)
 - `frames/story/night.rs:305` ` Only a complete qualification lets the profile be applied by day. ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (2 renders)
 - `frames/story/night.rs:308` ` {} witnessed, {} outstanding; only a complete qualification lets the profile be applied by day. ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (12 renders); sweep sweep/staged/qualifying/120x33/plus40, sweep/staged/qualifying/160x45/plus40 (5 renders)
-- `frames/story/night.rs:309` ` cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (175 renders); sweep scenario/between/120x33, scenario/controls/120x33 (77784 renders)
+- `frames/story/night.rs:309` ` cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (177 renders); sweep scenario/between/120x33, scenario/controls/120x33 (77798 renders)
 - `frames/story/night.rs:315` ` It closes only this night's reproduction task, never the veto. ` — tests frames::frame_tests::bounds::reproducing::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_3_reproducing (10 renders); sweep sweep/staged/reproducing/120x33/plus40, sweep/staged/reproducing/160x45/plus40 (5 renders)
-- `frames/story/night.rs:318` ` Controls establish how the machine behaves at stock before any nonzero test. ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, frames::story::tests::nights::a_reproduction_and_a_control_say_what_they_do_not_do (3 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (11604 renders)
+- `frames/story/night.rs:318` ` Controls establish how the machine behaves at stock before any nonzero test. ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_4_controls, frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape (4 renders); sweep scenario/controls/120x33, scenario/controls/160x45 (11604 renders)
 - `frames/story/night.rs:327` ` waits ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named (1 renders)
 - `frames/story/night.rs:327` ` wait ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named, frames::story::tests::nights::a_mapping_trial_names_its_ccd_offset_and_task (2 renders)
 - `frames/story/night.rs:328` `  {} {verb} behind it. ` — tests frames::story::tests::nights::a_mapping_trial_names_its_ccd_offset_and_task (1 renders)
-- `frames/story/night.rs:328` ` task ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (2823 renders); sweep scenario/between, scenario/between/120x33 (8387354 renders)
+- `frames/story/night.rs:328` ` task ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (9507 renders); sweep scenario/between, scenario/between/120x33 (8387719 renders)
 - `frames/story/night.rs:354` ` {} left in the night's plan; the next listed is {}. ` — tests frames::story::tests::nights::a_recovery_says_the_journal_is_intact_and_what_the_night_does_next, frames::story::tests::nights::an_open_night_names_the_backends_it_cannot_use (7 renders)
-- `frames/story/night.rs:355` ` task ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (2823 renders); sweep scenario/between, scenario/between/120x33 (8387354 renders)
-- `frames/story/night.rs:358` ` Every planned task is done; filler work runs until you end the night. ` — tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (62 renders); sweep scenario/between/120x33, scenario/between/160x45 (82881 renders)
+- `frames/story/night.rs:355` ` task ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (9507 renders); sweep scenario/between, scenario/between/120x33 (8387719 renders)
+- `frames/story/night.rs:358` ` Every planned task is done; filler work runs until you end the night. ` — tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::a_session_with_no_trial_yet_does_not_claim_one_ended (62 renders); sweep scenario/between/120x33, scenario/between/160x45 (82899 renders)
 - `frames/story/night.rs:367` `  Unavailable this night: {backends}. ` — tests frames::story::tests::nights::an_open_night_names_the_backends_it_cannot_use (2 renders)
 - `frames/story/night.rs:395` ` The day profile is {}. ` — tests frames::story::tests::nights::a_firmware_change_says_the_day_profile_goes_back_to_zero, frames::story::tests::nights::a_held_step_names_every_blocker (4 renders)
 - `frames/story/night.rs:396` ` No day profile has been applied; every CCD stays at CO 0. ` — tests frames::story::tests::nights::an_open_night_with_no_task_left_runs_filler_and_a_closed_one_gives_way_to_the_day, frames::story::tests::nights::the_day_state_names_the_applied_profile_and_what_the_latest_proposal_says (7 renders)
@@ -3724,7 +3727,7 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `frames/story/night.rs:464` ` The latest proposal steps {} back; it counts once it is applied. ` — tests frames::story::tests::nights::the_day_says_whether_its_latest_step_was_applied_or_only_proposed (2 renders)
 - `frames/story/night.rs:468` ` The latest step set {} to CO 0 after a firmware change and it was applied. ` — tests frames::story::tests::nights::the_day_says_whether_its_latest_step_was_applied_or_only_proposed (2 renders)
 - `frames/story/night.rs:472` ` The latest proposal sets {} to CO 0 after a firmware change; it counts once it is applied. ` — tests frames::story::tests::nights::the_day_says_whether_its_latest_step_was_applied_or_only_proposed (2 renders)
-- `frames/story/night.rs:485` ` CCD {ids} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (5888 renders); sweep journal/help/160x45, journal/help/240x67 (7781869 renders)
+- `frames/story/night.rs:485` ` CCD {ids} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (11988 renders); sweep journal/help/160x45, journal/help/240x67 (7782433 renders)
 - `frames/story/night.rs:487` ` CCDs {ids} ` — tests frames::story::tests::nights::the_day_says_whether_its_latest_step_was_applied_or_only_proposed (4 renders)
 - `frames/story/night.rs:493` ` its hold is not complete ` — tests frames::story::tests::nights::a_held_step_names_every_blocker (2 renders)
 - `frames/story/night.rs:494` ` it is at the cap ` — tests frames::story::tests::nights::a_held_step_names_every_blocker (2 renders)
@@ -3735,165 +3738,166 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `frames/story/night.rs:499` ` promotion is frozen ` — tests frames::story::tests::nights::a_held_step_names_every_blocker (2 renders)
 - `frames/story/night.rs:500` ` the cold boot started paused ` — tests frames::story::tests::nights::a_held_step_names_every_blocker (2 renders)
 - `frames/story/night.rs:501` ` the proposal expired ` — tests frames::story::tests::nights::a_held_step_names_every_blocker (2 renders)
-- `frames/story/night.rs:510` ` Trial {} ended: {}. ` — tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_not_a_countdown (33 renders); sweep scenario/between/120x33, scenario/between/160x45 (44830 renders)
-- `frames/story/night.rs:515` ` No trial has run yet; the tuner records what it decides before the first one starts. ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (70 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (1481 renders)
-- `frames/story/night.rs:520` ` NIGHT OVER ` — tests frames::story::tests::nights::an_open_night_with_no_task_left_runs_filler_and_a_closed_one_gives_way_to_the_day (1 renders)
+- `frames/story/night.rs:502` ` it failed qualification ` — tests frames::story::tests::nights::a_held_step_names_every_blocker (2 renders)
+- `frames/story/night.rs:511` ` Trial {} ended: {}. ` — tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_not_a_countdown (33 renders); sweep scenario/between/120x33, scenario/between/160x45 (44830 renders)
+- `frames/story/night.rs:516` ` No trial has run yet; the tuner records what it decides before the first one starts. ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (70 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (1525 renders)
+- `frames/story/night.rs:521` ` NIGHT OVER ` — tests frames::story::tests::nights::an_open_night_with_no_task_left_runs_filler_and_a_closed_one_gives_way_to_the_day (1 renders)
 
 ### `frames/story/resting.rs`: 38 of 38 covered
 
-- `frames/story/resting.rs:15` ` next trial:  ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (125 renders); sweep scenario/between/120x33, scenario/between/160x45 (61985 renders)
-- `frames/story/resting.rs:16` ` Rows show the saved profile, not applied now. ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (48 renders); sweep sweep/filler/8986-shutdown/120x33/plus40, sweep/filler/8986-shutdown/160x45/plus40 (57 renders)
+- `frames/story/resting.rs:15` ` next trial:  ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (125 renders); sweep scenario/between/120x33, scenario/between/160x45 (62053 renders)
+- `frames/story/resting.rs:16` ` Rows show the saved profile, not applied now. ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (48 renders); sweep sweep/filler/8988-shutdown/120x33/plus40, sweep/filler/8988-shutdown/160x45/plus40 (57 renders)
 - `frames/story/resting.rs:38` ` DEAD END ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (175 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (133 renders)
 - `frames/story/resting.rs:44` ` platform unstable at stock: a conclusive failure at CO 0 ` — tests frames::story::tests::nights::a_stock_failure_is_not_blamed_on_curve_optimizer (1 renders)
 - `frames/story/resting.rs:49` ` STOCK FAILURE ` — tests frames::story::tests::nights::a_stock_failure_is_not_blamed_on_curve_optimizer (2 renders)
 - `frames/story/resting.rs:56` ` CRASHED, NOT YET RECOVERED ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (58 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (135 renders)
 - `frames/story/resting.rs:71` ` STOPPED ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage (173 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (501812 renders)
-- `frames/story/resting.rs:78` ` RECOVERED FROM A CRASH ` — tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (40 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (1083 renders)
+- `frames/story/resting.rs:78` ` RECOVERED FROM A CRASH ` — tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (40 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (1119 renders)
 - `frames/story/resting.rs:85` ` last: {} ` — tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_not_a_countdown (42 renders); sweep scenario/between/120x33, scenario/between/160x45 (59774 renders)
-- `frames/story/resting.rs:89` ` BETWEEN TRIALS ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (92 renders); sweep scenario/between/120x33, scenario/between/160x45 (60902 renders)
+- `frames/story/resting.rs:89` ` BETWEEN TRIALS ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (92 renders); sweep scenario/between/120x33, scenario/between/160x45 (60934 renders)
 - `frames/story/resting.rs:97` ` stopped by a signal ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (48 renders); sweep scenario/day-step/120x33, scenario/day-step/160x45 (223006 renders)
 - `frames/story/resting.rs:99` ` stopped at a run limit an earlier version supported ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not, frames::story::tests::the_story::a_stopped_session_preserves_its_reason::test_case_1_first_result (7 renders)
 - `frames/story/resting.rs:101` ` read-only command finished; no applied offsets changed ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not (1 renders)
 - `frames/story/resting.rs:102` ` tuning stopped at a dead end ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not (1 renders)
-- `frames/story/resting.rs:111` ` {NEXT_TRIAL}filler ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (172 renders); sweep scenario/between, scenario/between/120x33 (153207 renders)
-- `frames/story/resting.rs:112` ` {NEXT_TRIAL}deciding ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (52 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (1016 renders)
-- `frames/story/resting.rs:118` ` detected {} ` — tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (41 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (1083 renders)
-- `frames/story/resting.rs:122` `  after a {} reset ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (573 renders); sweep journal/help/160x45, journal/help/240x67 (1086 renders)
+- `frames/story/resting.rs:111` ` {NEXT_TRIAL}filler ` — tests frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_1_a_filler_trial_on_one_ccd, frames::dash::tests::the_stage_line_names_the_filler_by_the_ccd_its_trial_tests::test_case_2_a_filler_task_before_its_first_trial (241 renders); sweep scenario/between, scenario/between/120x33 (153261 renders)
+- `frames/story/resting.rs:112` ` {NEXT_TRIAL}deciding ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (52 renders); sweep sweep/calendar/0000-session.start/120x33/plus40, sweep/calendar/0000-session.start/160x45/plus40 (1048 renders)
+- `frames/story/resting.rs:118` ` detected {} ` — tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (41 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (1119 renders)
+- `frames/story/resting.rs:122` `  after a {} reset ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (573 renders); sweep journal/help/160x45, journal/help/240x67 (1122 renders)
 - `frames/story/resting.rs:128` ` crash with no trial in flight · {detected} ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders)
-- `frames/story/resting.rs:132` ` crash in {} ` — tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (41 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (1083 renders)
-- `frames/story/resting.rs:135` `  · core {core:02} named ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (6 renders); sweep scenario/crashed, scenario/crashed/120x33 (5030 renders)
-- `frames/story/resting.rs:143` ` {} the trial ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (8 renders); sweep sweep/deadend/0049-trial.end/120x33/plus40, sweep/deadend/0049-trial.end/160x45/plus40 (1788 renders)
-- `frames/story/resting.rs:145` ` last sample {} of {} ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (5 renders); sweep sweep/deadend/0049-trial.end/120x33/plus40, sweep/deadend/0049-trial.end/160x45/plus40 (1020 renders)
-- `frames/story/resting.rs:146` ` last sample {} ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (9 renders); sweep scenario/deadend, scenario/filler (1034 renders)
+- `frames/story/resting.rs:132` ` crash in {} ` — tests frames::frame_tests::bounds::recovering::screens, frames::frame_tests::bounds::recovering::scrolling::test_case_1_one (41 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (1119 renders)
+- `frames/story/resting.rs:135` `  · core {core:02} named ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (8 renders); sweep scenario/crashed, scenario/crashed/120x33 (5046 renders)
+- `frames/story/resting.rs:143` ` {} the trial ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (8 renders); sweep sweep/deadend/0050-trial.end/120x33/plus40, sweep/deadend/0050-trial.end/160x45/plus40 (1832 renders)
+- `frames/story/resting.rs:145` ` last sample {} of {} ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (5 renders); sweep sweep/deadend/0050-trial.end/120x33/plus40, sweep/deadend/0050-trial.end/160x45/plus40 (1056 renders)
+- `frames/story/resting.rs:146` ` last sample {} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early (10 renders); sweep scenario/deadend, scenario/filler (1070 renders)
 - `frames/story/resting.rs:150` ` core {:02}'s worker had stalled by then ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders)
-- `frames/story/resting.rs:164` ` trial {} · {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (9737 renders); sweep journal/help/160x45, journal/help/240x67 (457234 renders)
+- `frames/story/resting.rs:164` ` trial {} · {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (23532 renders); sweep journal/help/160x45, journal/help/240x67 (457412 renders)
 - `frames/story/resting.rs:166` `  · started {} ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (56 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (135 renders)
 - `frames/story/resting.rs:170` ` A later boot has written events, so the machine restarted before this trial recorded its end. ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (57 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (135 renders)
 - `frames/story/resting.rs:171` ` togi run records the crash and picks up from the journal. ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (57 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (135 renders)
-- `frames/story/resting.rs:188` ` CRASH ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (143 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1743 renders)
-- `frames/story/resting.rs:191` ` FAILURE ` — tests frames::story::tests::nights::a_stock_failure_is_not_blamed_on_curve_optimizer, frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements (4 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (3318 renders)
+- `frames/story/resting.rs:188` ` CRASH ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::an_unrecovered_crash_is_not_masked::test_case_1_a_prior_recovery (143 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1791 renders)
+- `frames/story/resting.rs:191` ` FAILURE ` — tests frames::story::tests::nights::a_stock_failure_is_not_blamed_on_curve_optimizer, frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements (4 renders); sweep scenario/crashed/160x45, scenario/crashed/240x67 (3324 renders)
 - `frames/story/resting.rs:192` ` INCONCLUSIVE ` — tests frames::story::tests::the_resting_band::the_last_trial_word_takes_its_outcomes_colour::test_case_3_an_inconclusive_trial, tests::history::an_unclear_night_trial_says_why (2 renders); sweep scenario/day-step, scenario/day-step/160x45 (2104 renders)
-- `frames/story/resting.rs:193` ` PASS ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (1623 renders); sweep scenario/between, scenario/between/120x33 (294575 renders)
-- `frames/story/resting.rs:211` ` core {:02} named ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (6 renders); sweep scenario/crashed, scenario/crashed/120x33 (5030 renders)
-- `frames/story/resting.rs:214` ` Tctl max {tctl}°C ` — tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (2181 renders); sweep scenario/between, scenario/between/120x33 (2682187 renders)
+- `frames/story/resting.rs:193` ` PASS ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (5762 renders); sweep scenario/between, scenario/between/120x33 (294575 renders)
+- `frames/story/resting.rs:211` ` core {:02} named ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (8 renders); sweep scenario/crashed, scenario/crashed/120x33 (5046 renders)
+- `frames/story/resting.rs:214` ` Tctl max {tctl}°C ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (8565 renders); sweep scenario/between, scenario/between/120x33 (2682389 renders)
 - `frames/story/resting.rs:217` ` {volts:.2} V median ` — tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements (1 renders)
-- `frames/story/resting.rs:226` `  after {} ` — tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_not_a_countdown (1394 renders); sweep journal/help/160x45, journal/help/240x67 (62087 renders)
-- `frames/story/resting.rs:243` ` last trial       ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (79 renders); sweep scenario/between/160x45, scenario/between/240x67 (214790 renders)
+- `frames/story/resting.rs:226` `  after {} ` — tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_not_a_countdown (1398 renders); sweep journal/help/160x45, journal/help/240x67 (62159 renders)
+- `frames/story/resting.rs:243` ` last trial       ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (91 renders); sweep scenario/between/160x45, scenario/between/240x67 (214808 renders)
 
 ### `history.rs`: 9 of 9 covered
 
-- `history.rs:32` ` {} · {} passed ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (1273 renders); sweep journal/help/160x45, journal/help/240x67 (6625254 renders)
-- `history.rs:34` ` {} · passed ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (692 renders); sweep scenario/between, scenario/between/120x33 (6618976 renders)
-- `history.rs:37` `  · Tctl max {peak}°C ` — tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (684 renders); sweep scenario/between, scenario/between/120x33 (2673069 renders)
-- `history.rs:54` ` core {:02} named ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (6 renders); sweep scenario/crashed, scenario/crashed/120x33 (5030 renders)
-- `history.rs:76` ` rebooted ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (34 renders); sweep scenario/deadend, scenario/deadend/120x33 (1370 renders)
-- `history.rs:78` ` failed ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (3076 renders); sweep journal/help/160x45, journal/help/240x67 (13721 renders)
-- `history.rs:185` ` session started on {cores} cores ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (879 renders); sweep scenario/between, scenario/controls (6610 renders)
+- `history.rs:32` ` {} · {} passed ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (3599 renders); sweep journal/help/160x45, journal/help/240x67 (6625480 renders)
+- `history.rs:34` ` {} · passed ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (3018 renders); sweep scenario/between, scenario/between/120x33 (6619202 renders)
+- `history.rs:37` `  · Tctl max {peak}°C ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (2938 renders); sweep scenario/between, scenario/between/120x33 (2673271 renders)
+- `history.rs:54` ` core {:02} named ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (8 renders); sweep scenario/crashed, scenario/crashed/120x33 (5046 renders)
+- `history.rs:76` ` rebooted ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (35 renders); sweep scenario/deadend, scenario/deadend/120x33 (1398 renders)
+- `history.rs:78` ` failed ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (3079 renders); sweep journal/help/160x45, journal/help/240x67 (13737 renders)
+- `history.rs:185` ` session started on {cores} cores ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (893 renders); sweep scenario/between, scenario/controls (6667 renders)
 - `history.rs:194` ` idle with the offsets applied, rebooted ` — tests tests::describe::a_resumed_session_is_not_a_resumed_session_when_it_crashed, tests::history::reboot_history_requires_matching_cause (6 renders)
-- `history.rs:195` ` with the offsets applied, rebooted ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (25 renders); sweep scenario/deadend, scenario/deadend/120x33 (246 renders)
+- `history.rs:195` ` with the offsets applied, rebooted ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (26 renders); sweep scenario/deadend, scenario/deadend/120x33 (258 renders)
 
 ### `words.rs`: 126 of 127 covered
 
-- `words.rs:80` ` start ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (3342 renders); sweep journal/help/160x45, journal/help/240x67 (206780 renders)
-- `words.rs:81` ` pass ` — tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_not_a_countdown (1339 renders); sweep journal/help/160x45, journal/help/240x67 (7946758 renders)
-- `words.rs:82` ` fail ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (7210 renders); sweep journal/help/160x45, journal/help/240x67 (436073 renders)
-- `words.rs:83` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (1935 renders); sweep journal/help/160x45, journal/help/240x67 (439271 renders)
+- `words.rs:80` ` start ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (7512 renders); sweep journal/help/160x45, journal/help/240x67 (206913 renders)
+- `words.rs:81` ` pass ` — tests frames::frame_tests::bands::a_first_trial_that_ended_is_reported_as_the_last_one, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_not_a_countdown (3697 renders); sweep journal/help/160x45, journal/help/240x67 (7947016 renders)
+- `words.rs:82` ` fail ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (9280 renders); sweep journal/help/160x45, journal/help/240x67 (436225 renders)
+- `words.rs:83` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (2032 renders); sweep journal/help/160x45, journal/help/240x67 (439387 renders)
 - `words.rs:84` ` unclear ` — sweep scenario/day-step/120x33, scenario/day-step/160x45 (7025 renders)
-- `words.rs:85` ` reset ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (1239 renders); sweep journal/help/160x45, journal/help/240x67 (2554 renders)
-- `words.rs:86` ` step ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bounds::between::screens (3697 renders); sweep journal/help/160x45, journal/help/240x67 (555662 renders)
-- `words.rs:87` ` stop ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (1332 renders); sweep journal/help/160x45, journal/help/240x67 (393731 renders)
-- `words.rs:88` ` mce ` — tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (8 renders); sweep scenario/deadend, scenario/filler (27 renders)
+- `words.rs:85` ` reset ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::frame_tests::bounds::between::screens (1240 renders); sweep journal/help/160x45, journal/help/240x67 (2590 renders)
+- `words.rs:86` ` step ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide (5635 renders); sweep journal/help/160x45, journal/help/240x67 (555662 renders)
+- `words.rs:87` ` stop ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide (2011 renders); sweep journal/help/160x45, journal/help/240x67 (393731 renders)
+- `words.rs:88` ` mce ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden (10 renders); sweep scenario/deadend, scenario/filler (27 renders)
 - `words.rs:89` ` note ` — tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_3_backend_retry_main, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_5_session_warning_main (919 renders)
-- `words.rs:90` ` resume ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (7 renders); sweep scenario/crashed, scenario/crashed/120x33 (91 renders)
-- `words.rs:91` ` hold ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (3038 renders); sweep journal/help/160x45, journal/help/240x67 (223571 renders)
-- `words.rs:92` ` night ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (5186 renders); sweep journal/help/160x45, journal/help/240x67 (452235 renders)
-- `words.rs:93` ` edge ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (4443 renders); sweep journal/help/160x45, journal/help/240x67 (24919 renders)
-- `words.rs:94` ` cap ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (4947 renders); sweep journal/help/160x45, journal/help/240x67 (1821565 renders)
+- `words.rs:90` ` resume ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (8 renders); sweep scenario/crashed, scenario/crashed/120x33 (91 renders)
+- `words.rs:91` ` hold ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (3048 renders); sweep journal/help/160x45, journal/help/240x67 (223599 renders)
+- `words.rs:92` ` night ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (9486 renders); sweep journal/help/160x45, journal/help/240x67 (452316 renders)
+- `words.rs:93` ` edge ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (5498 renders); sweep journal/help/160x45, journal/help/240x67 (24943 renders)
+- `words.rs:94` ` cap ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (6269 renders); sweep journal/help/160x45, journal/help/240x67 (1821871 renders)
 - `words.rs:95` ` qualify ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (296 renders); sweep scenario/day-step, scenario/qualification (14523 renders)
-- `words.rs:96` ` repro ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (937 renders); sweep journal/help/160x45, journal/help/240x67 (444556 renders)
+- `words.rs:96` ` repro ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1008 renders); sweep journal/help/160x45, journal/help/240x67 (444568 renders)
 - `words.rs:97` ` day ` — tests frames::footer::tests::the_question_replaces_the_key_hints_and_names_the_day_cycle, frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (2073 renders); sweep journal/help/160x45, journal/help/240x67 (116748 renders)
 - `words.rs:98` ` veto ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (1144 renders); sweep journal/help/160x45, journal/help/240x67 (11374 renders)
 - `words.rs:99` ` apply ` — tests frames::frame_tests::policy_states::a_firmware_change_freezes_the_day_and_its_questions_and_events_are_named, frames::story::tests::nights::the_day_state_names_the_applied_profile_and_what_the_latest_proposal_says (3 renders); sweep scenario/qualification/240x67, scenario/reproduction/120x33 (26749 renders)
 - `words.rs:100` ` freeze ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (267 renders)
 - `words.rs:101` ` import ` — tests tests::words::an_import_counts_what_it_took (1 renders)
-- `words.rs:134` ` light load ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (745 renders); sweep journal/help/160x45, journal/help/240x67 (10728 renders)
+- `words.rs:134` ` light load ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (754 renders); sweep journal/help/160x45, journal/help/240x67 (10728 renders)
 - `words.rs:135` ` heavy vector load ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (25 renders); sweep sweep/calendar/0205-trial.intent/120x33/plus40, sweep/calendar/0205-trial.intent/160x45/plus40 (10376 renders)
-- `words.rs:136` ` load steps ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (1554 renders); sweep scenario/between, scenario/between/120x33 (458836 renders)
-- `words.rs:137` ` partial load ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (349 renders); sweep scenario/crashed, scenario/day-step (410768 renders)
-- `words.rs:138` ` both threads ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (652 renders); sweep journal/help/160x45, journal/help/240x67 (115339 renders)
+- `words.rs:136` ` load steps ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (3346 renders); sweep scenario/between, scenario/between/120x33 (458836 renders)
+- `words.rs:137` ` partial load ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (461 renders); sweep scenario/crashed, scenario/day-step (410768 renders)
+- `words.rs:138` ` both threads ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (764 renders); sweep journal/help/160x45, journal/help/240x67 (115339 renders)
 - `words.rs:139` ` idle with short bursts ` — silent: `regime_words(R6)` has no production caller: `load_words` words R6 itself
 - `words.rs:140` ` all-core load ` — sweep sweep/calendar/0849-trial.intent/120x33/plus40, sweep/calendar/0849-trial.intent/160x45/plus40 (3120 renders)
 - `words.rs:141` ` light core beside heavy neighbours ` — sweep sweep/calendar/0913-trial.intent/120x33/plus40, sweep/calendar/0913-trial.intent/160x45/plus40 (3504 renders)
 - `words.rs:142` ` every thread, alternating with one thread ` — sweep sweep/calendar/0981-trial.intent/120x33/plus40, sweep/calendar/0981-trial.intent/160x45/plus40 (936 renders)
-- `words.rs:149` ` idle + bursts ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::between::scrolling::test_case_1_one (271 renders); sweep scenario/crashed, scenario/day-step (7955 renders)
-- `words.rs:164` ` light ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (2286 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (3266116 renders)
-- `words.rs:165` ` heavy vector ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (445 renders); sweep scenario/between, scenario/between/120x33 (2144268 renders)
-- `words.rs:166` ` load steps ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (1554 renders); sweep scenario/between, scenario/between/120x33 (458836 renders)
-- `words.rs:167` ` partial load ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (349 renders); sweep scenario/crashed, scenario/day-step (410768 renders)
-- `words.rs:168` ` both threads ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (652 renders); sweep journal/help/160x45, journal/help/240x67 (115339 renders)
-- `words.rs:169` ` idle + bursts ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::between::scrolling::test_case_1_one (271 renders); sweep scenario/crashed, scenario/day-step (7955 renders)
-- `words.rs:170` ` all-core ` — tests frames::frame_tests::bounds::between::scrolling::test_case_1_one, frames::frame_tests::bounds::between::scrolling::test_case_2_three (322 renders); sweep scenario/crashed, scenario/crashed/240x67 (707443 renders)
-- `words.rs:171` ` light core + heavy neighbours ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (65 renders); sweep scenario/crashed, scenario/crashed/120x33 (710214 renders)
-- `words.rs:172` ` all threads ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (28 renders); sweep scenario/crashed, scenario/crashed/240x67 (502440 renders)
-- `words.rs:179` ` wrong result ` — tests frames::panels::history::tests::the_alarm_in_a_sentence_is_red, frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements (9 renders); sweep scenario/filler, sweep/filler/4397-trial.end (1663 renders)
-- `words.rs:180` ` the backend quit ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (1 renders); sweep scenario/crashed, scenario/crashed/120x33 (3491 renders)
+- `words.rs:149` ` idle + bursts ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (278 renders); sweep scenario/crashed, scenario/day-step (7955 renders)
+- `words.rs:164` ` light ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (4018 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (3266352 renders)
+- `words.rs:165` ` heavy vector ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (845 renders); sweep scenario/between, scenario/between/120x33 (2144268 renders)
+- `words.rs:166` ` load steps ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (3346 renders); sweep scenario/between, scenario/between/120x33 (458836 renders)
+- `words.rs:167` ` partial load ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (461 renders); sweep scenario/crashed, scenario/day-step (410768 renders)
+- `words.rs:168` ` both threads ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (764 renders); sweep journal/help/160x45, journal/help/240x67 (115339 renders)
+- `words.rs:169` ` idle + bursts ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (278 renders); sweep scenario/crashed, scenario/day-step (7955 renders)
+- `words.rs:170` ` all-core ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (1203 renders); sweep scenario/crashed, scenario/crashed/240x67 (707527 renders)
+- `words.rs:171` ` light core + heavy neighbours ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (578 renders); sweep scenario/crashed, scenario/crashed/120x33 (710266 renders)
+- `words.rs:172` ` all threads ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (204 renders); sweep scenario/crashed, scenario/crashed/240x67 (502452 renders)
+- `words.rs:179` ` wrong result ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::panels::history::tests::the_alarm_in_a_sentence_is_red (10 renders); sweep scenario/filler, sweep/filler/4399-trial.end (1663 renders)
+- `words.rs:180` ` the backend quit ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (2 renders); sweep scenario/crashed, scenario/crashed/120x33 (3507 renders)
 - `words.rs:181` ` the backend stalled ` — tests tests::describe::a_failure_says_which_core_failed_where_or_that_the_machine_idled, tests::history::a_night_trial_says_whether_it_is_a_retry::test_case_1_exact_qualification (6 renders)
-- `words.rs:182` ` corrected hardware error ` — tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail, tests::history::reboot_history_during_trial::test_case_3_retained_corrected_mce (5 renders); sweep scenario/deadend, scenario/deadend/120x33 (2024 renders)
-- `words.rs:183` ` uncorrected hardware error ` — tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail, tests::history::reboot_history_during_trial::test_case_4_retained_uncorrected_mce (3 renders); sweep scenario/deadend, scenario/deadend/120x33 (225 renders)
-- `words.rs:184` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (1935 renders); sweep journal/help/160x45, journal/help/240x67 (439271 renders)
+- `words.rs:182` ` corrected hardware error ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (6 renders); sweep scenario/deadend, scenario/deadend/120x33 (2038 renders)
+- `words.rs:183` ` uncorrected hardware error ` — tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail, tests::history::reboot_history_during_trial::test_case_4_retained_uncorrected_mce (3 renders); sweep scenario/deadend, scenario/deadend/120x33 (239 renders)
+- `words.rs:184` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (2032 renders); sweep journal/help/160x45, journal/help/240x67 (439387 renders)
 - `words.rs:214` ` no cores ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_2_idle, frames::frame_tests::bounds::idle::screens (49 renders); sweep sweep/staged/idle/120x33/plus40, sweep/staged/idle/160x45/plus40 (4 renders)
-- `words.rs:230` ` core ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (8816 renders); sweep journal/help/160x45, journal/help/240x67 (7188785 renders)
-- `words.rs:230` ` cores ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (1742 renders); sweep journal/help/160x45, journal/help/240x67 (11830 renders)
-- `words.rs:238` ` cores  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (1742 renders); sweep journal/help/160x45, journal/help/240x67 (11830 renders)
-- `words.rs:239` ` core  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (8816 renders); sweep journal/help/160x45, journal/help/240x67 (7188785 renders)
-- `words.rs:252` ` core {:02} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (8816 renders); sweep journal/help/160x45, journal/help/240x67 (7188785 renders)
-- `words.rs:253` ` all {total} cores ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them (65 renders); sweep scenario/crashed, scenario/day-step (2547 renders)
-- `words.rs:261` ` on core {:02} ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (750 renders); sweep scenario/between, scenario/between/120x33 (6283201 renders)
-- `words.rs:269` ` core {:02} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (8816 renders); sweep journal/help/160x45, journal/help/240x67 (7188785 renders)
-- `words.rs:270` ` cores {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (1742 renders); sweep journal/help/160x45, journal/help/240x67 (11830 renders)
+- `words.rs:230` ` core ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (17080 renders); sweep journal/help/160x45, journal/help/240x67 (7189162 renders)
+- `words.rs:230` ` cores ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (2450 renders); sweep journal/help/160x45, journal/help/240x67 (11887 renders)
+- `words.rs:238` ` cores  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (2450 renders); sweep journal/help/160x45, journal/help/240x67 (11887 renders)
+- `words.rs:239` ` core  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (17080 renders); sweep journal/help/160x45, journal/help/240x67 (7189162 renders)
+- `words.rs:252` ` core {:02} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (17080 renders); sweep journal/help/160x45, journal/help/240x67 (7189162 renders)
+- `words.rs:253` ` all {total} cores ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (429 renders); sweep scenario/crashed, scenario/day-step (2547 renders)
+- `words.rs:261` ` on core {:02} ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_2_containment (2592 renders); sweep scenario/between, scenario/between/120x33 (6283381 renders)
+- `words.rs:269` ` core {:02} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (17080 renders); sweep journal/help/160x45, journal/help/240x67 (7189162 renders)
+- `words.rs:270` ` cores {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (2450 renders); sweep journal/help/160x45, journal/help/240x67 (11887 renders)
 - `words.rs:290` ` during ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_4_no_planned_length, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_5_a_zero_planned_length (2 renders)
 - `words.rs:293` ` during ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_4_no_planned_length, frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_5_a_zero_planned_length (2 renders)
-- `words.rs:297` ` early in ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (2 renders); sweep sweep/deadend/0049-trial.end/120x33/plus40, sweep/deadend/0049-trial.end/160x45/plus40 (1788 renders)
+- `words.rs:297` ` early in ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_1_early, frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (2 renders); sweep sweep/deadend/0050-trial.end/120x33/plus40, sweep/deadend/0050-trial.end/160x45/plus40 (1832 renders)
 - `words.rs:299` ` midway through ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_2_midway (1 renders)
 - `words.rs:301` ` late in ` — tests frames::story::tests::the_resting_band::a_recovery_says_how_far_into_the_trial_the_crash_came::test_case_3_late, tests::history::a_crash_late_in_a_night_trial_says_how_far_it_got (3 renders)
-- `words.rs:311` ` core {:02} fails at {} ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::describe::a_failure_says_which_core_failed_where_or_that_the_machine_idled (4 renders); sweep scenario/crashed, scenario/crashed/120x33 (4306 renders)
+- `words.rs:311` ` core {:02} fails at {} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (6 renders); sweep scenario/crashed, scenario/crashed/120x33 (4330 renders)
 - `words.rs:319` ` idle with the offsets applied, {} ` — tests tests::describe::a_failure_says_which_core_failed_where_or_that_the_machine_idled, tests::describe::a_resumed_session_is_not_a_resumed_session_when_it_crashed (8 renders)
-- `words.rs:344` ` corrected ` — tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (25 renders); sweep scenario/deadend, scenario/deadend/120x33 (2057 renders)
-- `words.rs:346` ` uncorrected ` — tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail, tests::history::a_reset_and_an_mce_have_lines (12 renders); sweep scenario/deadend, scenario/deadend/120x33 (249 renders)
+- `words.rs:344` ` corrected ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden (29 renders); sweep scenario/deadend, scenario/deadend/120x33 (2071 renders)
+- `words.rs:346` ` uncorrected ` — tests frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail, tests::history::a_reset_and_an_mce_have_lines (12 renders); sweep scenario/deadend, scenario/deadend/120x33 (263 renders)
 - `words.rs:349` ` logical CPU {} ` — tests tests::describe::the_kinds_with_a_line_of_their_own (2 renders)
-- `words.rs:350` ` core {:02} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (8816 renders); sweep journal/help/160x45, journal/help/240x67 (7188785 renders)
+- `words.rs:350` ` core {:02} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (17080 renders); sweep journal/help/160x45, journal/help/240x67 (7189162 renders)
 - `words.rs:354` ` {who} {kind} error between trials (recorded only) ` — tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden, tests::describe::the_kinds_with_a_line_of_their_own (8 renders)
-- `words.rs:372` ` CCD{ccd} {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (5888 renders); sweep journal/help/160x45, journal/help/240x67 (7781869 renders)
-- `words.rs:379` ` CCD{ccd} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (5888 renders); sweep journal/help/160x45, journal/help/240x67 (7781869 renders)
-- `words.rs:388` ` CCD{ccd} {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (5888 renders); sweep journal/help/160x45, journal/help/240x67 (7781869 renders)
-- `words.rs:394` ` core {:02}: {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (8816 renders); sweep journal/help/160x45, journal/help/240x67 (7188785 renders)
+- `words.rs:372` ` CCD{ccd} {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (11988 renders); sweep journal/help/160x45, journal/help/240x67 (7782433 renders)
+- `words.rs:379` ` CCD{ccd} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (11988 renders); sweep journal/help/160x45, journal/help/240x67 (7782433 renders)
+- `words.rs:388` ` CCD{ccd} {} ` — tests frames::dash::tests::a_stop_a_dead_end_and_a_recovery_suppress_the_running_marker, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd (11988 renders); sweep journal/help/160x45, journal/help/240x67 (7782433 renders)
+- `words.rs:394` ` core {:02}: {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_10_240x67_arrived_123, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them::test_case_1_50x33_arrived_1 (17080 renders); sweep journal/help/160x45, journal/help/240x67 (7189162 renders)
 - `words.rs:396` ` per-core [{}] ` — tests tests::words::a_re_qualification_event_on_a_per_core_profile_names_its_night_and_every_core (1 renders)
-- `words.rs:405` ` boot {} ` — tests frames::footer::tests::the_question_replaces_the_key_hints_and_names_the_day_cycle, frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (841 renders); sweep journal/help/160x45, journal/help/240x67 (26151 renders)
-- `words.rs:407` ` record {session}#{seq} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (411 renders); sweep journal/missing-once/120x33, journal/missing-once/160x45 (47982 renders)
+- `words.rs:405` ` boot {} ` — tests frames::footer::tests::the_question_replaces_the_key_hints_and_names_the_day_cycle, frames::footer::tests::the_question_shortens_to_fit_and_stays_in_bounds (843 renders); sweep journal/help/160x45, journal/help/240x67 (26215 renders)
+- `words.rs:407` ` record {session}#{seq} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (411 renders); sweep journal/missing-once/120x33, journal/missing-once/160x45 (48066 renders)
 - `words.rs:408` ` re-qualification of night {night} ` — tests tests::words::a_re_qualification_event_on_a_per_core_profile_names_its_night_and_every_core (1 renders)
-- `words.rs:415` ` unknown ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1331 renders); sweep journal/help/160x45, journal/help/240x67 (226222 renders)
-- `words.rs:416` ` fails at {} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (252 renders); sweep scenario/crashed, scenario/crashed/120x33 (73060 renders)
-- `words.rs:417` ` censored at {} ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (224 renders); sweep scenario/day-step, scenario/day-step/120x33 (89085 renders)
-- `words.rs:430` ` CCD{} edge {} → {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (2036 renders); sweep journal/help/160x45, journal/help/240x67 (24905 renders)
-- `words.rs:441` ` fallback slope ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (352 renders); sweep scenario/crashed, scenario/crashed/120x33 (1479821 renders)
-- `words.rs:442` ` measured slope ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (166 renders); sweep scenario/filler, scenario/filler/120x33 (63309 renders)
-- `words.rs:449` ` rate of {} {} ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, tests::words::a_cap_names_what_fixed_it_and_its_slope::test_case_1_rate_and_fallback (3 renders); sweep scenario/crashed, scenario/crashed/120x33 (388352 renders)
+- `words.rs:415` ` unknown ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (2273 renders); sweep journal/help/160x45, journal/help/240x67 (226294 renders)
+- `words.rs:416` ` fails at {} ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (261 renders); sweep scenario/crashed, scenario/crashed/120x33 (73116 renders)
+- `words.rs:417` ` censored at {} ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (225 renders); sweep scenario/day-step, scenario/day-step/120x33 (89085 renders)
+- `words.rs:430` ` CCD{} edge {} → {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (3091 renders); sweep journal/help/160x45, journal/help/240x67 (24929 renders)
+- `words.rs:441` ` fallback slope ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1614 renders); sweep scenario/crashed, scenario/crashed/120x33 (1480037 renders)
+- `words.rs:442` ` measured slope ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis::test_case_1_no_evidence (203 renders); sweep scenario/filler, scenario/filler/120x33 (63309 renders)
+- `words.rs:449` ` rate of {} {} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart (123 renders); sweep scenario/crashed, scenario/crashed/120x33 (388376 renders)
 - `words.rs:450` ` edge margin ` — tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::words::a_cap_names_what_fixed_it_and_its_slope::test_case_2_edge_margin_and_measured (4 renders)
-- `words.rs:451` ` no cap yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (75 renders); sweep scenario/between/120x33, scenario/between/160x45 (1127007 renders)
-- `words.rs:460` ` CCD{} cap {} → {} · {} · {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (1974 renders); sweep journal/help/160x45, journal/help/240x67 (1415896 renders)
-- `words.rs:472` ` task ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (2823 renders); sweep scenario/between, scenario/between/120x33 (8387354 renders)
-- `words.rs:474` ` night opened · {tasks} ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (16 renders); sweep scenario/between, scenario/controls (19656 renders)
-- `words.rs:478` ` night replanned · {} elapsed · {tasks} ` — tests frames::story::tests::the_simulated_sessions::a_crashed_trial_and_its_recovery_are_told_apart, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (18 renders); sweep scenario/between, scenario/controls (276606 renders)
+- `words.rs:451` ` no cap yet ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (323 renders); sweep scenario/between/120x33, scenario/between/160x45 (1127273 renders)
+- `words.rs:460` ` CCD{} cap {} → {} · {} · {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_names_the_night, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (3278 renders); sweep journal/help/160x45, journal/help/240x67 (1416106 renders)
+- `words.rs:472` ` task ` — tests frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_1_half_a_cell, frames::dash::tests::the_rendered_wide_bar_has_two_full_height_rows_and_no_underline::test_case_2_three_eighths (9507 renders); sweep scenario/between, scenario/between/120x33 (8387719 renders)
+- `words.rs:474` ` night opened · {tasks} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (27 renders); sweep scenario/between, scenario/controls (19665 renders)
+- `words.rs:478` ` night replanned · {} elapsed · {tasks} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (103 renders); sweep scenario/between, scenario/controls (276660 renders)
 - `words.rs:488` ` next step ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (35 renders); sweep scenario/day-step, scenario/qualification (15600 renders)
 - `words.rs:489` ` re-qualification ` — tests frames::story::tests::nights::a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification, tests::words::a_re_qualification_event_on_a_per_core_profile_names_its_night_and_every_core (3 renders)
-- `words.rs:490` ` firmware ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1419 renders); sweep journal/help/160x45, journal/help/240x67 (142633 renders)
+- `words.rs:490` ` firmware ` — tests frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_1_wide_rich_odd, frames::dash::tests::the_rendered_frame_puts_each_edge_on_its_count::test_case_2_wide_rich_even (1428 renders); sweep journal/help/160x45, journal/help/240x67 (142661 renders)
 - `words.rs:501` ` qualifying {of} · {} to witness ` — tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::words::a_qualification_speaks_when_it_starts_ends_or_fails_and_not_between (4 renders); sweep scenario/day-step, scenario/qualification (2524 renders)
-- `words.rs:502` ` cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (175 renders); sweep scenario/between/120x33, scenario/controls/120x33 (77784 renders)
+- `words.rs:502` ` cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (177 renders); sweep scenario/between/120x33, scenario/controls/120x33 (77798 renders)
 - `words.rs:510` ` qualified {of} · {} witnessed ` — tests tests::describe::a_night_reads_in_order_from_plan_to_promotion, tests::words::a_qualification_speaks_when_it_starts_ends_or_fails_and_not_between (3 renders); sweep scenario/day-step, scenario/reproduction (2838 renders)
-- `words.rs:511` ` cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (175 renders); sweep scenario/between/120x33, scenario/controls/120x33 (77784 renders)
+- `words.rs:511` ` cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (177 renders); sweep scenario/between/120x33, scenario/controls/120x33 (77798 renders)
 - `words.rs:518` ` qualification of {of} failed · {} outstanding ` — tests tests::words::a_qualification_speaks_when_it_starts_ends_or_fails_and_not_between (1 renders)
-- `words.rs:519` ` cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (175 renders); sweep scenario/between/120x33, scenario/controls/120x33 (77784 renders)
-- `words.rs:528` ` exact profile {} ` — tests frames::frame_tests::bounds::qualifying::screens, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell::test_case_2_qualifying (1160 renders); sweep scenario/between, scenario/between/120x33 (2329276 renders)
+- `words.rs:519` ` cell ` — tests frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_5_compact_console, frames::dash::tests::trial_bars_have_no_strip_under_their_track::test_case_6_compact_rich (177 renders); sweep scenario/between/120x33, scenario/controls/120x33 (77798 renders)
+- `words.rs:528` ` exact profile {} ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_1_mapping_wide, frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_2_mapping_medium (2973 renders); sweep scenario/between, scenario/between/120x33 (2329318 renders)
 - `words.rs:531` ` CCD{ccd} alone at {} ` — tests frames::story::tests::edges::every_activity_is_narrated_with_every_tested_shape, tests::words::a_reproduction_speaks_once_it_has_an_answer::test_case_2_reproduced (6 renders)
 - `words.rs:533` ` no profile a night writes ` — tests tests::words::a_nonuniform_failure_is_untestable_and_says_no_night_writes_its_profile (1 renders)
 - `words.rs:541` ` {source} reproduced on {target} ` — tests tests::words::a_reproduction_speaks_once_it_has_an_answer::test_case_2_reproduced, tests::words::a_reproduction_speaks_once_it_has_an_answer::test_case_3_unreproduced (2 renders); sweep sweep/calendar/16159-night.reproduction, sweep/calendar/16159-night.reproduction/120x33/plus40 (161 renders)
@@ -3911,14 +3915,14 @@ Every string literal of a renderer's production source that holds words (592 of 
 - `words.rs:617` ` retreat {} to {} ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (589 renders); sweep journal/help/160x45, journal/help/240x67 (1492 renders)
 - `words.rs:626` ` firmware changed: {} to {} ` — tests tests::words::a_hold_proposal_is_silent_and_a_move_is_not (1 renders)
 - `words.rs:638` ` applied day profile {} ` — tests tests::model::a_core_shows_the_day_offset_of_its_ccd::test_case_2_each_core_shows_its_ccd_s_day_offset, tests::model::only_an_application_caused_by_a_step_marks_that_step_applied (11 renders); sweep scenario/day-step, scenario/qualification (40402 renders)
-- `words.rs:645` ` reset ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (1239 renders); sweep journal/help/160x45, journal/help/240x67 (2554 renders)
+- `words.rs:645` ` reset ` — tests frames::frame_tests::bands::event_redraws_keep_every_counter_on_the_same_second::test_case_5_filler, frames::frame_tests::bounds::between::screens (1240 renders); sweep journal/help/160x45, journal/help/240x67 (2590 renders)
 - `words.rs:646` ` recomputed ` — tests tests::words::a_hold_speaks_when_its_credit_resets_or_is_recomputed::test_case_3_recomputed (1 renders)
 - `words.rs:652` ` hold at {} {what} · {} eligible ` — tests tests::describe::a_hold_that_waits_adds_no_line_and_a_reset_hold_does, tests::words::a_hold_speaks_when_its_credit_resets_or_is_recomputed::test_case_2_reset (6 renders); sweep scenario/reproduction, scenario/reproduction/120x33 (1357 renders)
 - `words.rs:661` ` frozen ` — tests frames::frame_tests::day_question::a_pending_day_question_shows_in_the_footer_while_a_trial_runs_until_it_is_answered, frames::frame_tests::day_question::two_pending_questions_are_counted_and_a_narrow_footer_keeps_a_short_form (11 renders); sweep sweep/calendar/15007-day.unclean_end/120x33/plus40, sweep/calendar/15007-day.unclean_end/160x45/plus40 (8 renders)
 - `words.rs:662` ` unfrozen ` — tests tests::words::a_freeze_says_which_way_it_went::test_case_2_unfreeze (1 renders)
 - `words.rs:664` ` promotion {what} ` — tests frames::frame_tests::bounds::between::screens, frames::frame_tests::bounds::between::scrolling::test_case_1_one (635 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `words.rs:672` ` imported {} of {} selected records from {} ` — tests tests::words::an_import_counts_what_it_took (1 renders)
-- `words.rs:675` ` session ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (31552 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (294688 renders)
+- `words.rs:675` ` session ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (31669 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (294801 renders)
 - `words.rs:897` ` dead end: {} ` — tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_1_dead_end_main, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped::test_case_2_dead_end_log (10 renders); sweep scenario/deadend, scenario/deadend/120x33 (39 renders)
 - `words.rs:911` ` stopped ` — tests frames::frame_tests::bands::a_stopped_frame_shows_the_saved_profile_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame::test_case_3_stopped (83 renders); sweep scenario/day-step, scenario/day-step/120x33 (392406 renders)
 

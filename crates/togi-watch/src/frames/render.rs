@@ -1,8 +1,8 @@
 //! One dashboard frame: the header and the stage line over the main view, the help or the journal view, and the
 //! key hints under them.
 
-use jiff::Timestamp;
 use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use ratatui::buffer::Buffer;
 
 use super::dash::{draw_ccd, draw_now, header, stage_line, status_header};
@@ -36,6 +36,9 @@ pub fn render(
     zone: &TimeZone,
     buf: &mut Buffer,
 ) -> Drawn {
+    // All panels sample the same whole second, including redraws caused by journal or key events.
+    let nanos = now.subsec_nanosecond().rem_euclid(1_000_000_000);
+    let now = now - SignedDuration::from_nanos(i64::from(nanos));
     match *journal {
         Journal::Ready { snapshot, log } => {
             let scene = Scene::new(snapshot, now, zone, screen.colours);

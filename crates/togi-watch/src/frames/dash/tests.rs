@@ -23,7 +23,7 @@ use crate::frames::hand::{
 };
 use crate::frames::layout::SizeClass;
 use crate::frames::measure::{Ccd, CoreColumns, measure};
-use crate::frames::scene::Scene;
+use crate::frames::scene::{Scene, between};
 use crate::frames::testing::{FIXED_NOW, draw_checked, rows_of, screen};
 use crate::model::{
     CoreView, DeadEndView, IdleHold, Model, RecoveryView, SessionView, Snapshot, StopView,
@@ -1138,8 +1138,11 @@ fn the_rendered_wide_bar_has_two_full_height_rows_and_no_underline(extra: usize)
     let now_rect = measure(&probe, &sc).now;
     let cells = usize::from(now_rect.width) - 23;
     let eighths = cells * 8 / 3 + extra;
-    let (whole, edge) = (eighths / 8, eighths % 8);
     let at = started + elapsed_for(trial.duration, cells, eighths);
+    let sampled = at - SignedDuration::from_nanos(i64::from(at.subsec_nanosecond()));
+    let elapsed = between(started, sampled);
+    let eighths = (cells as u128 * 8 * elapsed.as_nanos() / trial.duration.as_nanos()) as usize;
+    let (whole, edge) = (eighths / 8, eighths % 8);
     let buf = frame_in(&hand, 240, 67, at, Colours::Rich);
     let rows = rows_of(&buf);
     let (x, top) = (usize::from(now_rect.x) + whole, usize::from(now_rect.y) + 3);

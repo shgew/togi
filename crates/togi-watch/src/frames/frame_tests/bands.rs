@@ -7,11 +7,12 @@ use togi_journal::DeadEndCondition;
 use super::{ALL_SIZES, SIZES, later, main_screen, one_frame, text, words};
 use crate::frames::hand::{Hand, Staged, ended_trial};
 use crate::frames::layout::Layout;
-use crate::frames::testing::rows_of;
+use crate::frames::testing::{Fixture, rows_of};
 use crate::model::{DeadEndView, RecoveryView, StopView};
 use crate::screen::{Hold, Screen, View};
 use togi_journal::ShutdownReason;
 use togi_machine::Regime;
+use togi_watchtest::Scenario;
 
 pub(super) fn stage_line(buf: &Buffer, screen: &Screen) -> String {
     rows_of(buf)[usize::from(Layout::new(screen).stage.y)]
@@ -184,6 +185,57 @@ fn a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running() {
         !Staged::Mapping.hand().snapshot().crashed_trial(),
         "a trial in the latest boot is running"
     );
+}
+
+#[test_case(Scenario::Mapping, 240, 67; "mapping wide")]
+#[test_case(Scenario::Mapping, 160, 45; "mapping medium")]
+#[test_case(Scenario::Mapping, 120, 33; "mapping compact")]
+#[test_case(Scenario::Controls, 160, 45; "controls")]
+#[test_case(Scenario::Filler, 160, 45; "filler")]
+fn event_redraws_keep_every_counter_on_the_same_second(
+    scenario: Scenario,
+    width: u16,
+    height: u16,
+) {
+    let mut events = scenario.events().expect("a running trial");
+    for event in &mut events {
+        event.time += jiff::SignedDuration::from_millis(375);
+    }
+    let fx = Fixture::of(&events);
+    let trial = fx.model.snapshot().trial.expect("a started trial");
+    let started = trial.started.expect("started");
+    let second = started - jiff::SignedDuration::from_nanos(i64::from(started.subsec_nanosecond()));
+    let screen = main_screen(width, height);
+    for elapsed in 1..=8 {
+        let at = later(second, elapsed);
+        let (boundary, _) = fx.draw(&screen, at);
+        let said = words(&boundary);
+        let shown = |seconds: u64| format!("{}:{:02}", seconds / 60, seconds % 60);
+        let remaining = trial.duration.as_secs() - elapsed.cast_unsigned();
+        if width == 240 {
+            assert!(
+                said.contains(&format!(
+                    "{} of {}",
+                    shown(elapsed.cast_unsigned() - 1),
+                    shown(trial.duration.as_secs())
+                )),
+                "elapsed second {elapsed}: {said}"
+            );
+        } else {
+            assert!(
+                said.contains(&format!("{} left", shown(remaining))),
+                "second {elapsed}: {said}"
+            );
+        }
+        for offset in (1..1000).step_by(137) {
+            let event_at = at + jiff::SignedDuration::from_millis(offset);
+            assert_eq!(
+                fx.draw(&screen, event_at).0,
+                boundary,
+                "an event at second {elapsed} + {offset}ms must not advance any counter"
+            );
+        }
+    }
 }
 
 #[test]

@@ -476,7 +476,8 @@ fn drive_with<B: console::Console>(
                 |screen, buf| {
                     let mut feed = feed.borrow_mut();
                     let journal = feed.journal(screen);
-                    render(&journal, screen, now(), buf)
+                    let at = now();
+                    (render(&journal, screen, at, buf), at)
                 },
                 || {
                     let mut feed = feed.borrow_mut();
@@ -1225,6 +1226,205 @@ mod tests {
         }
         let shown = crate::frames::testing::rows_of(&buffer).join("\n");
         assert!(shown.contains("write state projection: w4"), "{shown}");
+    }
+
+    #[test]
+    fn a_frame_samples_the_injected_clock_after_reading_its_journal() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::time::Duration;
+
+        struct Replaying {
+            now: Rc<Cell<Timestamp>>,
+        }
+        impl Feed for Replaying {
+            fn journal(&mut self, _: &Screen) -> Journal<'_> {
+                self.now.set(self.now.get() + Duration::from_secs(10));
+                Journal::Missing
+            }
+
+            fn reload(&mut self) -> bool {
+                false
+            }
+        }
+
+        let now = Rc::new(Cell::new(Timestamp::UNIX_EPOCH));
+        let recorder = Recorder::new(120, 33);
+        let stop = Stop::new();
+        let mut frames = 0;
+        let live = Config {
+            watch: None,
+            tick: Some(Duration::from_millis(250)),
+            stop: Some(&stop),
+            terminating: false,
+            quit: Quit::Keys,
+            switch: None,
+        };
+        let result = drive_with(
+            &timer_runtime(),
+            recorder.backend(),
+            Replaying { now: now.clone() },
+            &live,
+            None,
+            Colours::None,
+            || now.get(),
+            |journal, screen, at, buf| {
+                frames += 1;
+                assert_eq!(at, now.get(), "frame {frames} must use its journal's clock");
+                if frames == 2 {
+                    stop.stop();
+                }
+                plain(journal, screen, at, buf)
+            },
+            silent_listener,
+        );
+        assert_eq!(result.unwrap(), Outcome::Ended);
+        assert_eq!(frames, 2);
+    }
+
+    #[test]
+    fn a_second_crossed_during_paint_is_redrawn_immediately() {
+        use std::cell::Cell;
+        use std::time::Duration;
+
+        let before = Timestamp::UNIX_EPOCH + Duration::from_millis(999);
+        let after = Timestamp::UNIX_EPOCH + Duration::from_millis(1001);
+        let now = Cell::new(before);
+        let recorder = Recorder::new(120, 33);
+        let state = MemoryJournal::new();
+        let stop = Stop::new();
+        let mut painted_at = None;
+        let mut frames = 0;
+        let live = Config {
+            watch: None,
+            tick: None,
+            stop: Some(&stop),
+            terminating: false,
+            quit: Quit::Keys,
+            switch: None,
+        };
+        let result = drive_with(
+            &timer_runtime(),
+            recorder.backend(),
+            Source::memory(&state, None),
+            &live,
+            None,
+            Colours::None,
+            || now.get(),
+            |journal, screen, at, buf| {
+                frames += 1;
+                if let Some(painted_at) = painted_at {
+                    assert_eq!(at, after);
+                    assert!(
+                        tokio::time::Instant::now().duration_since(painted_at)
+                            <= Duration::from_millis(1),
+                        "the boundary crossed while painting must not wait for second 2"
+                    );
+                    stop.stop();
+                } else {
+                    assert_eq!(at, before);
+                    painted_at = Some(tokio::time::Instant::now());
+                    // The wall clock crosses a second boundary during synchronous painting.
+                    now.set(after);
+                }
+                plain(journal, screen, at, buf)
+            },
+            silent_listener,
+        );
+        assert_eq!(result.unwrap(), Outcome::Ended);
+        assert_eq!(frames, 2);
+    }
+
+    #[test_case::test_case(60_375; "forward clock step")]
+    #[test_case::test_case(-60_125; "backward clock step")]
+    #[test_case::test_case(3_600_375; "suspend without monotonic advance")]
+    fn trials_recorded_after_clock_changes_use_the_journals_wall_time(step_ms: i64) {
+        use std::cell::{Cell, RefCell};
+        use std::rc::Rc;
+        use std::time::Duration;
+
+        struct Stepping {
+            now: Rc<Cell<Timestamp>>,
+            events: Vec<togi_journal::Event>,
+            model: crate::model::Model,
+            step: jiff::SignedDuration,
+        }
+        impl Feed for Stepping {
+            fn journal(&mut self, _: &Screen) -> Journal<'_> {
+                for event in &mut self.events {
+                    event.time += self.step;
+                }
+                self.model = crate::model::project(&self.events);
+                let snapshot = self.model.snapshot();
+                let started = snapshot.trial.unwrap().started.unwrap();
+                self.now.set(started + Duration::from_secs(5));
+                Journal::Ready {
+                    snapshot,
+                    log: snapshot.log(),
+                }
+            }
+
+            fn reload(&mut self) -> bool {
+                false
+            }
+        }
+
+        let now = Rc::new(Cell::new(Timestamp::UNIX_EPOCH));
+        let recorder = Recorder::new(240, 67);
+        let stop = Stop::new();
+        let sender = RefCell::new(None::<tokio::sync::mpsc::UnboundedSender<Event>>);
+        let mut frames = 0;
+        let live = Config {
+            watch: None,
+            tick: None,
+            stop: Some(&stop),
+            terminating: false,
+            quit: Quit::Keys,
+            switch: None,
+        };
+        let result = drive_with(
+            &timer_runtime(),
+            recorder.backend(),
+            Stepping {
+                now: now.clone(),
+                events: togi_watchtest::Scenario::Mapping.events().unwrap(),
+                model: crate::model::Model::new(),
+                step: jiff::SignedDuration::from_millis(step_ms),
+            },
+            &live,
+            None,
+            Colours::None,
+            || now.get(),
+            |journal, screen, at, buf| {
+                frames += 1;
+                assert_eq!(
+                    at,
+                    now.get(),
+                    "the frame follows events after the clock change"
+                );
+                let drawn =
+                    crate::frames::render(journal, screen, at, &jiff::tz::TimeZone::UTC, buf);
+                let shown = crate::frames::testing::rows_of(buf).join("\n");
+                assert!(shown.contains("0:04 of"), "frame {frames}: {shown}");
+                if frames == 2 {
+                    stop.stop();
+                } else {
+                    sender
+                        .borrow()
+                        .as_ref()
+                        .unwrap()
+                        .send(Event::Resize)
+                        .unwrap();
+                }
+                drawn
+            },
+            |terminating, events| {
+                *sender.borrow_mut() = Some(events.clone());
+                silent_listener(terminating, events)
+            },
+        );
+        assert_eq!(result.unwrap(), Outcome::Ended);
+        assert_eq!(frames, 2);
     }
 
     /// A stand-in for the frames: says what the journal is, in the words the frames use for a missing one.
