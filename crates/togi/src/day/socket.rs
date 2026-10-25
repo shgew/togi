@@ -16,14 +16,14 @@ const LIMIT: u64 = 4096;
 const EXCHANGE: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "request", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
     Questions,
     Answer { boot: BootId, answer: DayAnswerKind },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "reply", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Reply {
     Questions { pending: Vec<DayUncleanEnd> },
     Answered,
@@ -257,6 +257,12 @@ fn write_reply(stream: &mut impl io::Write, reply: &Reply) -> Result<(), Error> 
     Ok(())
 }
 
+fn read_reply(stream: &mut impl io::Read) -> Result<Reply, Error> {
+    let mut bytes = Vec::new();
+    io::BufReader::new(stream.take(1 << 20)).read_until(b'\n', &mut bytes)?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
 /// Process an already-authenticated request, recording identity from the kernel, not the request.
 fn respond(
     journal: &mut Journal,
@@ -305,9 +311,7 @@ pub fn request(request: &Request) -> Result<Reply, Error> {
     }
     serde_json::to_writer(&mut stream, request)?;
     stream.write_all(b"\n")?;
-    let mut bytes = Vec::new();
-    io::BufReader::new(stream.take(1 << 20)).read_until(b'\n', &mut bytes)?;
-    let reply = serde_json::from_slice(&bytes)?;
+    let reply = read_reply(&mut stream)?;
     match reply {
         Reply::Refused { reason } => Err(Error::Refused(reason)),
         Reply::Questions { .. } | Reply::Answered => Ok(reply),

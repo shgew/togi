@@ -2,7 +2,7 @@ use super::*;
 use jiff::Timestamp;
 use std::io::Cursor;
 use test_case::test_case;
-use togi_machine::{CancellationToken, EndEvidence, PerCore, ResetReason};
+use togi_machine::{CancellationToken, CoreId, EndEvidence, ObservedOffset, PerCore, ResetReason};
 
 struct FixedClock;
 impl Clock for FixedClock {
@@ -25,7 +25,13 @@ fn pending(journal: &mut Journal) -> BootId {
         DayUncleanEnd {
             boot: boot.clone(),
             last_checkpoint: None,
-            offsets: PerCore::default(),
+            offsets: [(0, -12), (7, -3), (15, -30)].into_iter().fold(
+                PerCore::default(),
+                |mut offsets, (core, offset)| {
+                    offsets.set(CoreId::new(core).unwrap(), ObservedOffset(offset));
+                    offsets
+                },
+            ),
             reset_reason: ResetReason {
                 kind: None,
                 raw: Vec::new(),
@@ -80,9 +86,9 @@ fn changed_group_membership_is_used_for_the_next_connection() {
     assert!(!authorized(1000, 100, 42, "togi:x:42:\n", accounts));
 }
 
-#[test_case(b"{\"request\":\"answer\",\"boot\":\"crashed\",\"answer\":\"frozen\",\"uid\":0}\n"; "claimed identity refused")]
-#[test_case(b"{\"request\":\"answer\",\"boot\":\"crashed\",\"answer\":\"other\"}\n"; "unknown answer refused")]
-#[test_case(b"{\"request\":\"questions\"}"; "unterminated request refused")]
+#[test_case(b"{\"answer\":{\"boot\":\"crashed\",\"answer\":\"frozen\",\"uid\":0}}\n"; "claimed identity refused")]
+#[test_case(b"{\"answer\":{\"boot\":\"crashed\",\"answer\":\"other\"}}\n"; "unknown answer refused")]
+#[test_case(b"\"questions\""; "unterminated request refused")]
 #[test_case(b"[]\n"; "nonobject refused")]
 fn malformed_requests_are_refused(bytes: &[u8]) {
     assert!(read_request(&mut Cursor::new(bytes)).is_err());
@@ -139,6 +145,24 @@ fn a_trickling_request_is_refused_within_the_deadline() {
         "{error:?}"
     );
     assert_eq!(exchange.stream.reads, 3);
+}
+
+#[test]
+fn a_client_decodes_the_pending_ends_the_service_lists() {
+    let mut journal = crate::day::tests::journal();
+    pending(&mut journal);
+    let expected: Vec<_> = DayQuestions::of(journal.events())
+        .pending()
+        .cloned()
+        .collect();
+    let reply = respond(&mut journal, &FixedClock, 1000, Request::Questions).unwrap();
+    let mut wire = Vec::new();
+    write_reply(&mut wire, &reply).unwrap();
+    let Reply::Questions { pending } = read_reply(&mut Cursor::new(wire)).unwrap() else {
+        panic!("questions request must be answered with questions")
+    };
+    assert_eq!(pending, expected);
+    assert_eq!(pending[0].offsets.len(), 3);
 }
 
 #[test]
