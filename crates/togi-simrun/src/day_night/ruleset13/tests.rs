@@ -1,7 +1,9 @@
 use std::time::Duration;
 
-use togi_journal::{ApplyCause, Outcome, Payload, QualificationState, ShutdownReason, StepKind};
-use togi_machine::Machine;
+use togi_journal::{
+    ApplyCause, Event, Outcome, Payload, QualificationState, ShutdownReason, StepKind,
+};
+use togi_machine::{CcdProfile, Machine};
 use togi_tuner::policy::{Params, State};
 
 use super::Ruleset13;
@@ -106,6 +108,83 @@ fn a_first_promotion_follows_a_completed_night_qualification() {
         qualified,
         "promoted at event {promotion} before any qualification completed"
     );
+}
+
+/// The day the calendar changes firmware in [`a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified`],
+/// while [`SCENARIO`]'s seed 1 holds its second promotion.
+const FIRMWARE_CHANGE_DAY: u32 = 35;
+
+#[test]
+fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
+    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    let calendar = CalendarConfig {
+        days: FIRMWARE_CHANGE_DAY * 2,
+        firmware_change_day: Some(FIRMWARE_CHANGE_DAY),
+        ..CalendarConfig::default()
+    };
+    run_with_policy(SCENARIO, 1, calendar, &mut policy).unwrap();
+    let events = policy.events().unwrap();
+    let new_firmware = |version: &str| version.ends_with("-transition");
+    let applied = |event: &Event| {
+        if let Payload::DayApplied(applied) = &event.payload {
+            Some(applied.target.ccd.clone())
+        } else {
+            None
+        }
+    };
+    let changed = events
+        .iter()
+        .position(|event| {
+            matches!(&event.payload, Payload::SessionContext(context) if new_firmware(&context.bios_version))
+        })
+        .expect("the calendar recorded no firmware change");
+    let (before, after) = events.split_at(changed);
+    let previous = before
+        .iter()
+        .rev()
+        .find_map(applied)
+        .filter(|profile| !profile.is_zero())
+        .expect("no nonzero profile was applied when the firmware changed");
+    // The next cold boot proposes the firmware zero and applies stock.
+    let step = after
+        .iter()
+        .find_map(|event| {
+            if let Payload::DayStep(step) = &event.payload {
+                Some(step)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert!(
+        matches!(step.step, StepKind::FirmwareZero { .. }),
+        "{:?}",
+        step.step
+    );
+    assert!(after.iter().find_map(applied).unwrap().is_zero());
+    // The old qualification no longer counts: the previous profile is qualified afresh under the
+    // new firmware, and no nonzero profile returns without such a qualification of its own.
+    let qualified = |profile: &CcdProfile, events: &[Event]| {
+        events.iter().any(|event| {
+            matches!(&event.payload, Payload::NightQualification(q)
+                if new_firmware(&q.firmware.bios_version)
+                    && q.profile.ccd == *profile
+                    && matches!(q.state, QualificationState::Complete { .. }))
+        })
+    };
+    assert!(
+        qualified(&previous, after),
+        "{previous:?} was never qualified under the new firmware"
+    );
+    for (index, event) in after.iter().enumerate() {
+        if let Some(profile) = applied(event).filter(|profile| !profile.is_zero()) {
+            assert!(
+                qualified(&profile, &after[..index]),
+                "{profile:?} returned at event {} without a qualification under the new firmware",
+                event.seq
+            );
+        }
+    }
 }
 
 /// Delegates to [`Ruleset13`], replacing the first day observation after a promotion with an end the
