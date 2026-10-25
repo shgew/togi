@@ -9,6 +9,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::process::Command;
 
+use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
@@ -17,7 +18,7 @@ use togi_config::Config;
 use togi_journal::{Build, EventKind, FixStamp, Payload, Recording, SCHEMA, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
-use togi_session::{ConfigSource, StopPolicy};
+use togi_session::ConfigSource;
 use togi_sim::{Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome};
 
@@ -32,7 +33,7 @@ fn real_process_a_signal_stops_the_session_in_order() {
     let tmp = tempfile::tempdir().unwrap();
     let mut child = command()
         .env("TMPDIR", tmp.path())
-        .args(["--cycles", "1000"])
+        .args(["--night-hours", "1000"])
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap();
@@ -88,6 +89,14 @@ fn real_process_a_log_that_cannot_be_flushed_fails_a_command_that_otherwise_succ
 #[test_case(true; "with samples")]
 fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_samples: bool) {
     let definition = togi_sim::MachineDefinition::default();
+    let simulator = Simulator::new(
+        Model::new(&definition, 1).unwrap(),
+        RunSettings {
+            seed: 1,
+            ..RunSettings::default()
+        },
+    )
+    .unwrap();
     let dir = tempfile::tempdir().unwrap();
     let persistence = Persistence::Files(dir.path().to_owned());
     let outcome = togi_simrun::simulate(SimInput {
@@ -101,22 +110,12 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_sample
             fixes: FixStamp::none(),
             evidence: togi_tuner::EVIDENCE_EPOCH,
         },
-        simulator: Simulator::new(
-            Model::new(&definition, 1).unwrap(),
-            RunSettings {
-                seed: 1,
-                ..RunSettings::default()
-            },
-        )
-        .unwrap(),
+        simulator: simulator.clone(),
         persistence: persistence.clone(),
         replay: Replay::Warm,
         verify_every: None,
         max_boots: NonZeroU32::new(10).unwrap(),
-        policy: StopPolicy {
-            cycles: NonZeroU32::new(1),
-            first_result: false,
-        },
+        stop_at: Some(simulator.now() + SignedDuration::from_hours(8)),
         write_samples,
         defects: &[],
         log: None,
@@ -167,7 +166,20 @@ fn real_process_simulator_arithmetic_errors_are_reported(
     value: serde_json::Value,
     operation: &str,
 ) {
-    let definition = togi_sim::MachineDefinition::default();
+    // The boot exhaustion needs a crash to reboot at; four cores that crash past -10 give one in the first night.
+    let definition: togi_sim::MachineDefinition = serde_json::from_str(
+        r#"{
+          "cores": 4,
+          "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
+          "core": [
+            {"id": 0, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
+            {"id": 1, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
+            {"id": 2, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
+            {"id": 3, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]}
+          ]
+        }"#,
+    )
+    .unwrap();
     let sim = Simulator::new(
         Model::new(&definition, 1).unwrap(),
         RunSettings {
@@ -187,9 +199,13 @@ fn real_process_simulator_arithmetic_errors_are_reported(
         serde_json::to_vec(&persisted).unwrap(),
     )
     .unwrap();
+    let machine = tmp.path().join("hunt.json");
+    std::fs::write(&machine, serde_json::to_vec(&definition).unwrap()).unwrap();
     let output = command()
         .arg("--state-dir")
         .arg(tmp.path())
+        .arg("--machine")
+        .arg(&machine)
         .args(["--max-boots", "1"])
         .output()
         .unwrap();

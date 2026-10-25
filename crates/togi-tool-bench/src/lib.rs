@@ -8,21 +8,17 @@
 //! 2. [`Simulator`] runs each session as a subprocess with a state directory of its own, up to `--jobs` at a
 //!    time, and reads back its journal and log.
 //! 3. [`measure`] turns the journal into the [`Measured`] numbers of a [`Record`]: time, crashes, trials, real
-//!    answers, the final profile and the model's hazards at it.
+//!    answers and the model's hazards at the profile the session ended on.
 //! 4. [`summary::report`] and [`compare::report`] print the per-scenario summary and the comparison with a
 //!    baseline, and [`sanity::compare`] checks a run against the scores of a recorded baseline.
 //! 5. [`cache`] keeps each finished record under the digests of the simulator, the bench, the flags and every
 //!    input file, so an unchanged run is not simulated again.
 //!
 //! Records, the summary, the comparison and the cache are this crate's own formats: JSON Lines of [`Record`],
-//! plain text reports, and one JSON file per cached run. The gate of a ruleset is the `gate` object of the suite
-//! file, typed and judged by [`gate`].
+//! plain text reports, and one JSON file per cached run.
 //!
-//! Three modes do not measure the suite. [`same`] proves two trees decide the same on every simulated session, or
-//! only the suite's smoke sessions, by comparing their journals. [`forecast`] resumes copies of a real run's
-//! state directory on the simulator with the suite's `target` scenario and summarizes what the runs did.
-//! [`pass_cost`] computes, without simulating, what the R7 part requirements cost at a fixed profile.
-//! [`research`] dispatches the steps of a bounded research campaign under its launch manifest.
+//! Some modes do not measure the suite. [`same`] proves two trees decide the same on every simulated session, or
+//! only the suite's smoke sessions, by comparing their journals. [`research`] dispatches the steps of a bounded research campaign under its launch manifest.
 //!
 //! ```
 //! use togi_tool_bench::{Selection, Suite};
@@ -43,15 +39,13 @@ extern crate self as togi_tool_bench;
 pub mod cache;
 pub mod compare;
 pub mod day_night;
+pub mod day_night_gate;
 pub mod day_night_report;
 #[cfg(test)]
 mod day_night_tests;
 mod error;
-pub mod forecast;
-pub mod gate;
 mod git;
 mod metrics;
-pub mod pass_cost;
 mod pool;
 mod process;
 mod record;

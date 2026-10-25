@@ -2,7 +2,7 @@ use crate::common::{self, record};
 use togi_tool_bench::compare::{Pair, Verdict, compare, pairing, report};
 use togi_tool_bench::summary;
 use togi_tool_bench::{ModelCheck, Record, Status, set_scenario_shares};
-use togi_tool_forecast::Split;
+use togi_tool_sim::Split;
 
 fn pair<'a>(candidate: &'a Record, baseline: &'a Record) -> Pair<'a> {
     Pair {
@@ -13,14 +13,13 @@ fn pair<'a>(candidate: &'a Record, baseline: &'a Record) -> Pair<'a> {
 
 fn base() -> Record {
     Record {
-        depth: -20,
         hazard_max_per_h: 0.1,
         ..record("default", 1)
     }
 }
 
-fn violations(c: &togi_tool_bench::compare::Comparison) -> [usize; 4] {
-    [c.v1, c.v2, c.v3, c.v4]
+fn violations(c: &togi_tool_bench::compare::Comparison) -> [usize; 3] {
+    [c.v1, c.v2, c.v3]
 }
 
 fn text(write: impl FnOnce(&mut Vec<u8>) -> std::io::Result<()>) -> String {
@@ -41,7 +40,6 @@ fn a_baseline_file_compares_exactly_as_the_full_records_do() {
                 idle_failures: 0,
             }),
             machine: Some("m.json".to_owned()),
-            worst_r7_hazard_per_h: Some(0.25),
             sim_hours: 10.0 + f64::from(n),
             ..base()
         })
@@ -51,10 +49,8 @@ fn a_baseline_file_compares_exactly_as_the_full_records_do() {
         .map(|run| Record {
             wall_s: Some(1.0),
             model_check: None,
-            depth: run.depth + 9,
             crashes: 2,
             sim_hours: run.sim_hours * 1.5,
-            worst_r7_hazard_per_h: Some(0.5),
             ..run.clone()
         })
         .collect();
@@ -62,14 +58,11 @@ fn a_baseline_file_compares_exactly_as_the_full_records_do() {
     let against_full = text(|out| report(out, &candidate, &full));
     let against_slim = text(|out| report(out, &candidate, &slim));
     assert!(against_full.contains("verdict: "), "{against_full}");
-    assert!(
-        against_full.contains("max_worst_r7_hazard_delta"),
-        "{against_full}"
-    );
+    assert!(against_full.contains("max_hazard_delta"), "{against_full}");
     assert_eq!(against_slim, against_full);
 }
 
-type Edit = (&'static str, fn(&mut Record), Verdict, [usize; 4]);
+type Edit = (&'static str, fn(&mut Record), Verdict, [usize; 3]);
 
 #[test]
 fn runs_pair_by_scenario_and_seed_in_scenario_then_seed_order() {
@@ -99,14 +92,14 @@ fn runs_pair_by_scenario_and_seed_in_scenario_then_seed_order() {
     );
 }
 
-#[test_case::test_case(("equal", |_| {}, Verdict::Neutral, [0; 4]); "equal")]
-#[test_case::test_case(("faster", |r| r.sim_hours = 8.0, Verdict::Accept, [0; 4]); "faster")]
-#[test_case::test_case(("slower", |r| r.sim_hours = 12.0, Verdict::Reject, [0; 4]); "slower")]
+#[test_case::test_case(("equal", |_| {}, Verdict::Neutral, [0; 3]); "equal")]
+#[test_case::test_case(("faster", |r| r.sim_hours = 8.0, Verdict::Accept, [0; 3]); "faster")]
+#[test_case::test_case(("slower", |r| r.sim_hours = 12.0, Verdict::Reject, [0; 3]); "slower")]
 #[test_case::test_case((
             "lost conclusion",
             |r| r.status = Status::DeadEnd,
             Verdict::Reject,
-            [1, 0, 0, 0],
+            [1, 0, 0],
         ); "lost conclusion")]
 #[test_case::test_case((
             "censored",
@@ -115,32 +108,14 @@ fn runs_pair_by_scenario_and_seed_in_scenario_then_seed_order() {
                 r.sim_hours = 40.0;
             },
             Verdict::Reject,
-            [1, 0, 0, 0],
+            [1, 0, 0],
         ); "censored")]
 #[test_case::test_case((
             "hazard",
             |r| r.hazard_max_per_h = 0.111,
             Verdict::Reject,
-            [0, 1, 0, 0],
+            [0, 1, 0],
         ); "hazard")]
-#[test_case::test_case((
-            "mean depth",
-            |r| r.depth = -18,
-            Verdict::Reject,
-            [0, 0, 1, 0],
-        ); "mean depth")]
-#[test_case::test_case((
-            "pair depth",
-            |r| r.depth = -14,
-            Verdict::Reject,
-            [0, 0, 2, 0],
-        ); "pair depth")]
-#[test_case::test_case((
-            "depth boundary",
-            |r| r.depth = -19,
-            Verdict::Neutral,
-            [0; 4],
-        ); "depth boundary")]
 fn the_verdict_follows_the_violations_and_the_time_interval(case: Edit) {
     let (name, edit, verdict, expected) = case;
 
@@ -160,20 +135,9 @@ fn a_slower_target_is_a_violation_and_no_pairs_is_neutral() {
     b.scenario = "target".to_owned();
     a.sim_hours = 11.0;
     let c = compare(&[pair(&a, &b)]);
-    assert_eq!(violations(&c), [0, 0, 0, 1]);
+    assert_eq!(violations(&c), [0, 0, 1]);
     assert_eq!(c.verdict(), Verdict::Reject);
     assert_eq!(compare(&[]).verdict(), Verdict::Neutral);
-}
-
-#[test]
-fn one_deeper_pair_among_six_is_a_pair_violation_but_not_a_mean_one() {
-    let mut deeper = base();
-    deeper.depth = base().depth + 6;
-    let b = base();
-    let rest = vec![base(); 5];
-    let mut pairs = vec![pair(&deeper, &b)];
-    pairs.extend(rest.iter().map(|r| pair(r, &b)));
-    assert_eq!(compare(&pairs).v3, 1);
 }
 
 #[test]
@@ -209,7 +173,7 @@ fn the_time_ratio_weights_scenarios_equally_and_the_bootstrap_is_fixed() {
     let c = compare(&pairs);
     assert!((c.ratio - 1.0).abs() < 1e-12, "{}", c.ratio);
     assert!((c.lo - 1.0).abs() < 1e-12 && (c.hi - 1.0).abs() < 1e-12);
-    assert_eq!(c.v4, 1);
+    assert_eq!(c.v3, 1);
     for (i, candidate) in candidates.iter_mut().enumerate() {
         candidate.sim_hours = 5.0 + f64::from(u8::try_from(i % 3).unwrap());
     }
@@ -260,69 +224,38 @@ fn real_answer_shares_pool_over_the_scenario_and_the_pairs() {
     );
 }
 
-#[test]
-fn a_missing_worst_r7_hazard_is_unavailable_not_zero() {
-    let plain = base();
-    let measured = |v: f64| Record {
-        worst_r7_hazard_per_h: Some(v),
-        ..base()
-    };
-    let legacy = compare(&[pair(&measured(100.0), &plain)]);
-    assert_eq!(legacy, compare(&[pair(&plain, &plain)]));
-    let both = compare(&[pair(&measured(100.0), &measured(1.0))]);
-    assert_eq!(
-        (both.worst_r7_pairs, both.max_worst_r7_hazard_delta),
-        (1, 99.0)
-    );
-    assert_eq!(both.verdict(), Verdict::Neutral);
-    let (candidate, with, without) = (measured(100.0), measured(1.0), plain);
-    let mixed = compare(&[
-        pair(&candidate, &with),
-        pair(&candidate, &without),
-        pair(&without, &with),
-    ]);
-    assert_eq!(
-        (mixed.worst_r7_pairs, mixed.max_worst_r7_hazard_delta),
-        (1, 99.0)
-    );
-    let drop = compare(&[pair(&measured(0.0), &with)]);
-    assert!((drop.max_worst_r7_hazard_delta + 1.0).abs() < f64::EPSILON);
-}
-
 fn candidates() -> Vec<Record> {
-    let r = |scenario, seed, status, hours, crashes, depth, hazard, trials, real| Record {
+    let r = |scenario, seed, status, hours, crashes, hazard, trials, real| Record {
         status,
         sim_hours: hours,
         crashes,
-        depth,
         hazard_max_per_h: hazard,
         trials,
         real_answers: real,
         ..record(scenario, seed)
     };
     vec![
-        r("zeta", 2, Status::Concluded, 4.0, 2, -20, 0.005, 2, 1),
-        r("alpha", 1, Status::Concluded, 2.0, 0, -40, 0.0, 6, 1),
-        r("zeta", 3, Status::Error, 10.0, 4, -10, 0.015, 8, 1),
-        r("zeta", 4, Status::Censored, 300.0, 999, -12, 0.01, 9000, 0),
+        r("zeta", 2, Status::Concluded, 4.0, 2, 0.005, 2, 1),
+        r("alpha", 1, Status::Concluded, 2.0, 0, 0.0, 6, 1),
+        r("zeta", 3, Status::Error, 10.0, 4, 0.015, 8, 1),
+        r("zeta", 4, Status::Censored, 300.0, 999, 0.01, 9000, 0),
     ]
 }
 
 fn baselines() -> Vec<Record> {
-    let r = |scenario, seed, split, hours, crashes, depth, hazard, trials, real| Record {
+    let r = |scenario, seed, split, hours, crashes, hazard, trials, real| Record {
         split,
         sim_hours: hours,
         crashes,
-        depth,
         hazard_max_per_h: hazard,
         trials,
         real_answers: real,
         ..record(scenario, seed)
     };
     vec![
-        r("alpha", 1, Split::Dev, 4.0, 0, -40, 0.0, 4, 2),
-        r("zeta", 2, Split::Dev, 8.0, 1, -20, 0.005, 4, 3),
-        r("alpha", 9, Split::Holdout, 1.0, 0, 0, 0.0, 0, 0),
+        r("alpha", 1, Split::Dev, 4.0, 0, 0.0, 4, 2),
+        r("zeta", 2, Split::Dev, 8.0, 1, 0.005, 4, 3),
+        r("alpha", 9, Split::Holdout, 1.0, 0, 0.0, 0, 0),
     ]
 }
 
@@ -360,47 +293,11 @@ fn unmatched_runs_in_the_candidates_splits_are_warned_about() {
 fn a_rejected_candidate_says_which_violations() {
     let mut a = candidates().remove(0);
     a.status = Status::DeadEnd;
-    a.depth = -14;
     a.hazard_max_per_h = 0.1;
     let base = baselines().remove(1);
     common::assert_snapshot(
         &text(|out| report(out, &[a], &[base])),
         include_str!("snapshots/compare__a_rejected_candidate_says_which_violations.snap"),
-    );
-}
-
-#[test]
-fn shared_voltage_hazards_have_their_own_lines() {
-    let measured = |hazard| Record {
-        sim_hours: 2.0,
-        worst_r7_hazard_per_h: hazard,
-        ..record("shared", 1)
-    };
-    let rows = [
-        Record {
-            seed: 1,
-            ..measured(Some(0.25))
-        },
-        Record {
-            seed: 2,
-            ..measured(Some(0.5))
-        },
-        Record {
-            seed: 3,
-            ..measured(None)
-        },
-    ];
-    let baseline = Record {
-        seed: 2,
-        ..rows[0].clone()
-    };
-    let out = text(|out| {
-        summary::report(out, &rows)?;
-        report(out, &rows[1..2], &[baseline])
-    });
-    common::assert_snapshot(
-        &out,
-        include_str!("snapshots/compare__shared_voltage_hazards_have_their_own_lines.snap"),
     );
 }
 

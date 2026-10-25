@@ -2,6 +2,7 @@
   "scenarios": [
     {
       "name": "default",
+      "night_hours": 48,
       "machine": "",
       "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
       "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124],
@@ -9,6 +10,8 @@
     },
     {
       "name": "target",
+      "night_hours": 48,
+      "night_end": "operator_or_stock",
       "machines": ["machines/target-fit-0.json", "machines/target-fit-1.json", "machines/target-fit-2.json", "machines/target-fit-3.json", "machines/target-fit-4.json", "machines/target-fit-5.json", "machines/target-fit-6.json", "machines/target-fit-7.json", "machines/target-fit-8.json"],
       "replay": true,
       "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
@@ -17,6 +20,8 @@
     },
     {
       "name": "flat-hazard",
+      "night_hours": 48,
+      "night_end": "operator_or_stock",
       "machine": "machines/flat-hazard.json",
       "dev": [1, 2, 3, 4],
       "holdout": [101, 102, 103, 104],
@@ -24,6 +29,7 @@
     },
     {
       "name": "late-onset",
+      "night_hours": 48,
       "machine": "machines/late-onset.json",
       "dev": [1, 2, 3, 4],
       "holdout": [101, 102, 103, 104],
@@ -31,6 +37,7 @@
     },
     {
       "name": "idle-limit",
+      "night_hours": 48,
       "machine": "machines/idle-limit.json",
       "dev": [1, 2, 3, 4],
       "holdout": [101, 102, 103, 104],
@@ -38,6 +45,7 @@
     },
     {
       "name": "misleading-mce",
+      "night_hours": 48,
       "machine": "machines/misleading-mce.json",
       "dev": [1, 2, 3, 4],
       "holdout": [101, 102, 103, 104],
@@ -45,6 +53,8 @@
     },
     {
       "name": "target-nonmember-mce",
+      "night_hours": 48,
+      "night_end": "operator_or_stock",
       "machine": "machines/target-nonmember-mce.json",
       "replay": true,
       "dev": [1, 2, 3, 4],
@@ -53,6 +63,8 @@
     },
     {
       "name": "shared-voltage",
+      "night_hours": 48,
+      "night_end": "operator_or_stock",
       "machine": "machines/shared-voltage.json",
       "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
       "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112],
@@ -60,6 +72,8 @@
     },
     {
       "name": "target-shared-voltage",
+      "night_hours": 48,
+      "night_end": "operator_or_stock",
       "machine": "machines/target-shared-voltage.json",
       "replay": true,
       "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
@@ -68,6 +82,8 @@
     },
     {
       "name": "target-r7-vf-boost",
+      "night_hours": 48,
+      "night_end": "operator_or_stock",
       "machine": "machines/target-r7-vf-boost.json",
       "replay": true,
       "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
@@ -76,6 +92,8 @@
     },
     {
       "name": "target-r7-request-gap",
+      "night_hours": 48,
+      "night_end": "operator_or_stock",
       "machine": "machines/target-r7-request-gap.json",
       "replay": true,
       "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],

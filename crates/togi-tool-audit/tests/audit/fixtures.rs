@@ -25,13 +25,6 @@ pub(crate) fn boot(mut event: Event, name: &str) -> Event {
     event
 }
 
-pub(crate) fn merged(mut base: Value, extra: Value) -> Value {
-    base.as_object_mut()
-        .unwrap()
-        .extend(extra.as_object().unwrap().clone());
-    base
-}
-
 pub(crate) fn build(fixes: u32) -> Value {
     json!({"version": "0.1.0", "ruleset": 1, "schema": 1, "fixes": fixes, "evidence": 1})
 }
@@ -55,57 +48,16 @@ pub(crate) fn offsets(pair: [i64; 2]) -> Value {
     json!({"0": pair[0], "8": pair[1]})
 }
 
-pub(crate) fn phase(seq: u64, core: u8, failure_point: Option<i64>) -> Event {
-    let mut data = json!({"core": core, "to": "has_room", "offset": 0, "reason": "r"});
-    if let Some(point) = failure_point {
-        data["failure_point"] = json!(point);
-    }
-    event(seq, "core.phase", data)
-}
-
-pub(crate) fn search(seq: u64, core: u8) -> Event {
+pub(crate) fn phase(seq: u64, core: u8) -> Event {
     event(
         seq,
         "core.phase",
-        json!({"core": core, "to": "search", "offset": 0, "reason": "r"}),
-    )
-}
-
-pub(crate) fn applied(seq: u64, pair: [i64; 2]) -> Event {
-    event(
-        seq,
-        "profile.applied",
-        json!({"offsets": offsets(pair), "condition": "alone"}),
+        json!({"core": core, "to": "has_room", "offset": 0, "reason": "r"}),
     )
 }
 
 pub(crate) fn restored(seq: u64, pair: [i64; 2]) -> Event {
     event(seq, "profile.restored", json!({"offsets": offsets(pair)}))
-}
-
-pub(crate) fn combination(seq: u64, id: u32, members: &[(u8, i64)]) -> Event {
-    let members: Vec<Value> = members
-        .iter()
-        .map(|&(core, offset)| json!({"core": core, "offset": offset}))
-        .collect();
-    event(
-        seq,
-        "combination",
-        json!({"combination": id, "members": members, "hunt": 1, "reason": "r"}),
-    )
-}
-
-pub(crate) fn failure(seq: u64, core: u8, offset: i64) -> Event {
-    event(
-        seq,
-        "failure",
-        json!({"signal": "computation_error", "attribution": "attributed", "core": core, "offset": offset}),
-    )
-}
-
-pub(crate) fn failure_with(seq: u64, extra: Value) -> Event {
-    let base = json!({"signal": "computation_error", "attribution": "attributed"});
-    event(seq, "failure", merged(base, extra))
 }
 
 pub(crate) fn trial_intent(
@@ -136,31 +88,6 @@ pub(crate) fn trial_end(seq: u64, trial: &str) -> Event {
         "trial.end",
         json!({"trial": trial, "outcome": "failure", "duration_s": 60}),
     )
-}
-
-pub(crate) fn decision(seq: u64, core: u8, kind: &str, failure_point: Option<i64>) -> Event {
-    decision_in(seq, "checking", core, kind, failure_point)
-}
-
-pub(crate) fn decision_in(
-    seq: u64,
-    activity: &str,
-    core: u8,
-    kind: &str,
-    failure_point: Option<i64>,
-) -> Event {
-    let mut data = json!({
-        "core": core,
-        "activity": activity,
-        "decision": kind,
-        "from_offset": -10,
-        "to_offset": -10,
-        "reason": "r",
-    });
-    if let Some(point) = failure_point {
-        data["failure_point"] = json!(point);
-    }
-    event(seq, "tuner.decision", data)
 }
 
 pub(crate) fn intent(seq: u64, command: Value) -> Event {
@@ -231,11 +158,132 @@ pub(crate) fn reset_all(seq: u64) -> Event {
     event(seq, "command.reset", json!({"target": "all"}))
 }
 
-pub(crate) fn cycle_end(seq: u64, passed: bool, full: bool) -> Event {
+const DIGEST: &str = "0707070707070707070707070707070707070707070707070707070707070707";
+
+pub(crate) fn vector(pair: [i64; 2]) -> Value {
+    json!({"ccd": {"0": pair[0], "1": pair[1]}, "cores": {"0": pair[0], "8": pair[1]}})
+}
+
+pub(crate) fn firmware(version: &str) -> Value {
+    json!({
+        "bios_version": version,
+        "board": "X570",
+        "cpu_model": "5950X",
+        "microcode": "0xa201016",
+        "boost_limit_mhz": 5000,
+    })
+}
+
+pub(crate) fn context(seq: u64, version: &str) -> Event {
+    event(seq, "session.context", firmware(version))
+}
+
+/// A `night.qualification` of `pair` under firmware `version`; `state` is `"complete"` or `"failed"`.
+pub(crate) fn qualification(seq: u64, pair: [i64; 2], version: &str, state: &str) -> Event {
+    let state = if state == "complete" {
+        json!({"kind": "complete", "witnesses": []})
+    } else {
+        json!({"kind": "start", "outstanding": []})
+    };
     event(
         seq,
-        "checking.cycle",
-        json!({"cycle": 1, "event": "end", "passed": passed, "full": full}),
+        "night.qualification",
+        json!({
+            "profile": vector(pair),
+            "firmware": firmware(version),
+            "epoch": 1,
+            "contents": [],
+            "matrix": DIGEST,
+            "purpose": "next_step",
+            "state": state,
+        }),
+    )
+}
+
+pub(crate) fn day_applied(seq: u64, pair: [i64; 2]) -> Event {
+    event(
+        seq,
+        "day.applied",
+        json!({
+            "application": 1,
+            "cause": {"kind": "reapplication"},
+            "target": vector(pair),
+            "readbacks": {"0": pair[0], "8": pair[1]},
+            "transactions": [],
+            "boot": "b",
+            "mono_ns": 1_000_000_000_u64,
+        }),
+    )
+}
+
+/// A `day.step` from `old` to `proposed`: a promotion of CCD 0, or a hold when `promote` is false.
+pub(crate) fn day_step(seq: u64, old: [i64; 2], proposed: [i64; 2], promote: bool) -> Event {
+    let step = if promote {
+        json!({"kind": "promote", "changed": 0})
+    } else {
+        json!({"kind": "hold", "blocked_by": []})
+    };
+    event(
+        seq,
+        "day.step",
+        json!({
+            "decision": 1,
+            "cold_boot": "b",
+            "old": vector(old),
+            "proposed": vector(proposed),
+            "step": step,
+            "hours": [],
+            "hold_s": 0,
+            "causes": {},
+            "reason": "r",
+        }),
+    )
+}
+
+/// A `day.veto` of the whole profile `pair` for the record at `source`; `state` is `"active"` or `"cleared"`.
+pub(crate) fn veto(seq: u64, source: u64, pair: [i64; 2], state: &str) -> Event {
+    event(
+        seq,
+        "day.veto",
+        json!({
+            "event": {"kind": "record", "session": "20260101T000000Z", "seq": source},
+            "profile": {
+                "kind": "ccd",
+                "ccd": {"0": pair[0], "1": pair[1]},
+                "cores": {"0": pair[0], "8": pair[1]},
+            },
+            "state": state,
+            "evidence": [],
+            "reason": "r",
+        }),
+    )
+}
+
+/// A live `exposure.observed` of trial `trial`, which names itself as its source.
+pub(crate) fn exposure(seq: u64, trial: &str, origin: &str) -> Event {
+    event(
+        seq,
+        "exposure.observed",
+        json!({
+            "source": {"session": "20260101T000000Z", "seq": 2, "boot": "b", "trial": trial},
+            "origin": {"kind": origin},
+            "firmware": firmware("F31"),
+            "epoch": 1,
+            "class": {
+                "regime": "R8",
+                "workloads": [],
+                "cores": [0],
+                "position": {"kind": "light", "core": 0},
+                "duration_s": 120,
+                "placement": "isolated",
+            },
+            "profile": vector([-20, 0]),
+            "tested": {"kind": "isolated", "ccd": 0, "offset": -20},
+            "activity": "mapping",
+            "outcome": "pass",
+            "eligible_s": 120,
+            "uninterrupted_s": 120,
+        }),
     )
 }
 

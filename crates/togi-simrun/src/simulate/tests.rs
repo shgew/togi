@@ -7,7 +7,7 @@ use togi_config::Config;
 use togi_journal::{Build, EventKind, FixStamp, MemFs, SCHEMA};
 use togi_machine::{CancellationToken, Signal};
 use togi_render::Renderer;
-use togi_session::{ConfigSource, Divergence, StopPolicy};
+use togi_session::{ConfigSource, Divergence};
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 
@@ -44,6 +44,7 @@ fn sim_input(
     replay: Replay,
     verify_every: Option<NonZeroU32>,
 ) -> SimInput {
+    let stop_at = Some(simulator.now() + jiff::SignedDuration::from_hours(24));
     SimInput {
         config: Config::default(),
         source: ConfigSource::default(),
@@ -60,10 +61,7 @@ fn sim_input(
         replay,
         verify_every,
         max_boots: nz(3),
-        policy: StopPolicy {
-            cycles: Some(nz(1)),
-            first_result: false,
-        },
+        stop_at,
         write_samples: false,
         defects: &[],
         log: None,
@@ -75,11 +73,11 @@ fn sim_input(
     }
 }
 
-/// Two cores that crash every trial past -10, so each of the first three boots crashes.
-fn crashing() -> Simulator {
+/// Four cores, a neighbour on each CCD, with past-limit crashes at rate 1.
+fn machine() -> Simulator {
     let definition = MachineDefinition {
-        cores: 2,
-        core: (0..2)
+        cores: 4,
+        core: (0..4)
             .map(|id| CoreDef {
                 id,
                 alone: [-10; 5],
@@ -107,16 +105,36 @@ fn crashing() -> Simulator {
     .unwrap()
 }
 
+/// The machine, crashed at each of the first three trial ends, so each of the first three boots crashes before
+/// the simulation's cap of three boots.
+fn crashing_input(persistence: Persistence, replay: Replay, every: Option<NonZeroU32>) -> SimInput {
+    let simulator = machine();
+    let crasher = simulator.clone();
+    let mut ends = 0;
+    let mut input = sim_input(simulator, persistence, replay, every);
+    input.observer = Some(Box::new(move |event| {
+        if event.kind() == EventKind::TrialEnd && ends < 3 {
+            ends += 1;
+            crasher.crash();
+        }
+        Observe::Continue
+    }));
+    input
+}
+
 fn checked_boots(replay: Replay, every: Option<NonZeroU32>) -> Vec<u32> {
     let mut boots = Vec::new();
     let outcome = simulate_checked(
-        sim_input(crashing(), Persistence::Memory(MemFs::new()), replay, every),
+        crashing_input(Persistence::Memory(MemFs::new()), replay, every),
         &mut |capsule, events, latched, boot| {
             boots.push(boot);
             verify(capsule, events, latched, boot)
         },
     )
     .unwrap();
+    if let SimOutcome::Stopped(finished) = &outcome {
+        panic!("{:?} {:?} {boots:?}", finished.stop, finished.errors);
+    }
     assert!(matches!(outcome, SimOutcome::Capped { .. }));
     boots
 }
@@ -134,7 +152,7 @@ fn a_capped_simulation_checks_the_boots_its_cadence_names_in_either_replay(repla
 fn a_failed_check_of_the_last_boot_fails_the_simulation_instead_of_capping_it(replay: Replay) {
     let mut boots = Vec::new();
     let outcome = simulate_checked(
-        sim_input(crashing(), Persistence::Memory(MemFs::new()), replay, None),
+        crashing_input(Persistence::Memory(MemFs::new()), replay, None),
         &mut |_, _, _, boot| {
             boots.push(boot);
             Err(SimError::NoCapsule { boot })
@@ -199,12 +217,7 @@ fn a_failed_check_after_a_warm_crash_still_publishes_the_crashed_boots_state() {
     let fs = MemFs::new();
     let projected = MemFs::new();
     let outcome = simulate_checked(
-        sim_input(
-            crashing(),
-            Persistence::Memory(fs.clone()),
-            Replay::Warm,
-            Some(nz(1)),
-        ),
+        crashing_input(Persistence::Memory(fs.clone()), Replay::Warm, Some(nz(1))),
         &mut |capsule, events, latched, boot| {
             verify(capsule, events, latched, boot)?;
             if boot < 2 {
@@ -225,7 +238,7 @@ fn a_failed_check_after_a_warm_crash_still_publishes_the_crashed_boots_state() {
 fn a_dump_receives_the_stopped_memory_directory_after_publication() {
     let fs = MemFs::new();
     let mut input = sim_input(
-        crashing(),
+        machine(),
         Persistence::Memory(fs.clone()),
         Replay::Warm,
         None,
@@ -257,12 +270,7 @@ fn a_dump_receives_the_stopped_memory_directory_after_publication() {
 
 #[test]
 fn a_dump_of_a_capped_simulation_includes_the_machine_it_left() {
-    let mut input = sim_input(
-        crashing(),
-        Persistence::Memory(MemFs::new()),
-        Replay::Warm,
-        None,
-    );
+    let mut input = crashing_input(Persistence::Memory(MemFs::new()), Replay::Warm, None);
     input.dump_to = Some("/dump".into());
     let mut dumped = false;
     let outcome = super::simulate_with_dump(input, &mut verify, &mut |memory, _| {
@@ -279,12 +287,7 @@ fn a_dump_of_a_capped_simulation_includes_the_machine_it_left() {
 
 #[test]
 fn a_dump_that_cannot_be_written_fails_the_simulation_instead_of_capping_it() {
-    let mut input = sim_input(
-        crashing(),
-        Persistence::Memory(MemFs::new()),
-        Replay::Warm,
-        None,
-    );
+    let mut input = crashing_input(Persistence::Memory(MemFs::new()), Replay::Warm, None);
     input.dump_to = Some("/dump".into());
     let outcome = super::simulate_with_dump(input, &mut verify, &mut |memory, _| {
         assert!(memory.contents("/state/machine.json").is_some());

@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use togi_machine::object_only;
 use togi_sim::replay::Replay;
 use togi_sim::{InvalidMachine, MachineDefinition, Model, file};
-use togi_tool_forecast::Split;
+use togi_tool_sim::Split;
 use togi_tool_trialfacts::Extracts;
 
 use crate::error::Error;
@@ -108,8 +108,6 @@ object_only! {
     #[derive(Debug, Serialize)]
     #[serde(deny_unknown_fields)]
     struct SuiteFile {
-        #[serde(default)]
-        gate: Option<serde_json::Map<String, serde_json::Value>>,
         scenarios: Vec<ScenarioDef>,
     }
 
@@ -129,6 +127,11 @@ object_only! {
         holdout: Vec<u64>,
         #[serde(default)]
         smoke: Vec<u64>,
+        /// The sim suite's night length and expected end; the bench does not read them.
+        #[serde(default)]
+        night_hours: Option<serde_json::Value>,
+        #[serde(default)]
+        night_end: Option<serde_json::Value>,
     }
 }
 
@@ -144,11 +147,9 @@ struct Scenario {
 }
 
 /// A validated suite file: scenario names are safe unique path components, no seed repeats within a scenario and
-/// every smoke seed belongs to a split. The optional gate is kept as the object the file holds; [`crate::gate::load`]
-/// types and checks it.
+/// every smoke seed belongs to a split.
 #[derive(Debug)]
 pub struct Suite {
-    gate: Option<serde_json::Map<String, serde_json::Value>>,
     scenarios: Vec<Scenario>,
     base: PathBuf,
     digest: String,
@@ -184,7 +185,6 @@ impl Suite {
             scenarios.push(check(def)?);
         }
         Ok(Self {
-            gate: file.gate,
             scenarios,
             base,
             digest: hex(&Sha256::digest(bytes)),
@@ -194,31 +194,6 @@ impl Suite {
     /// The SHA-256 of the suite file's bytes, in lower-case hex.
     pub fn digest(&self) -> &str {
         &self.digest
-    }
-
-    /// The registered gate as the object the file holds; [`gate::load`](crate::gate::load) types it.
-    pub(crate) const fn gate_object(&self) -> Option<&serde_json::Map<String, serde_json::Value>> {
-        self.gate.as_ref()
-    }
-
-    /// A scenario's dev and holdout seeds, as the suite wrote them; none for a scenario the suite lacks.
-    pub(crate) fn seeds_of(&self, name: &str) -> Option<(&[u64], &[u64])> {
-        self.scenarios
-            .iter()
-            .find(|scenario| scenario.name == name)
-            .map(|scenario| (scenario.dev.as_slice(), scenario.holdout.as_slice()))
-    }
-
-    /// The notes of the registered gate, in order; none for a suite without a gate or a gate without notes.
-    pub fn notes(&self) -> Vec<String> {
-        self.gate
-            .as_ref()
-            .and_then(|gate| gate.get("notes"))
-            .and_then(serde_json::Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|note| note.as_str().map(str::to_owned))
-            .collect()
     }
 
     /// Every selected run, scenario by scenario in suite order, dev seeds before holdout seeds, with each

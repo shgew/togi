@@ -1598,22 +1598,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "togi-carry"
-version = "0.0.0"
-dependencies = [
- "jiff",
- "serde_json",
- "test-case",
- "thiserror",
- "togi-config",
- "togi-defect",
- "togi-facts",
- "togi-journal",
- "togi-machine",
- "togi-tuner",
-]
-
-[[package]]
 name = "togi-command"
 version = "0.0.0"
 dependencies = [
@@ -1675,7 +1659,6 @@ dependencies = [
  "togi-config",
  "togi-journal",
  "togi-machine",
- "togi-tuner",
 ]
 
 [[package]]
@@ -1780,14 +1763,12 @@ dependencies = [
 name = "togi-session"
 version = "0.0.0"
 dependencies = [
- "flate2",
  "jiff",
  "proptest",
  "serde",
  "serde_json",
  "test-case",
  "thiserror",
- "togi-carry",
  "togi-config",
  "togi-defect",
  "togi-journal",
@@ -1810,6 +1791,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "test-case",
  "thiserror",
@@ -1874,7 +1856,6 @@ dependencies = [
  "togi-journal",
  "togi-machine",
  "togi-session",
- "togi-tuner",
  "togi-version",
 ]
 
@@ -1900,14 +1881,12 @@ dependencies = [
  "togi-journal",
  "togi-machine",
  "togi-render",
- "togi-requests",
  "togi-session",
  "togi-sim",
  "togi-simrun",
- "togi-statecopy",
  "togi-tool-audit",
- "togi-tool-forecast",
  "togi-tool-modelcheck",
+ "togi-tool-sim",
  "togi-tool-trialfacts",
  "togi-tuner",
  "togi-version",
@@ -1969,28 +1948,6 @@ dependencies = [
  "togi-sim",
  "togi-tool-modelcheck",
  "togi-tool-trialfacts",
-]
-
-[[package]]
-name = "togi-tool-forecast"
-version = "0.0.0"
-dependencies = [
- "jiff",
- "proptest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "test-case",
- "thiserror",
- "togi-config",
- "togi-journal",
- "togi-machine",
- "togi-render",
- "togi-session",
- "togi-sim",
- "togi-simrun",
- "togi-tuner",
 ]
 
 [[package]]
@@ -2076,7 +2033,6 @@ dependencies = [
  "togi-sim",
  "togi-simrun",
  "togi-tool-audit",
- "togi-tool-forecast",
  "togi-tool-trialfacts",
  "togi-tuner",
  "togi-version",
@@ -2089,7 +2045,6 @@ dependencies = [
  "clap",
  "jiff",
  "proptest",
- "serde",
  "serde_json",
  "tempfile",
  "test-case",
@@ -2099,10 +2054,6 @@ dependencies = [
  "togi-machine",
  "togi-render",
  "togi-requests",
- "togi-session",
- "togi-sim",
- "togi-simrun",
- "togi-tool-forecast",
  "togi-tuner",
 ]
 
@@ -2132,6 +2083,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "test-case",
  "thiserror",
@@ -2165,12 +2117,11 @@ name = "togi-tuner"
 version = "0.0.0"
 dependencies = [
  "jiff",
- "proptest",
  "serde",
  "serde_json",
+ "sha2",
  "test-case",
  "thiserror",
- "togi-config",
  "togi-journal",
  "togi-machine",
  "togi-requests",

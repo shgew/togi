@@ -4,10 +4,10 @@ use std::io::{self, BufWriter, Read};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use togi_machine::{ObservedOffset, PerCore, Regime, object_only};
+use togi_machine::{Regime, object_only};
 
 use crate::error::Error;
-use togi_tool_forecast::Split;
+use togi_tool_sim::Split;
 
 /// How a run ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -77,9 +77,6 @@ object_only! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub wall_s: Option<f64>,
         pub sim_hours: f64,
-        #[serde(deserialize_with = "Option::deserialize")]
-        pub first_passed_cycle_h: Option<f64>,
-        pub passed_cycles: u32,
         pub crashes: u32,
         /// Trials that ended, whatever the outcome.
         pub trials: u32,
@@ -88,17 +85,9 @@ object_only! {
         pub real_answer_share: f64,
         pub scenario_real_answer_share: f64,
         pub trial_hours: f64,
-        pub hunts: u32,
-        pub combinations: u32,
-        pub final_profile: PerCore<ObservedOffset>,
-        /// The sum of the final profile's offsets: negative, deeper is more negative.
-        pub depth: i64,
         /// Steady-state failures per hour with every core loaded, by regime.
         pub hazard_per_h: BTreeMap<Regime, f64>,
         pub hazard_max_per_h: f64,
-        /// The largest shared-voltage hazard over the R7 loads; absent on a machine without a shared rail.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub worst_r7_hazard_per_h: Option<f64>,
     }
 }
 

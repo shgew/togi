@@ -3,7 +3,7 @@ description: Write the retro of a target-machine run and file its actions
 argument-hint: "[session-id] [--state-dir DIR]"
 ---
 
-Write the retro of the target-machine run that `$ARGUMENTS` names: a session ID, a copied state directory, both, or nothing for the newest session in `/var/lib/togi`. Read `AGENTS.md`, the Retros and Scoring a forecast sections of `docs/reviewing.md`, and `docs/issues.md` first. `docs/reviewing.md` owns what the retro says and `docs/issues.md` how its actions are filed; this command owns the order of the work. Post and file without asking: the repository's workflow approves it. Use `gh` for every GitHub action, keep scratch files outside the repository, and delete them when done. Every number you publish traces to a command output or an event seq, never to memory.
+Write the retro of the target-machine run that `$ARGUMENTS` names: a session ID, a copied state directory, both, or nothing for the newest session in `/var/lib/togi`. Read `AGENTS.md`, the Retros section of `docs/reviewing.md`, and `docs/issues.md` first. `docs/reviewing.md` owns what the retro says and `docs/issues.md` how its actions are filed; this command owns the order of the work. Post and file without asking: the repository's workflow approves it. Use `gh` for every GitHub action, keep scratch files outside the repository, and delete them when done. Every number you publish traces to a command output or an event seq, never to memory.
 
 ## 1. Identify the run
 
@@ -17,7 +17,6 @@ Then fan out in ONE parallel task call. Give every agent the export paths; an ag
 
 - **Boots:** each boot's entry (tuning or normal), how it ended, the reset reason the next boot reports (for the last, the boot after the run), startup times, devices that dropped out or came back late, and filesystem, machine-check and thermal messages. Recovery compared with the previous retro.
 - **Decisions:** the `tuner.decision`, `failure`, `checking.*` and `hunt.*` events checked against `docs/spec/tuner.md`, each conformant, a spec gap, or a defect with its code location, citing the event seqs and the spec text that decide it; reruns and repeated work counted in trials and hours.
-- **Forecast:** when `tools/bench/forecasts/` or an open pull request holds a forecast anchored before this run, its score and flags from `just stats --state-dir <step 1 state directory> --forecast <file>`, as `docs/reviewing.md` says.
 
 Done when every agent reported and you have checked each figure you will publish against the exports.
 

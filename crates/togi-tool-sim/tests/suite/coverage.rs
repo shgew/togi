@@ -1,9 +1,8 @@
 use test_case::test_case;
-use togi_journal::{DeadEndCondition, ShutdownReason};
 use togi_tool_audit::{Check, Violation};
 use togi_tool_sim::{
-    CoverageError, ExpectedShard, Outcome, Problem, RunId, RunResult, ShardManifest, check,
-    encode_manifest, parse_manifest,
+    CoverageError, ExpectedEnd, ExpectedShard, Outcome, Problem, RunId, RunResult, ShardManifest,
+    check, encode_manifest, parse_manifest,
 };
 
 fn id(text: &str) -> RunId {
@@ -237,11 +236,14 @@ fn a_run_missing_from_its_manifest_is_named() {
 
 #[test_case(Outcome::Failed { detail: "d".to_owned() }; "failed")]
 #[test_case(Outcome::Capped { boots: 1000 }; "capped")]
-#[test_case(Outcome::DeadEnd {
-    condition: DeadEndCondition::FailureAtZero,
-    detail: "d".to_owned(),
-}; "dead end")]
-#[test_case(Outcome::Stopped { reason: ShutdownReason::Signal }; "stopped")]
+#[test_case(Outcome::WrongEnd {
+    expected: ExpectedEnd::Operator,
+    ended: "dead end".to_owned(),
+}; "dead end instead of the operator")]
+#[test_case(Outcome::WrongEnd {
+    expected: ExpectedEnd::DeadEnd,
+    ended: "an operator signal".to_owned(),
+}; "operator instead of a dead end")]
 #[test_case(Outcome::VerifyFailed { detail: "d".to_owned() }; "verify failed")]
 #[test_case(Outcome::ReplayFailed { detail: "d".to_owned() }; "replay failed")]
 #[test_case(Outcome::AuditViolations {
@@ -302,15 +304,16 @@ fn a_manifest_round_trips_one_result_per_line() {
         result("a/dev-2", Outcome::Capped { boots: 3 }),
         result(
             "b/dev-1",
-            Outcome::DeadEnd {
-                condition: DeadEndCondition::FailureAtZero,
-                detail: "x".to_owned(),
+            Outcome::WrongEnd {
+                expected: ExpectedEnd::Operator,
+                ended: "dead end failure at zero: x".to_owned(),
             },
         ),
         result(
             "b/holdout-9",
-            Outcome::Stopped {
-                reason: ShutdownReason::Cycles,
+            Outcome::WrongEnd {
+                expected: ExpectedEnd::DeadEnd,
+                ended: "an operator signal".to_owned(),
             },
         ),
     ];

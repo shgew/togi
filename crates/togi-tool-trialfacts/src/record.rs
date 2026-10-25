@@ -144,13 +144,18 @@ pub enum Phase {
     Deepening,
 }
 
-impl From<Activity> for Phase {
-    fn from(activity: Activity) -> Self {
+impl Phase {
+    /// The phase an activity belongs to; the Ruleset 13 night activities are outside the fact phases.
+    pub fn of(activity: Activity) -> Option<Self> {
         match activity {
-            Activity::Search => Self::Search,
-            Activity::Checking => Self::Checking,
-            Activity::Hunt => Self::Hunt,
-            Activity::Deepening => Self::Deepening,
+            Activity::Search => Some(Self::Search),
+            Activity::Checking => Some(Self::Checking),
+            Activity::Hunt => Some(Self::Hunt),
+            Activity::Deepening => Some(Self::Deepening),
+            Activity::Mapping
+            | Activity::Qualification
+            | Activity::Reproduction
+            | Activity::Control => None,
         }
     }
 }

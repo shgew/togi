@@ -2,13 +2,14 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::path::Path;
 
+use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use test_case::test_case;
 use togi_config::Config;
 use togi_journal::{DeadEndCondition, MemFs, Payload, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
-use togi_session::{ConfigSource, StopPolicy};
+use togi_session::ConfigSource;
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Persistence, Replay, SimInput, simulate};
 
@@ -16,7 +17,14 @@ use super::common::Host;
 
 #[test]
 fn the_boot_cap_ends_an_unfinished_session_with_status_three() {
-    let ran = Host::default().run(["--max-boots", "2", "--state-dir", "/state"]);
+    let ran = Host::hunting().run([
+        "--machine",
+        "/hunt.json",
+        "--max-boots",
+        "2",
+        "--state-dir",
+        "/state",
+    ]);
     assert_eq!(ran.code, Some(3), "{}", ran.stderr);
     assert!(
         ran.stderr.ends_with(
@@ -46,8 +54,8 @@ fn a_simulation_failure_prints_its_operation_path_and_cause_once() {
 
 #[test]
 fn without_a_state_directory_a_temporary_one_is_kept_and_announced_first() {
-    let mut host = Host::default();
-    let ran = host.run(["--max-boots", "2"]);
+    let mut host = Host::hunting();
+    let ran = host.run(["--machine", "/hunt.json", "--max-boots", "2"]);
     assert_eq!(ran.code, Some(3), "{}", ran.stderr);
     assert_eq!(host.states.len(), 1);
     let dir = host.states.keys().next().unwrap();
@@ -116,7 +124,7 @@ fn samples_reach_the_state_directory_only_when_asked_for(write: bool) {
 }
 
 #[test]
-fn a_finished_session_ends_its_journal_with_the_cycles_shutdown() {
+fn a_finished_session_ends_its_journal_with_the_operators_shutdown() {
     let mut host = Host::default();
     let ran = host.run(["--state-dir", "/state"]);
     assert_eq!(ran.code, Some(0), "{}", ran.stderr);
@@ -124,7 +132,7 @@ fn a_finished_session_ends_its_journal_with_the_cycles_shutdown() {
     let Payload::Shutdown(shutdown) = &events.last().unwrap().payload else {
         panic!("the journal does not end in a shutdown");
     };
-    assert_eq!(shutdown.reason, ShutdownReason::Cycles);
+    assert_eq!(shutdown.reason, ShutdownReason::Signal);
     assert!(
         host.states[Path::new("/state")]
             .contents("/state/state.json")
@@ -138,26 +146,24 @@ fn a_finished_session_ends_its_journal_with_the_cycles_shutdown() {
 }
 
 fn record(fs: MemFs, config: Config) {
+    let simulator = Simulator::new(
+        Model::new(&MachineDefinition::default(), 1).unwrap(),
+        RunSettings {
+            seed: 1,
+            ..RunSettings::default()
+        },
+    )
+    .unwrap();
     simulate(SimInput {
         config,
         source: ConfigSource::default(),
         build: crate::build(),
-        simulator: Simulator::new(
-            Model::new(&MachineDefinition::default(), 1).unwrap(),
-            RunSettings {
-                seed: 1,
-                ..RunSettings::default()
-            },
-        )
-        .unwrap(),
+        simulator: simulator.clone(),
         persistence: Persistence::Memory(fs),
         replay: Replay::Warm,
         verify_every: None,
-        max_boots: NonZeroU32::MIN,
-        policy: StopPolicy {
-            cycles: NonZeroU32::new(1),
-            first_result: false,
-        },
+        max_boots: NonZeroU32::new(1000).unwrap(),
+        stop_at: Some(simulator.now() + SignedDuration::from_hours(1)),
         write_samples: false,
         defects: &[],
         log: None,
@@ -173,7 +179,10 @@ fn record(fs: MemFs, config: Config) {
 #[test]
 fn a_resume_runs_under_the_configuration_the_journal_recorded() {
     let mut host = Host::default();
-    let recorded = Config::parse(r#"{"durations":{"search_trial_s":60},"backends":{"mprime":"/recorded-mprime","ycruncher":"/recorded-ycruncher"}}"#).unwrap();
+    let recorded = Config::parse(
+        r#"{"backends":{"mprime":"/recorded-mprime","ycruncher":"/recorded-ycruncher"}}"#,
+    )
+    .unwrap();
     assert_ne!(recorded.backends(), Config::default().backends());
     let fs = MemFs::new();
     record(fs.clone(), recorded.clone());
@@ -197,42 +206,14 @@ fn a_resume_runs_under_the_configuration_the_journal_recorded() {
     }
 }
 
-#[test]
-fn a_recorded_checking_cycle_that_is_not_full_refuses_cycles_before_touching_the_state() {
-    let mut host = Host::default();
-    let short = Config::parse(r#"{"checking":{"cycle":["R1","R2"]}}"#).unwrap();
-    assert!(!short.checking_cycle().is_full());
-    let fs = MemFs::new();
-    record(fs.clone(), short);
-    let before: Vec<_> = fs
-        .entries()
-        .into_iter()
-        .map(|(path, kind)| {
-            let body = fs.contents(&path);
-            (path, kind, body)
-        })
-        .collect();
-    host.states.insert("/state".into(), fs.clone());
-    let ran = host.run(["--state-dir", "/state", "--max-boots", "5"]);
-    assert_eq!(ran.code, Some(2), "{}", ran.stderr);
-    assert!(ran.stderr.contains("is not full"));
-    let after: Vec<_> = fs
-        .entries()
-        .into_iter()
-        .map(|(path, kind)| {
-            let body = fs.contents(&path);
-            (path, kind, body)
-        })
-        .collect();
-    assert_eq!(after, before);
-}
-
 const THERMAL_MACHINE: &str = r#"{
-  "cores": 2,
+  "cores": 4,
   "model": {"signals": {"crash": 1}, "reset": {"thermal_trip": 1}},
   "core": [
     {"id": 0, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]},
-    {"id": 1, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]}
+    {"id": 1, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]},
+    {"id": 2, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]},
+    {"id": 3, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]}
   ]
 }"#;
 

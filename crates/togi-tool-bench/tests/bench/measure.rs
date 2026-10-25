@@ -6,10 +6,10 @@ use std::time::Duration;
 use jiff::Timestamp;
 use serde_json::{Value, json};
 use togi_journal::{Event, SCHEMA};
-use togi_machine::{CoreSet, REGIMES, Regime, TargetOffset, workloads};
+use togi_machine::{REGIMES, Regime, TargetOffset, workloads};
 use togi_sim::definition::CoreDef;
 use togi_sim::replay::{Replay, ReplayFact, ReplayOutcome};
-use togi_sim::{Load, MachineDefinition, Model, file};
+use togi_sim::{MachineDefinition, Model, file};
 use togi_simrun::SimOutcome;
 use togi_tool_bench::{Measured, Status, measure};
 use togi_tool_trialfacts::Extracts;
@@ -31,7 +31,7 @@ fn measured(session: &Session, definition: &MachineDefinition, seed: u64) -> Mea
 
 #[test]
 fn a_boot_capped_session_is_censored_with_its_crashes_and_time_so_far() {
-    let definition = MachineDefinition::default();
+    let definition = crate::session::hunting();
     let capped = session(&definition, 1, None, 4);
     assert!(matches!(capped.outcome, SimOutcome::Capped { .. }));
     let m = measured(&capped, &definition, 1);
@@ -44,21 +44,12 @@ fn a_boot_capped_session_is_censored_with_its_crashes_and_time_so_far() {
 }
 
 #[test]
-fn a_concluded_session_counts_its_cycles_trials_and_depth() {
+fn a_concluded_session_counts_its_trials_and_hazards() {
     let definition = MachineDefinition::default();
     let done = session(&definition, 1, None, 1000);
     assert!(matches!(done.outcome, SimOutcome::Stopped(_)));
     let m = measured(&done, &definition, 1);
-    assert!(m.passed_cycles >= 1);
-    let first = m.first_passed_cycle_h.unwrap();
-    assert!(first > 0.0 && first <= m.sim_hours);
     assert!(m.trials > 0 && m.trial_hours > 0.0);
-    assert_eq!(m.final_profile.len(), 16);
-    assert_eq!(
-        m.depth,
-        m.final_profile.iter().map(|(_, o)| o.0).sum::<i64>()
-    );
-    assert!(m.depth < 0);
     assert_eq!(m.real_answers, 0);
     assert!((m.real_answer_share).abs() < f64::EPSILON);
     assert_eq!(m.hazard_per_h.len(), REGIMES.len());
@@ -69,12 +60,10 @@ fn a_concluded_session_counts_its_cycles_trials_and_depth() {
 }
 
 #[test]
-fn a_journal_with_no_events_measures_the_zero_profile() {
+fn a_journal_with_no_events_measures_nothing() {
     let model = Model::new(&MachineDefinition::default(), 1).unwrap();
     let m = measure(&[], &model, None).unwrap();
-    assert_eq!((m.sim_hours, m.trials, m.crashes, m.depth), (0.0, 0, 0, 0));
-    assert_eq!(m.final_profile.len(), 16);
-    assert!(m.first_passed_cycle_h.is_none());
+    assert_eq!((m.sim_hours, m.trials, m.crashes), (0.0, 0, 0));
 }
 
 #[test]
@@ -85,47 +74,6 @@ fn measuring_twice_gives_the_same_numbers() {
         measured(&capped, &definition, 3),
         measured(&capped, &definition, 3)
     );
-}
-
-#[test]
-fn a_machine_without_a_shared_rail_has_no_worst_r7_hazard() {
-    let definition = MachineDefinition::default();
-    let capped = session(&definition, 1, None, 2);
-    assert!(
-        measured(&capped, &definition, 1)
-            .worst_r7_hazard_per_h
-            .is_none()
-    );
-}
-
-#[test]
-fn the_worst_r7_hazard_covers_at_least_every_all_core_load() {
-    let definition = definition("shared-voltage.json");
-    let capped = session(&definition, 1, None, 3);
-    let m = measured(&capped, &definition, 1);
-    let worst = m.worst_r7_hazard_per_h.unwrap();
-    let model = Model::new(&definition, 1).unwrap();
-    let profile: Vec<TargetOffset> = (0..16)
-        .map(|index| {
-            let core = togi_machine::CoreId::new(index).unwrap();
-            m.final_profile
-                .get(core)
-                .map_or(TargetOffset::ZERO, |o| TargetOffset::clamped(o.0))
-        })
-        .collect();
-    let all: CoreSet = (0..16)
-        .filter_map(|i| togi_machine::CoreId::new(i).ok())
-        .collect();
-    for workload in workloads(Regime::R7) {
-        let load = Load {
-            regime: Regime::R7,
-            workload: workload.id,
-            cores: all,
-            duration: Duration::ZERO,
-        };
-        let rate = model.hazard(&profile, &load).unwrap() * 3600.0;
-        assert!(worst >= rate - 1e-12, "{}: {worst} < {rate}", workload.id);
-    }
 }
 
 #[test]
@@ -273,56 +221,23 @@ fn a_hand_built_journal_measures_every_field_exactly() {
     let model = Model::new(&two_cores(), 1).unwrap();
     let m = measure(&hand_built(), &model, None).unwrap();
     close(m.sim_hours, 2.0);
-    close(m.first_passed_cycle_h.unwrap(), 1.0);
-    assert_eq!(
-        (
-            m.passed_cycles,
-            m.crashes,
-            m.trials,
-            m.hunts,
-            m.combinations
-        ),
-        (2, 1, 2, 1, 1)
-    );
+    assert_eq!((m.crashes, m.trials), (1, 2));
     close(m.trial_hours, 120.0 / 3600.0);
     assert_eq!((m.real_answers, m.real_answer_share), (0, 0.0));
-    let profile: Vec<i64> = m.final_profile.iter().map(|(_, offset)| offset.0).collect();
-    assert_eq!(
-        profile,
-        [-10, -11],
-        "the last profile.change, not the parked applied"
-    );
-    assert_eq!(m.depth, -21);
     assert_eq!(m.hazard_per_h.len(), REGIMES.len());
     for rate in m.hazard_per_h.values() {
         close(*rate, 0.108);
     }
     close(m.hazard_max_per_h, 0.108);
-    assert!(m.worst_r7_hazard_per_h.is_none());
 }
 
 #[test]
-fn a_journal_cut_before_any_passed_cycle_has_no_first_passed_cycle() {
+fn a_journal_cut_before_any_passed_cycle_counts_what_it_holds() {
     let model = Model::new(&two_cores(), 1).unwrap();
     let m = measure(&hand_built()[..4], &model, None).unwrap();
-    assert!(m.first_passed_cycle_h.is_none());
-    assert_eq!(
-        (m.passed_cycles, m.crashes, m.trials, m.hunts),
-        (0, 0, 1, 0)
-    );
+    assert_eq!((m.crashes, m.trials), (0, 1));
     close(m.sim_hours, 0.3);
     close(m.trial_hours, 90.0 / 3600.0);
-}
-
-#[test]
-fn a_machine_that_is_not_sixteen_cores_has_no_worst_r7_hazard() {
-    let model = Model::new(&two_cores(), 1).unwrap();
-    assert!(
-        measure(&[], &model, None)
-            .unwrap()
-            .worst_r7_hazard_per_h
-            .is_none()
-    );
 }
 
 #[test]

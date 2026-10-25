@@ -147,7 +147,7 @@ fn an_intent_authorizes_one_write_in_its_own_boot(case: Case) {
             vec![
                 intent(2, set(0, -5)),
                 write(3, set(0, -5), 2),
-                boot(phase(4, 0, None), "c"),
+                boot(phase(4, 0), "c"),
                 boot(stop(5), "c"),
             ],
             Finished,

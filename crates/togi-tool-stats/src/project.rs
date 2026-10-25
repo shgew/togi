@@ -2,12 +2,8 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use jiff::Timestamp;
-use togi_journal::{
-    Event, HuntEnd, HuntGroup, HuntStart, Outcome, Payload, Seq, ShutdownReason, TrialEnd, TrialId,
-    TrialIntent,
-};
+use togi_journal::{Event, Outcome, Payload, Seq, ShutdownReason, TrialEnd, TrialId, TrialIntent};
 use togi_machine::{BootId, CoreId, CoreSet, Signal, WorkloadId};
-use togi_tuner::{Load, Profile, Topology};
 
 use crate::journal::Journal;
 
@@ -60,9 +56,12 @@ impl PartialOrd for Class {
     }
 }
 
-/// The cores a trial loads: the one it names, or its set.
+/// The cores a trial loads: the one it names (which wins if both fields are recorded), or its set.
 pub(crate) fn loaded(intent: &TrialIntent) -> CoreSet {
-    Load::recorded(intent.core, intent.cores).cores()
+    match intent.core {
+        Some(core) => std::iter::once(core).collect(),
+        None => intent.cores,
+    }
 }
 
 /// Two-digit core numbers, comma separated.
@@ -78,12 +77,9 @@ pub(crate) fn core_list(cores: CoreSet) -> String {
 }
 
 pub(crate) struct Trial<'a> {
-    pub(crate) seq: Seq,
     pub(crate) time: Timestamp,
     pub(crate) boot: &'a BootId,
-    pub(crate) cause: &'a [Seq],
     pub(crate) intent: &'a TrialIntent,
-    pub(crate) profile: Option<Profile>,
     pub(crate) class: Class,
     pub(crate) started: bool,
     pub(crate) last_evidence: Timestamp,
@@ -93,7 +89,6 @@ pub(crate) struct Trial<'a> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct End<'a> {
-    pub(crate) seq: Seq,
     pub(crate) end: &'a TrialEnd,
 }
 
@@ -131,36 +126,18 @@ pub(crate) struct Run {
     boot: BootId,
 }
 
-pub(crate) struct Group<'a> {
-    pub(crate) plan: &'a HuntGroup,
-    pub(crate) trials: Vec<usize>,
-}
-
-pub(crate) struct Hunt<'a> {
-    pub(crate) start: &'a HuntStart,
-    pub(crate) id: u32,
-    pub(crate) time: Timestamp,
-    pub(crate) seq: Seq,
-    pub(crate) end_time: Timestamp,
-    pub(crate) result: Option<&'a HuntEnd>,
-    pub(crate) commitment: Option<String>,
-    pub(crate) groups: Vec<Group<'a>>,
-    pub(crate) trials: Vec<usize>,
-}
-
 pub(crate) struct BootTime {
     pub(crate) start: Timestamp,
     pub(crate) first_event: Timestamp,
 }
 
-/// A journal's trials, runs, hunts and boots, joined by the events' own references.
+/// A journal's trials, runs and boots, joined by the events' own references.
 pub(crate) struct Projection<'a> {
     pub(crate) events: &'a [Event],
-    pub(crate) topology: &'a Topology,
+    pub(crate) journal: &'a Journal,
     pub(crate) trials: Vec<Trial<'a>>,
     pub(crate) by_id: HashMap<&'a TrialId, usize>,
     pub(crate) runs: Vec<Run>,
-    pub(crate) hunts: Vec<Hunt<'a>>,
     pub(crate) boots: HashMap<&'a BootId, BootTime>,
     pub(crate) next_boot: HashMap<&'a BootId, &'a BootId>,
 }
@@ -169,11 +146,10 @@ impl<'a> Projection<'a> {
     pub(crate) fn new(journal: &'a Journal) -> Self {
         let mut p = Self {
             events: journal.events(),
-            topology: journal.topology(),
+            journal,
             trials: Vec::new(),
             by_id: HashMap::new(),
             runs: Vec::new(),
-            hunts: Vec::new(),
             boots: HashMap::new(),
             next_boot: HashMap::new(),
         };
@@ -184,9 +160,6 @@ impl<'a> Projection<'a> {
     fn fold(&mut self, journal: &Journal) {
         let mut active: Option<usize> = None;
         let mut by_seq: HashMap<Seq, usize> = HashMap::new();
-        let mut hunt_ids: HashMap<u32, usize> = HashMap::new();
-        let mut group_at: HashMap<(u32, u32), (usize, usize)> = HashMap::new();
-        let mut commitments: HashMap<Seq, usize> = HashMap::new();
         let mut previous_boot: Option<&BootId> = None;
         for event in self.events {
             if !self.boots.contains_key(&event.boot) {
@@ -240,12 +213,9 @@ impl<'a> Projection<'a> {
                 Payload::TrialIntent(intent) => {
                     let at = self.trials.len();
                     self.trials.push(Trial {
-                        seq: event.seq,
                         time: event.time,
                         boot: &event.boot,
-                        cause: &event.cause,
                         intent,
-                        profile: Profile::new(self.topology, intent.profile).ok(),
                         class: Class::of(intent),
                         started: false,
                         last_evidence: event.time,
@@ -256,14 +226,6 @@ impl<'a> Projection<'a> {
                     self.by_id.insert(&intent.trial, at);
                     if let Some(run) = active {
                         self.runs[run].trials += 1;
-                    }
-                    if let Some(&hunt) = intent.hunt.and_then(|id| hunt_ids.get(&id.get())) {
-                        self.hunts[hunt].trials.push(at);
-                    }
-                    if let (Some(hunt), Some(group)) = (intent.hunt, intent.group)
-                        && let Some(&(h, g)) = group_at.get(&(hunt.get(), group.get()))
-                    {
-                        self.hunts[h].groups[g].trials.push(at);
                     }
                 }
                 Payload::TrialStart(start) => {
@@ -277,10 +239,7 @@ impl<'a> Projection<'a> {
                 Payload::TrialSample(s) => self.evidence(&s.trial, event),
                 Payload::TrialEnd(end) => {
                     if let Some(&at) = self.by_id.get(&end.trial) {
-                        self.trials[at].end = Some(End {
-                            seq: event.seq,
-                            end,
-                        });
+                        self.trials[at].end = Some(End { end });
                     }
                 }
                 Payload::CrashDetected(crash) => {
@@ -291,57 +250,6 @@ impl<'a> Projection<'a> {
                         && self.trials[at].boot == &crash.previous_boot
                     {
                         self.trials[at].crashed = true;
-                    }
-                }
-                Payload::HuntStart(start) => {
-                    let id = start.hunt.get();
-                    hunt_ids.insert(id, self.hunts.len());
-                    self.hunts.push(Hunt {
-                        start,
-                        id,
-                        time: event.time,
-                        seq: event.seq,
-                        end_time: event.time,
-                        result: None,
-                        commitment: None,
-                        groups: Vec::new(),
-                        trials: Vec::new(),
-                    });
-                }
-                Payload::HuntGroup(plan) => {
-                    if let Some(&h) = hunt_ids.get(&plan.hunt.get()) {
-                        group_at.insert(
-                            (plan.hunt.get(), plan.group.get()),
-                            (h, self.hunts[h].groups.len()),
-                        );
-                        self.hunts[h].groups.push(Group {
-                            plan,
-                            trials: Vec::new(),
-                        });
-                    }
-                }
-                Payload::HuntEnd(end) => {
-                    if let Some(&h) = hunt_ids.get(&end.hunt.get()) {
-                        self.hunts[h].end_time = event.time;
-                        self.hunts[h].result = Some(end);
-                        commitments.insert(event.seq, h);
-                    }
-                }
-                Payload::Combination(combination) => {
-                    if let Some(&h) = hunt_ids.get(&combination.hunt.get()) {
-                        commitments.insert(event.seq, h);
-                    }
-                }
-                Payload::TunerDecision(decision)
-                    if decision.decision == togi_journal::Decision::Backoff =>
-                {
-                    if let Some(&h) = event.cause.iter().find_map(|cause| commitments.get(cause)) {
-                        self.hunts[h].commitment = Some(format!(
-                            "{:02} {}->{}",
-                            decision.core.get(),
-                            decision.from_offset.get(),
-                            decision.to_offset.get()
-                        ));
                     }
                 }
                 Payload::SessionStart(_)
@@ -364,6 +272,10 @@ impl<'a> Projection<'a> {
                 | Payload::Failure(_)
                 | Payload::Mce(_)
                 | Payload::TunerDecision(_)
+                | Payload::HuntStart(_)
+                | Payload::HuntGroup(_)
+                | Payload::HuntEnd(_)
+                | Payload::Combination(_)
                 | Payload::CorePhase(_)
                 | Payload::CheckingCycle(_)
                 | Payload::CheckingStep(_)
@@ -387,13 +299,23 @@ impl<'a> Projection<'a> {
                 | Payload::DayAnswer(_)
                 | Payload::DayRecord(_)
                 | Payload::DayFault(_)
+                | Payload::SessionImported(_)
+                | Payload::ExposureObserved(_)
+                | Payload::CcdEdge(_)
+                | Payload::CcdCap(_)
+                | Payload::NightPlan(_)
+                | Payload::NightQualification(_)
+                | Payload::NightReproduction(_)
+                | Payload::DayStep(_)
+                | Payload::DayApplied(_)
+                | Payload::DayEvent(_)
+                | Payload::DayVeto(_)
+                | Payload::DayHold(_)
+                | Payload::DayFreeze(_)
+                | Payload::DayInterval(_)
+                | Payload::DayImported(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => {}
-            }
-        }
-        if let Some(last) = self.events.last() {
-            for hunt in self.hunts.iter_mut().filter(|hunt| hunt.result.is_none()) {
-                hunt.end_time = last.time;
             }
         }
     }
@@ -408,7 +330,7 @@ impl<'a> Projection<'a> {
     }
 
     pub(crate) fn ccd_of(&self, core: CoreId) -> Option<togi_machine::CcdId> {
-        self.topology.ccd_of(core)
+        self.journal.ccd_of(core)
     }
 }
 

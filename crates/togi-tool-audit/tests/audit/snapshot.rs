@@ -8,7 +8,7 @@ use togi_tool_audit::audit_recordings;
 use crate::fixtures::*;
 
 fn events() -> Vec<Event> {
-    vec![header(), phase(2, 0, Some(-30))]
+    vec![header(), phase(2, 0)]
 }
 
 fn fresh(events: &[Event]) -> Value {
@@ -63,49 +63,10 @@ fn a_current_state_document_equals_a_fresh_fold_of_its_journal() {
 }
 
 #[test]
-fn a_tuner_refusal_keeps_the_configuration_field_value_and_range() {
-    let mut events = events();
-    let mut config = crate::rebuild::snapshot();
-    config["durations"]["search_trial_s"] = json!(0);
-    let mut state = fresh(&events);
-    events.push(event(
-        3,
-        "config.loaded",
-        json!({"build": build(0), "config": config, "path": "", "file": false}),
-    ));
-    state["facts"] = serde_json::to_value(togi_journal::State::replay(&events).unwrap()).unwrap();
-    let fs = MemFs::new();
-    let journal = events
-        .iter()
-        .map(|event| event.encode().unwrap() + "\n")
-        .collect::<String>();
-    fs.put("/state/events.jsonl", journal.into_bytes());
-    fs.put("/state/state.json", serde_json::to_vec(&state).unwrap());
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "projection fixtures use only an injected in-memory journal"
-    )]
-    let dir = StateDir::simulated(fs).unwrap();
-    let audits = audit_recordings(&dir, InProgress).unwrap();
-    let refusal = audits
-        .iter()
-        .flat_map(|audit| &audit.violations)
-        .find(|violation| {
-            violation.check == Projection
-                && violation.reason.starts_with("the tuner does not replay")
-        })
-        .unwrap();
-    assert_eq!(
-        refusal.reason,
-        "the tuner does not replay the journal: config.loaded records a configuration this build refuses: durations.search_trial_s: 0 is not within [1, 86400]"
-    );
-}
-
-#[test]
 fn a_current_document_that_disagrees_with_the_journal_is_a_violation() {
     let facts = changed(|state| state["facts"]["cores"] = json!([]));
     assert_eq!(found(Some(facts)), [(2, Projection)]);
-    let tuner = changed(|state| state["tuner"] = fresh(&events()[..1])["tuner"].clone());
+    let tuner = changed(|state| state["tuner"] = json!({}));
     assert_ne!(tuner, fresh(&events()));
     assert_eq!(found(Some(tuner)), [(2, Projection)]);
 }
@@ -170,35 +131,25 @@ enum NestedStateShape {
 fn a_nested_key_this_build_does_not_write_or_leaves_out_is_a_violation(scenario: NestedStateShape) {
     let fresh = fresh(&events());
     assert_eq!(fresh["facts"]["dead_end"], Value::Null);
-    assert_eq!(fresh["tuner"]["deepening"], Value::Null);
+    let tuner_keys: Vec<String> = fresh["tuner"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
     let unknown_fact = changed(|state| state["facts"]["extra"] = json!(true));
     let unknown_tuner = changed(|state| state["tuner"]["extra"] = json!(1));
     let missing_fact = changed(|state| {
         state["facts"].as_object_mut().unwrap().remove("dead_end");
     });
     let missing_tuner = changed(|state| {
-        state["tuner"].as_object_mut().unwrap().remove("deepening");
+        state["tuner"]
+            .as_object_mut()
+            .unwrap()
+            .remove(&tuner_keys[0]);
     });
-    let fields = [
-        "cores",
-        "constraints",
-        "checking",
-        "deepening",
-        "cycle_plan",
-        "search_turns",
-        "hunt_plan",
-        "phase_plan",
-        "bios_profile",
-        "r7_status",
-        "clean_cycles",
-        "last_clean_cycle",
-        "first_result",
-        "requirement",
-        "trial_history",
-    ];
-    assert_eq!(fresh["tuner"].as_object().unwrap().len(), fields.len());
     let positional_tuner = changed(|state| {
-        state["tuner"] = fields
+        state["tuner"] = tuner_keys
             .iter()
             .map(|field| fresh["tuner"][field].clone())
             .collect();

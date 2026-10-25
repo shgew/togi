@@ -2,13 +2,14 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
+use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_journal::fs::FileKind;
 use togi_journal::{Build, Event, EventKind, FixStamp, MemFs, SCHEMA, StateDir};
 use togi_machine::{CancellationToken, Signal};
 use togi_render::Renderer;
-use togi_session::{ConfigSource, StopPolicy};
+use togi_session::ConfigSource;
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{
@@ -16,6 +17,10 @@ use togi_simrun::{
 };
 
 pub(crate) const STATE: &str = "/state";
+
+/// How long the simulated operator lets a night run before ending it: long enough for the controls, mapping and the
+/// first crash on the default machine.
+pub(crate) const NIGHT: SignedDuration = SignedDuration::from_hours(24);
 
 pub(crate) fn build() -> Build {
     Build {
@@ -86,6 +91,7 @@ pub(crate) fn nz(n: u32) -> NonZeroU32 {
 }
 
 pub(crate) fn input(simulator: Simulator, persistence: Persistence) -> SimInput {
+    let stop_at = Some(simulator.now() + NIGHT);
     SimInput {
         config: Config::default(),
         source: ConfigSource::default(),
@@ -95,10 +101,7 @@ pub(crate) fn input(simulator: Simulator, persistence: Persistence) -> SimInput 
         replay: Replay::Warm,
         verify_every: Some(nz(1)),
         max_boots: nz(1000),
-        policy: StopPolicy {
-            cycles: Some(nz(1)),
-            first_result: false,
-        },
+        stop_at,
         write_samples: false,
         defects: &[],
         log: None,
@@ -204,31 +207,38 @@ pub(crate) fn until_kind(kind: EventKind) -> Observer {
     })
 }
 
-/// Stops the run after the first event `hit` holds for.
-pub(crate) fn stop_when(mut hit: impl FnMut(&Event) -> bool + 'static) -> Observer {
+/// Crashes the machine once, at the `nth` (1 is the first) appended event of `kind`.
+pub(crate) fn crash_at_nth(sim: &Simulator, kind: EventKind, nth: usize) -> Observer {
+    let sim = sim.clone();
+    let mut seen = 0;
     Box::new(move |event| {
-        if hit(event) {
-            Observe::Stop
-        } else {
-            Observe::Continue
+        if event.kind() == kind {
+            seen += 1;
+            if seen == nth {
+                sim.crash();
+            }
         }
+        Observe::Continue
     })
 }
 
-/// Holds at the passed cycle that concludes phase 2, read from the tuner folded over `bench`'s journal and then
-/// over every event it is given, which must be the events the run appends in order.
-pub(crate) fn phase_two_concludes(bench: &Bench) -> impl FnMut(&Event) -> bool + 'static {
-    let mut tuner = togi_tuner::replay(&bench.events()).unwrap();
-    move |event| {
-        tuner.fold(event).unwrap();
-        tuner
-            .phase_plan()
-            .is_some_and(|plan| plan.concluded == Some(event.seq))
-    }
+/// Crashes the machine at each of the first `count` appended events of `kind`, so each of the first boots crashes.
+pub(crate) fn crash_first(sim: &Simulator, kind: EventKind, count: usize) -> Observer {
+    let sim = sim.clone();
+    let mut seen = 0;
+    Box::new(move |event| {
+        if event.kind() == kind && seen < count {
+            seen += 1;
+            sim.crash();
+        }
+        Observe::Continue
+    })
 }
 
-/// Every core alone and together at -10, nothing else failing but past-limit crashes at rate 1.
+/// Every core alone and together at -10, nothing else failing but past-limit crashes at rate 1. The machine's cores
+/// split in halves into two CCDs, and a Ruleset 13 night needs a neighbour on every CCD, so it has at least four.
 pub(crate) fn hunt_machine(cores: i64) -> MachineDefinition {
+    let cores = cores.max(4);
     let limits = (0..cores)
         .map(|id| CoreDef {
             id,

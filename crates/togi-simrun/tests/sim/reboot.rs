@@ -4,11 +4,14 @@
 use std::path::Path;
 
 use togi_journal::fs::Op;
-use togi_journal::{MemFs, Payload};
+use togi_journal::{EventKind, MemFs, Payload};
 use togi_sim::MachineDefinition;
 use togi_simrun::{Persistence, Replay, SimOutcome, events, simulate};
 
-use crate::common::{hunt_machine, input, machine_file, nz, simulator};
+use crate::common::{crash_first, hunt_machine, input, machine_file, nz, simulator};
+
+/// Crashes at every trial end, so every boot of a capped simulation crashes.
+const EVERY: usize = usize::MAX;
 
 struct Simulated {
     boots: usize,
@@ -21,11 +24,20 @@ fn named(path: &Path, name: &str) -> bool {
     path.file_name().is_some_and(|file| file == name)
 }
 
-fn simulated(definition: &MachineDefinition, seed: u64, replay: Replay, boots: u32) -> Simulated {
+/// Runs a simulation whose machine crashes at each of the first `crashes` trial ends, so every boot up to then crashes.
+fn simulated(
+    definition: &MachineDefinition,
+    seed: u64,
+    replay: Replay,
+    boots: u32,
+    crashes: usize,
+) -> Simulated {
     let fs = MemFs::new();
     fs.record_history();
     let persistence = Persistence::Memory(fs.clone());
-    let mut sim = input(simulator(definition, seed), persistence.clone());
+    let machine = simulator(definition, seed);
+    let mut sim = input(machine.clone(), persistence.clone());
+    sim.observer = Some(crash_first(&machine, EventKind::TrialEnd, crashes));
     sim.replay = replay;
     sim.max_boots = nz(boots);
     let capped = matches!(simulate(sim).unwrap(), SimOutcome::Capped { .. });
@@ -55,8 +67,8 @@ fn simulated(definition: &MachineDefinition, seed: u64, replay: Replay, boots: u
 #[test]
 fn a_warm_simulation_reads_the_journal_once_however_many_boots_it_runs() {
     let machine = machine_file("flat-hazard");
-    let short = simulated(&machine, 102, Replay::Warm, 8);
-    let long = simulated(&machine, 102, Replay::Warm, 24);
+    let short = simulated(&machine, 102, Replay::Warm, 8, EVERY);
+    let long = simulated(&machine, 102, Replay::Warm, 24, EVERY);
     assert_eq!((short.boots, long.boots), (8, 24));
     assert!(short.capped && long.capped);
     assert!(short.journal_reads > 0, "the first boot reads the journal");
@@ -69,8 +81,8 @@ fn a_warm_simulation_reads_the_journal_once_however_many_boots_it_runs() {
 #[test]
 fn a_cold_simulation_reads_the_journal_at_every_boot() {
     let machine = machine_file("flat-hazard");
-    let short = simulated(&machine, 102, Replay::Cold, 8);
-    let long = simulated(&machine, 102, Replay::Cold, 24);
+    let short = simulated(&machine, 102, Replay::Cold, 8, EVERY);
+    let long = simulated(&machine, 102, Replay::Cold, 24, EVERY);
     assert!(
         long.journal_reads >= short.journal_reads + 16,
         "{} reads in 8 boots, {} in 24",
@@ -81,22 +93,22 @@ fn a_cold_simulation_reads_the_journal_at_every_boot() {
 
 #[test]
 fn a_warm_simulation_publishes_state_json_once_at_its_stop_or_its_cap() {
-    let stopped = simulated(&hunt_machine(2), 1, Replay::Warm, 1000);
+    let stopped = simulated(&hunt_machine(2), 1, Replay::Warm, 1000, 3);
     assert!(stopped.boots > 1 && !stopped.capped);
     assert_eq!(stopped.state_publications, 1);
 
-    let capped = simulated(&machine_file("flat-hazard"), 102, Replay::Warm, 24);
+    let capped = simulated(&machine_file("flat-hazard"), 102, Replay::Warm, 24, EVERY);
     assert!(capped.capped);
     assert_eq!(capped.state_publications, 1);
 }
 
 #[test]
 fn a_cold_simulation_publishes_state_json_at_every_crash_and_at_its_stop() {
-    let stopped = simulated(&hunt_machine(2), 1, Replay::Cold, 1000);
+    let stopped = simulated(&hunt_machine(2), 1, Replay::Cold, 1000, 3);
     assert!(stopped.boots > 1 && !stopped.capped);
     assert_eq!(stopped.state_publications, stopped.boots);
 
-    let capped = simulated(&machine_file("flat-hazard"), 102, Replay::Cold, 24);
+    let capped = simulated(&machine_file("flat-hazard"), 102, Replay::Cold, 24, EVERY);
     assert!(capped.capped);
     assert_eq!(capped.state_publications, capped.boots);
 }
@@ -137,8 +149,8 @@ fn boot_exhaustion_reaches_the_runner_and_publishes_pending_state(replay: Replay
     )
     .unwrap();
     let boot = sim.seams().host.boot_id().unwrap();
-    sim.crash_before_apply(1);
-    let mut run = input(sim, persistence.clone());
+    let mut run = input(sim.clone(), persistence.clone());
+    run.observer = Some(crash_first(&sim, EventKind::TrialEnd, 1));
     run.replay = replay;
     run.max_boots = nz(max_boots);
     assert!(matches!(

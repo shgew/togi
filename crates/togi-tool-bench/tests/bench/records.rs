@@ -17,10 +17,7 @@ fn line(record: &Record) -> String {
 
 #[test]
 fn records_round_trip_through_memory_one_per_line() {
-    let mut with_r7 = record("shared", 2);
-    with_r7.worst_r7_hazard_per_h = Some(1.5);
-    with_r7.first_passed_cycle_h = Some(3.25);
-    let records = vec![record("default", 1), with_r7];
+    let records = vec![record("default", 1), record("shared", 2)];
     let mut bytes = Vec::new();
     encode_records(&mut bytes, &records).unwrap();
     let text = String::from_utf8(bytes).unwrap();
@@ -54,7 +51,7 @@ fn a_malformed_line_names_its_number() {
 #[test]
 fn a_run_listed_twice_is_refused_even_across_splits() {
     let mut holdout = record("target", 1);
-    holdout.split = togi_tool_forecast::Split::Holdout;
+    holdout.split = togi_tool_sim::Split::Holdout;
     let text = format!("{}\n{}\n", line(&record("target", 1)), line(&holdout));
     let error = read_text(&text).unwrap_err().to_string();
     assert!(error.contains("duplicate baseline run target/1"), "{error}");
@@ -68,8 +65,6 @@ fn complete(scenario: &str, seed: u64) -> Record {
             flagged_groups: 2,
             idle_failures: 3,
         }),
-        first_passed_cycle_h: Some(1.5),
-        worst_r7_hazard_per_h: Some(0.5),
         ..record(scenario, seed)
     }
 }
@@ -130,7 +125,6 @@ fn a_baseline_file_round_trips_through_the_reader() {
         read.iter()
             .all(|r| r.wall_s.is_none() && r.model_check.is_none())
     );
-    assert_eq!(read[0].worst_r7_hazard_per_h, Some(0.5));
     assert_eq!(read[0].machine.as_deref(), Some("machine.json"));
 }
 
@@ -142,7 +136,7 @@ fn a_full_file_and_a_baseline_file_both_read_but_an_absent_wall_time_is_not_a_de
     assert_eq!(read_text(&value.to_string()).unwrap()[0].wall_s, None);
 }
 
-const FIELDS: [&str; 28] = [
+const FIELDS: [&str; 21] = [
     "scenario",
     "machine",
     "seed",
@@ -156,21 +150,14 @@ const FIELDS: [&str; 28] = [
     "exit_code",
     "wall_s",
     "sim_hours",
-    "first_passed_cycle_h",
-    "passed_cycles",
     "crashes",
     "trials",
     "real_answers",
     "real_answer_share",
     "scenario_real_answer_share",
     "trial_hours",
-    "hunts",
-    "combinations",
-    "final_profile",
-    "depth",
     "hazard_per_h",
     "hazard_max_per_h",
-    "worst_r7_hazard_per_h",
 ];
 
 #[test]
@@ -179,7 +166,7 @@ fn a_record_is_an_object_with_exactly_the_fields_the_format_names() {
     value["partial_seconds"] = 150.into();
     assert!(read_text(&value.to_string()).is_err());
     let mut missing = serde_json::to_value(record("a", 1)).unwrap();
-    missing.as_object_mut().unwrap().remove("depth");
+    missing.as_object_mut().unwrap().remove("hazard_max_per_h");
     assert!(read_text(&missing.to_string()).is_err());
 }
 
@@ -201,19 +188,6 @@ fn a_record_is_refused_in_the_positional_array_form() {
 }
 
 #[test]
-fn the_first_passed_cycle_is_required_but_may_be_null() {
-    let mut value = serde_json::to_value(record("a", 1)).unwrap();
-    assert!(value["first_passed_cycle_h"].is_null());
-    assert!(read_text(&value.to_string()).is_ok());
-    value
-        .as_object_mut()
-        .unwrap()
-        .remove("first_passed_cycle_h");
-    let error = togi_machine::error_chain(&read_text(&value.to_string()).unwrap_err());
-    assert!(error.contains("first_passed_cycle_h"), "{error}");
-}
-
-#[test]
 fn an_unreadable_input_is_a_read_error() {
     struct Unreadable;
     impl std::io::Read for Unreadable {
@@ -231,13 +205,11 @@ fn an_unreadable_input_is_a_read_error() {
 }
 
 #[test]
-fn absent_optional_measurements_are_omitted_or_null_as_the_format_says() {
+fn absent_optional_measurements_are_omitted_as_the_format_says() {
     let value = serde_json::to_value(record("a", 1)).unwrap();
     let object = value.as_object().unwrap();
-    assert!(!object.contains_key("worst_r7_hazard_per_h"));
     assert!(!object.contains_key("model_check"));
     assert!(!object.contains_key("machine"));
-    assert!(object["first_passed_cycle_h"].is_null());
 }
 
 #[test_case::test_case((

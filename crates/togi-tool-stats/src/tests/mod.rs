@@ -10,13 +10,9 @@ macro_rules! assert_snapshot {
     }};
 }
 
-mod chains;
-mod counterfactual;
-mod evidence;
-mod hunts;
+mod depth;
 mod recovery;
 mod requests;
 mod runs;
 mod scenario;
-mod score;
 mod support;

@@ -105,7 +105,7 @@ fn fake(facts: &[&str]) -> Fake {
         ("flake.lock", b"flake".to_vec()),
         ("rust-toolchain.toml", b"toolchain".to_vec()),
         ("tools/fit/research/427.md", b"brief 427".to_vec()),
-        ("tools/bench/research/490.md", b"brief 490".to_vec()),
+        ("tools/bench/research/503.md", b"brief 503".to_vec()),
         (SUITE, b"suite".to_vec()),
         ("crates/togi-sim/src/model.rs", b"model".to_vec()),
         ("crates/togi-tuner/src/lib.rs", b"tuner".to_vec()),
@@ -155,16 +155,16 @@ fn model_manifest(fake: &Fake) -> Value {
 
 fn observation_manifest(fake: &Fake) -> Value {
     json!({
-        "issue": 490,
+        "issue": 503,
         "mode": "fixed-policy-observation",
         "hypotheses": [{"id": "o1", "statement": "count the hazard boots"}],
         "checkout": CHECKOUT,
         "reference": REFERENCE,
         "suite": {"path": SUITE, "sha256": sha256(b"suite"), "split": "dev"},
-        "frozen": (["Cargo.lock", "flake.lock", "rust-toolchain.toml", "tools/bench/research/490.md"]
+        "frozen": (["Cargo.lock", "flake.lock", "rust-toolchain.toml", "tools/bench/research/503.md"]
             .map(|path| pin(fake, path))),
         "writable": [],
-        "output": "/research/490/o",
+        "output": "/research/503/o",
         "confirmations": 0,
     })
 }
@@ -372,8 +372,9 @@ fn issue_without_brief_is_rejected() {
 }
 
 #[test_case(480, |fake| { let mut m = model_manifest(fake); m["issue"] = json!(480); m["confirmations"] = json!(0); m }, "not an approved confirmation session" ; "480 reads no confirmation session")]
-#[test_case(896, |fake| { let mut m = observation_manifest(fake); m["issue"] = json!(896); m }, "runs in counterfactual accounting mode" ; "896 is accounting")]
-#[test_case(503, |fake| { let mut m = observation_manifest(fake); m["issue"] = json!(503); m["mode"] = json!("counterfactual-accounting"); m }, "runs in fixed-policy observation mode" ; "503 is observation")]
+#[test_case(896, |fake| { let mut m = observation_manifest(fake); m["issue"] = json!(896); m }, "has no research brief" ; "896 is retired")]
+#[test_case(490, |fake| { let mut m = observation_manifest(fake); m["issue"] = json!(490); m }, "has no research brief" ; "490 is retired")]
+#[test_case(503, |fake| { let mut m = observation_manifest(fake); m["issue"] = json!(503); m["mode"] = json!("model-development"); m }, "runs in fixed-policy observation mode" ; "503 is observation")]
 fn issue_table_is_enforced(issue: u32, manifest: fn(&Fake) -> Value, expected: &str) {
     let fake = fake(&sessions());
     let bytes = serde_json::to_vec(&manifest(&fake)).unwrap();
@@ -613,14 +614,14 @@ fn forward_records_are_written_inside_the_run() {
 #[test_case("forward --facts facts/original.jsonl.gz --seal 1", "not an evaluator of fixed-policy observation" ; "model evaluator")]
 #[test_case("bench --split dev", "--suite must name the manifest's suite" ; "default suite")]
 #[test_case("bench --suite tools/bench/suites/research.json --split holdout", "--split must be the manifest's dev" ; "other split")]
-#[test_case("bench --suite tools/bench/suites/research.json --split dev --out runs/elsewhere", "--out must name a path inside /research/490/o" ; "output outside the run")]
-#[test_case("bench --suite tools/bench/suites/research.json --split dev --out /research/490/o/experiments.jsonl", "outside its record" ; "output over the ledger")]
-#[test_case("bench --suite tools/bench/suites/research.json --split dev --keep /research/490/o/raw/k", "outside its record" ; "output under the raw output")]
-#[test_case("bench --suite tools/bench/suites/research.json --split dev --out /research/490/o/../x", "outside its record" ; "output escaping the run")]
+#[test_case("bench --suite tools/bench/suites/research.json --split dev --out runs/elsewhere", "--out must name a path inside /research/503/o" ; "output outside the run")]
+#[test_case("bench --suite tools/bench/suites/research.json --split dev --out /research/503/o/experiments.jsonl", "outside its record" ; "output over the ledger")]
+#[test_case("bench --suite tools/bench/suites/research.json --split dev --keep /research/503/o/raw/k", "outside its record" ; "output under the raw output")]
+#[test_case("bench --suite tools/bench/suites/research.json --split dev --out /research/503/o/../x", "outside its record" ; "output escaping the run")]
 #[test_case("bench --suite tools/bench/suites/research.json --split dev --baseline-out b.json", "--baseline-out is not allowed" ; "baseline refresh")]
 fn observation_evaluator_is_refused(command: &str, expected: &str) {
     let fake = fake(&sessions());
-    let mut live = Live::start(&observation_manifest(&fake), 490, &fake);
+    let mut live = Live::start(&observation_manifest(&fake), 503, &fake);
     let halt = live
         .begin(&fake, "o1", Role::Candidate, command)
         .unwrap_err();
@@ -630,8 +631,8 @@ fn observation_evaluator_is_refused(command: &str, expected: &str) {
 #[test]
 fn observation_run_keeps_the_simulator_timeout_and_boot_cap() {
     let fake = fake(&sessions());
-    let mut live = Live::start(&observation_manifest(&fake), 490, &fake);
-    let command = "bench --suite tools/bench/suites/research.json --split dev --out /research/490/o/b --timeout 120 --max-boots 400";
+    let mut live = Live::start(&observation_manifest(&fake), 503, &fake);
+    let command = "bench --suite tools/bench/suites/research.json --split dev --out /research/503/o/b --timeout 120 --max-boots 400";
     let seq = live
         .run(
             &fake,
@@ -664,7 +665,7 @@ fn observation_manifest_cannot_write_the_simulator() {
     let fake = fake(&sessions());
     let mut manifest = observation_manifest(&fake);
     manifest["writable"] = json!(["crates/togi-sim/src"]);
-    let error = start(&serde_json::to_vec(&manifest).unwrap(), 490, &fake, at(0)).unwrap_err();
+    let error = start(&serde_json::to_vec(&manifest).unwrap(), 503, &fake, at(0)).unwrap_err();
     assert!(
         error.to_string().contains("overlaps crates/togi-sim"),
         "{error}"
@@ -1426,19 +1427,19 @@ fn report_names_the_stop_outcomes_incomplete_runs_and_notes() {
 #[test]
 fn report_lists_outcomes_on_incomplete_runs_and_hides_the_run_directory() {
     let fake = fake(&sessions());
-    let mut live = Live::start(&observation_manifest(&fake), 490, &fake);
+    let mut live = Live::start(&observation_manifest(&fake), 503, &fake);
     live.run(
         &fake,
         "o1",
         Role::Candidate,
-        "bench --suite tools/bench/suites/research.json --split dev --out /research/490/o/b.jsonl",
+        "bench --suite tools/bench/suites/research.json --split dev --out /research/503/o/b.jsonl",
         End::Exited { code: 1 },
     )
     .unwrap();
     live.decide(&fake, "o1", Outcome::Rejected).unwrap();
     let report = render_report(&live.campaign, "");
     assert!(report.contains("--out $RUN/b.jsonl"), "{report}");
-    assert!(!report.contains("/research/490/o"), "{report}");
+    assert!(!report.contains("/research/503/o"), "{report}");
     assert!(
         report
             .contains("Incomplete runs: 1.\nOutcomes that list an incomplete run: o1 (rejected)."),

@@ -8,7 +8,7 @@ use togi_defect::Entry;
 use togi_journal::{Build, Event, MemFs};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
-use togi_session::{ConfigSource, Emergency, ResumeCapsule, SessionError, Stop, StopPolicy};
+use togi_session::{ConfigSource, Emergency, ResumeCapsule, SessionError, Stop};
 use togi_sim::Simulator;
 
 /// Where the state directory lives across the simulated boots. Either way `state.json` is published when each run
@@ -54,7 +54,11 @@ pub struct SimInput {
     /// run that stops are always verified.
     pub verify_every: Option<NonZeroU32>,
     pub max_boots: NonZeroU32,
-    pub policy: StopPolicy,
+    /// The simulated time the operator ends the night: the first event a run appends at or after it cancels the run
+    /// like a signal, in every boot. The trial in flight still finishes, as the simulated machine runs a trial in one
+    /// step, and the session records the end before it stops. `None` leaves the night to end at the policy's own
+    /// dead ends.
+    pub stop_at: Option<jiff::Timestamp>,
     /// Write each trial's samples under the state directory's `trials`; only a directory on disk has one.
     pub write_samples: bool,
     pub defects: &'static [Entry],

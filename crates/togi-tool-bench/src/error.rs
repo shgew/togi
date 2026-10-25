@@ -11,8 +11,6 @@ use crate::suite::SuiteError;
 pub enum Error {
     #[error("load suite")]
     Suite(#[from] SuiteError),
-    #[error("load suite")]
-    Gate(#[from] crate::gate::GateError),
     #[error("load scenario {scenario}")]
     Machine {
         scenario: String,

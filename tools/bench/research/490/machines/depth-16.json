@@ -1,8 +1,0 @@
-{
-  "description": "#490 research fixture: the seeded default machine plus a profile-dependent R7 hazard on each loaded CCD of 16 failures per hour at a mean CCD depth of 25 counts, doubling every 5 counts deeper and halving every 5 shallower; an all-core load sees both CCDs'. Not part of the bench suite.",
-  "cores": 16,
-  "ccd": {
-    "log_rate": -5.41610040220442,
-    "slope": 0.13862943611198905
-  }
-}

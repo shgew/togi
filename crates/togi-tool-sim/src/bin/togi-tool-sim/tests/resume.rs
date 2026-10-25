@@ -5,14 +5,26 @@ use super::common::Host;
 /// Reconstruct the simulator for each invocation, retaining only the journal and machine document.
 #[test]
 fn a_session_resumed_from_recorded_memory_ends_where_an_uninterrupted_one_does() {
-    let mut host = Host::default();
-    assert_eq!(host.run(["--state-dir", "/whole"]).code, Some(0));
+    let mut host = Host::hunting();
+    assert_eq!(
+        host.run(["--machine", "/hunt.json", "--state-dir", "/whole"])
+            .code,
+        Some(0)
+    );
     let mut resumes = 0;
-    let mut code = host.run(["--state-dir", "/split", "--max-boots", "4"]).code;
+    let split = [
+        "--machine",
+        "/hunt.json",
+        "--state-dir",
+        "/split",
+        "--max-boots",
+        "2",
+    ];
+    let mut code = host.run(split).code;
     while code == Some(3) {
         resumes += 1;
         assert!(resumes < 20, "the split session never finished");
-        code = host.run(["--state-dir", "/split", "--max-boots", "4"]).code;
+        code = host.run(split).code;
     }
     assert_eq!(code, Some(0));
     assert!(resumes >= 2, "the session crashed too rarely to split it");

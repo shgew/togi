@@ -1,9 +1,11 @@
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use togi_machine::object_only;
 
+use crate::run::{DEFAULT_NIGHT_HOURS, ExpectedEnd};
 use crate::{Run, RunId, Split};
 
 #[derive(Debug, thiserror::Error)]
@@ -60,6 +62,12 @@ object_only! {
         holdout: Vec<u64>,
         #[serde(default)]
         smoke: Vec<u64>,
+        /// Hours the simulated operator lets each run's night last before ending it; default 8.
+        #[serde(default)]
+        night_hours: Option<NonZeroU32>,
+        /// How the night is expected to end: `operator` (default), `dead_end` or `operator_or_stock`.
+        #[serde(default)]
+        night_end: ExpectedEnd,
     }
 }
 
@@ -78,6 +86,8 @@ struct Checked {
     dev: Vec<u64>,
     holdout: Vec<u64>,
     smoke: Vec<u64>,
+    night_hours: NonZeroU32,
+    night_end: ExpectedEnd,
 }
 
 impl Suite {
@@ -140,6 +150,8 @@ impl Suite {
                         machine,
                         replay: scenario.replay,
                         smoke: scenario.smoke.contains(&seed),
+                        night_hours: scenario.night_hours,
+                        expected_end: scenario.night_end,
                     });
                 }
             }
@@ -191,5 +203,7 @@ fn check(scenario: Scenario, base: &Path) -> Result<Checked, SuiteError> {
         dev: scenario.dev,
         holdout: scenario.holdout,
         smoke: scenario.smoke,
+        night_hours: scenario.night_hours.unwrap_or(DEFAULT_NIGHT_HOURS),
+        night_end: scenario.night_end,
     })
 }

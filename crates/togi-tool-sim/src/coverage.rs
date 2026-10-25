@@ -2,14 +2,14 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use togi_journal::{DeadEndCondition, ShutdownReason};
 use togi_machine::object_only;
 use togi_tool_audit::Violation;
 
-use crate::run::RunId;
+use crate::run::{ExpectedEnd, RunId};
 
-/// How one run ended. Only `Clean` passes the suite: the session stopped after its clean cycles, the resume state
-/// of its last boot matched a fresh fold of the journal, the tuner replays the journal and the audit found nothing.
+/// How one run ended. Only `Clean` passes the suite: the simulated night ended the way its run expects (the
+/// operator's end, or a dead end its machine produces), the resume state of its last boot matched a fresh fold of the
+/// journal, the Ruleset 13 fold accepts the journal and the audit found nothing.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Outcome {
@@ -20,12 +20,10 @@ pub enum Outcome {
     Capped {
         boots: u32,
     },
-    DeadEnd {
-        condition: DeadEndCondition,
-        detail: String,
-    },
-    Stopped {
-        reason: ShutdownReason,
+    /// The night ended another way than the run expects; `ended` says how.
+    WrongEnd {
+        expected: ExpectedEnd,
+        ended: String,
     },
     VerifyFailed {
         detail: String,
@@ -46,9 +44,8 @@ impl fmt::Display for Outcome {
             Self::Capped { boots } => {
                 write!(f, "reached the cap of {boots} boots without stopping")
             }
-            Self::DeadEnd { condition, detail } => write!(f, "dead end {condition}: {detail}"),
-            Self::Stopped { reason } => {
-                write!(f, "stopped for {reason} instead of completing its cycles")
+            Self::WrongEnd { expected, ended } => {
+                write!(f, "the night ended by {ended} instead of {expected}")
             }
             Self::VerifyFailed { detail } => {
                 write!(f, "warm state differs from a fresh replay: {detail}")

@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::io::{self, Write};
 use std::rc::Rc;
 
+use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_journal::Event;
 use togi_machine::CancellationToken;
@@ -75,14 +76,22 @@ impl Write for Tee {
 }
 
 /// The hook that shows `slot`'s observer each event a run appends. An observer that answers
-/// [`Observe::Stop`] is dropped and `cancel` fires, so it is never called again.
-pub(crate) fn hook(slot: Slot, cancel: CancellationToken) -> AppendHook {
+/// [`Observe::Stop`] is dropped and `cancel` fires, so it is never called again. The operator's `stop_at` fires
+/// `cancel` at the first event at or after it.
+pub(crate) fn hook(
+    slot: Slot,
+    cancel: CancellationToken,
+    stop_at: Option<Timestamp>,
+) -> AppendHook {
     Box::new(move |event| {
         let mut slot = slot.borrow_mut();
         if let Some(observer) = slot.as_mut()
             && observer(event) == Observe::Stop
         {
             *slot = None;
+            cancel.cancel();
+        }
+        if stop_at.is_some_and(|stop_at| event.time >= stop_at) {
             cancel.cancel();
         }
     })

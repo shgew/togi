@@ -63,7 +63,7 @@ fn simulate_with_dump(
         replay,
         verify_every,
         max_boots,
-        policy,
+        stop_at,
         write_samples,
         defects,
         log,
@@ -91,12 +91,9 @@ fn simulate_with_dump(
     let mut superseded = false;
     for number in 1..=max_boots.get() {
         let mut machine = simulator.seams();
-        let identity = machine
-            .host
-            .boot_id()
-            .and_then(|boot| Ok((boot, machine.host.bios_context()?)));
-        let (boot, context) = match identity {
-            Ok(identity) => identity,
+        let identity = machine.host.boot_id();
+        let boot = match identity {
+            Ok(boot) => boot,
             Err(source) => {
                 return Err(abandon(
                     kept.take(),
@@ -113,7 +110,7 @@ fn simulate_with_dump(
         let prepared = match kept.take() {
             Some(mut journal) => {
                 if journal.reboot(boot.clone()).is_ok() {
-                    prepare_kept(journal, &build, boot.clone(), now, Some(&context), defects)
+                    prepare_kept(journal, &build, boot.clone(), now)
                 } else {
                     // The flush a reboot starts with failed and poisoned the journal: reopen the directory from what
                     // the file holds, after publishing the state the crashed boot left pending, for the reopened
@@ -122,17 +119,10 @@ fn simulate_with_dump(
                     if let Some(capsule) = &resume {
                         publish(capsule, &mut dir, number)?;
                     }
-                    prepare(dir, &build, boot.clone(), now, Some(&context), defects)
+                    prepare(dir, &build, boot.clone(), now)
                 }
             }
-            None => prepare(
-                lock(&persistence)?,
-                &build,
-                boot.clone(),
-                now,
-                Some(&context),
-                defects,
-            ),
+            None => prepare(lock(&persistence)?, &build, boot.clone(), now),
         }
         .map_err(|source| {
             let error = SimError::Prepare {
@@ -163,20 +153,17 @@ fn simulate_with_dump(
             boot,
             journal,
             machine,
-            policy,
             publication: PublicationPolicy::OnFinish,
             bootloader: None,
-            prompt: None,
             defects,
             resume: resume.take(),
-            carry: prepared.carry,
+            import: prepared.import,
             log: Some(Box::new(Tee(Rc::clone(&user)))),
-            on_append: Some(hook(Rc::clone(&slot), run_cancel.clone())),
+            on_append: Some(hook(Rc::clone(&slot), run_cancel.clone(), stop_at)),
             renderer,
             zone: zone.clone(),
             cancel: run_cancel,
             report: Box::new(io::sink()),
-            controller: togi_machine::ControllerContract::Legacy,
         });
         if let Some(panic) = ended.panic.take() {
             // The journal has no drop flush: close it so a file-backed boot keeps the events it buffered and the

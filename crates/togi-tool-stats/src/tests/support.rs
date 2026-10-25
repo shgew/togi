@@ -4,9 +4,9 @@ use jiff::{SignedDuration, Timestamp};
 use togi_config::Config;
 use togi_journal::{
     Activity, Attribution, Build, CheckingCycle, ConfigLoaded, CrashDetected, CycleEvent, Decision,
-    Event, Failure, FixStamp, HuntEnd, HuntGroup, HuntOutcome, HuntStage, HuntStart, Outcome,
-    Payload, SCHEMA, Seq, SessionStart, Shutdown, ShutdownReason, Stamp, TrialEnd, TrialId,
-    TrialIntent, TrialStart, TunerDecision,
+    Event, FactSource, Failure, FixStamp, HuntEnd, HuntGroup, HuntOutcome, HuntStage, HuntStart,
+    Outcome, Payload, SCHEMA, Seq, SessionStart, Shutdown, ShutdownReason, Stamp, TrialCarried,
+    TrialClass, TrialEnd, TrialId, TrialIntent, TrialStart, TunerDecision,
 };
 use togi_machine::{
     BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, PerCore, Regime, Signal, TargetOffset,
@@ -179,6 +179,11 @@ pub(super) fn shutdown(reason: ShutdownReason) -> Shutdown {
 /// A trial of the first workload of `regime` loading `cores`, as the tuner would plan it in a search.
 pub(super) fn intent(id: &str, regime: Regime, cores: &[i64], offsets: &[i64]) -> TrialIntent {
     TrialIntent {
+        night: None,
+        task: None,
+        content: Vec::new(),
+        placement: None,
+        tested: None,
         trial: TrialId::from(id.to_owned()),
         kernel_cursor: None,
         kernel_error: None,
@@ -377,5 +382,42 @@ impl Log {
     pub(super) fn spaced(&mut self, payload: impl Into<Payload>) -> Seq {
         let minutes = i64::try_from(self.events.len()).unwrap();
         self.at(minutes * 60).add(payload)
+    }
+}
+
+fn source(session: &str, number: u64) -> FactSource {
+    FactSource {
+        session: session.parse().unwrap(),
+        seq: seq(number),
+        build: build("test", None),
+        trial: None,
+        time: EPOCH,
+        boot: BootId::from("a".to_owned()),
+        backend: None,
+    }
+}
+
+/// A trial carried from another session's R6 run.
+pub(super) fn carried(outcome: Outcome) -> TrialCarried {
+    TrialCarried {
+        source: source("20251231T000000Z", 1),
+        class: TrialClass {
+            regime: Regime::R6,
+            workload: Some(workload(Regime::R6, 0)),
+            cores: set(&[0]),
+            duration_s: 60,
+        },
+        condition: Condition::Together,
+        activity: None,
+        rerun: false,
+        profile: profile(&[-10]),
+        outcome,
+        signal: (outcome == Outcome::Failure).then_some(Signal::ComputationError),
+        duration_s: 60,
+        core: None,
+        stalled_core: None,
+        voltage_requests_v: PerCore::default(),
+        top_requesters: CoreSet::default(),
+        ccd_mhz: std::collections::BTreeMap::new(),
     }
 }

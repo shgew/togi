@@ -15,7 +15,6 @@ use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 use crate::cache::{self, Costs, RunCache};
 use crate::compare;
 use crate::error::{Error, ModelCheckError, RunError};
-use crate::gate::{self, Judgment};
 use crate::git::Tree;
 use crate::metrics::{self, Measured};
 use crate::pool;
@@ -57,7 +56,6 @@ pub struct Options {
 /// A finished bench run.
 #[derive(Debug)]
 pub struct Report {
-    pub notes: Vec<String>,
     /// One record per selected run, in suite order.
     pub records: Vec<Record>,
     pub checks: Vec<Check>,
@@ -69,8 +67,6 @@ pub struct Report {
     pub wall: Duration,
     /// Problems that did not stop the run.
     pub warnings: Vec<String>,
-    /// The registered gate's verdict, when the suite registers a gate and a baseline was given.
-    pub gate: Option<Judgment>,
     /// How many runs this bench simulated and audited; a cached run was audited when it ran.
     pub audited: usize,
     /// The journal audit's violations, in suite order and, within a run, in the order the audit found them.
@@ -104,12 +100,8 @@ impl RunFinding {
 }
 
 impl Report {
-    /// Writes the report: the suite's notes, the summary, the model checks, the journal audit and, with a baseline,
-    /// the comparison and the gate's verdict.
+    /// Writes the report: the summary, the model checks, the journal audit and, with a baseline, the comparison.
     pub fn write(&self, w: &mut impl io::Write) -> io::Result<()> {
-        for note in &self.notes {
-            writeln!(w, "suite: {note}")?;
-        }
         summary::report(w, &self.records)?;
         togi_tool_modelcheck::report(w, &self.checks)?;
         writeln!(
@@ -123,9 +115,6 @@ impl Report {
         }
         if let Some(baseline) = &self.baseline {
             compare::report(w, &self.records, baseline)?;
-        }
-        if let Some(judgment) = &self.gate {
-            judgment.write(w)?;
         }
         writeln!(
             w,
@@ -148,7 +137,6 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
 fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Result<Report, Error> {
     let started = Instant::now();
     let suite = Suite::load_from(&options.suite, io)?;
-    let gate = gate::load(&suite)?;
     let plan = suite.plan_from(options.selection, io)?;
     let (verdicts, checks) = model_checks_with(&plan, |path| io.read_facts(path))?;
     let baseline = options
@@ -226,10 +214,6 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
         records.push(measured.record);
     }
     set_scenario_shares(&mut records);
-    let judgment = gate.zip(baseline.as_deref()).map(|(resolved, baseline)| {
-        let verdict = resolved.judge(&records, baseline);
-        Judgment { resolved, verdict }
-    });
     if let Some(out) = &options.out {
         io.write_records(out, &records, false)?;
     }
@@ -237,7 +221,6 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
         io.write_records(path, &records, true)?;
     }
     Ok(Report {
-        notes: suite.notes(),
         records,
         checks,
         baseline,
@@ -245,7 +228,6 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
         kept: root.kept(),
         wall: started.elapsed(),
         warnings,
-        gate: judgment,
         audited,
         violations,
     })
@@ -384,20 +366,13 @@ fn record_of(
     let model = spec.model().map_err(RunError::Model)?;
     let Measured {
         sim_hours,
-        first_passed_cycle_h,
-        passed_cycles,
         crashes,
         trials,
         real_answers,
         real_answer_share,
         trial_hours,
-        hunts,
-        combinations,
-        final_profile,
-        depth,
         hazard_per_h,
         hazard_max_per_h,
-        worst_r7_hazard_per_h,
     } = metrics::measure_with(&session.events, &model, spec.replay.as_deref(), Some(facts))?;
     Ok(Record {
         scenario: spec.scenario.clone(),
@@ -426,21 +401,14 @@ fn record_of(
         exit_code: session.exit,
         wall_s: Some(session.wall.as_secs_f64()),
         sim_hours,
-        first_passed_cycle_h,
-        passed_cycles,
         crashes,
         trials,
         real_answers,
         real_answer_share,
         scenario_real_answer_share: 0.0,
         trial_hours,
-        hunts,
-        combinations,
-        final_profile,
-        depth,
         hazard_per_h,
         hazard_max_per_h,
-        worst_r7_hazard_per_h,
     })
 }
 
@@ -470,13 +438,6 @@ fn model_checks_with(
         }
     }
     Ok((verdicts, checks))
-}
-
-pub(crate) fn check_machine(
-    machine: &Machine,
-    extracts: &mut Extracts,
-) -> Result<Option<Check>, Error> {
-    check_machine_with(machine, extracts, |path| togi_tool_trialfacts::read(path))
 }
 
 pub(crate) fn check_machine_with(

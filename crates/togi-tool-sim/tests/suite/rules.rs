@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use test_case::test_case;
-use togi_tool_sim::{Split, Suite, SuiteError};
+use togi_tool_sim::{DEFAULT_NIGHT_HOURS, ExpectedEnd, Split, Suite, SuiteError};
 
 fn parse(text: &str) -> Result<Suite, SuiteError> {
     Suite::parse(text, Path::new("bench"))
@@ -110,6 +110,40 @@ fn replay_is_carried_to_every_run_of_its_scenario() {
             .unwrap();
     let replay: Vec<bool> = suite.runs().iter().map(|run| run.replay).collect();
     assert_eq!(replay, [true, true, false]);
+}
+
+#[test]
+fn a_night_lasts_eight_hours_and_ends_by_the_operator_unless_the_scenario_says_otherwise() {
+    let suite = parse(
+        r#"{"scenarios":[
+            {"name":"x","dev":[1]},
+            {"name":"y","night_hours":2,"night_end":"dead_end","dev":[1],"holdout":[2]}
+        ]}"#,
+    )
+    .unwrap();
+    let nights: Vec<(u32, ExpectedEnd)> = suite
+        .runs()
+        .iter()
+        .map(|run| (run.night_hours.get(), run.expected_end))
+        .collect();
+    assert_eq!(
+        nights,
+        [
+            (DEFAULT_NIGHT_HOURS.get(), ExpectedEnd::Operator),
+            (2, ExpectedEnd::DeadEnd),
+            (2, ExpectedEnd::DeadEnd)
+        ]
+    );
+    assert_eq!(DEFAULT_NIGHT_HOURS.get(), 8);
+}
+
+#[test_case(r#"{"scenarios":[{"name":"x","night_hours":0,"dev":[1]}]}"#; "zero hours")]
+#[test_case(r#"{"scenarios":[{"name":"x","night_hours":-1,"dev":[1]}]}"#; "negative hours")]
+#[test_case(r#"{"scenarios":[{"name":"x","night_hours":1.5,"dev":[1]}]}"#; "fractional hours")]
+#[test_case(r#"{"scenarios":[{"name":"x","night_end":"deadline","dev":[1]}]}"#; "unknown end")]
+#[test_case(r#"{"scenarios":[{"name":"x","night_end":["operator"],"dev":[1]}]}"#; "end that is not a word")]
+fn a_night_the_operator_cannot_run_is_refused(text: &str) {
+    assert!(matches!(parse(text), Err(SuiteError::Decode(_))));
 }
 
 #[test]

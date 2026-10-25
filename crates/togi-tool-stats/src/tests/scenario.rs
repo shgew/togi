@@ -3,15 +3,13 @@ use togi_journal::{
     Activity, Attribution, CheckingChain, Combination, CycleEvent, Decision, HuntOutcome,
     HuntStage, Member, Outcome, ShutdownReason, TrialProgress, TunerWarning, WarningKind,
 };
-use togi_machine::{Condition, CoreSet, PerCore, Regime, ResetKind, Signal};
+use togi_machine::{Condition, PerCore, Regime, ResetKind, Signal};
 
 use super::support::{
     EPOCH, Log, build, config_loaded, crash_detected, cycle, decision, end, failure, hunt_end,
     hunt_group, hunt_start, intent, nz, profile, set, shutdown, target, trial, trial_start,
     workload,
 };
-use crate::evidence::{GroupReuse, StageReuse};
-use crate::hunts::{StepCycle, StepKey};
 use crate::project::Projection;
 use crate::report::{Exposure, compute, report};
 use crate::{Error, Journal};
@@ -113,76 +111,15 @@ fn review_boundary() -> (Log, jiff::Timestamp) {
 }
 
 #[test]
-fn the_review_boundary_scenario_keeps_other_reports_when_evidence_is_unavailable() {
+fn the_review_boundary_scenario_reports_trials_and_failures_across_a_cutoff() {
     let (log, cutoff) = review_boundary();
     let journal = log.journal();
     let p = Projection::new(&journal);
     let all = compute(&p, None);
     let recent = compute(&p, Some(cutoff));
-    let group = |group, passes, failures| GroupReuse {
-        hunt: 2,
-        group,
-        stage: HuntStage::Part,
-        prior: None,
-        required: 1,
-        passes,
-        failures,
-        trials: 1,
-        seconds: 60,
-    };
-    for m in [&all, &recent] {
-        assert_eq!(
-            m.evidence.groups,
-            [group(1, 1, 0), group(2, 0, 1), group(3, 0, 0)]
-        );
-        assert_eq!(
-            m.evidence.stages.iter().collect::<Vec<_>>(),
-            [(
-                &(2, HuntStage::Part),
-                &StageReuse {
-                    groups: 3,
-                    unavailable: 3,
-                    established: 0,
-                    passed: 0,
-                    failed: 0,
-                    trials: 0,
-                    seconds: 0
-                }
-            )]
-        );
-    }
-    let key = |outcome| StepKey {
-        cycle: StepCycle::Cycle(Some(nz(1))),
-        regime: Regime::R6,
-        cores: "00,01".to_owned(),
-        outcome: Some(outcome),
-    };
-    assert_eq!(
-        all.checking.steps.iter().collect::<Vec<_>>(),
-        [(&key(Outcome::Pass), &1), (&key(Outcome::Failure), &1)]
-    );
-    let cancelled = &all.hunts[0];
-    assert_eq!(
-        (
-            cancelled.hunt.groups.len(),
-            cancelled.ran,
-            cancelled.inferred,
-            cancelled.skipped
-        ),
-        (1, 0, 0, 1)
-    );
-    assert!(cancelled.hunt.start.parked_seq.is_some());
-    assert_eq!(recent.hunts.len(), 1);
-    assert_eq!(recent.hunts[0].hunt.id, 2);
-    assert_eq!(
-        recent.evidence.warnings.iter().collect::<Vec<_>>(),
-        [(&WarningKind::Monotonicity, &1)]
-    );
-    assert_eq!(recent.evidence.single_carried, 0);
     assert_eq!(all.inconclusive.len(), 1);
     assert_eq!(all.inconclusive[0].intent.trial.as_str(), "2");
     assert_eq!(all.inconclusive[0].intent.condition, Condition::Parked);
-    assert_eq!(recent.checking, crate::hunts::CheckingMetrics::default());
     assert_eq!(
         recent.exposure.into_iter().collect::<Vec<_>>(),
         [(
@@ -373,23 +310,20 @@ fn combination() -> Log {
 }
 
 #[test]
-fn a_combination_failure_is_reported_in_every_section() {
+fn a_combination_failure_is_reported_in_the_session_failure_and_request_sections() {
     let log = combination();
     assert_snapshot!(
-        "scenario__a_combination_failure_is_reported_in_every_section",
+        "scenario__a_combination_failure_is_reported_in_the_session_failure_and_request_sections",
         log.report()
     );
     let journal = log.journal();
     let p = Projection::new(&journal);
     let m = compute(&p, None);
     assert_eq!(m.runs.len(), 1, "a crash and a reboot make one run");
-    assert_eq!(m.hunts[0].hunt.commitment.as_deref(), Some("03 -22->-19"));
-    assert_eq!(m.r7.backoffs().len(), 1);
-    assert_eq!(m.chains.len(), 1);
 }
 
 #[test]
-fn a_cutoff_between_runs_and_hunts_keeps_the_totals_of_the_run_it_overlaps() {
+fn a_cutoff_between_runs_keeps_the_totals_of_the_run_it_overlaps() {
     let log = combination();
     let journal = log.journal();
     let cutoff = Some(EPOCH + SignedDuration::from_secs(400));
@@ -401,164 +335,6 @@ fn a_cutoff_between_runs_and_hunts_keeps_the_totals_of_the_run_it_overlaps() {
     let p = Projection::new(&journal);
     let m = compute(&p, cutoff);
     assert_eq!(m.runs.len(), 1);
-    assert!(m.hunts.is_empty(), "the hunt began before the cutoff");
-    assert_eq!(m.r7.backoffs().len(), 1, "the backoff came after it");
-    assert_eq!(
-        m.r7.failures().count(),
-        0,
-        "its failure was first observed before it"
-    );
-    assert_eq!(crate::r7::records(&m.r7).unwrap(), "");
-    assert_eq!(
-        crate::r7::totals(&m.r7),
-        std::collections::BTreeMap::from([(
-            None,
-            crate::r7::PhaseTotals {
-                failures: 0,
-                carried: 0,
-                charged: 0,
-                backoffs: 1,
-                counts: 3,
-            }
-        )]),
-        "failures by their first event, backoffs by decision time"
-    );
-}
-
-#[test]
-fn r7_backoffs_and_chains_are_listed_with_their_causes_and_sources() {
-    let mut log = Log::with_build(&[(0, 0), (1, 1)], build("test", None));
-    let mut planned = intent("0001", Regime::R7, &[0, 1], &[0, 0]);
-    planned.workload = workload(Regime::R7, 0);
-    log.add(planned);
-    let mut multi = failure(Some("0001"));
-    multi.regime = Some(Regime::R7);
-    let multi = log.add(multi);
-    let mut voltage = decision(Decision::Backoff, 0, -20, -17);
-    voltage.reason = "request 1.100 V\nto 1.110 V".to_owned();
-    log.add_caused(&[multi], voltage);
-    let chain =
-        |cycle, step, ccd, groups: Vec<CoreSet>, cores, sources: Vec<_>, part| CheckingChain {
-            cycle: nz(cycle),
-            step: nz(step),
-            ccd: togi_machine::CcdId::new(ccd).unwrap(),
-            workload: workload(Regime::R7, 0),
-            groups,
-            cores,
-            source_seqs: sources,
-            profile: profile(&[0, 0]),
-            part: nz(part),
-            rederived: None,
-        };
-    log.add(chain(
-        1,
-        2,
-        0,
-        vec![set(&[0]), set(&[1])],
-        set(&[1]),
-        Vec::new(),
-        1,
-    ));
-    let mut single = intent("0002", Regime::R7, &[1], &[0, 0]);
-    single.core = Some(super::support::core(1));
-    single.cores = CoreSet::default();
-    log.add(single);
-    let mut solo = failure(Some("0002"));
-    solo.regime = Some(Regime::R7);
-    let solo = log.add(solo);
-    log.add_caused(&[solo], decision(Decision::Backoff, 1, -20, -19));
-    log.add(chain(
-        2,
-        1,
-        1,
-        vec![set(&[0, 1])],
-        set(&[0, 1]),
-        vec![multi, solo],
-        1,
-    ));
-    let carried_failure = |cores: &[i64]| {
-        let mut fact = super::evidence::carried(Outcome::Failure);
-        fact.class = togi_journal::TrialClass {
-            regime: Regime::R7,
-            workload: Some(workload(Regime::R7, 0)),
-            cores: set(cores),
-            duration_s: 120,
-        };
-        fact
-    };
-    let carried_multi = log.add(carried_failure(&[0, 1]));
-    log.add_caused(&[carried_multi], decision(Decision::Backoff, 0, -20, -16));
-    let carried_single = log.add(carried_failure(&[1]));
-    log.add_caused(&[carried_single], decision(Decision::Backoff, 1, -20, -19));
-    log.add(intent("0003", Regime::R7, &[0, 1], &[0, 0]));
-    log.add(trial_start("0003"));
-    let ended = log.add(end("0003", Outcome::Failure));
-    log.add_caused(&[ended], decision(Decision::Backoff, 0, -20, -15));
-    let journal = log.journal();
-    let p = Projection::new(&journal);
-    let r = crate::r7::decisions(p.events, None);
-    assert_eq!(
-        r.backoffs()
-            .iter()
-            .map(|(_, b)| (b.seq.get(), b.counts))
-            .collect::<Vec<_>>(),
-        [(4, 3), (11, 4), (17, 5)],
-        "only backoffs of multi-core R7 failures are voltage-targeted: live, carried or ended"
-    );
-    let chains = crate::chains::attribute(&p, None);
-    assert_eq!(
-        chains.iter().map(|c| c.seq.get()).collect::<Vec<_>>(),
-        [5, 9]
-    );
-    assert_snapshot!(
-        "scenario__r7_backoffs_and_chains_are_listed_with_their_causes_and_sources",
-        super::support::rendered(|table| {
-            crate::r7::render_decisions(table, &r);
-            crate::chains::render(table, &chains);
-        })
-    );
-    assert_snapshot!(
-        "scenario__r7_backoff_records_of_live_and_carried_failures",
-        crate::r7::records(&r).unwrap()
-    );
-}
-
-#[test]
-fn a_paired_r7_backoff_is_charged_once_to_its_first_cause() {
-    let mut log = Log::with_build(&[(0, 0), (1, 1)], build("test", None));
-    let r7_failure = |log: &mut Log, id: &str| {
-        log.add(intent(id, Regime::R7, &[0, 1], &[0, 0]));
-        let mut failed = failure(Some(id));
-        failed.regime = Some(Regime::R7);
-        log.add(failed)
-    };
-    let held = r7_failure(&mut log, "0001");
-    log.add_caused(&[held], decision(Decision::Hold, 0, -20, -20));
-    let later = r7_failure(&mut log, "0002");
-    let paired = log.add_caused(&[later, held], decision(Decision::Backoff, 0, -20, -18));
-    let journal = log.journal();
-    let p = Projection::new(&journal);
-    let r = crate::r7::decisions(p.events, None);
-    assert_eq!(
-        r.failures()
-            .map(|f| (f.seq, f.backoffs.iter().map(|b| b.seq).collect::<Vec<_>>()))
-            .collect::<Vec<_>>(),
-        [(held, Vec::new()), (later, vec![paired])],
-        "the pair's backoff is the later failure's, and the held failure is charged nothing"
-    );
-    assert_eq!(
-        crate::r7::totals(&r),
-        std::collections::BTreeMap::from([(
-            None,
-            crate::r7::PhaseTotals {
-                failures: 2,
-                carried: 0,
-                charged: 1,
-                backoffs: 1,
-                counts: 2,
-            }
-        )])
-    );
 }
 
 #[test]
@@ -639,7 +415,7 @@ fn a_journal_refuses_unrepresentable_voltage_bins(volts: f64, carried: bool) {
     let mut log = Log::new(&[(0, 0)]);
     let requests = set(&[0]).iter().map(|core| (core, volts)).collect();
     if carried {
-        let mut fact = super::evidence::carried(Outcome::Pass);
+        let mut fact = super::support::carried(Outcome::Pass);
         fact.voltage_requests_v = requests;
         log.add(fact);
     } else {
@@ -664,5 +440,5 @@ fn a_journal_refuses_unrepresentable_voltage_bins(volts: f64, carried: bool) {
 #[test_case::test_case(f64::MAX, None; "positive multiplication overflow")]
 #[test_case::test_case(-f64::MAX, None; "negative multiplication overflow")]
 fn voltage_bins_are_checked_at_signed_boundaries(volts: f64, expected: Option<i64>) {
-    assert_eq!(crate::r7::checked_bin(volts).ok(), expected);
+    assert_eq!(crate::requests::checked_bin(volts).ok(), expected);
 }

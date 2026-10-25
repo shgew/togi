@@ -187,11 +187,9 @@ pub(super) fn arguments(
                     output(flag)?;
                 }
             }
-            Mode::FixedPolicyObservation | Mode::CounterfactualAccounting => {
+            Mode::FixedPolicyObservation => {
                 if !matches!(role, Role::Reference | Role::Candidate) {
-                    return Err(refuse(
-                        "observation and accounting runs have no confirmation".to_owned(),
-                    ));
+                    return Err(refuse("observation runs have no confirmation".to_owned()));
                 }
                 let Some(suite) = &manifest.suite else {
                     return Err(refuse("the manifest names no suite".to_owned()));

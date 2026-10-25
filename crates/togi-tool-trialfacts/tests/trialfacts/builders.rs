@@ -191,7 +191,13 @@ impl Writer {
             mono: None,
         };
         let dir = journal
-            .archive(stamp, ArchiveKind::Transition, &[])
+            .archive(
+                stamp,
+                ArchiveKind::Transition {
+                    destination: "20260101T000100Z".parse().unwrap(),
+                },
+                &[],
+            )
             .unwrap();
         Self::reopen(dir, boot + 1, second + 2)
     }
@@ -213,6 +219,11 @@ pub(crate) fn together(
     condition: Condition,
 ) -> TrialIntent {
     TrialIntent {
+        night: None,
+        task: None,
+        content: Vec::new(),
+        placement: None,
+        tested: None,
         trial: TrialId::from(id.to_owned()),
         kernel_cursor: None,
         kernel_error: None,

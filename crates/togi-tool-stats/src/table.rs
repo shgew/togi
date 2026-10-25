@@ -33,14 +33,6 @@ impl Table {
         self.rows.push(cells);
     }
 
-    /// A line of text before the first section, or between sections.
-    pub(crate) fn line(&mut self, text: &str) {
-        self.flush();
-        self.text.push_str(text);
-        self.text.push('\n');
-        self.started = true;
-    }
-
     pub(crate) fn finish(mut self) -> String {
         self.flush();
         self.text

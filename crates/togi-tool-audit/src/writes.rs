@@ -1,10 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use togi_journal::{DeadEndCondition, Event, Payload, Seq, SmuCommand, SmuReadback};
-use togi_machine::{CoreId, ObservedOffset, PerCore, TargetOffset};
+use togi_machine::{CoreId, ObservedOffset, PerCore};
 
 use crate::auditor::Seen;
-use crate::marks::Marks;
 use crate::violation::{Check, Findings};
 
 /// The SMU's intent, write and readback protocol, and the register offsets the journal says the hardware holds.
@@ -37,7 +36,6 @@ impl Writes {
         event: &Event,
         seen: &Seen<'_>,
         cores: &[CoreId],
-        marks: &Marks,
         findings: &mut Findings,
     ) {
         if let Some(mismatch) = self.mismatch {
@@ -111,6 +109,21 @@ impl Writes {
                 | Payload::DayAnswer(_)
                 | Payload::DayRecord(_)
                 | Payload::DayFault(_)
+                | Payload::SessionImported(_)
+                | Payload::ExposureObserved(_)
+                | Payload::CcdEdge(_)
+                | Payload::CcdCap(_)
+                | Payload::NightPlan(_)
+                | Payload::NightQualification(_)
+                | Payload::NightReproduction(_)
+                | Payload::DayStep(_)
+                | Payload::DayApplied(_)
+                | Payload::DayEvent(_)
+                | Payload::DayVeto(_)
+                | Payload::DayHold(_)
+                | Payload::DayFreeze(_)
+                | Payload::DayInterval(_)
+                | Payload::DayImported(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => {}
             }
@@ -122,17 +135,10 @@ impl Writes {
             }
             Payload::SmuWrite(record) => {
                 self.flush(findings);
-                self.write(event, record.command(), seen, cores, marks, findings);
+                self.write(event, record.command(), seen, cores, findings);
             }
             Payload::SmuReadback(readback) => self.readback(event, readback, seen, findings),
-            Payload::ProfileApplied(applied) => {
-                self.flush(findings);
-                applied_profile(event, &applied.offsets, marks, findings);
-            }
-            Payload::ProfileRestored(restored) => {
-                self.flush(findings);
-                applied_profile(event, &restored.offsets, marks, findings);
-            }
+            Payload::ProfileApplied(_) | Payload::ProfileRestored(_) => self.flush(findings),
             Payload::TrialStart(_)
             | Payload::TrialEnd(_)
             | Payload::DeadEnd(_)
@@ -184,6 +190,21 @@ impl Writes {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -212,7 +233,6 @@ impl Writes {
         command: SmuCommand,
         seen: &Seen<'_>,
         cores: &[CoreId],
-        marks: &Marks,
         findings: &mut Findings,
     ) {
         if !self.matching_intent(event, command, seen) {
@@ -229,7 +249,6 @@ impl Writes {
         for &core in &written {
             self.registers.insert(core, offset);
         }
-        marks.check_profile(event, &self.registers, &written, findings);
         self.pending
             .insert(event.seq, written.into_iter().collect());
     }
@@ -317,18 +336,4 @@ impl Writes {
             );
         }
     }
-}
-
-fn applied_profile(
-    event: &Event,
-    offsets: &PerCore<TargetOffset>,
-    marks: &Marks,
-    findings: &mut Findings,
-) {
-    let profile: BTreeMap<CoreId, i64> = offsets
-        .iter()
-        .map(|(core, offset)| (core, offset.get()))
-        .collect();
-    let written: Vec<CoreId> = profile.keys().copied().collect();
-    marks.check_profile(event, &profile, &written, findings);
 }

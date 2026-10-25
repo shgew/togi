@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use togi_journal::{Event, StateDir, StateError};
 use togi_machine::object_only;
-use togi_tuner::Projection;
 
 use crate::AuditError;
 use crate::violation::{Check, Completion, Violation};
@@ -11,14 +10,14 @@ object_only! {
     #[derive(Debug, Serialize)]
     struct Snapshot {
         facts: togi_journal::State,
-        tuner: Projection,
+        tuner: Value,
     }
 }
 
-/// Compares the published `state.json` with a fresh fold of the live journal: the journal's facts replayed and the
-/// tuner's projection of `togi_tuner::replay`. A document that does not decode as this build's shape is a violation,
-/// and so is one whose JSON differs from what this build writes for the fresh fold, since the nested types drop
-/// unknown keys, fill a missing optional one and accept positional arrays when decoded.
+/// Compares the published `state.json` with a fresh fold of the live journal: the journal's facts and the tuner's
+/// projection, folded by the session's own readers. A document that does not decode as this build's shape is a
+/// violation, and so is one whose JSON differs from what this build writes for the fresh fold, since the nested
+/// types drop unknown keys, fill a missing optional one and accept positional arrays when decoded.
 /// One published at another sequence than the journal's last is stale by design while the run is in progress, since
 /// a crash between the journal's fsync and the state write leaves it behind, and is not compared; neither is a
 /// directory with none. A finished run publishes its final document, so for it either is a violation.
@@ -96,21 +95,19 @@ pub(crate) fn audit(
             togi_machine::error_chain(&error)
         ))),
     }
-    let tuner = fresh.as_ref().map_or_else(
-        |_| togi_tuner::replay(events),
-        |fresh| Ok(fresh.tuner().clone()),
-    );
-    match tuner {
-        Ok(tuner) if tuner.project() != snapshot.tuner => found.push(violation(
-            "state.json tuner projection differs from a fresh replay of the journal".to_owned(),
-        )),
-        Ok(tuner) if !written_as(&document["tuner"], &tuner.project()) => found.push(violation(
-            "state.json tuner projection is not written as this build writes it".to_owned(),
-        )),
-        Ok(_) => {}
+    match &fresh {
+        Ok(fresh) => {
+            let projection = fresh.tuner().project();
+            if document["tuner"] != serde_json::to_value(&projection).unwrap_or(Value::Null) {
+                found.push(violation(
+                    "state.json tuner projection differs from a fresh fold of the journal"
+                        .to_owned(),
+                ));
+            }
+        }
         Err(error) => found.push(violation(format!(
-            "the tuner does not replay the journal: {}",
-            togi_machine::error_chain(&error)
+            "the tuner does not fold the journal: {}",
+            togi_machine::error_chain(error)
         ))),
     }
     if found.is_empty() {

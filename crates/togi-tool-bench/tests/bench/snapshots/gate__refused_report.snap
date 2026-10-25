@@ -1,6 +1,0 @@
----
-source: crates/togi-tool-bench/tests/bench/gate.rs
-expression: out
----
-gate test: judged against ruleset 10 at abc on every dev seed; quantiles of worst_r7_hazard_per_h fail only when the 95% interval of candidate minus baseline (10000 paired resamples, seed 1) lies above 0; time is the geometric mean ratio over pairs both concluded.
-gate test: FAIL refused: incomplete pairing: adv seed 1 has no candidate run; the gate needs every dev seed of its scenarios

@@ -10,7 +10,7 @@ fn baseline_runs(lines: &[String]) -> Vec<BaselineRun> {
 
 fn baseline_line(scenario: &str, seed: u64, sim_hours: f64, crashes: u32) -> String {
     format!(
-        r#"{{"scenario":"{scenario}","machine":"","seed":{seed},"split":"dev","commit":"5145f657","dirty":false,"ruleset":11,"status":"concluded","exit_code":0,"sim_hours":{sim_hours},"first_passed_cycle_h":null,"passed_cycles":2,"crashes":{crashes},"trials":1000,"real_answers":0,"real_answer_share":0,"scenario_real_answer_share":0,"trial_hours":40.0,"hunts":2,"combinations":0,"final_profile":[-1,-2],"depth":-300,"hazard_per_h":{{"R1":0}},"hazard_max_per_h":0,"partial_seconds":150}}"#
+        r#"{{"scenario":"{scenario}","machine":"","seed":{seed},"split":"dev","commit":"5145f657","dirty":false,"ruleset":11,"status":"concluded","exit_code":0,"sim_hours":{sim_hours},"crashes":{crashes},"trials":1000,"real_answers":0,"real_answer_share":0,"scenario_real_answer_share":0,"trial_hours":40.0,"hazard_per_h":{{"R1":0}},"hazard_max_per_h":0,"partial_seconds":150}}"#
     )
 }
 
@@ -19,10 +19,7 @@ fn current(scenario: &str, seed: u64, sim_hours: f64, crashes: u32) -> Record {
         sim_hours,
         crashes,
         trials: 1000,
-        passed_cycles: 2,
         trial_hours: 40.0,
-        hunts: 2,
-        depth: -300,
         ..record(scenario, seed)
     }
 }
@@ -55,27 +52,16 @@ const DISTINCT: &str = r#"{"scenario":"default","seed":1,"status":"concluded","s
 fn baseline_scores_ignore_the_fields_the_sanity_check_does_not_compare() {
     let runs = baseline_runs(&[DISTINCT.to_owned()]);
     assert_eq!(runs.len(), 1);
-    let counterpart = Record {
-        first_passed_cycle_h: Some(1.0),
-        worst_r7_hazard_per_h: Some(1.0),
-        ..record("default", 1)
-    };
-    let lines = compare(&[counterpart], &runs);
+    let lines = compare(&[record("default", 1)], &runs);
     let baseline = |metric| find(&lines, "default", metric).baseline;
     for (metric, want) in [
         ("concluded", 1.0),
         ("sim_hours", 41.5),
-        ("first_passed_cycle_h", 7.25),
-        ("passed_cycles", 3.0),
         ("crashes", 11.0),
         ("trials", 1234.0),
         ("real_answer_share", 0.5),
         ("trial_hours", 33.5),
-        ("hunts", 5.0),
-        ("combinations", 7.0),
-        ("depth", -321.0),
         ("hazard_max_per_h", 0.0625),
-        ("worst_r7_hazard_per_h", 1.75),
     ] {
         assert!(
             (baseline(metric) - want).abs() < 1e-12,
@@ -107,11 +93,7 @@ fn identical_distributions_flag_nothing() {
     let lines = compare(&current_runs, &baseline_runs(&baseline_lines));
     assert!(!lines.is_empty());
     assert!(flagged(&lines).is_empty());
-    assert!(
-        lines
-            .iter()
-            .all(|l| l.z.abs() < f64::EPSILON || l.metric == "first_passed_cycle_h")
-    );
+    assert!(lines.iter().all(|l| l.z.abs() < f64::EPSILON));
 }
 
 #[test]
@@ -240,13 +222,6 @@ fn nothing_shared_compares_nothing() {
     );
 }
 
-fn with_r7(line: &str, hazard: f64) -> String {
-    line.replace(
-        "\"partial_seconds\"",
-        &format!("\"worst_r7_hazard_per_h\":{hazard},\"partial_seconds\""),
-    )
-}
-
 fn find<'a>(
     lines: &'a [togi_tool_bench::sanity::Line],
     scenario: &str,
@@ -256,52 +231,6 @@ fn find<'a>(
         .iter()
         .find(|l| l.scenario == scenario && l.metric == metric)
         .unwrap()
-}
-
-#[test]
-fn a_metric_only_the_current_records_measured_is_a_flagged_line() {
-    let (mut current_runs, baseline_lines) = series("default", &[40.0, 41.0]);
-    current_runs[0].worst_r7_hazard_per_h = Some(1.0);
-    let lines = compare(&current_runs, &baseline_runs(&baseline_lines));
-    let l = find(&lines, "default", "worst_r7_hazard_per_h");
-    assert!(l.flagged);
-    assert_eq!((l.current_runs, l.baseline_runs), (1, 0));
-    assert!(l.baseline.is_nan());
-}
-
-#[test]
-fn a_metric_only_the_baseline_measured_is_a_flagged_line() {
-    let (current_runs, baseline_lines) = series("default", &[40.0, 41.0]);
-    let baseline_lines: Vec<String> = baseline_lines.iter().map(|l| with_r7(l, 1.0)).collect();
-    let lines = compare(&current_runs, &baseline_runs(&baseline_lines));
-    for scenario in ["default", "TOTAL"] {
-        let l = find(&lines, scenario, "worst_r7_hazard_per_h");
-        assert!(l.flagged, "{scenario}");
-        assert_eq!((l.current_runs, l.baseline_runs), (0, 2));
-        assert!(l.current.is_nan());
-    }
-}
-
-#[test]
-fn a_metric_measured_on_fewer_runs_is_flagged_even_at_the_same_mean() {
-    let (mut current_runs, baseline_lines) = series("default", &[40.0, 41.0, 42.0, 43.0]);
-    let baseline_lines: Vec<String> = baseline_lines.iter().map(|l| with_r7(l, 1.0)).collect();
-    for record in &mut current_runs[..3] {
-        record.worst_r7_hazard_per_h = Some(1.0);
-    }
-    let lines = compare(&current_runs, &baseline_runs(&baseline_lines));
-    let l = find(&lines, "default", "worst_r7_hazard_per_h");
-    assert!(l.flagged);
-    assert_eq!((l.current_runs, l.baseline_runs), (3, 4));
-    assert!((l.current - l.baseline).abs() < f64::EPSILON);
-}
-
-#[test]
-fn a_metric_neither_side_measured_is_left_out() {
-    let (current_runs, baseline_lines) = series("default", &[40.0, 41.0]);
-    let lines = compare(&current_runs, &baseline_runs(&baseline_lines));
-    assert!(lines.iter().all(|l| l.metric != "worst_r7_hazard_per_h"));
-    assert!(lines.iter().all(|l| l.metric != "first_passed_cycle_h"));
 }
 
 #[test]

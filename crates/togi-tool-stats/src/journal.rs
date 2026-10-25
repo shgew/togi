@@ -1,10 +1,9 @@
 use jiff::{SignedDuration, Timestamp};
 use std::collections::HashMap;
 use std::path::Path;
-use togi_machine::BootId;
+use togi_machine::{BootId, CcdId, PerCore};
 
 use togi_journal::{Event, Payload, Recording, Skipped};
-use togi_tuner::Topology;
 
 use crate::error::Error;
 
@@ -13,7 +12,7 @@ use crate::error::Error;
 /// ([`skipped`](Self::skipped) says what was).
 pub struct Journal {
     events: Vec<Event>,
-    topology: Topology,
+    ccds: PerCore<Option<CcdId>>,
     skipped: Skipped,
     boot_starts: HashMap<BootId, Timestamp>,
 }
@@ -38,12 +37,13 @@ impl Journal {
         let Payload::SessionStart(start) = &first.payload else {
             return Err(Error::NotStarted);
         };
-        let topology = Topology::new(&start.cores)?;
+        let ccds = start
+            .cores
+            .iter()
+            .map(|info| (info.core, Some(info.ccd)))
+            .collect();
         let mut boot_starts = HashMap::new();
         for event in &events {
-            if let Payload::CheckingCycle(cycle) = &event.payload {
-                checking_steps(cycle.steps.len())?;
-            }
             let requests = if let Payload::TrialEnd(end) = &event.payload {
                 Some(&end.voltage_requests_v)
             } else if let Payload::TrialCarried(carried) = &event.payload {
@@ -53,7 +53,7 @@ impl Journal {
             };
             if let Some(requests) = requests {
                 for (_, request) in requests.iter() {
-                    crate::r7::checked_bin(request)?;
+                    crate::requests::checked_bin(request)?;
                 }
             }
             if !boot_starts.contains_key(&event.boot) {
@@ -69,7 +69,7 @@ impl Journal {
         }
         Ok(Self {
             events,
-            topology,
+            ccds,
             skipped,
             boot_starts,
         })
@@ -84,28 +84,12 @@ impl Journal {
         &self.skipped
     }
 
-    pub(crate) fn topology(&self) -> &Topology {
-        &self.topology
+    /// The CCD `session.start` records for `core`, if it lists the core.
+    pub(crate) fn ccd_of(&self, core: togi_machine::CoreId) -> Option<CcdId> {
+        self.ccds.get(core).flatten()
     }
 
     pub(crate) fn boot_start(&self, boot: &BootId) -> Timestamp {
         self.boot_starts[boot]
-    }
-}
-
-fn checking_steps(count: usize) -> Result<u32, Error> {
-    u32::try_from(count).map_err(Error::CheckingSteps)
-}
-
-#[cfg(test)]
-mod numeric_tests {
-    use super::checking_steps;
-
-    #[test_case::test_case(0, Some(0); "empty steps")]
-    #[test_case::test_case(u32::MAX as usize, Some(u32::MAX); "last exact ordinal")]
-    #[test_case::test_case(u32::MAX as usize + 1, None; "overflowing ordinal")]
-    #[cfg(target_pointer_width = "64")]
-    fn checking_step_counts_are_checked(count: usize, expected: Option<u32>) {
-        assert_eq!(checking_steps(count).ok(), expected);
     }
 }

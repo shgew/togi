@@ -5,13 +5,14 @@ use togi_journal::{EventKind, LockError, Payload, StateDir};
 use togi_machine::CoreId;
 use togi_simrun::{Observe, Persistence, SimError, SimOutcome, simulate};
 
-use crate::common::{Bench, hunt_machine, nz, simulator, state_json};
+use crate::common::{Bench, crash_first, hunt_machine, nz, simulator, state_json};
 
 #[test]
 fn boot_cap_leaves_a_partial_session_in_the_journal() {
     let bench = Bench::new(&hunt_machine(2), 1);
     let mut input = bench.input();
     input.max_boots = nz(3);
+    input.observer = Some(crash_first(&bench.sim, EventKind::TrialEnd, usize::MAX));
     let SimOutcome::Capped { boots } = simulate(input).unwrap() else {
         panic!("a crashing machine stopped within 3 boots");
     };
@@ -37,8 +38,12 @@ fn a_cap_whose_last_state_cannot_be_published_is_an_error_not_a_cap() {
     let mut input = bench.input();
     input.max_boots = nz(3);
     let fs = bench.fs.clone();
+    let sim = bench.sim.clone();
     let mut crashes = 0;
     input.observer = Some(Box::new(move |event| {
+        if event.kind() == EventKind::TrialEnd {
+            sim.crash();
+        }
         if event.kind() == EventKind::CrashDetected {
             crashes += 1;
             if crashes == 2 {

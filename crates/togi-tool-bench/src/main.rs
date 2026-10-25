@@ -13,8 +13,6 @@ use togi_machine::error_chain;
 use togi_tool_bench::{Fleet, Options, Selection, execute, inspect, sanity};
 
 mod day_night_cli;
-mod forecast_cli;
-mod pass_cost_cli;
 mod research_cli;
 mod same_cli;
 
@@ -40,10 +38,6 @@ enum Command {
     Sanity(SanityArgs),
     /// Prove two trees decide the same on every simulated session, or only the suite's smoke sessions.
     Same(same_cli::SameArgs),
-    /// Forecast a real run from a copy of its state directory with the suite's target scenario.
-    Forecast(forecast_cli::ForecastArgs),
-    /// Compute what the R7 part requirements cost at a fixed profile, as a counterfactual study that never becomes tuner evidence.
-    PassCost(pass_cost_cli::PassCostArgs),
     /// Dispatch one step of a bounded research campaign under its launch manifest.
     Research(research_cli::ResearchArgs),
     /// Run the preregistered day/night comparators, without scoring the future real policy.
@@ -68,10 +62,10 @@ struct RunArgs {
     /// Write one JSON record per run to this file.
     #[arg(long, value_name = "FILE")]
     out: Option<PathBuf>,
-    /// Write the records as a baseline file keeps them: without `model_check` and `wall_s`, which no comparison reads. Comparison and gates accept it as `--baseline`.
+    /// Write the records as a baseline file keeps them: without `model_check` and `wall_s`, which no comparison reads. Comparison accepts it as `--baseline`.
     #[arg(long, value_name = "FILE")]
     baseline_out: Option<PathBuf>,
-    /// Compare the run with the records in this file and, when the suite registers a gate, judge it and exit 1 unless it passes.
+    /// Compare the run with the records in this file.
     #[arg(long, value_name = "FILE")]
     baseline: Option<PathBuf>,
     /// Keep each run's state directory under a new directory in DIR; keeping skips the cache.
@@ -117,8 +111,6 @@ fn main() -> ExitCode {
             None => bench(cli.run),
             Some(Command::Sanity(args)) => sanity_check(&args),
             Some(Command::Same(args)) => same_cli::run(args),
-            Some(Command::Forecast(args)) => forecast_cli::run(args),
-            Some(Command::PassCost(args)) => pass_cost_cli::run(args),
             Some(Command::Research(args)) => research_cli::run(args),
             Some(Command::DayNight(args)) => day_night_cli::run(args),
         },
@@ -209,9 +201,6 @@ fn bench(args: RunArgs) -> ExitCode {
             "the journal audit found {} violations",
             report.violations.len()
         ));
-    }
-    if report.gate.as_ref().is_some_and(|gate| !gate.passed()) {
-        return fail(&"gate failed");
     }
     ExitCode::SUCCESS
 }

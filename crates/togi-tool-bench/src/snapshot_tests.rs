@@ -1,25 +1,57 @@
 use std::num::NonZeroU32;
 use std::path::Path;
 
+use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use proptest::prelude::*;
 use togi_config::Config;
 use togi_journal::{Build, Event, FixStamp, MemFs, StateDir};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
-use togi_session::{ConfigSource, ReadState, SnapshotStatus, StopPolicy};
+use togi_session::{ConfigSource, ReadState, SnapshotStatus};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Persistence, SimInput, events, simulate};
-use togi_tool_forecast::{Session, after, read_dir_fs};
 use togi_watch::model::Model as Watch;
 
 use super::{measure, measure_with};
 
-fn generated(seed: u64, cores: i64) -> (Vec<Event>, MachineDefinition) {
-    let definition = MachineDefinition {
-        cores,
-        ..MachineDefinition::default()
+/// Four cores that crash past -10: a Ruleset 13 night needs a neighbour on every CCD, and this one crashes.
+fn hunting() -> MachineDefinition {
+    let core = |id: i64| {
+        serde_json::json!({
+            "id": id,
+            "alone": [-10, -10, -10, -10, -10],
+            "together": [-10, -10, -10, -10, -10, -10, -50],
+        })
     };
+    serde_json::from_value(serde_json::json!({
+        "cores": 4,
+        "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
+        "core": [core(0), core(1), core(2), core(3)],
+    }))
+    .unwrap()
+}
+
+fn generated(seed: u64, cores: i64) -> (Vec<Event>, MachineDefinition) {
+    generated_from(
+        MachineDefinition {
+            cores,
+            ..MachineDefinition::default()
+        },
+        seed,
+    )
+}
+
+fn generated_from(definition: MachineDefinition, seed: u64) -> (Vec<Event>, MachineDefinition) {
+    let simulator = Simulator::new(
+        Model::new(&definition, seed).unwrap(),
+        RunSettings {
+            seed,
+            ..RunSettings::default()
+        },
+    )
+    .unwrap();
+    let night_end = simulator.now() + SignedDuration::from_hours(8);
     let persistence = Persistence::Memory(MemFs::new());
     simulate(SimInput {
         config: Config::default(),
@@ -32,22 +64,12 @@ fn generated(seed: u64, cores: i64) -> (Vec<Event>, MachineDefinition) {
             fixes: FixStamp::none(),
             evidence: togi_tuner::EVIDENCE_EPOCH,
         },
-        simulator: Simulator::new(
-            Model::new(&definition, seed).unwrap(),
-            RunSettings {
-                seed,
-                ..RunSettings::default()
-            },
-        )
-        .unwrap(),
+        simulator,
         persistence: persistence.clone(),
         replay: togi_simrun::Replay::Warm,
         verify_every: None,
         max_boots: NonZeroU32::new(8).unwrap(),
-        policy: StopPolicy {
-            cycles: NonZeroU32::new(1),
-            first_result: false,
-        },
+        stop_at: Some(night_end),
         write_samples: false,
         defects: &[],
         log: None,
@@ -82,14 +104,6 @@ fn publish(fs: &MemFs, events: &[Event], cut: usize) {
     fs.put("/state/state.json", serde_json::to_vec(&document).unwrap());
 }
 
-fn forecast_equal(cached: &[Session], full: &[Session], anchor: &togi_tool_forecast::Anchor) {
-    match (after(cached, anchor), after(full, anchor)) {
-        (Ok(cached), Ok(full)) => assert_eq!(cached, full),
-        (Err(cached), Err(full)) => assert_eq!(cached.to_string(), full.to_string()),
-        (cached, full) => panic!("forecast cache changed outcome: {cached:?} versus {full:?}"),
-    }
-}
-
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: 12,
@@ -99,7 +113,7 @@ proptest! {
     })]
     #[test]
     fn snapshot_plus_random_tail_equals_full_replay_for_every_reader(
-        seed in any::<u64>(), cores in prop::sample::select(vec![2_i64, 4]),
+        seed in any::<u64>(), cores in prop::sample::select(vec![4_i64, 6]),
         cuts in prop::collection::vec(any::<usize>(), 1..5),
     ) {
         let (events, definition) = generated(seed, cores);
@@ -107,7 +121,6 @@ proptest! {
         let model = Model::new(&definition, seed).unwrap();
         let measured = measure(&events, &model, None).unwrap();
         let expected_watch = togi_watch::model::project(&events);
-        let forecast = Session::from_events(events.clone()).unwrap();
         let fs = MemFs::new();
         fs.put("/state/events.jsonl", lines(&events));
         let directory = Path::new("/state");
@@ -116,15 +129,9 @@ proptest! {
             publish(&fs, &events, cut);
             let restored = ReadState::read_in(&fs, directory, &events).unwrap();
             prop_assert_eq!(&restored, &full, "seed {}, cut {}", seed, cut);
-            prop_assert_eq!(restored.tuner().forecast(), full.tuner().forecast(), "seed {}, cut {}", seed, cut);
             let watch = Watch::read_in(&fs, directory, &events);
             prop_assert_eq!(watch.snapshot(), expected_watch.snapshot(), "seed {}, cut {}", seed, cut);
             prop_assert_eq!(measure_with(&events, &model, None, Some(restored.facts())).unwrap(), measured.clone());
-            let cached_forecast = read_dir_fs(&fs, directory, None).unwrap();
-            for at in [0, cut.saturating_sub(1), events.len() - 1] {
-                let anchor = forecast.anchor_at(events[at].seq).unwrap();
-                forecast_equal(&cached_forecast, std::slice::from_ref(&forecast), &anchor);
-            }
             #[expect(clippy::disallowed_methods, reason = "the snapshot property uses only MemFs")]
             let dir = StateDir::simulated(fs.clone()).unwrap();
             let status = togi_session::verify_snapshot(&dir, &events).unwrap();
@@ -140,7 +147,7 @@ proptest! {
 #[test_case::test_case(false; "shutdown")]
 #[test_case::test_case(true; "detected crash")]
 fn snapshot_then_config_reload_has_the_same_cleared_trial_end_as_full_replay(crash: bool) {
-    let (events, _) = generated(1, 2);
+    let (events, _) = generated_from(hunting(), 1);
     let cut = events
         .iter()
         .rposition(|event| {

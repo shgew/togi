@@ -127,7 +127,7 @@ fn record(session: &SessionFacts, fact: &Fact) -> Result<TrialFact, ExtractError
         } => (
             Class::Trial(*class),
             *condition,
-            activity.map(Phase::from),
+            activity.and_then(Phase::of),
             *outcome,
             *duration_s,
             telemetry.as_ref(),

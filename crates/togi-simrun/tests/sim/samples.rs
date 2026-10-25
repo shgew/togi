@@ -1,8 +1,8 @@
 use togi_journal::{Event, EventKind, MemFs, Payload, SessionId, TrialEnd};
-use togi_machine::{BiosContext, TrialConditions};
+use togi_machine::TrialConditions;
 use togi_simrun::{Observer, Persistence, events, simulate};
 
-use crate::common::{hunt_machine, input, simulator, until_kind};
+use crate::common::{crash_at_nth, hunt_machine, input, simulator, until_kind};
 
 fn trial_end<'a>(events: &'a [Event], trial: &str) -> Option<&'a TrialEnd> {
     events.iter().find_map(|event| {
@@ -29,8 +29,8 @@ fn session_id(events: &[Event]) -> &SessionId {
         .unwrap()
 }
 
-/// Runs a session, to its end or, with `observer`, until it stops, changes the BIOS so the next invocation starts
-/// a new session, and crashes that session's trial 0001 before it starts. Returns both sessions' events and
+/// Runs a session, to its end or, with `observer`, until it stops, then starts a new session through a newer
+/// ruleset and crashes that session's trial 0001 before it starts. Returns both sessions' events and
 /// the first session's trial 0001 samples.
 fn a_new_session_after_an_earlier_one(
     persistence: &Persistence,
@@ -39,14 +39,17 @@ fn a_new_session_after_an_earlier_one(
     observer: Option<Observer>,
 ) -> (Vec<Event>, Vec<Event>, Vec<TrialConditions>) {
     let mut sim = simulator(&hunt_machine(4), 1);
-    let run = |sim: &togi_sim::Simulator, observer: Option<Observer>| {
+    let run = |sim: &togi_sim::Simulator, observer: Option<Observer>, newer_ruleset: bool| {
         let mut input = input(sim.clone(), persistence.clone());
         input.write_samples = write_samples;
         input.verify_every = None;
         input.observer = observer;
+        if newer_ruleset {
+            input.build.ruleset += 1;
+        }
         simulate(input).unwrap();
     };
-    run(&sim, observer);
+    run(&sim, observer, false);
     let first = events(persistence).unwrap();
     assert!(trial_end(&first, "0001").is_some());
     let samples: Vec<_> = sim
@@ -70,16 +73,13 @@ fn a_new_session_after_an_earlier_one(
         assert!(sim.seams().trials.samples("0001").next().is_some());
     }
 
-    sim.set_bios_context(BiosContext {
-        bios_version: "new".into(),
-        board: "sim".into(),
-        cpu_model: "sim".into(),
-        microcode: "0x2".into(),
-        boost_limit_mhz: 5500,
-    });
+    // A newer ruleset cannot continue the first session: the next invocation archives it and starts a new one.
     sim.reboot().unwrap();
-    sim.crash_before_apply(1);
-    run(&sim, None);
+    run(
+        &sim,
+        Some(crash_at_nth(&sim, EventKind::TrialIntent, 1)),
+        true,
+    );
 
     let second = events(persistence).unwrap();
     assert_ne!(session_id(&first), session_id(&second));

@@ -50,11 +50,20 @@ impl Session {
     }
 
     /// Whether a signal ended the session rather than the session itself: the process died of one, or its
-    /// journal ends in a shutdown a signal asked for. Its outcome is not determined by its inputs.
+    /// journal holds a shutdown a signal asked for before the simulated operator's own end (the night the
+    /// simulator runs without `--night-hours`, counted from the journal's first event). Its outcome is not
+    /// determined by its inputs.
     pub fn ended_by_signal(&self) -> bool {
+        let night =
+            jiff::SignedDuration::from_hours(i64::from(togi_tool_sim::DEFAULT_NIGHT_HOURS.get()));
+        let operator_end = self
+            .events
+            .first()
+            .and_then(|first| first.time.checked_add(night).ok());
         self.exit == -1
             || self.events.iter().any(|event| {
                 matches!(&event.payload, Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal)
+                    && operator_end.is_none_or(|end| event.time < end)
             })
     }
 }

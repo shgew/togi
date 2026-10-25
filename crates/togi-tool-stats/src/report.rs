@@ -5,12 +5,10 @@ use togi_journal::{Activity, Attribution, Event, Outcome, Payload};
 use togi_machine::{CcdId, Condition, Regime, ResetKind, Signal, WorkloadId};
 use togi_render::escape_text;
 
-use crate::chains::{self, Derivation};
-use crate::evidence::{self, EvidenceMetrics};
-use crate::hunts::{self, CheckingMetrics, HuntMetrics};
+use crate::depth::{self, DepthRate};
 use crate::journal::Journal;
 use crate::project::{Projection, Trial, build_name};
-use crate::r7::{self, R7Decisions, RequestMetrics};
+use crate::requests::{self, RequestMetrics};
 use crate::table::{Table, row};
 
 /// Selects what starts at or after the cutoff; no cutoff selects everything.
@@ -43,12 +41,7 @@ pub(crate) struct Metrics<'a> {
     pub(crate) failures: FailureMetrics,
     pub(crate) exposure: BTreeMap<(Regime, WorkloadId), Exposure>,
     pub(crate) recovery: RecoveryGap,
-    pub(crate) hunts: Vec<HuntMetrics<'a>>,
-    pub(crate) checking: CheckingMetrics,
-    pub(crate) evidence: EvidenceMetrics,
-    pub(crate) r7: R7Decisions<'a>,
-    pub(crate) chains: Vec<Derivation<'a>>,
-    pub(crate) depth: Vec<evidence::DepthRate>,
+    pub(crate) depth: Vec<DepthRate>,
     pub(crate) requests: RequestMetrics,
     pub(crate) inconclusive: Vec<&'a Trial<'a>>,
     pub(crate) tctl: BTreeMap<(Regime, i32), u32>,
@@ -73,13 +66,8 @@ pub(crate) fn compute<'a>(p: &'a Projection<'a>, since: Option<Timestamp>) -> Me
         failures: failure_metrics(p, since),
         exposure: exposure_metrics(p, since),
         recovery: summarize_gaps(gaps),
-        hunts: hunts::compute_hunts(p, since),
-        checking: hunts::compute_checking(p, since),
-        evidence: evidence::compute(p, since),
-        r7: r7::decisions(p.events, since),
-        chains: chains::attribute(p, since),
-        depth: evidence::depth(p, since),
-        requests: r7::requests(p, since),
+        depth: depth::depth(p, since),
+        requests: requests::requests(p, since),
         inconclusive: p
             .trials
             .iter()
@@ -94,13 +82,8 @@ pub(crate) fn render(m: &Metrics<'_>) -> String {
     render_session(&mut table, &m.session, &m.runs, m.since);
     render_time(&mut table, &m.time);
     render_failures(&mut table, &m.failures, &m.exposure, &m.recovery);
-    hunts::render_hunts(&mut table, &m.hunts);
-    hunts::render_checking(&mut table, &m.checking);
-    evidence::render(&mut table, &m.evidence);
-    r7::render_decisions(&mut table, &m.r7);
-    chains::render(&mut table, &m.chains);
-    evidence::render_depth(&mut table, &m.depth);
-    r7::render_requests(&mut table, &m.requests);
+    depth::render_depth(&mut table, &m.depth);
+    requests::render_requests(&mut table, &m.requests);
     render_outcomes(&mut table, &m.inconclusive, &m.tctl);
     table.finish()
 }
@@ -188,6 +171,21 @@ fn session_metrics(events: &[Event]) -> SessionMetrics {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -412,6 +410,21 @@ fn failure_metrics(p: &Projection<'_>, since: Option<Timestamp>) -> FailureMetri
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -599,37 +612,10 @@ fn render_outcomes(
     }
 }
 
-/// Renders the report of a journal: what ran and for how long, what failed, how hunts and checking went,
-/// what evidence each hunt group could reuse, and the R7 request telemetry. A cutoff keeps what starts at or
+/// Renders the report of a journal: what ran and for how long, what failed, the failure rate by depth and the
+/// R7 request telemetry. A cutoff keeps what starts at or
 /// after it; runs that overlap it keep their totals.
 pub fn report(journal: &Journal, since: Option<Timestamp>) -> String {
     let projection = Projection::new(journal);
     render(&compute(&projection, since))
-}
-
-/// The R7 chain attribution of `journal`'s `checking.chain` events at or after `since`, one JSON object a
-/// derivation and a line, in journal order.
-///
-/// # Errors
-///
-/// When a record cannot be encoded.
-pub fn chain_records(
-    journal: &Journal,
-    since: Option<Timestamp>,
-) -> Result<String, serde_json::Error> {
-    let projection = Projection::new(journal);
-    chains::records(&chains::attribute(&projection, since))
-}
-
-/// The multi-core R7 failures of `journal` first observed at or after `since` with the backoffs charged to
-/// each, one JSON object a failure and a line, in journal order.
-///
-/// # Errors
-///
-/// When a record cannot be encoded.
-pub fn backoff_records(
-    journal: &Journal,
-    since: Option<Timestamp>,
-) -> Result<String, serde_json::Error> {
-    r7::records(&r7::decisions(journal.events(), since))
 }

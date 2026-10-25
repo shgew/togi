@@ -61,14 +61,14 @@ fn clean() -> Vec<Event> {
 }
 
 fn dirty() -> Vec<Event> {
-    vec![header(), phase(2, 0, Some(-30)), applied(3, [-30, 0])]
+    vec![header(), day_applied(2, [-30, 0])]
 }
 
 #[test]
 fn a_finished_run_must_conclude_but_one_in_progress_need_not() {
     let mut dirs = Directories::default();
     let path = Path::new("/fixture/a/dev-1");
-    dirs.put(path, &[header(), phase(2, 0, None)]);
+    dirs.put(path, &[header(), phase(2, 0)]);
     let finished = dirs.inspect(path, Completion::Finished);
     assert_eq!(kinds(&finished.findings), [Kind::Audit(Check::Termination)]);
     assert!(
@@ -123,7 +123,7 @@ fn the_reported_check_spellings_are_pinned() {
             value["check"].as_str().unwrap().to_owned()
         })
         .collect();
-    assert_eq!(spelled, ["avoidance", "unreadable"]);
+    assert_eq!(spelled, ["qualification", "unreadable"]);
 }
 
 #[test]
@@ -192,5 +192,5 @@ fn a_violation_in_an_archived_journal_names_the_archive() {
         "{:?}",
         report.findings
     );
-    assert_eq!(report.findings[0].check, Kind::Audit(Check::Avoidance));
+    assert_eq!(report.findings[0].check, Kind::Audit(Check::Qualification));
 }

@@ -1,11 +1,15 @@
 use std::collections::BTreeSet;
 use std::io::{self, Write};
+use std::num::NonZeroUsize;
+use std::sync::Mutex;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use togi_sim::saturating_count;
-use togi_simrun::day_night::{CalendarConfig, Comparator, Metrics, RunError};
+use togi_simrun::day_night::{CalendarConfig, Metrics, PolicyKind, RunError};
 
 use crate::day_night::{CapKind, DailyCoverage, RegisteredScenario, Registration};
+use crate::pool;
 
 /// One independently reproducible seed; the policy label is not a gate verdict.
 #[derive(Debug, Deserialize, Serialize)]
@@ -13,7 +17,10 @@ use crate::day_night::{CapKind, DailyCoverage, RegisteredScenario, Registration}
 pub struct Record {
     pub scenario: String,
     pub seed: u64,
+    /// The label of the `PolicyKind` that ran.
     pub comparator: String,
+    /// Wall-clock seconds this one run took.
+    pub wall_s: f64,
     pub metrics: Metrics,
 }
 
@@ -51,18 +58,25 @@ pub enum ComparatorError {
     Write(#[from] io::Error),
     #[error("encode day/night results")]
     Encode(#[from] serde_json::Error),
+    #[error("a day/night run finished without a record")]
+    Missing,
 }
 
-/// One comparator run of a scenario and seed; production uses `togi_simrun::day_night::run`.
+/// One run of a scenario and seed under a freshly built policy; production uses
+/// `togi_simrun::day_night::run`. It is called from several threads at once.
 pub type Runner<'a> =
-    dyn FnMut(&str, u64, Comparator, CalendarConfig) -> Result<Metrics, RunError> + 'a;
+    dyn Fn(&str, u64, PolicyKind, CalendarConfig) -> Result<Metrics, RunError> + Sync + 'a;
 
-/// Runs both comparators on every selected seed of every registered scenario, writing each record
-/// to `jsonl` as one JSON line as it completes. `run` is `togi_simrun::day_night::run` outside tests.
-pub fn run_comparators(
+/// Runs every policy on every selected seed of every registered scenario on `jobs` threads, then
+/// writes each record to `jsonl` as one JSON line. Records come back (and are written) in
+/// registered scenario order, then seed, then the order of `policies`, whatever order the threads
+/// finished in. `run` is `togi_simrun::day_night::run` outside tests.
+pub fn run_policies(
     registration: &Registration,
     selection: crate::Selection,
-    run: &mut Runner<'_>,
+    policies: &[PolicyKind],
+    jobs: NonZeroUsize,
+    run: &Runner<'_>,
     jsonl: &mut dyn Write,
 ) -> Result<Vec<Record>, ComparatorError> {
     let ranges = match selection {
@@ -70,37 +84,57 @@ pub fn run_comparators(
         crate::Selection::Holdout => vec![&registration.seeds.holdout],
         crate::Selection::All => vec![&registration.seeds.dev, &registration.seeds.holdout],
     };
-    let mut records = Vec::new();
+    let mut work = Vec::new();
     for scenario in &registration.scenarios {
         for range in &ranges {
             for seed in range.values()? {
-                for (label, comparator) in [
-                    ("co-zero", Comparator::CoZero),
-                    ("fixed-margin", Comparator::FixedMargin),
-                ] {
-                    let calendar = CalendarConfig {
-                        days: registration.calendar.days,
-                        year_days: registration.calendar.year_days,
-                        lambda_per_hour: registration.lambda_per_hour,
-                        active_hours: f64::from(registration.calendar.daily_hours),
-                        night_hours: f64::from(registration.calendar.night_hours),
-                        night_weekdays: registration.calendar.night_weekdays.clone(),
-                        firmware_change_day: (scenario.name == "firmware-change")
-                            .then_some(registration.calendar.firmware_change_day),
-                        ..CalendarConfig::default()
-                    };
-                    let record = Record {
-                        scenario: scenario.name.clone(),
-                        seed,
-                        comparator: label.to_owned(),
-                        metrics: run(&scenario.name, seed, comparator, calendar)?,
-                    };
-                    serde_json::to_writer(&mut *jsonl, &record)?;
-                    writeln!(jsonl)?;
-                    records.push(record);
+                for policy in policies {
+                    work.push((scenario, seed, *policy));
                 }
             }
         }
+    }
+    let slots: Vec<Mutex<Option<Record>>> = work.iter().map(|_| Mutex::new(None)).collect();
+    let order: Vec<usize> = (0..work.len()).collect();
+    let errors = pool::run(jobs.get(), &order, |index| {
+        let (scenario, seed, policy) = work[index];
+        let calendar = CalendarConfig {
+            days: registration.calendar.days,
+            year_days: registration.calendar.year_days,
+            lambda_per_hour: registration.lambda_per_hour,
+            active_hours: f64::from(registration.calendar.daily_hours),
+            night_hours: f64::from(registration.calendar.night_hours),
+            night_weekdays: registration.calendar.night_weekdays.clone(),
+            firmware_change_day: (scenario.name == "firmware-change")
+                .then_some(registration.calendar.firmware_change_day),
+            ..CalendarConfig::default()
+        };
+        let started = Instant::now();
+        let metrics = run(&scenario.name, seed, policy, calendar)?;
+        let record = Record {
+            scenario: scenario.name.clone(),
+            seed,
+            comparator: policy.label().to_owned(),
+            wall_s: started.elapsed().as_secs_f64(),
+            metrics,
+        };
+        *slots[index]
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(record);
+        Ok::<(), RunError>(())
+    });
+    if let Some((_, error)) = errors.into_iter().next() {
+        return Err(error.into());
+    }
+    let mut records = Vec::with_capacity(slots.len());
+    for slot in slots {
+        let record = slot
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .ok_or(ComparatorError::Missing)?;
+        serde_json::to_writer(&mut *jsonl, &record)?;
+        writeln!(jsonl)?;
+        records.push(record);
     }
     Ok(records)
 }
@@ -195,13 +229,30 @@ fn valid_dimensions(metric: &Metrics) -> bool {
         && metric.unattributed_retreat_counts.len() == count
 }
 
-/// Judges one complete registered seed set, never dropping censored seeds from denominators.
-/// Callers must check experiment identity and seed completeness before presenting this as a gate.
-pub fn judge(
-    registration: &Registration,
-    scenario: &RegisteredScenario,
-    metrics: &[&Metrics],
-) -> Criteria {
+/// What one complete registered seed set measured, before any threshold is applied. Fractions
+/// divide by every seed, so a censored seed counts against each; they are NaN for no seeds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Measured {
+    pub runs: usize,
+    pub censored: usize,
+    /// Fraction of seeds with no climb crash on any CCD.
+    pub climb_free: f64,
+    /// Fraction of seeds whose every CCD stayed within the registered first-year crash count.
+    pub year_one_within: f64,
+    /// Fraction of seeds whose overshoot never exceeded one count.
+    pub overshoot_one: f64,
+    /// The deepest overshoot over all seeds and CCDs.
+    pub max_overshoot: u8,
+    /// Median over seeds of the worst CCD's convergence day; infinite when not converged.
+    pub median_convergence_days: f64,
+    /// Fraction of seeds whose every CCD retained its converged depth within the registered loss.
+    pub retained: f64,
+    /// The most cap-promotion steps any CCD took.
+    pub max_promotions: u32,
+}
+
+/// Measures one complete registered seed set, never dropping censored seeds from denominators.
+pub fn measure(registration: &Registration, metrics: &[&Metrics]) -> Measured {
     let thresholds = &registration.thresholds;
     let fraction = |predicate: &dyn Fn(&Metrics) -> bool| {
         let count = metrics
@@ -214,59 +265,76 @@ pub fn judge(
         .iter()
         .map(|metric| worst_convergence(metric))
         .collect();
+    Measured {
+        runs: metrics.len(),
+        censored: metrics.iter().filter(|metric| metric.censored).count(),
+        climb_free: fraction(&|metric| metric.climb_co_crashes.iter().all(|count| *count == 0)),
+        year_one_within: fraction(&|metric| {
+            metric
+                .year_one_co_crashes
+                .iter()
+                .all(|count| *count <= thresholds.hidden_year_one_max_crashes_per_ccd)
+        }),
+        overshoot_one: fraction(&|metric| metric.max_overshoot.iter().all(|depth| *depth <= 1)),
+        max_overshoot: metrics
+            .iter()
+            .flat_map(|metric| &metric.max_overshoot)
+            .copied()
+            .max()
+            .unwrap_or(0),
+        median_convergence_days: median(&convergences),
+        retained: fraction(&|metric| {
+            metric.converged_depth.iter().zip(&metric.final_depth).all(
+                |(converged, final_depth)| {
+                    converged.is_some_and(|depth| {
+                        *final_depth >= depth.saturating_sub(thresholds.retention_max_lost_counts)
+                    })
+                },
+            )
+        }),
+        max_promotions: metrics
+            .iter()
+            .flat_map(|metric| &metric.promotions)
+            .copied()
+            .max()
+            .unwrap_or(0),
+    }
+}
+
+/// Judges one complete registered seed set, never dropping censored seeds from denominators.
+/// Callers must check experiment identity and seed completeness before presenting this as a gate.
+pub fn judge(
+    registration: &Registration,
+    scenario: &RegisteredScenario,
+    metrics: &[&Metrics],
+) -> Criteria {
+    let thresholds = &registration.thresholds;
+    let measured = measure(registration, metrics);
+    let uncensored = measured.runs > 0 && measured.censored == 0;
     Criteria {
         covered_climb: match scenario.daily_class {
-            DailyCoverage::Covered => Some(
-                fraction(&|metric| metric.climb_co_crashes.iter().all(|count| *count == 0))
-                    >= thresholds.covered_crash_free_fraction,
-            ),
+            DailyCoverage::Covered => {
+                Some(measured.climb_free >= thresholds.covered_crash_free_fraction)
+            }
             DailyCoverage::Hidden => None,
         },
         hidden_year_one: match scenario.daily_class {
-            DailyCoverage::Hidden => Some(
-                fraction(&|metric| {
-                    metric
-                        .year_one_co_crashes
-                        .iter()
-                        .all(|count| *count <= thresholds.hidden_year_one_max_crashes_per_ccd)
-                }) >= thresholds.hidden_year_one_fraction,
-            ),
+            DailyCoverage::Hidden => {
+                Some(measured.year_one_within >= thresholds.hidden_year_one_fraction)
+            }
             DailyCoverage::Covered => None,
         },
-        overshoot_fraction: fraction(&|metric| {
-            metric.max_overshoot.iter().all(|depth| *depth <= 1)
-        }) >= thresholds.overshoot_one_count_fraction,
-        overshoot_absolute: !metrics.is_empty()
-            && metrics.iter().all(|metric| {
-                !metric.censored
-                    && metric
-                        .max_overshoot
-                        .iter()
-                        .all(|depth| *depth <= thresholds.overshoot_absolute_max_counts)
-            }),
-        convergence: median(&convergences) <= f64::from(thresholds.median_convergence_days),
-        retention: scenario.retention.then(|| {
-            fraction(&|metric| {
-                metric.converged_depth.iter().zip(&metric.final_depth).all(
-                    |(converged, final_depth)| {
-                        converged.is_some_and(|depth| {
-                            *final_depth
-                                >= depth.saturating_sub(thresholds.retention_max_lost_counts)
-                        })
-                    },
-                )
-            }) >= thresholds.retention_fraction
-        }),
+        overshoot_fraction: measured.overshoot_one >= thresholds.overshoot_one_count_fraction,
+        overshoot_absolute: uncensored
+            && measured.max_overshoot <= thresholds.overshoot_absolute_max_counts,
+        convergence: measured.median_convergence_days
+            <= f64::from(thresholds.median_convergence_days),
+        retention: scenario
+            .retention
+            .then_some(measured.retained >= thresholds.retention_fraction),
         fixed_cap_steps: match scenario.cap {
             CapKind::Fixed => Some(
-                !metrics.is_empty()
-                    && metrics.iter().all(|metric| {
-                        !metric.censored
-                            && metric
-                                .promotions
-                                .iter()
-                                .all(|steps| *steps <= thresholds.fixed_cap_max_steps_per_ccd)
-                    }),
+                uncensored && measured.max_promotions <= thresholds.fixed_cap_max_steps_per_ccd,
             ),
             CapKind::Moving | CapKind::Firmware => None,
         },
@@ -302,11 +370,12 @@ fn median(values: &[f64]) -> f64 {
 pub fn report(
     out: &mut dyn Write,
     registration: &Registration,
+    policies: &[PolicyKind],
     records: &[Record],
 ) -> io::Result<()> {
     writeln!(
         out,
-        "{}: comparator diagnostics; Ruleset 13 pending #1217; slopes {:?} unscored",
+        "{}: policy summary; only ruleset13 can pass the gate; registered slopes {:?}",
         registration.id, registration.policy_slopes
     )?;
     writeln!(
@@ -314,7 +383,7 @@ pub fn report(
         "scenario comparator seeds CO/day suspect year1/CCD climb-free% converge-d overshoot steps final-depth retained% bg-retreat CO-retreat nonCPU-retreat censored"
     )?;
     for scenario in &registration.scenarios {
-        for comparator in ["co-zero", "fixed-margin"] {
+        for comparator in policies.iter().map(|policy| policy.label()) {
             let metrics: Vec<_> = records
                 .iter()
                 .filter(|record| {
