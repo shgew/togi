@@ -24,7 +24,7 @@ pub(super) struct Options<N> {
     /// The night switch to offer.
     pub(super) switch: Option<Direction>,
     pub(super) colours: Colours,
-    /// Wall time sampled once, then advanced by the monotonic clock.
+    /// The current wall or injected playback clock, from which holds are measured.
     pub(super) now: N,
     /// A redraw at least this often, whatever the frame's hold says.
     pub(super) tick: Option<std::time::Duration>,
@@ -44,8 +44,7 @@ impl Painter {
         &mut self,
         session: &mut Session<B>,
         screen: &mut Screen,
-        frame: &mut impl FnMut(&Screen, Timestamp, &mut Buffer) -> Drawn,
-        now: Timestamp,
+        frame: &mut impl FnMut(&Screen, &mut Buffer) -> Drawn,
     ) -> Result<Drawn, Error> {
         session
             .terminal
@@ -66,7 +65,7 @@ impl Painter {
         );
         self.scratch.resize(area);
         self.scratch.reset();
-        let drawn = frame(screen, now, &mut self.scratch);
+        let drawn = frame(screen, &mut self.scratch);
         let target = session.terminal.current_buffer_mut();
         for y in 0..area.height {
             for x in 0..area.width {
@@ -89,7 +88,7 @@ pub(super) async fn show<B, N>(
     backend: B,
     options: Options<N>,
     events: &mut mpsc::UnboundedReceiver<Event>,
-    mut frame: impl FnMut(&Screen, Timestamp, &mut Buffer) -> Drawn,
+    mut frame: impl FnMut(&Screen, &mut Buffer) -> Drawn,
     mut reload: impl FnMut() -> bool,
 ) -> Result<Outcome, Error>
 where
@@ -118,9 +117,8 @@ where
             session.repaint()?;
             repaint = false;
         }
-        let now = clock.now();
-        let drawn = painter.paint(&mut session, &mut screen, &mut frame, now)?;
-        clock.schedule(drawn.hold, now);
+        let drawn = painter.paint(&mut session, &mut screen, &mut frame)?;
+        clock.schedule(drawn.hold, (options.now)());
         if let Some(frozen) = &options.frozen {
             frozen.send_if_modified(|frozen| {
                 let now = drawn.hold == Hold::Frozen;
@@ -288,7 +286,8 @@ mod tests {
                     backend,
                     options,
                     &mut queue,
-                    move |screen, now, buf: &mut Buffer| {
+                    move |screen, buf: &mut Buffer| {
+                        let now = EPOCH + SignedDuration::try_from(Instant::now() - start).unwrap();
                         frame_script.times.borrow_mut().push(now);
                         frame(&frame_script, screen, buf)
                     },
@@ -1099,7 +1098,7 @@ mod tests {
                     frozen: None,
                 },
                 &mut queue,
-                |_: &Screen, _, _: &mut Buffer| -> Drawn { panic!("session panic") },
+                |_: &Screen, _: &mut Buffer| -> Drawn { panic!("session panic") },
                 || false,
             ))
         }));
@@ -1175,7 +1174,7 @@ mod tests {
                         backend,
                         options,
                         &mut queue,
-                        move |screen, _, _: &mut Buffer| {
+                        move |screen, _: &mut Buffer| {
                             let mut source = frame_source.borrow_mut();
                             let text = match source.journal(screen) {
                                 crate::screen::Journal::Missing => "no session yet".to_owned(),

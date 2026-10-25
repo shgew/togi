@@ -20,7 +20,7 @@ pub(super) struct Clock {
 }
 
 impl Clock {
-    /// Anchors wall time once to monotonic time, also waking every `tick`, if given.
+    /// Tracks wall-second deadlines with monotonic timers, also waking every `tick`, if given.
     pub(super) fn paced(tick: Option<Duration>, wall: Timestamp) -> Self {
         let pace = tick.map(|tick| {
             let mut pace = tokio::time::interval_at(Instant::now() + tick, tick);
@@ -36,7 +36,7 @@ impl Clock {
         }
     }
 
-    /// One monotonic reference supplies both the frame's time and its redraw deadlines.
+    /// The last wall reading projected onto monotonic time, used only to notice a clock change.
     pub(super) fn now(&self) -> Timestamp {
         self.wall + self.start.elapsed()
     }
@@ -46,6 +46,14 @@ impl Clock {
     /// A frozen frame arms nothing at all. A frame held until a future instant wakes once at that instant. Any
     /// other frame shows the clock, so it wakes every second.
     pub(super) fn schedule(&mut self, hold: Hold, now: Timestamp) {
+        // Wall and monotonic readings are not atomic. Ignore sub-millisecond sampling jitter, but
+        // re-anchor after a clock step, suspend or accelerated playback changes the wall phase.
+        if now.duration_since(self.now()).unsigned_abs() > Duration::from_millis(1) {
+            self.wall = now;
+            self.start = Instant::now();
+            self.ticker = None;
+            self.timer = None;
+        }
         match hold {
             Hold::Frozen => {
                 self.ticker = None;
@@ -152,6 +160,36 @@ mod tests {
         });
     }
 
+    #[test_case::test_case(60_375, 600; "forward wall step")]
+    #[test_case::test_case(-60_125, 600; "backward wall step")]
+    #[test_case::test_case(3_600_375, 0; "suspend without monotonic advance")]
+    fn changed_wall_time_rearms_the_next_wall_second(step_ms: i64, elapsed_ms: u64) {
+        crate::terminal::testing::paused(async {
+            let wall = NOW + SignedDuration::from_millis(250);
+            let mut clock = Clock::paced(None, wall);
+            clock.schedule(Hold::Never, wall);
+            tokio::time::advance(Duration::from_millis(elapsed_ms)).await;
+            let wall =
+                wall + Duration::from_millis(elapsed_ms) + SignedDuration::from_millis(step_ms);
+            clock.schedule(Hold::Never, wall);
+            assert_eq!(
+                clock.now(),
+                wall,
+                "the deadline anchor follows the new clock"
+            );
+            let nanos = 1_000_000_000 - wall.subsec_nanosecond().rem_euclid(1_000_000_000);
+            let until = Duration::from_nanos(nanos.cast_unsigned().into());
+            assert!(
+                !wakes(
+                    &mut clock,
+                    until.checked_sub(Duration::from_millis(1)).unwrap()
+                )
+                .await
+            );
+            assert!(wakes(&mut clock, Duration::from_millis(2)).await);
+        });
+    }
+
     #[test]
     fn a_clock_frame_wakes_every_second() {
         crate::terminal::testing::paused(async {
@@ -197,7 +235,7 @@ mod tests {
             let mut clock = Clock::paced(None, NOW);
             clock.schedule(Hold::Never, NOW);
             tokio::time::advance(Duration::from_millis(600)).await;
-            clock.schedule(Hold::Never, NOW);
+            clock.schedule(Hold::Never, NOW + SignedDuration::from_millis(600));
             assert!(wakes(&mut clock, Duration::from_millis(401)).await);
         });
     }
