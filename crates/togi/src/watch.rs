@@ -115,7 +115,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     };
     match result {
         Ok(Outcome::Ended) => Exit::Ok,
-        Ok(Outcome::Switch(Direction::Night)) => night::begin(ctx, None, Confirmation::Given),
+        Ok(Outcome::Switch(Direction::Night)) => night::begin(ctx, Confirmation::Given),
         Ok(Outcome::Switch(Direction::Day)) => night_end::leave(ctx),
         Err(terminal::Error::Journal(SourceError::Read(error))) => {
             let message = unknown_kind(&error).unwrap_or_else(|| togi_render::error_chain(&error));

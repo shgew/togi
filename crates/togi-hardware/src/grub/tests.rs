@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 use test_case::test_case;
-use togi_tuningboot::night::{DAY_ENTRY_VARIABLE, NIGHT_VARIABLE};
+use togi_tuningboot::night::{DAY_ENTRY_VARIABLE, NIGHT_BEGUN, NIGHT_VARIABLE};
 use togi_tuningboot::{
     COUNT_VARIABLE, Environment as _, LeaveReason, REASON_VARIABLE, RestartCount, clear_reason,
     read_reason, reset_count, restart_limit, write_reason,
@@ -254,12 +254,12 @@ const DAY: &str = "NixOS - Configuration 7";
 
 fn night(saved: &str) -> Fake {
     Fake::with(saved)
-        .value(NIGHT_VARIABLE, r#"{"until":1}"#)
+        .value(NIGHT_VARIABLE, NIGHT_BEGUN)
         .value(DAY_ENTRY_VARIABLE, DAY)
 }
 
 #[test]
-fn clearing_restores_the_days_entry_exactly_and_forgets_the_night() {
+fn clearing_restores_the_days_entry_exactly_and_ends_the_night() {
     let fake = night("NixOS - togi");
     assert_eq!(
         fake.grub().clear_saved().unwrap(),
@@ -274,19 +274,36 @@ fn clearing_restores_the_days_entry_exactly_and_forgets_the_night() {
 }
 
 #[test]
-fn clearing_twice_selects_the_same_day_entry_again() {
+fn clearing_twice_keeps_the_same_day_entry_and_writes_nothing_more() {
     let fake = night("NixOS - togi");
     fake.grub().clear_saved().unwrap();
-    fake.grub().clear_saved().unwrap();
+    let writes = fake.calls();
+    assert_eq!(
+        fake.grub().clear_saved().unwrap(),
+        SavedEntry {
+            before: DAY.to_owned(),
+            after: DAY.to_owned()
+        }
+    );
     assert_eq!(fake.saved(), DAY);
+    assert_eq!(fake.value_of(DAY_ENTRY_VARIABLE).as_deref(), Some(DAY));
+    assert_eq!(fake.calls(), writes + 1, "one listing and no edit");
 }
 
 #[test]
-fn without_a_remembered_day_entry_clearing_unsets_and_forgets_the_night() {
-    let fake = Fake::with("NixOS - togi").value(NIGHT_VARIABLE, r#"{"until":1}"#);
+fn without_a_remembered_day_entry_clearing_unsets_and_ends_the_night() {
+    let fake = Fake::with("NixOS - togi").value(NIGHT_VARIABLE, NIGHT_BEGUN);
     assert_eq!(fake.grub().clear_saved().unwrap(), saved("NixOS - togi"));
     assert_eq!(fake.saved(), "");
     assert_eq!(fake.value_of(NIGHT_VARIABLE), None);
+}
+
+#[test]
+fn a_menu_picked_tuning_boot_drops_the_day_entry_of_an_earlier_night() {
+    let fake = Fake::with("NixOS - togi").value(DAY_ENTRY_VARIABLE, DAY);
+    assert_eq!(fake.grub().clear_saved().unwrap(), saved("NixOS - togi"));
+    assert_eq!(fake.saved(), "");
+    assert_eq!(fake.value_of(DAY_ENTRY_VARIABLE), None);
 }
 
 #[test]

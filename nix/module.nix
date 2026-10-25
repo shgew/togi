@@ -40,12 +40,6 @@ in
       default = true;
       description = "Restore the normal boot selection (`togi night-end`) on an orderly operator shutdown or reboot of the tuning boot, so the next boot is the normal system. This is how the power button ends a night. Restart-limit retry reboots preserve the tuning entry; crash reboots return to it either way.";
     };
-    tuning.night.morning = lib.mkOption {
-      type = lib.types.strMatching "([01][0-9]|2[0-3]):[0-5][0-9]";
-      default = "07:00";
-      example = "06:30";
-      description = "The time of day, as HH:MM in the machine's time zone, when a night in the tuning boot ends, whether it began with `togi night` or from the boot menu. `togi night --until` overrides it for one night. Once the time has passed, a guard in the tuning boot restores the normal boot selection and reboots before the tuner starts.";
-    };
     tuning.display = lib.mkOption {
       type = lib.types.enum [
         "console"
@@ -189,11 +183,10 @@ in
         # `togi night` runs grub-editenv in the normal boot, where a shell has no other path to it.
         environment.systemPackages = [ pkgs.grub2 ];
         # What the night switch needs to know, in one file the normal boot and the tuning boot both read: GRUB's
-        # environment, the menu title of the tuning entry as the boot loader lists it, and when a night ends.
+        # environment and the menu title of the tuning entry as the boot loader lists it.
         environment.etc."togi/night.json".source = json.generate "togi-night.json" {
           grubenv = toString grubenv;
           entry = "${config.system.nixos.distroName} - togi";
-          inherit (cfg.tuning.night) morning;
         };
         specialisation.togi.configuration = {
           # The tuning boot inherits the normal configuration; the observer is a normal-boot service.
@@ -239,54 +232,15 @@ in
               systemctl reboot
             '';
           };
-          # Runs before the tuner in every tuning boot and checks the morning deadline kept in GRUB's environment, so
-          # the deadline does not depend on the tuner starting. togi requires it: a guard that fails keeps the
-          # tuner from starting unguarded, and the guard's own failure unit returns to the normal system, because a
-          # tuner start that fails on its dependency never reaches the restart limit.
-          systemd.services.togi-night-guard-failed = {
-            description = "Return to the normal system after the night guard failed";
-            unitConfig.RequiresMountsFor = grubenv;
-            path = [
-              pkgs.grub2
-              config.systemd.package
-            ];
-            serviceConfig.Type = "oneshot";
-            # No reboot when the selection stays: the next boot would enter the same night and fail the same way.
-            script = ''
-              ${lib.getExe cfg.package} night-end || grub-editenv ${grubenv} unset saved_entry
-              systemctl reboot
-            '';
-          };
-          systemd.services.togi-night-guard = {
-            description = "Return to the normal system when the night is over";
-            before = [ "togi.service" ];
-            onFailure = [ "togi-night-guard-failed.service" ];
-            after = [ "local-fs.target" ];
-            unitConfig.RequiresMountsFor = grubenv;
-            path = [
-              pkgs.grub2
-              config.systemd.package
-            ];
-            serviceConfig = {
-              Type = "oneshot";
-              # Once per boot: a restart of the tuner finds the guard active and does not check the morning again.
-              RemainAfterExit = true;
-              # A hung guard would hold the tuner back for good; the timeout fails it into the recovery above.
-              TimeoutStartSec = "60s";
-              ExecStart = "${lib.getExe cfg.package} night-guard";
-            };
-          };
           systemd.services.togi = {
             description = "togi tuning boot";
             onFailure = [ "togi-restart-limit.service" ];
             unitConfig.RequiresMountsFor = grubenv;
             wantedBy = [ "multi-user.target" ];
-            requires = [ "togi-night-guard.service" ];
             after = [
               "systemd-modules-load.service"
               "systemd-pstore.service"
               "local-fs.target"
-              "togi-night-guard.service"
             ];
             path = [
               pkgs.grub2

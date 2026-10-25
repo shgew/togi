@@ -4,9 +4,9 @@ expression: "help(\"night\")"
 ---
 Reboot into the tuning boot for the night
 
-Shows what the night will do, as `togi status` plans it, and when it ends, then asks to reboot. On yes it says good night, points the boot loader at the tuning entry, remembering the selection it replaces, and reboots. Anything but yes changes nothing.
+Shows what the night will do, as `togi status` plans it, then asks to reboot. On yes it says good night, points the boot loader at the tuning entry, remembering the selection it replaces, and reboots. Anything but yes changes nothing.
 
-The night ends at the next morning time, 07:00 unless the NixOS module sets another, or at the `--until` time. An early-boot guard in the tuning boot returns to the day once that time has passed, before the tuner starts; F10 on the tuning dashboard and the power button end the night too. Each restores the selection the night replaced exactly. A crash never ends a night.
+The night has no time limit: it runs until you end it with F10 on the tuning dashboard or the power button, or until the tuner stops on its own at a dead end or its restart limit. Each restores the selection the night replaced exactly. Crash reboots stay in the night.
 
 Needs root, and the NixOS module's tuning boot, which writes /etc/togi/night.json.
 
@@ -18,12 +18,8 @@ Options:
           
           [default: /var/lib/togi]
 
-      --until <HH:MM>
-          When the night ends, as HH:MM in the machine's time zone
-
   -h, --help
           Print help (see a summary with '-h')
 
 Examples:
-  sudo togi night                 Show what the night will do, then reboot into the tuning boot until the usual morning
-  sudo togi night --until 06:30   Tonight's night ends at 06:30 instead
+  sudo togi night   Show what the night will do, then reboot into the tuning boot until you end it

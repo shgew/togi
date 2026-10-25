@@ -493,11 +493,6 @@ fn night_help() {
 }
 
 #[test]
-fn night_guard_help() {
-    snapshot!(night_guard_help, help("night-guard"));
-}
-
-#[test]
 fn night_end_help() {
     snapshot!(night_end_help, help("night-end"));
 }

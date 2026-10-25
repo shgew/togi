@@ -298,17 +298,21 @@ impl Grub {
         Ok(lookup(&self.edit(&Edit::List)?, name))
     }
 
-    /// Gives up the tuning selection and reads it back, then forgets the night record. When a
-    /// night remembered the day's entry, `saved_entry` becomes that entry exactly, never a
-    /// generation of its own choosing; otherwise it is unset, so the menu's first entry boots. The
-    /// remembered entry stays, so a repeat selects the same day entry again.
+    /// Gives up the tuning selection and reads it back. While a night `togi night` began lasts, and
+    /// it remembered the day's entry, `saved_entry` becomes that entry exactly, never a generation of
+    /// its own choosing, and the night ends; the remembered entry stays, so a repeat finds it
+    /// selected and changes nothing. Otherwise `saved_entry` is unset, so the menu's first entry
+    /// boots, and a remembered entry of an earlier night goes with it: a tuning boot picked from the
+    /// menu has no day of its own to return to.
     pub fn clear_saved(&mut self) -> Result<SavedEntry, ClearError> {
         let listing = self.edit(&Edit::List).map_err(ClearError::ReadBefore)?;
         let before = lookup(&listing, SAVED_ENTRY).unwrap_or_default();
         let day = lookup(&listing, DAY_ENTRY_VARIABLE).filter(|day| !day.is_empty());
-        match day {
-            Some(day) => self.restore(before, day),
-            None => self.unset_saved(before),
+        let begun = lookup(&listing, NIGHT_VARIABLE).is_some_and(|night| !night.is_empty());
+        match (day, begun) {
+            (Some(day), true) => self.restore(before, day),
+            (Some(day), false) if day == before => Ok(SavedEntry { before, after: day }),
+            (Some(_) | None, _) => self.unset_saved(before),
         }
     }
 
@@ -336,7 +340,11 @@ impl Grub {
     }
 
     fn unset_saved(&mut self, before: String) -> Result<SavedEntry, ClearError> {
-        let unset = Edit::Unset(vec![SAVED_ENTRY.to_owned(), NIGHT_VARIABLE.to_owned()]);
+        let unset = Edit::Unset(vec![
+            SAVED_ENTRY.to_owned(),
+            NIGHT_VARIABLE.to_owned(),
+            DAY_ENTRY_VARIABLE.to_owned(),
+        ]);
         if let Err(source) = self.edit(&unset) {
             return Err(ClearError::Unset { before, source });
         }

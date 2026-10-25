@@ -13,8 +13,8 @@ use crate::args::StateDirArgs;
 use crate::exit::Exit;
 use crate::system::{Real, System};
 use crate::{
-    completion, doctor, emergency_stop, events, night, night_end, night_guard, reset,
-    restart_limit, status, watch,
+    completion, doctor, emergency_stop, events, night, night_end, reset, restart_limit, status,
+    watch,
 };
 
 const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/ __ `/ /\n/ /_/ /_/ / /_/ / /\n\\__/\\____/\\__, /_/\n         /____/\n\n  per-core Curve Optimizer\n\n";
@@ -61,7 +61,6 @@ pub enum Command {
     Events(events::Args),
     Night(night::Args),
     NightEnd(night_end::Args),
-    NightGuard(night_guard::Args),
     Reset(reset::Args),
     RestartLimit(restart_limit::Args),
     EmergencyStop(emergency_stop::Args),
@@ -80,7 +79,6 @@ impl Command {
             Self::Events(args) => events::run(&args, ctx),
             Self::Night(args) => night::run(&args, ctx),
             Self::NightEnd(args) => night_end::run(&args, ctx),
-            Self::NightGuard(args) => night_guard::run(&args, ctx),
             Self::Reset(args) => reset::run(&args, ctx),
             Self::RestartLimit(args) => restart_limit::run(&args, ctx),
             Self::EmergencyStop(args) => emergency_stop::run(&args, ctx),

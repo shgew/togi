@@ -42,7 +42,6 @@ pub mod events;
 pub mod exit;
 pub mod night;
 pub mod night_end;
-pub mod night_guard;
 pub mod panics;
 pub mod read;
 pub mod report;

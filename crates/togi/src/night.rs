@@ -5,8 +5,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
-use jiff::Timestamp;
-use togi_tuningboot::night::{GrubSelection, Morning, Night, SETUP_PATH, Selection, Setup};
+use togi_tuningboot::night::{GrubSelection, SETUP_PATH, Selection, Setup};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
@@ -15,37 +14,26 @@ use crate::run::prompt::parse_answer;
 use crate::{read, status};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
-    examples(&[
-        (
-            "sudo togi night",
-            "Show what the night will do, then reboot into the tuning boot until the usual morning",
-        ),
-        (
-            "sudo togi night --until 06:30",
-            "Tonight's night ends at 06:30 instead",
-        ),
-    ])
+    examples(&[(
+        "sudo togi night",
+        "Show what the night will do, then reboot into the tuning boot until you end it",
+    )])
 });
 
 /// Reboot into the tuning boot for the night
 ///
-/// Shows what the night will do, as `togi status` plans it, and when it ends, then asks to
-/// reboot. On yes it says good night, points the boot loader at the tuning entry, remembering the
-/// selection it replaces, and reboots. Anything but yes changes nothing.
+/// Shows what the night will do, as `togi status` plans it, then asks to reboot. On yes it says
+/// good night, points the boot loader at the tuning entry, remembering the selection it replaces,
+/// and reboots. Anything but yes changes nothing.
 ///
-/// The night ends at the next morning time, 07:00 unless the NixOS module sets another, or at
-/// the `--until` time. An early-boot guard in the tuning boot returns to the day once that time
-/// has passed, before the tuner starts; F10 on the tuning dashboard and the power button end the
-/// night too. Each restores the selection the night replaced exactly. A crash never ends a night.
+/// The night has no time limit: it runs until you end it with F10 on the tuning dashboard or the
+/// power button, or until the tuner stops on its own at a dead end or its restart limit. Each
+/// restores the selection the night replaced exactly. Crash reboots stay in the night.
 ///
 /// Needs root, and the NixOS module's tuning boot, which writes /etc/togi/night.json.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
-pub struct Args {
-    /// When the night ends, as HH:MM in the machine's time zone
-    #[arg(long, value_name = "HH:MM")]
-    pub until: Option<Morning>,
-}
+pub struct Args {}
 
 const COMMAND: &str = "night";
 
@@ -59,8 +47,8 @@ pub enum Confirmation {
 }
 
 /// Runs `togi night`.
-pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
-    begin(ctx, args.until, Confirmation::Ask)
+pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
+    begin(ctx, Confirmation::Ask)
 }
 
 /// What the night switch needs from the module's setup file.
@@ -108,15 +96,9 @@ fn plan(ctx: &mut Context<'_>) -> Result<Vec<String>, Exit> {
     )])
 }
 
-fn local(ctx: &Context<'_>, at: Timestamp) -> String {
-    at.to_zoned(ctx.system.zone())
-        .strftime("%Y-%m-%d %H:%M")
-        .to_string()
-}
-
 /// Shows the night, confirms it as `confirmation` says, and starts it: the tuning entry selected,
 /// the day's selection remembered, the machine rebooting. Declining changes nothing.
-pub fn begin(ctx: &mut Context<'_>, until: Option<Morning>, confirmation: Confirmation) -> Exit {
+pub fn begin(ctx: &mut Context<'_>, confirmation: Confirmation) -> Exit {
     if !ctx.system.privileged() {
         return fail(
             ctx,
@@ -128,11 +110,6 @@ pub fn begin(ctx: &mut Context<'_>, until: Option<Morning>, confirmation: Confir
         Ok(setup) => setup,
         Err(message) => return fail(ctx, COMMAND, message),
     };
-    let morning = until.unwrap_or(setup.morning);
-    let ends = match morning.next_after(ctx.system.now(), &ctx.system.zone()) {
-        Ok(ends) => ends,
-        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
-    };
     let lines = match plan(ctx) {
         Ok(lines) => lines,
         Err(exit) => return exit,
@@ -142,10 +119,7 @@ pub fn begin(ctx: &mut Context<'_>, until: Option<Morning>, confirmation: Confir
             return exit;
         }
     }
-    let summary = format!(
-        "The night ends at {} or earlier: the machine then returns to the day on its own.",
-        local(ctx, ends)
-    );
+    let summary = "The night runs until you end it, or until the tuner stops on its own.";
     if let Err(exit) = emit(ctx, summary) {
         return exit;
     }
@@ -157,13 +131,10 @@ pub fn begin(ctx: &mut Context<'_>, until: Option<Morning>, confirmation: Confir
         }
     }
     let mut selection = GrubSelection::new(ctx.system.bootloader(&setup.grubenv));
-    if let Err(error) = selection.begin(&setup.entry, &Night::new(ends)) {
+    if let Err(error) = selection.begin(&setup.entry) {
         return fail(ctx, COMMAND, togi_render::error_chain(&error));
     }
-    let goodnight = format!(
-        "Good night. Rebooting into the tuning boot; the day returns at {}, or sooner with F10 on the dashboard or the power button.",
-        local(ctx, ends)
-    );
+    let goodnight = "Good night. Rebooting into the tuning boot; F10 on its dashboard or the power button brings back the day.";
     if let Err(exit) = emit(ctx, goodnight) {
         restore_day(ctx, &mut selection, "the failed message");
         return exit;

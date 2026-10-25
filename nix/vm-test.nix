@@ -542,9 +542,6 @@ in
           if [ "$1" = restart-limit ]; then
             exit 2
           fi
-          if [ "$1" = night-guard ]; then
-            exit 0
-          fi
           if [ "$1" = emergency-stop ]; then
             echo "stub emergency-stop"
             exit 0
@@ -600,8 +597,8 @@ in
 
   # The night switch under real systemd and GRUB, with the shipped `togi` and a tuner that only sleeps: `togi night`
   # declines and confirms, points the next boot at the tuning entry and remembers the day's selection; a crash reboot
-  # past the morning deadline makes the guard restore that selection and reboot before the tuner starts; the power
-  # button ends a night through the leave hook. Every return selects the day's entry again exactly.
+  # stays in the night; the power button ends a night through the leave hook and selects the day's entry again
+  # exactly. A tuning boot picked from the menu is a night too, and ending it boots the boot loader's default.
   night = pkgs.testers.runNixOSTest {
     name = "togi-night";
 
@@ -642,7 +639,7 @@ in
       assert normal_system != tuning_system
 
       setup = json.loads(machine.succeed("cat /etc/togi/night.json"))
-      assert setup == {"grubenv": "/boot/grub/grubenv", "entry": "NixOS - togi", "morning": "07:00"}, setup
+      assert setup == {"grubenv": "/boot/grub/grubenv", "entry": "NixOS - togi"}, setup
 
       # The day's selection is one entry the boot menu lists, chosen on purpose so that the restore is checkable.
       day = machine.succeed("grep -m1 '^menuentry' /boot/grub/grub.cfg | cut -d'\"' -f2").strip()
@@ -655,8 +652,8 @@ in
       machine.succeed("togi night </dev/null")
       assert grubenv() == before, (before, grubenv())
 
-      # Confirming selects the tuning entry, remembers the day, records the night and reboots.
-      out = machine.succeed("echo y | togi night --until 06:30")
+      # Confirming selects the tuning entry, remembers the day, marks the night begun and reboots.
+      out = machine.succeed("echo y | togi night")
       assert "Good night." in out, out
       # The reboot starts as the command returns, so the selection is read in the tuning boot it selected.
       reaches_reboot()
@@ -664,53 +661,19 @@ in
       env = grubenv()
       assert env["saved_entry"] == "NixOS - togi", env
       assert env["togi_day_entry"] == day, env
-      assert json.loads(env["togi_night"])["until"] > 0, env
+      assert env["togi_night"] == "1", env
       machine.wait_until_succeeds("systemctl is-active togi.service")
-      assert machine.succeed("systemctl show togi-night-guard.service -p Result --value").strip() == "success"
-      assert "the night goes on until" in machine.succeed("journalctl -b -u togi-night-guard.service -o cat")
-      assert grubenv()["saved_entry"] == "NixOS - togi"
 
-      # A crash reboot past the deadline: the guard of the next tuning boot restores the day's selection and reboots
-      # before the tuner starts. The console shows the guard's reboot and then the normal boot reaching multi-user;
-      # that boot is then crashed too, so that a fresh shell connection reads the result (the shell of a boot
-      # that reboots at once would answer with the old boot's connection).
-      machine.succeed("grub-editenv /boot/grub/grubenv set 'togi_night={\"until\":1}' && sync")
-      machine.crash()
-      machine.start(allow_reboot=True)
-      machine.wait_for_console_text("reboot: Restarting system", timeout=180)
-      machine.wait_for_console_text("Reached target Multi-User System", timeout=180)
+      # A crash reboot stays in the night: nothing ends it but the operator or the tuner's own stops.
       machine.crash()
       machine.start(allow_reboot=True)
       machine.wait_for_unit("multi-user.target")
-      assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
-      env = grubenv()
-      assert env["saved_entry"] == day, env
-      assert "togi_night" not in env, env
-      # The tuning boot that returned wrote its journal: the guard said so and the tuner never started in it.
-      boot = machine.succeed(
-          "journalctl -u togi-night-guard.service -g 'returning to the day' -o verbose --no-pager | grep -o '_BOOT_ID=[0-9a-f]*' | head -1 | cut -d= -f2"
-      ).strip()
-      assert boot, "the guard's boot is not in the journal"
-      machine.succeed(f"journalctl _BOOT_ID={boot} -u togi-night-guard.service -o cat | grep -F 'returning to the day'")
-      machine.fail(f"journalctl _BOOT_ID={boot} -u togi.service -o cat --no-pager | grep -E 'Started togi tuning boot|Starting togi tuning boot'")
-
-      # A guard that fails returns to the day on its own: a tuner start that fails on its dependency never reaches the
-      # restart limit.
-      machine.succeed("echo y | togi night")
-      reaches_reboot()
       assert machine.succeed("readlink -f /run/current-system").strip() == tuning_system
+      night = {name: grubenv().get(name) for name in ("saved_entry", "togi_day_entry", "togi_night")}
+      assert night == {"saved_entry": "NixOS - togi", "togi_day_entry": day, "togi_night": "1"}, night
       machine.wait_until_succeeds("systemctl is-active togi.service")
-      machine.succeed("rm /etc/togi/night.json")
-      machine.fail("systemctl restart togi-night-guard.service")
-      reaches_reboot()
-      assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
-      assert grubenv().get("saved_entry") != "NixOS - togi", grubenv()
 
-      # The power button ends a night through the leave hook.
-      machine.succeed("echo y | togi night")
-      reaches_reboot()
-      assert machine.succeed("readlink -f /run/current-system").strip() == tuning_system
-      machine.wait_until_succeeds("systemctl is-active togi.service")
+      # The power button ends a night through the leave hook and selects the day's entry again exactly.
       machine.send_monitor_command("system_powerdown")
       machine.wait_for_shutdown()
       machine.start(allow_reboot=True)
@@ -718,6 +681,28 @@ in
       assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
       env = grubenv()
       assert env["saved_entry"] == day, env
+      assert "togi_night" not in env, env
+      assert env["togi_day_entry"] == day, env
+
+      # A tuning boot picked from the boot menu: GRUB's savedefault selects it as the menu does, and nothing began a
+      # night, so the day entry the last night remembered is not its day. Ending it boots the boot loader's default.
+      machine.succeed("grub-set-default 'NixOS - togi' && sync")
+      machine.reboot()
+      machine.wait_for_unit("multi-user.target")
+      assert machine.succeed("readlink -f /run/current-system").strip() == tuning_system
+      machine.wait_until_succeeds("systemctl is-active togi.service")
+      machine.send_monitor_command("system_powerdown")
+      machine.wait_for_shutdown()
+      machine.start(allow_reboot=True)
+      machine.wait_for_unit("multi-user.target")
+      assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
+      # Ending unset `saved_entry`, so GRUB booted its first entry, and its savedefault then saved that entry's title.
+      machine.succeed(
+          "journalctl -b -1 -u togi-leave-tuning-boot.service -o cat | grep -F 'boot entry restored to \"\", was \"NixOS - togi\"'"
+      )
+      env = grubenv()
+      assert env.get("saved_entry", day) == day, env
+      assert "togi_day_entry" not in env, env
       assert "togi_night" not in env, env
     '';
   };

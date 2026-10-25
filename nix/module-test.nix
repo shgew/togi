@@ -143,12 +143,10 @@ let
   stopHook = togiService.postStop;
   generatedConfig = one.environment.etc."togi/config.json";
   nightSetup = one.environment.etc."togi/night.json";
-  nightGuard = tuning.systemd.services.togi-night-guard;
   expectedNight = hostPkgs.writeText "togi-module-night.json" (
     builtins.toJSON {
       grubenv = "/boot/grub/grubenv";
       entry = "NixOS - togi";
-      morning = "07:00";
     }
   );
   expectedSettings = hostPkgs.writeText "togi-module-settings.json" (
@@ -275,27 +273,10 @@ assert lib.hasInfix "[ ! -e /run/togi-retry-tuning-boot ] || exit 0" leaveTuning
 assert lib.hasInfix
   (builtins.unsafeDiscardStringContext "${lib.getExe package} night-end || ${pkgs.grub2}/bin/grub-editenv /boot/grub/grubenv unset saved_entry")
   leaveTuningBoot.preStop;
-# The guard runs before the tuner in every tuning boot, and the tuner requires it.
-assert nightGuard.serviceConfig.ExecStart == "${lib.getExe package} night-guard";
-assert nightGuard.serviceConfig.Type == "oneshot";
-assert nightGuard.serviceConfig.RemainAfterExit;
-assert nightGuard.serviceConfig.TimeoutStartSec == "60s";
-assert nightGuard.onFailure == [ "togi-night-guard-failed.service" ];
-assert lib.hasInfix
-  (builtins.unsafeDiscardStringContext "${lib.getExe package} night-end || grub-editenv /boot/grub/grubenv unset saved_entry")
-  tuning.systemd.services.togi-night-guard-failed.script;
-assert lib.hasInfix "systemctl reboot" tuning.systemd.services.togi-night-guard-failed.script;
-assert builtins.elem "togi.service" nightGuard.before;
-assert nightGuard.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
-assert builtins.elem "togi-night-guard.service" togiService.requires;
-assert builtins.elem "togi-night-guard.service" togiService.after;
-assert !(one.systemd.services ? togi-night-guard);
-assert builtins.elem pkgs.grub2 nightGuard.path;
 assert builtins.elem pkgs.grub2 consoleWatch.path;
 assert builtins.elem pkgs.grub2 kmsconService.path;
 assert builtins.elem pkgs.grub2 one.environment.systemPackages;
 assert nightSetup.target == "togi/night.json";
-assert one.services.togi.tuning.night.morning == "07:00";
 assert builtins.elem "f /run/lock/togi.lock :0600 :root :root - -" one.systemd.tmpfiles.rules;
 assert builtins.elem "f /run/lock/togi.lock :0660 :root :togi-hardware - -"
   delegated.systemd.tmpfiles.rules;

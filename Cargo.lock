@@ -2179,7 +2179,6 @@ name = "togi-tuningboot"
 version = "0.0.0"
 dependencies = [
  "getrandom",
- "jiff",
  "proptest",
  "serde",
  "serde_json",

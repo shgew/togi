@@ -44,9 +44,6 @@ _togi() {
             togi,night-end)
                 cmd="togi__subcmd__night__subcmd__end"
                 ;;
-            togi,night-guard)
-                cmd="togi__subcmd__night__subcmd__guard"
-                ;;
             togi,reset)
                 cmd="togi__subcmd__reset"
                 ;;
@@ -110,9 +107,6 @@ _togi() {
             togi__subcmd__help,night-end)
                 cmd="togi__subcmd__help__subcmd__night__subcmd__end"
                 ;;
-            togi__subcmd__help,night-guard)
-                cmd="togi__subcmd__help__subcmd__night__subcmd__guard"
-                ;;
             togi__subcmd__help,reset)
                 cmd="togi__subcmd__help__subcmd__reset"
                 ;;
@@ -144,7 +138,7 @@ _togi() {
 
     case "${cmd}" in
         togi)
-            opts="-h -V --state-dir --help --version run day completion doctor events night night-end night-guard reset restart-limit emergency-stop status watch help"
+            opts="-h -V --state-dir --help --version run day completion doctor events night night-end reset restart-limit emergency-stop status watch help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -478,7 +472,7 @@ _togi() {
             return 0
             ;;
         togi__subcmd__help)
-            opts="run day completion doctor events night night-end night-guard reset restart-limit emergency-stop status watch help"
+            opts="run day completion doctor events night night-end reset restart-limit emergency-stop status watch help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -645,20 +639,6 @@ _togi() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        togi__subcmd__help__subcmd__night__subcmd__guard)
-            opts=""
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
         togi__subcmd__help__subcmd__reset)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -730,31 +710,6 @@ _togi() {
             return 0
             ;;
         togi__subcmd__night)
-            opts="-h --until --state-dir --help"
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                --until)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --state-dir)
-                    COMPREPLY=()
-                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
-                        compopt -o plusdirs
-                    fi
-                    return 0
-                    ;;
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        togi__subcmd__night__subcmd__end)
             opts="-h --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -775,7 +730,7 @@ _togi() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        togi__subcmd__night__subcmd__guard)
+        togi__subcmd__night__subcmd__end)
             opts="-h --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

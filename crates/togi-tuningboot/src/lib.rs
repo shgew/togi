@@ -1,5 +1,5 @@
 //! Bounded restart-limit retries and leave reasons kept in GRUB's environment block, and the night
-//! switch ([`night`]): the morning deadline and the boot loader selection.
+//! switch ([`night`]): the boot loader selection between night and day.
 //!
 //! The record types make an invalid leave reason unrepresentable, and `restart_limit` records an
 //! attempt before it grants either boot action, so a failure never grants a retry.
@@ -41,9 +41,12 @@ pub struct SavedEntry {
 }
 
 pub trait Bootloader: Environment {
-    /// Gives up the tuning selection, so the next boot is the day's: the entry a night remembered
-    /// (`night::DAY_ENTRY_VARIABLE`) selected again exactly, or none when the day had none. It also
-    /// forgets the night record. Reads the selection back and reports what it was before and is now.
+    /// Gives up the tuning selection, so the next boot is the day's. While a night begun with
+    /// `night::Selection::begin` lasts (`night::NIGHT_VARIABLE`), the entry it remembered
+    /// (`night::DAY_ENTRY_VARIABLE`) is selected again exactly, or none when the day had none, and
+    /// the night ends; the remembered entry stays, so a repeat after that changes nothing. Otherwise a
+    /// remembered entry belongs to an earlier night and is dropped with the selection, so the boot
+    /// loader's default boots. Reads the selection back and reports what it was before and is now.
     fn clear_saved_entry(&mut self) -> io::Result<SavedEntry>;
 }
 

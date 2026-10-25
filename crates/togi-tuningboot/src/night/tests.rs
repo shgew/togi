@@ -3,13 +3,11 @@ use std::collections::BTreeMap;
 use std::io;
 use std::rc::Rc;
 
-use jiff::Timestamp;
-use jiff::tz::TimeZone;
 use test_case::test_case;
 
 use super::{
-    DAY_ENTRY_VARIABLE, Entry, GrubSelection, Guard, Morning, NIGHT_VARIABLE, Night, NightError,
-    SAVED_ENTRY_VARIABLE, Selection, Setup, guard,
+    DAY_ENTRY_VARIABLE, Entry, GrubSelection, NIGHT_BEGUN, NIGHT_VARIABLE, NightError,
+    SAVED_ENTRY_VARIABLE, Selection, Setup,
 };
 use crate::{Bootloader, Environment, SavedEntry};
 
@@ -40,8 +38,9 @@ impl Environment for Memory {
     }
 }
 
-/// What the real GRUB implementation does, which `togi-hardware` tests against `grub-editenv`: the day's
-/// remembered entry is selected again, or `saved_entry` is unset, and the night record goes.
+/// What the real GRUB implementation does, which `togi-hardware` tests against `grub-editenv`: a
+/// begun night selects the day's remembered entry again and ends; a remembered entry already
+/// selected stays; otherwise `saved_entry` and any remembered entry are unset.
 impl Bootloader for Memory {
     fn clear_saved_entry(&mut self) -> io::Result<SavedEntry> {
         let mut values = self.0.borrow_mut();
@@ -53,23 +52,30 @@ impl Bootloader for Memory {
             .get(DAY_ENTRY_VARIABLE)
             .filter(|day| !day.is_empty())
             .cloned();
-        let after = if let Some(day) = day {
-            values.insert(SAVED_ENTRY_VARIABLE.to_owned(), day.clone());
-            day
-        } else {
-            values.remove(SAVED_ENTRY_VARIABLE);
-            String::new()
+        let begun = values.contains_key(NIGHT_VARIABLE);
+        let after = match (day, begun) {
+            (Some(day), true) => {
+                values.insert(SAVED_ENTRY_VARIABLE.to_owned(), day.clone());
+                values.remove(NIGHT_VARIABLE);
+                day
+            }
+            (Some(day), false) if day == before => day,
+            (Some(_) | None, _) => {
+                for name in [SAVED_ENTRY_VARIABLE, NIGHT_VARIABLE, DAY_ENTRY_VARIABLE] {
+                    values.remove(name);
+                }
+                String::new()
+            }
         };
-        values.remove(NIGHT_VARIABLE);
         Ok(SavedEntry { before, after })
     }
 }
 
 /// A GRUB that misbehaves the way `grub-editenv` can: it keeps ignoring writes of the selection, or
-/// cannot read the night record.
+/// cannot read the environment at all.
 enum Fault {
     IgnoresSelectionWrites,
-    NightUnreadable,
+    Unreadable,
 }
 
 struct Flaky(Memory, Fault);
@@ -77,10 +83,8 @@ struct Flaky(Memory, Fault);
 impl Environment for Flaky {
     fn get(&mut self, name: &str) -> io::Result<Option<String>> {
         match self.1 {
-            Fault::NightUnreadable if name == NIGHT_VARIABLE => {
-                Err(io::Error::other("grubenv unreadable"))
-            }
-            Fault::NightUnreadable | Fault::IgnoresSelectionWrites => self.0.get(name),
+            Fault::Unreadable => Err(io::Error::other("grubenv unreadable")),
+            Fault::IgnoresSelectionWrites => self.0.get(name),
         }
     }
 
@@ -94,7 +98,7 @@ impl Environment for Flaky {
                     .collect();
                 self.0.set(&kept)
             }
-            Fault::NightUnreadable => self.0.set(values),
+            Fault::Unreadable => self.0.set(values),
         }
     }
 
@@ -137,222 +141,107 @@ fn saved(values: &Values) -> Option<String> {
     values.borrow().get(SAVED_ENTRY_VARIABLE).cloned()
 }
 
+fn value(values: &Values, name: &str) -> Option<String> {
+    values.borrow().get(name).cloned()
+}
+
 fn tuning() -> Entry {
     Entry::try_from(TUNING.to_owned()).unwrap()
 }
 
-fn at(second: i64) -> Timestamp {
-    Timestamp::from_second(second).unwrap()
-}
-
-fn morning() -> Morning {
-    "07:00".parse().unwrap()
-}
-
-const MINUTE: i64 = 60;
-const HOUR: i64 = 3600;
-const START: i64 = 1_800_000_000;
-
-#[test_case(START + 8 * HOUR - 1, false; "a second before the morning")]
-#[test_case(START + 8 * HOUR, true; "at the morning")]
-#[test_case(START + 8 * HOUR + 1, true; "a second after the morning")]
-#[test_case(START + 30 * HOUR, true; "a day late")]
-fn the_morning_ends_a_night_at_its_deadline(now: i64, ended: bool) {
-    let night = Night::new(at(START + 8 * HOUR));
-    assert_eq!(night.ended(at(now)), ended);
-}
-
 #[test]
-fn the_deadline_survives_crash_reboots_and_ends_the_first_boot_after_it() {
-    let (mut grub, values) = selection(Some("NixOS - Configuration 7"));
-    grub.begin(&tuning(), &Night::new(at(START + 8 * HOUR)))
-        .unwrap();
-    for hours in [1, 2, 4, 7] {
-        let now = at(START + hours * HOUR);
-        let Guard::Tune(night) = guard(&mut grub, now, morning(), &TimeZone::UTC).unwrap() else {
-            panic!("{hours} h: the night ended early");
-        };
-        assert_eq!(night.until(), at(START + 8 * HOUR), "{hours} h");
-        assert_eq!(saved(&values).as_deref(), Some(TUNING), "{hours} h");
-    }
-    let late = at(START + 9 * HOUR);
+fn beginning_a_night_selects_the_tuning_entry_and_remembers_the_day_exactly() {
+    let (mut grub, values) = selection(Some(DAY));
+    grub.begin(&tuning()).unwrap();
+    assert_eq!(saved(&values).as_deref(), Some(TUNING));
+    assert_eq!(value(&values, DAY_ENTRY_VARIABLE).as_deref(), Some(DAY));
+    assert_eq!(value(&values, NIGHT_VARIABLE).as_deref(), Some(NIGHT_BEGUN));
     assert_eq!(
-        guard(&mut grub, late, morning(), &TimeZone::UTC).unwrap(),
-        Guard::Return(Night::new(at(START + 8 * HOUR)))
+        grub.end().unwrap(),
+        SavedEntry {
+            before: TUNING.to_owned(),
+            after: DAY.to_owned()
+        }
     );
-    assert_eq!(saved(&values).as_deref(), Some("NixOS - Configuration 7"));
-    assert_eq!(grub.night().unwrap(), None);
+    assert_eq!(saved(&values).as_deref(), Some(DAY));
+    assert_eq!(value(&values, NIGHT_VARIABLE), None);
 }
 
 #[test]
-fn a_boot_before_the_deadline_with_the_clock_set_back_keeps_the_night() {
-    let (mut grub, _) = selection(None);
-    grub.begin(&tuning(), &Night::new(at(START + 8 * HOUR)))
-        .unwrap();
-    let back = at(START - 400 * HOUR);
-    assert!(matches!(
-        guard(&mut grub, back, morning(), &TimeZone::UTC).unwrap(),
-        Guard::Tune(_)
-    ));
+fn a_day_without_a_saved_selection_returns_to_none_and_never_pins_a_generation() {
+    let (mut grub, values) = selection(None);
+    grub.begin(&tuning()).unwrap();
+    assert_eq!(saved(&values).as_deref(), Some(TUNING));
+    assert_eq!(value(&values, DAY_ENTRY_VARIABLE), None);
+    grub.end().unwrap();
+    assert_eq!(saved(&values), None);
+    assert_eq!(value(&values, NIGHT_VARIABLE), None);
 }
 
 #[test]
-fn any_number_of_boots_in_quick_succession_before_the_morning_keep_the_night() {
-    let (mut grub, values) = selection(Some("NixOS - Configuration 7"));
-    grub.begin(&tuning(), &Night::new(at(START + 100 * HOUR)))
-        .unwrap();
-    for boot in 0..60 {
-        let now = at(START + boot * MINUTE);
-        assert!(
-            matches!(
-                guard(&mut grub, now, morning(), &TimeZone::UTC).unwrap(),
-                Guard::Tune(_)
-            ),
-            "boot {boot}"
-        );
-        assert_eq!(saved(&values).as_deref(), Some(TUNING), "boot {boot}");
-    }
-}
-
-#[test]
-fn a_damaged_record_is_replaced_by_a_night_to_the_next_morning_keeping_the_day() {
-    let (mut grub, values) = selection(Some(TUNING));
+fn a_day_without_a_saved_selection_forgets_the_day_of_an_earlier_night() {
+    let (mut grub, values) = selection(None);
     values
         .borrow_mut()
         .insert(DAY_ENTRY_VARIABLE.to_owned(), DAY.to_owned());
-    values
-        .borrow_mut()
-        .insert(NIGHT_VARIABLE.to_owned(), "{\"until\":".to_owned());
-    let Guard::Tune(night) = guard(&mut grub, at(START), morning(), &TimeZone::UTC).unwrap() else {
-        panic!("a damaged record must not end the night");
-    };
-    assert!(night.until() > at(START));
-    assert!(grub.night().unwrap().is_some());
+    grub.begin(&tuning()).unwrap();
+    assert_eq!(value(&values, DAY_ENTRY_VARIABLE), None);
+    grub.end().unwrap();
+    assert_eq!(saved(&values), None);
+}
+
+#[test]
+fn returning_twice_selects_the_same_day_entry_again() {
+    let (mut grub, values) = selection(Some(DAY));
+    grub.begin(&tuning()).unwrap();
+    grub.end().unwrap();
+    assert_eq!(
+        grub.end().unwrap(),
+        SavedEntry {
+            before: DAY.to_owned(),
+            after: DAY.to_owned()
+        }
+    );
+    assert_eq!(saved(&values).as_deref(), Some(DAY));
+}
+
+#[test]
+fn beginning_again_in_the_night_keeps_the_day_the_first_beginning_remembered() {
+    let (mut grub, values) = selection(Some(DAY));
+    grub.begin(&tuning()).unwrap();
+    grub.begin(&tuning()).unwrap();
+    assert_eq!(value(&values, DAY_ENTRY_VARIABLE).as_deref(), Some(DAY));
     grub.end().unwrap();
     assert_eq!(saved(&values).as_deref(), Some(DAY));
 }
 
-#[test_case("07:00", 7, 0; "seven")]
-#[test_case("00:00", 0, 0; "midnight")]
-#[test_case("23:59", 23, 59; "last minute")]
-fn a_morning_reads_hours_and_minutes(text: &str, hour: i8, minute: i8) {
-    let morning: Morning = text.parse().unwrap();
-    assert_eq!(
-        (morning.time().hour(), morning.time().minute()),
-        (hour, minute)
-    );
-    assert_eq!(morning.to_string(), text);
-}
-
-#[test_case("7:00"; "one digit hour")]
-#[test_case("24:00"; "hour out of range")]
-#[test_case("07:60"; "minute out of range")]
-#[test_case("07"; "no minutes")]
-#[test_case("07:00:00"; "seconds")]
-#[test_case("+7:00"; "sign")]
-#[test_case(""; "empty")]
-fn a_morning_refuses_other_text(text: &str) {
-    assert!(text.parse::<Morning>().is_err(), "{text:?}");
-}
-
-#[test_case("2026-10-24T23:00:00Z", "2026-10-25T07:00:00Z"; "the evening before")]
-#[test_case("2026-10-25T06:59:59Z", "2026-10-25T07:00:00Z"; "just before")]
-#[test_case("2026-10-25T07:00:00Z", "2026-10-26T07:00:00Z"; "exactly at it asks for the next")]
-fn the_next_morning_is_after_now(now: &str, expected: &str) {
-    let found = morning()
-        .next_after(now.parse().unwrap(), &TimeZone::UTC)
-        .unwrap();
-    assert_eq!(found, expected.parse::<Timestamp>().unwrap());
-}
-
 #[test]
-fn the_next_morning_follows_the_zone() {
-    let zone = TimeZone::fixed(jiff::tz::offset(2));
-    let found = morning()
-        .next_after("2026-10-24T23:00:00Z".parse().unwrap(), &zone)
-        .unwrap();
-    assert_eq!(found, "2026-10-25T05:00:00Z".parse::<Timestamp>().unwrap());
-}
-
-#[test]
-fn reading_a_damaged_record_refuses_it_with_its_text() {
+fn a_tuning_boot_entered_from_the_menu_is_adopted_as_a_night() {
+    // GRUB's savedefault selects the entry picked in the menu; crash reboots then boot it again.
     let (mut grub, values) = selection(Some(TUNING));
-    values
-        .borrow_mut()
-        .insert(NIGHT_VARIABLE.to_owned(), "{\"until\":".to_owned());
-    let error = grub.night().unwrap_err();
-    assert!(
-        matches!(&error, NightError::Invalid { record, .. } if record == "{\"until\":"),
-        "{error:?}"
-    );
     assert_eq!(saved(&values).as_deref(), Some(TUNING));
+    assert_eq!(grub.end().unwrap().after, "");
+    assert_eq!(saved(&values), None);
 }
 
 #[test]
-fn a_record_with_the_boot_list_of_an_earlier_design_is_refused() {
-    let (mut grub, values) = selection(Some(TUNING));
-    values.borrow_mut().insert(
-        NIGHT_VARIABLE.to_owned(),
-        r#"{"until":1,"boots":[]}"#.to_owned(),
-    );
-    assert!(matches!(grub.night(), Err(NightError::Invalid { .. })));
-}
-
-#[test]
-fn the_setup_names_the_environment_the_entry_and_the_morning() {
-    let setup: Setup =
-        r#"{"grubenv":"/boot/grub/grubenv","entry":"NixOS - togi","morning":"06:30"}"#
-            .parse()
-            .unwrap();
-    assert_eq!(setup.grubenv.to_str(), Some("/boot/grub/grubenv"));
-    assert_eq!(setup.entry.as_str(), TUNING);
-    assert_eq!(setup.morning.to_string(), "06:30");
-}
-
-#[test_case(r#"{"grubenv":"/g","entry":"","morning":"06:30"}"#; "empty entry")]
-#[test_case(r#"{"grubenv":"/g","entry":"a","morning":"6:30"}"#; "bad morning")]
-#[test_case(r#"{"grubenv":"/g","entry":"a","morning":"06:30","extra":1}"#; "unknown field")]
-#[test_case(r#"{"entry":"a","morning":"06:30"}"#; "missing grubenv")]
-fn a_malformed_setup_is_refused(text: &str) {
-    assert!(text.parse::<Setup>().is_err(), "{text}");
-}
-
-#[test_case("2026-10-25T00:45:00Z", "2026-10-25T01:30:00Z"; "the second reading of a repeated time")]
-#[test_case("2026-10-25T00:15:00Z", "2026-10-25T00:30:00Z"; "the first reading of a repeated time")]
-#[test_case("2026-10-25T01:30:00Z", "2026-10-26T01:30:00Z"; "after both readings")]
-#[test_case("2026-03-29T00:30:00Z", "2026-03-29T01:30:00Z"; "a time the clock skips")]
-fn a_morning_counts_both_readings_of_a_repeated_time_and_resolves_a_skipped_one(
-    now: &str,
-    expected: &str,
-) {
-    // Central European time: clocks go back at 03:00 on 2026-10-25 and forward at 02:00 on 2026-03-29.
-    let zone = TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").unwrap();
-    let morning: Morning = "02:30".parse().unwrap();
-    let found = morning.next_after(now.parse().unwrap(), &zone).unwrap();
-    assert_eq!(found, expected.parse::<Timestamp>().unwrap());
-}
-
-#[test]
-fn a_record_written_as_an_array_is_refused() {
-    let (mut grub, values) = selection(Some(TUNING));
+fn a_stale_day_entry_is_dropped_when_a_menu_entered_night_ends() {
+    let (mut grub, values) = selection(Some(DAY));
+    grub.begin(&tuning()).unwrap();
+    grub.end().unwrap();
+    // A later tuning boot picked from the menu: savedefault selects it, and nothing begins a night.
     values
         .borrow_mut()
-        .insert(NIGHT_VARIABLE.to_owned(), "[1800000000,[]]".to_owned());
-    assert!(matches!(grub.night(), Err(NightError::Invalid { .. })));
-}
-
-#[test]
-fn a_setup_written_as_an_array_is_refused() {
-    let text = r#"["/boot/grub/grubenv","NixOS - togi","06:30"]"#;
-    assert!(text.parse::<Setup>().is_err());
+        .insert(SAVED_ENTRY_VARIABLE.to_owned(), TUNING.to_owned());
+    grub.end().unwrap();
+    assert_eq!(saved(&values), None);
+    assert_eq!(value(&values, DAY_ENTRY_VARIABLE), None);
 }
 
 #[test]
 fn beginning_refuses_when_the_selection_does_not_read_back_as_the_tuning_entry() {
     let (mut grub, values) = flaky(Some(DAY), Fault::IgnoresSelectionWrites);
-    let error = grub
-        .begin(&tuning(), &Night::new(at(START + 8 * HOUR)))
-        .unwrap_err();
+    let error = grub.begin(&tuning()).unwrap_err();
     assert!(
         matches!(&error, NightError::NotSelected { expected, found }
             if expected == TUNING && found.as_deref() == Some(DAY)),
@@ -362,14 +251,30 @@ fn beginning_refuses_when_the_selection_does_not_read_back_as_the_tuning_entry()
 }
 
 #[test]
-fn a_guard_that_cannot_read_the_record_fails_and_changes_nothing() {
-    let (mut grub, values) = flaky(Some(TUNING), Fault::NightUnreadable);
-    values.borrow_mut().insert(
-        NIGHT_VARIABLE.to_owned(),
-        Night::new(at(START + 8 * HOUR)).encode(),
-    );
+fn beginning_on_an_unreadable_environment_fails_and_changes_nothing() {
+    let (mut grub, values) = flaky(Some(DAY), Fault::Unreadable);
     let before = values.borrow().clone();
-    let outcome = guard(&mut grub, at(START), morning(), &TimeZone::UTC);
-    assert!(matches!(outcome, Err(NightError::Read(_))), "{outcome:?}");
+    assert!(matches!(
+        grub.begin(&tuning()),
+        Err(NightError::ReadSelection(_))
+    ));
     assert_eq!(*values.borrow(), before);
+}
+
+#[test]
+fn the_setup_names_the_environment_and_the_entry() {
+    let setup: Setup = r#"{"grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#
+        .parse()
+        .unwrap();
+    assert_eq!(setup.grubenv.to_str(), Some("/boot/grub/grubenv"));
+    assert_eq!(setup.entry.as_str(), TUNING);
+}
+
+#[test_case(r#"{"grubenv":"/g","entry":""}"#; "empty entry")]
+#[test_case(r#"{"grubenv":"/g","entry":"a","extra":1}"#; "unknown field")]
+#[test_case(r#"{"grubenv":"/g","entry":"a","morning":"06:30"}"#; "morning time of an earlier design")]
+#[test_case(r#"{"entry":"a"}"#; "missing grubenv")]
+#[test_case(r#"["/boot/grub/grubenv","NixOS - togi"]"#; "array of the fields")]
+fn a_malformed_setup_is_refused(text: &str) {
+    assert!(text.parse::<Setup>().is_err(), "{text}");
 }

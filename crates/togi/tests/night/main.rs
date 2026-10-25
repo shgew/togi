@@ -1,5 +1,5 @@
-//! `togi night`, `togi night-guard`, `togi night-end` and the dashboard's F10, on an in-memory GRUB
-//! environment, clock and filesystem.
+//! `togi night`, `togi night-end` and the dashboard's F10, on an in-memory GRUB environment and
+//! filesystem.
 
 #![expect(
     clippy::unwrap_used,
@@ -32,18 +32,19 @@ use togi_hostlock::{HostLock, Policy};
 use togi_journal::fs::Fs;
 use togi_machine::{BiosContext, BootId, Machine};
 use togi_render::OutputFacts;
-use togi_tuningboot::night::{DAY_ENTRY_VARIABLE, NIGHT_VARIABLE, SETUP_PATH};
+use togi_tuningboot::night::{DAY_ENTRY_VARIABLE, NIGHT_BEGUN, NIGHT_VARIABLE, SETUP_PATH};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 use togi_watch::screen::Direction;
 
-const SETUP: &str = r#"{"grubenv":"/boot/grub/grubenv","entry":"NixOS - togi","morning":"07:00"}"#;
+const SETUP: &str = r#"{"grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#;
 const DAY: &str = "NixOS - Configuration 7";
 const TUNING: &str = "NixOS - togi";
 const START: &str = "2026-01-01T00:00:00Z";
 
 type Values = Rc<RefCell<BTreeMap<String, String>>>;
 
-/// GRUB's environment block in memory, restoring the day's entry as the real one does.
+/// GRUB's environment block in memory, restoring the day's entry as the real one does, which
+/// `togi-hardware` tests against `grub-editenv`.
 struct Grub(Values);
 
 impl Environment for Grub {
@@ -72,14 +73,22 @@ impl Bootloader for Grub {
     fn clear_saved_entry(&mut self) -> io::Result<SavedEntry> {
         let mut values = self.0.borrow_mut();
         let before = values.get("saved_entry").cloned().unwrap_or_default();
-        let after = if let Some(day) = values.get(DAY_ENTRY_VARIABLE).cloned() {
-            values.insert("saved_entry".to_owned(), day.clone());
-            day
-        } else {
-            values.remove("saved_entry");
-            String::new()
+        let day = values.get(DAY_ENTRY_VARIABLE).cloned();
+        let begun = values.contains_key(NIGHT_VARIABLE);
+        let after = match (day, begun) {
+            (Some(day), true) => {
+                values.insert("saved_entry".to_owned(), day.clone());
+                values.remove(NIGHT_VARIABLE);
+                day
+            }
+            (Some(day), false) if day == before => day,
+            (Some(_) | None, _) => {
+                for name in ["saved_entry", NIGHT_VARIABLE, DAY_ENTRY_VARIABLE] {
+                    values.remove(name);
+                }
+                String::new()
+            }
         };
-        values.remove(NIGHT_VARIABLE);
         Ok(SavedEntry { before, after })
     }
 }
@@ -115,10 +124,6 @@ impl Night {
             stop_fails: Cell::new(false),
             root: Cell::new(true),
         }
-    }
-
-    fn at(&self, time: &str) {
-        self.now.set(time.parse().unwrap());
     }
 
     fn answer(&self, line: Option<&str>) {
@@ -169,13 +174,6 @@ impl Night {
                 err: String::from_utf8(err).unwrap(),
             },
         )
-    }
-
-    /// The night record's deadline as written by the command.
-    fn until(&self) -> Timestamp {
-        let record: serde_json::Value =
-            serde_json::from_str(&self.value(NIGHT_VARIABLE).unwrap()).unwrap();
-        Timestamp::from_second(record["until"].as_i64().unwrap()).unwrap()
     }
 }
 
@@ -324,7 +322,7 @@ fn confirming_selects_the_tuning_entry_remembers_the_day_and_reboots() {
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert_eq!(night.value("saved_entry").as_deref(), Some(TUNING));
     assert_eq!(night.value(DAY_ENTRY_VARIABLE).as_deref(), Some(DAY));
-    assert_eq!(night.until(), "2026-01-01T07:00:00Z".parse().unwrap());
+    assert_eq!(night.value(NIGHT_VARIABLE).as_deref(), Some(NIGHT_BEGUN));
     assert_eq!(night.reboots(), 1);
     assert!(ran.out.contains("no tuning session yet"), "{}", ran.out);
     assert!(
@@ -333,7 +331,7 @@ fn confirming_selects_the_tuning_entry_remembers_the_day_and_reboots() {
         ran.out
     );
     assert!(ran.out.contains("Good night."), "{}", ran.out);
-    assert!(ran.out.contains("2026-01-01 07:00"), "{}", ran.out);
+    assert!(ran.out.contains("runs until you end it"), "{}", ran.out);
     let steps = night.steps();
     let ask = steps.iter().position(|step| step == "ask").unwrap();
     let reboot = steps.iter().position(|step| step == "reboot").unwrap();
@@ -357,22 +355,10 @@ fn declining_changes_nothing(answer: Option<&str>) {
     assert!(!ran.out.contains("Good night."), "{}", ran.out);
 }
 
-#[test_case::test_case("00:00", "06:30", "2026-01-01T06:30:00Z"; "later tonight")]
-#[test_case::test_case("06:45", "06:30", "2026-01-02T06:30:00Z"; "already past today")]
-#[test_case::test_case("06:30", "06:30", "2026-01-02T06:30:00Z"; "exactly now")]
-fn until_overrides_the_morning(now: &str, until: &str, ends: &str) {
-    let night = Night::new();
-    night.at(&format!("2026-01-01T{now}:00Z"));
-    night.answer(Some("y\n"));
-    let ran = night.togi(&["night", "--until", until]);
-    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
-    assert_eq!(night.until(), ends.parse().unwrap());
-}
-
 #[test]
-fn a_bad_until_is_a_usage_error_that_changes_nothing() {
+fn the_night_has_no_end_time_to_give() {
     let night = Night::new();
-    let ran = night.togi(&["night", "--until", "25:00"]);
+    let ran = night.togi(&["night", "--until", "06:30"]);
     assert_eq!(ran.exit, Exit::Usage);
     assert!(night.grub.borrow().is_empty());
     assert_eq!(night.reboots(), 0);
@@ -409,83 +395,17 @@ fn a_failed_reboot_gives_the_day_back() {
     assert_eq!(night.value(NIGHT_VARIABLE), None);
 }
 
-fn night_begun_until(night: &Night, until: &str) {
+fn night_begun(night: &Night) {
     night.day_is(DAY);
     night.answer(Some("y\n"));
-    let ran = night.togi(&["night", "--until", until]);
+    let ran = night.togi(&["night"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
-}
-
-#[test]
-fn the_guard_lets_the_night_go_on_before_the_deadline_and_ends_it_after() {
-    let night = Night::new();
-    night_begun_until(&night, "06:00");
-    let reboots = night.reboots();
-    night.at("2026-01-01T05:59:59Z");
-    let ran = night.togi(&["night-guard"]);
-    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
-    assert_eq!(night.reboots(), reboots);
-    assert_eq!(night.value("saved_entry").as_deref(), Some(TUNING));
-
-    night.at("2026-01-01T06:00:00Z");
-    let ran = night.togi(&["night-guard"]);
-    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
-    assert_eq!(night.reboots(), reboots + 1);
-    assert_eq!(night.value("saved_entry").as_deref(), Some(DAY));
-    assert_eq!(night.value(NIGHT_VARIABLE), None);
-    assert!(ran.err.contains("returning to the day"), "{}", ran.err);
-}
-
-#[test]
-fn the_deadline_survives_crash_reboots_spread_over_the_night() {
-    let night = Night::new();
-    night_begun_until(&night, "06:00");
-    let reboots = night.reboots();
-    for hour in 1..6 {
-        night.at(&format!("2026-01-01T0{hour}:00:00Z"));
-        assert_eq!(night.togi(&["night-guard"]).exit, Exit::Ok);
-    }
-    assert_eq!(night.reboots(), reboots);
-    assert_eq!(night.until(), "2026-01-01T06:00:00Z".parse().unwrap());
-    night.at("2026-01-01T06:05:00Z");
-    night.togi(&["night-guard"]);
-    assert_eq!(night.reboots(), reboots + 1);
-    assert_eq!(night.value("saved_entry").as_deref(), Some(DAY));
-}
-
-#[test]
-fn many_boots_in_quick_succession_before_the_morning_keep_the_night() {
-    let night = Night::new();
-    night_begun_until(&night, "06:00");
-    let reboots = night.reboots();
-    for minute in 0..40 {
-        night.at(&format!("2026-01-01T01:{:02}:00Z", minute + 10));
-        assert_eq!(night.togi(&["night-guard"]).exit, Exit::Ok);
-    }
-    assert_eq!(night.reboots(), reboots);
-    assert_eq!(night.value("saved_entry").as_deref(), Some(TUNING));
-}
-
-#[test]
-fn a_tuning_boot_from_the_menu_gets_the_next_morning_as_its_deadline() {
-    let night = Night::new();
-    night.at("2026-01-01T23:00:00Z");
-    let ran = night.togi(&["night-guard"]);
-    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
-    assert_eq!(night.until(), "2026-01-02T07:00:00Z".parse().unwrap());
-    assert_eq!(night.reboots(), 0);
-}
-
-#[test]
-fn a_guard_that_cannot_read_its_setup_fails_so_the_tuner_does_not_start() {
-    let night = Night::bare();
-    assert_eq!(night.togi(&["night-guard"]).exit, Exit::Error);
 }
 
 #[test]
 fn night_end_restores_the_day_exactly_and_repeating_it_changes_nothing() {
     let night = Night::new();
-    night_begun_until(&night, "06:00");
+    night_begun(&night);
     for _ in 0..2 {
         let ran = night.togi(&["night-end"]);
         assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
@@ -496,9 +416,22 @@ fn night_end_restores_the_day_exactly_and_repeating_it_changes_nothing() {
 }
 
 #[test]
+fn night_end_after_a_menu_picked_tuning_boot_returns_to_the_boot_loaders_default() {
+    let night = Night::new();
+    night_begun(&night);
+    assert_eq!(night.togi(&["night-end"]).exit, Exit::Ok);
+    // A later tuning boot picked from the menu: GRUB's savedefault selects it, nothing begins a night.
+    night.day_is(TUNING);
+    let ran = night.togi(&["night-end"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert_eq!(night.value("saved_entry"), None);
+    assert_eq!(night.value(DAY_ENTRY_VARIABLE), None);
+}
+
+#[test]
 fn leaving_from_the_dashboard_stops_the_run_then_restores_then_reboots() {
     let night = Night::new();
-    night_begun_until(&night, "06:00");
+    night_begun(&night);
     let before = night.steps().len();
     let (exit, _) = night.with_context(togi_cli::night_end::leave);
     assert_eq!(exit, Exit::Ok);
@@ -511,7 +444,7 @@ fn leaving_from_the_dashboard_stops_the_run_then_restores_then_reboots() {
 #[test]
 fn a_run_that_will_not_stop_leaves_the_night_as_it_was() {
     let night = Night::new();
-    night_begun_until(&night, "06:00");
+    night_begun(&night);
     let before = night.grub.borrow().clone();
     let reboots = night.reboots();
     night.stop_fails.set(true);
@@ -566,7 +499,7 @@ fn a_good_night_message_that_cannot_be_written_gives_the_tuning_selection_back()
     let night = Night::new();
     night.day_is(DAY);
     let (exit, _) = night.with_output(BreaksAtGoodnight, |ctx| {
-        togi_cli::night::begin(ctx, None, togi_cli::night::Confirmation::Given)
+        togi_cli::night::begin(ctx, togi_cli::night::Confirmation::Given)
     });
     assert_eq!(exit, Exit::Error);
     assert_eq!(night.reboots(), 0);

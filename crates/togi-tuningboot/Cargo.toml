@@ -8,7 +8,6 @@ description = "Bounded restart-limit retries and leave reasons kept in GRUB's en
 
 [dependencies]
 getrandom.workspace = true
-jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
