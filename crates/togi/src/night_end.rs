@@ -34,10 +34,11 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
         Ok(setup) => setup,
         Err(message) => return fail(ctx, COMMAND, message),
     };
-    restore(
-        ctx,
-        &mut BootSelection::new(ctx.system.bootloader(&setup.grubenv)),
-    )
+    let bootloader = match ctx.system.bootloader(setup.boot_path()) {
+        Ok(bootloader) => bootloader,
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
+    };
+    restore(ctx, &mut BootSelection::new(bootloader))
 }
 
 fn restore(ctx: &mut Context<'_>, selection: &mut BootSelection) -> Exit {
@@ -77,7 +78,11 @@ pub fn leave(ctx: &mut Context<'_>) -> Exit {
             format!("stop the run: {}", togi_render::error_chain(&error)),
         );
     }
-    let mut selection = BootSelection::new(ctx.system.bootloader(&setup.grubenv));
+    let bootloader = match ctx.system.bootloader(setup.boot_path()) {
+        Ok(bootloader) => bootloader,
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
+    };
+    let mut selection = BootSelection::new(bootloader);
     let exit = restore(ctx, &mut selection);
     if exit != Exit::Ok {
         return exit;

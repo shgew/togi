@@ -21,19 +21,19 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 
 /// Recover after the tuning service reaches its restart limit
 ///
-/// Persist the count and leave reason in the GRUB environment before requesting a reboot. The
-/// first two consecutive restart-limit hits reboot back into the tuning boot; the third clears and
-/// verifies `saved_entry` so the reboot selects the normal system. The first durable journal append
-/// by run resets this count.
+/// Persist the count and leave reason in the boot loader's state before requesting a reboot. The
+/// first two consecutive restart-limit hits reboot back into the tuning boot; the third restores
+/// and verifies the day's selection so the reboot selects the normal system. The first durable
+/// journal append by run resets this count.
 ///
-/// A retry creates /run/togi-retry-tuning-boot after the GRUB write succeeds, so the shutdown
+/// A retry creates /run/togi-retry-tuning-boot after the boot-loader write succeeds, so the shutdown
 /// service keeps the tuning entry selected. A failed reboot removes the marker. Errors exit
 /// unsuccessfully so the service can fall back to a normal boot. This command does not open the
 /// journal or access the CPU hardware.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
-    /// GRUB environment file for retry state and the saved tuning entry
+    /// GRUB environment or /etc/togi/night.json for retry state and boot selection
     #[arg(
         long,
         required = true,
@@ -47,10 +47,13 @@ pub struct Args {
 const COMMAND: &str = "restart-limit";
 const ATTEMPTS: u8 = 3;
 
-/// Records the hit in GRUB, sets or clears the retry marker and requests the reboot.
+/// Records the hit, sets or clears the retry marker and requests the reboot.
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let system = ctx.system;
-    let mut bootloader = system.bootloader(&args.tuning_boot);
+    let mut bootloader = match system.bootloader(&args.tuning_boot) {
+        Ok(bootloader) => bootloader,
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
+    };
     let limit = match restart_limit(&mut *bootloader) {
         Ok(limit) => limit,
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),

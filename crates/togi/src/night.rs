@@ -130,8 +130,12 @@ pub fn begin(ctx: &mut Context<'_>, confirmation: Confirmation) -> Exit {
             Err(exit) => return exit,
         }
     }
-    let mut selection = BootSelection::new(ctx.system.bootloader(&setup.grubenv));
-    if let Err(error) = selection.begin(&setup.entry) {
+    let bootloader = match ctx.system.bootloader(setup.boot_path()) {
+        Ok(bootloader) => bootloader,
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
+    };
+    let mut selection = BootSelection::new(bootloader);
+    if let Err(error) = selection.begin(setup.entry()) {
         return fail(ctx, COMMAND, togi_render::error_chain(&error));
     }
     let goodnight = "Good night. Rebooting into the tuning boot; F10 on its dashboard or the power button brings back the day.";

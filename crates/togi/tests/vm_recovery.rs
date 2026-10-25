@@ -534,7 +534,7 @@ mod vm_recovery {
             self.0.diagnose(config, recorded, lock)
         }
 
-        fn bootloader(&self, grubenv: &Path) -> Box<dyn Bootloader> {
+        fn bootloader(&self, grubenv: &Path) -> io::Result<Box<dyn Bootloader>> {
             self.0.bootloader(grubenv)
         }
 

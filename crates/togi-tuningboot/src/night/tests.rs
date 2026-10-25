@@ -6,7 +6,7 @@ use std::rc::Rc;
 use test_case::test_case;
 
 use super::{
-    DAY_ENTRY_VARIABLE, Entry, BootSelection, NIGHT_BEGUN, NIGHT_VARIABLE, NightError,
+    BootSelection, DAY_ENTRY_VARIABLE, Entry, NIGHT_BEGUN, NIGHT_VARIABLE, NightError,
     SAVED_ENTRY_VARIABLE, Selection, Setup,
 };
 use crate::{Bootloader, Environment, SavedEntry};
@@ -263,17 +263,29 @@ fn beginning_on_an_unreadable_environment_fails_and_changes_nothing() {
 
 #[test]
 fn the_setup_names_the_environment_and_the_entry() {
-    let setup: Setup = r#"{"grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#
+    let setup: Setup = r#"{"loader":"grub","grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#
         .parse()
         .unwrap();
-    assert_eq!(setup.grubenv.to_str(), Some("/boot/grub/grubenv"));
-    assert_eq!(setup.entry.as_str(), TUNING);
+    assert_eq!(setup.boot_path().to_str(), Some("/boot/grub/grubenv"));
+    assert_eq!(setup.entry().as_str(), TUNING);
 }
 
-#[test_case(r#"{"grubenv":"/g","entry":""}"#; "empty entry")]
-#[test_case(r#"{"grubenv":"/g","entry":"a","extra":1}"#; "unknown field")]
-#[test_case(r#"{"grubenv":"/g","entry":"a","morning":"06:30"}"#; "morning time of an earlier design")]
-#[test_case(r#"{"entry":"a"}"#; "missing grubenv")]
+#[test]
+fn the_systemd_setup_names_the_esp_state_and_specialisation() {
+    let setup: Setup = r#"{"loader":"systemd-boot","esp":"/boot","boot":"/boot","state":"/var/lib/togi-boot","specialisation":"togi"}"#
+        .parse()
+        .unwrap();
+    assert_eq!(setup.boot_path(), std::path::Path::new(super::SETUP_PATH));
+    assert_eq!(setup.entry().as_str(), "togi");
+    assert!(matches!(setup, Setup::SystemdBoot { esp, state, .. }
+        if esp == std::path::Path::new("/boot") && state == std::path::Path::new("/var/lib/togi-boot")));
+}
+
+#[test_case(r#"{"loader":"grub","grubenv":"/g","entry":""}"#; "empty entry")]
+#[test_case(r#"{"loader":"grub","grubenv":"/g","entry":"a","extra":1}"#; "unknown field")]
+#[test_case(r#"{"loader":"grub","grubenv":"/g","entry":"a","morning":"06:30"}"#; "morning time of an earlier design")]
+#[test_case(r#"{"loader":"grub","entry":"a"}"#; "missing grubenv")]
+#[test_case(r#"{"loader":"unsupported","entry":"a"}"#; "unknown loader")]
 #[test_case(r#"["/boot/grub/grubenv","NixOS - togi"]"#; "array of the fields")]
 fn a_malformed_setup_is_refused(text: &str) {
     assert!(text.parse::<Setup>().is_err(), "{text}");

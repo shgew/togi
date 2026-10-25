@@ -1,5 +1,5 @@
-//! Bounded restart-limit retries and leave reasons kept in GRUB's environment block, and the night
-//! switch ([`night`]): the boot loader selection between night and day.
+//! Bounded restart-limit retries and durable leave reasons, and the night switch ([`night`]):
+//! the boot loader selection between night and day.
 //!
 //! The record types make an invalid leave reason unrepresentable, and `restart_limit` records an
 //! attempt before it grants either boot action, so a failure never grants a retry.
@@ -26,7 +26,7 @@ const MAX_COUNT: u8 = 3;
 const HEX: &[u8; 16] = b"0123456789abcdef";
 const RECORD_OVERHEAD: usize = r#"{"id":"","count":0,"reason":""}"#.len();
 
-/// GRUB's environment block. `set` writes all pairs in one operation.
+/// Durable boot-loader state. `set` writes all pairs in one operation.
 pub trait Environment {
     /// `None` means the variable is unset.
     fn get(&mut self, name: &str) -> io::Result<Option<String>>;
@@ -94,7 +94,7 @@ pub enum Error {
     InvalidCount(String),
     #[error("write restart count and leave reason")]
     WriteCountAndReason(#[source] io::Error),
-    #[error("clear GRUB saved entry")]
+    #[error("restore boot selection")]
     ClearSavedEntry(#[source] io::Error),
     #[error("read leave reason")]
     ReadReason(#[source] io::Error),

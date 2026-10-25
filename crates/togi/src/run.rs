@@ -93,8 +93,8 @@ pub struct Args {
     #[arg(long)]
     pub first_result: bool,
 
-    /// Run as the tuning boot service: persist a leave reason before clearing the saved boot entry in this GRUB
-    /// environment file, and reboot after a boot loop
+    /// Run as the tuning boot service: persist a leave reason before restoring the day's boot
+    /// selection, using a GRUB environment or /etc/togi/night.json, and reboot after a boot loop
     #[arg(long, value_name = "file", value_hint = ValueHint::FilePath)]
     pub tuning_boot: Option<PathBuf>,
 
@@ -115,10 +115,17 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     }
     let renderer = Renderer::new(ctx.system.stderr_facts());
     let build = current_build();
-    let mut bootloader = args
+    let mut bootloader = match args
         .tuning_boot
         .as_deref()
-        .map(|grubenv| ctx.system.bootloader(grubenv));
+        .map(|selection| ctx.system.bootloader(selection))
+        .transpose()
+    {
+        Ok(bootloader) => bootloader,
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+        }
+    };
 
     // What a run can decide from reading alone comes first, before any lock: a journal this build may not
     // append to, and the configuration. Neither writes anything, so neither needs the host lock, except the
@@ -425,7 +432,7 @@ fn refuse(
     if let Err(error) = reason {
         let _ = writeln!(
             ctx.err,
-            "togi: persist GRUB leave reason: {}",
+            "togi: persist boot leave reason: {}",
             escape_text(&togi_render::error_chain(&error))
         );
     }
@@ -440,7 +447,7 @@ fn refuse(
         Err(error) => {
             let _ = writeln!(
                 ctx.err,
-                "togi: clear GRUB saved entry: {}; no reboot requested",
+                "togi: restore boot selection: {}; no reboot requested",
                 escape_text(&togi_render::error_chain(&error))
             );
         }

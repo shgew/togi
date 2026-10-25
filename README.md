@@ -25,11 +25,11 @@ Works today, on a simulated 16-core machine:
 - console-compatible dashboard rendering and a [rich truecolour profile](docs/spec/runtime.md#dashboard) using the same colours with Unicode gauges and text.
 - read-only normal-boot observation with `togi day`: checkpointed hours per offset profile, clean/unclean ends with the evidence around them, and a question per unclean end that you answer without root, without changing tuning decisions or applying offsets.
 
-Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
+Built for real hardware, a Granite Ridge desktop running NixOS, and tested piece by piece on one with GRUB:
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
 - mprime and y-cruncher trials, each confined to its cores in a systemd scope;
 - machine-check detection from the kernel log;
-- the NixOS module and the unattended tuning boot, with two service restart-limit retry boots before returning to the normal system and durable leave reasons; a stubbed NixOS VM check covers the normal-boot fallback.
+- the NixOS module and unattended tuning boot support GRUB and systemd-boot, with two service restart-limit retry boots before returning to the normal system and durable leave reasons; VM checks cover switching between day and night without tuning hardware.
 
 Not yet:
 - a full tuning session on real hardware, from search through a clean cycle.
@@ -42,6 +42,7 @@ Not yet:
 togi --version                         # version and git revision of this build
 sudo togi doctor                       # check this machine is ready for a run, without starting a session or writing the journal
 sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
+sudo togi night                        # GRUB or systemd-boot: confirm, remember the day's selection and reboot into tuning
 sudo togi day                          # observe daily use after a session exists; stop before run/reset
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
 sudo togi day record                   # journal a crash togi did not observe, with the offsets it ran; stop the day service first
@@ -59,6 +60,8 @@ source <(togi completion bash)         # shell completions; the Nix package inst
 The dashboard adapts to wide and compact terminals. It shows checking's cycle checklist, hunt parts and member probes, or search turns beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. [Commands](docs/spec/runtime.md#commands) describes when the screen redraws.
 
 `status` adds a Day section after observations exist: observed boots, checkpointed hours per read-back offset profile, clean and unclean ends, and the latest unclean boot's reset reason. Each unclean end becomes a question that `status` and `watch` show, with what togi saw, until you answer it with `togi day answer <boot> <frozen|graphics|power-off|unsure>`; no root shell is needed, and the answer changes no profile or tuning decision. `togi day notify` raises a desktop notification through the installed `notify-send`, with answer buttons on KDE Plasma. Daily observation is read-only. See [day observation](docs/howto.md#daily-observation) for service setup and [answering](docs/howto.md#answering-what-happened).
+
+The NixOS tuning specialisation supports exactly one of GRUB or systemd-boot. `sudo togi night` selects it persistently, so crash reboots stay in the night; F10 on its dashboard or the power button restores the previous boot selection. See [Night and day](docs/spec/runtime.md#night-and-day) for saved defaults and menu-started nights.
 
 [docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `togi --help` lists every command, and `togi <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
 

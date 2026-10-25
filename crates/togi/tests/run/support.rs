@@ -442,8 +442,8 @@ impl System for Fake {
         self.sim.now()
     }
 
-    fn bootloader(&self, _: &Path) -> Box<dyn Bootloader> {
-        Box::new(self.grub.clone())
+    fn bootloader(&self, _: &Path) -> io::Result<Box<dyn Bootloader>> {
+        Ok(Box::new(self.grub.clone()))
     }
 
     fn reboot(&self) -> Result<(), RebootError> {

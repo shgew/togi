@@ -394,7 +394,7 @@ impl System for Host {
         self.diagnosis.borrow_mut().take().unwrap()
     }
 
-    fn bootloader(&self, grubenv: &Path) -> Box<dyn Bootloader> {
+    fn bootloader(&self, grubenv: &Path) -> io::Result<Box<dyn Bootloader>> {
         self.grubenvs.borrow_mut().push(grubenv.to_owned());
         let values = self
             .count
@@ -402,11 +402,11 @@ impl System for Host {
             .iter()
             .map(|count| ("togi_restart_count".to_owned(), count.clone()))
             .collect();
-        Box::new(Env {
+        Ok(Box::new(Env {
             values,
             steps: Rc::clone(&self.steps),
             fail: self.fail.borrow().clone(),
-        })
+        }))
     }
 
     fn create_retry_marker(&self) -> io::Result<()> {

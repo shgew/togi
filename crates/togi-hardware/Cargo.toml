@@ -12,6 +12,8 @@ hardware = []
 [dependencies]
 jiff.workspace = true
 rustix = { workspace = true, features = ["fs", "process", "time"] }
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 togi-backend.workspace = true
 togi-command.workspace = true

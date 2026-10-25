@@ -36,7 +36,7 @@ use togi_tuningboot::night::{DAY_ENTRY_VARIABLE, NIGHT_BEGUN, NIGHT_VARIABLE, SE
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 use togi_watch::screen::Direction;
 
-const SETUP: &str = r#"{"grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#;
+const SETUP: &str = r#"{"loader":"grub","grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#;
 const DAY: &str = "NixOS - Configuration 7";
 const TUNING: &str = "NixOS - togi";
 const START: &str = "2026-01-01T00:00:00Z";
@@ -231,9 +231,9 @@ impl System for Night {
         self.host.diagnose(config, recorded, lock)
     }
 
-    fn bootloader(&self, _: &Path) -> Box<dyn Bootloader> {
-        self.host.step("grub").unwrap();
-        Box::new(Grub(Rc::clone(&self.grub)))
+    fn bootloader(&self, _: &Path) -> io::Result<Box<dyn Bootloader>> {
+        self.host.step("grub")?;
+        Ok(Box::new(Grub(Rc::clone(&self.grub))))
     }
 
     fn create_retry_marker(&self) -> io::Result<()> {
@@ -393,6 +393,20 @@ fn a_failed_reboot_gives_the_day_back() {
     assert_eq!(ran.exit, Exit::Error);
     assert_eq!(night.value("saved_entry").as_deref(), Some(DAY));
     assert_eq!(night.value(NIGHT_VARIABLE), None);
+}
+
+#[test_case(&["night"]; "begin")]
+#[test_case(&["night-end"]; "end")]
+fn an_unavailable_bootloader_changes_no_selection_and_never_reboots(args: &[&str]) {
+    let night = Night::new();
+    night.day_is(DAY);
+    night.answer(Some("y\n"));
+    let before = night.grub.borrow().clone();
+    night.host.fail.borrow_mut().push("grub");
+    let ran = night.togi(args);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert_eq!(*night.grub.borrow(), before);
+    assert_eq!(night.reboots(), 0);
 }
 
 fn night_begun(night: &Night) {

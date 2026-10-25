@@ -4,8 +4,8 @@
 //! tuner stops on its own; no clock ends it. Beginning one selects the tuning entry and remembers
 //! the selection it replaced; returning to the day restores that selection exactly and never
 //! selects a particular generation. Crash reboots in between stay in the night, because the
-//! selection stays. A tuning boot picked from the boot menu is a night too: GRUB's `savedefault`
-//! selects it, and its day is the boot loader's default.
+//! selection stays. Menu-picked tuning boots follow their loader's default policy; GRUB adopts
+//! the choice, while systemd-boot saves it only with effective `@saved`.
 
 use std::fmt;
 use std::io;
@@ -40,9 +40,7 @@ pub enum NightError {
     ReadSelection(#[source] io::Error),
     #[error("select the tuning entry")]
     Select(#[source] io::Error),
-    #[error(
-        "the tuning entry {expected:?} is not selected after selecting it: {SAVED_ENTRY_VARIABLE} is {found:?}"
-    )]
+    #[error("the tuning entry {expected:?} is not selected after selecting it: found {found:?}")]
     NotSelected {
         expected: String,
         found: Option<String>,
@@ -98,12 +96,34 @@ impl fmt::Display for Entry {
 
 /// What the NixOS module tells the night switch about the installed tuning boot ([`SETUP_PATH`]).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Setup {
-    /// GRUB's environment block.
-    pub grubenv: PathBuf,
-    /// The tuning boot's menu entry.
-    pub entry: Entry,
+#[serde(tag = "loader", deny_unknown_fields)]
+pub enum Setup {
+    #[serde(rename = "grub")]
+    Grub { grubenv: PathBuf, entry: Entry },
+    #[serde(rename = "systemd-boot")]
+    SystemdBoot {
+        esp: PathBuf,
+        boot: PathBuf,
+        state: PathBuf,
+        specialisation: Entry,
+    },
+}
+
+impl Setup {
+    /// The boot selection passed to the host: GRUB's environment or the module's loader setup.
+    pub fn boot_path(&self) -> &std::path::Path {
+        match self {
+            Self::Grub { grubenv, .. } => grubenv,
+            Self::SystemdBoot { .. } => std::path::Path::new(SETUP_PATH),
+        }
+    }
+
+    pub fn entry(&self) -> &Entry {
+        match self {
+            Self::Grub { entry, .. } => entry,
+            Self::SystemdBoot { specialisation, .. } => specialisation,
+        }
+    }
 }
 
 impl FromStr for Setup {

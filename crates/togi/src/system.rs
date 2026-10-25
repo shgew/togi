@@ -1,7 +1,7 @@
 //! The machine a command runs on, as one seam.
 //!
 //! Every command reaches the host through [`System`]: the platform, the host lock, the default
-//! configuration file, the boot id, the clock, the hardware checks, GRUB, the reboot, the machine
+//! configuration file, the boot id, the clock, the hardware checks, the boot loader, the reboot, the machine
 //! `run` tunes and the process's own terminal, stderr and dashboard. [`Real`] is the host;
 //! [`crate::run()`] uses it. [`crate::run_with`] takes any other, so a test on Linux can stand for
 //! another platform (`check_platform` fails with [`togi_hardware::Error::Unsupported`]), acquire a
@@ -133,8 +133,8 @@ pub trait System {
         lock: Option<&HostLock>,
     ) -> Result<Diagnosis, togi_hardware::Error>;
 
-    /// The GRUB environment file `grubenv`.
-    fn bootloader(&self, grubenv: &Path) -> Box<dyn Bootloader>;
+    /// Opens a GRUB environment, or the module's setup file for another supported loader.
+    fn bootloader(&self, selection: &Path) -> io::Result<Box<dyn Bootloader>>;
 
     /// Creates the retry marker; fails when it exists.
     fn create_retry_marker(&self) -> io::Result<()>;
@@ -303,8 +303,30 @@ impl System for Real {
         togi_hardware::diagnose(config, recorded, lock)
     }
 
-    fn bootloader(&self, grubenv: &Path) -> Box<dyn Bootloader> {
-        Box::new(Grub::new(grubenv))
+    fn bootloader(&self, selection: &Path) -> io::Result<Box<dyn Bootloader>> {
+        use togi_tuningboot::night::{SETUP_PATH, Setup};
+
+        if selection != Path::new(SETUP_PATH) {
+            return Ok(Box::new(Grub::new(selection)));
+        }
+        let setup: Setup = self
+            .read_config(selection)?
+            .parse()
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        match setup {
+            Setup::Grub { grubenv, .. } => Ok(Box::new(Grub::new(grubenv))),
+            Setup::SystemdBoot {
+                esp,
+                boot,
+                state,
+                specialisation,
+            } => Ok(Box::new(togi_hardware::systemd_boot::SystemdBoot::new(
+                esp,
+                boot,
+                state,
+                specialisation.as_str(),
+            ))),
+        }
     }
 
     fn create_retry_marker(&self) -> io::Result<()> {

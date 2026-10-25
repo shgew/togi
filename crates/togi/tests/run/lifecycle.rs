@@ -652,7 +652,7 @@ fn the_refusal_still_clears_the_entry_when_the_reason_cannot_be_written() {
     let grubenv = fake.grubenv();
     let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
     assert_eq!(exit, Exit::Incompatible, "{err}");
-    assert!(err.contains("togi: persist GRUB leave reason:"), "{err}");
+    assert!(err.contains("togi: persist boot leave reason:"), "{err}");
     assert_eq!(fake.grub.state().cleared, 1);
 }
 
@@ -666,7 +666,7 @@ fn the_refusal_reports_a_failed_clear_and_requests_no_reboot() {
     let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
     assert_eq!(exit, Exit::Incompatible, "{err}");
     assert!(
-        err.contains("togi: clear GRUB saved entry:") && err.contains("no reboot requested"),
+        err.contains("togi: restore boot selection:") && err.contains("no reboot requested"),
         "{err}"
     );
     assert_eq!(fake.reboots.get(), 0);
