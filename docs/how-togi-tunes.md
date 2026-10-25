@@ -7,8 +7,8 @@ Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More
 ## Days and nights
 
 - **Nights test.** The operator starts a night (the tuning boot, or `togi run` by hand). It tests with workloads and runs until the operator ends it or the next normal boot begins; it has no end time. Ending it restores every core to CO 0.
-- **Days observe.** In normal boots togi applies one profile and watches it without running workloads: applied hours, faults, clean and unclean ends. [Daily observation](howto.md#daily-observation) says how to answer what happened after an unclean end.
-- **BIOS stays at CO 0.** Togi applies the day profile at boot ([ADR 0082](adr/0082-bios-stays-at-zero.md)); it never tells you to enter offsets in BIOS.
+- **Days observe.** In normal boots togi watches the day profile without running workloads: applied hours, faults, clean and unclean ends. [Daily observation](howto.md#daily-observation) says how to answer what happened after an unclean end.
+- **BIOS stays at CO 0.** The day service will apply the day profile at boot ([#1218](https://github.com/shgew/togi/issues/1218), [ADR 0082](adr/0082-bios-stays-at-zero.md)); togi never tells you to enter offsets in BIOS.
 
 A **profile** is one offset per CCD, expanded to every core of that CCD. Per-core refinement is outside this ruleset.
 
