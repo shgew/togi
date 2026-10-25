@@ -44,19 +44,24 @@ pub(super) struct Machine {
     /// How many times the firmware context or a workload's content changed: the durable ordinal of the
     /// controls the current evidence context owes.
     pub(super) evidence_changes: u32,
+    /// The first seq of the current evidence context: what was committed before it belongs to an earlier
+    /// one.
+    pub(super) context_since: Option<Seq>,
     /// The frozen content identity of each workload, from the latest intent or qualification naming it.
     #[serde(with = "super::wire::pairs")]
     pub(super) contents: BTreeMap<WorkloadId, ContentId>,
 }
 
 impl Machine {
-    /// Freezes a workload's content; a different content than the one known starts a new evidence context.
-    pub(super) fn set_content(&mut self, workload: WorkloadId, content: &ContentId) {
+    /// Freezes a workload's content; a different content than the one known starts a new evidence context
+    /// at `seq`.
+    pub(super) fn set_content(&mut self, seq: Seq, workload: WorkloadId, content: &ContentId) {
         let changed = self
             .contents
             .insert(workload, content.clone())
             .is_some_and(|known| known != *content);
         if changed {
+            self.context_since = Some(seq);
             self.evidence_changes = self.evidence_changes.saturating_add(1);
         }
     }
@@ -72,6 +77,7 @@ impl Machine {
             .is_some_and(|known| *known != context)
         {
             self.changed_at = Some(seq);
+            self.context_since = Some(seq);
             self.evidence_changes = self.evidence_changes.saturating_add(1);
         }
         self.firmware = Some(context);

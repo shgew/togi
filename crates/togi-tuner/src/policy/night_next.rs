@@ -171,8 +171,11 @@ impl State {
     /// Takes the contents `query` runs as current. Evidence is current only under the contents this night
     /// runs: a changed content invalidates the earlier exposures before any trial of it has been folded.
     fn run_contents(&mut self, query: &NightQuery<'_>) {
+        let since = self.last.map_or(Some(Seq::FIRST), Seq::next);
         for (&workload, content) in query.contents.map() {
-            self.machine.set_content(workload, content);
+            if let Some(since) = since {
+                self.machine.set_content(since, workload, content);
+            }
         }
     }
 

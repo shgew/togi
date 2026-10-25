@@ -87,6 +87,8 @@ pub(crate) struct Journal {
     boot: String,
     /// Seconds every later event's time is shifted by, as after the days `advance` skipped.
     shift: i64,
+    /// The content every workload runs from now on.
+    built: ContentId,
 }
 
 impl Journal {
@@ -97,6 +99,7 @@ impl Journal {
             state: State::new(params),
             boot: "boot".to_owned(),
             shift: 0,
+            built: content(),
         }
     }
 
@@ -108,6 +111,11 @@ impl Journal {
     /// Records every later event in `boot`, as after a reboot.
     pub(crate) fn reboot(&mut self, boot: &str) {
         boot.clone_into(&mut self.boot);
+    }
+
+    /// Runs every workload from `built` from now on, as after a rebuild of every backend.
+    pub(crate) fn rebuild(&mut self, built: ContentId) {
+        self.built = built;
     }
 
     /// Moves the clock of every later event `secs` ahead.
@@ -277,12 +285,26 @@ pub(crate) fn content() -> ContentId {
     }
 }
 
+/// A rebuild of every backend.
+pub(crate) fn rebuilt() -> ContentId {
+    ContentId {
+        backend: Backend::Mprime,
+        executable: Digest::from_bytes([9; 32]),
+        configuration: Digest::from_bytes([2; 32]),
+    }
+}
+
 /// Every workload of every regime, as one build of the backends.
 pub(crate) fn contents() -> Contents {
+    contents_of(&content())
+}
+
+/// Every workload's content when each runs from `built`.
+fn contents_of(built: &ContentId) -> Contents {
     Contents::new(togi_machine::ALL_REGIMES.into_iter().flat_map(|regime| {
         togi_machine::workloads(regime)
             .iter()
-            .map(|w| (w.id(), content()))
+            .map(|w| (w.id(), built.clone()))
     }))
 }
 
@@ -298,7 +320,8 @@ pub(crate) enum Ending {
 impl Journal {
     /// Journals one trial of `plan`: intent, start and an end as `ending` says, as long as intended.
     pub(crate) fn run(&mut self, plan: &TrialPlan, ending: Ending) -> Seq {
-        self.run_built(plan, ending, &content())
+        let built = self.built.clone();
+        self.run_built(plan, ending, &built)
     }
 
     /// Journals one trial of `plan` whose every workload ran the backend build `built`.
@@ -388,7 +411,7 @@ impl Journal {
         now: Timestamp,
         unavailable: &BTreeMap<Backend, Vec<Seq>>,
     ) -> Result<TrialPlan, EndReason> {
-        let contents = contents();
+        let contents = contents_of(&self.built);
         for _ in 0..200 {
             let action = self
                 .state

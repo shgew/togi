@@ -2,24 +2,15 @@
 //! (`docs/spec/tuner.md`, Failed next-step qualification).
 
 use togi_journal::{Activity, CellEvidence, DayStep, Payload, QualificationState, Queue, StepKind};
-use togi_machine::{Backend, BootId, CcdProfile, ContentId, Digest};
+use togi_machine::{BootId, CcdProfile, ContentId};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, TrialPlan};
 
-use crate::fixture::{Ending, Journal, ccd, content, cores};
+use crate::fixture::{Ending, Journal, ccd, content, cores, rebuilt};
 
 /// Whether `plan` qualifies a proposal other than D.
 fn qualifies_proposal(plan: &TrialPlan) -> bool {
     plan.activity == Activity::Qualification && plan.task.queue == Queue::Qualification
-}
-
-/// A rebuild of every backend.
-fn rebuilt() -> ContentId {
-    ContentId {
-        backend: Backend::Mprime,
-        executable: Digest::from_bytes([9; 32]),
-        configuration: Digest::from_bytes([2; 32]),
-    }
 }
 
 /// Drives passing trials until the first proposal's qualification trial, and fails it on the build

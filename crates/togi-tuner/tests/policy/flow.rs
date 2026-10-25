@@ -6,16 +6,16 @@ use std::collections::BTreeMap;
 
 use togi_journal::{
     Activity, ApplicationId, ApplyCause, CellEvidence, Classification, DayApplied, DayCheckpoint,
-    DayCleanStop, DayOffsetsChanged, DayStep, DayUncleanEnd, LoadMix, NightQualification, Payload,
-    QualificationPurpose, QualificationState, Queue, ReproductionState, RetreatCause, StepKind,
-    Tested,
+    DayCleanStop, DayOffsetsChanged, DayStep, DayUncleanEnd, Edge, LoadMix, NightQualification,
+    Payload, QualificationPurpose, QualificationState, Queue, ReproductionState, RetreatCause, Seq,
+    StepKind, Tested,
 };
 use togi_machine::{BootId, CcdProfile, EndEvidence, ResetReason};
 use togi_tuner::cap::Rate;
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{Action, DayQuery, EndReason, Params, PolicyPayload, TrialPlan};
 
-use crate::fixture::{Ending, Journal, at, ccd, firmware, offsets_of, zero};
+use crate::fixture::{Ending, Journal, at, ccd, firmware, offsets_of, rebuilt, zero};
 
 fn cold_boot(boot: &str, second: i64) -> DayQuery {
     DayQuery {
@@ -577,4 +577,110 @@ fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores
         ),
         "{restored:?}"
     );
+}
+
+/// A budget generous enough for caps several steps deep.
+fn deep() -> Params {
+    Params {
+        machine_budget: Rate::per_hour(1.0).unwrap(),
+        ..Params::SPEC
+    }
+}
+
+/// The committed slope's kind on `ccd`.
+fn slope_kind(journal: &Journal, ccd: usize) -> String {
+    serde_json::to_value(journal.state.project()).unwrap()["ccds"][ccd]["cap"]["slope"]["kind"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// A promoted D, then a night whose CCD 0 mapping fails at -10 and deeper until CCD 0's slope is measured
+/// without a justified decay, which holds its cap at CO 0.
+fn measured() -> Journal {
+    let (mut journal, _) = promoted_with(deep());
+    journal.reboot("tuning1");
+    while slope_kind(&journal, 0) == "fallback" {
+        let plan = journal.until_trial(journal.now());
+        let fails = plan.activity == Activity::Mapping
+            && plan
+                .profile
+                .get(ccd(0))
+                .is_some_and(|offset| offset.get() <= -10);
+        journal.run(
+            &plan,
+            if fails {
+                Ending::Fail(None)
+            } else {
+                Ending::Pass
+            },
+        );
+    }
+    assert_eq!(cap_of(&journal, 0), 0);
+    journal
+}
+
+/// The witnesses an edge cites.
+fn edge_witnesses(edge: &Edge) -> Vec<Seq> {
+    match edge {
+        Edge::Unknown {} => Vec::new(),
+        Edge::Observed { witness, .. } => vec![*witness],
+        Edge::Censored { witnesses, .. } => witnesses.clone(),
+    }
+}
+
+/// Asserts every edge and cap committed after `changed` cites only what came after it.
+fn cites_only_after(journal: &Journal, changed: Seq) {
+    for event in journal.events.iter().filter(|event| event.seq > changed) {
+        let edge = if let Payload::CcdEdge(committed) = &event.payload {
+            &committed.edge
+        } else if let Payload::CcdCap(committed) = &event.payload {
+            &committed.edge
+        } else {
+            continue;
+        };
+        let witnesses = edge_witnesses(edge);
+        assert!(
+            witnesses.iter().all(|&witness| witness > changed),
+            "{:?} cites {witnesses:?} from before {changed:?}",
+            event.seq
+        );
+    }
+}
+
+#[test]
+fn a_firmware_change_restarts_the_slopes_and_rebuilds_the_caps_from_new_evidence() {
+    let mut journal = measured();
+    let changed = journal.boot_start_at("day2", "2", &zero());
+    let committed = journal.settle_day(&cold_boot_at("day2", journal.now()));
+    let step = steps(&committed)
+        .into_iter()
+        .find(|step| matches!(step.step, StepKind::FirmwareZero { .. }))
+        .cloned()
+        .unwrap_or_else(|| panic!("no firmware zero in {committed:?}"));
+    apply(&mut journal, &step, 2, "day2");
+    journal.reboot("tuning2");
+    journal.append(firmware("2").into(), &[]);
+    for _ in 0..1_500 {
+        let plan = journal.until_trial(journal.now());
+        journal.run(&plan, Ending::Pass);
+    }
+    assert_eq!(slope_kind(&journal, 0), "fallback");
+    assert!(cap_of(&journal, 0) < 0, "{}", cap_of(&journal, 0));
+    assert!(cap_of(&journal, 1) < 0, "{}", cap_of(&journal, 1));
+    cites_only_after(&journal, changed);
+}
+
+#[test]
+fn a_rebuilt_backend_restarts_the_slopes_and_rebuilds_the_caps_from_new_evidence() {
+    let mut journal = measured();
+    let changed = journal.events.last().unwrap().seq;
+    journal.rebuild(rebuilt());
+    for _ in 0..1_500 {
+        let plan = journal.until_trial(journal.now());
+        journal.run(&plan, Ending::Pass);
+    }
+    assert_eq!(slope_kind(&journal, 0), "fallback");
+    assert!(cap_of(&journal, 0) < 0, "{}", cap_of(&journal, 0));
+    cites_only_after(&journal, changed);
 }

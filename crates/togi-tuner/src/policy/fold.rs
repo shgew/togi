@@ -169,7 +169,7 @@ impl State {
             Payload::NightQualification(p) => {
                 for content in &p.contents {
                     self.machine
-                        .set_content(content.workload.runs(), &content.content);
+                        .set_content(seq, content.workload.runs(), &content.content);
                 }
                 self.nights.qualifications.push(committed(event, p.clone()));
             }
@@ -275,7 +275,7 @@ impl State {
         }
         for content in &intent.content {
             self.machine
-                .set_content(content.workload.runs(), &content.content);
+                .set_content(event.seq, content.workload.runs(), &content.content);
         }
         let at = self.trials.all.len();
         self.trials.index.insert(intent.trial.clone(), at);

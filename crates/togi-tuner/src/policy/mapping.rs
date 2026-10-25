@@ -94,13 +94,18 @@ struct TaskProgress {
     passes: Vec<Seq>,
 }
 
-/// The incremental mapping replay and the layout it is valid for.
+/// The layout and evidence context a mapping replay is valid for.
+#[derive(Clone, Debug, PartialEq)]
+struct ReplayKey {
+    partials: BTreeMap<CcdId, crate::HonestChain>,
+    cores: Vec<togi_machine::CoreInfo>,
+    context_since: Option<Seq>,
+}
+
+/// The incremental mapping replay and what it is valid for.
 #[derive(Clone, Debug)]
 pub(super) struct MapReplay {
-    key: Option<(
-        BTreeMap<CcdId, crate::HonestChain>,
-        Vec<togi_machine::CoreInfo>,
-    )>,
+    key: Option<ReplayKey>,
     /// How many of the ended trials it has folded.
     processed: usize,
     /// The tasks without a finished step.
@@ -130,9 +135,13 @@ impl Default for MapReplay {
 }
 
 impl MapReplay {
-    fn new(layout: &Layout<'_>, ccds: Vec<CcdId>) -> Self {
+    fn new(layout: &Layout<'_>, ccds: Vec<CcdId>, context_since: Option<Seq>) -> Self {
         Self {
-            key: Some((layout.partials.clone(), layout.cores.to_vec())),
+            key: Some(ReplayKey {
+                partials: layout.partials.clone(),
+                cores: layout.cores.to_vec(),
+                context_since,
+            }),
             mapped: Mapped {
                 board: MappingBoard::new(ccds.clone()),
                 ccds,
@@ -144,10 +153,12 @@ impl MapReplay {
         }
     }
 
-    fn fits(&self, layout: &Layout<'_>) -> bool {
-        self.key
-            .as_ref()
-            .is_some_and(|(partials, cores)| partials == layout.partials && cores == layout.cores)
+    fn fits(&self, layout: &Layout<'_>, context_since: Option<Seq>) -> bool {
+        self.key.as_ref().is_some_and(|key| {
+            key.partials == *layout.partials
+                && key.cores == layout.cores
+                && key.context_since == context_since
+        })
     }
 
     /// Each CCD's latest task still without a finished step.
@@ -192,13 +203,16 @@ impl State {
         })
     }
 
-    /// The mapping board as the journal's mapping tasks and isolated reproduction failures replay it, in
-    /// the order the trials ended. Each query folds only the trials that ended since the last one; a
-    /// changed layout, which can change what a task's cells are, replays from the start.
+    /// The mapping board as the current evidence context's mapping tasks and isolated reproduction failures
+    /// replay it, in the order the trials ended: an earlier firmware or content leaves the board unmapped
+    /// (`docs/spec/tuner.md`, Firmware). Each query folds only the trials that ended since the last one; a
+    /// changed layout, which can change what a task's cells are, or a new evidence context replays from the
+    /// start.
     pub(super) fn replay_mapping(&self, layout: &Layout<'_>) -> Result<Mapped, NotReady> {
         let mut replay = self.caches.mapping.lock();
-        if !replay.fits(layout) {
-            *replay = MapReplay::new(layout, self.ccds());
+        let since = self.machine.context_since;
+        if !replay.fits(layout, since) {
+            *replay = MapReplay::new(layout, self.ccds(), since);
         }
         while let Some(&at) = self.trials.ended_order.get(replay.processed) {
             if let Some(trial) = self.trials.all.get(at) {
@@ -220,6 +234,13 @@ impl State {
         else {
             return Ok(());
         };
+        if task.queue == togi_journal::Queue::Mapping {
+            // Task ordinals stay unique across evidence contexts.
+            replay.mapped.next_ordinal = replay.mapped.next_ordinal.max(task.ordinal + 1);
+        }
+        if !self.is_current_trial(trial) {
+            return Ok(());
+        }
         match task.queue {
             // Reproduction attempts and filler cap probes are isolated observations: they move U but never
             // finish a mapping step.
@@ -234,7 +255,6 @@ impl State {
             }
             togi_journal::Queue::Mapping => {
                 let ordinal = task.ordinal;
-                replay.mapped.next_ordinal = replay.mapped.next_ordinal.max(ordinal + 1);
                 if replay.finished.contains(&ordinal) {
                     return Ok(());
                 }
@@ -296,6 +316,14 @@ impl State {
         }
         replay.refresh_open();
         Ok(())
+    }
+
+    /// Whether the trial ran under the current firmware and workload contents.
+    fn is_current_trial(&self, trial: &Trial) -> bool {
+        trial.firmware == self.machine.firmware
+            && trial.intent.content.iter().all(|entry| {
+                self.machine.contents.get(&entry.workload.runs()) == Some(&entry.content)
+            })
     }
 
     /// The isolated result of an ended trial: a pass, or a failure located on the tested CCD or elsewhere.
@@ -496,7 +524,13 @@ impl State {
                 cells.entry(id).or_default();
             }
         }
-        let committed = self.nights.caps.get(&ccd);
+        // A cap committed under an earlier evidence context carries no slope or cap forward
+        // (`docs/spec/tuner.md`, Firmware).
+        let committed = self.nights.caps.get(&ccd).filter(|committed| {
+            self.machine
+                .context_since
+                .is_none_or(|since| committed.seq >= since)
+        });
         let previous = committed.map_or(Slope::Fallback(self.params.fallback_slope), |committed| {
             slope_of(&committed.payload.slope)
         });
