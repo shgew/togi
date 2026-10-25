@@ -76,7 +76,7 @@ type LiveLog = dyn FnMut(Option<&KernelCursor>) -> Result<KernelRead, Partial<Ke
 struct Reading {
     offsets: VecDeque<PerCore<ObservedOffset>>,
     reason: Option<ResetKind>,
-    watchdog: WatchdogState,
+    watchdog: VecDeque<WatchdogState>,
     times: VecDeque<Vec<CpuTime>>,
     live: Box<LiveLog>,
 }
@@ -92,7 +92,7 @@ impl Reading {
         Self {
             offsets: [offsets(-10)].into(),
             reason: None,
-            watchdog: armed(),
+            watchdog: [armed()].into(),
             times: [vec![CpuTime {
                 cpu: CpuId::from(0_u16),
                 busy: 0,
@@ -136,7 +136,11 @@ impl Observer for Reading {
         togi_machine::EndEvidence::unknown()
     }
     fn watchdog(&mut self) -> WatchdogState {
-        self.watchdog.clone()
+        if self.watchdog.len() > 1 {
+            self.watchdog.pop_front().unwrap()
+        } else {
+            self.watchdog.front().unwrap().clone()
+        }
     }
     fn live_faults(
         &mut self,
@@ -394,6 +398,7 @@ fn next_boot_records_unclean_end_without_classifying_it(reason: Option<ResetKind
             DayCheckpoint {
                 applied_secs: 600,
                 load_mix: LoadMix::default(),
+                watchdog: None,
             }
             .into(),
             &[],
@@ -491,7 +496,7 @@ fn changed_readback_records_change_before_checkpoint_and_excludes_ambiguous_prof
     let mut journal = journal();
     let mut reading = Reading {
         offsets: [offsets(-10), offsets(-5)].into(),
-        watchdog: armed(),
+        watchdog: [armed()].into(),
         ..Reading::fixed()
     };
     observe(
@@ -517,7 +522,7 @@ fn changed_readback_records_change_before_checkpoint_and_excludes_ambiguous_prof
 fn the_observer_records_whether_pid_1_s_watchdog_is_armed_as_it_starts(state: WatchdogState) {
     let mut journal = journal();
     let mut reading = Reading {
-        watchdog: state.clone(),
+        watchdog: [state.clone()].into(),
         ..Reading::fixed()
     };
     observe(
@@ -538,6 +543,42 @@ fn the_observer_records_whether_pid_1_s_watchdog_is_armed_as_it_starts(state: Wa
     };
     assert_eq!(start.watchdog, Some(state.clone()));
     assert_eq!(Ledger::of(journal.events()).watchdog, Some(state));
+}
+
+#[test_case(Duration::from_secs(5), Duration::from_secs(5); "sample tick")]
+#[test_case(Duration::from_secs(5), Duration::from_secs(125); "first tick after deep sleep")]
+#[test_case(Duration::from_secs(600), Duration::from_secs(600); "checkpoint")]
+fn a_stopped_timer_is_journaled_before_the_observer_stops(active: Duration, wall: Duration) {
+    let stopped = WatchdogState::Unarmed {
+        detail: "watchdog0 open but not counting: timeleft 4294967295 s exceeds timeout 60 s"
+            .into(),
+    };
+    let mut reading = Reading {
+        watchdog: [armed(), stopped.clone(), armed()].into(),
+        ..Reading::fixed()
+    };
+    let mut journal = journal();
+    observe(
+        &mut journal,
+        &mut reading,
+        &mut ticking(2, active, wall),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    let checks: Vec<_> = journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::DayCheckpoint(checkpoint) = &event.payload {
+                Some(checkpoint.watchdog.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(checks, [Some(stopped), Some(armed())]);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(armed()));
 }
 
 /// An active clock that wakes `ticks` times, each after `active` of active time and `wall` of wall time.

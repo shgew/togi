@@ -31,7 +31,7 @@ object_only! {
 
 object_only! {
     /// Periodic proof the observer is still running.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct DayCheckpoint {
         /// Whole seconds (floor) the observer has been active this boot, cumulative across its `day.boot_start`
@@ -41,6 +41,9 @@ object_only! {
         /// A checkpoint written before the mix was sampled has none, which reads as zero.
         #[serde(default)]
         pub load_mix: LoadMix,
+        /// The latest hardware watchdog check. Older checkpoints omit it and preserve the previous check.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub watchdog: Option<WatchdogState>,
     }
 }
 

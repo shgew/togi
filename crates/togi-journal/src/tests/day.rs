@@ -445,6 +445,7 @@ fn a_boot_was_read_back_when_its_observer_last_reported() {
             DayCheckpoint {
                 applied_secs: 600,
                 load_mix: LoadMix::default(),
+                watchdog: None,
             }
             .into(),
         ),
@@ -456,6 +457,7 @@ fn a_boot_was_read_back_when_its_observer_last_reported() {
             DayCheckpoint {
                 applied_secs: 1,
                 load_mix: LoadMix::default(),
+                watchdog: None,
             }
             .into(),
         ),

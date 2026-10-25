@@ -83,6 +83,7 @@ fn crashes(recorded: &[&str]) -> DayCrashes {
             DayCheckpoint {
                 applied_secs: 100,
                 load_mix: togi_journal::LoadMix::default(),
+                watchdog: None,
             },
         ),
         end(4, "first", -5),

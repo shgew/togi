@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::{DeadEndCondition, HuntStage, Member, Seq, TrialId};
 use togi_machine::{CoreId, CoreSet, PerCore, Regime, TargetOffset};
 use togi_tuner::{GroupState, HuntGroup};
@@ -226,6 +227,7 @@ fn day_events(
             DayCheckpoint {
                 applied_secs: 3600,
                 load_mix: togi_journal::LoadMix::default(),
+                watchdog: None,
             }
             .into(),
         ),
@@ -236,6 +238,7 @@ fn day_events(
             DayCheckpoint {
                 applied_secs: 1800,
                 load_mix: togi_journal::LoadMix::default(),
+                watchdog: None,
             }
             .into(),
         ),
@@ -319,7 +322,7 @@ fn the_latest_observer_start_decides_the_reported_watchdog() {
     let mut out = String::new();
     super::render_day(&mut out, &day_events([restart_with(Some(unarmed))]));
     assert!(
-        out.contains("hardware watchdog at the last observer start: not armed (watchdog0 state"),
+        out.contains("hardware watchdog at the last observer check: not armed (watchdog0 state"),
         "{out}"
     );
 }
@@ -329,9 +332,41 @@ fn a_start_recorded_before_the_check_reports_the_watchdog_as_not_recorded() {
     let mut out = String::new();
     super::render_day(&mut out, &day_events([restart_with(None)]));
     assert!(
-        out.contains("hardware watchdog at the last observer start: not recorded\n"),
+        out.contains("hardware watchdog at the last observer check: not recorded\n"),
         "{out}"
     );
+}
+
+#[test_case(true; "counting")]
+#[test_case(false; "open but not counting")]
+fn a_checkpoint_refreshes_the_watchdog_report(counting: bool) {
+    let watchdog = if counting {
+        armed()
+    } else {
+        togi_machine::WatchdogState::Unarmed {
+            detail: "watchdog0 open but not counting: timeleft 4294967295 s exceeds timeout 60 s"
+                .into(),
+        }
+    };
+    let mut out = String::new();
+    super::render_day(
+        &mut out,
+        &day_events([(
+            "day-b",
+            togi_journal::DayCheckpoint {
+                applied_secs: 1800,
+                load_mix: togi_journal::LoadMix::default(),
+                watchdog: Some(watchdog),
+            }
+            .into(),
+        )]),
+    );
+    let expected = if counting {
+        "hardware watchdog at the last observer check: armed"
+    } else {
+        "hardware watchdog at the last observer check: not armed (watchdog0 open"
+    };
+    assert!(out.contains(expected), "{out}");
 }
 
 #[test]

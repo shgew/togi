@@ -103,8 +103,8 @@ pub struct Check {
 }
 
 object_only! {
-    /// Whether PID 1's hardware watchdog is armed: the kernel reports a hardware watchdog active and PID 1 holds
-    /// its device, so a frozen machine resets. `detail` names the device, or what is missing.
+    /// Whether PID 1 holds an active hardware watchdog whose counter is plausible, where supported.
+    /// `detail` names the device, or what prevents establishing reset protection.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
     pub enum WatchdogState {

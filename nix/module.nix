@@ -28,7 +28,7 @@ in
     };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
     day.enable = lib.mkEnableOption "the togi day observer, a read-only service in the normal boot that records the machine's day in togi's journal. It holds the host lock and the journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops, and it refuses to start while there is no session. It never exists in the tuning boot, and enabling it keeps the journal on disk with a 5s sync interval";
-    day.watchdog = lib.mkEnableOption "the PID 1 hardware watchdog in the normal boot with the day observer, RuntimeWatchdogSec=60s, so a hang resets the machine and the observer can record the unclean end. A unit ordered before sleep.target stops the watchdog around every suspend or hibernation and restarts it on resume, so a sleep longer than 60s never resets the machine. It sets no lockup panic kernel parameter and never applies in the tuning boot, which keeps its own 30s watchdog";
+    day.watchdog = lib.mkEnableOption "the PID 1 hardware watchdog in the normal boot with the day observer, RuntimeWatchdogSec=60s, so a hang resets the machine and the observer can record the unclean end. A unit ordered before sleep.target releases the watchdog before suspend or hibernation, reloads sp5100_tco after resume to restore its timer decoding after deep sleep, and re-arms PID 1's watchdog even if the reload fails. The pause is retained for s2idle, where the timer may keep counting. It sets no lockup panic kernel parameter and never applies in the tuning boot, which keeps its own 30s watchdog";
     day.users = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -159,15 +159,23 @@ in
           # failed, but PID 1 may have applied the 0 before busctl failed, and the restore is harmless after a
           # start that applied nothing.
           systemd.services.togi-day-watchdog-sleep = {
-            description = "Pause PID 1's hardware watchdog across sleep";
+            description = "Pause PID 1's hardware watchdog and restore SP5100 after sleep";
             wantedBy = [ "sleep.target" ];
             before = [ "sleep.target" ];
             unitConfig.StopWhenUnneeded = true;
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
+              TimeoutStopSec = "30s";
               ExecStart = runtimeWatchdog "0";
-              ExecStopPost = runtimeWatchdog "18446744073709551615";
+              # Firmware can clear the SP5100 timer's MMIO decode on deep resume. Probe restores it.
+              # A failed or stalled module command must not skip re-arming: '-' ignores failures, while
+              # timeout kills each command within 7s, well before systemd's 30s stop deadline.
+              ExecStopPost = [
+                "-${pkgs.coreutils}/bin/timeout --verbose --kill-after=2s 5s ${pkgs.kmod}/bin/modprobe -r sp5100_tco"
+                "-${pkgs.coreutils}/bin/timeout --verbose --kill-after=2s 5s ${pkgs.kmod}/bin/modprobe sp5100_tco"
+                (runtimeWatchdog "18446744073709551615")
+              ];
             };
           };
         }
