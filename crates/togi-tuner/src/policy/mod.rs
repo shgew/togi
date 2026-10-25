@@ -127,6 +127,7 @@ struct Caches {
     filler_failures: cache::Cache<day_events::FillerFailures>,
     nights: cache::Cache<night_next::NightTallies>,
     intervals: cache::Cache<day_query::IntervalCache>,
+    warnings: cache::Cache<ledger::Monotonicity>,
 }
 
 impl State {

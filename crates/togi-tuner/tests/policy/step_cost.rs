@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 use togi_journal::{
-    DayCheckpoint, DayCleanStop, LoadMix, Payload, Queue, Shutdown, ShutdownReason,
+    DayCheckpoint, DayCleanStop, LoadMix, Payload, Queue, Shutdown, ShutdownReason, Tested,
 };
 use togi_machine::BootId;
 use togi_tuner::day::{Invocation, Pause};
@@ -166,5 +166,36 @@ fn a_filler_query_in_a_late_night_costs_what_one_in_an_early_night_costs() {
     assert!(
         late_cost <= early_cost * SLACK,
         "in night {nights} a filler query took {late_cost:?}, against {early_cost:?} in the third"
+    );
+}
+
+/// The state at the filler trial after `fillers` filler trials of a night whose mapping failed at -10 and
+/// deeper, where no deeper pass ever warns of those failures.
+fn filler_state_after(fillers: u32) -> (State, Timestamp) {
+    let mut journal = Journal::ready();
+    journal.until_filler(|plan| {
+        if matches!(plan.tested, Tested::Isolated { offset, .. } if offset.get() <= -10) {
+            Ending::Fail(None)
+        } else {
+            Ending::Pass
+        }
+    });
+    for _ in 0..fillers {
+        let plan = journal.until_trial(journal.now());
+        journal.run(&plan, Ending::Pass);
+    }
+    let now = journal.now();
+    journal.until_trial(now);
+    (journal.state, now)
+}
+
+#[test]
+fn a_filler_query_late_in_a_long_filler_costs_what_the_first_one_costs() {
+    let early = filler_state_after(1);
+    let late = filler_state_after(10_000);
+    let (early_cost, late_cost) = fastest(&early, &late);
+    assert!(
+        late_cost <= early_cost * SLACK,
+        "after 10000 filler trials a query took {late_cost:?}, against {early_cost:?} at the first"
     );
 }

@@ -264,9 +264,27 @@ impl State {
 
     /// Whether a group holds under the current firmware, epoch and workload contents.
     pub(super) fn is_current_group(&self, group: &Group) -> bool {
-        self.machine.firmware.as_ref() == Some(&group.key.firmware)
-            && group.key.epoch == EVIDENCE_EPOCH
-            && group.key.contents.iter().all(|content| {
+        self.is_current_evidence(&group.key.firmware, group.key.epoch, &group.key.contents)
+    }
+
+    /// Whether an exposure holds under the current firmware, epoch and workload contents.
+    pub(super) fn is_current_exposure(&self, observed: &ExposureObserved) -> bool {
+        self.is_current_evidence(
+            &observed.firmware,
+            observed.epoch,
+            &observed.class.workloads,
+        )
+    }
+
+    fn is_current_evidence(
+        &self,
+        firmware: &BiosContext,
+        epoch: u32,
+        contents: &[WorkloadContent],
+    ) -> bool {
+        self.machine.firmware.as_ref() == Some(firmware)
+            && epoch == EVIDENCE_EPOCH
+            && contents.iter().all(|content| {
                 self.machine.contents.get(&content.workload.runs()) == Some(&content.content)
             })
     }

@@ -1,15 +1,18 @@
 //! The exposure ledger: what each class of trial was exposed to, derived once per ended trial from its
 //! journaled intent, start and end, and matched to matrix cells by class signature.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use jiff::Timestamp;
 use togi_journal::{
     Activity, Attribution, CreditExclusion, ExposureClass, ExposureFailure, ExposureObserved,
     ExposureOrigin, Failure, FailureTime, OriginalSource, Outcome, Placement, Position, Seq,
-    TaskId, Tested, TunerWarning, WarningKind, WorkloadContent,
+    SessionId, TaskId, Tested, TunerWarning, WarningKind, WorkloadContent,
 };
-use togi_machine::{CcdId, CcdProfile, CoreId, CoreSet, PhaseSchedule, Regime, Signal, WorkloadId};
+use togi_machine::{
+    BiosContext, CcdId, CcdProfile, CoreId, CoreSet, PhaseSchedule, Regime, Signal, TargetOffset,
+    WorkloadId,
+};
 
 use super::State;
 use super::books::{Exposure, Trial};
@@ -22,6 +25,28 @@ use crate::night::{
     Cell, Conclusion, Credit, Launch, PlacementValidity, Purpose, Roles, adequately_exposed,
     warm_up_secs,
 };
+
+/// The evidence context a monotonicity cache was built under.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct WarningContext {
+    session: Option<SessionId>,
+    since: Option<Seq>,
+    firmware: Option<BiosContext>,
+    contents: usize,
+}
+
+/// The unwarned isolated failures, sorted by whether the current evidence has a deeper pass of their class.
+#[derive(Clone, Debug, Default)]
+pub(super) struct Monotonicity {
+    context: Option<WarningContext>,
+    /// How many ledger records and ended trials it has read.
+    records: usize,
+    ended: usize,
+    /// The failures without a deeper pass yet, by CCD and class: each one's offset and trial index.
+    waiting: HashMap<(CcdId, Sig), Vec<(TargetOffset, usize)>>,
+    /// The failures with a deeper pass, by trial index.
+    warnable: BTreeSet<usize>,
+}
 
 /// What makes two trials the same class: the matrix cell and the journal's exposure class both reduce
 /// to it, so a cell is matched to its observations without storing cells in the journal.
@@ -329,43 +354,106 @@ impl State {
             })
     }
 
-    /// A failure at an offset where the same class already passed adequately at a deeper one.
+    /// The monotonicity warning owed for the earliest unwarned isolated failure whose class passed
+    /// adequately at a deeper offset on its CCD. The candidates are kept incrementally: each failure is
+    /// checked once when it ends, and a waiting one is released by the first deeper pass folded after it.
     pub(super) fn owed_warning(&self) -> Option<Decision> {
-        self.trials
-            .unwarned
-            .iter()
-            .filter_map(|&at| self.trials.all.get(at))
-            .find_map(|trial| {
-                let ended = trial.end.as_ref()?;
-                let Some(Tested::Isolated { ccd, offset }) = trial.intent.tested else {
-                    return None;
-                };
-                let failed = self.derive_exposure(trial)?;
-                let sig = Sig::of_class(&failed.class);
-                let mut passes: Vec<Seq> = self
-                    .current_groups()
-                    .filter_map(|group| group.isolated_passes.get(&(ccd, sig.clone())))
-                    .flatten()
-                    .filter(|&&(deeper, _)| deeper < offset)
-                    .map(|&(_, seq)| seq)
-                    .collect();
-                passes.sort();
-                if passes.is_empty() {
-                    return None;
-                }
-                Some(Decision::new(
-                    PolicyPayload::TunerWarning(TunerWarning {
-                        warning: WarningKind::Monotonicity,
-                        trial: Some(trial.intent.trial.clone()),
-                        detail: format!(
-                            "CCD{ccd} failed at {offset} where the same class passed adequately at a deeper offset",
-                            offset = offset.get()
-                        ),
-                        passes,
-                    }),
-                    vec![trial.intent_seq, ended.seq],
-                ))
-            })
+        let mut cache = self.caches.warnings.lock();
+        let context = WarningContext {
+            session: self.machine.session,
+            since: self.machine.context_since,
+            firmware: self.machine.firmware.clone(),
+            contents: self.machine.contents.len(),
+        };
+        if cache.context.as_ref() != Some(&context) {
+            *cache = Monotonicity {
+                context: Some(context),
+                records: self.ledger.records.len(),
+                ..Monotonicity::default()
+            };
+        }
+        let Monotonicity {
+            records,
+            ended,
+            waiting,
+            warnable,
+            ..
+        } = &mut *cache;
+        for record in self.ledger.records.get(*records..).unwrap_or_default() {
+            let observed = &record.observed;
+            let Tested::Isolated { ccd, offset } = observed.tested else {
+                continue;
+            };
+            if !is_adequate(observed, &self.machine.cores) || !self.is_current_exposure(observed) {
+                continue;
+            }
+            if let Some(failures) = waiting.get_mut(&(ccd, Sig::of_class(&observed.class))) {
+                failures.retain(|&(failed, at)| {
+                    let released = offset < failed;
+                    if released {
+                        warnable.insert(at);
+                    }
+                    !released
+                });
+            }
+        }
+        *records = self.ledger.records.len();
+        for &at in self.trials.ended_order.get(*ended..).unwrap_or_default() {
+            if !self.trials.unwarned.contains(&at) {
+                continue;
+            }
+            let Some(trial) = self.trials.all.get(at) else {
+                continue;
+            };
+            let Some(Tested::Isolated { ccd, offset }) = trial.intent.tested else {
+                continue;
+            };
+            let Some(failed) = self.derive_exposure(trial) else {
+                continue;
+            };
+            let sig = Sig::of_class(&failed.class);
+            if self.deeper_passes(ccd, &sig, offset).is_empty() {
+                waiting.entry((ccd, sig)).or_default().push((offset, at));
+            } else {
+                warnable.insert(at);
+            }
+        }
+        *ended = self.trials.ended_order.len();
+        warnable.retain(|at| self.trials.unwarned.contains(at));
+        let at = *warnable.first()?;
+        drop(cache);
+        let trial = self.trials.all.get(at)?;
+        let ended = trial.end.as_ref()?;
+        let Some(Tested::Isolated { ccd, offset }) = trial.intent.tested else {
+            return None;
+        };
+        let failed = self.derive_exposure(trial)?;
+        let passes = self.deeper_passes(ccd, &Sig::of_class(&failed.class), offset);
+        Some(Decision::new(
+            PolicyPayload::TunerWarning(TunerWarning {
+                warning: WarningKind::Monotonicity,
+                trial: Some(trial.intent.trial.clone()),
+                detail: format!(
+                    "CCD{ccd} failed at {offset} where the same class passed adequately at a deeper offset",
+                    offset = offset.get()
+                ),
+                passes,
+            }),
+            vec![trial.intent_seq, ended.seq],
+        ))
+    }
+
+    /// The adequate isolated passes of the class on `ccd` deeper than `offset`, in order.
+    fn deeper_passes(&self, ccd: CcdId, sig: &Sig, offset: TargetOffset) -> Vec<Seq> {
+        let mut passes: Vec<Seq> = self
+            .current_groups()
+            .filter_map(|group| group.isolated_passes.get(&(ccd, sig.clone())))
+            .flatten()
+            .filter(|&&(deeper, _)| deeper < offset)
+            .map(|&(_, seq)| seq)
+            .collect();
+        passes.sort();
+        passes
     }
 
     /// The wall seconds a trial occupied the night: from its task's start, before the profile was prepared

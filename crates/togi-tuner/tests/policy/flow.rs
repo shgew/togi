@@ -8,7 +8,7 @@ use togi_journal::{
     Activity, ApplicationId, ApplyCause, CellEvidence, Classification, DayApplied, DayCheckpoint,
     DayCleanStop, DayOffsetsChanged, DayStep, DayUncleanEnd, Edge, LoadMix, NightQualification,
     Payload, QualificationPurpose, QualificationState, Queue, ReproductionState, RetreatCause, Seq,
-    StepKind, Tested,
+    StepKind, Tested, WarningKind,
 };
 use togi_machine::{BootId, CcdProfile, EndEvidence, ResetReason};
 use togi_tuner::cap::Rate;
@@ -683,4 +683,47 @@ fn a_rebuilt_backend_restarts_the_slopes_and_rebuilds_the_caps_from_new_evidence
     assert_eq!(slope_kind(&journal, 0), "fallback");
     assert!(cap_of(&journal, 0) < 0, "{}", cap_of(&journal, 0));
     cites_only_after(&journal, changed);
+}
+
+#[test]
+fn a_failure_is_warned_of_once_its_class_passes_deeper() {
+    let mut journal = Journal::ready();
+    // CCD 0's first descent step fails on a core of CCD 1: the step goes on, and nothing deeper has passed.
+    let failed = loop {
+        let plan = journal.until_trial(journal.now());
+        if plan.activity == Activity::Mapping
+            && matches!(plan.tested, Tested::Isolated { ccd: tested, offset } if tested == ccd(0) && offset.get() < 0)
+        {
+            break journal.run(&plan, Ending::Fail(Some(2)));
+        }
+        journal.run(&plan, Ending::Pass);
+    };
+    let warnings = |journal: &Journal| -> Vec<(Seq, Vec<Seq>, Vec<Seq>)> {
+        journal
+            .events
+            .iter()
+            .filter_map(|event| {
+                if let Payload::TunerWarning(warning) = &event.payload
+                    && warning.warning == WarningKind::Monotonicity
+                {
+                    Some((event.seq, event.cause.clone(), warning.passes.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+    for _ in 0..3_000 {
+        if !warnings(&journal).is_empty() {
+            break;
+        }
+        let plan = journal.until_trial(journal.now());
+        journal.run(&plan, Ending::Pass);
+    }
+    let warnings = warnings(&journal);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let (_, causes, passes) = &warnings[0];
+    assert!(causes.contains(&failed), "{causes:?}");
+    assert!(!passes.is_empty());
+    assert!(passes.iter().all(|&pass| pass > failed), "{passes:?}");
 }
