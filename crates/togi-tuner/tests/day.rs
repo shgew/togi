@@ -1255,6 +1255,39 @@ mod day {
     }
 
     #[test]
+    fn a_reclassified_step_back_completed_from_co_zero_is_restored() {
+        let mut day = Day::new([-20, -20]);
+        day.promote([-12, -15]);
+        day.promote([-14, -15]);
+        day.crash("a", [-14, -15], EndClass::Unknown);
+        let fallback = day.decide();
+        let (to, _, unqualified) = retreat(fallback.clone());
+        assert_eq!(to, profile([0, 0]));
+        assert_eq!(unqualified, Some(profile([-12, -15])));
+        day.apply(&fallback);
+        day.close(&EventId::Boot(boot("a")));
+        day.qualify(&[[-12, -15]]);
+        let completion = day.decide();
+        assert_eq!(retreat(completion.clone()).0, profile([-12, -15]));
+        day.apply(&completion);
+        day.run(HOURS_50);
+
+        day.qualify(&[[-14, -15], [-16, -15]]);
+        day.answer("a", DayAnswerKind::Graphics);
+        let decision = day.decide();
+        let DayDecision::Promote { proposal, .. } = &decision else {
+            panic!("expected the restoration, got {decision:?}");
+        };
+        assert_eq!(
+            proposal.profile,
+            profile([-14, -15]),
+            "the completed step back owns the step its CO 0 fallback consumed"
+        );
+        let restores = proposal.restores.as_ref().unwrap();
+        assert_eq!(restores.events, [EventId::Boot(boot("a"))]);
+    }
+
+    #[test]
     fn a_blocked_restoration_holds_instead_of_taking_the_half_distance_step() {
         let mut day = stepped_back_provisionally();
         day.qualify(&[[-16, -15]]);

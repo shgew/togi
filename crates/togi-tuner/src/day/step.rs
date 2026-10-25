@@ -136,7 +136,9 @@ pub fn propose(applied: &CcdProfile, caps: &CcdProfile) -> Result<Option<Proposa
 /// The restoration a reclassification owes (`docs/spec/tuner.md`, Undoing a reclassified retreat):
 /// among the applied step backs whose events were all since reclassified as no CPU evidence, the
 /// newest original promotion they reverted (ties to the lower CCD id) that no later promotion
-/// restored, as `(promotion, CCD, step back)`. Promotions before a firmware reset are never restored.
+/// restored, as `(promotion, CCD, step back)`. A step back that first fell back to CO 0 is applied
+/// once its wanted profile qualifies, and owns the steps its fallback consumed. Promotions before a
+/// firmware reset are never restored.
 fn restoration<'a>(
     history: &'a DayHistory,
     events: &[DailyEvent],
@@ -147,15 +149,21 @@ fn restoration<'a>(
             .iter()
             .any(|event| &event.id == id && event.class == Classification::NonCpu)
     };
+    let mut fallbacks: Vec<RetreatRecord<'a>> = Vec::new();
     let mut best: Option<(Promotion<'a>, CcdId, RetreatRecord<'a>)> = None;
     for record in history.retreats() {
-        if !matches!(record.outcome, RetreatOutcome::Reached)
-            || record.events.is_empty()
-            || !record.events.iter().all(reclassified)
-        {
+        if matches!(record.outcome, RetreatOutcome::Fallback { .. }) {
+            fallbacks.push(record);
             continue;
         }
-        for reverted in record.reverted {
+        if record.events.is_empty() || !record.events.iter().all(reclassified) {
+            continue;
+        }
+        let completed = fallbacks
+            .iter()
+            .filter(|fallback| fallback.events.iter().any(|id| record.events.contains(id)))
+            .flat_map(|fallback| fallback.reverted);
+        for reverted in record.reverted.iter().chain(completed) {
             let Some(promotion) = promotions
                 .iter()
                 .find(|promotion| promotion.at == reverted.step)
