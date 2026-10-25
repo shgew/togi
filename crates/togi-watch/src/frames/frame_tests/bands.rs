@@ -228,6 +228,57 @@ fn a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running() {
     );
 }
 
+#[test_case(Scenario::Search, 240, 67; "search wide")]
+#[test_case(Scenario::Search, 160, 45; "search medium")]
+#[test_case(Scenario::Search, 120, 33; "search compact")]
+#[test_case(Scenario::Checking, 160, 45; "checking")]
+#[test_case(Scenario::Hunt, 160, 45; "hunt")]
+fn event_redraws_keep_every_counter_on_the_same_second(
+    scenario: Scenario,
+    width: u16,
+    height: u16,
+) {
+    let mut events = scenario.events().expect("a running trial");
+    for event in &mut events {
+        event.time += jiff::SignedDuration::from_millis(375);
+    }
+    let fx = Fixture::of(&events);
+    let trial = fx.model.snapshot().trial.expect("a started trial");
+    let started = trial.started.expect("started");
+    let second = started - jiff::SignedDuration::from_nanos(i64::from(started.subsec_nanosecond()));
+    let screen = main_screen(width, height);
+    for elapsed in 1..=8 {
+        let at = later(second, elapsed);
+        let (boundary, _) = fx.draw(&screen, at);
+        let said = words(&boundary);
+        let shown = |seconds: u64| format!("{}:{:02}", seconds / 60, seconds % 60);
+        let remaining = trial.duration.as_secs() - elapsed.cast_unsigned();
+        if width == 240 {
+            assert!(
+                said.contains(&format!(
+                    "{} of {}",
+                    shown(elapsed.cast_unsigned() - 1),
+                    shown(trial.duration.as_secs())
+                )),
+                "elapsed second {elapsed}: {said}"
+            );
+        } else {
+            assert!(
+                said.contains(&format!("{} left", shown(remaining))),
+                "second {elapsed}: {said}"
+            );
+        }
+        for offset in (1..1000).step_by(137) {
+            let event_at = at + jiff::SignedDuration::from_millis(offset);
+            assert_eq!(
+                fx.draw(&screen, event_at).0,
+                boundary,
+                "an event at second {elapsed} + {offset}ms must not advance any counter"
+            );
+        }
+    }
+}
+
 #[test]
 fn a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash() {
     let fx = Fixture::scenario(Scenario::Search);
