@@ -935,12 +935,12 @@ in
           enter_night("PATH=/etc/togi-reboot-probe:$PATH ")
           at_reboot = immutable(machine.succeed("cat /root/reboot-flags"))
           assert at_reboot == dict.fromkeys(loader_variables, True), at_reboot
-          # The explicit tuning Default does not itself update LastBooted. Change the real EFI fixture so night-end
-          # must rewrite both variables rather than only confirming an already-restored LastBooted.
+          # The explicit tuning Default makes systemd-boot discard LastBooted. Install a changed real EFI fixture so
+          # night-end must rewrite both immutable variables rather than creating an absent LastBooted.
           changed_last = saved_last[:4] + (tuning_entry + "\0").encode("utf-16-le")
           last_path = variable("LoaderEntryLastBooted")
           machine.succeed(
-              f"chattr -i {last_path} && "
+              f"if [ -e {last_path} ]; then chattr -i {last_path}; fi && "
               f"printf %s {base64.b64encode(changed_last).decode()} | base64 -d | "
               f"dd of={last_path} bs=4096 iflag=fullblock conv=notrunc status=none"
           )
