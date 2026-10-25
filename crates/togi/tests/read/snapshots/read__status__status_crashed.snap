@@ -14,70 +14,73 @@ CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
   bound by R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
            120s isolated
 1   8-15  0   0   fallback baseline unknown      0         80      135
-  CCD 0 uncovered for the cap: R1 mprime-sse-4k-21k 90s exact x8; R1
-    ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s exact x8; R2
-    mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k 90s exact x8;
-    R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3 mprime-sse-4k-21k-steps 120s
-    exact x8; R3 ycruncher-bkt-sftv4-steps 120s exact x8; R3
-    ycruncher-snt-svt-steps 120s exact x8; R4 mprime-sse-4k-21k-duty25 120s
-    exact x8; R4 ycruncher-bkt-sftv4-duty50 120s exact x8; R4
-    ycruncher-snt-svt-duty75 120s exact x8; R5 mprime-sse-4k-21k-smt 120s exact
-    x8; R7 mprime-avx2-36k-248k-allcore 120s exact x7; R8
-    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 120s exact;
-    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1 120s
-    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2
+  CCD 0 uncovered for the cap, no observations: R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 0 120s
+    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 1 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 2 120s
+    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 3 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 4 120s
+    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 5 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 6 120s
+    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 7 120s isolated; R9 ycruncher-snt-svt-all-threads serial cpu 21
+    120s isolated
+  CCD 0 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
+    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
+    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
+    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
+    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
+    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
+    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
+    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
+    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
+    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
     120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    3 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
-    core 4 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
-    light core 5 120s exact; R8
-    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6 120s exact;
-    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7 120s
-    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
-    600s exact; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 0 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 1 120s
-    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 2 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 3 120s
-    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 4 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 5 120s
-    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 6 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 7 120s
-    isolated; R9 ycruncher-snt-svt-all-threads serial cpu 21 120s isolated
-  CCD 1 uncovered for the cap: R1 mprime-sse-4k-21k 90s exact x8; R1
-    ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s exact x8; R2
-    mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k 90s exact x8;
-    R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3 mprime-sse-4k-21k-steps 120s
-    exact x8; R3 ycruncher-bkt-sftv4-steps 120s exact x8; R3
-    ycruncher-snt-svt-steps 120s exact x8; R4 mprime-sse-4k-21k-duty25 120s
-    exact x8; R4 ycruncher-bkt-sftv4-duty50 120s exact x8; R4
-    ycruncher-snt-svt-duty75 120s exact x8; R5 mprime-sse-4k-21k-smt 120s exact
-    x8; R7 mprime-avx2-36k-248k-allcore 120s exact x7; R8
-    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8 120s exact;
-    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 9 120s
-    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 10
+    1 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 2 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 3 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6
     120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    11 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
-    core 12 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
-    light core 13 120s exact; R8
-    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14 120s exact;
-    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 15 120s
-    exact; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light
-    core 8 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 9 120s
+    7 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 0 600s exact
+  CCD 1 uncovered for the cap, no observations: R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 8 120s
     isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 10 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 11
+    light core 9 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 10
     120s isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 12 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 13
+    light core 11 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 12
     120s isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 14 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 15
-    120s isolated; R7 ycruncher-fftv4-n63-vt3-allcore 120s isolated x7; R9
-    ycruncher-snt-svt-all-threads serial cpu 29 120s isolated
+    light core 13 120s isolated; R8
+    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 14
+    120s isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
+    light core 15 120s isolated; R7 ycruncher-fftv4-n63-vt3-allcore 120s
+    isolated x7; R9 ycruncher-snt-svt-all-threads serial cpu 29 120s isolated
+  CCD 1 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
+    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
+    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
+    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
+    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
+    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
+    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
+    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
+    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
+    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    9 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 10 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 11 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    15 120s exact
   A class is uncovered for the cap when mapping has not adequately exposed it or
     it lies outside the mapping projection; uncovered is never read as safe.
 
