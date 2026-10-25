@@ -1041,6 +1041,17 @@ in
       machine.fail(f"runuser -u mallory -- togi day answer {crashed} frozen")
       assert day("day.answer") == [], day("day.answer")
 
+      # The notifier decodes the pending end, with its per-core offsets, from the socket and raises one notification.
+      machine.succeed("install -d -o alice /tmp/fake-notify")
+      machine.succeed("""cat > /tmp/fake-notify/notify-send <<'EOF'
+      #!/bin/sh
+      echo "$@" > /tmp/fake-notify/args
+      EOF""")
+      machine.succeed("chmod 755 /tmp/fake-notify/notify-send")
+      # The notifier never exits on its own; the timeout ends it, and only a decoded question leaves the file.
+      machine.succeed("runuser -u alice -- sh -c 'PATH=/tmp/fake-notify:$PATH timeout 5 togi day notify; true'")
+      machine.succeed(f"grep -q {crashed} /tmp/fake-notify/args")
+
       # The group user answers through the real socket without root; the service journals the answer.
       machine.succeed(f"runuser -u alice -- togi day answer {crashed} frozen")
       machine.wait_until_succeeds(f"grep -q day.answer {journal}")

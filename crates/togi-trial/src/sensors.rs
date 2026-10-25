@@ -34,17 +34,15 @@ pub(crate) struct Readings {
     pub(crate) tccd_c: Option<BTreeMap<String, i64>>,
     pub(crate) core_mhz: PerCore<i64>,
     pub(crate) package_power_w: Option<f64>,
-    pub(crate) cores_power_w: Option<f64>,
 }
 
-/// Reads temperatures, all-core clocks and package and core-domain energy.
+/// Reads temperatures, all-core clocks and package energy.
 #[derive(Debug)]
 pub(crate) struct Sensors {
     hwmon: PathBuf,
     powercap: PathBuf,
     clocks: Vec<(CoreId, PathBuf)>,
     energy: Option<i64>,
-    cores_energy: Option<i64>,
     energy_at: Instant,
     inputs: Inputs,
 }
@@ -92,7 +90,6 @@ impl Sensors {
         Ok(Self {
             hwmon: roots.hwmon.clone(),
             energy: read_integer(&inputs, &powercap.join("energy_uj"))?,
-            cores_energy: read_integer(&inputs, &powercap.join("intel-rapl:0:0/energy_uj"))?,
             powercap,
             clocks,
             energy_at: now,
@@ -109,19 +106,14 @@ impl Sensors {
             }
         }
         let energy = read_integer(&self.inputs, &self.powercap.join("energy_uj"))?;
-        let cores_path = self.powercap.join("intel-rapl:0:0");
-        let cores_energy = read_integer(&self.inputs, &cores_path.join("energy_uj"))?;
         let package_power_w = self.power(&self.powercap, energy, self.energy, now)?;
-        let cores_power_w = self.power(&cores_path, cores_energy, self.cores_energy, now)?;
         self.energy = energy;
-        self.cores_energy = cores_energy;
         self.energy_at = now;
         Ok(Readings {
             tctl_c,
             tccd_c,
             core_mhz,
             package_power_w,
-            cores_power_w,
         })
     }
 
@@ -319,44 +311,6 @@ mod tests {
         );
     }
 
-    #[test_case::test_case(None, None, None, None; "missing domain")]
-    #[test_case::test_case(Some("1000000"), Some("4000000"), None, Some(3.0); "delta")]
-    #[test_case::test_case(Some("9000000"), Some("1000000"), Some("10000000"), Some(2.0); "wrap")]
-    #[test_case::test_case(Some("9000000"), Some("1000000"), None, None; "unexplained decrease")]
-    #[test_case::test_case(Some("9000000"), Some("1000000"), Some("500000"), None; "invalid wrap range")]
-    #[test_case::test_case(Some("1000000"), Some("invalid"), None, None; "invalid reading")]
-    #[test_case::test_case(Some("1000000"), Some("-1"), None, None; "negative reading")]
-    fn core_domain_uses_its_own_baseline_and_wrap_range(
-        initial: Option<&str>,
-        current: Option<&str>,
-        range: Option<&str>,
-        expected: Option<f64>,
-    ) {
-        let fixture = Fixture::new();
-        fixture.write("powercap/intel-rapl:0/energy_uj", "100000000");
-        if let Some(value) = initial {
-            fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", value);
-        }
-        if let Some(value) = range {
-            fixture.write(
-                "powercap/intel-rapl:0/intel-rapl:0:0/max_energy_range_uj",
-                value,
-            );
-        }
-        let start = Instant::now();
-        let mut sensors = fixture.sensors(&[], start);
-        if let Some(value) = current {
-            fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", value);
-        }
-        assert_eq!(
-            sensors
-                .read(start + Duration::from_secs(1))
-                .unwrap()
-                .cores_power_w,
-            expected
-        );
-    }
-
     #[test]
     fn clocks_come_from_the_first_cpu_of_every_core_including_idle_cores() {
         let fixture = Fixture::new();
@@ -420,36 +374,26 @@ mod tests {
         );
     }
 
-    #[test_case::test_case("intel-rapl:0", false; "package")]
-    #[test_case::test_case("intel-rapl:0/intel-rapl:0:0", true; "cores")]
-    fn a_missing_reading_resets_the_baseline_so_the_next_good_one_omits_power(
-        domain: &str,
-        cores: bool,
-    ) {
+    #[test]
+    fn a_missing_reading_resets_the_baseline_so_the_next_good_one_omits_power() {
         let fixture = Fixture::new();
-        let path = format!("powercap/{domain}/energy_uj");
-        fixture.write(&path, "1000000\n");
+        let path = "powercap/intel-rapl:0/energy_uj";
+        fixture.write(path, "1000000\n");
         let start = Instant::now();
         let mut sensors = fixture.sensors(&[], start);
-        let power = |readings: Readings| {
-            if cores {
-                readings.cores_power_w
-            } else {
-                readings.package_power_w
-            }
-        };
-        togi_journal::fs::Fs::remove_file(fixture.fs.as_ref(), &Path::new("/sensors").join(&path))
+        let power = |readings: Readings| readings.package_power_w;
+        togi_journal::fs::Fs::remove_file(fixture.fs.as_ref(), &Path::new("/sensors").join(path))
             .unwrap();
         assert_eq!(
             power(sensors.read(start + Duration::from_secs(1)).unwrap()),
             None
         );
-        fixture.write(&path, "5000000\n");
+        fixture.write(path, "5000000\n");
         assert_eq!(
             power(sensors.read(start + Duration::from_secs(2)).unwrap()),
             None
         );
-        fixture.write(&path, "7000000\n");
+        fixture.write(path, "7000000\n");
         assert_eq!(
             power(sensors.read(start + Duration::from_secs(3)).unwrap()),
             Some(2.0)
@@ -488,26 +432,21 @@ mod tests {
     #[test_case::test_case("cpu/cpu0/cpufreq/scaling_cur_freq"; "frequency")]
     #[test_case::test_case("hwmon/hwmon0/temp1_input"; "temperature")]
     #[test_case::test_case("powercap/intel-rapl:0/energy_uj"; "package energy")]
-    #[test_case::test_case("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj"; "cores energy")]
     #[test_case::test_case("powercap/intel-rapl:0/max_energy_range_uj"; "package wrap")]
-    #[test_case::test_case("powercap/intel-rapl:0/intel-rapl:0:0/max_energy_range_uj"; "cores wrap")]
     fn overflowing_sensor_observations_refuse_the_read(path: &str) {
         let fixture = Fixture::new();
         fixture.write("hwmon/hwmon0/name", "k10temp");
         fixture.write("hwmon/hwmon0/temp1_label", "Tctl");
         fixture.write("powercap/intel-rapl:0/energy_uj", "10");
-        fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", "10");
         let now = Instant::now();
         let mut sensors = fixture.sensors(&topology(), now);
         fixture.write("powercap/intel-rapl:0/energy_uj", "1");
-        fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", "1");
         fixture.write(path, "9223372036854775808");
         let error = sensors.read(now + Duration::from_secs(1)).unwrap_err();
         assert_eq!(error.path, Path::new("/sensors").join(path));
     }
 
     #[test_case::test_case("powercap/intel-rapl:0/energy_uj"; "package baseline")]
-    #[test_case::test_case("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj"; "cores baseline")]
     fn overflowing_energy_baselines_refuse_initialization(path: &str) {
         let fixture = Fixture::new();
         fixture.write(path, "9223372036854775808");

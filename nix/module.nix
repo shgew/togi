@@ -367,6 +367,7 @@ in
             ];
             environment.TERM = "linux";
             serviceConfig = {
+              Type = "exec";
               ExecStart = "${lib.getExe cfg.package} watch --tuning-boot";
               StandardInput = "tty";
               StandardOutput = "tty";

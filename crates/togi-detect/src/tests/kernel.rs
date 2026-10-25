@@ -43,6 +43,7 @@ fn whole_boot_reads_the_grep_query_of_the_boot_without_hyphens() {
             OLD,
             "-o",
             "json",
+            "--all",
             "--output-fields=MESSAGE,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP",
             "--grep",
             "Hardware Error",
