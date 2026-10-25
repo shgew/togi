@@ -9,9 +9,9 @@ BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
 in flight: [#33] trial 0001 core 00 offset 0 R1 mprime SSE 4K-21K 90 s together
   control task control #0 night #30
 
-CCD  CORES  D  S  SLOPE  BINDING  U        REMAINING  COVERED  UNCOVERED
-0    0-7    0  -  -      -        unknown  -          -        -
-1    8-15   0  -  -      -        unknown  -          -        -
+CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
+0   0-7   0   -   -        -        unknown      -         -       -
+1   8-15  0   -   -        -        unknown      -         -       -
   A CCD with no cap yet has S at offset 0.
 
 Day policy

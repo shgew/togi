@@ -199,29 +199,40 @@ fn event_word(id: &DayEventId) -> String {
     }
 }
 
+/// The CCD table's columns, each with the width it is laid out at: the widest value its column can hold (`censored
+/// -50` for U, a CCD's core range, an offset). Columns are one space apart, so the ten columns span 76 cells and every
+/// value sits under its header whatever the values are; a wider value widens its column for every row.
+const CCD_COLUMNS: [(&str, usize); 10] = [
+    ("CCD", 3),
+    ("CORES", 5),
+    ("D", 3),
+    ("S", 3),
+    ("SLOPE", 8),
+    ("BINDING", 8),
+    ("U", 12),
+    ("REMAINING", 9),
+    ("COVERED", 7),
+    ("UNCOVERED", 9),
+];
+
 pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
     if policy.ccds.is_empty() {
         return;
     }
-    let mut rows = vec![Row::new(
-        [
-            "CCD",
-            "CORES",
-            "D",
-            "S",
-            "SLOPE",
-            "BINDING",
-            "U",
-            "REMAINING",
-            "COVERED",
-            "UNCOVERED",
-        ]
-        .map(String::from),
-    )];
-    for ccd in &policy.ccds {
-        rows.push(ccd_row(ccd));
+    let header = CCD_COLUMNS.map(|(name, _)| name.to_owned());
+    let rows: Vec<([String; 10], Option<String>)> = policy.ccds.iter().map(ccd_row).collect();
+    let widths: [usize; 10] = std::array::from_fn(|column| {
+        rows.iter()
+            .map(|(cells, _)| cells[column].chars().count())
+            .fold(CCD_COLUMNS[column].1, usize::max)
+    });
+    ccd_line(out, &header, &widths);
+    for (cells, bound) in &rows {
+        ccd_line(out, cells, &widths);
+        if let Some(class) = bound {
+            wrap(out, "  bound by ", "           ", class);
+        }
     }
-    table(out, &rows);
     for ccd in &policy.ccds {
         match &ccd.cap {
             Some(cap) if !cap.uncovered.is_empty() => {
@@ -257,7 +268,21 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
     }
 }
 
-fn ccd_row(ccd: &CcdProjection) -> Row {
+/// One line of the CCD table: each cell padded to its column's width and one space, the last unpadded.
+fn ccd_line(out: &mut String, cells: &[String; 10], widths: &[usize; 10]) {
+    let last = cells.len() - 1;
+    for (column, cell) in cells.iter().enumerate() {
+        out.push_str(cell);
+        if column < last {
+            let pad = widths[column] - cell.chars().count() + 1;
+            let _ = write!(out, "{:pad$}", "");
+        }
+    }
+    out.push('\n');
+}
+
+/// A CCD's cells, in [`CCD_COLUMNS`] order, and the class its cap is bound by when a rate binds it.
+fn ccd_row(ccd: &CcdProjection) -> ([String; 10], Option<String>) {
     let (cap, slope, binding, covered, uncovered) = match &ccd.cap {
         Some(cap) => (
             cap.offset.get().to_string(),
@@ -274,7 +299,7 @@ fn ccd_row(ccd: &CcdProjection) -> Row {
             "-".to_owned(),
         ),
     };
-    let row = Row::new([
+    let cells = [
         ccd.ccd.to_string(),
         core_ranges(ccd.cores),
         ccd.day.get().to_string(),
@@ -286,11 +311,12 @@ fn ccd_row(ccd: &CcdProjection) -> Row {
             .map_or("-".to_owned(), |left| left.to_string()),
         covered,
         uncovered,
-    ]);
-    match ccd.cap.as_ref().map(|cap| &cap.binding) {
-        Some(Binding::Rate { class }) => row.note("bound by", class_word(class)),
-        Some(Binding::EdgeMargin {} | Binding::Baseline {}) | None => row,
-    }
+    ];
+    let bound = match ccd.cap.as_ref().map(|cap| &cap.binding) {
+        Some(Binding::Rate { class }) => Some(class_word(class)),
+        Some(Binding::EdgeMargin {} | Binding::Baseline {}) | None => None,
+    };
+    (cells, bound)
 }
 
 const fn reproduction_word(state: ReproductionState) -> &'static str {

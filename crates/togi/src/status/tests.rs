@@ -462,3 +462,71 @@ fn a_stopped_session_leads_with_stopped_before_any_night() {
     policy.stopped = true;
     assert_eq!(activity(&policy, UTC), "stopped");
 }
+
+fn ccd_projection(
+    ccd: i64,
+    cores: &[i64],
+    edge: Option<togi_journal::Edge>,
+) -> togi_tuner::policy::CcdProjection {
+    togi_tuner::policy::CcdProjection {
+        ccd: CcdId::new(ccd).unwrap(),
+        cores: cores.iter().map(|&id| core(id)).collect(),
+        edge,
+        cap: Some(togi_tuner::policy::CapProjection {
+            offset: TargetOffset::new(-1).unwrap(),
+            binding: togi_journal::Binding::Baseline {},
+            slope: togi_journal::Slope::Fallback {
+                beta: togi_journal::Finite::new(1.0).unwrap(),
+            },
+            adequate: Vec::new(),
+            uncovered: Vec::new(),
+            witness: Seq::new(7).unwrap(),
+        }),
+        day: TargetOffset::new(-10).unwrap(),
+        remaining: Some(0),
+    }
+}
+
+/// Where each header of the CCD table starts on `line`, and where each value of a row starts.
+fn starts(line: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut previous = ' ';
+    for (at, c) in line.char_indices() {
+        if c != ' ' && previous == ' ' {
+            out.push(at);
+        }
+        previous = c;
+    }
+    out
+}
+
+#[test_case(None; "an unknown edge")]
+#[test_case(Some(togi_journal::Edge::Censored { limit: TargetOffset::new(-50).unwrap(), witnesses: Vec::new() }); "a censored edge")]
+#[test_case(Some(togi_journal::Edge::Observed { offset: TargetOffset::new(-35).unwrap(), witness: Seq::new(4).unwrap() }); "an observed edge")]
+fn the_ccd_table_keeps_every_value_under_its_header_within_eighty_columns(
+    edge: Option<togi_journal::Edge>,
+) {
+    let mut policy = projection(None);
+    policy.ccds = vec![
+        ccd_projection(0, &[0, 1, 2, 3, 4, 5, 6, 7], edge.clone()),
+        ccd_projection(1, &[8, 9, 10, 11, 12, 13, 14, 15], edge),
+    ];
+    let out = shown(&policy, UTC);
+    let lines: Vec<&str> = out.lines().take(3).collect();
+    let columns = [0, 4, 10, 14, 18, 27, 36, 49, 59, 67];
+    assert_eq!(starts(lines[0]), columns, "{out}");
+    assert_eq!(
+        lines[0],
+        "CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED"
+    );
+    for row in &lines[1..] {
+        let at = starts(row);
+        // U is the seventh column; `censored -50` is two words that start at its column and inside it.
+        let at: Vec<usize> = at
+            .into_iter()
+            .filter(|&at| !(columns[6] < at && at < columns[7]))
+            .collect();
+        assert_eq!(at, columns, "{out}");
+        assert!(row.len() <= 80, "{row:?} is wider than 80 columns");
+    }
+}

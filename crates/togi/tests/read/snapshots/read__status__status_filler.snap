@@ -9,11 +9,11 @@ BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
 in flight: [#8959] trial 1810 core 00 offset -1 R1 mprime SSE 4K-21K 90 s
   together mapping task filler #0 night #30 testing CCD0 at -1
 
-CCD  CORES  D  S  SLOPE     BINDING  U         REMAINING  COVERED  UNCOVERED
-0    0-7    0  0  measured  rate     fails -9  0          121      121
+CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
+0   0-7   0   0   measured rate     fails -9     0         121     121
   bound by R8 ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light
            core 0 120s isolated
-1    8-15   0  0  fallback  rate     fails -7  0          103      128
+1   8-15  0   0   fallback rate     fails -7     0         103     128
   bound by R9 ycruncher-bkt-sftv4-all-threads serial cpu 25 120s isolated
   CCD 0 uncovered for the cap: R1 mprime-sse-4k-21k 90s exact x8; R1
     ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s exact x8; R2

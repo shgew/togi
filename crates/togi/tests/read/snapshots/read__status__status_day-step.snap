@@ -8,10 +8,10 @@ BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
 in flight: none
 
-CCD CORES D S SLOPE BINDING U REMAINING COVERED UNCOVERED
-0    0-7    0  -6  fallback  rate     censored -50  6          114      153
+CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
+0   0-7   0   -6  fallback rate     censored -50 6         114     153
   bound by R9 ycruncher-bkt-sftv4-all-threads serial cpu 0 120s isolated
-1    8-15   0  -6  fallback  rate     censored -50  6          114      142
+1   8-15  0   -6  fallback rate     censored -50 6         114     142
   bound by R9 ycruncher-snt-svt-all-threads serial cpu 25 120s isolated
   CCD 0 uncovered for the cap: R1 mprime-sse-4k-21k 90s exact x8; R1
     ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s exact x8; R2
