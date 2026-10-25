@@ -208,7 +208,7 @@ The clean-stop summary prints exactly the closing events the dashboard kept off 
 
 A session written by a newer ruleset, schema or evidence epoch is refused before another event is appended, even if another dimension is older. `run` checks the journal's build stamp before validating configuration, so a newer journal still exits 16 when this build also rejects the config file. The diagnostic identifies the writing build's version and advises installing it or running `togi reset --all`. `reset` and `doctor` take that build from the first `session.start`, not the latest `config.loaded`.
 
-An older ruleset, schema or evidence epoch with no newer dimension uses [the fresh transition](journal.md#transitions), including an epoch-only increase: after configuration validation, `run` archives the source unchanged and starts a new session that maps from scratch, importing only eligible raw day observations. No tuning failures, passes, limits or prior decisions seed it. For a command that refuses this older journal instead of performing the transition, the advice text is: `togi run archives it and starts a new session that maps from scratch; togi reset --all archives it and starts over.` A BIOS/AGESA/microcode change alone continues the session under [firmware invalidation](tuner.md#firmware); it is not a compatibility archive.
+An older ruleset, schema or evidence epoch with no newer dimension uses [the fresh transition](journal.md#transitions), including an epoch-only increase: after configuration validation, `run` archives the source unchanged and starts a new session that maps from scratch, importing only eligible raw day observations. No tuning failures, passes, limits or prior decisions seed it. For a command that refuses this older journal instead of performing the transition, the advice text is: `togi run archives it and starts a new session that maps from scratch, keeping the raw day observations; togi reset --all archives it and starts over.` A BIOS/AGESA/microcode change alone continues the session under [firmware invalidation](tuner.md#firmware); it is not a compatibility archive.
 
 `status` and `events` (including `events --json`) warn to stderr before rendering a different ruleset with this build's rules, but refuse a different schema with a red bold line (journald priority 3). `watch` renders a different ruleset without a warning and shows a different schema's refusal on screen in place of the session. `reset --all` works across these build-dimension mismatches; a schema mismatch archives without appending to the old journal. Discarding a pending import occurs under the writer lock after establishing the permanent reset boundary and reports that raw-day import was discarded, never that tuning carry was dropped.
 
@@ -377,15 +377,11 @@ After every successful nonwriting preflight, on fresh start and resume in either
 
 ## Configuration
 
-JSON at the `--config` path (default `/etc/togi/config.json`), produced by the NixOS module from `services.togi.settings`. Keys remain snake_case; nested settings are JSON objects and core IDs are object keys written as decimal strings:
+JSON at the `--config` path (default `/etc/togi/config.json`), produced by the NixOS module from `services.togi.settings`. Keys remain snake_case and nested settings are JSON objects:
 
 ```json
 {
-  "backend_user": "togi-trial",
-  "start_offsets": {"3": -10},
-  "candidate_solo_limits": {"11": -20},
-  "durations": {"short_trial_s": 120},
-  "evidence": {"miss": 0.05, "rate": 0.5}
+  "backend_user": "togi-trial"
 }
 ```
 
@@ -393,31 +389,29 @@ The example assumes the `togi-trial` account exists; [Privileges](#privileges) d
 
 | Key | Default | Valid |
 |---|---|---|
-| `start_offsets.<core>` | none | Offset override per core id: a canonical decimal key (`"3"`, not `"03"`, `"+3"` or `" 3"`) within 0..=15, and an integer offset within [-50, 0]; never clamped, never `null` |
-| `candidate_solo_limits.<core>` | none | Candidate solo limit in [-50, 0], starting search at that offset with a solo-limit check; not together with `start_offsets` for the same core. A carried failure point can clamp it |
-| `durations.search_trial_s` | 90 | [1, 86400] |
-| `durations.short_trial_s` | 120 | [1, 86400]; short R7 trials, hunt groups, deepening checks and reruns |
-| `durations.checking_trial_s` | 120 | [1, 86400] |
-| `durations.checking_idle_s` | 900 | [1, 86400]; R6 |
-| `durations.checking_all_core_s` | 1200 | [4, 86400]; R7 long trials: a quarter per CCD, remainder all-core |
-| `checking.cycle` | `["R7", "R7", "R7", "R2", "R2", "R2", "R6", "R5", "R1", "R1", "R1", "R3", "R3", "R3", "R4", "R4", "R4", "R6"]` | Non-empty regime list; a passed cycle is not necessarily full. The schedule is full when it has at least three each of R1, R2 and R7 and one each of R3, R4, R5 and R6 (`CheckingSchedule::is_full`); `run --cycles N` and `run --first-result` refuse a schedule that is not full, because phase 1 ends only at a passed full cycle, and the session and CLI do the refusal |
-| `evidence.miss` | 0.05 | Probability of missing the failure rate used by the pass rule; finite number strictly between 0 and 1 ([Evidence](tuner.md#evidence)) |
-| `evidence.rate` | 0.5 | Per-trial failure probability used by the pass rule; finite number strictly between 0 and 1; together with miss yields between 1 and 1000 trials ([Evidence](tuner.md#evidence)) |
+| `start_offsets` | — | Retired; remove from the configuration |
+| `candidate_solo_limits` | — | Retired; remove from the configuration |
+| `durations.search_trial_s` | — | Retired; the night policy owns durations |
+| `durations.short_trial_s` | — | Retired; the night policy owns durations |
+| `durations.checking_trial_s` | — | Retired; the night policy owns durations |
+| `durations.checking_idle_s` | — | Retired; the night policy owns durations |
+| `durations.checking_all_core_s` | — | Retired; the night policy owns durations |
+| `evidence.miss` | — | Retired; no configurable replicated-pass quota |
+| `evidence.rate` | — | Retired; no configurable replicated-pass quota |
+| `checking.cycle` | — | Retired; no configurable checking cycle |
 | `dead_ends.inconclusive_in_a_row` | 3 | [1, 100] |
 | `dead_ends.stray_crashes_in_a_row` | 3 | [1, 100] |
 | `backends.mprime` | not configured | Absolute path of the package (`bin/mprime` inside it); leave out or `null` for none, an empty string is an error |
 | `backends.ycruncher` | not configured | Absolute path of the package (`lib/y-cruncher/Binaries` inside it); leave out or `null` for none, an empty string is an error |
 | `backend_user` | not configured; module sets `"togi-trial"` | Existing account with non-root UID and primary GID; checked by hardware preflight |
 
-Unknown members, including members of nested objects, duplicate members, duplicate core keys and out-of-range values are errors. TOML, JSON with comments and YAML are not accepted ([ADR 0050](../adr/0050-json-for-first-party-data-files.md)). When `--config` is not given and no file exists at the default path, the defaults apply.
+The retired keys are recognized only for diagnostics, never applied as settings. When a retired value is set, the configuration is refused with this exact stale-configuration error: `<key>: Ruleset 13 retired this setting; remove it from the configuration`. If several are set, report the first in the table's order. For example: `durations.short_trial_s: Ruleset 13 retired this setting; remove it from the configuration`. Historical snapshots may retain these fields as recorded data; they do not configure a new run.
 
-Evidence values outside (0, 1) are errors, as is an evidence pair whose trial count falls outside 1..=1000. `backend_user` is left out for none; an empty string is an error. A removed key is an unknown member like any other.
+Other unknown members, including members of nested objects, duplicate members and out-of-range active settings are errors. TOML, JSON with comments and YAML are not accepted ([ADR 0050](../adr/0050-json-for-first-party-data-files.md)). When `--config` is not given and no file exists at the default path, the defaults apply. `backend_user` is left out for none; an empty string is an error.
 
-The number of trials for a full evidence step is `ceil(ln(evidence.miss) / log1p(-evidence.rate))`, five at defaults. Durations and workload identity are part of the trial class, so a change to either never turns passes of a different class into valid evidence.
+The night policy owns trial durations and coverage under [the matrix](workloads.md#coverage-matrix), not these retired settings. [Evidence compatibility](workloads.md#evidence-compatibility) owns whether workload-content changes invalidate prior observations.
 
-The probability interpretation, independence assumption and heuristic choice of defaults are specified in [tuner.md, Evidence](tuner.md#evidence). These settings determine a replicated check's pass count; they are not a tolerated failure rate or a guarantee about future use.
-
-The effective configuration is recorded in `config.loaded` at every start. The JSON file cutover leaves that snapshot's shape unchanged and does not change the journal schema. Configuration that changes the meaning of existing evidence, such as trial durations, is allowed mid-session and takes effect from the next trial. The journal shows when it changed.
+The effective configuration is recorded in `config.loaded` at every start. Newly written snapshots contain only the active settings: `dead_ends`, `backends` and `backend_user`; retired fields remain decodable in historical snapshots but are not written or reapplied ([journal configuration snapshot](journal.md#event-format)).
 
 The JSON configuration has no version field, and the configuration rejects unknown members (`deny_unknown_fields`), so a removed or renamed option fails the command until the file is edited. The NixOS module keeps no `mkRenamedOptionModule` or `mkRemovedOptionModule` shims: the change is noted in the changelog. Changed configurable defaults are not a ruleset break.
 
