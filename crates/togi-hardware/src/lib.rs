@@ -14,6 +14,7 @@ mod preflight;
 mod ranking;
 mod reboot;
 mod stop;
+pub mod systemd_boot;
 mod watchdog;
 
 use std::path::Path;

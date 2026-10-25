@@ -55,7 +55,7 @@ complete -c togi -n "__fish_togi_needs_command" -f -a "watch" -d 'Show the sessi
 complete -c togi -n "__fish_togi_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c togi -n "__fish_togi_using_subcommand run" -l config -d 'JSON configuration file [default: /etc/togi/config.json]' -r -F
 complete -c togi -n "__fish_togi_using_subcommand run" -l cycles -d 'Stop after N clean cycles, each a passed full cycle ending at or after phase 2\'s confirmation cycle (default endless)' -r
-complete -c togi -n "__fish_togi_using_subcommand run" -l tuning-boot -d 'Run as the tuning boot service: persist a leave reason before clearing the saved boot entry in this GRUB environment file, and reboot after a boot loop' -r -F
+complete -c togi -n "__fish_togi_using_subcommand run" -l tuning-boot -d 'Run as the tuning boot service: persist a leave reason before restoring the day\'s boot selection, using a GRUB environment or /etc/togi/night.json, and reboot after a boot loop' -r -F
 complete -c togi -n "__fish_togi_using_subcommand run" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand run" -l first-result -d 'Stop once the BIOS profile is first confirmed, after phase 1\'s passed cycle and before phase 2 moves a core'
 complete -c togi -n "__fish_togi_using_subcommand run" -l no-tui -d 'Print one line per event instead of the dashboard on a terminal'
@@ -105,7 +105,7 @@ complete -c togi -n "__fish_togi_using_subcommand reset" -l config -d 'JSON conf
 complete -c togi -n "__fish_togi_using_subcommand reset" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand reset" -l all -d 'Archive the session; the next run starts a new one'
 complete -c togi -n "__fish_togi_using_subcommand reset" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand restart-limit" -l tuning-boot -d 'GRUB environment file for retry state and the saved tuning entry' -r -F
+complete -c togi -n "__fish_togi_using_subcommand restart-limit" -l tuning-boot -d 'GRUB environment or /etc/togi/night.json for retry state and boot selection' -r -F
 complete -c togi -n "__fish_togi_using_subcommand restart-limit" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand restart-limit" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c togi -n "__fish_togi_using_subcommand emergency-stop" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"

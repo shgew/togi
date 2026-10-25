@@ -1,5 +1,5 @@
-//! Bounded restart-limit retries and leave reasons kept in GRUB's environment block, and the night
-//! switch ([`night`]): the boot loader selection between night and day.
+//! Bounded restart-limit retries and durable leave reasons, and the night switch ([`night`]):
+//! the boot loader selection between night and day.
 //!
 //! The record types make an invalid leave reason unrepresentable, and `restart_limit` records an
 //! attempt before it grants either boot action, so a failure never grants a retry.
@@ -26,7 +26,7 @@ const MAX_COUNT: u8 = 3;
 const HEX: &[u8; 16] = b"0123456789abcdef";
 const RECORD_OVERHEAD: usize = r#"{"id":"","count":0,"reason":""}"#.len();
 
-/// GRUB's environment block. `set` writes all pairs in one operation.
+/// Durable boot-loader state. `set` writes all pairs in one operation.
 pub trait Environment {
     /// `None` means the variable is unset.
     fn get(&mut self, name: &str) -> io::Result<Option<String>>;
@@ -41,6 +41,42 @@ pub struct SavedEntry {
 }
 
 pub trait Bootloader: Environment {
+    /// Selects the tuning entry persistently, remembering the selection it replaces and reading
+    /// the result back. The default implements GRUB's environment-block selection.
+    fn select_tuning_entry(&mut self, tuning: &night::Entry) -> Result<(), night::NightError> {
+        use night::{DAY_ENTRY_VARIABLE, NIGHT_BEGUN, NIGHT_VARIABLE, SAVED_ENTRY_VARIABLE};
+        let current = self
+            .get(SAVED_ENTRY_VARIABLE)
+            .map_err(night::NightError::ReadSelection)?
+            .filter(|value| !value.is_empty());
+        match current {
+            Some(current) if current == tuning.as_str() => return Ok(()),
+            Some(day) => self.set(&[
+                (SAVED_ENTRY_VARIABLE, tuning.as_str()),
+                (DAY_ENTRY_VARIABLE, &day),
+                (NIGHT_VARIABLE, NIGHT_BEGUN),
+            ]),
+            None => self.unset(&[DAY_ENTRY_VARIABLE]).and_then(|()| {
+                self.set(&[
+                    (SAVED_ENTRY_VARIABLE, tuning.as_str()),
+                    (NIGHT_VARIABLE, NIGHT_BEGUN),
+                ])
+            }),
+        }
+        .map_err(night::NightError::Select)?;
+        let found = self
+            .get(SAVED_ENTRY_VARIABLE)
+            .map_err(night::NightError::ReadSelection)?
+            .filter(|value| !value.is_empty());
+        if found.as_deref() != Some(tuning.as_str()) {
+            return Err(night::NightError::NotSelected {
+                expected: tuning.to_string(),
+                found,
+            });
+        }
+        Ok(())
+    }
+
     /// Gives up the tuning selection, so the next boot is the day's. While a night begun with
     /// `night::Selection::begin` lasts (`night::NIGHT_VARIABLE`), the entry it remembered
     /// (`night::DAY_ENTRY_VARIABLE`) is selected again exactly, or none when the day had none, and
@@ -58,7 +94,7 @@ pub enum Error {
     InvalidCount(String),
     #[error("write restart count and leave reason")]
     WriteCountAndReason(#[source] io::Error),
-    #[error("clear GRUB saved entry")]
+    #[error("restore boot selection")]
     ClearSavedEntry(#[source] io::Error),
     #[error("read leave reason")]
     ReadReason(#[source] io::Error),

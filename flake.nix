@@ -542,6 +542,7 @@
               vm-host-lock = vm.host-lock;
               vm-restart-limit = vm.restart-limit;
               vm-night = vm.night;
+              vm-night-systemd-boot = vm.night-systemd-boot;
               vm-trial-scope = vm.trial-scope;
               vm-emergency-stop = vm.emergency-stop;
               vm-day-observer = vm.day-observer;

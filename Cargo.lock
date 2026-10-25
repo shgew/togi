@@ -1684,6 +1684,8 @@ version = "0.0.0"
 dependencies = [
  "jiff",
  "rustix",
+ "serde",
+ "serde_json",
  "tempfile",
  "test-case",
  "thiserror",

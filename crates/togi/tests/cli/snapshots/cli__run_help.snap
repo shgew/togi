@@ -32,7 +32,7 @@ Options:
           Stop once the BIOS profile is first confirmed, after phase 1's passed cycle and before phase 2 moves a core
 
       --tuning-boot <file>
-          Run as the tuning boot service: persist a leave reason before clearing the saved boot entry in this GRUB environment file, and reboot after a boot loop
+          Run as the tuning boot service: persist a leave reason before restoring the day's boot selection, using a GRUB environment or /etc/togi/night.json, and reboot after a boot loop
 
       --no-tui
           Print one line per event instead of the dashboard on a terminal

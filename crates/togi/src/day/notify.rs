@@ -295,7 +295,7 @@ mod tests {
             panic!("notify does not diagnose hardware")
         }
 
-        fn bootloader(&self, _: &Path) -> Box<dyn togi_tuningboot::Bootloader> {
+        fn bootloader(&self, _: &Path) -> std::io::Result<Box<dyn togi_tuningboot::Bootloader>> {
             panic!("notify does not touch the bootloader")
         }
 

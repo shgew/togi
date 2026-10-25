@@ -10,6 +10,38 @@ let
   json = pkgs.formats.json { };
   grub = config.boot.loader.grub;
   grubenv = "${(lib.head grub.mirroredBoots).path}/grub/grubenv";
+  systemdBoot = config.boot.loader.systemd-boot;
+  esp = config.boot.loader.efi.efiSysMountPoint;
+  boot = if systemdBoot.xbootldrMountPoint == null then esp else systemdBoot.xbootldrMountPoint;
+  bootState = "/var/lib/togi-boot";
+  tuningBoot = if grub.enable then grubenv else "/etc/togi/night.json";
+  bootMounts =
+    if grub.enable then
+      grubenv
+    else
+      lib.concatStringsSep " " (
+        [
+          esp
+          bootState
+        ]
+        ++ lib.optional (boot != esp) boot
+      );
+  bootTools = lib.optional grub.enable pkgs.grub2 ++ [ config.systemd.package ];
+  clearBootSelection =
+    if grub.enable then
+      "${pkgs.grub2}/bin/grub-editenv ${grubenv} unset saved_entry"
+    else
+      ''
+        ${config.systemd.package}/bin/bootctl --esp-path=${lib.escapeShellArg esp} set-default "" &&
+        ${config.systemd.package}/bin/bootctl --esp-path=${lib.escapeShellArg esp} set-oneshot "" &&
+        {
+          saved=/sys/firmware/efi/efivars/LoaderEntryLastBooted-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
+          if [ -e "$saved" ]; then
+            ${pkgs.e2fsprogs}/bin/chattr -i "$saved" &&
+            ${pkgs.coreutils}/bin/rm "$saved"
+          fi
+        }
+      '';
 in
 {
   options.services.togi = {
@@ -26,7 +58,7 @@ in
       example = "togi-hardware";
       description = "An explicitly authorized existing group whose members may acquire the root-owned host lock for delegated hardware tests. The default permits root only. This does not grant access to hardware or a delegated cpuset controller.";
     };
-    tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
+    tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB or systemd-boot entry that tunes unattended";
     day.enable = lib.mkEnableOption "the togi day observer, a read-only service in the normal boot that records the machine's day in togi's journal. It holds the host lock and the journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops, and it refuses to start while there is no session. It never exists in the tuning boot, and enabling it keeps the journal on disk with a 5s sync interval";
     day.watchdog = lib.mkEnableOption "the PID 1 hardware watchdog in the normal boot with the day observer, RuntimeWatchdogSec=60s, so a hang resets the machine and the observer can record the unclean end. A unit ordered before sleep.target releases the watchdog before suspend or hibernation, reloads sp5100_tco after resume to restore its timer decoding after deep sleep, and re-arms PID 1's watchdog even if the reload fails. The pause is retained for s2idle, where the timer may keep counting. It sets no lockup panic kernel parameter and never applies in the tuning boot, which keeps its own 30s watchdog";
     day.users = lib.mkOption {
@@ -183,24 +215,38 @@ in
       (lib.mkIf cfg.tuning.enable {
         assertions = [
           {
-            assertion = grub.enable && builtins.length grub.mirroredBoots == 1;
-            message = "services.togi.tuning.enable requires GRUB with exactly one mirroredBoots entry: togi's tuning boot supports a single GRUB environment";
+            assertion = grub.enable != systemdBoot.enable;
+            message = "services.togi.tuning.enable requires exactly one supported boot loader: GRUB or systemd-boot";
+          }
+          {
+            assertion = !grub.enable || builtins.length grub.mirroredBoots == 1;
+            message = "services.togi.tuning.enable with GRUB requires exactly one mirroredBoots entry: togi's tuning boot supports a single GRUB environment";
           }
         ];
-        boot.loader.grub.default = "saved";
-        # `togi night` runs grub-editenv in the normal boot, where a shell has no other path to it.
-        environment.systemPackages = [ pkgs.grub2 ];
-        # What the night switch needs to know, in one file the normal boot and the tuning boot both read: GRUB's
-        # environment and the menu title of the tuning entry as the boot loader lists it.
-        environment.etc."togi/night.json".source = json.generate "togi-night.json" {
-          grubenv = toString grubenv;
-          entry = "${config.system.nixos.distroName} - togi";
-        };
+        boot.loader.grub.default = lib.mkIf grub.enable "saved";
+        # The same setup file is read in the normal boot and its tuning specialisation.
+        environment.systemPackages = bootTools;
+        systemd.tmpfiles.rules = lib.optional systemdBoot.enable "d ${bootState} 0700 root root -";
+        environment.etc."togi/night.json".source = json.generate "togi-night.json" (
+          if grub.enable then
+            {
+              loader = "grub";
+              grubenv = toString grubenv;
+              entry = "${config.system.nixos.distroName} - togi";
+            }
+          else
+            {
+              loader = "systemd-boot";
+              inherit esp boot;
+              state = bootState;
+              specialisation = "togi";
+            }
+        );
         specialisation.togi.configuration = {
           # The tuning boot inherits the normal configuration; the observer is a normal-boot service.
           services.togi.day.enable = lib.mkForce false;
           system.nixos.tags = [ "togi" ];
-          boot.loader.grub.configurationName = "togi";
+          boot.loader.grub.configurationName = lib.mkIf grub.enable "togi";
           systemd.defaultUnit = lib.mkForce "multi-user.target";
           boot.initrd.kernelModules = [ "sp5100_tco" ];
           boot.kernel.sysctl = {
@@ -222,42 +268,46 @@ in
           };
           systemd.services.togi-restart-limit = {
             description = "Recover when togi reaches its service restart limit";
-            unitConfig.RequiresMountsFor = grubenv;
-            path = [
-              pkgs.coreutils
-              pkgs.grub2
-              pkgs.systemd
-            ];
+            unitConfig.RequiresMountsFor = bootMounts;
+            path = [ pkgs.coreutils ] ++ bootTools;
             serviceConfig.Type = "oneshot";
             script = ''
               [ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0
-              if ${lib.getExe cfg.package} restart-limit --tuning-boot ${grubenv}; then
+              if ${lib.getExe cfg.package} restart-limit --tuning-boot ${tuningBoot}; then
                 exit 0
               fi
               rm -f /run/togi-retry-tuning-boot || true
-              grub-editenv ${grubenv} set "togi_leave_reason={\"id\":\"fallback-$INVOCATION_ID\",\"count\":0,\"reason\":\"restart-limit command failed; returning to the normal system\"}" || true
-              grub-editenv ${grubenv} unset saved_entry
+              ${
+                if grub.enable then
+                  ''
+                    grub-editenv ${grubenv} set "togi_leave_reason={\"id\":\"fallback-$INVOCATION_ID\",\"count\":0,\"reason\":\"restart-limit command failed; returning to the normal system\"}" || true
+                    ${clearBootSelection}
+                  ''
+                else
+                  ''
+                    ${lib.getExe cfg.package} night-end || {
+                      ${clearBootSelection}
+                    }
+                  ''
+              }
               systemctl reboot
             '';
           };
           systemd.services.togi = {
             description = "togi tuning boot";
             onFailure = [ "togi-restart-limit.service" ];
-            unitConfig.RequiresMountsFor = grubenv;
+            unitConfig.RequiresMountsFor = bootMounts;
             wantedBy = [ "multi-user.target" ];
             after = [
               "systemd-modules-load.service"
               "systemd-pstore.service"
               "local-fs.target"
             ];
-            path = [
-              pkgs.grub2
-              config.systemd.package
-            ];
+            path = bootTools;
             startLimitIntervalSec = 1800;
             startLimitBurst = 3;
             serviceConfig = {
-              ExecStart = "${lib.getExe cfg.package} run --tuning-boot ${grubenv}";
+              ExecStart = "${lib.getExe cfg.package} run --tuning-boot ${tuningBoot}";
               Restart = "on-failure";
               RestartSec = 60;
               RestartPreventExitStatus = lib.concatMapStringsSep " " toString ([ 3 ] ++ lib.range 10 18);
@@ -276,14 +326,13 @@ in
             wantedBy = [ "multi-user.target" ];
             before = [ "togi.service" ];
             restartIfChanged = false;
-            unitConfig.RequiresMountsFor = grubenv;
-            path = [
-              pkgs.grub2
-              config.systemd.package
-            ];
+            unitConfig.RequiresMountsFor = bootMounts;
+            path = bootTools;
             preStop = ''
               [ ! -e /run/togi-retry-tuning-boot ] || exit 0
-              ${lib.getExe cfg.package} night-end || ${pkgs.grub2}/bin/grub-editenv ${grubenv} unset saved_entry
+              ${lib.getExe cfg.package} night-end || {
+                ${clearBootSelection}
+              }
             '';
             serviceConfig = {
               Type = "oneshot";
@@ -322,11 +371,8 @@ in
             wants = [ "togi-kernel-log.service" ];
             wantedBy = lib.optional (cfg.tuning.display == "console") "multi-user.target";
             unitConfig.ConditionPathExists = "/dev/tty1";
-            # F10 stops the run, restores the boot selection and reboots: it needs systemctl and grub-editenv.
-            path = [
-              pkgs.grub2
-              config.systemd.package
-            ];
+            # F10 stops the run, restores the boot selection and reboots.
+            path = bootTools;
             environment.TERM = "linux";
             serviceConfig = {
               Type = "exec";
@@ -360,10 +406,7 @@ in
             unitConfig.ConditionPathExists = "/dev/tty1";
             startLimitIntervalSec = 180;
             startLimitBurst = 3;
-            path = [
-              pkgs.grub2
-              config.systemd.package
-            ];
+            path = bootTools;
             environment = {
               COLORTERM = "truecolor";
               TERM = "xterm-256color";

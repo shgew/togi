@@ -16,7 +16,7 @@ module completions {
     --config: path            # JSON configuration file [default: /etc/togi/config.json]
     --cycles: string          # Stop after N clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle (default endless)
     --first-result            # Stop once the BIOS profile is first confirmed, after phase 1's passed cycle and before phase 2 moves a core
-    --tuning-boot: path       # Run as the tuning boot service: persist a leave reason before clearing the saved boot entry in this GRUB environment file, and reboot after a boot loop
+    --tuning-boot: path       # Run as the tuning boot service: persist a leave reason before restoring the day's boot selection, using a GRUB environment or /etc/togi/night.json, and reboot after a boot loop
     --no-tui                  # Print one line per event instead of the dashboard on a terminal
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
@@ -132,7 +132,7 @@ module completions {
 
   # Recover after the tuning service reaches its restart limit
   export extern "togi restart-limit" [
-    --tuning-boot: path       # GRUB environment file for retry state and the saved tuning entry
+    --tuning-boot: path       # GRUB environment or /etc/togi/night.json for retry state and boot selection
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
   ]

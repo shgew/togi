@@ -4,8 +4,8 @@
 //! tuner stops on its own; no clock ends it. Beginning one selects the tuning entry and remembers
 //! the selection it replaced; returning to the day restores that selection exactly and never
 //! selects a particular generation. Crash reboots in between stay in the night, because the
-//! selection stays. A tuning boot picked from the boot menu is a night too: GRUB's `savedefault`
-//! selects it, and its day is the boot loader's default.
+//! selection stays. Menu-picked tuning boots follow their loader's default policy; GRUB adopts
+//! the choice, while systemd-boot saves it only with effective `@saved`.
 
 use std::fmt;
 use std::io;
@@ -40,9 +40,7 @@ pub enum NightError {
     ReadSelection(#[source] io::Error),
     #[error("select the tuning entry")]
     Select(#[source] io::Error),
-    #[error(
-        "the tuning entry {expected:?} is not selected after selecting it: {SAVED_ENTRY_VARIABLE} is {found:?}"
-    )]
+    #[error("the tuning entry {expected:?} is not selected after selecting it: found {found:?}")]
     NotSelected {
         expected: String,
         found: Option<String>,
@@ -98,12 +96,34 @@ impl fmt::Display for Entry {
 
 /// What the NixOS module tells the night switch about the installed tuning boot ([`SETUP_PATH`]).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Setup {
-    /// GRUB's environment block.
-    pub grubenv: PathBuf,
-    /// The tuning boot's menu entry.
-    pub entry: Entry,
+#[serde(tag = "loader", deny_unknown_fields)]
+pub enum Setup {
+    #[serde(rename = "grub")]
+    Grub { grubenv: PathBuf, entry: Entry },
+    #[serde(rename = "systemd-boot")]
+    SystemdBoot {
+        esp: PathBuf,
+        boot: PathBuf,
+        state: PathBuf,
+        specialisation: Entry,
+    },
+}
+
+impl Setup {
+    /// The boot selection passed to the host: GRUB's environment or the module's loader setup.
+    pub fn boot_path(&self) -> &std::path::Path {
+        match self {
+            Self::Grub { grubenv, .. } => grubenv,
+            Self::SystemdBoot { .. } => std::path::Path::new(SETUP_PATH),
+        }
+    }
+
+    pub fn entry(&self) -> &Entry {
+        match self {
+            Self::Grub { entry, .. } => entry,
+            Self::SystemdBoot { specialisation, .. } => specialisation,
+        }
+    }
 }
 
 impl FromStr for Setup {
@@ -124,8 +144,8 @@ fn object_only<T: DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> 
     }
 }
 
-/// The boot loader's selection of the next boot, as the night switch uses it. This is the one seam
-/// a boot loader implements: [`GrubSelection`] keeps everything in GRUB's environment block.
+/// The boot loader's selection of the next boot, as the night switch uses it. [`BootSelection`]
+/// delegates to the selected boot loader, keeping loader details out of commands.
 pub trait Selection {
     /// Selects `tuning` for every following boot, remembering the selection it replaces. Beginning
     /// while `tuning` is already selected changes nothing, so a second beginning keeps the day the
@@ -146,50 +166,19 @@ pub trait Selection {
     fn end(&mut self) -> Result<SavedEntry, NightError>;
 }
 
-/// [`Selection`] in GRUB's environment block: `saved_entry` is the selection, `togi_day_entry` the
-/// one the night replaced and `togi_night` marks a night [`Selection::begin`] began.
-pub struct GrubSelection(Box<dyn Bootloader>);
+/// The night switch over the installed boot loader.
+pub struct BootSelection(Box<dyn Bootloader>);
 
-impl GrubSelection {
+impl BootSelection {
     #[must_use]
     pub fn new(bootloader: Box<dyn Bootloader>) -> Self {
         Self(bootloader)
     }
-
-    fn saved(&mut self) -> Result<Option<String>, NightError> {
-        self.0
-            .get(SAVED_ENTRY_VARIABLE)
-            .map(|value| value.filter(|value| !value.is_empty()))
-            .map_err(NightError::ReadSelection)
-    }
 }
 
-impl Selection for GrubSelection {
+impl Selection for BootSelection {
     fn begin(&mut self, tuning: &Entry) -> Result<(), NightError> {
-        let written = match self.saved()? {
-            Some(current) if current == tuning.as_str() => return Ok(()),
-            Some(day) => self.0.set(&[
-                (SAVED_ENTRY_VARIABLE, tuning.as_str()),
-                (DAY_ENTRY_VARIABLE, &day),
-                (NIGHT_VARIABLE, NIGHT_BEGUN),
-            ]),
-            None => self.0.unset(&[DAY_ENTRY_VARIABLE]).and_then(|()| {
-                self.0.set(&[
-                    (SAVED_ENTRY_VARIABLE, tuning.as_str()),
-                    (NIGHT_VARIABLE, NIGHT_BEGUN),
-                ])
-            }),
-        };
-        written.map_err(NightError::Select)?;
-        let found = self.saved()?;
-        if found.as_deref() == Some(tuning.as_str()) {
-            Ok(())
-        } else {
-            Err(NightError::NotSelected {
-                expected: tuning.to_string(),
-                found,
-            })
-        }
+        self.0.select_tuning_entry(tuning)
     }
 
     fn end(&mut self) -> Result<SavedEntry, NightError> {

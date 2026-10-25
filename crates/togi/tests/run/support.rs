@@ -24,6 +24,7 @@ use togi_machine::{
 };
 use togi_render::OutputFacts;
 use togi_sim::{Model, RunSettings, Simulator, file};
+use togi_tuningboot::night::{SETUP_PATH, Setup};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 use togi_watch::terminal;
 
@@ -442,8 +443,15 @@ impl System for Fake {
         self.sim.now()
     }
 
-    fn bootloader(&self, _: &Path) -> Box<dyn Bootloader> {
-        Box::new(self.grub.clone())
+    /// Like the real host's: the night setup file is read and decoded before a loader opens, so an unreadable or
+    /// malformed one fails here; any other selection is the in-memory GRUB environment.
+    fn bootloader(&self, selection: &Path) -> io::Result<Box<dyn Bootloader>> {
+        if selection == Path::new(SETUP_PATH) {
+            self.read_config(selection)?
+                .parse::<Setup>()
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        }
+        Ok(Box::new(self.grub.clone()))
     }
 
     fn reboot(&self) -> Result<(), RebootError> {

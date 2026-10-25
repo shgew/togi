@@ -3,6 +3,7 @@ mod support;
 
 use support::{Host, files};
 use togi_cli::Exit;
+use togi_tuningboot::night::SETUP_PATH;
 
 const GRUBENV: &str = "fake grubenv";
 const GET: &str = "get togi_restart_count";
@@ -219,4 +220,46 @@ fn the_state_directory_flag_is_accepted_after_the_command() {
         ],
     );
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+}
+
+#[test_case::test_case(None, "entity not found"; "unreadable")]
+#[test_case::test_case(Some(&b"\xff\xfe"[..]), "invalid utf-8"; "not text")]
+#[test_case::test_case(Some(&b""[..]), "setup is malformed"; "empty")]
+#[test_case::test_case(Some(&b"{ not json"[..]), "setup is malformed"; "not json")]
+#[test_case::test_case(Some(&b"[\"grub\"]"[..]), "setup is malformed"; "not an object")]
+#[test_case::test_case(Some(&br#"{"loader":"lilo"}"#[..]), "setup is malformed"; "unknown loader")]
+#[test_case::test_case(Some(&br#"{"loader":"grub","grubenv":"/boot/grubenv"}"#[..]), "setup is malformed"; "missing entry")]
+fn a_night_setup_that_cannot_be_loaded_fails_before_any_retry_state_or_reboot(
+    setup: Option<&[u8]>,
+    cause: &str,
+) {
+    let host = Host::new();
+    let state = support::MemoryDir::new();
+    if let Some(bytes) = setup {
+        assert!(host.write(SETUP_PATH, bytes).is_ok());
+    }
+    let ran = host.run(
+        state.path(),
+        &["restart-limit", "--tuning-boot", SETUP_PATH],
+    );
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert_eq!(ran.out, "");
+    assert!(ran.err.starts_with("togi restart-limit: "), "{}", ran.err);
+    assert!(ran.err.contains(cause), "{}", ran.err);
+    assert_eq!(
+        host.grubenvs.borrow().as_slice(),
+        [std::path::PathBuf::from(SETUP_PATH)]
+    );
+    assert_eq!(
+        host.steps(),
+        Vec::<String>::new(),
+        "no count, marker or reboot step"
+    );
+    assert!(!host.marker.get(), "the retry marker was created");
+    assert_eq!(host.marker_at_reboot.get(), None, "a reboot was requested");
+    assert_eq!(
+        files(&host.fs, state.path()),
+        Vec::<String>::new(),
+        "touched the state directory"
+    );
 }

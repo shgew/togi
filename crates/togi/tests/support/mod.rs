@@ -30,6 +30,7 @@ use togi_journal::fs::Fs;
 use togi_journal::{MemFs, Payload};
 use togi_machine::{BiosContext, BootId, Machine};
 use togi_render::OutputFacts;
+use togi_tuningboot::night::{SETUP_PATH, Setup};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 use togi_watchtest::{Scenario, install_with_fs};
 
@@ -394,19 +395,26 @@ impl System for Host {
         self.diagnosis.borrow_mut().take().unwrap()
     }
 
-    fn bootloader(&self, grubenv: &Path) -> Box<dyn Bootloader> {
+    /// Like the real host's: the night setup file is read and decoded before a loader opens, so an unreadable or
+    /// malformed one fails here; any other selection is GRUB's environment.
+    fn bootloader(&self, grubenv: &Path) -> io::Result<Box<dyn Bootloader>> {
         self.grubenvs.borrow_mut().push(grubenv.to_owned());
+        if grubenv == Path::new(SETUP_PATH) {
+            self.read_config(grubenv)?
+                .parse::<Setup>()
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        }
         let values = self
             .count
             .borrow()
             .iter()
             .map(|count| ("togi_restart_count".to_owned(), count.clone()))
             .collect();
-        Box::new(Env {
+        Ok(Box::new(Env {
             values,
             steps: Rc::clone(&self.steps),
             fail: self.fail.borrow().clone(),
-        })
+        }))
     }
 
     fn create_retry_marker(&self) -> io::Result<()> {
