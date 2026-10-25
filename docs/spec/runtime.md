@@ -495,7 +495,7 @@ This section owns the boot-loader selection; [night declaration](#night-declarat
 
 **The power button.** `togi-leave-tuning-boot.service` is the leave-on-shutdown hook: its stop runs `togi night-end`, so the power button, `poweroff` and `reboot` all return to the day, with the day's selection exactly. It is the same hook as before; only what it runs changed. With `tuning.leaveOnShutdown` off no hook runs, and the night lasts until F10, a dead end, the restart limit or a pick of another menu entry.
 
-**Hours.** [Day-policy integration](#day-policy-integration) owns applied daily hours and their exclusions, including pause. Boot-loader selection is not exposure evidence.
+**Hours.** The [Ruleset 13 policy boundary](#ruleset-13-policy-boundary) owns applied daily hours and their exclusions, including pause. Boot-loader selection is not exposure evidence.
 
 ## Dead-end actions
 
