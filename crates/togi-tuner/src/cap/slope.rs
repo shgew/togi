@@ -155,18 +155,20 @@ struct Point {
     ln_hours: f64,
 }
 
-/// Fits `rate(o) = exp(a - beta*o)` by Poisson likelihood to the cells with positive exposure. Profiling
+/// Fits `rate(o) = exp(a - beta*o)` by Poisson likelihood to the offsets with positive exposure; cells at
+/// one offset merge first, so a warm-up failure counts with the same offset's later positive hours. Profiling
 /// out `a` (`exp(a) = Σk / Σ T exp(-beta o)`) leaves
 /// `loglik(beta) = -K ln Σ T_i exp(-beta o_i) - beta Σ k_i o_i` up to a constant, which is concave, so
 /// the maximum and both ends of the interval where twice the loss is at most `cutoff` bracket cleanly.
 /// Returns the lower endpoint.
 pub fn fit_slope(cells: &[Cell], cutoff: LikelihoodCutoff) -> SlopeFit {
     let mut merged: BTreeMap<TargetOffset, (u64, f64)> = BTreeMap::new();
-    for cell in cells.iter().filter(|cell| cell.hours.get() > 0.0) {
+    for cell in cells {
         let entry = merged.entry(cell.offset).or_insert((0, 0.0));
         entry.0 += u64::from(cell.failures);
         entry.1 = (entry.1 + cell.hours.get()).min(f64::MAX);
     }
+    merged.retain(|_, (_, hours)| *hours > 0.0);
     let failing: BTreeSet<TargetOffset> = merged
         .iter()
         .filter(|(_, (failures, _))| *failures > 0)

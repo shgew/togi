@@ -453,6 +453,20 @@ fn failures_without_exposure_are_not_a_measurement() {
 }
 
 #[test]
+fn a_warm_up_failure_counts_with_the_hours_its_offset_ran_later() {
+    // The failures at -10 came in a warm-up, with no eligible hours; a later pass at the same offset ran
+    // its hours. Merged by offset, -10 is a failing offset like any other.
+    let split = vec![
+        mapped(0, 1, 1000.0),
+        mapped(-10, 12, 0.0),
+        mapped(-10, 0, 1000.0),
+    ];
+    let merged = vec![mapped(0, 1, 1000.0), mapped(-10, 12, 1000.0)];
+    assert_eq!(fit(&split), fit(&merged));
+    assert!(matches!(fit(&split), SlopeFit::Measured { .. }));
+}
+
+#[test]
 fn a_flat_class_justifies_no_decay() {
     let cells = vec![mapped(0, 5, 1000.0), mapped(-20, 5, 1000.0)];
     let SlopeFit::NoJustifiedDecay(NoDecay::Nonpositive(lower)) = fit(&cells) else {
