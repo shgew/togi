@@ -382,6 +382,27 @@ impl Journal {
         self.append(end.into(), &[intent])
     }
 
+    /// Journals a trial of `plan` the session was killed in after its intent and before its start: the
+    /// resumed run ends it inconclusive and interrupted, having run nothing.
+    pub(crate) fn run_unstarted(&mut self, plan: &TrialPlan) -> Seq {
+        let id = TrialId::from(format!("t{}", self.events.len() + 1));
+        let content = plan
+            .workloads()
+            .into_iter()
+            .map(|workload| WorkloadContent {
+                workload,
+                content: self.built.clone(),
+            })
+            .collect();
+        let intent = plan.intent(id.clone(), &cores(), content).unwrap();
+        let intent = self.append(intent.into(), &plan.causes);
+        let end: TrialEnd = serde_json::from_value(serde_json::json!({
+            "trial": id.as_str(), "outcome": "inconclusive", "duration_s": 0, "interrupted": true
+        }))
+        .unwrap();
+        self.append(end.into(), &[intent])
+    }
+
     /// Drives the night until it asks for a trial, committing what it owes on the way.
     pub(crate) fn until_trial(&mut self, now: Timestamp) -> TrialPlan {
         match self.until_end(now, &BTreeMap::new()) {

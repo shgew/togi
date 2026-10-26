@@ -248,7 +248,10 @@ impl State {
         };
         let position = match regime {
             Regime::R8 => intent.core.map(|core| Position::Light { core }),
-            Regime::R9 => trial.start.as_ref().and_then(|(_, start)| {
+            // The serial CPU is the matrix's choice among the core's CPUs and is journaled only in the
+            // start's roles: a trial killed before its start has no class to record.
+            Regime::R9 => {
+                let (_, start) = trial.start.as_ref()?;
                 start.roles.iter().find_map(|role| match role.schedule {
                     PhaseSchedule::Alternate { serial: true, .. } => {
                         Some(Position::Serial { cpu: role.cpu })
@@ -258,7 +261,7 @@ impl State {
                     | PhaseSchedule::Steps { .. }
                     | PhaseSchedule::Burst { .. } => None,
                 })
-            }),
+            }
             Regime::R1
             | Regime::R2
             | Regime::R3

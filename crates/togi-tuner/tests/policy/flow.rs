@@ -6,13 +6,14 @@ use std::collections::BTreeMap;
 
 use togi_journal::{
     Activity, ApplicationId, ApplyCause, CellEvidence, Classification, DayApplied, DayCheckpoint,
-    DayCleanStop, DayOffsetsChanged, DayStep, DayUncleanEnd, Edge, LoadMix, NightQualification,
-    Payload, QualificationPurpose, QualificationState, Queue, ReproductionState, RetreatCause, Seq,
-    StepKind, Tested, UncoveredReason, WarningKind,
+    DayCleanStop, DayOffsetsChanged, DayStep, DayUncleanEnd, Edge, ExposureClass, LoadMix,
+    NightQualification, Payload, QualificationPurpose, QualificationState, Queue,
+    ReproductionState, RetreatCause, Seq, StepKind, Tested, UncoveredReason, WarningKind,
 };
 use togi_machine::{BootId, CcdProfile, EndEvidence, Regime, ResetReason};
 use togi_tuner::cap::Rate;
 use togi_tuner::day::{Invocation, Pause};
+use togi_tuner::night::Roles;
 use togi_tuner::policy::{Action, DayQuery, EndReason, Params, PolicyPayload, TrialPlan};
 
 use crate::fixture::{Ending, Journal, at, ccd, firmware, offsets_of, rebuilt, zero};
@@ -866,4 +867,54 @@ fn a_cap_says_why_each_class_is_uncovered() {
     // R9 is a mapping class the night had not mapped yet when it first committed a cap.
     let r9 = reasons(Regime::R9);
     assert!(r9.contains(&UncoveredReason::NoObservations), "{r9:?}");
+}
+
+/// The uncovered classes of each cap the first night commits, every trial passing. With `crash`, the
+/// session is killed between the first R9 mapping trial's intent and its start, and the trial is rerun.
+fn uncovered_by_cap(crash: bool) -> Vec<Vec<ExposureClass>> {
+    let mut journal = Journal::ready();
+    let mut crashed = !crash;
+    for step in 0..3_500_i64 {
+        let plan = journal.until_trial(at(100 + step));
+        if plan.task.queue == Queue::Filler {
+            break;
+        }
+        if !crashed
+            && plan.activity == Activity::Mapping
+            && matches!(plan.cell.roles, Roles::AllThreads { .. })
+        {
+            journal.run_unstarted(&plan);
+            crashed = true;
+        }
+        journal.run(&plan, Ending::Pass);
+    }
+    assert!(crashed, "the night ran no R9 mapping trial");
+    journal
+        .events
+        .iter()
+        .filter_map(|event| {
+            let Payload::CcdCap(cap) = &event.payload else {
+                return None;
+            };
+            Some(
+                cap.uncovered
+                    .iter()
+                    .map(|uncovered| uncovered.class.clone())
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_trial_killed_before_its_start_adds_no_class_to_the_caps() {
+    let crashed = uncovered_by_cap(true);
+    assert!(
+        crashed
+            .iter()
+            .flatten()
+            .all(|class| class.regime != Regime::R9 || class.position.is_some()),
+        "{crashed:?}"
+    );
+    assert_eq!(crashed, uncovered_by_cap(false));
 }
