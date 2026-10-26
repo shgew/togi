@@ -124,6 +124,66 @@ fn state_rebuild_write_failure_warns_and_continues() {
 }
 
 #[test]
+fn startup_readback_resolution_survives_replay_and_rebuilds_a_stale_open_snapshot() {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    session.begin().unwrap();
+    let receipt = session
+        .appender
+        .smu_intent(
+            togi_journal::SmuCommand::Set {
+                core: crate::testing::core(1),
+                offset: togi_machine::TargetOffset::ZERO,
+            },
+            &[],
+        )
+        .unwrap();
+    let intent = receipt.intent();
+    assert!(session.appender.publish_state().unwrap());
+    drop(session);
+
+    let mut resumed = bench.open();
+    assert_eq!(resumed.start().unwrap(), Control::Continue);
+    assert_eq!(resumed.preflight().unwrap(), Control::Continue);
+    assert_eq!(resumed.sweep().unwrap(), Control::Continue);
+    assert_eq!(resumed.reconcile().unwrap(), Control::Continue);
+    assert!(resumed.appender.folds.facts.open.is_empty());
+    assert_eq!(
+        resumed
+            .appender
+            .recovery()
+            .latest_unmatched_intent(resumed.appender.journal().boot()),
+        None
+    );
+    assert!(resumed.appender.journal().events().iter().any(|event| {
+        matches!(event.payload, Payload::SmuReadback(_)) && event.cause == [intent]
+    }));
+    crate::testing::assert_fold_consistent(&resumed.appender);
+    drop(resumed);
+
+    let mut reopened = bench.open();
+    reopened.rebuild_state().unwrap();
+    let Payload::StateRebuilt(rebuilt) =
+        &reopened.appender.journal().events().last().unwrap().payload
+    else {
+        panic!("the stale open-intent snapshot was not rebuilt");
+    };
+    assert!(rebuilt.fields.contains(&"last_seq".to_owned()));
+    assert!(reopened.appender.folds.facts.open.is_empty());
+    assert!(reopened.appender.publish_state().unwrap());
+    let (_, saved): (_, StateDocument) = reopened
+        .appender
+        .journal()
+        .dir()
+        .read_snapshot()
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.facts, reopened.appender.folds.facts);
+    assert_eq!(saved.recovery, *reopened.appender.recovery());
+    crate::testing::assert_fold_consistent(&reopened.appender);
+}
+
+#[test]
 fn a_state_file_holding_the_document_as_an_array_is_rebuilt() {
     let bench = Bench::new(2);
     let mut session = swept(&bench);

@@ -242,7 +242,7 @@ impl Session<'_> {
     }
 
     fn read_back_and_restore(&mut self) -> Step<()> {
-        write::read_all(&mut self.appender, &mut *self.smu, &mut self.hardware, &[])?;
+        write::read_all(&mut self.appender, &mut *self.smu, &mut self.hardware)?;
         self.restore().map(drop)
     }
 

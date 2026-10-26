@@ -357,16 +357,30 @@ pub(crate) struct Reading {
 }
 
 /// Reads every core's offset, journals each as a readback without an expected value and lets the hardware know what
-/// it found: a value no write could have put there leaves the slot unknown. A read that fails records `smu.error`.
+/// it found: a value no write could have put there leaves the slot unknown. Each read cites an inherited open intent
+/// for its core on this boot, resolving it without inventing a write. A read that fails records `smu.error`.
 pub(crate) fn read_all(
     appender: &mut Appender,
     smu: &mut dyn Smu,
     hardware: &mut Hardware,
-    causes: &[Seq],
 ) -> Result<Reading, WriteFailure> {
     let mut offsets = PerCore::default();
     let mut readbacks = Vec::with_capacity(hardware.cores.len());
     for core in &hardware.cores {
+        let intent = appender.folds.facts.open.iter().find_map(|open| {
+            if open.boot != *appender.journal().boot() {
+                return None;
+            }
+            let event = appender.journal().event(open.seq)?;
+            if let Payload::SmuIntent(intent) = &event.payload
+                && intent.command().core().is_none_or(|target| target == core)
+            {
+                Some(open.seq)
+            } else {
+                None
+            }
+        });
+        let causes = intent.as_slice();
         let observed = match smu.offset(core) {
             Ok(observed) => observed,
             Err(error) => {

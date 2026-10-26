@@ -684,6 +684,11 @@ impl RecoveryState {
     }
 
     fn smu_readback(&mut self, event: &Event, readback: &togi_journal::SmuReadback) {
+        self.unmatched.retain(|open| {
+            !(matches!(open.kind, IntentKind::Smu)
+                && open.boot == event.boot
+                && event.cause.contains(&open.seq))
+        });
         if let Some(expected) = readback.expected
             && expected.observed() != readback.offset
         {

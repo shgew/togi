@@ -438,8 +438,7 @@ fn a_crash_at_the_write_is_before_any_effect() {
 #[test]
 fn reading_every_core_journals_each_without_an_expected_value_and_knows_the_slots() {
     let mut rig = Rig::new(4);
-    let reading =
-        super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware, &[]).unwrap();
+    let reading = super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware).unwrap();
     assert_eq!(
         rig.kinds(),
         [
@@ -465,14 +464,42 @@ fn reading_every_core_journals_each_without_an_expected_value_and_knows_the_slot
 }
 
 #[test]
+fn startup_readback_resolves_the_inherited_intent_on_its_core_without_a_write() {
+    let mut rig = Rig::new(2);
+    rig.start_at_zero();
+    let receipt = rig
+        .appender
+        .smu_intent(
+            togi_journal::SmuCommand::Set {
+                core: core(1),
+                offset: target(0),
+            },
+            &[],
+        )
+        .unwrap();
+    let intent = receipt.intent();
+    let before = rig.events().len();
+    let reading = super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware).unwrap();
+    assert_eq!(rig.kinds()[before..], ["smu.readback", "smu.readback"]);
+    assert_eq!(rig.events()[before].cause, []);
+    assert_eq!(rig.events()[before + 1].cause, [intent]);
+    assert_eq!(reading.offsets.get(core(1)), Some(ObservedOffset(0)));
+    assert_eq!(
+        rig.appender.recovery().latest_unmatched_intent(&rig.boot),
+        None
+    );
+    assert_eq!(rig.appender.folds.facts.in_flight(), None);
+    assert_fold_consistent(&rig.appender);
+}
+
+#[test]
 fn a_nonzero_machine_is_read_as_it_stands_and_a_value_no_write_can_set_is_unknown() {
     let mut rig = Rig::defined(&MachineDefinition {
         cores: 2,
         bios: Some(vec![-5, -7]),
         ..MachineDefinition::default()
     });
-    let reading =
-        super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware, &[]).unwrap();
+    let reading = super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware).unwrap();
     assert_eq!(reading.offsets.get(core(1)), Some(ObservedOffset(-7)));
     assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Known(target(-5))));
     assert_eq!(rig.hardware.slot(core(1)), Some(Slot::Known(target(-7))));
@@ -490,8 +517,7 @@ fn a_failed_read_records_the_error_and_is_smu_evidence() {
         }
         Ok(())
     });
-    let failure =
-        super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware, &[]).unwrap_err();
+    let failure = super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware).unwrap_err();
     assert!(matches!(
         failure,
         WriteFailure::Smu {

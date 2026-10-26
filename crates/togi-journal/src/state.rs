@@ -237,6 +237,13 @@ impl State {
                     !(open.kind == EventKind::SmuIntent && event.cause.contains(&open.seq))
                 });
             }
+            Payload::SmuReadback(_) => {
+                self.open.retain(|open| {
+                    !(open.kind == EventKind::SmuIntent
+                        && open.boot == event.boot
+                        && event.cause.contains(&open.seq))
+                });
+            }
             Payload::TrialIntent(intent) => self.push_open(event, Some(intent.trial.clone())),
             Payload::TrialEnd(end) => {
                 self.open.retain(|open| {
@@ -252,7 +259,6 @@ impl State {
             | Payload::SessionArchived(_)
             | Payload::SessionCarried(_)
             | Payload::PreflightCheck(_)
-            | Payload::SmuReadback(_)
             | Payload::ProfileApplied(_)
             | Payload::ProfileChange(_)
             | Payload::ProfileRestored(_)

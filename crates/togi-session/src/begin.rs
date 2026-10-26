@@ -53,7 +53,7 @@ impl Session<'_> {
         if self.appender.recovery().baseline().is_some() {
             return Ok(());
         }
-        let reading = write::read_all(&mut self.appender, &mut *self.smu, &mut self.hardware, &[])?;
+        let reading = write::read_all(&mut self.appender, &mut *self.smu, &mut self.hardware)?;
         let missing: CoreSet = self
             .topology
             .iter()

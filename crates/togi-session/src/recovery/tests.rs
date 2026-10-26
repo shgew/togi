@@ -515,6 +515,37 @@ fn a_new_smu_intent_replaces_one_nothing_answered_and_a_crash_clears_its_boots()
     assert_eq!(log.state().latest_unmatched_intent(&boot("b0")), None);
 }
 
+#[test_case(true, true, false; "same boot cited intent closes")]
+#[test_case(true, false, true; "uncited intent stays open")]
+#[test_case(false, true, true; "next boot intent stays attributable")]
+fn startup_readback_resolves_only_a_cited_same_boot_smu_intent(
+    same_boot: bool,
+    cited: bool,
+    still_open: bool,
+) {
+    let mut log = Log::new();
+    let intent = log.intent(8, 0, &[]);
+    if !same_boot {
+        log.at("b1", 0);
+    }
+    log.add(
+        Payload::SmuReadback(SmuReadback {
+            core: core(8),
+            offset: ObservedOffset(0),
+            expected: None,
+        }),
+        if cited {
+            std::slice::from_ref(&intent)
+        } else {
+            &[]
+        },
+    );
+    assert_eq!(
+        log.state().latest_unmatched_intent(&boot("b0")),
+        still_open.then_some(intent)
+    );
+}
+
 #[test]
 fn a_nonzero_write_outside_a_trial_is_an_application_together_or_parked_once_a_group_arms_it() {
     let mut log = Log::new();
