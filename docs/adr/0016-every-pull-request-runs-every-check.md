@@ -6,7 +6,7 @@ Pull requests ran only `just ci`: lint, the formatting check and the Go tests. T
 
 ## Decision
 
-- The flake's `checks` are every gate for their system: `package` (the tests, with the integration tests on Linux), `lint`, `fmt` (treefmt with `--ci` over the tracked Go, Nix and justfile sources) and, on Linux, `vm`. The VM test uses a copy of the package with `doCheck = false`, so it does not wait on the tests `package` already runs.
+- The flake's `checks` are every gate for their system: `package` (the tests, with the integration tests on Linux), `lint`, `fmt` (treefmt with `--ci` over the tracked Go, Nix and justfile sources) and, on Linux, the VM test. The VM test uses a copy of the package with `doCheck = false`, so it does not wait on the tests `package` already runs.
 - The race detector leaves the automated checks; `just test -race` runs it locally.
 - The `check` workflow runs on every pull request and push to `main`. An `eval` job evaluates the flake and lists `checks.x86_64-linux`; one job per check builds it in parallel; a `check` job passes only when all of them passed. A newer push to a pull request cancels its older run; every push to `main` runs to the end.
 - The release workflow refuses unless the `check` run for `main` HEAD succeeded, then builds only `packages.x86_64-linux.default` on the release commit before pushing it.
@@ -18,7 +18,7 @@ Pull requests ran only `just ci`: lint, the formatting check and the Go tests. T
 - **The race detector as a flake check on every pull request:** rejected because its job took 8m00s on the first run, against 3m41s for the VM test, the next slowest, and so doubled every run.
 - **Fast checks on pull requests, slow ones on push to `main`:** rejected because breakage could still land on `main`.
 - **A single `nix flake check` job:** rejected because the checks share the runner's 2–4 vCPUs, where separate jobs each get their own.
-- **A Nix store cache per check (`nix-community/cache-nix-action`):** rejected because restoring it took about a minute and the `vm` job was no faster: 4m07s with it on a changed source, against 3m41s and 4m05s without.
+- **A Nix store cache per check (`nix-community/cache-nix-action`):** rejected because restoring it took about a minute and the VM job was no faster: 4m07s with it on a changed source, against 3m41s and 4m05s without.
 - **`govulncheck` in CI:** rejected because it fails on advisories unrelated to the change. Dependabot alerts cover the modules, and standard library fixes arrive with the Go toolchain through `flake.lock`.
 - **A scheduled tier:** rejected because the inputs are pinned; nothing changes between pushes.
 - **Go build caching:** rejected because the Nix sandbox keeps no build cache between builds.
