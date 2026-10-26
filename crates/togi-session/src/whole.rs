@@ -1,5 +1,7 @@
 //! Whole nights over the simulated machine and the in-memory journal, through the public `run`.
 
+mod cut;
+
 use jiff::{SignedDuration, Timestamp};
 use togi_journal::{DeadEndCondition, Event, Payload, Queue, TrialIntent};
 use togi_machine::Backend;
