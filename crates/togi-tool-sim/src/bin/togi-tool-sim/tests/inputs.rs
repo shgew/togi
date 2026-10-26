@@ -6,8 +6,8 @@ use super::common::{Host, sim};
 
 #[test_case(&["--unknown"], "--unknown"; "unknown flag")]
 #[test_case(&["extra"], "extra"; "positional argument")]
-#[test_case(&["--cycles", "0"], "--cycles"; "zero cycles")]
-#[test_case(&["--cycles", "-1"], "-1"; "negative cycles")]
+#[test_case(&["--night-hours", "0"], "--night-hours"; "zero night hours")]
+#[test_case(&["--night-hours", "-1"], "-1"; "negative night hours")]
 #[test_case(&["--max-boots", "0"], "--max-boots"; "zero boots")]
 #[test_case(&["--verify-every", "-1"], "-1"; "negative verify interval")]
 #[test_case(&["--seed", "x"], "--seed"; "non-numeric seed")]

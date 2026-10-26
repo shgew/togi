@@ -1,27 +1,23 @@
 //! The model: the journal folded into the facts one frame shows.
 //!
-//! [`Model::fold_batch`] takes each batch once, through the journal's and the tuner's own states, retaining
-//! outcomes only for its last trial end. The tuner's projection and forecast are computed once per change, on
-//! the first [`Model::snapshot`] after it, never per frame. The views keep the tuner's plan types and add only
-//! what the journal says about them: when, why and after what. Raw facts stay raw; the frames escape them at output.
+//! [`Model::fold_batch`] takes each batch once, through the journal's and the policy's own states, retaining
+//! outcomes only for its last trial end. The policy's projection is computed once per change, on the first
+//! [`Model::snapshot`] after it, never per frame. The views add only what the journal says beside it: when, why
+//! and after what. Raw facts stay raw; the frames escape them at output.
 
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Activity, DeadEndCondition, Event, Member, Payload, Seq, ShutdownReason, State as JournalState,
-    TrialId,
+    Activity, DeadEndCondition, Event, Payload, ShutdownReason, State as JournalState, TrialId,
 };
 use togi_machine::{
     CcdId, Condition, CoreId, CoreSet, ObservedOffset, PerCore, Regime, ResetKind, Signal,
     TargetOffset, WorkloadId,
 };
-use togi_tuner::{
-    BiosProfile, CombinationId, CyclePlan, DeepeningView, Forecast, HuntPlan, Limit, MemberProbe,
-    PhasePlan, R7CoreStatus, SearchTurn, State as TunerState, StepNo,
-};
+use togi_tuner::policy::{Params, Projection as PolicyProjection, State as PolicyState};
 
 use crate::derive::Derived;
 use crate::facts::Facts;
@@ -29,15 +25,15 @@ use crate::history::{Entry, LOG_LIMIT, LogEntry};
 use crate::screen::Log;
 use crate::tuning::TuningClock;
 
-/// Why the model cannot stand for the journal: one of the two folds refused an event.
+/// Why the model cannot stand for the journal: one of its folds refused an event.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum FoldError {
     /// The journal's own state refused an event.
     #[error(transparent)]
     Journal(#[from] togi_journal::FoldError),
-    /// The tuner's state refused an event.
+    /// The policy state refused an event.
     #[error(transparent)]
-    Tuner(#[from] togi_tuner::FoldError),
+    Tuner(#[from] togi_tuner::policy::FoldError),
     /// A writer handed a deferred presentation to a reader before materializing it.
     #[error("trial-end presentation has not been materialized")]
     DeferredPresentation,
@@ -54,44 +50,6 @@ pub struct BatchFoldError {
     pub source: FoldError,
 }
 
-/// Where a core stands on the dashboard.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum CoreState {
-    /// At 0, waiting for its first search turn.
-    Waiting,
-    /// Searching.
-    Search,
-    /// Confirming a candidate solo limit.
-    Confirm,
-    /// Solo limit confirmed, waiting until every core has one.
-    Found,
-    /// At its limit.
-    AtLimit,
-    /// Has room to go deeper.
-    HasRoom,
-    /// A hunt candidate at its failing offset.
-    Suspect,
-    /// A member of a group the hunt keeps together, at its failing offset.
-    Member,
-    /// The member a probe moves shallower.
-    Probe,
-    /// Held shallower by a hunt.
-    Parked,
-}
-
-/// The passes of a candidate solo limit being confirmed: light then heavy, each needing `needed` in a row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Confirm {
-    /// The candidate offset.
-    pub offset: TargetOffset,
-    /// Light passes so far.
-    pub light: u32,
-    /// Heavy passes so far.
-    pub heavy: u32,
-    /// Passes each needs.
-    pub needed: u32,
-}
-
 /// One core as a frame shows it.
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CoreView {
@@ -99,156 +57,16 @@ pub struct CoreView {
     pub id: CoreId,
     /// Its CCD.
     pub ccd: CcdId,
-    /// Where it stands.
-    pub state: CoreState,
-    /// The reset command that sent it back to search, until the search restarts.
-    pub queued: Option<togi_journal::Seq>,
     /// The last hardware readback or restoration; `None` while the journal records none for the core, which is
     /// not the same as an offset of 0.
     pub applied: Option<ObservedOffset>,
-    /// The offset the tuner's profile holds for the core.
+    /// The day offset D of the core's CCD, CO 0 before any `day.applied`.
     pub profile: TargetOffset,
-    /// Its solo limit, once confirmed or carried.
-    pub solo: Option<TargetOffset>,
-    /// The deepest offset that passed the search.
-    pub pass: Option<TargetOffset>,
-    /// The offset the search tries next.
-    pub next: Option<TargetOffset>,
-    /// Its failure point.
-    pub fail: Option<TargetOffset>,
-    /// What stops the core one count deeper than its profile offset, when anything does.
-    pub holder: Option<Limit>,
-    /// The combination whose backoff moved the core shallower than its solo limit.
-    pub gave_back: Option<CombinationId>,
-    /// Offsets at which a group trial of the running hunt failed with this core loaded.
-    pub group_fails: Vec<TargetOffset>,
-    /// The offset a parked core returns to when the hunt ends.
-    pub returns_to: Option<TargetOffset>,
-    /// The candidate solo limit being confirmed.
-    pub confirm: Option<Confirm>,
     /// Whether the trial in flight loads it.
     pub loaded: bool,
-    /// Whether the trial in flight can name it.
-    pub judged: bool,
-}
-
-/// What a hunt sets each core to: its failing offsets and the offsets it parks the rest at.
-#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct HuntShape {
-    /// The failing profile.
-    pub failing: PerCore<TargetOffset>,
-    /// The profile that parks cores shallower.
-    pub parked: PerCore<TargetOffset>,
-}
-
-/// What a hunt's parked profile does to each core, against its failing profile and its candidates.
-#[derive(Debug, Clone, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Parking {
-    /// Cores that are not candidates and run at their failing offsets in every group, the loaded cores of a
-    /// located hunt among them.
-    pub held: CoreSet,
-    /// Candidates kept at their failing offsets: nonzero, and parked no shallower.
-    pub kept: CoreSet,
-    /// Cores parked at offset 0.
-    pub zero: CoreSet,
-    /// Cores parked at a nonzero offset shallower than their failing one, with that offset.
-    pub shallow: Vec<(CoreId, TargetOffset)>,
-}
-
-impl Parking {
-    /// Whether every core the hunt parks sits at 0: some are parked, none is kept at its failing offset or
-    /// parked at a nonzero offset. Held cores run at their failing offsets and are not parked.
-    #[must_use]
-    pub fn rest_at_zero(&self) -> bool {
-        !self.zero.is_empty() && self.kept.is_empty() && self.shallow.is_empty()
-    }
-
-    /// The offset the hunt parks `core` at, when it parks it shallower than its failing offset.
-    #[must_use]
-    pub fn parked_at(&self, core: CoreId) -> Option<TargetOffset> {
-        if self.zero.contains(core) {
-            return Some(TargetOffset::ZERO);
-        }
-        self.shallow
-            .iter()
-            .find(|(shallow, _)| *shallow == core)
-            .map(|&(_, offset)| offset)
-    }
-}
-
-impl HuntFacts {
-    /// Whether every core the hunt parks sits at offset 0.
-    #[must_use]
-    pub fn parked_at_zero(&self) -> bool {
-        self.parking.as_ref().is_some_and(Parking::rest_at_zero)
-    }
-}
-
-/// A recorded combination: offsets at which these cores failed together.
-#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ComboView {
-    /// Its id.
-    pub id: CombinationId,
-    /// Its members, in core order.
-    pub members: Vec<Member>,
-    /// The hunt that found it.
-    pub hunt: u32,
-    /// Whether member probes ran; otherwise no smaller group was shown to fail.
-    pub probed: bool,
-    /// Whether it is an unresolved fallback.
-    pub fallback: bool,
-    /// The member it holds at its limit now, at its profile offset.
-    pub holds: Option<Member>,
-    /// Members shallower than their offset in the combination now.
-    pub clear: CoreSet,
-}
-
-/// Where a checking trial stands in its cycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct CyclePlace {
-    /// The cycle.
-    pub cycle: u32,
-    /// The step, counting from 1; `None` until the trial is placed.
-    pub step: Option<u32>,
-    /// The part of its step, counting from 1.
-    pub part: Option<u32>,
-    /// How many parts the step has.
-    pub parts: u32,
-}
-
-/// Where a hunt trial stands in its hunt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct HuntPlace {
-    /// The hunt.
-    pub hunt: u32,
-    /// The group.
-    pub group: u32,
-    /// The part of the hunt's current split, counting from 1; `None` outside a split.
-    pub part: Option<u32>,
-    /// How many parts the current split has.
-    pub parts: u32,
-    /// The split's number among the hunt's splits, counting from 1; 0 when the plan is not a split.
-    pub cut: u32,
-    /// The member a probe moves shallower.
-    pub probe: Option<Member>,
-}
-
-/// Which trial of its part or requirement a trial is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub struct Count {
-    /// Passes so far.
-    pub passed: u32,
-    /// The running trial, counting from 1.
-    pub index: u32,
-    /// How many are needed.
-    pub of: u32,
 }
 
 /// A trial as the journal recorded its intent.
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "independent facts of one trial"
-)]
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TrialView {
     /// Its id.
@@ -259,14 +77,16 @@ pub struct TrialView {
     pub workload: WorkloadId,
     /// Cores under load.
     pub cores: CoreSet,
-    /// Cores a hunt holds shallower in this trial.
-    pub parked: CoreSet,
-    /// Cores neither loaded nor parked.
+    /// Cores that are not loaded.
     pub idle: CoreSet,
     /// Its condition.
     pub condition: Condition,
     /// What the session was doing when it asked for it.
     pub activity: Option<Activity>,
+    /// The night task it serves, once the policy plans one.
+    pub task: Option<togi_journal::TaskId>,
+    /// What it tests: one CCD alone at an offset, or the exact whole profile.
+    pub tested: Option<togi_journal::Tested>,
     /// The offsets it runs at.
     pub profile: PerCore<TargetOffset>,
     /// When it started, once it has.
@@ -275,24 +95,8 @@ pub struct TrialView {
     pub crashed: bool,
     /// Its planned length.
     pub duration: Duration,
-    /// An R7 trial that loads part of a CCD.
-    pub partial: bool,
-    /// A rerun of a failed trial.
-    pub rerun: bool,
     /// A retry of a trial that could not run.
     pub retry: bool,
-    /// Its place in a checking cycle.
-    pub cycle: Option<CyclePlace>,
-    /// Its place in a hunt.
-    pub hunt: Option<HuntPlace>,
-    /// Search and confirm: the core judged.
-    pub core: Option<CoreId>,
-    /// Search and confirm: the offset judged.
-    pub offset: Option<TargetOffset>,
-    /// The deepening round.
-    pub round: Option<u32>,
-    /// Its place in its requirement.
-    pub count: Count,
 }
 
 impl TrialView {
@@ -313,11 +117,6 @@ impl TrialView {
         } else {
             past
         }
-    }
-
-    /// The all-zero rerun of a failing trial, run before a `failure_at_zero` dead end.
-    pub fn zero_rerun(&self) -> bool {
-        self.rerun && self.condition == Condition::Parked && self.hunt.is_none()
     }
 }
 
@@ -350,156 +149,6 @@ pub struct TrialEndView {
     pub tctl_max_c: Option<i32>,
     /// The median voltage request.
     pub voltage_v: Option<f64>,
-}
-
-/// Why a hunt began.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct HuntCause {
-    /// When the failure was recorded.
-    pub at: Option<Timestamp>,
-    /// The failing trial, when one ran.
-    pub trial: Option<TrialView>,
-    /// How the failing trial ended.
-    pub end: Option<TrialEndView>,
-    /// How it failed.
-    pub signal: Option<Signal>,
-    /// The core the failure named.
-    pub core: Option<CoreId>,
-    /// The failing profile already failed in a recorded trial; no trial ran.
-    pub known: bool,
-    /// With `known`: that trial was carried from an earlier session.
-    pub carried: bool,
-    /// With `known`: the regime of the skipped trial.
-    pub regime: Option<Regime>,
-    /// The failure came in a rerun after a backoff.
-    pub rerun_of: bool,
-    /// Which trial of its requirement failed, counting from 1.
-    pub trial_number: u32,
-}
-
-/// What is recorded about a hunt beside the tuner's plan of it.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct HuntFacts {
-    /// When it started.
-    pub started: Option<Timestamp>,
-    /// Why.
-    pub cause: HuntCause,
-    /// Where the hunt's shape puts each core; none until the journal records it.
-    pub parking: Option<Parking>,
-    /// How each group's trial failed, by group number.
-    pub group_signals: Vec<(u32, Signal)>,
-}
-
-/// The running hunt: the tuner's plan and what the journal says about it.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HuntView<'a> {
-    /// The tuner's plan.
-    pub plan: &'a HuntPlan,
-    /// What the journal adds.
-    pub facts: &'a HuntFacts,
-}
-
-impl HuntView<'_> {
-    /// A located hunt still rerunning its failed load with every unloaded core at 0.
-    pub fn locating(&self) -> bool {
-        self.plan.groups.last().is_some_and(|group| {
-            group.stage == togi_journal::HuntStage::Locate
-                && group.outcome == togi_tuner::GroupState::Running
-        })
-    }
-
-    /// How the failed trial of a group failed.
-    pub fn group_signal(&self, group: u32) -> Option<Signal> {
-        self.facts
-            .group_signals
-            .iter()
-            .find(|(number, _)| *number == group)
-            .map(|(_, signal)| *signal)
-    }
-
-    /// The culprit of a singleton hunt and how its probing stands. The tuner lists every member of a
-    /// combination it probes, two or more, so a single probe is the culprit's own.
-    pub fn singleton(&self) -> Option<Singleton<'_>> {
-        let [probe] = self.plan.probes.as_slice() else {
-            return None;
-        };
-        let anchor = self
-            .facts
-            .parking
-            .as_ref()
-            .and_then(|parking| parking.parked_at(probe.member));
-        let stopped = self
-            .plan
-            .groups
-            .iter()
-            .filter_map(|group| Some((group.probe.filter(|at| at.core == probe.member)?, group)))
-            .any(|(at, group)| {
-                group.outcome == togi_tuner::GroupState::Skipped
-                    || (anchor == Some(at.offset)
-                        && group.outcome == togi_tuner::GroupState::Failed)
-            });
-        let stage = match (probe.done, stopped) {
-            (false, _) if anchor == Some(probe.offset) => SingletonStage::Anchor,
-            (false, _) => SingletonStage::Interior,
-            (true, false) => SingletonStage::Bracketed,
-            (true, true) => SingletonStage::Stopped,
-        };
-        Some(Singleton {
-            probe,
-            anchor,
-            stage,
-        })
-    }
-}
-
-/// The culprit of a singleton hunt: its probes and how they stand.
-#[derive(Debug, Clone, Copy)]
-pub struct Singleton<'a> {
-    /// The culprit's probes.
-    pub probe: &'a MemberProbe,
-    /// Its parked offset, the anchor its search needs to pass; none until the journal records the parking.
-    pub anchor: Option<TargetOffset>,
-    /// How its probing stands.
-    pub stage: SingletonStage,
-}
-
-/// How the probing of a singleton hunt's culprit stands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SingletonStage {
-    /// Testing it at its parked offset: nothing has passed yet to bracket its failure point.
-    Anchor,
-    /// Probing between its reproduced failure and its passing anchor.
-    Interior,
-    /// Done: a passing anchor or probe sits one count shallower than its failure point.
-    Bracketed,
-    /// Done without a pass next to its failure point: the shallowest reproduced failure stands.
-    Stopped,
-}
-
-/// The checking cycle: the tuner's plan and the hunts each step started.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct CycleView<'a> {
-    /// The tuner's plan.
-    pub plan: &'a CyclePlan,
-    /// The hunts each step started, by step index.
-    pub step_hunts: &'a [Vec<u32>],
-    /// The step the tuner's next cycle trial runs in once reruns pass: the forecast between trials, or its pass
-    /// branch while a trial runs.
-    pub resume: Option<StepNo>,
-}
-
-impl CycleView<'_> {
-    /// The index of the step checking runs next, which skips the steps whose chain endings the tuner records
-    /// without a trial; the first step not done when the tuner names none. It is the number of steps once every
-    /// step is done.
-    pub fn resume_step(&self) -> usize {
-        match self.resume {
-            Some(step) if (step.get().get() as usize) <= self.plan.steps.len() => {
-                step.get().get() as usize - 1
-            }
-            _ => self.plan.current,
-        }
-    }
 }
 
 /// A crash detected on this boot, with no trial started since.
@@ -560,32 +209,12 @@ pub struct Snapshot<'a> {
     pub tuning: &'a TuningClock,
     /// The last failure that changed a decision; skips are excluded.
     pub last_failure: Option<Timestamp>,
-    /// Clean cycles counted for the current profile.
-    pub clean_cycles: u32,
     /// Every core, in core order.
     pub cores: &'a [CoreView],
-    /// The recorded combinations.
-    pub combos: &'a [ComboView],
-    /// Per R7 workload, CCD and core: whether the core has passed as a top requester.
-    pub r7: &'a [R7CoreStatus],
     /// The trial in flight: its intent is recorded and it has not ended.
     pub trial: Option<&'a TrialView>,
     /// The last trial that ended.
     pub last: Option<&'a TrialEndView>,
-    /// What each outcome of the trial in flight leads to, and what runs next between trials.
-    pub forecast: &'a Forecast,
-    /// The checking cycle.
-    pub cycle: Option<CycleView<'a>>,
-    /// The running hunt.
-    pub hunt: Option<HuntView<'a>>,
-    /// The search's turns, in the order the tuner takes them; empty once every core has a solo limit.
-    pub turns: &'a [SearchTurn],
-    /// Where the two-phase method stands.
-    pub phases: Option<&'a PhasePlan>,
-    /// The open deepening round.
-    pub deepening: Option<&'a DeepeningView>,
-    /// The profile to enter in BIOS.
-    pub bios: Option<&'a BiosProfile>,
     /// A crash detected on this boot with no trial started since.
     pub recover: Option<&'a RecoveryView>,
     /// The session stopped.
@@ -602,12 +231,12 @@ pub struct Snapshot<'a> {
     pub log_total: usize,
     /// The unclean ends the day observer recorded and the answers given to them.
     pub day: &'a togi_journal::DayQuestions,
-    /// Core ids in the session's order, ascending, the order every profile is listed in.
-    pub order: &'a [CoreId],
-    /// What each hunt sets each core to, by hunt number.
-    pub shapes: &'a BTreeMap<u32, HuntShape>,
-    /// The sequence numbers of trials carried from earlier sessions.
-    pub carried: &'a BTreeSet<Seq>,
+    /// Observed hours and crashes beside the CO 0 totals.
+    pub day_totals: &'a crate::day_totals::DayTotals,
+    /// The day steps a `day.applied` carried out. The policy projection holds the latest proposal, applied or not.
+    pub applied_steps: &'a BTreeSet<togi_journal::DecisionId>,
+    /// The Ruleset 13 policy: per-CCD day, cap and edge, the day, the night and the qualifications.
+    pub policy: &'a PolicyProjection,
     /// What the lenient read of the journal skipped or ignored, in one line; shown whatever else is on screen.
     pub skipped: Option<&'a str>,
     /// While the session rests between trials: what the trial that just ended led to, as it stood before its
@@ -615,43 +244,13 @@ pub struct Snapshot<'a> {
     pub ended: Option<EndedTrial<'a>>,
 }
 
-/// The trial that just ended, with the forecast and plans the frame showed while it ran.
+/// The trial that just ended, with the policy as it stood before its end.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EndedTrial<'a> {
     /// The trial, before its end.
     pub trial: &'a TrialView,
-    /// What each outcome of that trial led to.
-    pub forecast: &'a Forecast,
-    /// The checking cycle as it stood then.
-    pub cycle: Option<CycleView<'a>>,
-    /// The running hunt as it stood then.
-    pub hunt: Option<HuntView<'a>>,
-}
-
-fn cycle_view<'a>(
-    plan: &'a togi_tuner::CyclePlan,
-    step_hunts: &'a [Vec<u32>],
-    forecast: &Forecast,
-) -> Option<CycleView<'a>> {
-    (plan.number.is_some() || !plan.steps.is_empty()).then(|| CycleView {
-        plan,
-        step_hunts,
-        resume: match &forecast.between {
-            Some(between) => between.resume,
-            None => forecast
-                .branches
-                .iter()
-                .find(|branch| branch.premise == togi_tuner::Premise::Pass)
-                .and_then(|branch| branch.resume),
-        },
-    })
-}
-
-fn hunt_view<'a>(
-    plan: Option<&'a togi_tuner::HuntPlan>,
-    hunt: Option<&'a HuntFacts>,
-) -> Option<HuntView<'a>> {
-    plan.zip(hunt).map(|(plan, facts)| HuntView { plan, facts })
+    /// The policy as it stood then.
+    pub policy: &'a PolicyProjection,
 }
 
 /// A started idle trial: nothing on the screen may change with the clock until its end is recorded, so drawing
@@ -716,28 +315,6 @@ impl<'a> Snapshot<'a> {
         self.trial.is_some_and(|trial| trial.crashed)
     }
 
-    /// The R7 workload the running trial, or else the cycle's current step, loads; `None` outside R7.
-    pub fn r7_workload(&self) -> Option<WorkloadId> {
-        if let Some(trial) = self.trial.filter(|trial| trial.regime == Regime::R7) {
-            return Some(trial.workload);
-        }
-        let cycle = self.cycle?;
-        let step = cycle.plan.steps.get(cycle.plan.current)?;
-        (step.regime == Regime::R7).then_some(step.workload)
-    }
-
-    /// The current R7 workload's top requesters, each with whether offsets stand in for its request.
-    pub fn r7_top(&self) -> PerCore<Option<bool>> {
-        let Some(workload) = self.r7_workload() else {
-            return PerCore::default();
-        };
-        self.r7
-            .iter()
-            .filter(|status| status.workload == workload && status.top_requester)
-            .map(|status| (status.core, Some(status.offset_proxy)))
-            .collect()
-    }
-
     /// The log as the log view lists it, with nothing arrived since.
     pub fn log(&self) -> Log<'a> {
         Log {
@@ -745,6 +322,13 @@ impl<'a> Snapshot<'a> {
             total: self.log_total,
             arrived: 0,
         }
+    }
+
+    /// Whether the day step the policy shows was carried out: a `day.applied` cites its decision. A hold applies
+    /// nothing, so it is never proposed.
+    pub fn step_applied(&self, step: &togi_journal::DayStep) -> bool {
+        matches!(step.step, togi_journal::StepKind::Hold { .. })
+            || self.applied_steps.contains(&step.decision)
     }
 }
 
@@ -765,22 +349,17 @@ enum EndState {
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct RetainedEnd {
     view: crate::derive::EndView,
-    tuner: TunerState,
 }
 
 impl RetainedEnd {
     fn into_derived(self) -> EndDerived {
-        EndDerived {
-            view: self.view,
-            forecast: self.tuner.forecast(),
-        }
+        EndDerived { view: self.view }
     }
 }
 
 #[derive(Debug)]
 struct EndDerived {
     view: crate::derive::EndView,
-    forecast: Forecast,
 }
 
 /// Whether an event makes the previous trial's between-trial outcome unobservable.
@@ -797,34 +376,28 @@ pub fn clears_retained_end(event: &Event) -> bool {
 fn capture_end(
     event: &Event,
     journal: &JournalState,
-    tuner: &TunerState,
+    policy: &PolicyState,
     facts: &Facts,
     ended: &mut Option<EndDerived>,
-    cached: Option<Derived>,
     keep: bool,
 ) {
     if clears_retained_end(event) {
         *ended = None;
     } else if matches!(event.payload, Payload::TrialEnd(_)) {
-        *ended = (keep && journal.session.is_some()).then(|| {
-            let forecast = cached.map_or_else(|| tuner.forecast(), |cached| cached.forecast);
-            EndDerived {
-                view: crate::derive::EndView::new(journal, tuner, facts),
-                forecast,
-            }
+        *ended = (keep && journal.session.is_some()).then(|| EndDerived {
+            view: crate::derive::EndView::new(journal, policy, facts),
         });
     }
 }
 
 impl Presentation {
     /// Retains the last trial's pre-end view before the shared reducers consume its result.
-    pub fn before_event(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
+    pub fn before_event(&mut self, event: &Event, journal: &JournalState, policy: &PolicyState) {
         if clears_retained_end(event) {
             self.ended = None;
         } else if matches!(event.payload, Payload::TrialEnd(_)) && journal.session.is_some() {
             self.ended = Some(EndState::Ready(Box::new(RetainedEnd {
-                view: crate::derive::EndView::new(journal, tuner, &self.facts),
-                tuner: tuner.clone(),
+                view: crate::derive::EndView::new(journal, policy, &self.facts),
             })));
         }
     }
@@ -842,7 +415,7 @@ impl Presentation {
     pub fn deferred_end(&self) -> Option<togi_journal::Seq> {
         match self.ended {
             Some(EndState::Deferred(seq)) => Some(seq),
-            _ => None,
+            Some(EndState::Ready(_)) | None => None,
         }
     }
 
@@ -852,8 +425,8 @@ impl Presentation {
     }
 
     /// Updates presentation facts after the shared reducers have consumed the event.
-    pub fn after_event(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
-        self.facts.fold(event, journal, tuner);
+    pub fn after_event(&mut self, event: &Event, journal: &JournalState, _policy: &PolicyState) {
+        self.facts.fold(event, journal);
     }
 }
 
@@ -861,20 +434,34 @@ impl Presentation {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PublishedView {
     facts: JournalState,
-    incremental: TunerState,
+    incremental: PolicyState,
     presentation: Presentation,
 }
 
 /// The journal folded into facts.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Model {
     journal: JournalState,
-    tuner: TunerState,
+    policy: PolicyState,
     facts: Facts,
     problem: Option<FoldError>,
     skipped: Option<String>,
     derived: OnceCell<Derived>,
     ended: Option<EndDerived>,
+}
+
+impl Default for Model {
+    fn default() -> Self {
+        Self {
+            journal: JournalState::default(),
+            policy: PolicyState::new(Params::SPEC),
+            facts: Facts::default(),
+            problem: None,
+            skipped: None,
+            derived: OnceCell::new(),
+            ended: None,
+        }
+    }
 }
 
 impl Model {
@@ -944,13 +531,17 @@ impl Model {
         &self.journal
     }
 
-    /// The incremental tuner fold used by this model.
-    pub const fn tuner_state(&self) -> &TunerState {
-        &self.tuner
+    /// The incremental policy fold used by this model.
+    pub const fn tuner_state(&self) -> &PolicyState {
+        &self.policy
     }
 
     /// Restores an independently verified snapshot without folding its prefix again.
-    pub fn restored(journal: JournalState, tuner: TunerState, presentation: Presentation) -> Self {
+    pub fn restored(
+        journal: JournalState,
+        policy: PolicyState,
+        presentation: Presentation,
+    ) -> Self {
         let (ended, problem) = match presentation.ended {
             Some(EndState::Ready(ended)) => (Some(ended.into_derived()), None),
             Some(EndState::Deferred(_)) => (None, Some(FoldError::DeferredPresentation)),
@@ -958,7 +549,7 @@ impl Model {
         };
         Self {
             journal,
-            tuner,
+            policy,
             facts: presentation.facts,
             ended,
             problem,
@@ -1002,24 +593,23 @@ impl Model {
         if let Some(problem) = &self.problem {
             return Err(problem.clone());
         }
-        let before = self.derived.take();
+        self.derived = OnceCell::new();
         capture_end(
             event,
             &self.journal,
-            &self.tuner,
+            &self.policy,
             &self.facts,
             &mut self.ended,
-            before,
             keep_outcomes,
         );
         let folded = self
             .journal
             .apply(event)
             .map_err(FoldError::from)
-            .and_then(|()| self.tuner.fold(event).map_err(FoldError::from));
+            .and_then(|()| self.policy.fold(event).map_err(FoldError::from));
         match folded {
             Ok(()) => {
-                self.facts.fold(event, &self.journal, &self.tuner);
+                self.facts.fold(event, &self.journal);
                 Ok(())
             }
             Err(error) => {
@@ -1035,19 +625,18 @@ impl Model {
         self.problem.as_ref()
     }
 
-    /// The facts a frame shows, borrowed from the model. The tuner's projection and forecast are computed here
+    /// The facts a frame shows, borrowed from the model. The policy's projection is computed here
     /// the first time after a change and kept until the next fold.
     pub fn snapshot(&self) -> Snapshot<'_> {
         let derived = self.derived.get_or_init(|| {
             if self.problem.is_some() || self.journal.session.is_none() {
                 Derived::empty()
             } else {
-                Derived::new(&self.journal, &self.tuner, &self.facts)
+                Derived::new(&self.journal, &self.policy, &self.facts)
             }
         });
         let live = self.problem.is_none() && self.journal.session.is_some();
         let facts = &self.facts;
-        let projection = &derived.projection;
         let log = &facts.log[facts.log.len().saturating_sub(LOG_LIMIT)..];
         let mut snapshot = Snapshot {
             session: facts.session.as_ref().filter(|_| live),
@@ -1055,26 +644,9 @@ impl Model {
             crashes: facts.crashes,
             tuning: &facts.tuning,
             last_failure: facts.last_failure,
-            clean_cycles: projection.clean_cycles,
             cores: &derived.cores,
-            combos: &derived.combos,
-            r7: &projection.r7_status,
             trial: derived.trial.as_ref(),
             last: facts.last.as_ref(),
-            forecast: &derived.forecast,
-            cycle: cycle_view(
-                &derived.projection.cycle_plan,
-                &derived.step_hunts,
-                &derived.forecast,
-            ),
-            hunt: hunt_view(derived.projection.hunt_plan.as_ref(), derived.hunt.as_ref()),
-            turns: &projection.search_turns,
-            phases: projection.phase_plan.as_ref(),
-            deepening: projection.deepening.as_ref(),
-            bios: projection
-                .bios_profile
-                .as_ref()
-                .filter(|bios| bios.confirmed.is_some()),
             recover: derived.recover.as_ref(),
             stopped: facts.stop.as_ref().filter(|_| facts.stopped),
             dead_end: facts
@@ -1086,24 +658,18 @@ impl Model {
             log,
             log_total: facts.log_total,
             day: &facts.day,
-            order: &derived.order,
-            shapes: &facts.shapes,
-            carried: &facts.carried,
+            day_totals: &facts.day_totals,
+            policy: &derived.policy,
+            applied_steps: &facts.applied_steps,
             skipped: self.skipped.as_deref(),
             ended: None,
         };
         snapshot.ended = self.ended.as_ref().and_then(|ended| {
             let trial = ended.view.trial.as_ref()?;
             (snapshot.between_trials() && snapshot.last.is_some_and(|last| last.id == trial.id))
-                .then(|| EndedTrial {
+                .then_some(EndedTrial {
                     trial,
-                    forecast: &ended.forecast,
-                    cycle: cycle_view(
-                        &ended.view.cycle_plan,
-                        &ended.view.step_hunts,
-                        &ended.forecast,
-                    ),
-                    hunt: hunt_view(ended.view.hunt_plan.as_ref(), ended.view.hunt.as_ref()),
+                    policy: &ended.view.policy,
                 })
         });
         snapshot

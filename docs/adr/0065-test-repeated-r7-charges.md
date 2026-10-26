@@ -1,4 +1,4 @@
-Status: see [the index](README.md).
+Status: superseded by [0080](0080-per-ccd-first.md); no repeated charges, requester probes or remembered locate results remain. Honest partial loads remain direct coverage, not attribution.
 
 # Test repeated R7 charges before rerunning the full load
 

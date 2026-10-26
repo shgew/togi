@@ -147,7 +147,7 @@ fn an_intent_authorizes_one_write_in_its_own_boot(case: Case) {
             vec![
                 intent(2, set(0, -5)),
                 write(3, set(0, -5), 2),
-                boot(phase(4, 0, None), "c"),
+                boot(phase(4, 0), "c"),
                 boot(stop(5), "c"),
             ],
             Finished,
@@ -298,5 +298,37 @@ fn a_mismatching_readback_ends_the_session_in_an_smu_dead_end(case: Case) {
         &[],
     ); "the session stops reading at the first mismatch and ends in the smu dead end")]
 fn a_mismatching_readback_of_a_set_all_write_leaves_its_other_cores_unread(case: Case) {
+    run(case);
+}
+
+#[test_case::test_case(case(
+            "a verified write precedes the day application",
+            vec![
+                intent(2, set(0, 0)),
+                write(3, set(0, 0), 2),
+                readback(4, 0, 0, Some(3)),
+                day_applied(5, [0, 0]),
+                stop(6),
+            ],
+            Finished,
+            &[],
+        ); "a verified write precedes the day application")]
+#[test_case::test_case(case(
+            "a day application claims a write that was never read back",
+            vec![
+                intent(2, set(0, 0)),
+                write(3, set(0, 0), 2),
+                day_applied(4, [0, 0]),
+            ],
+            InProgress,
+            &[(3, WriteProtocol)],
+        ); "a day application claims a write that was never read back")]
+#[test_case::test_case(case(
+            "a day application follows a mismatching readback",
+            then(vec![day_applied(5, [0, 0])]),
+            InProgress,
+            &[(5, WriteProtocol)],
+        ); "a day application follows a mismatching readback")]
+fn a_day_application_is_a_boundary_for_the_write_protocol(case: Case) {
     run(case);
 }

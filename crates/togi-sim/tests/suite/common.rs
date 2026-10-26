@@ -373,18 +373,58 @@ pub(crate) fn spec(
     // Replay-miss tests deliberately mismatch the trial's regime and workload. Roles describe the
     // workload that actually runs, retaining the mismatched class the oracle must refuse.
     let role_regime = workload.id().regime();
-    let roles = if role_regime.instance_per_core() {
-        TrialRole::legacy(role_regime, workload.id(), seed, &cores, &cpus, &topology)
-            .expect("roles for the loaded cores")
-    } else {
-        cores
-            .iter()
-            .zip(&cpus)
-            .flat_map(|(&core, &cpu)| {
-                TrialRole::legacy(role_regime, workload.id(), seed, &[core], &[cpu], &topology)
-                    .expect("roles for the loaded core")
-            })
-            .collect()
+    let roles = match role_regime {
+        // The light core is the first loaded core; R9's serial CPU is its first CPU. Both roles load more cores than
+        // the caller names, and the trial loads what its roles do.
+        Regime::R8 => TrialRole::neighbours(
+            workload.id(),
+            cores[0],
+            pick_workload(Regime::R2, 0).id(),
+            seed,
+            &topology,
+        )
+        .expect("neighbour roles"),
+        Regime::R9 => {
+            TrialRole::all_threads(workload.id(), cpus[0], &topology).expect("all-thread roles")
+        }
+        Regime::R1
+        | Regime::R2
+        | Regime::R3
+        | Regime::R4
+        | Regime::R5
+        | Regime::R6
+        | Regime::R7 => {
+            if role_regime.instance_per_core() {
+                TrialRole::legacy(role_regime, workload.id(), seed, &cores, &cpus, &topology)
+                    .expect("roles for the loaded cores")
+            } else {
+                cores
+                    .iter()
+                    .zip(&cpus)
+                    .flat_map(|(&core, &cpu)| {
+                        TrialRole::legacy(
+                            role_regime,
+                            workload.id(),
+                            seed,
+                            &[core],
+                            &[cpu],
+                            &topology,
+                        )
+                        .expect("roles for the loaded core")
+                    })
+                    .collect()
+            }
+        }
+    };
+    let (cores, cpus) = match role_regime {
+        Regime::R8 | Regime::R9 => (TrialRole::cores(&roles), TrialRole::cpus(&roles)),
+        Regime::R1
+        | Regime::R2
+        | Regime::R3
+        | Regime::R4
+        | Regime::R5
+        | Regime::R6
+        | Regime::R7 => (cores, cpus),
     };
     TrialSpec {
         id: id.to_owned(),

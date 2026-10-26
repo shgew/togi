@@ -12,8 +12,6 @@ use crate::stats::{percentile, share};
 const RESAMPLES: usize = 10_000;
 const BOOTSTRAP_SEED: u64 = 1;
 const HAZARD_RISE_PER_H: f64 = 0.01;
-const PAIR_DEPTH_RISE: f64 = 5.0;
-const MEAN_DEPTH_RISE: f64 = 1.0;
 const TARGET: &str = "target";
 
 /// A run and the baseline's run of the same scenario and seed.
@@ -39,7 +37,7 @@ pub fn pairing<'a>(candidate: &'a [Record], baseline: &'a [Record]) -> Vec<Pair<
     pairs
 }
 
-/// The measures of a set of pairs. A positive depth delta is shallower: offsets are negative.
+/// The measures of a set of pairs.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Comparison {
     pub pairs: usize,
@@ -53,20 +51,15 @@ pub struct Comparison {
     pub slower: usize,
     pub equal: usize,
     pub crash_delta: f64,
-    pub depth_delta: f64,
     pub max_hazard_delta: f64,
     /// V1: runs that lost their conclusion.
     pub v1: usize,
     /// V2: runs whose maximum hazard rose by more than 0.01 per hour.
     pub v2: usize,
-    /// V3: runs whose depth rose by more than 5, and scenarios whose mean depth rose by more than 1.
+    /// V3: a `target` time ratio above 1.
     pub v3: usize,
-    /// V4: a `target` time ratio above 1.
-    pub v4: usize,
     pub real_answer_share: f64,
     pub baseline_real_answer_share: f64,
-    pub worst_r7_pairs: usize,
-    pub max_worst_r7_hazard_delta: f64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,7 +81,7 @@ impl fmt::Display for Verdict {
 
 impl Comparison {
     pub fn verdict(&self) -> Verdict {
-        if self.v1 + self.v2 + self.v3 + self.v4 > 0 || self.lo > 1.0 {
+        if self.v1 + self.v2 + self.v3 > 0 || self.lo > 1.0 {
             Verdict::Reject
         } else if self.timed > 0 && self.hi < 1.0 {
             Verdict::Accept
@@ -112,19 +105,14 @@ pub fn compare(pairs: &[Pair<'_>]) -> Comparison {
         slower: 0,
         equal: 0,
         crash_delta: 0.0,
-        depth_delta: 0.0,
         max_hazard_delta: 0.0,
         v1: 0,
         v2: 0,
         v3: 0,
-        v4: 0,
         real_answer_share: 0.0,
         baseline_real_answer_share: 0.0,
-        worst_r7_pairs: 0,
-        max_worst_r7_hazard_delta: 0.0,
     };
     let mut logs: BTreeMap<&str, Vec<f64>> = BTreeMap::new();
-    let mut depths: BTreeMap<&str, (f64, usize)> = BTreeMap::new();
     let (mut real, mut trials, mut base_real, mut base_trials) = (0, 0, 0, 0);
     for (i, p) in pairs.iter().enumerate() {
         let (a, b) = (p.candidate, p.baseline);
@@ -142,23 +130,7 @@ pub fn compare(pairs: &[Pair<'_>]) -> Comparison {
         if i == 0 || hazard > c.max_hazard_delta {
             c.max_hazard_delta = hazard;
         }
-        if let (Some(a), Some(b)) = (a.worst_r7_hazard_per_h, b.worst_r7_hazard_per_h) {
-            let delta = a - b;
-            if c.worst_r7_pairs == 0 || delta > c.max_worst_r7_hazard_delta {
-                c.max_worst_r7_hazard_delta = delta;
-            }
-            c.worst_r7_pairs += 1;
-        }
-        #[expect(clippy::cast_precision_loss, reason = "depths are small integers")]
-        let depth = (a.depth - b.depth) as f64;
-        if depth > PAIR_DEPTH_RISE {
-            c.v3 += 1;
-        }
-        let entry = depths.entry(&a.scenario).or_default();
-        entry.0 += depth;
-        entry.1 += 1;
         c.crash_delta += f64::from(a.crashes) - f64::from(b.crashes);
-        c.depth_delta += depth;
         if a.status == Status::Concluded
             && b.status == Status::Concluded
             && a.sim_hours > 0.0
@@ -176,13 +148,8 @@ pub fn compare(pairs: &[Pair<'_>]) -> Comparison {
     }
     c.real_answer_share = share(real, trials);
     c.baseline_real_answer_share = share(base_real, base_trials);
-    c.v3 += depths
-        .values()
-        .filter(|(sum, n)| sum / saturating_count(*n) > MEAN_DEPTH_RISE)
-        .count();
     if c.pairs > 0 {
         c.crash_delta /= saturating_count(c.pairs);
-        c.depth_delta /= saturating_count(c.pairs);
     }
     let scenarios: Vec<&Vec<f64>> = logs.values().collect();
     let mean = |values: &[f64]| values.iter().sum::<f64>() / saturating_count(values.len());
@@ -192,7 +159,7 @@ pub fn compare(pairs: &[Pair<'_>]) -> Comparison {
         sum += mean;
         c.timed += values.len();
         if name == TARGET && mean.exp() > 1.0 {
-            c.v4 += 1;
+            c.v3 += 1;
         }
     }
     if c.timed == 0 {
@@ -223,7 +190,7 @@ pub fn compare(pairs: &[Pair<'_>]) -> Comparison {
 fn comparison_line(w: &mut impl io::Write, label: &str, c: &Comparison) -> io::Result<()> {
     writeln!(
         w,
-        "{label} ratio={:.3} ci=[{:.3},{:.3}] pairs={} timed={} faster={} slower={} equal={} crash_delta={:.3} depth_delta={:.3} max_hazard_delta={:.6} real_answer_share={:.6} baseline_real_answer_share={:.6} violations=V1:{},V2:{},V3:{},V4:{}",
+        "{label} ratio={:.3} ci=[{:.3},{:.3}] pairs={} timed={} faster={} slower={} equal={} crash_delta={:.3} max_hazard_delta={:.6} real_answer_share={:.6} baseline_real_answer_share={:.6} violations=V1:{},V2:{},V3:{}",
         c.ratio,
         c.lo,
         c.hi,
@@ -233,22 +200,13 @@ fn comparison_line(w: &mut impl io::Write, label: &str, c: &Comparison) -> io::R
         c.slower,
         c.equal,
         c.crash_delta,
-        c.depth_delta,
         c.max_hazard_delta,
         c.real_answer_share,
         c.baseline_real_answer_share,
         c.v1,
         c.v2,
         c.v3,
-        c.v4,
     )?;
-    if c.worst_r7_pairs > 0 {
-        writeln!(
-            w,
-            "{label} max_worst_r7_hazard_delta={:.6} worst_r7_pairs={}",
-            c.max_worst_r7_hazard_delta, c.worst_r7_pairs,
-        )?;
-    }
     Ok(())
 }
 
@@ -257,18 +215,8 @@ fn comparison_line(w: &mut impl io::Write, label: &str, c: &Comparison) -> io::R
 pub fn report(w: &mut impl io::Write, candidate: &[Record], baseline: &[Record]) -> io::Result<()> {
     writeln!(
         w,
-        "comparison: overall ratio weights scenarios equally; CI resamples pairs within each scenario ({RESAMPLES}, fixed seed). V1=lost conclusion; V2=hazard increase >0.01/h; V3=mean depth increase >1 or pair >5; V4=target ratio >1. Positive depth delta is shallower."
+        "comparison: overall ratio weights scenarios equally; CI resamples pairs within each scenario ({RESAMPLES}, fixed seed). V1=lost conclusion; V2=hazard increase >0.01/h; V3=target ratio >1."
     )?;
-    if candidate
-        .iter()
-        .chain(baseline)
-        .any(|r| r.worst_r7_hazard_per_h.is_some())
-    {
-        writeln!(
-            w,
-            "comparison: worst R7 hazard deltas use only pairs with shared-voltage metrics on both sides; missing is unavailable, not zero. Diagnostic only, not a verdict gate."
-        )?;
-    }
     let pairs = pairing(candidate, baseline);
     let splits: BTreeSet<_> = candidate.iter().map(|r| r.split).collect();
     let candidate_keys: BTreeSet<_> = candidate.iter().map(Record::key).collect();

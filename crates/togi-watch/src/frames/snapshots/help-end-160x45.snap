@@ -2,37 +2,37 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
 │
-│  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4  ───  1:20 left
+│  ► NIGHT since 22:13 · 0h30m  ───  mapping CCD 1 at -20  ───  9:20 left
 │
-│  │ R6            During idle trials this screen holds still, clock included, so it cannot wake the cores.
+│  │             core with the offset read back.
 │  │
-│  │ NO ETA        A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial.
+│  │ R6          During idle trials this screen holds still, clock included, so it cannot wake the cores.
 │  │
-│  │ RULES         How togi decides what to do: https://github.com/shgew/togi/blob/main/docs/spec/tuner.md
+│  │ NO ETA      Nights and days follow the clock, but when a hold completes depends on what runs, so togi shows only what is scheduled and the time left in
+│  │             the current trial.
+│  │
+│  │ RULES       How togi decides what to do: https://github.com/shgew/togi/blob/main/docs/spec/tuner.md
 │  │
 │  │
 │  │ WORDS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  │
-│  │ SEARCH           finding its solo limit with light and heavy-vector trials alone
-│  │ CONFIRM          checking its candidate solo limit with repeated light and heavy-vector trials alone
-│  │ FOUND            solo limit checked; waiting at 0
-│  │ WAITING          at 0, waiting for its first search turn
-│  │ MEMBER           kept with its hunt group at its failing offset; another member may be probed
-│  │ offset           Curve Optimizer counts, 0 to -50; deeper is more negative
-│  │ trial            one launch of one workload on its target
-│  │ solo limit       the deepest offset a core confirmed under load alone
-│  │ failure point    the shallowest ruled-out offset for a core
-│  │ combination      offsets at which a group of cores failed together
-│  │ at its limit     a core that cannot go deeper
-│  │ has room         a core that can still go deeper
-│  │ suspect          a core a hunt keeps at its failing offset
-│  │ parked           a core a hunt holds no deeper than its failing offset, outside the selected group
-│  █ partial part     an R7 part with the top requesters idle
-│  █ top requester    an R7 workload's highest-request group on each CCD, ties included; marked top on the CCD tables
-│  █ self-sufficient  observed passing as top requester for this R7 workload
-│  █ cycle            one pass through the checking schedule
+│  │ offset       Curve Optimizer counts, 0 to -50; deeper is more negative
+│  │ trial        one launch of one workload on its target
+│  │ D            the CCD's applied day offset; 0 before the first day step
+│  │ S            the cap: the deepest offset the night's evidence supports, with its slope and what binds it
+│  │ U            the night edge: the shallowest offset that failed in isolation; unknown until mapped, censored when nothing failed down to the limit
+│  │ slope        how fast a class's failure rate grows with depth: a fallback until enough is measured
+│  │ bound by     what limits S: a class's failure rate, the margin from the edge, or the baseline
+│  │ covered      a class whose evidence backs the cap; an uncovered class does not yet
+│  │ hold         applied hours at D out of the hours a step needs
+│  █ step         what the day decided: hold, promote one CCD, retreat, or reset after a firmware change
+│  █ veto         a profile an event forbids until the veto clears
+│  █ freeze       keeps D and blocks promotions; a required retreat or firmware reset still applies
+│  █ qualifying   running a whole profile until every class has witnessed it
+│  █ reproducing  re-running a daily event's conditions to see whether it comes back
+│  █ share        the part of the night's elapsed time a queue has used, against the part it is meant to take
 │  █
 │  █
 │  █ KINDS OF LOAD ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

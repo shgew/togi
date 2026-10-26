@@ -19,28 +19,45 @@ use togi_journal::MemFs;
 use togi_journal::fs::Fs;
 use togi_machine::{
     BiosContext, BootId, CancellationToken, CoreId, Error as MachineError, Machine, ObservedOffset,
-    Partial, Running, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec,
-    Trials,
+    Partial, Running, Signal, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions,
+    TrialSpec, Trials,
 };
 use togi_render::OutputFacts;
-use togi_sim::{Model, RunSettings, Simulator, file};
+use togi_sim::definition::{CoreDef, ModelDef, Weights};
+use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_tuningboot::night::{SETUP_PATH, Setup};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 use togi_watch::terminal;
 
 const CONFIG: &str = "config.json";
 
-pub(crate) fn simulator(seed: u64) -> Simulator {
-    biased(seed, 0)
-}
+/// Cores of the machine every `togi run` test drives.
+pub(crate) const CORES: i64 = 4;
 
-/// The machine with every core's boot offset at `bios`, which a run has to restore after it wrote others.
-pub(crate) fn biased(seed: u64, bios: i64) -> Simulator {
-    let mut definition = file::decode(include_str!(
-        "../../../../tools/bench/machines/shared-voltage.json"
-    ))
-    .unwrap();
-    definition.bios = (bios != 0).then(|| vec![bios; 16]);
+/// A four-core machine, two cores on each of two CCDs, whose cores all hold to CO -30 alone and together and fail
+/// only past it: its stock controls never fail, so a run reaches the night's first written profile in a few trials.
+pub(crate) fn simulator(seed: u64) -> Simulator {
+    let core = (0..CORES)
+        .map(|id| CoreDef {
+            id,
+            alone: [-30; 5],
+            together: [-30; 7],
+            flat: 0.0,
+            idle: None,
+            workload: BTreeMap::new(),
+        })
+        .collect();
+    let definition = MachineDefinition {
+        cores: CORES,
+        core,
+        model: ModelDef {
+            past_limit_rate: 1.0,
+            signals: Weights::from([(Signal::Crash, 1.0)]),
+            crash_mce: 0.0,
+            ..ModelDef::default()
+        },
+        ..MachineDefinition::default()
+    };
     Simulator::new(
         Model::new(&definition, seed).unwrap(),
         RunSettings {
@@ -49,6 +66,14 @@ pub(crate) fn biased(seed: u64, bios: i64) -> Simulator {
         },
     )
     .unwrap()
+}
+
+/// Whether `spec` runs a core at an offset the run wrote: a night's stock controls run at the all-zero baseline, so
+/// a run stopped during one has nothing to restore.
+pub(crate) fn written(spec: &TrialSpec) -> bool {
+    spec.offsets
+        .iter()
+        .any(|(_, offset)| offset != TargetOffset::ZERO)
 }
 
 /// What a fake writes to stderr, readable by the test.
@@ -627,6 +652,13 @@ struct InterruptingTrials {
 }
 
 impl Trials for InterruptingTrials {
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, MachineError> {
+        self.inner.content(workload)
+    }
+
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, MachineError> {
         self.inner.sweep(cancel)
     }
@@ -712,6 +744,10 @@ impl togi_machine::Host for UnvalidatedHost {
         }]
     }
 
+    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+        self.inner.backends()
+    }
+
     fn watchdog(&mut self) -> togi_machine::Check {
         self.inner.watchdog()
     }
@@ -751,6 +787,10 @@ impl togi_machine::Host for FourCcds {
 
     fn preflight(&mut self) -> Vec<togi_machine::Check> {
         self.0.preflight()
+    }
+
+    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+        self.0.backends()
     }
 
     fn watchdog(&mut self) -> togi_machine::Check {

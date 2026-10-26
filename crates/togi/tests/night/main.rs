@@ -476,11 +476,8 @@ fn the_night_shows_the_plan_status_gives_for_the_session() {
     night.host.write(SETUP_PATH, SETUP).unwrap();
     night.answer(Some("n\n"));
     let plan = night.togi_in(session.path(), &["status"]).out;
-    let header = plan
-        .lines()
-        .find(|line| line.contains("phase"))
-        .unwrap()
-        .to_owned();
+    let header = plan.lines().next().unwrap().to_owned();
+    assert!(!header.is_empty(), "{plan}");
     let ran = night.togi_in(session.path(), &["night"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert!(

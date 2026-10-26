@@ -18,18 +18,18 @@ fn rewrite_first_line(text: &mut String, from: &str, to: &str) {
 
 #[test]
 fn the_events_of_a_recording_are_read_whole() {
-    let loaded = loaded(&recording(Scenario::Checking)).unwrap();
-    assert_eq!(loaded.events, Scenario::Checking.events().unwrap());
+    let loaded = loaded(&recording(Scenario::Controls)).unwrap();
+    assert_eq!(loaded.events, Scenario::Controls.events().unwrap());
     assert_eq!(loaded.skipped, None);
 }
 
 #[test]
 fn an_unknown_kind_in_the_middle_is_skipped_unknown_fields_are_ignored_and_the_report_says_which() {
-    let mut text = recording(Scenario::Checking);
+    let mut text = recording(Scenario::Between);
     let planted = plant(&mut text);
     let before = text.clone();
     let loaded = loaded(&text).unwrap();
-    let known: Vec<_> = Scenario::Checking
+    let known: Vec<_> = Scenario::Between
         .events()
         .unwrap()
         .into_iter()
@@ -53,7 +53,7 @@ fn an_unknown_kind_in_the_middle_is_skipped_unknown_fields_are_ignored_and_the_r
 
 #[test]
 fn an_unknown_kind_on_the_first_line_is_still_an_error() {
-    let mut text = recording(Scenario::Checking);
+    let mut text = recording(Scenario::Controls);
     rewrite_first_line(
         &mut text,
         "\"kind\":\"session.start\"",
@@ -64,13 +64,13 @@ fn an_unknown_kind_on_the_first_line_is_still_an_error() {
 
 #[test]
 fn reading_leaves_the_journal_and_its_unfinished_last_line_as_they_are() {
-    let mut text = recording(Scenario::Checking);
+    let mut text = recording(Scenario::Controls);
     text.push_str("{\"unfinished\":");
     let before = text.clone();
     let loaded = loaded(&text).unwrap();
     assert_eq!(
         loaded.events.len(),
-        Scenario::Checking.events().unwrap().len()
+        Scenario::Controls.events().unwrap().len()
     );
     assert_eq!(loaded.skipped, None);
     assert_eq!(text, before);
@@ -78,7 +78,7 @@ fn reading_leaves_the_journal_and_its_unfinished_last_line_as_they_are() {
 
 #[test]
 fn a_recording_of_another_ruleset_or_a_newer_schema_is_refused() {
-    let mut ruleset = recording(Scenario::Checking);
+    let mut ruleset = recording(Scenario::Controls);
     let current = togi_tuner::RULESET;
     rewrite_first_line(
         &mut ruleset,
@@ -92,7 +92,7 @@ fn a_recording_of_another_ruleset_or_a_newer_schema_is_refused() {
         "{error}"
     );
 
-    let mut schema = recording(Scenario::Checking);
+    let mut schema = recording(Scenario::Controls);
     let current = togi_journal::SCHEMA;
     rewrite_first_line(
         &mut schema,
@@ -131,7 +131,7 @@ fn a_missing_journal_and_an_empty_one_are_errors_naming_what_is_wrong() {
 
 #[test]
 fn a_journal_that_does_not_decode_is_an_error() {
-    let text = recording(Scenario::Checking);
+    let text = recording(Scenario::Controls);
     let first = text.lines().next().unwrap();
     let error = loaded(&format!("{first}\nnot an event\n")).unwrap_err();
     assert!(matches!(error, Error::Read(_)));
@@ -143,7 +143,7 @@ fn a_journal_that_does_not_decode_is_an_error() {
 
 #[test]
 fn a_refusal_comes_before_any_later_event_is_decoded() {
-    let mut text = recording(Scenario::Checking);
+    let mut text = recording(Scenario::Controls);
     let current = togi_tuner::RULESET;
     rewrite_first_line(
         &mut text,

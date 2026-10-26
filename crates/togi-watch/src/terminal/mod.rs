@@ -1387,7 +1387,7 @@ mod tests {
             recorder.backend(),
             Stepping {
                 now: now.clone(),
-                events: togi_watchtest::Scenario::Search.events().unwrap(),
+                events: togi_watchtest::Scenario::Mapping.events().unwrap(),
                 model: crate::model::Model::new(),
                 step: jiff::SignedDuration::from_millis(step_ms),
             },

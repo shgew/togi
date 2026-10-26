@@ -136,7 +136,7 @@ fn real_process_kept_runs_are_named_on_stderr() {
 #[test]
 fn real_process_a_run_that_breaks_an_audit_check_fails_the_bench_and_is_named() {
     let bench = Bench::new();
-    let events = session::session(&togi_sim::MachineDefinition::default(), 1, None, 2).events;
+    let events = session::session(&session::hunting(), 1, None, 2).events;
     let seq = events.last().unwrap().seq;
     bench.journal(&events);
     let mut command = bench_command(&bench);
@@ -423,24 +423,6 @@ fn real_process_outside_a_git_repository_the_bench_fails_naming_it() {
     let mut command = bench_command(&bench);
     with_sim(&mut command, &bench, 0);
     let output = run(command
-        .current_dir(&outside)
-        .env("GIT_CEILING_DIRECTORIES", bench.dir.path()));
-    assert_eq!(output.status.code(), Some(1));
-    let stderr = text(&output.stderr);
-    assert!(stderr.starts_with("togi-tool-bench: git "), "{stderr}");
-    assert!(stderr.contains("not a git repository"), "{stderr}");
-}
-
-#[test]
-fn real_process_outside_a_git_repository_the_forecast_fails_naming_it() {
-    let bench = Bench::new();
-    let outside = bench.path("outside");
-    fs::create_dir(&outside).unwrap();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
-    isolate_git(&mut command, &bench.path("githome"));
-    let output = run(command
-        .arg("forecast")
-        .arg(bench.path("state"))
         .current_dir(&outside)
         .env("GIT_CEILING_DIRECTORIES", bench.dir.path()));
     assert_eq!(output.status.code(), Some(1));

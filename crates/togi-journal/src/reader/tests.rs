@@ -488,7 +488,13 @@ fn recordings_read_the_archives_oldest_first_then_the_live_journal() {
     let newer = session("20231114T000000Z");
     let older = session("20231113T000000Z");
     let dir = begin(&fs, newer)
-        .archive(stamp(5), crate::ArchiveKind::Transition, &[])
+        .archive(
+            stamp(5),
+            crate::ArchiveKind::Transition {
+                destination: session("20231115T000000Z"),
+            },
+            &[],
+        )
         .unwrap();
     let archived = dir.recordings().unwrap();
     assert_eq!(archived.len(), 1);
@@ -623,7 +629,13 @@ fn an_archived_recording_is_read_alone_and_absent_when_there_is_no_archive() {
     let fs = MemFs::new();
     let id = session("20231114T000000Z");
     let dir = begin(&fs, id)
-        .archive(stamp(5), crate::ArchiveKind::Transition, &[])
+        .archive(
+            stamp(5),
+            crate::ArchiveKind::Transition {
+                destination: session("20231115T000000Z"),
+            },
+            &[],
+        )
         .unwrap();
     let recording = dir.archived_recording(&id).unwrap().unwrap();
     assert_eq!(started(&recording), id);

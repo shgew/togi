@@ -1,9 +1,9 @@
-use togi_journal::{MemFs, Payload};
+use togi_journal::{EventKind, MemFs, Payload};
 use togi_simrun::{Persistence, Replay, SimOutcome, events, simulate};
 
 use test_case::test_case;
 
-use crate::common::{input, machine_file, nz, simulator, state_json};
+use crate::common::{crash_first, input, machine_file, nz, simulator, state_json};
 
 const BOOTS: u32 = 24;
 
@@ -14,7 +14,9 @@ fn run(
 ) -> (Vec<togi_journal::Event>, Option<Vec<u8>>, bool) {
     let fs = MemFs::new();
     let persistence = Persistence::Memory(fs.clone());
-    let mut sim = input(simulator(&machine_file(machine), seed), persistence.clone());
+    let machine = simulator(&machine_file(machine), seed);
+    let mut sim = input(machine.clone(), persistence.clone());
+    sim.observer = Some(crash_first(&machine, EventKind::TrialEnd, usize::MAX));
     sim.replay = replay;
     sim.max_boots = nz(BOOTS);
     let capped = matches!(simulate(sim).unwrap(), SimOutcome::Capped { .. });

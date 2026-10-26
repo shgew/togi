@@ -177,14 +177,73 @@ fn profiles_and_loads_that_do_not_fit_the_machine_are_refused() {
     );
 }
 
-#[test_case(Regime::R8; "r8")]
-#[test_case(Regime::R9; "r9")]
-fn role_regime_loads_are_refused_as_unmodeled(regime: Regime) {
-    let model = model(&base());
-    let load = load(regime, "", &[0], 90.0);
+#[test]
+fn r9_reads_r7s_together_limit_and_gets_its_ccd_residual() {
+    let mut definition = base();
+    definition.core[0].together[6] = -14;
+    definition.ccd = Some(CcdDef {
+        log_rate: -3.0,
+        ..CcdDef::default()
+    });
+    let model = model(&definition);
+    let profile = offsets(&[-13, -1]);
+    let hazard = |regime: Regime| {
+        let load = load(regime, "", &[0], 90.0);
+        model.hazard(&profile, &load).expect("shape")
+    };
+    let residual = 3.0_f64.exp().recip();
     assert_eq!(
-        model.hazard(&offsets(&[0, 0]), &load),
-        Err(ShapeError::UnmodeledRegime { regime })
+        hazard(Regime::R7),
+        0.25 + residual,
+        "R7's limit -14 holds at -13"
+    );
+    assert_eq!(hazard(Regime::R9), hazard(Regime::R7));
+    assert_eq!(
+        hazard(Regime::R8),
+        2.0,
+        "R8 has no residual and R2's limit -12 fails at -13"
+    );
+}
+
+#[test]
+fn r8_reads_the_together_limit_of_its_r2_neighbours() {
+    let mut definition = base();
+    definition.core[0].together[1] = -14;
+    let model = model(&definition);
+    let profile = offsets(&[-13, -1]);
+    let hazard = |regime: Regime| {
+        let load = load(regime, "", &[0], 90.0);
+        model.hazard(&profile, &load).expect("shape")
+    };
+    assert_eq!(
+        hazard(Regime::R8),
+        0.25,
+        "R2's together limit -14 holds at -13"
+    );
+    assert_eq!(hazard(Regime::R8), hazard(Regime::R2));
+    assert_eq!(
+        hazard(Regime::R1),
+        2.0,
+        "R1's together limit -12 fails at -13"
+    );
+}
+
+#[test]
+fn an_r8_workload_override_applies_to_that_catalog_entry_only() {
+    let mut definition = base();
+    let light = togi_machine::pick_workload(Regime::R8, 0).id();
+    definition.core[0].workload = BTreeMap::from([(light, -20)]);
+    let model = model(&definition);
+    let profile = offsets(&[-15, -1]);
+    let hazard = |regime: Regime, workload: &str| {
+        let load = load(regime, workload, &[0], 90.0);
+        model.hazard(&profile, &load).expect("shape")
+    };
+    assert_eq!(hazard(Regime::R8, light.as_str()), 0.25);
+    assert_eq!(
+        hazard(Regime::R8, ""),
+        32.0,
+        "R2's together limit -12, 3 counts past"
     );
 }
 

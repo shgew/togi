@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn the_feed_folds_the_events_played_so_far_and_only_when_the_count_changes() {
-        let mut events = Scenario::Checking.events().unwrap();
+        let mut events = Scenario::Controls.events().unwrap();
         events.truncate(8);
         for (hour, event) in (0_i64..).zip(&mut events) {
             event.mono = None;
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn what_the_read_skipped_is_in_every_frame_before_and_while_the_events_play() {
         let report = "skipped 1 event of a kind this build does not know (future.thing at line 3)";
-        let mut events = Scenario::Checking.events().unwrap();
+        let mut events = Scenario::Controls.events().unwrap();
         events.truncate(8);
         for (hour, event) in (0_i64..).zip(&mut events) {
             event.mono = None;
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn an_event_the_model_cannot_fold_is_shown_as_a_problem_and_nothing_folds_after_it() {
-        let mut events = Scenario::Checking.events().unwrap();
+        let mut events = Scenario::Controls.events().unwrap();
         events.truncate(3);
         events[1] = events[0].clone();
         let (mut feed, _, _) = at(&events, 3, 1.0, Duration::ZERO);
@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn a_frame_is_drawn_at_the_time_of_its_own_journal_even_when_an_event_falls_due_between_them() {
         let hour = jiff::SignedDuration::from_hours(1);
-        let mut events = Scenario::Checking.events().unwrap();
+        let mut events = Scenario::Controls.events().unwrap();
         events.truncate(4);
         for (second, event) in (0_i64..).zip(&mut events) {
             event.boot = BootId::from("boot".to_owned());

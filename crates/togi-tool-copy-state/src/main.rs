@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use clap::Parser;
 
 /// Copy a state directory's live journal, `state.json` and the archived journals and markers of its sessions, the
-/// files forecast, facts and replay read. Trial directories are left out. Take the copy while no trial runs.
+/// files facts and replay read. Trial directories are left out. Take the copy while no trial runs.
 #[derive(Debug, Parser)]
 #[command(name = "togi-tool-copy-state")]
 struct Cli {

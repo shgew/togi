@@ -14,7 +14,7 @@ use crate::cores::ids;
 use crate::error::ShapeError;
 use crate::model::{Joint, Limits, Model, Onset};
 use crate::random::Domain;
-use crate::vocab::regime_index;
+use crate::vocab::{limit_index, modeled_as};
 use crate::voltage::{Voltage, voltage_state};
 
 /// What a trial loads: its regime and workload, the cores running it and its intended duration.
@@ -206,9 +206,10 @@ impl Model {
         }
     }
 
-    /// The shared-voltage model when `load` is a multi-core R7 trial on a machine that has one.
+    /// The shared-voltage model when `load` is a multi-core trial modeled as R7 (R7 and R9) on a machine that has
+    /// one.
     pub(crate) fn shared_voltage(&self, load: &Load<'_>) -> Option<&Voltage> {
-        (load.cores.len() > 1 && load.regime == Regime::R7)
+        (load.cores.len() > 1 && modeled_as(load.regime) == Regime::R7)
             .then(|| self.voltage())
             .flatten()
     }
@@ -227,9 +228,7 @@ impl Model {
         mut visit: impl FnMut(HazardSource),
     ) -> Result<(), ShapeError> {
         self.check_shape(profile, load)?;
-        let slot = regime_index(load.regime).ok_or(ShapeError::UnmodeledRegime {
-            regime: load.regime,
-        })?;
+        let slot = limit_index(load.regime);
         let regime = load.regime;
         let shared = self
             .shared_voltage(load)
@@ -388,7 +387,7 @@ impl Model {
         let Some(parameters) = self.ccd() else {
             return 0.0;
         };
-        if regime != Regime::R7 {
+        if modeled_as(regime) != Regime::R7 {
             return 0.0;
         }
         let size = self.cores() / 2;

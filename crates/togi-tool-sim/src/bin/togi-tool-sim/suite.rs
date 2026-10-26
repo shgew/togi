@@ -7,18 +7,19 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
+use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use togi_config::Config;
-use togi_journal::{MemFs, StateDir};
-use togi_machine::CancellationToken;
+use togi_journal::{DeadEndCondition, MemFs, Payload, Seq, StateDir};
+use togi_machine::{CancellationToken, TargetOffset};
 use togi_render::Renderer;
-use togi_session::{ConfigSource, Stop, StopPolicy};
+use togi_session::{ConfigSource, Stop};
 use togi_sim::{RunSettings, Simulator};
 use togi_simrun::{Persistence, Replay, SimError, SimInput, SimOutcome};
 use togi_tool_audit::{Completion, audit_recordings};
 use togi_tool_sim::{
-    ExpectedShard, Outcome, Run, RunResult, ShardManifest, Suite, encode_manifest, parse_manifest,
-    shard,
+    ExpectedEnd, ExpectedShard, Outcome, Run, RunResult, ShardManifest, Suite, encode_manifest,
+    parse_manifest, shard,
 };
 use togi_tool_trialfacts::Extracts;
 
@@ -260,10 +261,11 @@ where
     Ok(togi_tool_sim::check(&expected, &manifests)?)
 }
 
-/// Runs one session of the suite and judges it: clean only when it stopped after its cycles, the last boot's
-/// resume state matched a fresh fold of the journal (the simulation checks that after every crash too), the tuner
-/// replays the journal, and the audit finds no violation in any of the directory's journals and a published
-/// `state.json` at the journal's last event. `fs` is the session's fresh in-memory state directory.
+/// Runs one session of the suite and judges it: clean only when its simulated night ended the way its run expects (the
+/// operator's end at the run's night length, or a dead end its machine produces), the last boot's resume state matched
+/// a fresh fold of the journal (the simulation checks that after every crash too), the Ruleset 13 fold accepts the journal, and
+/// the audit finds no violation in any of the directory's journals and a published `state.json` at the journal's last
+/// event. `fs` is the session's fresh in-memory state directory.
 #[cfg(test)]
 fn execute(
     run: &Run,
@@ -312,6 +314,7 @@ fn execute_loaded(
         }
     };
     let persistence = Persistence::Memory(fs.clone());
+    let stop_at = simulator.now() + SignedDuration::from_hours(i64::from(run.night_hours.get()));
     let simulated = togi_simrun::simulate(SimInput {
         config: Config::default(),
         source: ConfigSource::default(),
@@ -321,10 +324,7 @@ fn execute_loaded(
         replay: Replay::Warm,
         verify_every: NonZeroU32::new(1),
         max_boots,
-        policy: StopPolicy {
-            cycles: NonZeroU32::new(1),
-            first_result: false,
-        },
+        stop_at: Some(stop_at),
         write_samples: false,
         defects: togi_defect::KNOWN_DEFECTS,
         log: None,
@@ -358,31 +358,63 @@ fn execute_loaded(
             detail: errors.join("; "),
         };
     }
-    match &finished.stop {
-        Some(Stop::Cycles) => {}
-        Some(Stop::DeadEnd { dead_end, .. }) => {
-            return Outcome::DeadEnd {
-                condition: dead_end.condition,
-                detail: dead_end.detail.clone(),
+    if cancel.is_cancelled() {
+        return Outcome::Failed {
+            detail: "interrupted by a signal before the night ended".to_owned(),
+        };
+    }
+    match (&finished.stop, run.expected_end) {
+        (Some(Stop::Signal), ExpectedEnd::Operator | ExpectedEnd::OperatorOrStock)
+        | (Some(Stop::DeadEnd { .. } | Stop::Night(_)), ExpectedEnd::DeadEnd) => {}
+        (
+            Some(Stop::DeadEnd {
+                dead_end, causes, ..
+            }),
+            ExpectedEnd::OperatorOrStock,
+        ) if stock_failure(&persistence, dead_end.condition, causes) => {}
+        (Some(stop), expected) => {
+            return Outcome::WrongEnd {
+                expected,
+                ended: describe(stop),
             };
         }
-        Some(Stop::Signal) => {
-            return Outcome::Stopped {
-                reason: togi_journal::ShutdownReason::Signal,
-            };
-        }
-        Some(Stop::FirstResult) => {
-            return Outcome::Stopped {
-                reason: togi_journal::ShutdownReason::FirstResult,
-            };
-        }
-        None => {
+        (None, _) => {
             return Outcome::Failed {
                 detail: "the session ended without a stop".to_owned(),
             };
         }
     }
     judge(&persistence, fs)
+}
+
+/// Whether a dead end is a conclusive failure at CO 0 and a failing exposure it cites ran every core at zero.
+fn stock_failure(persistence: &Persistence, condition: DeadEndCondition, causes: &[Seq]) -> bool {
+    condition == DeadEndCondition::FailureAtZero
+        && togi_simrun::events(persistence).is_ok_and(|events| {
+            events
+                .iter()
+                .filter(|event| causes.contains(&event.seq))
+                .any(|event| {
+                    matches!(&event.payload, Payload::ExposureObserved(exposure)
+                        if !exposure.failures.is_empty()
+                            && exposure
+                                .profile
+                                .cores
+                                .into_iter_values()
+                                .all(|(_, offset)| offset == TargetOffset::ZERO))
+                })
+        })
+}
+
+/// How a night ended, for the outcome of a run that expected another end.
+fn describe(stop: &Stop) -> String {
+    match stop {
+        Stop::Signal => "an operator signal".to_owned(),
+        Stop::Night(reason) => format!("the night policy ({reason:?})"),
+        Stop::DeadEnd { dead_end, .. } => {
+            format!("dead end {}: {}", dead_end.condition, dead_end.detail)
+        }
+    }
 }
 
 fn judge(persistence: &Persistence, fs: MemFs) -> Outcome {
@@ -394,7 +426,7 @@ fn judge(persistence: &Persistence, fs: MemFs) -> Outcome {
             };
         }
     };
-    if let Err(error) = togi_tuner::replay(&events) {
+    if let Err(error) = togi_session::ReadState::replay(&events) {
         return Outcome::ReplayFailed {
             detail: togi_machine::error_chain(&error),
         };
@@ -460,6 +492,8 @@ mod tests {
             machine: None,
             replay: false,
             smoke: false,
+            night_hours: togi_tool_sim::DEFAULT_NIGHT_HOURS,
+            expected_end: togi_tool_sim::ExpectedEnd::Operator,
         };
         execute(
             &run,

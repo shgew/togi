@@ -6,7 +6,7 @@ use togi_journal::{Event, EventKind, MemFs};
 use togi_session::SessionError;
 use togi_simrun::{Observe, Persistence, SimError, SimInput, SimOutcome, events, simulate};
 
-use crate::common::{hunt_machine, input, nz, simulator};
+use crate::common::{crash_first, hunt_machine, input, nz, simulator};
 
 struct Log {
     fail_writes: bool,
@@ -53,11 +53,10 @@ fn shown(outcome: &Result<SimOutcome, SimError>) -> String {
 
 #[test]
 fn a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_capping_it() {
-    let mut input = input(
-        simulator(&hunt_machine(2), 1),
-        Persistence::Memory(MemFs::new()),
-    );
+    let machine = simulator(&hunt_machine(2), 1);
+    let mut input = input(machine.clone(), Persistence::Memory(MemFs::new()));
     input.max_boots = nz(3);
+    input.observer = Some(crash_first(&machine, EventKind::TrialEnd, usize::MAX));
     input.log = Some(log(true, false).0);
     match simulate(input) {
         Err(SimError::Failed { boot: 1, errors }) => {
@@ -76,11 +75,10 @@ fn a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_cappin
 
 #[test]
 fn a_log_that_cannot_flush_fails_the_simulation() {
-    let mut input = input(
-        simulator(&hunt_machine(2), 1),
-        Persistence::Memory(MemFs::new()),
-    );
+    let machine = simulator(&hunt_machine(2), 1);
+    let mut input = input(machine.clone(), Persistence::Memory(MemFs::new()));
     input.max_boots = nz(3);
+    input.observer = Some(crash_first(&machine, EventKind::TrialEnd, usize::MAX));
     let (log, flushes) = log(false, true);
     input.log = Some(log);
     let outcome = simulate(input);

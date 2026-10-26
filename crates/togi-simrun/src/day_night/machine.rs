@@ -319,6 +319,9 @@ impl Host for CycleHost {
     fn preflight(&mut self) -> Vec<Check> {
         self.inner.preflight()
     }
+    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+        self.inner.backends()
+    }
     fn watchdog(&mut self) -> Check {
         self.inner.watchdog()
     }
@@ -345,6 +348,13 @@ impl Clock for CycleClock {
 
 struct CycleTrials(Shared);
 impl Trials for CycleTrials {
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, Error> {
+        Ok(togi_sim::content_id(workload))
+    }
+
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
@@ -369,11 +379,13 @@ impl Trials for CycleTrials {
             let state = self.0.borrow();
             spec.check_roles(state.scenario.topology())
                 .map_err(|error| machine_error(RunError::Roles(error)))?;
+            // A cell starts without asking whether it fits: the operator ends the night, not the
+            // trial's length. Once the operator has ended it, nothing more starts.
             let remaining = state.night_remaining.ok_or_else(|| {
                 machine_error(RunError::Calendar("trials require a night allocation"))
             })?;
-            if spec.duration > remaining {
-                return Err(machine_error(RunError::NightOverrun));
+            if remaining.is_zero() {
+                return Err(Error::Cancelled);
             }
             Ok(Box::new(CycleRunning {
                 shared: self.0.clone(),
@@ -416,7 +428,7 @@ impl Running for CycleRunning {
         cancel: &CancellationToken,
         reporter: &mut dyn Reporter,
     ) -> Result<TrialResult, Partial<TrialResult>> {
-        let mut execute = || {
+        let mut execute = || -> Result<(TrialResult, bool), Error> {
             if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
@@ -425,12 +437,14 @@ impl Running for CycleRunning {
             }
             self.waited = true;
             let mut state = self.shared.borrow_mut();
-            let failure = state
-                .draw(&self.class, self.spec.duration)
-                .map_err(machine_error)?;
-            let ran = failure
-                .as_ref()
-                .map_or(self.spec.duration, |failure| failure.elapsed);
+            // The operator ends the night when its allocation runs out; a trial still running then
+            // runs only to that moment and is stopped by the operator's signal.
+            let window = self.spec.duration.min(state.night_remaining.ok_or_else(|| {
+                machine_error(RunError::Calendar("trials require a night allocation"))
+            })?);
+            let failure = state.draw(&self.class, window).map_err(machine_error)?;
+            let ran = failure.as_ref().map_or(window, |failure| failure.elapsed);
+            let operator_end = failure.is_none() && window < self.spec.duration;
             state
                 .advance(Some(&self.class), ran)
                 .map_err(machine_error)?;
@@ -476,16 +490,27 @@ impl Running for CycleRunning {
             } else {
                 None
             };
-            Ok(TrialResult {
-                ran,
-                failure,
-                ..TrialResult::default()
-            })
+            Ok((
+                TrialResult {
+                    ran,
+                    failure,
+                    ..TrialResult::default()
+                },
+                operator_end,
+            ))
         };
-        execute().map_err(|error| Partial {
-            value: TrialResult::default(),
-            error,
-        })
+        match execute() {
+            Ok((result, false)) => Ok(result),
+            // A runner stopped by a signal returns what ran so far as a cancelled partial.
+            Ok((result, true)) => Err(Partial {
+                value: result,
+                error: Error::Cancelled,
+            }),
+            Err(error) => Err(Partial {
+                value: TrialResult::default(),
+                error,
+            }),
+        }
     }
     fn stop(self: Box<Self>) -> Result<Stopped, Error> {
         Ok(confirmed())

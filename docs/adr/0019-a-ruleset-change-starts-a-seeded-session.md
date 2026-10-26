@@ -1,4 +1,4 @@
-Status: see [the index](README.md).
+Status: superseded for the Ruleset 13 cutover by [0084](0084-a-fresh-ruleset-transition.md): fresh tuning state, raw daily observations imported, no tuning carry. The decision below is historical.
 
 # A ruleset change starts a seeded session
 

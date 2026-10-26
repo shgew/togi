@@ -56,6 +56,15 @@ impl TestBackend {
 }
 
 impl Backend for TestBackend {
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, Error> {
+        let plan = self.plan(
+            workload,
+            Path::new(""),
+            &togi_backend::numbered_cpus(workload.threads),
+        )?;
+        Ok(togi_backend::configuration_bytes(&plan.args, &plan.inputs))
+    }
+
     fn kind(&self) -> togi_machine::Backend {
         self.kind
     }

@@ -144,6 +144,15 @@ impl Simulator {
         self.shared.borrow_mut().faults.fail_setup = starts;
     }
 
+    /// Makes every start of a trial that runs `backend` fail its setup, an inconclusive trial.
+    pub fn fail_backend_setup(&self, backend: Backend) {
+        self.shared
+            .borrow_mut()
+            .faults
+            .failing_backends
+            .insert(backend);
+    }
+
     /// Makes every start of a trial of `backend` fail with a missing backend.
     pub fn miss_backend(&self, backend: Backend) {
         self.shared

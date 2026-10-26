@@ -1,3 +1,5 @@
+Status: superseded by [0080](0080-per-ccd-first.md); Ruleset 13 removes located hunts and request-based charges. This decision records the predecessor policy.
+
 # Locate multi-core R7 failures only when backing off loaded cores stops helping
 
 Supersedes [ADR 0040](0040-located-hunts.md) where it locates a multi-core R7 failure before charging the loaded cores; its all-zero rerun, located-hunt mechanics and Ruleset 10 gate record stay. [Issue #526](https://github.com/shgew/togi/issues/526) records the change and [#493](https://github.com/shgew/togi/issues/493) the decision (Q10).

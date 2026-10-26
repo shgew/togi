@@ -1,4 +1,3 @@
-use std::num::NonZeroU32;
 use test_case::test_case;
 
 use togi_journal::{Outcome, Payload, TrialId, TrialProgress, TrialSample};
@@ -124,9 +123,7 @@ fn crashed_after(bench: &Bench, signal: Signal) -> Ended {
             },
         )
         .unwrap();
-    let mut input = bench.input();
-    input.policy.cycles = Some(NonZeroU32::MIN);
-    run(input)
+    run(bench.input_ending_at(bench.short_night()))
 }
 
 #[test]
@@ -153,8 +150,7 @@ fn a_stall_journaled_before_a_crash_is_recovered_as_the_failure_of_the_interrupt
     drop(crashed);
     bench.sim.reboot().unwrap();
 
-    let mut input = bench.input();
-    input.policy.cycles = Some(NonZeroU32::MIN);
+    let input = bench.input();
     input.cancel.cancel();
     let resumed = run(input);
     let end = resumed

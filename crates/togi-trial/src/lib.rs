@@ -11,6 +11,8 @@ mod runner;
 #[cfg(target_os = "linux")]
 mod clock;
 #[cfg(target_os = "linux")]
+mod content;
+#[cfg(target_os = "linux")]
 mod controller;
 #[cfg(any(test, target_os = "linux"))]
 mod evidence;

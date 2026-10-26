@@ -1,14 +1,10 @@
-//! The panels under the core tables: the BIOS profile, the cycle and its parts, a hunt with its groups and
-//! probes, the search turns, a phase 2 round, the combinations and the history; and the journal view.
+//! The panels under the core tables: the night and day context and the history; and the journal view.
 
 mod context;
-mod cycle;
 #[cfg(test)]
 mod fixtures;
 mod history;
-mod hunt;
 mod log;
-mod search;
 mod table;
 
 use jiff::tz::TimeZone;
@@ -19,8 +15,9 @@ use super::measure::Measure;
 use super::scene::Scene;
 use crate::screen::{Colours, Log};
 
-/// The context panel's rows: the BIOS profile with the panel under it (a hunt, the search turns, a round, or the
-/// cycle, the combinations and R7), at most `measure.context.height` of them.
+/// The context panel's rows: the open night's task, mapping, qualification, reproduction and shares, then the
+/// day's hold, step, freeze, firmware, questions, events and vetoes (the day first once the night closes), at
+/// most `measure.context.height` of them.
 pub(crate) fn context_lines(scene: &Scene<'_>, measure: &Measure) -> Vec<Line<'static>> {
     context::context(scene, measure)
 }
@@ -29,15 +26,6 @@ pub(crate) fn context_lines(scene: &Scene<'_>, measure: &Measure) -> Vec<Line<'s
 /// out: those that do not fit and those older than the entries the model keeps.
 pub(crate) fn history_panel(scene: &Scene<'_>, width: usize, height: usize) -> Vec<Line<'static>> {
     history::history(scene, width, height)
-}
-
-/// Where the stage line says a hunt stands: `group 2 of 3`, `part 1 of 2`; empty when it says nothing.
-pub(crate) fn hunt_stage(scene: &Scene<'_>, short: bool) -> String {
-    scene
-        .s
-        .hunt
-        .as_ref()
-        .map_or_else(String::new, |hunt| hunt::stage(hunt, short))
 }
 
 /// The journal view's body in `width` cells and `height` rows scrolled `scroll` lines down, with its

@@ -2,18 +2,17 @@
 
 use ratatui::buffer::Buffer;
 use test_case::test_case;
-use togi_journal::{
-    CommandReset, DeadEnd, DeadEndCondition, EventKind, Outcome, ResetTarget, Shutdown,
-    ShutdownReason, TrialProgress,
-};
-use togi_machine::Signal;
-use togi_watchtest::{Scenario, cut_at};
+use togi_journal::DeadEndCondition;
 
-use super::{ALL_SIZES, Fixture, SIZES, append, later, main_screen, one_frame, text, words};
+use super::{ALL_SIZES, SIZES, later, main_screen, one_frame, text, words};
+use crate::frames::hand::{Hand, Staged, ended_trial};
 use crate::frames::layout::Layout;
-use crate::frames::testing::rows_of;
+use crate::frames::testing::{Fixture, rows_of};
+use crate::model::{DeadEndView, RecoveryView, StopView};
 use crate::screen::{Hold, Screen, View};
-use crate::tests::kit::{Script, crash, end_payload, warning};
+use togi_journal::ShutdownReason;
+use togi_machine::Regime;
+use togi_watchtest::Scenario;
 
 pub(super) fn stage_line(buf: &Buffer, screen: &Screen) -> String {
     rows_of(buf)[usize::from(Layout::new(screen).stage.y)]
@@ -28,18 +27,10 @@ pub(super) fn summary_screen() -> Screen {
     }
 }
 
-fn session_events() -> Vec<togi_journal::Event> {
-    Scenario::Stopped
-        .base()
-        .events()
-        .expect("the simulated session")
-        .to_vec()
-}
-
 #[test]
-fn between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown() {
-    let fx = Fixture::scenario(Scenario::Between);
-    assert!(fx.model.snapshot().trial.is_none() && fx.model.snapshot().last.is_some());
+fn between_trials_names_the_last_outcome_and_not_a_countdown() {
+    let fx = Staged::Between.hand();
+    assert!(fx.snapshot().trial.is_none() && fx.snapshot().last.is_some());
     for (width, height) in SIZES {
         let (buf, drawn) = fx.main(width, height);
         let shown = text(&buf);
@@ -48,13 +39,8 @@ fn between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown() {
             "{width}x{height} loses its state:\n{shown}"
         );
         assert!(
-            !shown.contains("left"),
+            shown.lines().all(|row| !row.trim_end().ends_with(" left")),
             "{width}x{height} invents a countdown:\n{shown}"
-        );
-        let lower = shown.to_lowercase();
-        assert!(
-            lower.contains("next trial:") || lower.contains("deciding"),
-            "{width}x{height} hides the tuner's next action:\n{shown}"
         );
         assert_eq!(drawn.hold, Hold::Never);
     }
@@ -62,8 +48,8 @@ fn between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown() {
 
 #[test]
 fn a_stopped_frame_shows_the_saved_profile_and_no_running_stage() {
-    let fx = Fixture::scenario(Scenario::Stopped);
-    assert!(fx.model.snapshot().stopped.is_some_and(|stop| stop.saved));
+    let fx = Staged::Stopped.hand();
+    assert!(fx.snapshot().stopped.is_some_and(|stop| stop.saved));
     for (width, height) in ALL_SIZES {
         let (buf, _) = fx.main(width, height);
         let shown = text(&buf).to_lowercase();
@@ -73,27 +59,26 @@ fn a_stopped_frame_shows_the_saved_profile_and_no_running_stage() {
         );
         let stage = stage_line(&buf, &main_screen(width, height));
         assert!(
-            !stage.contains('►') && !stage.contains("repeats until stopped"),
+            stage.starts_with("○ STOPPED") && !stage.contains('►'),
             "{width}x{height}: a stopped stage line shows a running stage: {stage:?}"
         );
     }
-    let (wide, _) = fx.main(240, 67);
-    let said = words(&wide);
-    assert!(
-        said.contains("requested clean cycles completed"),
-        "the stop sentence says why the session stopped: {said}"
-    );
 }
 
 #[test]
-fn a_running_stage_line_keeps_its_marker_and_its_repeat_note() {
-    let fx = Fixture::scenario(Scenario::Concluded);
-    assert!(fx.model.snapshot().stopped.is_none());
+fn a_running_stage_line_keeps_its_marker_and_names_the_night() {
+    let fx = Staged::Mapping.hand();
     let (buf, _) = fx.main(240, 67);
     let stage = stage_line(&buf, &main_screen(240, 67));
     assert!(
-        stage.contains('►') && stage.contains("repeats until stopped"),
+        stage.starts_with("► NIGHT since") && stage.contains("mapping CCD 1 at -20"),
         "{stage:?}"
+    );
+    let day = Staged::Day.hand();
+    let (buf, _) = day.main(240, 67);
+    assert!(
+        stage_line(&buf, &main_screen(240, 67)).starts_with("► DAY"),
+        "the day has its own stage"
     );
 }
 
@@ -120,18 +105,12 @@ fn a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis(
     detail: &str,
     wrong: &str,
 ) {
-    let mut script = Script::at_limit();
-    script.append(
-        DeadEnd {
-            condition,
-            core: None,
-            detail: detail.to_owned(),
-            action: None,
-        }
-        .into(),
-        &[],
-    );
-    let fx = Fixture::of(&script.events);
+    let mut fx = Staged::Deadend.hand();
+    fx.dead_end = Some(DeadEndView {
+        at: crate::frames::testing::FIXED_NOW,
+        condition,
+        detail: detail.to_owned(),
+    });
     let (buf, _) = fx.main(240, 67);
     let shown = text(&buf);
     assert!(
@@ -140,25 +119,15 @@ fn a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis(
     );
 }
 
-fn trial_events() -> (Vec<togi_journal::Event>, usize) {
-    let events = session_events();
-    let first_intent = events
-        .iter()
-        .position(|event| event.kind() == EventKind::TrialIntent)
-        .expect("a trial intent");
-    (events, first_intent)
-}
-
 #[test]
 fn a_session_with_no_trial_yet_does_not_claim_one_ended() {
-    let (events, first_intent) = trial_events();
-    let fx = Fixture::of(&events[..first_intent]);
-    assert!(fx.model.snapshot().trial.is_none());
+    let mut fx = Staged::Between.hand();
+    fx.last = None;
     for (width, height) in SIZES {
         let said = words(&fx.main(width, height).0);
         assert!(
-            said.contains("No trial has run yet"),
-            "{width}x{height} lacks the no-trial words: {said}"
+            said.contains("BETWEEN TRIALS") && !said.contains("last:"),
+            "{width}x{height} names an outcome where none exists: {said}"
         );
         assert!(
             !said.contains("has ended"),
@@ -169,10 +138,7 @@ fn a_session_with_no_trial_yet_does_not_claim_one_ended() {
 
 #[test]
 fn a_first_trial_that_ended_is_reported_as_the_last_one() {
-    let (events, _) = trial_events();
-    let ended = cut_at(&events, |event| event.kind() == EventKind::TrialEnd).expect("a trial end");
-    let fx = Fixture::of(ended);
-    assert!(fx.model.snapshot().trial.is_none());
+    let fx = Staged::Between.hand();
     for (width, height) in SIZES {
         let said = words(&fx.main(width, height).0);
         assert!(
@@ -184,15 +150,9 @@ fn a_first_trial_that_ended_is_reported_as_the_last_one() {
 
 #[test]
 fn a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running() {
-    let fx = Fixture::scenario(Scenario::Crashed);
-    let id = fx
-        .model
-        .snapshot()
-        .trial
-        .expect("a crashed trial")
-        .id
-        .clone();
-    assert!(fx.model.snapshot().crashed_trial());
+    let fx = Staged::Crashed.hand();
+    let id = fx.snapshot().trial.expect("a crashed trial").id.clone();
+    assert!(fx.snapshot().crashed_trial());
     for (width, height) in SIZES {
         let (buf, drawn) = fx.main(width, height);
         let said = words(&buf);
@@ -206,7 +166,7 @@ fn a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running() {
                 "{width}x{height} lacks {want:?}: {said}"
             );
         }
-        for bad in ["left", "past its end", "I'm finding", "I'm confirming"] {
+        for bad in ["left", "past its end"] {
             assert!(
                 !said.contains(bad),
                 "{width}x{height} says {bad:?} of a crashed trial: {said}"
@@ -221,18 +181,17 @@ fn a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running() {
         !stage.contains('►') && !stage.contains("left") && stage.contains("trial crashed"),
         "{stage:?}"
     );
-    let started = Fixture::scenario(Scenario::Search);
     assert!(
-        !started.model.snapshot().crashed_trial(),
+        !Staged::Mapping.hand().snapshot().crashed_trial(),
         "a trial in the latest boot is running"
     );
 }
 
-#[test_case(Scenario::Search, 240, 67; "search wide")]
-#[test_case(Scenario::Search, 160, 45; "search medium")]
-#[test_case(Scenario::Search, 120, 33; "search compact")]
-#[test_case(Scenario::Checking, 160, 45; "checking")]
-#[test_case(Scenario::Hunt, 160, 45; "hunt")]
+#[test_case(Scenario::Mapping, 240, 67; "mapping wide")]
+#[test_case(Scenario::Mapping, 160, 45; "mapping medium")]
+#[test_case(Scenario::Mapping, 120, 33; "mapping compact")]
+#[test_case(Scenario::Controls, 160, 45; "controls")]
+#[test_case(Scenario::Filler, 160, 45; "filler")]
 fn event_redraws_keep_every_counter_on_the_same_second(
     scenario: Scenario,
     width: u16,
@@ -281,8 +240,8 @@ fn event_redraws_keep_every_counter_on_the_same_second(
 
 #[test]
 fn a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash() {
-    let fx = Fixture::scenario(Scenario::Search);
-    let trial = fx.model.snapshot().trial.expect("a started trial");
+    let fx = Staged::Mapping.hand();
+    let trial = fx.snapshot().trial.expect("a started trial").clone();
     let end = later(
         trial.started.expect("a started trial"),
         i64::try_from(trial.duration.as_secs()).expect("seconds"),
@@ -303,7 +262,12 @@ fn a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash() {
         );
         let (buf, drawn) = fx.draw(&sc, later(end, 42));
         let said = words(&buf);
-        for want in ["0:42", "past", "may still be running"] {
+        for want in [
+            "0:42",
+            "past",
+            "no trial end recorded",
+            "may still be running",
+        ] {
             assert!(
                 said.contains(want),
                 "{width}x{height} lacks {want:?}: {said}"
@@ -316,6 +280,8 @@ fn a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash() {
             );
         }
         assert_eq!(drawn.hold, Hold::Never, "{width}x{height} keeps ticking");
+        let (one, _) = fx.draw(&one_frame(width, height), later(end, 42));
+        assert!(words(&one).contains("no trial end recorded"));
     }
     let summary = summary_screen();
     let (wide, _) = fx.draw(&summary, later(end, 42));
@@ -325,171 +291,39 @@ fn a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash() {
     );
 }
 
-#[test]
-fn a_trial_overdue_with_later_progress_reports_its_missing_end() {
-    let mut events = Scenario::Search.events().expect("the scenario's journal");
-    let fx = Fixture::of(&events);
-    let trial = fx.model.snapshot().trial.expect("a started trial");
-    let end = later(
-        trial.started.expect("started"),
-        i64::try_from(trial.duration.as_secs()).expect("seconds"),
-    );
-    let id = trial.id.clone();
-    let last = events.last().expect("an event").time;
-    let boot = events.last().expect("an event").boot.to_string();
-    append(
-        &mut events,
-        TrialProgress {
-            trial: id,
-            detail: "FFT 36K done".to_owned(),
-            signal: None,
-            core: None,
-            fault: None,
-            pid: None,
-        }
-        .into(),
-        end.duration_since(last).as_secs() + 10,
-        &boot,
-    );
-    let fx = Fixture::of(&events);
-    let now = later(end, 42);
-    for (width, height) in SIZES {
-        for sc in [main_screen(width, height), one_frame(width, height)] {
-            let (buf, drawn) = fx.draw(&sc, now);
-            let said = words(&buf);
-            for want in [
-                "0:42",
-                "past",
-                "no trial end recorded",
-                "may still be running",
-            ] {
-                assert!(
-                    said.contains(want),
-                    "{width}x{height} lacks {want:?}: {said}"
-                );
-            }
-            for bad in [
-                "nothing recorded since",
-                "0:00 left",
-                "crashed",
-                "CRASHED",
-                "togi run records the crash",
-            ] {
-                assert!(
-                    !said.contains(bad),
-                    "{width}x{height} says {bad:?} despite later progress: {said}"
-                );
-            }
-            assert_eq!(drawn.hold, Hold::Never);
-        }
-    }
+/// A crashed trial whose session also shows `mask`: the crash narration wins over a stale recovery or a stop.
+fn crash_with(mask: impl FnOnce(&mut Hand)) -> Hand {
+    let mut fx = Staged::Crashed.hand();
+    mask(&mut fx);
+    fx
 }
 
-#[test]
-fn a_prior_recovery_does_not_mask_a_later_boot_crash() {
-    let mut script = Script::at_limit();
-    let plan = script.next_trial();
-    let (intent, first) = script.intent(&plan);
-    script.start(&first);
-    script.boot = "next".to_owned();
-    let crashed = script.append(crash("boot", Some(intent)).into(), &[]);
-    script.append(
-        end_payload(&first, Outcome::Failure, Some(Signal::Crash)).into(),
-        &[crashed],
-    );
-    let plan = script.next_trial();
-    let (_, second) = script.intent(&plan);
-    let preparing = script.model();
-    let snapshot = preparing.snapshot();
-    assert!(
-        snapshot
-            .trial
-            .is_some_and(|trial| trial.id == second && !trial.crashed)
-    );
-    assert!(
-        snapshot.recover.is_some(),
-        "the first trial's recovery is current"
-    );
-    script.boot = "later".to_owned();
-    script.append(warning("a later boot wrote this"), &[]);
-    let fx = Fixture::of(&script.events);
-    assert!(
-        fx.model
-            .snapshot()
-            .trial
-            .is_some_and(|trial| trial.id == second && trial.crashed)
-    );
+#[test_case(
+    |fx: &mut Hand| fx.recover = Some(RecoveryView {
+        crash_at: crate::frames::testing::FIXED_NOW,
+        reset: None,
+        trial: None,
+        end: Some(ended_trial(Regime::R1)),
+    });
+    "a prior recovery"
+)]
+#[test_case(
+    |fx: &mut Hand| fx.stopped = Some(StopView {
+        at: crate::frames::testing::FIXED_NOW,
+        reason: ShutdownReason::Command,
+        saved: true,
+    });
+    "a command shutdown"
+)]
+fn an_unrecovered_crash_is_not_masked(mask: fn(&mut Hand)) {
+    let fx = crash_with(mask);
+    let id = fx.snapshot().trial.expect("a crashed trial").id.clone();
     for (width, height) in SIZES {
         for sc in [main_screen(width, height), one_frame(width, height)] {
             let said = words(&fx.draw(&sc, fx.now).0);
             for want in [
                 "CRASHED, NOT YET RECOVERED",
-                &format!("trial {second}"),
-                "togi run records the crash",
-            ] {
-                assert!(
-                    said.contains(want),
-                    "one_frame {} {width}x{height} lacks {want:?}: {said}",
-                    sc.one_frame
-                );
-            }
-            for bad in [
-                "RECOVERED FROM A CRASH",
-                "I picked up from the journal after the reboot",
-            ] {
-                assert!(
-                    !said.contains(bad),
-                    "{width}x{height} presents the first trial's recovery as current: {said}"
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn a_command_shutdown_does_not_mask_an_unrecovered_crash() {
-    let mut events = Scenario::Search.events().expect("the scenario's journal");
-    let running = Fixture::of(&events);
-    let trial = running
-        .model
-        .snapshot()
-        .trial
-        .expect("a started trial")
-        .clone();
-    assert!(!trial.crashed && running.model.snapshot().recover.is_none());
-    let core = trial.core.expect("the trial's core");
-    append(
-        &mut events,
-        CommandReset {
-            target: ResetTarget::Core(core),
-        }
-        .into(),
-        1,
-        "reset-boot",
-    );
-    append(
-        &mut events,
-        Shutdown {
-            reason: ShutdownReason::Command,
-            kernel_cursor: None,
-            kernel_error: None,
-            cycles: None,
-        }
-        .into(),
-        1,
-        "reset-boot",
-    );
-    let fx = Fixture::of(&events);
-    let snapshot = fx.model.snapshot();
-    assert!(snapshot.trial.is_some_and(|crashed| crashed.crashed));
-    assert!(snapshot.stopped.is_some() && snapshot.recover.is_none());
-    for (width, height) in SIZES {
-        for sc in [main_screen(width, height), one_frame(width, height)] {
-            let (buf, _) = fx.draw(&sc, fx.now);
-            let said = words(&buf);
-            for want in [
-                "CRASHED, NOT YET RECOVERED",
-                &format!("trial {}", trial.id),
+                &format!("trial {id}"),
                 "togi run records the crash",
             ] {
                 assert!(
@@ -510,40 +344,8 @@ fn a_command_shutdown_does_not_mask_an_unrecovered_crash() {
     let stage = stage_line(&wide, &summary);
     assert!(
         stage.contains("trial crashed") && !stage.contains('►') && !stage.contains("left"),
-        "a reset after a reboot presents a running stage: {stage:?}"
+        "a masked crash presents a running stage: {stage:?}"
     );
-}
-
-#[test_case::test_case(240, 67; "wide")]
-#[test_case::test_case(160, 45; "medium")]
-fn a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next(
-    width: u16,
-    height: u16,
-) {
-    let built = togi_watchtest::cycle_completed_by_rerun().expect("the rerun journals");
-    assert!(!built.running.is_empty());
-    for (n, events) in built.running.iter().enumerate() {
-        let fx = Fixture::of(events);
-        let (wide, _) = fx.main(240, 67);
-        let said = words(&wide);
-        assert!(
-            said.contains("waits at step 2") || said.contains("paused at step 2"),
-            "rerun {}: {said}",
-            n + 1
-        );
-        assert!(
-            !said.contains("waits at step 1") && !said.contains("waits at step 3"),
-            "rerun {}: {said}",
-            n + 1
-        );
-        let sc = main_screen(width, height);
-        let stage = stage_line(&fx.draw(&sc, fx.now).0, &sc);
-        assert!(
-            stage.contains("paused at step 2"),
-            "rerun {} at {width}x{height}: {stage:?}",
-            n + 1
-        );
-    }
 }
 
 fn header_row(buf: &Buffer, screen: &Screen) -> String {
@@ -574,15 +376,16 @@ fn header_clocks(row: &str) -> Option<((bool, u64), (bool, u64))> {
     Some((clock("tuning", "tune")?, clock("session", "age")?))
 }
 
-#[test_case(Scenario::Search, false; "search, whose clocks run")]
-#[test_case(Scenario::Idle, true; "idle")]
-#[test_case(Scenario::Stopped, true; "stopped")]
-#[test_case(Scenario::Deadend, true; "dead end")]
+#[test_case(Staged::Mapping, false; "mapping, whose clocks run")]
+#[test_case(Staged::Idle, true; "idle")]
+#[test_case(Staged::Stopped, true; "stopped")]
+#[test_case(Staged::Deadend, true; "dead end")]
 fn the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame(
-    scenario: Scenario,
+    staged: Staged,
     frozen: bool,
 ) {
-    let fx = Fixture::scenario(scenario);
+    let scenario = staged.name();
+    let fx = staged.hand();
     for (width, height) in ALL_SIZES {
         let screen = main_screen(width, height);
         let (buf, _) = fx.draw(&screen, fx.now);

@@ -1,9 +1,10 @@
-use togi_journal::{Decision, DefectDirection, DefectId, EventKind, FixStamp};
+use togi_journal::{DefectDirection, DefectId, EventKind, FixStamp};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Clause {
+    /// The kind of the Ruleset 13 decision event: `ccd.edge`, `ccd.cap`, `night.plan`, `night.qualification` or
+    /// `night.reproduction`.
     pub decision_kind: EventKind,
-    pub decision: Decision,
     pub cause_kind: EventKind,
 }
 

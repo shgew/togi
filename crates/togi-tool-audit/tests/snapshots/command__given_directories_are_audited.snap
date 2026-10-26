@@ -3,5 +3,5 @@ source: crates/togi-tool-audit/tests/command.rs
 expression: brief(&text(&both.stdout))
 ---
 [
-    "journal=\"live\" seq=3 \"avoidance\": \"core 0 offset -30 reaches failure point -30 recorded at seq 2 (tuner.md: P[c] <= fail[c])\"",
+    "journal=\"live\" seq=2 \"qualification\": \"day.applied target CCD0=-30,CCD1=0 has no earlier complete night.qualification of that exact profile under the current firmware context\"",
 ]

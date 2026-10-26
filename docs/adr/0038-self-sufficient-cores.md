@@ -1,6 +1,6 @@
 # Self-sufficient cores under shared voltage
 
-Status: see [the index](README.md).
+Status: superseded for attribution, self-sufficiency and backoff by [0080](0080-per-ccd-first.md) and [0081](0081-margin-from-measured-slope.md). Honest partial-load generation remains under [workloads](../spec/workloads.md#regimes); the gate and observations below are historical.
 
 Supersedes [ADR 0023](0023-hunts-that-converge-on-shared-voltage.md) and the parts of [ADR 0020](0020-hunt-and-refine.md) about multi-core R7 hunts, joint/combination backoff and deferred noisy group testing. Their hunt mechanics remain available outside multi-core R7; R1–R6, R6 idle failures, single-core failures and their first-failure rules are unchanged. [Issue #105](https://github.com/shgew/togi/issues/105) records the approved decision; [#306](https://github.com/shgew/togi/issues/306) records the simulator prerequisites.
 

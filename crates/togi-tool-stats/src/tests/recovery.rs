@@ -1,19 +1,16 @@
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngSeed};
 use test_case::test_case;
-use togi_journal::{
-    Activity, Attribution, HuntOutcome, Outcome, TrialProgress, TrialSample, TrialSignal,
-};
+use togi_journal::{Attribution, Outcome, TrialProgress, TrialSample, TrialSignal};
 use togi_machine::{CpuId, Regime, Signal};
 
 use super::support::{
-    Log, build, config_loaded, crash_detected, end, failure, hunt_end, hunt_start, intent, nz,
-    trial_start, workload,
+    Log, build, config_loaded, crash_detected, end, failure, intent, trial_start, workload,
 };
 use crate::project::Projection;
 use crate::report::{RecoveryGap, compute, summarize_gaps};
 
-/// A hunt trial cut short by a crash. Its last evidence comes `ran` after it starts, after a wall-clock `jump`;
+/// A trial cut short by a crash. Its last evidence comes `ran` after it starts, after a wall-clock `jump`;
 /// the next boot logs its first event `recovery` after that evidence, 10 seconds after booting.
 struct Interruption {
     evidence: Evidence,
@@ -45,10 +42,7 @@ impl Interruption {
         let mut log = Log::new(&[(0, 0)]);
         let at = 100;
         log.boot("t/a").at(at).mono(10_000);
-        log.add(hunt_start(1, "original", 1));
-        let mut planned = intent("t", Regime::R7, &[0, 1], &[0, 0]);
-        planned.hunt = Some(nz(1));
-        planned.activity = Some(Activity::Hunt);
+        let planned = intent("t", Regime::R7, &[0, 1], &[0, 0]);
         let intent_seq = log.add(planned);
         log.add(trial_start("t"));
         let evidence_at = at + self.ran + self.jump;
@@ -88,7 +82,6 @@ impl Interruption {
         failed.signal = self.signal;
         failed.regime = Some(Regime::R7);
         log.add(failed);
-        log.add(hunt_end(1, HuntOutcome::Combination));
         log
     }
 }
@@ -151,7 +144,6 @@ fn a_crash_keeps_its_stronger_signal_in_every_metric(signal: Signal) {
         m.time.downtime_s
     );
     assert_eq!(m.failures.timing, [0, 1, 0, 0, 0], "{signal}");
-    assert_eq!(m.hunts[0].crashes, 1, "{signal}");
     assert_eq!(
         m.failures.counts.into_iter().collect::<Vec<_>>(),
         [(

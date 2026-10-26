@@ -6,17 +6,16 @@
 //! collects, so an ordinary test run pays one thread-local check per hook.
 //!
 //! [`narration_corpus`] is the exporter, ignored by default. Given `TOGI_NARRATION_CORPUS`, the absolute path of the
-//! document, and `TOGI_NARRATION_STATUS`, the absolute path of the `togi status` corpus the `togi` crate's own
-//! exporter wrote, it
+//! document, it
 //!
 //! 1. reruns every other unit test of this crate in a child process of this test binary; each test records what it
 //!    renders under its own name, into a records file beside the document;
-//! 2. folds every prefix of every [`togi_watchtest::Base`] journal and of the cycle a rerun completes, and draws
-//!    each at a sample of the three main sizes and clocks, not their cross product
-//!    ([`crate::frames::corpus::run`] lists them);
-//! 3. draws the 18 [`togi_watchtest::Scenario`] cuts and the journal states at the three sizes;
+//! 2. folds every prefix of every [`togi_watchtest::Base`] journal and draws each, and every hand-built staged frame,
+//!    at a sample of the three main sizes and clocks, not their cross product ([`crate::frames::corpus::run`] lists
+//!    them);
+//! 3. draws every [`togi_watchtest::Scenario`] cut and the journal states at the three sizes;
 //! 4. writes one Markdown document ([`document`]): the phrase templates by producer, the forwarded journal
-//!    messages, the [`manifest`] of source literals with the cases that rendered each, and the status corpus.
+//!    messages, the [`manifest`] of source literals with the cases that rendered each.
 //!
 //! It fails, after writing the document, when an enforced source literal was rendered by no case and is not listed
 //! as silent, or when a [`manifest::SILENT`] entry matches no literal.
@@ -42,9 +41,6 @@ use crate::history::Entry;
 
 /// The document the exporter writes: an absolute path the coordinator supplies.
 const DOC_VAR: &str = "TOGI_NARRATION_CORPUS";
-
-/// The `togi status` corpus the document ends with: an absolute path the coordinator supplies.
-const STATUS_VAR: &str = "TOGI_NARRATION_STATUS";
 
 /// Set by the exporter for its child run: the records file every test appends what it renders to.
 const RECORDS_VAR: &str = "TOGI_NARRATION_CORPUS_RECORDS";
@@ -579,16 +575,6 @@ fn narration_corpus() {
         "{DOC_VAR} must be absolute: {}",
         doc.display()
     );
-    let status_path = PathBuf::from(std::env::var_os(STATUS_VAR).unwrap_or_else(|| {
-        panic!("{STATUS_VAR} must name the absolute path of the `togi status` corpus to append")
-    }));
-    assert!(
-        status_path.is_absolute(),
-        "{STATUS_VAR} must be absolute: {}",
-        status_path.display()
-    );
-    let status = std::fs::read_to_string(&status_path)
-        .unwrap_or_else(|error| panic!("{}: {error}", status_path.display()));
     let records = records_path(&doc);
     File::create(&records).unwrap_or_else(|error| panic!("{}: {error}", records.display()));
 
@@ -605,7 +591,7 @@ fn narration_corpus() {
     std::fs::remove_file(&records).unwrap_or_else(|error| panic!("{}: {error}", records.display()));
 
     let run = TestRun { passed, recording };
-    let markdown = document::write(&collector, &run, &swept, &status);
+    let markdown = document::write(&collector, &run, &swept);
     std::fs::write(&doc, markdown).unwrap_or_else(|error| panic!("{}: {error}", doc.display()));
     println!("narration corpus: {}", doc.display());
     let stale = manifest::stale();
@@ -685,5 +671,20 @@ mod tests {
         assert_eq!(left.tests.renders, 2);
         assert_eq!(left.sweep.renders, 1);
         assert!(left.any());
+    }
+
+    #[test]
+    fn the_manifest_lists_the_night_and_day_narration() {
+        let night: Vec<&str> = manifest::literals()
+            .iter()
+            .filter(|literal| literal.file == "frames/story/night.rs")
+            .map(|literal| literal.text.as_str())
+            .collect();
+        for phrase in [
+            "The latest proposal keeps the profile.",
+            "No day profile has been applied; every CCD stays at CO 0.",
+        ] {
+            assert!(night.contains(&phrase), "{phrase:?} is not in {night:#?}");
+        }
     }
 }

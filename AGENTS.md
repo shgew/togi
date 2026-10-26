@@ -11,7 +11,7 @@ Rust CLI that finds and keeps testing per-core Curve Optimizer offsets on Zen 5 
 - `docs/issues.md`: read before filing, triaging or claiming issues; owns labels, lifecycle, `Touches:` and the target-machine queue.
 - `REVIEW.md`: read before reviewing; `docs/review-record.md`: read before recording review. `.omp/commands/review-pr.md` owns independent review mechanics; `.omp/commands/retro.md` owns run retros.
 - `docs/prior-art.md`: check before proposing features. `docs/rust-migration.md`: history only; append migration measurements there.
-- `docs/benchmarking.md`: run before and after tuner-decision changes; also forecasts and research campaigns.
+- `docs/benchmarking.md`: run before and after tuner-decision changes; also research campaigns.
 - [Development](docs/development.md): read for shell setup, choosing checks, new crates, platform-gated code or stacks. `docs/simulating.md`, `docs/reviewing.md`, `docs/releasing.md`, `CHANGELOG.md`, `changes/README.md`: read for their named activities.
 
 ## Workflow
@@ -26,7 +26,7 @@ Every change, docs included, lands through a pull request against `main` on `git
 - Start independent review immediately after opening, before reporting done. Merge requires CI, robotogi's `review` check on the head and resolved threads.
 - Address every finding on the same branch. Fix behavior, safety, security, journal, concurrency, Acceptance, inadequate behavior tests and contradictory-doc defects. Otherwise reply with reasons without edits: taste, optional tests/refactors or another layer's work do not justify changing this layer.
 - Schema/ruleset bumps (`togi_journal::SCHEMA`, `togi_tuner::RULESET`) require a `[BREAKING]` title, `breaking` label and `**BREAKING**` changelog line.
-- Decision-changing bug fixes add a defect entry and pre-fix fixture-journal replay test when decisions can be matched; otherwise the changelog specifies the operator's `togi reset --core` action.
+- Decision-changing bug fixes add a defect entry and pre-fix fixture-journal replay test when decisions can be matched; otherwise the changelog tells the operator to run `togi reset --all` to archive the session and start over.
 
 ## Keeping docs current
 
@@ -65,7 +65,7 @@ Idiom, required in pull requests and checked by `/review-pr`:
 - **Serde:** derive with `serde_json` defaults; no custom text rules.
 - **Randomness:** `StdRng` from `rand`, pinned to an exact version. A recorded seed reproduces its stream only with the build that recorded it; a `rand` bump changes the stream.
 - **Cancellation:** a `CancellationToken` passed explicitly to code that waits. The tuner and journal take none; the session loop and the simulator never wait themselves but pass a token to the machine seams that wait (`Clock::sleep`, `Trials`, `Running::wait`): the run's token, or a fresh one where the spec requires uncancellable cleanup (same-boot reconciliation, the stale-scope sweep). Tokio stays in the crates that wait on the outside world.
-- **Ownership:** borrow for reads; `Clone` explicitly where a copy is meant (`forecast` copies the folded state). A capability that depends on another borrows it for its whole life, not only at construction (hardware access borrows the host lock). A guard, ticket or outcome whose drop releases a lock or loses a result is `#[must_use = "…"]`.
+- **Ownership:** borrow for reads; `Clone` explicitly where a copy is meant. A capability that depends on another borrows it for its whole life, not only at construction (hardware access borrows the host lock). A guard, ticket or outcome whose drop releases a lock or loses a result is `#[must_use = "…"]`.
 - **Text at the edge:** data stays typed until it is rendered. Code never parses text it formatted, and a test's name or label never selects its input.
 - **One owner per rule:** a rule the tuner owns is queried from the tuner, never re-implemented in the dashboard or a tool.
 - **Safety semantics:** the specs own them, with fault tests: [offset types, the intent-write-readback receipt chain and what typestate proves](docs/spec/runtime.md#offset-types-and-the-write-transaction), [journal-failure emergency zeroing](docs/spec/runtime.md#exit-codes), [explicit teardown order](docs/spec/workloads.md#containment) and [journal durability](docs/spec/journal.md#rules).

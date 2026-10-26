@@ -1,42 +1,17 @@
 //! Putting back the offsets the machine had before the run.
 
-use togi_machine::{CoreSet, ObservedOffset, PerCore, TargetOffset};
-use togi_tuner::{Constraints, FailurePoint};
+use togi_machine::{CoreSet, PerCore, TargetOffset};
 
 use crate::error::{Flow, Step};
 use crate::session::Session;
 use crate::write::{self, ProfileRecord, ProfileRequest};
 
-/// The offsets the baseline recorded, kept no deeper than `held`, the offsets the tuner is searching at, and shallower
-/// than a failure point by one count. A core the baseline lacks is restored to 0.
-pub(crate) fn restore_target(
-    baseline: &PerCore<ObservedOffset>,
-    held: &PerCore<TargetOffset>,
-    failure_points: Option<&PerCore<FailurePoint>>,
-    cores: CoreSet,
-) -> PerCore<TargetOffset> {
-    let zero_point = failure_points.is_some_and(|points| {
-        points
-            .iter()
-            .any(|(_, point)| point.offset() == TargetOffset::ZERO)
-    });
+/// Where a restoration leaves the cores: every one at CO 0. Ruleset 13 starts from a verified all-zero baseline,
+/// so zero is the baseline, and the night's profiles are never carried out of the run.
+pub(crate) fn restore_target(cores: CoreSet) -> PerCore<TargetOffset> {
     cores
         .iter()
-        .map(|core| {
-            if zero_point {
-                return (core, TargetOffset::ZERO);
-            }
-            let mut target = baseline.get(core).map_or(TargetOffset::ZERO, |observed| {
-                TargetOffset::clamped(observed.0)
-            });
-            if let Some(held) = held.get(core) {
-                target = target.max(held);
-            }
-            if let Some(point) = failure_points.and_then(|points| points.get(core)) {
-                target = target.max(TargetOffset::clamped(point.offset().get() + 1));
-            }
-            (core, target)
-        })
+        .map(|core| (core, TargetOffset::ZERO))
         .collect()
 }
 
@@ -60,32 +35,22 @@ impl Restoration {
 }
 
 impl Session<'_> {
-    /// Restores the baseline offsets, as bounded by [`restore_target`], when this run touched the machine and the
-    /// profile on it is not that one. Without the proof that no workload runs nothing is written. The restoration
-    /// cites the baseline.
-    pub(crate) fn restore(&mut self, held: &PerCore<TargetOffset>) -> Step<Restoration> {
-        let Some((baseline_seq, baseline)) = self.appender.recovery().baseline() else {
+    /// Restores every core to CO 0 when this run touched the machine and the profile on it is not that one. Without
+    /// the proof that no workload runs nothing is written. The restoration cites the baseline.
+    pub(crate) fn restore(&mut self) -> Step<Restoration> {
+        let Some((baseline_seq, _)) = self.appender.recovery().baseline() else {
             return Ok(Restoration::Unchanged);
         };
         if !self.hardware.engaged() {
             return Ok(Restoration::Unchanged);
         }
-        let target = restore_target(
-            baseline,
-            held,
-            self.appender
-                .tuner()
-                .constraints()
-                .map(Constraints::failure_points),
-            self.hardware.cores(),
-        );
+        let target = restore_target(self.hardware.cores());
         if self.hardware.profile().as_ref() == Some(&target) {
             return Ok(Restoration::Unchanged);
         }
         let Some(stopped) = self.lifecycle.stopped() else {
             return Ok(Restoration::Withheld);
         };
-        let mut check = write::checker(self.appender.tuner());
         let written = write::apply_profile(
             &mut self.appender,
             &mut *self.smu,
@@ -96,7 +61,6 @@ impl Session<'_> {
                 causes: &[baseline_seq],
                 record: ProfileRecord::Restored,
             },
-            &mut check,
         );
         match written {
             Ok(_) => Ok(Restoration::Restored),

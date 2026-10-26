@@ -1,10 +1,8 @@
 use std::io;
 use std::sync::Arc;
 
-use togi_journal::{
-    AppendError, DeadEndCondition, DefectId, DirError, EventKind, LookupError, Refusal, Seq,
-};
-use togi_machine::{CoreId, CoreSet};
+use togi_journal::{AppendError, DeadEndCondition, DirError, EventKind, LookupError, Refusal, Seq};
+use togi_machine::CoreSet;
 
 use crate::boot::BootError;
 use crate::write::{ProfileFailure, WriteFailure};
@@ -63,7 +61,7 @@ pub enum FoldError {
     Tuner {
         seq: Seq,
         #[source]
-        error: togi_tuner::FoldError,
+        error: togi_tuner::policy::FoldError,
     },
     #[error("event does not fold into the shared journal facts")]
     Facts(#[from] togi_journal::FoldError),
@@ -107,8 +105,15 @@ pub enum SessionError {
     RecoveredElapsed(#[source] jiff::Error),
     #[error("convert recorded workload rotation")]
     WorkloadRotation(#[source] std::num::TryFromIntError),
-    #[error("an initial offset is configured for core {core:02}, which this machine does not have")]
-    NoSuchCore { core: CoreId },
+    /// The all-zero baseline a session starts from was not found: Ruleset 13 refuses a nonzero one, never clamps.
+    #[error(
+        "the baseline is not all zero on cores {}; reset the offsets to zero and start again",
+        listed(*cores)
+    )]
+    BaselineNotZero { cores: CoreSet },
+    /// The baseline readback did not cover every core of the topology.
+    #[error("the baseline readback is missing cores {}", listed(*cores))]
+    BaselineIncomplete { cores: CoreSet },
     /// The session was recorded on other cores than the machine has now: a resumed session cannot change them.
     #[error(
         "the session was recorded on other cores than this machine has now (added: {}; removed: {}); \
@@ -120,20 +125,14 @@ pub enum SessionError {
     /// The machine's topology is one the tuner cannot work on, so no session can start on it.
     #[error("this machine's topology is not supported")]
     UnsupportedTopology(#[source] togi_tuner::TopologyError),
-    #[error(
-        "a trial is planned on core {core:02}, which this machine does not have or gives no CPU"
-    )]
-    NoSuchTrialCore { core: CoreId },
     /// A trial or a profile write was asked for without the proof that no workload runs.
     #[error("nothing proves that no workload runs, so nothing may be written or started")]
     Unproven,
-    /// The profile a trial together was planned on is not the one the tuner stands at.
-    #[error("the trial's profile is not the one the machine is set to")]
-    PlanDisagrees,
-    #[error("assign trial roles")]
-    TrialRoles(#[source] togi_machine::InvalidRoles),
+    /// A plan the policy made cannot become an intent, a profile or roles on this machine.
+    #[error("carry out the night policy's plan")]
+    Plan(#[source] togi_tuner::policy::PlanError),
     #[error("the tuner cannot choose the next action after startup")]
-    NotReady(#[from] togi_tuner::NotReady),
+    NotReady(#[from] togi_tuner::policy::NotReady),
     #[error("clear GRUB's saved entry after refusing to start")]
     ClearSavedEntry(#[source] io::Error),
     #[error("allocate the session id")]
@@ -141,12 +140,6 @@ pub enum SessionError {
     /// A step reported dead-end evidence, and the journal supports no dead end.
     #[error("{0} dead-end evidence reported without a recorded dead end")]
     DeadEndUnrecorded(DeadEndCondition),
-    #[error("ask whether to reset the cores of defect {defect}")]
-    Prompt {
-        defect: DefectId,
-        #[source]
-        source: io::Error,
-    },
     /// The run panicked; its cleanup ran before the panic was handed back.
     #[error("panic: {0}")]
     Panicked(String),

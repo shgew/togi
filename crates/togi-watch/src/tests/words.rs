@@ -1,29 +1,33 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
+use jiff::Timestamp;
+use test_case::test_case;
 use togi_journal::Outcome::{Failure, Inconclusive, Pass};
 use togi_journal::{
-    Activity, CorePhase, CoreTransition, Decision, EventKind, HuntOutcome, Payload, SessionContext,
-    TunerDecision,
+    ApplicationId, ApplyCause, Binding, Budget, CcdCap, CcdEdge, CcdVector, Certainty,
+    Classification, DayApplied, DayEvent, DayEventId, DayFreeze, DayHold, DayStep, DayVeto,
+    DecisionId, Edge, EventKind, ExposureClass, Finite, FreezeChoice, FreezeSource, HoldChange,
+    HoldReason, ImportCounts, NightId, NightPlan, NightQualification, NightReproduction,
+    ObservedProfile, Payload, Placement, PlannedTask, QualificationPurpose, QualificationState,
+    Queue, Rate, ReproductionState, ReproductionTarget, Resolution, SessionContext,
+    SessionImported, Slope, StepCauses, StepKind, TaskId, TaskStatus, VetoState,
 };
-use togi_machine::{CoreId, Regime, Signal};
+use togi_machine::{BootId, CcdId, CcdProfile, CoreId, Digest, PerCore, Regime, Signal};
 
 use super::kit::*;
+use crate::history::Entry;
 use crate::words::{
-    Brief, History, Phrase, Tag, Tagging, Tone, age, candidate_word, carried_groups, core_ids,
-    core_list, cores_named, cores_text, decision_line, decision_phrase, failure_line, group_word,
-    hunt_end_phrase, kind_words, lateness, load_words, noun, on_cores, phase_line, phase_word,
-    plural, regime_words, signal_words, solo_limit, tag_word, trial_end_tag, words,
-    workload_display,
+    History, Tag, Tagging, Tone, age, core_ids, core_list, cores_named, cores_text, edge_words,
+    failure_line, kind_words, lateness, load_words, noun, on_cores, plural, regime_words,
+    signal_words, tag_word, trial_end_tag, words, workload_display,
 };
-use crate::words::{decision_brief, decision_detail};
-use togi_journal::{
-    CheckingChain, CheckingStep, DeadEnd, DeadEndCondition, DeepeningRound, HuntSkipped, RoundEvent,
-};
-use togi_machine::CcdId;
-use togi_tuner::{DecisionPayload, GroupState};
 
-/// The kinds with no words of their own: not in the history, in the log under their kind name, in no story.
+/// The kinds with no history line: in the log under their kind name, and in no story.
 const SILENT: &[EventKind] = &[
+    EventKind::ExposureObserved,
+    EventKind::DayInterval,
+    EventKind::DayImported,
     EventKind::SessionContext,
     EventKind::SessionBaseline,
     EventKind::SessionNotice,
@@ -32,12 +36,15 @@ const SILENT: &[EventKind] = &[
     EventKind::ProfileApplied,
     EventKind::ProfileChange,
     EventKind::ProfileRestored,
+    EventKind::TrialIntent,
+    EventKind::TaskStart,
     EventKind::TrialStart,
     EventKind::TrialProgress,
     EventKind::TrialSignal,
     EventKind::TrialSample,
     EventKind::TrialCarried,
     EventKind::FailureCarried,
+    EventKind::SessionCarried,
     EventKind::HostRanking,
     EventKind::TunerWarning,
     EventKind::DefectAnswered,
@@ -63,23 +70,60 @@ const UNLISTED: &[EventKind] = &[
     EventKind::SmuReadback,
 ];
 
-fn quiet(kind: EventKind) -> bool {
-    let table = words(kind);
-    matches!(table.history, History::Silent)
-        && matches!(table.tag, Tagging::Kind)
-        && matches!(table.compact, Brief::Silent)
-        && matches!(table.detailed, Phrase::Silent)
-}
+/// The kinds whose history line needs the events before them.
+const CONTEXTUAL: &[EventKind] = &[
+    EventKind::SessionStart,
+    EventKind::ConfigLoaded,
+    EventKind::TrialEnd,
+    EventKind::CrashDetected,
+];
+
+/// The kinds of earlier rulesets whose history line is the message the journal recorded.
+const HISTORICAL: &[EventKind] = &[
+    EventKind::TunerDecision,
+    EventKind::CorePhase,
+    EventKind::CheckingCycle,
+    EventKind::CheckingStep,
+    EventKind::CheckingChain,
+    EventKind::HuntStart,
+    EventKind::HuntGroup,
+    EventKind::HuntEnd,
+    EventKind::HuntSkipped,
+    EventKind::Combination,
+    EventKind::DeepeningRound,
+];
+
+/// The Ruleset 13 kinds with a history line of their own, with the tag their events carry.
+const RULESET13: &[(EventKind, Tag)] = &[
+    (EventKind::CcdEdge, Tag::Edge),
+    (EventKind::CcdCap, Tag::Cap),
+    (EventKind::NightPlan, Tag::Night),
+    (EventKind::NightQualification, Tag::Qualify),
+    (EventKind::NightReproduction, Tag::Repro),
+    (EventKind::DayEvent, Tag::Day),
+    (EventKind::DayVeto, Tag::Veto),
+    (EventKind::DayStep, Tag::Step),
+    (EventKind::DayApplied, Tag::Apply),
+    (EventKind::DayHold, Tag::Hold),
+    (EventKind::DayFreeze, Tag::Freeze),
+    (EventKind::SessionImported, Tag::Import),
+];
 
 #[test]
 fn every_kind_has_its_words_or_says_it_is_silent() {
-    assert_eq!(EventKind::ALL.len(), 58);
+    assert_eq!(EventKind::ALL.len(), 74);
     for &kind in EventKind::ALL {
         let table = words(kind);
+        let silent = SILENT.contains(&kind) || UNLISTED.contains(&kind);
         assert_eq!(
-            quiet(kind),
-            SILENT.contains(&kind) || UNLISTED.contains(&kind),
+            matches!(table.history, History::Silent) && matches!(table.tag, Tagging::Kind),
+            silent,
             "{kind}: a kind with no entry must be listed as silent, and a silent one must have none"
+        );
+        assert_eq!(
+            matches!(table.history, History::Contextual(_)),
+            CONTEXTUAL.contains(&kind),
+            "{kind}"
         );
         assert_eq!(
             table.listed,
@@ -88,7 +132,7 @@ fn every_kind_has_its_words_or_says_it_is_silent() {
         );
     }
     for kind in SILENT.iter().chain(UNLISTED) {
-        assert!(quiet(*kind), "{kind}");
+        assert!(matches!(words(*kind).history, History::Silent), "{kind}");
     }
 }
 
@@ -103,12 +147,7 @@ fn the_tag_of_a_silent_kind_is_its_name() {
     }
     .into();
     assert_eq!(tag_word(&context), "session context");
-    let reset = Payload::CommandReset(togi_journal::CommandReset {
-        target: togi_journal::ResetTarget::All,
-    });
-    assert_eq!(tag_word(&reset), "command reset");
-    let cycle: Payload = cycle(1, togi_journal::CycleEvent::Start).into();
-    assert_eq!(tag_word(&cycle), "cycle");
+    assert_eq!(tag_word(&crash("boot", None).into()), "crash");
 }
 
 #[test]
@@ -117,117 +156,621 @@ fn the_history_line_of_a_kind_is_its_tag() {
     h.push(crash("boot", None).into());
     let (entries, _) = h.facts.history.recent();
     assert_eq!(entries[0].tag, Tag::Crash);
-    assert_eq!(tag_word(&crash("boot", None).into()), "crash");
 }
 
-pub(super) fn decision(kind: Decision, from: i64, to: i64) -> TunerDecision {
-    TunerDecision {
-        core: core(3),
-        activity: Activity::Checking,
-        decision: kind,
-        from_offset: off(from),
-        to_offset: off(to),
-        pass: None,
-        failure_point: Some(off(from)),
-        workloads: Vec::new(),
-        reason: String::new(),
+/// The history line a kind words `payload` with, read back as the sentence its history entry shows.
+fn history_line(payload: &Payload) -> Option<crate::words::Line> {
+    let History::Line(of) = words(payload.kind()).history else {
+        panic!("{} has no line of its own", payload.kind());
+    };
+    let line = of(payload)?;
+    let entry = Entry::line(at(seq(1)), line.tag, line.text, line.tone);
+    let (text, alarm, after) = entry.sentence();
+    Some(crate::words::Line {
+        tag: entry.tag,
+        text: format!("{text}{alarm}{after}"),
+        tone: entry.tone,
+    })
+}
+
+fn said(payload: &Payload) -> (Tag, Tone, String) {
+    let line = history_line(payload).unwrap_or_else(|| panic!("{} has no line", payload.kind()));
+    (line.tag, line.tone, line.text)
+}
+
+fn ccd(id: i64) -> CcdId {
+    CcdId::new(id).unwrap()
+}
+
+fn profile(offsets: &[(i64, i64)]) -> CcdProfile {
+    let map: BTreeMap<_, _> = offsets.iter().map(|&(c, o)| (ccd(c), off(o))).collect();
+    CcdProfile::try_from(map).unwrap()
+}
+
+pub(super) fn vector(offsets: &[(i64, i64)]) -> CcdVector {
+    CcdVector {
+        ccd: profile(offsets),
+        cores: PerCore::default(),
     }
 }
 
-#[test_case::test_case(Decision::StepDeeper, Tag::Step, Tone::Plain, "core 03 passed -10; searches -15 on its next turn", "core 03 searches -15 on its next turn"; "StepDeeper")]
-#[test_case::test_case(Decision::CheckSoloLimit, Tag::Confirm, Tone::Plain, "core 03 confirming -15 as its solo limit", "core 03 starts confirming -15 as its solo limit"; "CheckSoloLimit")]
-#[test_case::test_case(Decision::Deepen, Tag::Room, Tone::Good, "core 03 -10 → -15", "core 03 deepens -10 → -15"; "Deepen")]
-#[test_case::test_case(Decision::Yield, Tag::Room, Tone::Plain, "core 03 yields -10 → -15, back to its round baseline", "core 03 yields -10 → -15, back to its round baseline"; "Yield")]
-#[test_case::test_case(Decision::Hold, Tag::Hold, Tone::Warn, "core 03 failure held; tuning stays at -10", "core 03 failure held at -10; no tuning move"; "Hold")]
-#[test_case::test_case(Decision::Backoff, Tag::Backoff, Tone::Warn, "core 03 -10 → -15", "core 03 -10 → -15"; "Backoff")]
-fn each_decision_has_its_tag_tone_and_phrases(
-    kind: Decision,
-    tag: Tag,
-    tone: Tone,
-    line: &str,
-    phrase: &str,
+fn observed(offsets: &[(i64, i64)]) -> ObservedProfile {
+    ObservedProfile::Ccd {
+        ccd: profile(offsets),
+        cores: PerCore::default(),
+    }
+}
+
+fn class(regime: Regime) -> ExposureClass {
+    ExposureClass {
+        regime,
+        workloads: Vec::new(),
+        cores: set(&[0, 1]),
+        position: None,
+        duration_s: 120,
+        placement: Placement::Isolated,
+    }
+}
+
+fn boot_id() -> DayEventId {
+    DayEventId::Boot {
+        boot: BootId::from("0123456789abcdef".to_owned()),
+    }
+}
+
+fn moment() -> Timestamp {
+    Timestamp::from_second(1_700_000_000).unwrap()
+}
+
+pub(super) fn edge_event(old: Edge, new: Edge) -> Payload {
+    CcdEdge {
+        ccd: ccd(1),
+        edge: new,
+        old,
+        reason: String::new(),
+    }
+    .into()
+}
+
+fn observed_edge(offset: i64) -> Edge {
+    Edge::Observed {
+        offset: off(offset),
+        witness: seq(3),
+    }
+}
+
+pub(super) fn cap_event(binding: Binding, slope: Slope) -> Payload {
+    CcdCap {
+        ccd: ccd(0),
+        old: off(0),
+        new: off(-15),
+        budget: Rate::new(1.0).unwrap(),
+        edge: Edge::Unknown {},
+        adequate: Vec::new(),
+        uncovered: Vec::new(),
+        cells: Vec::new(),
+        slope,
+        candidates: Vec::new(),
+        binding,
+    }
+    .into()
+}
+
+pub(super) fn plan_event() -> Payload {
+    plan(None)
+}
+
+fn plan(night: Option<NightId>) -> Payload {
+    NightPlan {
+        night,
+        budgets: vec![
+            Budget {
+                queue: Queue::Mapping,
+                share_pct: 10,
+                consumed_s: 3600,
+            },
+            Budget {
+                queue: Queue::Qualification,
+                share_pct: 75,
+                consumed_s: 3600,
+            },
+        ],
+        tasks: vec![
+            PlannedTask {
+                task: TaskId {
+                    queue: Queue::Mapping,
+                    ordinal: 1,
+                },
+                status: TaskStatus::Pending,
+            };
+            2
+        ],
+        unavailable: Vec::new(),
+    }
+    .into()
+}
+
+pub(super) fn qualification_event(state: QualificationState) -> Payload {
+    NightQualification {
+        profile: vector(&[(0, -10), (1, -5)]),
+        firmware: togi_machine::BiosContext::default(),
+        epoch: 1,
+        contents: Vec::new(),
+        matrix: Digest::from_bytes([7; 32]),
+        purpose: QualificationPurpose::NextStep,
+        state,
+    }
+    .into()
+}
+
+fn reproduction_event(state: ReproductionState) -> Payload {
+    NightReproduction {
+        source: boot_id(),
+        target: Some(ReproductionTarget::Isolated {
+            ccd: ccd(1),
+            offset: off(-20),
+        }),
+        night: NightId(seq(4)),
+        consumed_s: 0,
+        remaining: Vec::new(),
+        failures: Vec::new(),
+        state,
+    }
+    .into()
+}
+
+fn day_event(classification: Classification, resolution: Resolution) -> Payload {
+    DayEvent {
+        event: boot_id(),
+        profile: observed(&[(0, -10), (1, -5)]),
+        boot: None,
+        from: moment(),
+        to: moment(),
+        witnesses: Vec::new(),
+        classification,
+        resolution,
+        reason: String::new(),
+        predecessor: None,
+        escalation: None,
+        cursors: Vec::new(),
+        consumed: Vec::new(),
+        reproduction: ReproductionState::Pending,
+    }
+    .into()
+}
+
+pub(super) fn step_event(step: StepKind) -> Payload {
+    DayStep {
+        decision: DecisionId(1),
+        cold_boot: BootId::from("b".to_owned()),
+        old: vector(&[(0, -10), (1, -5)]),
+        proposed: vector(&[(0, -15), (1, -5)]),
+        step,
+        predecessor: None,
+        hours: Vec::new(),
+        hold_s: 0,
+        causes: StepCauses::default(),
+        reason: String::new(),
+    }
+    .into()
+}
+
+pub(super) fn hold_event(change: HoldChange) -> Payload {
+    DayHold {
+        profile: vector(&[(0, -10)]),
+        application: ApplicationId(1),
+        credited: Vec::new(),
+        eligible_s: 7200,
+        change,
+    }
+    .into()
+}
+
+#[test_case(Edge::Unknown {}, observed_edge(-23), Tone::Warn, "CCD1 edge unknown → fails at -23"; "observed")]
+#[test_case(
+    observed_edge(-23),
+    Edge::Censored { limit: off(-50), witnesses: Vec::new() },
+    Tone::Plain,
+    "CCD1 edge fails at -23 → censored at -50";
+    "censored"
+)]
+#[test_case(observed_edge(-23), Edge::Unknown {}, Tone::Plain, "CCD1 edge fails at -23 → unknown"; "forgotten")]
+fn an_edge_change_names_both_edges(old: Edge, new: Edge, tone: Tone, text: &str) {
+    assert_eq!(
+        said(&edge_event(old, new)),
+        (Tag::Edge, tone, text.to_owned())
+    );
+}
+
+#[test]
+fn edges_read_as_the_dashboard_says_them() {
+    assert_eq!(edge_words(&Edge::Unknown {}), "unknown");
+    assert_eq!(edge_words(&observed_edge(-23)), "fails at -23");
+}
+
+#[test_case(Binding::Rate { class: class(Regime::R2) }, Slope::Fallback { beta: Finite::new(0.2).unwrap() }, "CCD0 cap 0 → -15 · rate of R2 heavy vector · fallback slope"; "rate and fallback")]
+#[test_case(
+    Binding::EdgeMargin {},
+    Slope::Measured { lower: togi_journal::LowerEndpoint::Unbounded {}, historical_min: None },
+    "CCD0 cap 0 → -15 · edge margin · measured slope";
+    "edge margin and measured"
+)]
+#[test_case(Binding::Baseline {}, Slope::Fallback { beta: Finite::new(0.2).unwrap() }, "CCD0 cap 0 → -15 · no cap yet · fallback slope"; "baseline")]
+fn a_cap_names_what_fixed_it_and_its_slope(binding: Binding, slope: Slope, text: &str) {
+    assert_eq!(
+        said(&cap_event(binding, slope)),
+        (Tag::Cap, Tone::Plain, text.to_owned())
+    );
+}
+
+#[test_case(None, "night opened · 2 tasks"; "the opening plan")]
+#[test_case(Some(NightId(seq(4))), "night replanned · 2h00m elapsed · 2 tasks"; "a replan")]
+fn a_night_plan_says_whether_it_opens_the_night_the_time_observed_and_the_tasks(
+    night: Option<NightId>,
+    text: &str,
 ) {
-    let d = decision(kind, -10, -15);
-    let said = decision_line(&d);
     assert_eq!(
-        (said.tag, said.tone, said.text.as_str()),
-        (tag, tone, line),
-        "{kind}"
-    );
-    assert_eq!(decision_phrase(&d, None), phrase, "{kind}");
-    let payload = Payload::from(d);
-    assert_decision_words(&payload);
-    let table = words(EventKind::TunerDecision);
-    let Tagging::By(of) = table.tag else {
-        panic!("a decision is tagged by its payload");
-    };
-    assert_eq!(of(&payload), tag);
-    let Phrase::Of(of) = table.detailed else {
-        panic!("a decision has a phrase");
-    };
-    assert_eq!(of(&payload).as_deref(), Some(phrase));
-    let Brief::Of(of) = table.compact else {
-        panic!("a decision may have a compact outcome");
-    };
-    assert_eq!(
-        of(&payload).as_deref(),
-        (kind == Decision::Backoff).then_some("backs off"),
-        "{kind}"
+        said(&plan(night)),
+        (Tag::Night, Tone::Plain, text.to_owned())
     );
 }
 
 #[test]
-fn a_named_backoff_records_its_failure_point() {
-    let named = decision(Decision::Backoff, -30, -16);
+fn a_qualification_speaks_when_it_starts_ends_or_fails_and_not_between() {
+    let cell = || class(Regime::R7);
+    let start = qualification_event(QualificationState::Start {
+        outstanding: vec![cell(), cell()],
+    });
     assert_eq!(
-        decision_phrase(&named, Some(core(3))),
-        "core 03 fails at -30, -30 → -16",
-        "a backoff of the core a failure named records its failure point"
+        said(&start),
+        (
+            Tag::Qualify,
+            Tone::Plain,
+            "qualifying CCD0 -10, CCD1 -5 (next step) · 2 cells to witness".to_owned()
+        )
     );
-    assert_eq!(decision_phrase(&named, Some(core(4))), "core 03 -30 → -16");
+    let progress = qualification_event(QualificationState::Progress {
+        witnesses: Vec::new(),
+        outstanding: vec![cell()],
+    });
+    assert_eq!(history_line(&progress), None);
+    let done = qualification_event(QualificationState::Complete {
+        witnesses: vec![togi_journal::CellWitness {
+            cell: cell(),
+            evidence: togi_journal::CellEvidence::Fresh { exposure: seq(2) },
+        }],
+    });
+    assert_eq!(
+        said(&done),
+        (
+            Tag::Qualify,
+            Tone::Good,
+            "qualified CCD0 -10, CCD1 -5 (next step) · 1 cell witnessed".to_owned()
+        )
+    );
+    let failed = qualification_event(QualificationState::Failed {
+        failure: seq(4),
+        witnesses: Vec::new(),
+        outstanding: vec![cell()],
+    });
+    assert_eq!(
+        said(&failed),
+        (
+            Tag::Qualify,
+            Tone::Bad,
+            "qualification of CCD0 -10, CCD1 -5 (next step) failed · 1 cell outstanding".to_owned()
+        )
+    );
 }
 
-fn phase(from: Option<CorePhase>, to: CorePhase, offset: i64, pass: Option<i64>) -> CoreTransition {
-    let mut start = Start::search(offset);
-    (start.from, start.to, start.pass) = (from, to, pass);
-    transition(1, start)
+#[test_case(ReproductionState::Pending, None; "pending")]
+#[test_case(
+    ReproductionState::Reproduced,
+    Some((Tone::Bad, "boot 01234567 reproduced on CCD1 alone at -20"));
+    "reproduced"
+)]
+#[test_case(
+    ReproductionState::Unreproduced,
+    Some((Tone::Good, "boot 01234567 not reproduced on CCD1 alone at -20"));
+    "unreproduced"
+)]
+fn a_reproduction_speaks_once_it_has_an_answer(
+    state: ReproductionState,
+    want: Option<(Tone, &str)>,
+) {
+    let got = history_line(&reproduction_event(state));
+    assert_eq!(
+        got.map(|line| (line.tag, line.tone, line.text)),
+        want.map(|(tone, text)| (Tag::Repro, tone, text.to_owned()))
+    );
 }
 
 #[test]
-fn a_solo_limit_is_the_offset_the_core_passed_alone() {
-    let exit = phase(Some(CorePhase::Search), CorePhase::HasRoom, -19, Some(-20));
-    assert_eq!(solo_limit(&exit), Some(-20));
-    assert_eq!(phase_line(&exit).unwrap().text, "core 01 solo limit -20");
-    let bare = phase(Some(CorePhase::Search), CorePhase::HasRoom, -9, None);
+fn a_nonuniform_failure_is_untestable_and_says_no_night_writes_its_profile() {
+    let Payload::NightReproduction(mut untestable) =
+        reproduction_event(ReproductionState::Untestable)
+    else {
+        unreachable!("reproduction_event builds a reproduction");
+    };
+    untestable.target = None;
     assert_eq!(
-        solo_limit(&bare),
-        None,
-        "an exit with no pass has no solo limit"
-    );
-    assert!(phase_line(&bare).is_none());
-    let again = phase(Some(CorePhase::AtLimit), CorePhase::Search, 0, None);
-    assert_eq!(
-        phase_line(&again).unwrap().text,
-        "core 01 starts over from 0"
-    );
-    let room = phase(Some(CorePhase::AtLimit), CorePhase::HasRoom, -12, None);
-    assert_eq!(
-        phase_line(&room).map(|line| (line.tag, line.text)),
-        Some((Tag::Room, "core 01 has room again at -12".to_owned()))
+        said(&untestable.into()),
+        (
+            Tag::Repro,
+            Tone::Warn,
+            "boot 01234567 cannot be retested: no profile a night writes".to_owned()
+        )
     );
 }
 
-#[test_case::test_case(None, CorePhase::Search; "initial search")]
-#[test_case::test_case(None, CorePhase::HasRoom; "initial room")]
-#[test_case::test_case(None, CorePhase::AtLimit; "initial limit")]
-#[test_case::test_case(Some(CorePhase::HasRoom), CorePhase::HasRoom; "room unchanged")]
-#[test_case::test_case(Some(CorePhase::HasRoom), CorePhase::AtLimit; "room to limit")]
-#[test_case::test_case(Some(CorePhase::AtLimit), CorePhase::AtLimit; "limit unchanged")]
-fn a_phase_without_a_new_solo_limit_has_no_line(from: Option<CorePhase>, to: CorePhase) {
-    assert!(
-        phase_line(&phase(from, to, -12, None)).is_none(),
-        "{from:?} → {to:?} shows on the core's row"
+#[test_case(
+    Classification::CpuSuspect { certainty: Certainty::Definite },
+    Resolution::Unresolved {},
+    Tone::Bad,
+    "boot 01234567 at CCD0 -10, CCD1 -5 · CPU-suspect, unresolved";
+    "suspect"
+)]
+#[test_case(
+    Classification::CpuSuspect { certainty: Certainty::Provisional },
+    Resolution::Resolved { retreat: None },
+    Tone::Bad,
+    "boot 01234567 at CCD0 -10, CCD1 -5 · provisionally CPU-suspect, resolved";
+    "provisional"
+)]
+#[test_case(
+    Classification::NonCpu {},
+    Resolution::Resolved { retreat: None },
+    Tone::Plain,
+    "boot 01234567 at CCD0 -10, CCD1 -5 · not CPU, resolved";
+    "not cpu"
+)]
+#[test_case(
+    Classification::Unexplained {},
+    Resolution::Unresolved {},
+    Tone::Warn,
+    "boot 01234567 at CCD0 -10, CCD1 -5 · unexplained, unresolved";
+    "unexplained"
+)]
+fn a_daily_event_names_its_boot_profile_and_class(
+    classification: Classification,
+    resolution: Resolution,
+    tone: Tone,
+    text: &str,
+) {
+    assert_eq!(
+        said(&day_event(classification, resolution)),
+        (Tag::Day, tone, text.to_owned())
     );
+}
+
+#[test_case(VetoState::Active, Tone::Warn, "veto on CCD0 -10 from boot 01234567"; "active")]
+#[test_case(VetoState::Cleared, Tone::Plain, "veto on CCD0 -10 cleared, from boot 01234567"; "cleared")]
+fn a_veto_says_its_profile_and_source(state: VetoState, tone: Tone, text: &str) {
+    let veto: Payload = DayVeto {
+        event: boot_id(),
+        profile: observed(&[(0, -10)]),
+        state,
+        evidence: Vec::new(),
+        reason: String::new(),
+    }
+    .into();
+    assert_eq!(said(&veto), (Tag::Veto, tone, text.to_owned()));
+}
+
+#[test]
+fn a_hold_proposal_is_silent_and_a_move_is_not() {
+    let hold = step_event(StepKind::Hold {
+        blocked_by: vec![HoldReason::AtCap {}],
+    });
+    assert_eq!(history_line(&hold), None);
+    assert_eq!(
+        said(&step_event(StepKind::Promote { changed: ccd(0) })),
+        (
+            Tag::Step,
+            Tone::Good,
+            "promote CCD0 to CCD0 -15, CCD1 -5".to_owned()
+        )
+    );
+    let retreat = step_event(StepKind::Retreat {
+        changed: vec![ccd(0), ccd(1)],
+        cause: togi_journal::RetreatCause::ShallowerCap {},
+        wanted: None,
+    });
+    assert_eq!(
+        said(&retreat),
+        (
+            Tag::Step,
+            Tone::Warn,
+            "retreat CCD0, CCD1 to CCD0 -15, CCD1 -5".to_owned()
+        )
+    );
+    let firmware = step_event(StepKind::FirmwareZero {
+        changed: vec![ccd(1)],
+    });
+    assert_eq!(
+        said(&firmware),
+        (
+            Tag::Step,
+            Tone::Warn,
+            "firmware changed: CCD1 to CCD0 -15, CCD1 -5".to_owned()
+        )
+    );
+}
+
+#[test]
+fn an_applied_profile_is_named_by_its_ccds() {
+    let applied: Payload = DayApplied {
+        application: ApplicationId(1),
+        cause: ApplyCause::Reapplication {},
+        target: vector(&[(0, -10), (1, -5)]),
+        readbacks: PerCore::default(),
+        transactions: Vec::new(),
+        boot: BootId::from("b".to_owned()),
+        mono_ns: 0,
+    }
+    .into();
+    assert_eq!(
+        said(&applied),
+        (
+            Tag::Apply,
+            Tone::Plain,
+            "applied day profile CCD0 -10, CCD1 -5".to_owned()
+        )
+    );
+}
+
+#[test_case(HoldChange::Credited {}, None; "credited hours add no line")]
+#[test_case(
+    HoldChange::Reset { cause: seq(2) },
+    Some("hold at CCD0 -10 reset · 2h00m eligible");
+    "reset"
+)]
+#[test_case(
+    HoldChange::Recomputed { cause: seq(2) },
+    Some("hold at CCD0 -10 recomputed · 2h00m eligible");
+    "recomputed"
+)]
+fn a_hold_speaks_when_its_credit_resets_or_is_recomputed(change: HoldChange, want: Option<&str>) {
+    let got = history_line(&hold_event(change));
+    assert_eq!(
+        got.map(|line| (line.tag, line.text)),
+        want.map(|text| (Tag::Hold, text.to_owned()))
+    );
+}
+
+#[test_case(FreezeChoice::Freeze, "promotion frozen"; "freeze")]
+#[test_case(FreezeChoice::Unfreeze, "promotion unfrozen"; "unfreeze")]
+fn a_freeze_says_which_way_it_went(choice: FreezeChoice, text: &str) {
+    let freeze: Payload = DayFreeze {
+        choice,
+        source: FreezeSource::Command { uid: 0 },
+    }
+    .into();
+    assert_eq!(said(&freeze), (Tag::Freeze, Tone::Plain, text.to_owned()));
+}
+
+#[test]
+fn an_import_counts_what_it_took() {
+    let import: Payload = SessionImported {
+        sources: vec![
+            togi_journal::CarriedSource {
+                session: "20231114T221320Z".parse().unwrap(),
+                schema: 1,
+                ruleset: 12,
+            },
+            togi_journal::CarriedSource {
+                session: "20231115T221320Z".parse().unwrap(),
+                schema: 1,
+                ruleset: 12,
+            },
+        ],
+        selected: Vec::new(),
+        counts: ImportCounts {
+            selected: 9,
+            imported: 7,
+            duplicates: 1,
+            unknown: 1,
+            excluded: 0,
+        },
+        unknown: Vec::new(),
+        excluded: Vec::new(),
+        reason: String::new(),
+    }
+    .into();
+    assert_eq!(
+        said(&import),
+        (
+            Tag::Import,
+            Tone::Plain,
+            "imported 7 of 9 selected records from 2 sessions".to_owned()
+        )
+    );
+}
+
+#[test]
+fn every_ruleset13_kind_with_words_is_tagged_in_the_log_as_its_line_is() {
+    for &(kind, tag) in RULESET13 {
+        let table = words(kind);
+        assert!(matches!(table.history, History::Line(_)), "{kind}");
+        assert!(table.listed, "{kind}");
+        assert!(
+            matches!(table.tag, Tagging::Fixed(fixed) if fixed == tag),
+            "{kind}"
+        );
+    }
+}
+
+#[test]
+fn the_ruleset13_kinds_all_have_a_line_or_are_named_silent() {
+    let ruleset13 = [
+        EventKind::ExposureObserved,
+        EventKind::CcdEdge,
+        EventKind::CcdCap,
+        EventKind::NightPlan,
+        EventKind::NightQualification,
+        EventKind::NightReproduction,
+        EventKind::DayEvent,
+        EventKind::DayVeto,
+        EventKind::DayInterval,
+        EventKind::DayHold,
+        EventKind::DayStep,
+        EventKind::DayApplied,
+        EventKind::DayFreeze,
+        EventKind::DayImported,
+        EventKind::SessionImported,
+    ];
+    for kind in ruleset13 {
+        let spoken = RULESET13.iter().any(|&(spoken, _)| spoken == kind);
+        assert_eq!(spoken, !SILENT.contains(&kind), "{kind}");
+    }
+}
+
+fn historical_payloads() -> Vec<Payload> {
+    let decision = togi_journal::TunerDecision {
+        core: core(3),
+        activity: togi_journal::Activity::Checking,
+        decision: togi_journal::Decision::Backoff,
+        from_offset: off(-10),
+        to_offset: off(-15),
+        pass: None,
+        failure_point: None,
+        workloads: Vec::new(),
+        reason: String::new(),
+    };
+    vec![
+        decision.into(),
+        transition(3, Start::search(-10)).into(),
+        cycle(1, togi_journal::CycleEvent::Start).into(),
+        hunt_start(1, &[0, 2]).into(),
+    ]
+}
+
+#[test]
+fn a_kind_of_an_earlier_ruleset_says_its_recorded_message_and_nothing_else() {
+    for payload in historical_payloads() {
+        assert!(HISTORICAL.contains(&payload.kind()), "{}", payload.kind());
+        let (tag, tone, text) = said(&payload);
+        assert_eq!((tag, tone), (Tag::Note, Tone::Plain), "{}", payload.kind());
+        assert_eq!(text, payload.message(), "{}", payload.kind());
+        assert_eq!(
+            tag_word(&payload),
+            payload.kind().as_str().replace('.', " "),
+            "the log names the kind"
+        );
+    }
+    for &kind in HISTORICAL {
+        assert!(matches!(words(kind).history, History::Line(_)), "{kind}");
+        assert!(matches!(words(kind).tag, Tagging::Kind), "{kind}");
+        assert!(words(kind).listed, "{kind}");
+    }
+}
+
+#[test]
+fn a_reset_command_says_its_message_under_the_reset_tag() {
+    let reset = Payload::CommandReset(togi_journal::CommandReset {
+        target: togi_journal::ResetTarget::Core(core(3)),
+    });
+    assert_eq!(said(&reset), (Tag::Reset, Tone::Plain, reset.message()));
 }
 
 #[test]
@@ -243,38 +786,30 @@ fn trial_ends_are_tagged_by_how_they_ended() {
 }
 
 #[test]
-fn hunt_ends_in_the_detailed_story() {
-    let end = |result, named| hunt_end_phrase(&hunt_end(2, result, &[0, 1]), named);
+fn a_failure_names_the_core_and_offset_or_the_idle_signal() {
+    let mut named = failure(Signal::ComputationError, Some("t"));
+    named.attribution = togi_journal::Attribution::Attributed;
+    named.core = Some(core(3));
+    named.offset = Some(off(-20));
     assert_eq!(
-        end(HuntOutcome::Direct, true),
-        ("the hunt ends".to_owned(), false)
+        failure_line(&named).map(|line| (line.tag, line.text)),
+        Some((Tag::Fail, "core 03 fails at -20".to_owned()))
     );
+    let idle = failure(Signal::Stall, None);
     assert_eq!(
-        end(HuntOutcome::Culprit, false).0,
-        "hunt 2 ends: 00 01 named"
+        failure_line(&idle).map(|line| line.text),
+        Some("idle with the offsets applied, the backend stalled".to_owned())
     );
-    assert_eq!(
-        end(HuntOutcome::Fallback, false),
-        ("hunt 2 unresolved".to_owned(), true)
-    );
-    assert_eq!(
-        end(HuntOutcome::Combination, false).0,
-        "hunt 2 keeps 00 01 together"
-    );
-    assert_eq!(end(HuntOutcome::Cancelled, false).0, "hunt 2 cancelled");
-    assert_eq!(
-        end(HuntOutcome::Loaded, false).0,
-        "hunt 2 keeps the failure on loaded 00 01"
-    );
+    assert_eq!(failure_line(&failure(Signal::Crash, None)), None);
 }
 
-#[test_case::test_case(Regime::R1, "light load", "light"; "r1")]
-#[test_case::test_case(Regime::R2, "heavy vector load", "heavy vector"; "r2")]
-#[test_case::test_case(Regime::R3, "load steps", "load steps"; "r3")]
-#[test_case::test_case(Regime::R4, "partial load", "partial load"; "r4")]
-#[test_case::test_case(Regime::R5, "both threads", "both threads"; "r5")]
-#[test_case::test_case(Regime::R6, "idle with short bursts", "idle + bursts"; "r6")]
-#[test_case::test_case(Regime::R7, "all-core load", "all-core"; "r7")]
+#[test_case(Regime::R1, "light load", "light"; "r1")]
+#[test_case(Regime::R2, "heavy vector load", "heavy vector"; "r2")]
+#[test_case(Regime::R3, "load steps", "load steps"; "r3")]
+#[test_case(Regime::R4, "partial load", "partial load"; "r4")]
+#[test_case(Regime::R5, "both threads", "both threads"; "r5")]
+#[test_case(Regime::R6, "idle with short bursts", "idle + bursts"; "r6")]
+#[test_case(Regime::R7, "all-core load", "all-core"; "r7")]
 fn the_regime_words(regime: Regime, sentence: &str, kind: &str) {
     assert_eq!(regime_words(regime), sentence);
     assert_eq!(kind_words(regime), kind);
@@ -283,42 +818,19 @@ fn the_regime_words(regime: Regime, sentence: &str, kind: &str) {
 #[test]
 fn every_regime_has_load_words() {
     for regime in togi_machine::REGIMES {
-        let expected = if regime == Regime::R6 {
-            "idle + bursts"
-        } else {
-            regime_words(regime)
-        };
-        assert_eq!(load_words(regime), expected, "{regime:?}");
+        assert!(!load_words(regime).is_empty(), "{regime:?}");
     }
+    assert_eq!(load_words(Regime::R6), "idle + bursts");
 }
 
-#[test_case::test_case(Signal::ComputationError, "wrong result"; "ComputationError")]
-#[test_case::test_case(Signal::UnexpectedExit, "the backend quit"; "UnexpectedExit")]
-#[test_case::test_case(Signal::Stall, "the backend stalled"; "Stall")]
-#[test_case::test_case(Signal::CorrectedMce, "corrected hardware error"; "CorrectedMce")]
-#[test_case::test_case(Signal::UncorrectedMce, "uncorrected hardware error"; "UncorrectedMce")]
-#[test_case::test_case(Signal::Crash, "crash"; "Crash")]
+#[test_case(Signal::ComputationError, "wrong result"; "ComputationError")]
+#[test_case(Signal::UnexpectedExit, "the backend quit"; "UnexpectedExit")]
+#[test_case(Signal::Stall, "the backend stalled"; "Stall")]
+#[test_case(Signal::CorrectedMce, "corrected hardware error"; "CorrectedMce")]
+#[test_case(Signal::UncorrectedMce, "uncorrected hardware error"; "UncorrectedMce")]
+#[test_case(Signal::Crash, "crash"; "Crash")]
 fn the_signal_words(signal: Signal, words: &str) {
     assert_eq!(signal_words(signal), words);
-}
-
-#[test]
-fn the_phase_word_is_shared_with_status() {
-    assert_eq!(phase_word(CorePhase::Search), "SEARCH");
-    assert_eq!(phase_word(CorePhase::HasRoom), "HAS ROOM");
-    assert_eq!(phase_word(CorePhase::AtLimit), "AT LIMIT");
-    assert_eq!(phase_word(Activity::Checking), "checking");
-    assert_eq!(phase_word(Activity::Deepening), "deepening");
-}
-
-#[test]
-fn the_group_and_candidate_words_are_shared_with_status() {
-    assert_eq!(group_word(GroupState::Running), "running");
-    assert_eq!(group_word(GroupState::Passed), "passed");
-    assert_eq!(group_word(GroupState::Failed), "failed");
-    assert_eq!(group_word(GroupState::Skipped), "skipped");
-    assert_eq!(candidate_word(true), "moving");
-    assert_eq!(candidate_word(false), "checked again in place");
 }
 
 #[test]
@@ -328,8 +840,8 @@ fn counting_words() {
         ("step".into(), "steps".into(), "crashes".into())
     );
     assert_eq!(noun(2, "wish"), "wishes");
-    assert_eq!(plural(0, "group"), "0 groups");
-    assert_eq!(plural(1, "solo limit"), "1 solo limit");
+    assert_eq!(plural(0, "task"), "0 tasks");
+    assert_eq!(plural(1, "cell"), "1 cell");
 }
 
 #[test]
@@ -386,484 +898,46 @@ fn a_variant_workload_shows_its_base() {
     }
 }
 
-fn phrase(payload: &Payload) -> Option<String> {
-    let Phrase::Of(of) = words(payload.kind()).detailed else {
-        panic!("{} has no phrase of its own", payload.kind());
+#[test]
+fn a_re_qualification_event_on_a_per_core_profile_names_its_night_and_every_core() {
+    let Payload::DayEvent(mut event) =
+        day_event(Classification::Unexplained {}, Resolution::Unresolved {})
+    else {
+        unreachable!("day_event builds a daily event");
     };
-    let said = of(payload);
-    assert_decision_words(payload);
-    said
-}
-
-fn compact(payload: &Payload) -> Option<String> {
-    let Brief::Of(of) = words(payload.kind()).compact else {
-        panic!("{} has no compact words", payload.kind());
+    event.event = DayEventId::Requalification {
+        night: NightId(seq(4)),
     };
-    let said = of(payload);
-    assert_decision_words(payload);
-    said
-}
-
-/// The words of a forecast decision are the table's words for the event it would be.
-fn assert_decision_words(payload: &Payload) {
-    let decision = match payload.clone() {
-        Payload::Failure(d) => DecisionPayload::from(d),
-        Payload::TunerWarning(d) => d.into(),
-        Payload::DeadEnd(d) => d.into(),
-        Payload::CorePhase(d) => d.into(),
-        Payload::TunerDecision(d) => d.into(),
-        Payload::ProfileChange(d) => d.into(),
-        Payload::CheckingCycle(d) => d.into(),
-        Payload::CheckingStep(d) => d.into(),
-        Payload::CheckingChain(d) => d.into(),
-        Payload::HuntStart(d) => d.into(),
-        Payload::HuntGroup(d) => d.into(),
-        Payload::HuntEnd(d) => d.into(),
-        Payload::HuntSkipped(d) => d.into(),
-        Payload::Combination(d) => d.into(),
-        Payload::DeepeningRound(d) => d.into(),
-        Payload::SessionStart(_)
-        | Payload::SessionContext(_)
-        | Payload::SessionBaseline(_)
-        | Payload::SessionNotice(_)
-        | Payload::SessionWarning(_)
-        | Payload::SessionArchived(_)
-        | Payload::SessionCarried(_)
-        | Payload::ConfigLoaded(_)
-        | Payload::PreflightCheck(_)
-        | Payload::SmuIntent(_)
-        | Payload::SmuWrite(_)
-        | Payload::SmuReadback(_)
-        | Payload::SmuError(_)
-        | Payload::ProfileApplied(_)
-        | Payload::ProfileRestored(_)
-        | Payload::TrialIntent(_)
-        | Payload::TrialStart(_)
-        | Payload::TrialProgress(_)
-        | Payload::TrialSignal(_)
-        | Payload::TrialSample(_)
-        | Payload::TrialEnd(_)
-        | Payload::TrialCarried(_)
-        | Payload::FailureCarried(_)
-        | Payload::Mce(_)
-        | Payload::CrashDetected(_)
-        | Payload::HostRanking(_)
-        | Payload::BackendRetry(_)
-        | Payload::CommandReset(_)
-        | Payload::DefectFound(_)
-        | Payload::DefectAnswered(_)
-        | Payload::BootSavedEntry(_)
-        | Payload::BootLeaveReason(_)
-        | Payload::Shutdown(_)
-        | Payload::JournalTorn(_)
-        | Payload::DayBootStart(_)
-        | Payload::DayCheckpoint(_)
-        | Payload::DayOffsetsChanged(_)
-        | Payload::DayCleanStop(_)
-        | Payload::DayUncleanEnd(_)
-        | Payload::DayAnswer(_)
-        | Payload::DayRecord(_)
-        | Payload::DayFault(_)
-        | Payload::StateRebuilt(_) => return,
+    event.profile = ObservedProfile::PerCore {
+        cores: [
+            (core(0), togi_machine::ObservedOffset(-10)),
+            (core(1), togi_machine::ObservedOffset(-5)),
+        ]
+        .into_iter()
+        .collect(),
     };
-    let table = words(payload.kind());
-    let detailed = match table.detailed {
-        Phrase::Of(of) => of(payload),
-        Phrase::Silent | Phrase::Contextual => None,
-    };
-    let brief = match table.compact {
-        Brief::Of(of) => of(payload),
-        Brief::Silent => None,
-    };
-    assert_eq!(decision_detail(&decision), detailed, "{}", payload.kind());
-    assert_eq!(decision_brief(&decision), brief, "{}", payload.kind());
-}
-
-fn history_line(payload: &Payload) -> Option<crate::words::Line> {
-    let History::Line(of) = words(payload.kind()).history else {
-        panic!("{} has no line of its own", payload.kind());
-    };
-    of(payload)
+    let (tag, tone, text) = said(&event.into());
+    assert_eq!((tag, tone), (Tag::Day, Tone::Warn));
+    assert!(
+        text.starts_with("re-qualification of night #4 at per-core [core 00: -10, core 01: -5"),
+        "{text}"
+    );
+    assert!(text.ends_with(" · unexplained, unresolved"), "{text}");
 }
 
 #[test]
-fn chains_cycles_and_rounds_have_phrases() {
-    let chain = |cores: &[u8]| -> Payload {
-        CheckingChain {
-            cycle: nz(1),
-            step: nz(1),
-            ccd: CcdId::new(1).unwrap(),
-            workload: togi_machine::workloads(Regime::R7)[0].id(),
-            groups: Vec::new(),
-            cores: set(cores),
-            source_seqs: Vec::new(),
-            profile: offsets(&[0]),
-            part: nz(1),
-            rederived: None,
-        }
-        .into()
+fn a_re_qualification_says_what_it_qualifies_for() {
+    let Payload::NightQualification(mut qualification) =
+        qualification_event(QualificationState::Start {
+            outstanding: Vec::new(),
+        })
+    else {
+        unreachable!("qualification_event builds a qualification");
     };
-    assert_eq!(phrase(&chain(&[])).as_deref(), Some("CCD 1 partials end"));
+    qualification.purpose = QualificationPurpose::Requalification;
+    let (_, _, text) = said(&qualification.into());
     assert_eq!(
-        phrase(&chain(&[2, 3])).as_deref(),
-        Some("CCD 1 partial on 02 03")
+        text,
+        "qualifying CCD0 -10, CCD1 -5 (re-qualification) · 0 cells to witness"
     );
-
-    let ended = |passed, full| -> Payload {
-        let mut end = cycle(2, togi_journal::CycleEvent::End);
-        (end.passed, end.full) = (passed, full);
-        end.missing = vec!["R2".to_owned(), "R5".to_owned()];
-        end.reason = Some("a failure".to_owned());
-        end.into()
-    };
-    let start: Payload = cycle(2, togi_journal::CycleEvent::Start).into();
-    assert_eq!(phrase(&start).as_deref(), Some("cycle 2 starts"));
-    assert_eq!(
-        phrase(&ended(true, true)).as_deref(),
-        Some("cycle 2 passed, a full cycle")
-    );
-    assert_eq!(
-        phrase(&ended(true, false)).as_deref(),
-        Some("cycle 2 passed")
-    );
-    assert_eq!(
-        phrase(&ended(false, false)).as_deref(),
-        Some("cycle 2 ends")
-    );
-    let line = |payload: &Payload| history_line(payload).unwrap().text;
-    assert_eq!(line(&start), "cycle 2 started · 0 steps");
-    assert_eq!(line(&ended(true, true)), "cycle 2 passed, a full cycle");
-    assert_eq!(
-        line(&ended(true, false)),
-        "cycle 2 passed but missing R2, R5"
-    );
-    assert_eq!(line(&ended(false, false)), "cycle 2 ended early: a failure");
-
-    let round = |event, passed| -> Payload {
-        DeepeningRound {
-            round: nz(4),
-            event,
-            base: offsets(&[]),
-            base_seq: None,
-            target: offsets(&[]),
-            profile: offsets(&[]),
-            cores: set(&[]),
-            ranking: Vec::new(),
-            trials: None,
-            trial_s: None,
-            passed,
-            reason: None,
-        }
-        .into()
-    };
-    assert_eq!(
-        phrase(&round(RoundEvent::Start, false)).as_deref(),
-        Some("deepening round 4 starts")
-    );
-    assert_eq!(
-        phrase(&round(RoundEvent::End, true)).as_deref(),
-        Some("deepening round 4 passed")
-    );
-    assert_eq!(
-        phrase(&round(RoundEvent::End, false)).as_deref(),
-        Some("deepening round 4 ends")
-    );
-}
-
-#[test]
-fn steps_hunts_and_stops_have_phrases() {
-    let step = |n| -> Payload {
-        CheckingStep {
-            cycle: nz(1),
-            step: nz(n),
-            profile: offsets(&[]),
-        }
-        .into()
-    };
-    assert_eq!(phrase(&step(1)), None);
-    assert_eq!(phrase(&step(3)).as_deref(), Some("step 2 is done"));
-
-    let start: Payload = hunt_start(2, &[0, 2]).into();
-    assert_eq!(phrase(&start).as_deref(), Some("hunt 2 starts over 00 02"));
-    assert_eq!(compact(&start).as_deref(), Some("hunt 2"));
-    let end: Payload = hunt_end(2, HuntOutcome::Fallback, &[0]).into();
-    assert_eq!(compact(&end).as_deref(), Some("hunt ends"));
-
-    let skipped: Payload = HuntSkipped {
-        failure: seq(1),
-        reason: String::new(),
-    }
-    .into();
-    assert_eq!(phrase(&skipped).as_deref(), Some("no hunt"));
-    assert_eq!(compact(&skipped).as_deref(), Some("no hunt"));
-    assert_eq!(history_line(&skipped).unwrap().text, "not hunted");
-    let held: Payload = HuntSkipped {
-        failure: seq(1),
-        reason: "held: first unattributed failure".into(),
-    }
-    .into();
-    assert_eq!(
-        phrase(&held).as_deref(),
-        Some("no hunt: held: first unattributed failure")
-    );
-    assert_eq!(compact(&held).as_deref(), Some("no hunt"));
-    assert_eq!(
-        history_line(&held).unwrap().text,
-        "not hunted: held: first unattributed failure"
-    );
-
-    let combo: Payload = combination(3, 1, &[(0, -30), (2, -28)], false).into();
-    assert_eq!(compact(&combo).as_deref(), Some("C3"));
-    assert_eq!(phrase(&combo).as_deref(), Some("C3 over 00 02"));
-    assert_eq!(history_line(&combo).unwrap().text, "C3: 00 -30  02 -28");
-    let fallback: Payload = combination(4, 2, &[(0, -30), (2, -28)], true).into();
-    assert_eq!(
-        history_line(&fallback).unwrap().text,
-        "C4 over 00 02 · hunt 2 unresolved"
-    );
-
-    let stop: Payload = DeadEnd {
-        condition: DeadEndCondition::FailureAtZero,
-        core: None,
-        detail: "x".to_owned(),
-        action: None,
-    }
-    .into();
-    assert_eq!(compact(&stop).as_deref(), Some("tuning stops"));
-    assert_eq!(
-        phrase(&stop).as_deref(),
-        Some("tuning stops: failure at zero")
-    );
-}
-
-#[test]
-fn core_phases_have_phrases() {
-    let phase = |from, to, pass: Option<i64>| -> Payload {
-        let mut start = Start::search(-12);
-        (start.from, start.to, start.pass) = (from, to, pass);
-        transition(1, start).into()
-    };
-    let search = Some(CorePhase::Search);
-    assert_eq!(
-        phrase(&phase(search, CorePhase::HasRoom, Some(-13))).as_deref(),
-        Some("core 01 solo limit -13")
-    );
-    assert_eq!(
-        phrase(&phase(search, CorePhase::AtLimit, None)),
-        None,
-        "an exit with no pass names no solo limit"
-    );
-    assert_eq!(
-        phrase(&phase(Some(CorePhase::AtLimit), CorePhase::Search, None)).as_deref(),
-        Some("core 01 starts its search over")
-    );
-    assert_eq!(
-        phrase(&phase(None, CorePhase::Search, None)).as_deref(),
-        Some("core 01 starts its search"),
-        "the first start is not a start over"
-    );
-    assert_eq!(
-        phrase(&phase(Some(CorePhase::AtLimit), CorePhase::HasRoom, None)),
-        None
-    );
-    assert_eq!(phrase(&phase(None, CorePhase::HasRoom, None)), None);
-}
-
-#[test_case::test_case(Some(CorePhase::Search), CorePhase::HasRoom, Some(-13), Tag::Limit; "passed solo")]
-#[test_case::test_case(Some(CorePhase::Search), CorePhase::HasRoom, None, Tag::Room; "room")]
-#[test_case::test_case(Some(CorePhase::Search), CorePhase::AtLimit, None, Tag::Limit; "limit")]
-#[test_case::test_case(None, CorePhase::Search, None, Tag::Step; "initial search")]
-#[test_case::test_case(None, CorePhase::HasRoom, None, Tag::Room; "initial room")]
-#[test_case::test_case(None, CorePhase::AtLimit, None, Tag::Limit; "initial limit")]
-#[test_case::test_case(Some(CorePhase::AtLimit), CorePhase::HasRoom, None, Tag::Room; "limit to room")]
-#[test_case::test_case(Some(CorePhase::HasRoom), CorePhase::Search, None, Tag::Step; "room to search")]
-fn core_phases_have_tags(from: Option<CorePhase>, to: CorePhase, pass: Option<i64>, word: Tag) {
-    let phase = |from, to, pass: Option<i64>| -> Payload {
-        let mut start = Start::search(-12);
-        (start.from, start.to, start.pass) = (from, to, pass);
-        transition(1, start).into()
-    };
-    let Tagging::By(tag) = words(EventKind::CorePhase).tag else {
-        panic!("a core phase is tagged by its payload");
-    };
-    assert_eq!(tag(&phase(from, to, pass)), word, "{from:?} → {to:?}");
-}
-
-#[test_case::test_case(EventKind::TunerDecision; "TunerDecision")]
-#[test_case::test_case(EventKind::CorePhase; "CorePhase")]
-#[test_case::test_case(EventKind::CheckingCycle; "CheckingCycle")]
-#[test_case::test_case(EventKind::CheckingStep; "CheckingStep")]
-#[test_case::test_case(EventKind::CheckingChain; "CheckingChain")]
-#[test_case::test_case(EventKind::HuntStart; "HuntStart")]
-#[test_case::test_case(EventKind::Combination; "Combination")]
-#[test_case::test_case(EventKind::DeepeningRound; "DeepeningRound")]
-#[test_case::test_case(EventKind::DeadEnd; "DeadEnd")]
-#[test_case::test_case(EventKind::Mce; "Mce")]
-fn a_phrase_applies_only_to_its_own_kind(kind: EventKind) {
-    let other = warning("x");
-    let table = words(kind);
-    if let Phrase::Of(of) = table.detailed {
-        assert_eq!(of(&other), None, "{kind}");
-    }
-    if let (Brief::Of(of), false) = (table.compact, kind == EventKind::DeadEnd) {
-        assert_eq!(of(&other), None, "{kind}");
-    }
-    if let (History::Line(of), false) = (table.history, kind == EventKind::CheckingChain) {
-        assert_eq!(of(&other), None, "{kind}");
-    }
-}
-
-#[test_case::test_case(EventKind::TrialEnd; "TrialEnd")]
-#[test_case::test_case(EventKind::Failure; "Failure")]
-#[test_case::test_case(EventKind::TunerDecision; "TunerDecision")]
-#[test_case::test_case(EventKind::HuntGroup; "HuntGroup")]
-#[test_case::test_case(EventKind::CorePhase; "CorePhase")]
-fn a_tag_applies_only_to_its_own_kind(kind: EventKind) {
-    let other = warning("x");
-    let Tagging::By(of) = words(kind).tag else {
-        panic!("{kind} is tagged by its payload");
-    };
-    let fallback = match kind {
-        EventKind::TrialEnd => Tag::Unclear,
-        EventKind::Failure => Tag::Fail,
-        EventKind::TunerDecision => Tag::Backoff,
-        EventKind::HuntGroup => Tag::Group,
-        EventKind::SessionStart
-        | EventKind::SessionContext
-        | EventKind::SessionBaseline
-        | EventKind::SessionNotice
-        | EventKind::SessionWarning
-        | EventKind::SessionArchived
-        | EventKind::SessionCarried
-        | EventKind::ConfigLoaded
-        | EventKind::PreflightCheck
-        | EventKind::SmuIntent
-        | EventKind::SmuWrite
-        | EventKind::SmuReadback
-        | EventKind::SmuError
-        | EventKind::ProfileApplied
-        | EventKind::ProfileChange
-        | EventKind::ProfileRestored
-        | EventKind::TrialIntent
-        | EventKind::TrialStart
-        | EventKind::TrialProgress
-        | EventKind::TrialSignal
-        | EventKind::TrialSample
-        | EventKind::TrialCarried
-        | EventKind::FailureCarried
-        | EventKind::Mce
-        | EventKind::CrashDetected
-        | EventKind::CorePhase
-        | EventKind::CheckingCycle
-        | EventKind::CheckingStep
-        | EventKind::CheckingChain
-        | EventKind::HostRanking
-        | EventKind::HuntStart
-        | EventKind::HuntEnd
-        | EventKind::HuntSkipped
-        | EventKind::Combination
-        | EventKind::DeepeningRound
-        | EventKind::TunerWarning
-        | EventKind::BackendRetry
-        | EventKind::CommandReset
-        | EventKind::DefectFound
-        | EventKind::DefectAnswered
-        | EventKind::DeadEnd
-        | EventKind::BootSavedEntry
-        | EventKind::BootLeaveReason
-        | EventKind::Shutdown
-        | EventKind::JournalTorn
-        | EventKind::DayBootStart
-        | EventKind::DayCheckpoint
-        | EventKind::DayOffsetsChanged
-        | EventKind::DayCleanStop
-        | EventKind::DayAnswer
-        | EventKind::DayRecord
-        | EventKind::DayFault
-        | EventKind::DayUncleanEnd
-        | EventKind::StateRebuilt => Tag::Limit,
-    };
-    assert_eq!(of(&other), fallback, "{kind}");
-}
-
-#[test]
-fn a_hunt_group_is_tagged_by_how_it_was_answered() {
-    let Tagging::By(tag) = words(EventKind::HuntGroup).tag else {
-        panic!("a group is tagged by its payload");
-    };
-    let plain = hunt_group(1, 1, &[0]);
-    assert_eq!(tag(&plain.clone().into()), Tag::Group);
-    let mut probe = plain.clone();
-    probe.probe = Some(togi_journal::Member {
-        core: core(0),
-        offset: off(-1),
-    });
-    assert_eq!(tag(&probe.into()), Tag::Probe);
-    let mut inferred = plain.clone();
-    inferred.inferred = Some(togi_journal::Inference::Pass);
-    assert_eq!(tag(&inferred.into()), Tag::Skip);
-    let mut skipped = plain;
-    skipped.skipped = true;
-    assert_eq!(tag(&skipped.into()), Tag::Skip);
-    assert_eq!(
-        carried_groups(2, 2, togi_journal::Inference::Pass),
-        ("group 2 answered by existing evidence".to_owned(), true)
-    );
-    assert_eq!(
-        carried_groups(2, 4, togi_journal::Inference::Failure),
-        ("groups 2-4 failed on existing evidence".to_owned(), false)
-    );
-}
-
-#[test_case::test_case(Tag::Unclear, "unclear"; "unclear")]
-#[test_case::test_case(Tag::Reset, "reset"; "reset")]
-#[test_case::test_case(Tag::Mce, "mce"; "mce")]
-#[test_case::test_case(Tag::Note, "note"; "note")]
-#[test_case::test_case(Tag::Confirm, "confirm"; "confirm")]
-#[test_case::test_case(Tag::Resume, "resume"; "resume")]
-#[test_case::test_case(Tag::Hold, "hold"; "hold")]
-fn every_tag_has_a_word(tag: Tag, word: &str) {
-    assert_eq!(tag.word(), word);
-}
-
-#[test]
-fn an_idle_failure_is_worded_but_a_crash_is_not() {
-    let idle = failure(Signal::Stall, None);
-    assert_eq!(
-        failure_line(&idle).unwrap().text,
-        "idle with the offsets applied, the backend stalled"
-    );
-    assert!(failure_line(&failure(Signal::Crash, None)).is_none());
-    assert!(failure_line(&failure(Signal::Stall, Some("t1"))).is_none());
-    let mut unnamed = failure(Signal::Stall, Some("t1"));
-    unnamed.attribution = togi_journal::Attribution::Attributed;
-    assert!(failure_line(&unnamed).is_none(), "attributed to no core");
-}
-
-#[test_case::test_case(&{ let mut known = failure(Signal::ComputationError, None); known.known_failure = Some(seq(1)); known.into() }, "skip"; "skip 1")]
-#[test_case::test_case(&failure(Signal::Stall, None).into(), "fail"; "fail 2")]
-#[test_case::test_case(&hunt_start(1, &[0]).into(), "hunt"; "hunt 3")]
-#[test_case::test_case(&hunt_end(1, HuntOutcome::Culprit, &[0]).into(), "hunt"; "hunt 4")]
-#[test_case::test_case(&HuntSkipped { failure: seq(1), reason: String::new(), } .into(), "hunt"; "hunt 5")]
-#[test_case::test_case(&hunt_group(1, 1, &[0]).into(), "group"; "group 6")]
-#[test_case::test_case(&{ let mut probe = hunt_group(1, 2, &[0]); probe.probe = Some(togi_journal::Member { core: core(0), offset: off(-1) }); probe.into() }, "probe"; "probe 7")]
-#[test_case::test_case(&combination(1, 1, &[(0, -1)], false).into(), "combo"; "combo 8")]
-#[test_case::test_case(&DeepeningRound { round: nz(1), event: RoundEvent::Start, base: offsets(&[]), base_seq: None, target: offsets(&[]), profile: offsets(&[]), cores: set(&[]), ranking: Vec::new(), trials: None, trial_s: None, passed: false, reason: None, } .into(), "round"; "round 9")]
-#[test_case::test_case(&CheckingStep { cycle: nz(1), step: nz(1), profile: offsets(&[]), } .into(), "step"; "step 10")]
-#[test_case::test_case(&cycle(1, togi_journal::CycleEvent::Start).into(), "cycle"; "cycle 11")]
-#[test_case::test_case(&DeadEnd { condition: DeadEndCondition::Smu, core: None, detail: String::new(), action: None, } .into(), "stop"; "stop 12")]
-#[test_case::test_case(&togi_journal::Shutdown { reason: togi_journal::ShutdownReason::Signal, kernel_cursor: None, kernel_error: None, cycles: None, } .into(), "stop"; "stop 13")]
-#[test_case::test_case(&session_start(&[(0, 0)]), "start"; "start 14")]
-#[test_case::test_case(&crash("boot", None).into(), "crash"; "crash 15")]
-#[test_case::test_case(&end_payload(&togi_journal::TrialId::from("t".to_owned()), Pass, None).into(), "pass"; "pass 16")]
-#[test_case::test_case(&end_payload(&togi_journal::TrialId::from("t".to_owned()), Failure, Some(Signal::Stall)).into(), "fail"; "fail 17")]
-#[test_case::test_case(&end_payload(&togi_journal::TrialId::from("t".to_owned()), Failure, Some(Signal::Crash)).into(), "crash"; "crash 18")]
-#[test_case::test_case(&end_payload(&togi_journal::TrialId::from("t".to_owned()), Inconclusive, None).into(), "unclear"; "unclear 19")]
-#[test_case::test_case(&decision(Decision::Backoff, -10, -9).into(), "backoff"; "backoff 20")]
-#[test_case::test_case(&decision(Decision::StepDeeper, -10, -15).into(), "step"; "step 21")]
-#[test_case::test_case(&decision(Decision::Hold, -10, -10).into(), "hold"; "hold 22")]
-#[test_case::test_case(&warning("x"), "session warning"; "session warning 23")]
-#[test_case::test_case(&smu_intent(0, -1), "smu intent"; "smu intent 24")]
-fn the_log_tags_each_kind_by_its_word(payload: &Payload, word: &str) {
-    assert_eq!(tag_word(payload), word, "{}", payload.kind());
 }

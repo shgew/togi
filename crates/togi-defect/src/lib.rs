@@ -1,5 +1,5 @@
 //! Known tuning defects: [`KNOWN_DEFECTS`] describes the affected decisions, and [`DefectState`]
-//! folds journal events into findings and guidance for the affected cores.
+//! folds journal events into the findings a session records.
 
 mod registry;
 mod state;
@@ -8,4 +8,4 @@ mod state;
 mod tests;
 
 pub use registry::{Clause, Entry, KNOWN_DEFECTS, fixed_stamp, is_ordered};
-pub use state::{DefectState, FindingView, Guidance, PendingFinding};
+pub use state::{DefectState, FindingView, PendingFinding};

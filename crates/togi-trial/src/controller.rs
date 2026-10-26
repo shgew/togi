@@ -13,7 +13,7 @@ use std::sync::{Mutex, PoisonError};
 use rustix::io::Errno;
 use rustix::process::Pid;
 use rustix::thread::CpuSet;
-use togi_machine::{CoreId, CoreInfo, CpuId, PerCore, TargetOffset};
+use togi_machine::{CcdId, CoreId, CoreInfo, CpuId, PerCore, TargetOffset};
 
 /// The CPUs togi's own threads use while a trial loads `loaded` cores and `cpus`, or `None` when
 /// the topology names no core.
@@ -66,17 +66,91 @@ fn least_deep<'a>(cores: &[&'a CoreInfo], offsets: &PerCore<TargetOffset>) -> Op
     })
 }
 
-/// Managed placement is separate from the legacy selector until a scheduler explicitly opts in.
-/// An excluded host still supplies failure evidence, but supplies no passing exposure.
+/// Where the controller runs. `cpus` are every logical CPU it may use.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Placement {
     pub(crate) cpus: Vec<CpuId>,
-    pub(crate) host: Option<CoreId>,
-    pub(crate) capped: bool,
-    pub(crate) excluded: Option<CoreId>,
+    pub(crate) contract: Contract,
 }
 
-/// Chooses from the physical trial shape, not the regime's name or workload quota.
+/// A rotating or single controller host and the applied, read-back offset it held when placement
+/// was computed. A missing offset stays unknown; it is never CO 0.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Host {
+    pub(crate) core: CoreId,
+    pub(crate) offset: Option<TargetOffset>,
+}
+
+/// The row of the managed placement table a trial fell into, or the legacy selector's choice,
+/// with what it means for the trial's clock and credit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Contract {
+    /// The legacy selector: no cap, no recorded host, credit unchanged.
+    Legacy,
+    /// Single CCD with an unloaded physical core: rotation across the unloaded cores. Capped; the
+    /// host is untested and earns no exposure, while every loaded position keeps its credit.
+    UnloadedHost(Host),
+    /// Single CCD with every physical core loaded: rotation across the tested cores. Capped; the
+    /// host is excluded from passing credit and keeps supplying failure evidence.
+    ExcludedHost(Host),
+    /// Every logical CPU of an entire idle CO-0 CCD. Capped; the loaded CCD keeps its credit.
+    IdleCcd { ccd: CcdId },
+    /// The lowest-ID unloaded CO-0 core. Uncapped; controller work is outside the tested set.
+    IdleCore(Host),
+    /// Rotation across the loaded cores. Uncapped; controller work counts as load on the host.
+    LoadedHost(Host),
+}
+
+impl Contract {
+    /// Whether the controller's cpufreq policies are capped for the trial.
+    pub(crate) const fn capped(self) -> bool {
+        match self {
+            Self::UnloadedHost(_) | Self::ExcludedHost(_) | Self::IdleCcd { .. } => true,
+            Self::Legacy | Self::IdleCore(_) | Self::LoadedHost(_) => false,
+        }
+    }
+
+    /// The tested core the trial withholds passing credit from.
+    pub(crate) const fn excluded(self) -> Option<CoreId> {
+        match self {
+            Self::ExcludedHost(host) => Some(host.core),
+            Self::Legacy
+            | Self::UnloadedHost(_)
+            | Self::IdleCcd { .. }
+            | Self::IdleCore(_)
+            | Self::LoadedHost(_) => None,
+        }
+    }
+
+    /// A stranger-readable account of the placement for the trial's progress lines.
+    pub(crate) fn describe(self) -> String {
+        let at = |host: Host| match host.offset {
+            Some(offset) => format!("core {} at CO {}", host.core, offset.get()),
+            None => format!("core {} at an unknown offset", host.core),
+        };
+        match self {
+            Self::Legacy => "legacy placement, uncapped".to_owned(),
+            Self::UnloadedHost(host) => format!(
+                "rotating unloaded host {}, capped; the host earns no exposure credit",
+                at(host)
+            ),
+            Self::ExcludedHost(host) => format!(
+                "rotating tested host {}, capped; the host is excluded from passing credit",
+                at(host)
+            ),
+            Self::IdleCcd { ccd } => format!("idle CO-0 CCD {ccd}, capped"),
+            Self::IdleCore(host) => format!("idle CO-0 host {}, uncapped", at(host)),
+            Self::LoadedHost(host) => format!(
+                "rotating loaded host {}, uncapped; controller work counts as load",
+                at(host)
+            ),
+        }
+    }
+}
+
+/// Chooses managed placement from the physical trial shape, not the regime's name or workload
+/// quota, following the controller placement table of the workloads spec in order. `None` when
+/// the trial is not managed or no host has logical CPUs.
 pub(crate) fn placement(
     topology: &[CoreInfo],
     spec: &togi_machine::TrialSpec,
@@ -87,12 +161,20 @@ pub(crate) fn placement(
     let is_loaded = |info: &&CoreInfo| {
         spec.cores.contains(&info.core) || info.cpus.iter().any(|cpu| spec.cpus.contains(cpu))
     };
-    let mut tested: Vec<&CoreInfo> = topology.iter().filter(is_loaded).collect();
-    tested.sort_unstable_by_key(|info| info.core);
+    let mut cores: Vec<&CoreInfo> = topology.iter().collect();
+    cores.sort_unstable_by_key(|info| info.core);
+    let (tested, unloaded): (Vec<&CoreInfo>, Vec<&CoreInfo>) =
+        cores.iter().copied().partition(is_loaded);
     let first = *tested.first()?;
     let single_ccd = topology.iter().all(|info| info.ccd == first.ccd);
     if single_ccd {
-        return rotating(&tested, rotation, true);
+        // Any unloaded core qualifies here, whatever its offset; the cap keeps it from
+        // stealing the tested cores' clock.
+        return if unloaded.is_empty() {
+            rotating(&tested, rotation, spec, Contract::ExcludedHost)
+        } else {
+            rotating(&unloaded, rotation, spec, Contract::UnloadedHost)
+        };
     }
     // An idle CCD is useful only when every one of its cores is known to hold CO 0.
     // R6's instances deliberately stop and burst; its entire target remains tested.
@@ -119,41 +201,47 @@ pub(crate) fn placement(
         cpus.dedup();
         return (!cpus.is_empty()).then_some(Placement {
             cpus,
-            host: None,
-            capped: true,
-            excluded: None,
+            contract: Contract::IdleCcd { ccd },
         });
     }
-    if let Some(idle) = topology
-        .iter()
-        .filter(|info| !is_loaded(info) && offsets_zero(spec, info))
-        .min_by_key(|info| info.core)
-    {
+    // Only a CO-0 unloaded core qualifies: a nonzero one is never chosen merely because it is
+    // shallower than the loaded cores.
+    if let Some(idle) = unloaded.iter().find(|info| offsets_zero(spec, info)) {
         return (!idle.cpus.is_empty()).then(|| Placement {
             cpus: idle.cpus.clone(),
-            host: Some(idle.core),
-            capped: false,
-            excluded: None,
+            contract: Contract::IdleCore(host(spec, idle)),
         });
     }
-    rotating(&tested, rotation, false)
+    rotating(&tested, rotation, spec, Contract::LoadedHost)
 }
 
 fn offsets_zero(spec: &togi_machine::TrialSpec, info: &CoreInfo) -> bool {
     spec.offsets.get(info.core).map(TargetOffset::get) == Some(0)
 }
 
-fn rotating(tested: &[&CoreInfo], rotation: u64, capped: bool) -> Option<Placement> {
-    let count = u64::try_from(tested.len())
+fn host(spec: &togi_machine::TrialSpec, info: &CoreInfo) -> Host {
+    Host {
+        core: info.core,
+        offset: spec.offsets.get(info.core),
+    }
+}
+
+/// The host at the caller's persistent trial ordinal modulo the eligible count; `eligible` is in
+/// core-ID order.
+fn rotating(
+    eligible: &[&CoreInfo],
+    rotation: u64,
+    spec: &togi_machine::TrialSpec,
+    contract: fn(Host) -> Contract,
+) -> Option<Placement> {
+    let count = u64::try_from(eligible.len())
         .ok()
         .filter(|count| *count != 0)?;
     let index = usize::try_from(rotation % count).ok()?;
-    let host = tested.get(index)?;
-    (!host.cpus.is_empty()).then(|| Placement {
-        cpus: host.cpus.clone(),
-        host: Some(host.core),
-        capped,
-        excluded: capped.then_some(host.core),
+    let info = eligible.get(index)?;
+    (!info.cpus.is_empty()).then(|| Placement {
+        cpus: info.cpus.clone(),
+        contract: contract(host(spec, info)),
     })
 }
 
@@ -483,8 +571,6 @@ fn is_empty(set: &CpuSet) -> bool {
 mod tests {
     use std::sync::Arc;
 
-    use togi_machine::CcdId;
-
     use super::*;
 
     fn core(n: u8) -> CoreId {
@@ -606,6 +692,22 @@ mod tests {
         rotation: u64,
         single_ccd: bool,
     ) -> Option<Placement> {
+        managed_with(
+            regime,
+            loaded,
+            held(&all(offsets)),
+            togi_machine::ControllerMode::Managed { rotation },
+            single_ccd,
+        )
+    }
+
+    fn managed_with(
+        regime: togi_machine::Regime,
+        loaded: &[u8],
+        offsets: PerCore<TargetOffset>,
+        controller: togi_machine::ControllerMode,
+        single_ccd: bool,
+    ) -> Option<Placement> {
         let mut topology = topology();
         if !single_ccd {
             for info in &mut topology[2..] {
@@ -623,10 +725,25 @@ mod tests {
             duration: std::time::Duration::from_secs(120),
             index: 0,
             seed: 0,
-            offsets: held(&all(offsets)),
-            controller: togi_machine::ControllerMode::Managed { rotation },
+            offsets,
+            controller,
         };
         placement(&topology, &spec)
+    }
+
+    /// The host `core` at the applied offset the test gave it.
+    fn host_at(n: u8, offset: i64) -> Host {
+        Host {
+            core: core(n),
+            offset: Some(TargetOffset::new(offset).unwrap()),
+        }
+    }
+
+    fn on_core(n: u8, contract: Contract) -> Placement {
+        Placement {
+            cpus: cpus(&[u16::from(n), u16::from(n) + 4]),
+            contract,
+        }
     }
 
     #[test_case::test_case(togi_machine::Regime::R1; "light mapping")]
@@ -634,36 +751,56 @@ mod tests {
     #[test_case::test_case(togi_machine::Regime::R7; "CCD mapping")]
     #[test_case::test_case(togi_machine::Regime::R8; "neighbour mapping")]
     fn mapping_uses_the_entire_idle_zero_ccd_capped(regime: togi_machine::Regime) {
+        let got = managed(regime, &[0, 1], [-20, -20, 0, 0], 3, false);
         assert_eq!(
-            managed(regime, &[0, 1], [-20, -20, 0, 0], 3, false),
+            got,
             Some(Placement {
                 cpus: cpus(&[2, 3, 6, 7]),
-                host: None,
-                capped: true,
-                excluded: None,
+                contract: Contract::IdleCcd {
+                    ccd: CcdId::new(1).unwrap()
+                },
+            })
+        );
+        let contract = got.unwrap().contract;
+        assert_eq!((contract.capped(), contract.excluded()), (true, None));
+    }
+
+    #[test]
+    fn an_idle_ccd_with_a_nonzero_core_is_not_an_idle_zero_ccd() {
+        let got = managed(
+            togi_machine::Regime::R1,
+            &[0, 1],
+            [-20, -20, 0, -1],
+            0,
+            false,
+        );
+        assert_eq!(
+            got,
+            Some(Placement {
+                cpus: cpus(&[2, 6]),
+                contract: Contract::IdleCore(host_at(2, 0)),
             })
         );
     }
 
-    #[test_case::test_case(togi_machine::Regime::R7, 0, 0; "all core first host")]
-    #[test_case::test_case(togi_machine::Regime::R7, 1, 1; "all core second host")]
-    #[test_case::test_case(togi_machine::Regime::R7, 4, 0; "all core wraps")]
-    #[test_case::test_case(togi_machine::Regime::R9, 3, 3; "all threads")]
-    #[test_case::test_case(togi_machine::Regime::R6, 2, 2; "idle bursts")]
+    #[test_case::test_case(togi_machine::Regime::R7, 0, 0, -20; "all core first host")]
+    #[test_case::test_case(togi_machine::Regime::R7, 1, 1, -10; "all core second host")]
+    #[test_case::test_case(togi_machine::Regime::R7, 4, 0, -20; "all core wraps")]
+    #[test_case::test_case(togi_machine::Regime::R9, 3, 3, 0; "all threads")]
+    #[test_case::test_case(togi_machine::Regime::R6, 2, 2, -5; "idle bursts")]
     fn full_machine_rotates_uncapped_and_keeps_host_credit(
         regime: togi_machine::Regime,
         rotation: u64,
         host: u8,
+        offset: i64,
     ) {
+        let got = managed(regime, &[0, 1, 2, 3], [-20, -10, -5, 0], rotation, false);
         assert_eq!(
-            managed(regime, &[0, 1, 2, 3], [-20, -10, -5, 0], rotation, false),
-            Some(Placement {
-                cpus: cpus(&[u16::from(host), u16::from(host) + 4]),
-                host: Some(core(host)),
-                capped: false,
-                excluded: None,
-            })
+            got,
+            Some(on_core(host, Contract::LoadedHost(host_at(host, offset))))
         );
+        let contract = got.unwrap().contract;
+        assert_eq!((contract.capped(), contract.excluded()), (false, None));
     }
 
     #[test_case::test_case(togi_machine::Regime::R6; "idle subset")]
@@ -671,15 +808,10 @@ mod tests {
     fn a_partial_uses_an_unloaded_zero_core_when_no_idle_zero_ccd_exists(
         regime: togi_machine::Regime,
     ) {
-        assert_eq!(
-            managed(regime, &[0, 2], [-20, 0, -20, -10], 1, false),
-            Some(Placement {
-                cpus: cpus(&[1, 5]),
-                host: Some(core(1)),
-                capped: false,
-                excluded: None,
-            })
-        );
+        let got = managed(regime, &[0, 2], [-20, 0, -20, -10], 1, false);
+        assert_eq!(got, Some(on_core(1, Contract::IdleCore(host_at(1, 0)))));
+        let contract = got.unwrap().contract;
+        assert_eq!((contract.capped(), contract.excluded()), (false, None));
     }
 
     #[test]
@@ -692,36 +824,7 @@ mod tests {
                 1,
                 false
             ),
-            Some(Placement {
-                cpus: cpus(&[2, 6]),
-                host: Some(core(2)),
-                capped: false,
-                excluded: None,
-            })
-        );
-    }
-
-    #[test_case::test_case(0, 0; "first host")]
-    #[test_case::test_case(1, 2; "second host")]
-    #[test_case::test_case(u64::MAX, 2; "large ordinal")]
-    fn single_ccd_rotates_capped_only_across_tested_cores_and_excludes_the_host(
-        rotation: u64,
-        host: u8,
-    ) {
-        assert_eq!(
-            managed(
-                togi_machine::Regime::R7,
-                &[0, 2],
-                [-20, 0, -20, 0],
-                rotation,
-                true
-            ),
-            Some(Placement {
-                cpus: cpus(&[u16::from(host), u16::from(host) + 4]),
-                host: Some(core(host)),
-                capped: true,
-                excluded: Some(core(host)),
-            })
+            Some(on_core(2, Contract::LoadedHost(host_at(2, -30))))
         );
     }
 
@@ -735,25 +838,158 @@ mod tests {
                 7,
                 false
             ),
-            Some(Placement {
-                cpus: cpus(&[2, 6]),
-                host: Some(core(2)),
-                capped: false,
-                excluded: None,
-            })
+            Some(on_core(2, Contract::IdleCore(host_at(2, 0))))
+        );
+    }
+
+    #[test_case::test_case(0, 1, 0; "first unloaded core at CO 0")]
+    #[test_case::test_case(1, 3, -7; "second unloaded core at a nonzero offset")]
+    #[test_case::test_case(2, 1, 0; "wraps over the two unloaded cores")]
+    #[test_case::test_case(u64::MAX, 3, -7; "large ordinal")]
+    fn single_ccd_with_an_unloaded_core_rotates_across_unloaded_cores_regardless_of_offsets(
+        rotation: u64,
+        host: u8,
+        offset: i64,
+    ) {
+        let got = managed(
+            togi_machine::Regime::R7,
+            &[0, 2],
+            [-20, 0, -20, -7],
+            rotation,
+            true,
+        );
+        assert_eq!(
+            got,
+            Some(on_core(host, Contract::UnloadedHost(host_at(host, offset))))
+        );
+        let contract = got.unwrap().contract;
+        assert_eq!(
+            (contract.capped(), contract.excluded()),
+            (true, None),
+            "the unloaded host earns nothing and withholds no loaded position's credit"
+        );
+    }
+
+    #[test_case::test_case(togi_machine::Regime::R1, 9, 0; "one tested core rotates over the three idle ones")]
+    #[test_case::test_case(togi_machine::Regime::R6, 10, 1; "R6 on one CCD is not uncapped")]
+    #[test_case::test_case(togi_machine::Regime::R2, 11, 3; "last idle core")]
+    fn a_single_tested_core_on_one_ccd_never_hosts_the_controller_while_a_core_is_unloaded(
+        regime: togi_machine::Regime,
+        rotation: u64,
+        host: u8,
+    ) {
+        let got = managed(regime, &[2], [-9, 0, -20, -4], rotation, true);
+        assert_eq!(
+            got.map(|placement| placement.cpus),
+            Some(cpus(&[u16::from(host), u16::from(host) + 4]))
+        );
+    }
+
+    #[test_case::test_case(0, 0; "first tested core")]
+    #[test_case::test_case(1, 1; "second tested core")]
+    #[test_case::test_case(3, 3; "last tested core")]
+    #[test_case::test_case(6, 2; "wraps")]
+    #[test_case::test_case(u64::MAX, 3; "large ordinal")]
+    fn single_ccd_with_every_core_loaded_rotates_capped_across_tested_cores_and_excludes_the_host(
+        rotation: u64,
+        host: u8,
+    ) {
+        let offsets = [-20, -10, -5, 0];
+        let got = managed(
+            togi_machine::Regime::R7,
+            &[0, 1, 2, 3],
+            offsets,
+            rotation,
+            true,
+        );
+        assert_eq!(
+            got,
+            Some(on_core(
+                host,
+                Contract::ExcludedHost(host_at(host, offsets[usize::from(host)]))
+            ))
+        );
+        let contract = got.unwrap().contract;
+        assert_eq!(
+            (contract.capped(), contract.excluded()),
+            (true, Some(core(host)))
         );
     }
 
     #[test]
-    fn a_single_tested_core_on_one_ccd_is_capped_and_excluded_even_with_idle_zero_neighbours() {
+    fn the_ordinal_not_a_workload_index_picks_the_host_when_every_core_is_loaded() {
+        let got = managed_with(
+            togi_machine::Regime::R7,
+            &[0, 1, 2, 3],
+            held(&all([0, 0, 0, 0])),
+            togi_machine::ControllerMode::Managed { rotation: 5 },
+            true,
+        );
         assert_eq!(
-            managed(togi_machine::Regime::R1, &[2], [0, 0, -20, 0], 9, true),
-            Some(Placement {
-                cpus: cpus(&[2, 6]),
-                host: Some(core(2)),
-                capped: true,
-                excluded: Some(core(2)),
+            got,
+            Some(on_core(1, Contract::ExcludedHost(host_at(1, 0)))),
+            "5 mod 4"
+        );
+    }
+
+    #[test]
+    fn a_missing_offset_is_recorded_as_unknown_never_as_zero() {
+        let offsets = held(&[Some(-3), None, Some(-3), Some(-3)]);
+        let mode = togi_machine::ControllerMode::Managed { rotation: 0 };
+        // Core 1 is the lone unloaded core of the single CCD.
+        let got = managed_with(togi_machine::Regime::R7, &[0, 2, 3], offsets, mode, true);
+        assert_eq!(
+            got,
+            Some(on_core(
+                1,
+                Contract::UnloadedHost(Host {
+                    core: core(1),
+                    offset: None,
+                })
+            ))
+        );
+        // Multi-CCD, no unloaded CO-0 core, and an unknown one is not CO 0: loaded rotation.
+        let offsets = held(&[Some(-3), None, Some(-3), Some(-3)]);
+        let got = managed_with(togi_machine::Regime::R7, &[0, 2], offsets, mode, false);
+        assert_eq!(got, Some(on_core(0, Contract::LoadedHost(host_at(0, -3)))));
+    }
+
+    #[test]
+    fn only_a_managed_trial_has_a_managed_placement() {
+        assert_eq!(
+            managed_with(
+                togi_machine::Regime::R7,
+                &[0],
+                held(&all([0; 4])),
+                togi_machine::ControllerMode::Legacy,
+                true,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn a_trial_that_loads_nothing_has_no_placement() {
+        assert_eq!(
+            managed(togi_machine::Regime::R7, &[], [0; 4], 0, true),
+            None
+        );
+    }
+
+    #[test]
+    fn the_description_names_the_host_and_its_offset() {
+        let host = host_at(3, -7);
+        assert_eq!(
+            Contract::UnloadedHost(host).describe(),
+            "rotating unloaded host core 3 at CO -7, capped; the host earns no exposure credit"
+        );
+        assert!(
+            Contract::ExcludedHost(Host {
+                core: core(3),
+                offset: None
             })
+            .describe()
+            .contains("core 3 at an unknown offset")
         );
     }
 

@@ -54,8 +54,9 @@ pub(super) fn conclude(
         }
         return Outcome::exit(match first {
             SessionError::Compatibility(_) => Exit::Incompatible,
-            SessionError::NoSuchCore { .. } => Exit::Usage,
-            SessionError::UnsupportedTopology(_) => Exit::Preflight,
+            SessionError::UnsupportedTopology(_)
+            | SessionError::BaselineNotZero { .. }
+            | SessionError::BaselineIncomplete { .. } => Exit::Preflight,
             SessionError::Journal(_)
             | SessionError::Fold(_)
             | SessionError::Machine(_)
@@ -65,15 +66,12 @@ pub(super) fn conclude(
             | SessionError::Write(_)
             | SessionError::Log(_)
             | SessionError::TopologyChanged { .. }
-            | SessionError::NoSuchTrialCore { .. }
             | SessionError::Unproven
-            | SessionError::PlanDisagrees
-            | SessionError::TrialRoles(_)
+            | SessionError::Plan(_)
             | SessionError::NotReady(_)
             | SessionError::ClearSavedEntry(_)
             | SessionError::SessionId(_)
             | SessionError::DeadEndUnrecorded(_)
-            | SessionError::Prompt { .. }
             | SessionError::Panicked(_)
             | SessionError::TrialDuration(_)
             | SessionError::TrialTemperature(_)
@@ -84,7 +82,7 @@ pub(super) fn conclude(
         });
     }
     match stop {
-        Some(Stop::Signal | Stop::Cycles | Stop::FirstResult) => Outcome::exit(Exit::Ok),
+        Some(Stop::Signal | Stop::Night(_)) => Outcome::exit(Exit::Ok),
         Some(Stop::DeadEnd {
             dead_end,
             causes,
@@ -183,6 +181,22 @@ impl HiddenClosing {
             | EventKind::DeepeningRound
             | EventKind::TunerWarning
             | EventKind::BackendRetry
+            | EventKind::TaskStart
+            | EventKind::SessionImported
+            | EventKind::ExposureObserved
+            | EventKind::CcdEdge
+            | EventKind::CcdCap
+            | EventKind::NightPlan
+            | EventKind::NightQualification
+            | EventKind::NightReproduction
+            | EventKind::DayStep
+            | EventKind::DayApplied
+            | EventKind::DayEvent
+            | EventKind::DayVeto
+            | EventKind::DayHold
+            | EventKind::DayFreeze
+            | EventKind::DayInterval
+            | EventKind::DayImported
             | EventKind::CommandReset
             | EventKind::DefectFound
             | EventKind::DefectAnswered

@@ -1,0 +1,34 @@
+---
+source: crates/togi/tests/read/status.rs
+expression: text(&ran.stdout)
+---
+night since 00:00, 0s elapsed: control (task control #0)
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
+  boost limit 5700 MHz
+in flight: [#35] trial 0001 core 00 offset 0 R1 mprime SSE 4K-21K 90 s together
+  control task control #0 night #31
+
+CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
+0   0-7   0   -   -        -        unknown      -         -       -
+1   8-15  0   -   -        -        unknown      -         -       -
+  A CCD with no cap yet has S at offset 0.
+
+Day policy
+applied profile: CCD 0 0, CCD 1 0
+hold: none recorded
+latest step: none
+freeze: off
+firmware: valid
+
+Night since 00:00
+elapsed: 0s
+QUEUE            SHARE  USED  TIME
+reproduction     25%    0%    0s
+qualification    75%    0%    0s
+mapping          10%    0%    0s
+control          5%     0%    0s
+requalification  10%    0%    0s
+current task: control (task control #0)
+mapping CCD 0: next offset 0
+mapping CCD 1: next offset 0

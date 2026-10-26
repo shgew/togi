@@ -224,6 +224,11 @@ fn hunt_start() -> Event {
 #[test_case(&event("host.ranking", &json!({"ranking": [], "detail": "missing"})), Style::Plain; "host ranking unavailable")]
 #[test_case(&event("session.baseline", &json!({"offsets": {"0": 0, "1": -5}})), Style::Plain; "session baseline")]
 #[test_case(&event("session.archived", &json!({"session": "20261002T011407Z"})), Style::Plain; "session archived")]
+#[test_case(&event("ccd.edge", &json!({"ccd": 0, "edge": {"kind": "observed", "offset": -25, "witness": 40}, "old": {"kind": "unknown"}, "reason": "first failure"})), Style::Red; "observed edge")]
+#[test_case(&event("ccd.edge", &json!({"ccd": 0, "edge": {"kind": "unknown"}, "old": {"kind": "observed", "offset": -25, "witness": 40}, "reason": "evidence withdrawn"})), Style::Plain; "unknown edge")]
+#[test_case(&event("day.veto", &json!({"event": {"kind": "boot", "boot": "b"}, "profile": {"kind": "per_core", "cores": {"0": -15}}, "state": "active", "evidence": [7], "reason": "cpu suspect"})), Style::Yellow; "active veto")]
+#[test_case(&event("day.veto", &json!({"event": {"kind": "boot", "boot": "b"}, "profile": {"kind": "per_core", "cores": {"0": -15}}, "state": "cleared", "evidence": [7], "reason": "cleared"})), Style::Plain; "cleared veto")]
+#[test_case(&event("day.freeze", &json!({"choice": "freeze", "source": {"kind": "command", "uid": 1000}})), Style::Plain; "freeze")]
 fn style_follows_the_semantic_table(event: &Event, expected: Style) {
     assert_eq!(style_for(&event.payload), expected);
 }

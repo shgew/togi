@@ -1,0 +1,80 @@
+---
+source: crates/togi-tool-stats/src/tests/scenario.rs
+expression: log.report()
+---
+Session
+field     value
+id        20260101T000000Z
+rulesets  3
+builds    1.2.3+abc
+events    29
+first     2026-01-01T00:00:00Z
+last      2026-01-01T00:10:01Z
+
+Runs
+run  start                 end                   build      trials  crashes  ended
+1    2026-01-01T00:00:00Z  2026-01-01T00:10:01Z  1.2.3+abc  4       1        cycles
+
+Time
+activity / condition / regime / outcome      trial seconds  hours
+search / alone / R1 / inconclusive           60             0.017
+checking / together / R7 / pass              120            0.033
+checking / together / R7 / failure           30             0.008
+hunt / parked / R7 / failure                 60             0.017
+crash downtime (last evidence to next boot)  87.000         0.024
+
+Failures
+regime  workload                      signal  attribution   count
+R7      mprime-avx2-36k-248k-allcore  crash   unattributed  1
+
+Exposure
+regime  workload                      trials  hours  failures
+R1      mprime-sse-4k-21k             1       0.017  0
+R7      mprime-avx2-36k-248k-allcore  3       0.058  2
+
+Unattributed crashes by loaded CCD
+CCD(s)  count
+0,1     1
+
+Crash timing (last evidence)
+seconds  count
+0        0
+1-29     0
+30-59    1
+60-119   0
+120+     0
+
+Reset reasons
+reason    count
+watchdog  1
+
+Recovery gap
+count  min seconds  median seconds  max seconds
+1      99.000       99.000          99.000
+
+Failure rate by depth
+regime / workload / loaded cores / duration       shallowest offset  trials  failures  rate
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  -22                1       1         100.0%
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  -20                1       0         0.0%
+R7/mprime-avx2-36k-248k-allcore/01,03/60s         -22                1       1         100.0%
+
+R7 voltage requests
+field                               count
+failures without request telemetry  2
+
+R7 trials by top request (4 mV bins)
+class                                             top request V   trials  failures
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  [1.100, 1.104)  1       0
+
+R7 trials by top requester
+class                                             core  trials  failures
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  01    1       0
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  03    1       0
+
+Inconclusive trials
+trial  condition  reason
+0004   alone      run on\nanother core
+
+Tctl
+regime  max C  passing trials
+R7      62     1

@@ -1,8 +1,9 @@
 //! The journal invariant audit: whether a recorded session kept the rules of `docs/spec/tuner.md` and
-//! `docs/spec/journal.md`, judged from its events alone without running the tuner's scheduler.
-//! Failure-point merging and recorded intent loads use the tuner's domain operations; the audit's
-//! invariant checks remain its own. Checking a published `state.json` replays the journal through
-//! the tuner, since that document is the tuner's projection.
+//! `docs/spec/journal.md` that a journal states about itself, judged from its events alone without running the
+//! tuner's scheduler: sequence and cause integrity, the SMU intent/write/readback protocol, the conclusion of a
+//! finished run and, for Ruleset 13, that an applied nonzero day profile was night-qualified, a promotion respects
+//! every active veto and a live exposure cites its trial. Checking a published `state.json` folds the journal
+//! through the session's readers, since that document is the tuner's projection.
 //!
 //! Offsets the tuner chooses are [`togi_machine::TargetOffset`]s, which cannot leave [-50, 0] and are refused by the
 //! journal's decoder, so a journal holding one is unreadable ([`AuditError`]) rather than a violation. Readbacks and
@@ -12,8 +13,8 @@
 //! `togi-tool-audit` command audits the state directories it is given as runs that may be in progress.
 
 mod auditor;
-mod marks;
 mod report;
+mod rules;
 mod snapshot;
 mod violation;
 mod writes;

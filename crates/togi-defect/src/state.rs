@@ -1,10 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use togi_journal::{
-    CommandReset, DefectAnswer, DefectAnswered, DefectDirection, DefectFound, DefectId, Event,
-    EventKind, FixStamp, Payload, ResetTarget, Seq, TunerDecision,
+    DefectDirection, DefectFound, DefectId, Event, EventKind, FixStamp, Payload, Seq,
 };
-use togi_machine::{CoreId, CoreSet};
+use togi_machine::{CcdId, CoreSet};
 
 use crate::registry::{Entry, KNOWN_DEFECTS, is_ordered};
 
@@ -23,7 +22,6 @@ struct Finding {
     direction: DefectDirection,
     cores: CoreSet,
     decisions: Vec<Seq>,
-    guidance: CoreSet,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -44,12 +42,6 @@ pub struct FindingView<'a> {
     pub direction: DefectDirection,
     pub cores: CoreSet,
     pub decisions: &'a [Seq],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Guidance<'a> {
-    pub finding: FindingView<'a>,
-    pub cores: CoreSet,
 }
 
 #[cfg(test)]
@@ -76,9 +68,8 @@ pub struct DefectState {
     unrecorded: BTreeMap<DefectId, Matches>,
     findings: BTreeMap<DefectId, Finding>,
     order: Vec<DefectId>,
-    answered: BTreeSet<DefectId>,
-    pending_resets: BTreeMap<Seq, CoreSet>,
     excluded: BTreeSet<Seq>,
+    ccds: Vec<(CcdId, CoreSet)>,
     #[cfg(test)]
     #[serde(skip)]
     visits: Visits,
@@ -114,9 +105,8 @@ impl DefectState {
             unrecorded: BTreeMap::new(),
             findings: BTreeMap::new(),
             order: Vec::new(),
-            answered: BTreeSet::new(),
-            pending_resets: BTreeMap::new(),
             excluded: BTreeSet::new(),
+            ccds: Vec::new(),
             #[cfg(test)]
             visits: Visits::default(),
         }
@@ -150,13 +140,31 @@ impl DefectState {
             self.kinds.insert(event.seq, kind);
         }
         match &event.payload {
-            Payload::SessionStart(start) => self.fixes = start.build.fixes,
+            Payload::SessionStart(start) => {
+                self.fixes = start.build.fixes;
+                self.ccds.clear();
+                for info in &start.cores {
+                    match self.ccds.iter_mut().find(|(ccd, _)| *ccd == info.ccd) {
+                        Some((_, cores)) => {
+                            cores.insert(info.core);
+                        }
+                        None => self
+                            .ccds
+                            .push((info.ccd, std::iter::once(info.core).collect())),
+                    }
+                }
+            }
             Payload::ConfigLoaded(loaded) => self.fixes = loaded.build.fixes,
-            Payload::TunerDecision(decision) => self.fold_decision(event, decision),
+            Payload::CcdEdge(edge) => self.fold_decision(event, Some(edge.ccd)),
+            Payload::CcdCap(cap) => self.fold_decision(event, Some(cap.ccd)),
+            Payload::NightPlan(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_) => self.fold_decision(event, None),
             Payload::DefectFound(found) => self.fold_found(event.seq, found),
-            Payload::DefectAnswered(answered) => self.fold_answer(event.seq, answered),
-            Payload::CommandReset(reset) => self.fold_reset(event, *reset),
-            Payload::SessionContext(_)
+            // Older per-core answers and resets are archived history: no Ruleset 13 finding is resolved by them.
+            Payload::DefectAnswered(_)
+            | Payload::CommandReset(_)
+            | Payload::SessionContext(_)
             | Payload::SessionBaseline(_)
             | Payload::SessionNotice(_)
             | Payload::SessionWarning(_)
@@ -194,6 +202,7 @@ impl DefectState {
             | Payload::DeepeningRound(_)
             | Payload::TunerWarning(_)
             | Payload::BackendRetry(_)
+            | Payload::TaskStart(_)
             | Payload::DeadEnd(_)
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
@@ -206,18 +215,33 @@ impl DefectState {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
+            | Payload::TunerDecision(_)
             | Payload::StateRebuilt(_) => {}
         }
     }
 
-    fn fold_decision(&mut self, event: &Event, decision: &TunerDecision) {
+    fn fold_decision(&mut self, event: &Event, ccd: Option<CcdId>) {
+        let cores: CoreSet = ccd
+            .and_then(|ccd| self.ccds.iter().find(|(known, _)| *known == ccd))
+            .map(|(_, cores)| *cores)
+            .unwrap_or_default();
         for entry in self.registry {
             if self.fixes.fixes(entry.id) {
                 continue;
             }
             let mut matched = false;
-            for (cause, cause_kind) in Self::matched_causes(&self.kinds, entry, event, decision) {
+            for (cause, cause_kind) in Self::matched_causes(&self.kinds, entry, event) {
                 matched = true;
                 if cause_kind == EventKind::Failure {
                     self.excluded.insert(cause);
@@ -225,7 +249,7 @@ impl DefectState {
             }
             if matched && !self.findings.contains_key(&entry.id) {
                 let matches = self.unrecorded.entry(entry.id).or_default();
-                matches.cores.insert(decision.core);
+                matches.cores.extend(cores);
                 matches.decisions.push(event.seq);
             }
         }
@@ -235,7 +259,6 @@ impl DefectState {
         kinds: &'a BTreeMap<Seq, EventKind>,
         entry: &'a Entry,
         event: &'a Event,
-        decision: &'a TunerDecision,
     ) -> impl Iterator<Item = (Seq, EventKind)> + 'a {
         event.cause.iter().filter_map(move |&cause| {
             let cause_kind = *kinds.get(&cause)?;
@@ -243,9 +266,7 @@ impl DefectState {
                 .clauses
                 .iter()
                 .any(|clause| {
-                    clause.decision_kind == EventKind::TunerDecision
-                        && clause.decision == decision.decision
-                        && clause.cause_kind == cause_kind
+                    clause.decision_kind == event.kind() && clause.cause_kind == cause_kind
                 })
                 .then_some((cause, cause_kind))
         })
@@ -257,10 +278,6 @@ impl DefectState {
             return;
         }
         self.unrecorded.remove(&id);
-        let guidance = match found.direction {
-            DefectDirection::TooCautious => found.cores,
-            DefectDirection::TooAggressive => CoreSet::default(),
-        };
         self.findings.insert(
             id,
             Finding {
@@ -271,40 +288,9 @@ impl DefectState {
                 direction: found.direction,
                 cores: found.cores,
                 decisions: found.decisions.clone(),
-                guidance,
             },
         );
         self.order.push(id);
-    }
-
-    fn fold_answer(&mut self, seq: Seq, answered: &DefectAnswered) {
-        self.answered.insert(answered.id);
-        if answered.answer == DefectAnswer::Yes && !answered.cores.is_empty() {
-            self.pending_resets.insert(seq, answered.cores);
-        }
-    }
-
-    fn fold_reset(&mut self, event: &Event, reset: CommandReset) {
-        match reset.target {
-            ResetTarget::All => {
-                for finding in self.findings.values_mut() {
-                    finding.guidance = CoreSet::default();
-                }
-            }
-            ResetTarget::Core(core) => {
-                for finding in self.findings.values_mut() {
-                    finding.guidance.remove(core);
-                }
-                for cause in &event.cause {
-                    if let Some(cores) = self.pending_resets.get_mut(cause) {
-                        cores.remove(core);
-                        if cores.is_empty() {
-                            self.pending_resets.remove(cause);
-                        }
-                    }
-                }
-            }
-        }
     }
 
     pub fn new_findings(&self) -> impl Iterator<Item = PendingFinding<'_>> {
@@ -319,31 +305,18 @@ impl DefectState {
         })
     }
 
-    pub fn unanswered(&self) -> impl Iterator<Item = FindingView<'_>> {
-        self.order
-            .iter()
-            .filter(|id| {
-                self.visit();
-                !self.answered.contains(id)
-            })
-            .map(|&id| self.view(id))
+    /// Every recorded finding, in journal order. None is ever resolved inside a session: only `togi reset --all`,
+    /// which starts a fresh one, clears them.
+    pub fn findings(&self) -> impl Iterator<Item = FindingView<'_>> {
+        self.order.iter().map(|&id| {
+            self.visit();
+            self.view(id)
+        })
     }
 
     pub fn finding_seq(&self, id: DefectId) -> Option<Seq> {
         self.visit();
         self.findings.get(&id).map(|finding| finding.seq)
-    }
-
-    pub fn missing_resets(&self) -> impl Iterator<Item = (Seq, CoreId)> {
-        self.pending_resets
-            .iter()
-            .flat_map(move |(&answer, cores)| {
-                self.visit();
-                cores.iter().map(move |core| {
-                    self.visit();
-                    (answer, core)
-                })
-            })
     }
 
     pub fn excludes_failure(&self, failure: Seq) -> bool {
@@ -355,17 +328,6 @@ impl DefectState {
         self.excluded.iter().map(|&failure| {
             self.visit();
             failure
-        })
-    }
-
-    pub fn reset_guidance(&self) -> impl Iterator<Item = Guidance<'_>> {
-        self.order.iter().filter_map(|&id| {
-            self.visit();
-            let cores = self.findings[&id].guidance;
-            (!cores.is_empty()).then(|| Guidance {
-                finding: self.view(id),
-                cores,
-            })
         })
     }
 

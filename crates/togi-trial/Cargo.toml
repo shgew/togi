@@ -15,6 +15,7 @@ nix = { workspace = true, features = ["user", "signal"] }
 rustix = { workspace = true, features = ["fs", "process", "param", "pipe", "thread"] }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 togi-backend.workspace = true
 togi-command.workspace = true

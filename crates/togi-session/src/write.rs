@@ -1,7 +1,7 @@
 //! The one place an offset reaches the SMU.
 //!
-//! A write needs a [`CheckedWrite`], which only [`Hardware`] builds, after the constraint check of the profile the
-//! write would leave on the machine. [`apply`] spends it: the intent is made durable first and yields a receipt, the
+//! A write needs a [`CheckedWrite`], which only [`Hardware`] builds, after checking that the core is the machine's.
+//! [`apply`] spends it: the intent is made durable first and yields a receipt, the
 //! seam write is derived from that receipt, the receipt is spent on the `smu.write`, and each affected core is read
 //! back into the journal. Only a readback that agrees makes a slot [`Slot::Known`], and the [`Verified`] it returns
 //! is what a trial needs to start.
@@ -100,66 +100,8 @@ pub(crate) mod authority;
 pub(crate) use authority::Verified;
 use authority::execute;
 
-/// What prevents the constraint check from accepting the profile a write would leave.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum ConstraintRefusal {
-    #[error("the tuner state holds no standing topology")]
-    NoTopology,
-    #[error("check the profile's cores")]
-    Profile(#[from] togi_tuner::ProfileError),
-    #[error("{0}")]
-    Reached(togi_tuner::Reached),
-    #[error("check the profile against the constraints' topology")]
-    Topology(#[from] togi_tuner::TopologyMismatch),
-}
-
-/// The constraint check of `check_set`: refuses a profile that reaches a failure point or combination the tuner
-/// state holds, one the state cannot judge, or cores other than the topology's. Never reads such a profile as safe.
-#[cfg(test)]
-pub(crate) fn refusal(
-    state: &togi_tuner::State,
-    after: &PerCore<TargetOffset>,
-) -> Option<ConstraintRefusal> {
-    judge(state.topology(), state.constraints(), after)
-}
-
-/// [`refusal`] against the tuner state as it stands now, for a write sequence that appends to the journal the state
-/// is folded from.
-pub(crate) fn checker(
-    state: &togi_tuner::State,
-) -> impl FnMut(&PerCore<TargetOffset>) -> Option<ConstraintRefusal> + use<> {
-    let topology = state.topology().cloned();
-    let constraints = state.constraints().cloned();
-    move |after| judge(topology.as_ref(), constraints.as_ref(), after)
-}
-
-fn judge(
-    topology: Option<&togi_tuner::Topology>,
-    constraints: Option<&togi_tuner::Constraints>,
-    after: &PerCore<TargetOffset>,
-) -> Option<ConstraintRefusal> {
-    let (Some(topology), Some(constraints)) = (topology, constraints) else {
-        return Some(ConstraintRefusal::NoTopology);
-    };
-    let profile = match togi_tuner::Profile::new(topology, *after) {
-        Ok(profile) => profile,
-        Err(error) => return Some(ConstraintRefusal::Profile(error)),
-    };
-    match constraints.reaches(&profile) {
-        Ok(reached) => reached.map(ConstraintRefusal::Reached),
-        Err(mismatch) => Some(ConstraintRefusal::Topology(mismatch)),
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Refused {
-    #[error("refusing to write core {core:02} to {}: check the resulting profile", .target.get())]
-    Reaches {
-        core: CoreId,
-        target: TargetOffset,
-        #[source]
-        refusal: ConstraintRefusal,
-    },
     #[error("refusing to write core {core:02}: the offsets of the other cores are not known")]
     Unknown { core: CoreId },
     #[error("core {core:02} is not on this machine")]
@@ -234,34 +176,14 @@ impl Hardware {
             .collect()
     }
 
-    /// A write of `target` to `core`. When it can deepen the core, `check` sees the profile the machine would hold
-    /// afterwards and names what it reaches; a write that leaves the core as deep or shallower than it is known to
-    /// be, or sets it to 0, moves toward no constraint and is not checked.
+    /// A write of `target` to `core`, which the machine must have.
     pub(crate) fn check_set(
         &mut self,
         core: CoreId,
         target: TargetOffset,
-        check: &mut dyn FnMut(&PerCore<TargetOffset>) -> Option<ConstraintRefusal>,
     ) -> Result<CheckedWrite<'_>, Refused> {
         if !self.cores.contains(core) {
             return Err(Refused::NoSuchCore { core });
-        }
-        let deepens = match self.slots.get(core) {
-            Some(Slot::Known(held)) => target < held,
-            Some(Slot::Unknown) | None => true,
-        };
-        if target.get() < 0 && deepens {
-            let mut after = self
-                .profile_with_unknown(core)
-                .ok_or(Refused::Unknown { core })?;
-            after.set(core, target);
-            if let Some(refusal) = check(&after) {
-                return Err(Refused::Reaches {
-                    core,
-                    target,
-                    refusal,
-                });
-            }
         }
         self.engaged = true;
         Ok(CheckedWrite {
@@ -273,7 +195,7 @@ impl Hardware {
         })
     }
 
-    /// A write of 0 to every core. Nothing to check: 0 reaches no failure point or combination.
+    /// A write of 0 to every core.
     pub(crate) fn zero_all(&mut self) -> CheckedWrite<'_> {
         self.engaged = true;
         CheckedWrite {
@@ -282,17 +204,6 @@ impl Hardware {
                 offset: TargetOffset::ZERO,
             },
         }
-    }
-
-    fn profile_with_unknown(&self, unknown: CoreId) -> Option<PerCore<TargetOffset>> {
-        self.cores
-            .iter()
-            .map(|core| match self.slots.get(core) {
-                Some(Slot::Known(offset)) => Some((core, offset)),
-                Some(Slot::Unknown) | None if core == unknown => Some((core, TargetOffset::ZERO)),
-                Some(Slot::Unknown) | None => None,
-            })
-            .collect()
     }
 }
 
@@ -446,16 +357,30 @@ pub(crate) struct Reading {
 }
 
 /// Reads every core's offset, journals each as a readback without an expected value and lets the hardware know what
-/// it found: a value no write could have put there leaves the slot unknown. A read that fails records `smu.error`.
+/// it found: a value no write could have put there leaves the slot unknown. Each read cites an inherited open intent
+/// for its core on this boot, resolving it without inventing a write. A read that fails records `smu.error`.
 pub(crate) fn read_all(
     appender: &mut Appender,
     smu: &mut dyn Smu,
     hardware: &mut Hardware,
-    causes: &[Seq],
 ) -> Result<Reading, WriteFailure> {
     let mut offsets = PerCore::default();
     let mut readbacks = Vec::with_capacity(hardware.cores.len());
     for core in &hardware.cores {
+        let intent = appender.folds.facts.open.iter().find_map(|open| {
+            if open.boot != *appender.journal().boot() {
+                return None;
+            }
+            let event = appender.journal().event(open.seq)?;
+            if let Payload::SmuIntent(intent) = &event.payload
+                && intent.command().core().is_none_or(|target| target == core)
+            {
+                Some(open.seq)
+            } else {
+                None
+            }
+        });
+        let causes = intent.as_slice();
         let observed = match smu.offset(core) {
             Ok(observed) => observed,
             Err(error) => {
@@ -518,16 +443,15 @@ pub(crate) struct ProfileRequest<'a> {
 }
 
 /// Puts a profile on the machine. When the profile on it is not known, every core is zeroed first. Then the cores
-/// that get shallower are written in core order, then the cores that get deeper, each after the check of the
-/// profile that step leaves. A step that fails leaves the steps before it written and read back and records no
-/// profile.
+/// that get shallower are written in core order, then the cores that get deeper. The profile is the policy's plan,
+/// trusted as the policy built it: only its shape is checked. A step that fails leaves the steps before it written
+/// and read back and records no profile.
 pub(crate) fn apply_profile(
     appender: &mut Appender,
     smu: &mut dyn Smu,
     stopped: &Stopped,
     hardware: &mut Hardware,
     request: ProfileRequest<'_>,
-    check: &mut dyn FnMut(&PerCore<TargetOffset>) -> Option<ConstraintRefusal>,
 ) -> Result<Verified, ProfileFailure> {
     let ProfileRequest {
         target,
@@ -554,7 +478,7 @@ pub(crate) fn apply_profile(
             if wanted == held || (wanted < held) != deeper {
                 continue;
             }
-            let checked = hardware.check_set(core, wanted, check)?;
+            let checked = hardware.check_set(core, wanted)?;
             let step = apply(appender, smu, stopped, checked, causes)?;
             readbacks.extend_from_slice(step.readbacks());
         }

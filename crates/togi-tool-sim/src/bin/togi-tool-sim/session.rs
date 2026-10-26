@@ -3,14 +3,17 @@ use std::io::{self, Write as _};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
+use jiff::SignedDuration;
+use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_config::{Config, DEFAULT_PATH};
-use togi_journal::{Event, Seq};
+use togi_journal::{Event, Payload, Seq};
 use togi_machine::CancellationToken;
 use togi_render::{OutputFacts, Renderer, Style};
-use togi_session::{ConfigSource, Stop, StopPolicy};
+use togi_session::{ConfigSource, Stop};
 use togi_simrun::{Finished, Persistence, Replay, ResumeError, SimInput, SimOutcome};
 use togi_tool_trialfacts::Extracts;
+use togi_tuner::policy::{FoldError, Params, State};
 
 use crate::log::Log;
 use crate::{SessionArgs, build, machine, signals};
@@ -18,9 +21,9 @@ use crate::{SessionArgs, build, machine, signals};
 const FAILED: u8 = 1;
 const CAPPED: u8 = 3;
 
-/// Runs one session, resuming the journal of an existing state directory. Exit status 0 for a stop other than a
-/// dead end, 1 for an error or a dead end, 2 when the recorded checking cycle is not full and `--cycles` could
-/// never be met, 3 when the boot cap ends an unfinished session.
+/// Runs one session, resuming the journal of an existing state directory. The simulated operator ends the night
+/// after `--night-hours`. Exit status 0 for that end, 1 for an error or a night that ends at a dead end, 3 when the
+/// boot cap ends an unfinished session.
 pub(crate) fn run(args: SessionArgs, log: &mut Log) -> u8 {
     run_with(
         args,
@@ -81,15 +84,7 @@ pub(crate) fn run_with(
         Ok(code) => code,
         Err(error) => {
             let _ = writeln!(log, "sim: {}", togi_machine::error_chain(&error));
-            match error {
-                Error::ScheduleNotFull => crate::USAGE,
-                Error::Machine(_)
-                | Error::TempDir(_)
-                | Error::Config(_)
-                | Error::Resume(_)
-                | Error::Signals(_)
-                | Error::Simulate(_) => FAILED,
-            }
+            FAILED
         }
     }
 }
@@ -108,10 +103,8 @@ pub(crate) enum Error {
     Signals(#[source] io::Error),
     #[error(transparent)]
     Simulate(#[from] togi_simrun::SimError),
-    #[error(
-        "--cycles counts passed full cycles, and the checking cycle this state directory recorded is not full"
-    )]
-    ScheduleNotFull,
+    #[error("fold the journal into the policy")]
+    Fold(#[from] FoldError),
 }
 
 fn simulate(
@@ -135,14 +128,15 @@ fn simulate(
     let cold_boots = args.cold_boots;
     let verify_every = args.verify_every;
     let max_boots = args.max_boots;
-    let cycles = args.cycles;
+    let night = SignedDuration::from_hours(i64::from(args.night_hours.get()));
     let write_samples = args.samples;
     let persistence = persistence(args, log)?;
     let config = togi_simrun::recorded_config(&persistence, Config::default())?;
-    if !config.checking_cycle().is_full() {
-        return Err(Error::ScheduleNotFull);
-    }
     let simulator = togi_simrun::resume_simulator(&persistence, model, seed, replay)?;
+    // The night ends a fixed time after it started, however many processes the machine's boots span. A night a
+    // completed stop already closed is over; a rerun opens a fresh one at the simulator's clock.
+    let started = night_started(&togi_simrun::events(&persistence)?, simulator.now())?;
+    let stop_at = Some(started + night);
     let dir = match &persistence {
         Persistence::Files(dir) => dir.as_path(),
         Persistence::Memory(_) => Path::new("/state"),
@@ -163,10 +157,7 @@ fn simulate(
         },
         verify_every: NonZeroU32::new(verify_every),
         max_boots,
-        policy: StopPolicy {
-            cycles: Some(cycles),
-            first_result: false,
-        },
+        stop_at,
         write_samples,
         defects: togi_defect::KNOWN_DEFECTS,
         log: Some(Box::new(log.clone())),
@@ -186,6 +177,34 @@ fn simulate(
         }
         SimOutcome::Stopped(finished) => report(&finished, &persistence, renderer, &zone, log, dir),
     })
+}
+
+/// When the night this run belongs to started: the first event after the latest closing witness the policy
+/// recognizes (`docs/spec/runtime.md`, Night declaration), so an unfinished or crashed night keeps its original start
+/// and a closed one gives way to a fresh night at `now`.
+pub(crate) fn night_started(events: &[Event], now: Timestamp) -> Result<Timestamp, FoldError> {
+    let mut policy = State::new(Params::SPEC);
+    let mut opened = 0;
+    for (index, event) in events.iter().enumerate() {
+        policy.fold(event)?;
+        // Only these kinds can close a night; the policy's projection decides whether this one did.
+        let candidate = matches!(
+            event.payload,
+            Payload::Shutdown(_)
+                | Payload::DayBootStart(_)
+                | Payload::CommandReset(_)
+                | Payload::SessionStart(_)
+        );
+        if candidate
+            && policy
+                .project()
+                .night
+                .is_some_and(|night| night.closed_by == Some(event.seq))
+        {
+            opened = index + 1;
+        }
+    }
+    Ok(events.get(opened).map_or(now, |first| first.time))
 }
 
 fn temporary() -> Result<PathBuf, Error> {
@@ -234,8 +253,13 @@ fn report(
             }
             FAILED
         }
-        Some(Stop::Signal | Stop::Cycles | Stop::FirstResult) if finished.errors.is_empty() => 0,
-        Some(_) => FAILED,
+        Some(Stop::Signal) if finished.errors.is_empty() => 0,
+        Some(Stop::Night(reason)) => {
+            let line = format!("sim: the night ended at a dead end: {reason:?}");
+            let _ = writeln!(log, "{}", renderer.text(Style::RedBold, &line));
+            FAILED
+        }
+        Some(Stop::Signal) => FAILED,
         None => {
             if finished.errors.is_empty() {
                 let _ = writeln!(log, "sim: the session ended without a stop");

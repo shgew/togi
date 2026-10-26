@@ -1,9 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use togi_config::Config;
 use togi_journal::MemFs;
 use togi_journal::fs::{Fault, Fs, Op};
-use togi_session::SessionError;
 use togi_sim::{MachineDefinition, Model};
 use togi_simrun::{Persistence, ResumeError, SimError, SimOutcome, resume_simulator, simulate};
 
@@ -53,8 +51,17 @@ fn resumed(definition: &MachineDefinition, seed: u64, store: &impl Store) -> tog
     .unwrap()
 }
 
+/// The whole night's input: the stop time is the first process's start plus the night, so a continuation that
+/// resumes at a later clock stops at the same instant as an uninterrupted run.
+fn night_input(sim: togi_sim::Simulator, persistence: Persistence) -> togi_simrun::SimInput {
+    let end = simulator(&hunt_machine(2), 1).now() + crate::common::NIGHT;
+    let mut run = input(sim, persistence);
+    run.stop_at = Some(end);
+    run
+}
+
 fn to_the_end(sim: togi_sim::Simulator, store: &impl Store) {
-    let outcome = simulate(input(sim, store.persistence())).unwrap();
+    let outcome = simulate(night_input(sim, store.persistence())).unwrap();
     assert!(
         matches!(outcome, SimOutcome::Stopped(_)),
         "capped at the full cap"
@@ -71,7 +78,7 @@ fn capped(
     store: &impl Store,
     boots: u32,
 ) -> serde_json::Value {
-    let mut first = input(simulator(definition, seed), store.persistence());
+    let mut first = night_input(simulator(definition, seed), store.persistence());
     first.max_boots = nz(boots);
     let outcome = simulate(first).unwrap();
     assert!(
@@ -190,28 +197,27 @@ fn a_capped_simulation_keeps_its_pending_machine_checks_for_the_next_process() {
 }
 
 #[test]
-fn a_continuation_that_starts_nothing_keeps_the_saved_machine() {
+fn a_continuation_on_another_machine_is_refused_and_keeps_the_saved_machine() {
     let definition = hunt_machine(2);
     let whole = MemFs::new();
     to_the_end(simulator(&definition, 1), &whole);
 
     let split = MemFs::new();
     let saved = capped(&definition, 1, &split, 3);
-    let mut rejected = input(resumed(&definition, 1, &split), split.persistence());
-    rejected.config = Config::parse(r#"{"start_offsets": {"15": -10}}"#).unwrap();
-    let SimOutcome::Stopped(finished) = simulate(rejected).unwrap() else {
-        panic!("a refused configuration capped the simulation");
+    let journaled = split.text("events.jsonl");
+    // Four cores is the least a Ruleset 13 night runs on, and the simulator itself refuses a machine with another
+    // core count before the session sees a changed topology.
+    let Err(ResumeError::Restore(_)) = resume_simulator(
+        &split.persistence(),
+        Model::new(&hunt_machine(6), 1).unwrap(),
+        1,
+        None,
+    ) else {
+        panic!("a machine with other cores was resumed");
     };
-    assert!(
-        matches!(
-            finished.errors.as_slice(),
-            [SessionError::NoSuchCore { .. }]
-        ),
-        "{:?}",
-        finished.errors
-    );
     let kept: serde_json::Value = serde_json::from_slice(&split.bytes(MACHINE).unwrap()).unwrap();
     assert_eq!(kept, saved);
+    assert_eq!(split.text("events.jsonl"), journaled);
 
     to_the_end(resumed(&definition, 1, &split), &split);
     assert_eq!(whole.text("events.jsonl"), split.text("events.jsonl"));
@@ -258,7 +264,8 @@ fn a_continuation_that_cannot_remove_the_superseded_machine_fails() {
     let sim = resumed(&definition, 1, &store);
     store.inject(Fault::before(Op::Remove, 1).named(MACHINE));
 
-    let Err(SimError::Machine { path, .. }) = simulate(input(sim, store.persistence())) else {
+    let Err(SimError::Machine { path, .. }) = simulate(night_input(sim, store.persistence()))
+    else {
         panic!("a kept superseded machine was not a machine failure");
     };
     assert_eq!(path, store.path(MACHINE));
@@ -277,7 +284,7 @@ fn a_continuation_that_fails_after_a_warm_crash_still_publishes_the_crashed_boot
     let before = store.bytes("state.json");
     let reference = MemFs::new();
     capped(&definition, 1, &reference, 3);
-    let mut one_boot = input(resumed(&definition, 1, &reference), reference.persistence());
+    let mut one_boot = night_input(resumed(&definition, 1, &reference), reference.persistence());
     one_boot.max_boots = nz(1);
     assert!(matches!(
         simulate(one_boot).unwrap(),
@@ -287,7 +294,7 @@ fn a_continuation_that_fails_after_a_warm_crash_still_publishes_the_crashed_boot
     let sim = resumed(&definition, 1, &store);
     store.inject(Fault::before(Op::Remove, 1).named(MACHINE));
     assert!(matches!(
-        simulate(input(sim, store.persistence())),
+        simulate(night_input(sim, store.persistence())),
         Err(SimError::Machine { .. })
     ));
 

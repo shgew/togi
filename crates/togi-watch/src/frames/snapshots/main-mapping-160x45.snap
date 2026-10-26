@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│
+│  ► NIGHT since 22:13 · 0h30m  ───  mapping CCD 1 at -20
+│
+│  ▌  MAPPING   Mapping CCD 1 at -20 (mapping task 3).
+│
+│
+│  NOW ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial t1
+│   R1   light load  on 08-15   mprime SSE 4K-21K · 8 workers                                                                             MAPPING CCD 1 AT -20
+│  █████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  9:20 left
+│
+│
+│
+│
+│
+│  CCD 0 idle         0       -10       -20       -30       -40       -50          CCD 1 all loaded   0       -10       -20       -30       -40       -50
+│  D -10 · S -26 fallback slope · rate R1 · U fails at -31 · 16 counts to S        D -8 · S -15 measured slope · rate R1 · U censored at -50 · 7 counts to S
+│  3 covered for the cap · 1 uncovered for the cap                                 4 covered for the cap · 0 uncovered for the cap
+│    00  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                             ► 08   -8  LOADED   ▄▄▄▄▄▄▄▄·······                                  ▄
+│    01  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                             ► 09   -8  LOADED   ▄▄▄▄▄▄▄▄·······                                  ▄
+│    02  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                             ► 10   -8  LOADED   ▄▄▄▄▄▄▄▄·······                                  ▄
+│    03  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                             ► 11   -8  LOADED   ▄▄▄▄▄▄▄▄·······                                  ▄
+│    04  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                             ► 12   -8  LOADED   ▄▄▄▄▄▄▄▄·······                                  ▄
+│    05  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                             ► 13   -8  LOADED   ▄▄▄▄▄▄▄▄·······                                  ▄
+│    06  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                             ► 14   -8  LOADED   ▄▄▄▄▄▄▄▄·······                                  ▄
+│    07  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                             ► 15   -8  LOADED   ▄▄▄▄▄▄▄▄·······                                  ▄
+│
+│  NIGHT since 22:13 · 0h30m elapsed ─────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+│  task        mapping task 2 · 1 of 2 planned tasks done
+│  mapping     CCD 1 at -20                                                        22:13  start    session started on 16 cores
+│  shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%
+│
+│  DAY ──────────────────────────────────────────────────────── applied -10/-8
+│  hold        3h00m of 8h00m · holding -10/-8
+│  firmware    valid
+│
+│
+│
+│
+│
+│
+│
+│
+│   ?  help    l  log    esc  back    q  exit dashboard

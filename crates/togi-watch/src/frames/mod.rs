@@ -3,7 +3,7 @@
 //! - [`render`]: one frame of the journal on a screen, and how long it stays true.
 //! - [`Paint`] and [`colours_for`]: the drawing roles the panels paint with and
 //!   how each [`Colours`](crate::screen::Colours) profile applies them.
-//! - [`cut_words`], [`fit_clauses`], [`CoreNote`] and the rest of the fitting:
+//! - [`cut_words`], [`fit_clauses`] and the rest of the fitting:
 //!   every line is measured as the screen shows it, escaped, and never cut
 //!   inside a value or a word.
 //! - [`Layout`] and [`check_frame_bounds`]: the size classes and the frame area,
@@ -19,10 +19,11 @@ mod fit;
 mod footer;
 #[cfg(test)]
 mod frame_tests;
+#[cfg(test)]
+mod hand;
 mod help;
 mod layout;
 mod measure;
-mod notes;
 mod panels;
 mod render;
 mod scene;
@@ -30,7 +31,6 @@ mod scroll;
 #[cfg(test)]
 mod snapshots;
 mod story;
-mod terms;
 #[cfg(test)]
 pub(crate) mod testing;
 
@@ -43,6 +43,5 @@ pub use fit::{
 pub use footer::{footer, key_hints};
 pub use help::{help_body, title_rule};
 pub use layout::{Layout, Rows, SizeClass, check_frame_bounds, frame_area};
-pub use notes::{CoreNote, offset_list, top_note};
 pub use render::render;
 pub use scroll::{scroll_body_with_bar, scrollbar};

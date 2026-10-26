@@ -2,10 +2,9 @@ use jiff::SignedDuration;
 use togi_journal::{Outcome, TrialClass};
 use togi_machine::{Condition, PerCore, Regime};
 
-use super::evidence::carried;
-use super::support::{EPOCH, Log, end, intent, rendered, set, trial_start, workload};
+use super::support::{EPOCH, Log, carried, end, intent, rendered, set, trial_start, workload};
 use crate::project::Projection;
-use crate::r7::{RequestCounts, render_requests, requests};
+use crate::requests::{RequestCounts, render_requests, requests};
 
 fn measured(requests: &[(i64, f64)]) -> PerCore<f64> {
     requests
@@ -206,5 +205,8 @@ fn carried_facts_count_once_per_source_and_only_with_both_request_fields() {
         )]
     );
     let later = Some(EPOCH + SignedDuration::from_secs(1000));
-    assert_eq!(requests(&p, later), crate::r7::RequestMetrics::default());
+    assert_eq!(
+        requests(&p, later),
+        crate::requests::RequestMetrics::default()
+    );
 }

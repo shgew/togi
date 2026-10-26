@@ -1,8 +1,8 @@
 use std::convert::Infallible;
 
 use togi_machine::{
-    CancellationToken, Partial, Reporter, Running, Started, Stopped, Swept, TrialConditions,
-    TrialResult, TrialSpec, Trials,
+    CancellationToken, ContentId, Partial, Reporter, Running, Started, Stopped, Swept,
+    TrialConditions, TrialResult, TrialSpec, Trials, WorkloadId,
 };
 
 use crate::error::Error;
@@ -46,6 +46,10 @@ impl Trials for Runner {
     }
 
     fn ended(&mut self, _: &str) -> Result<(), togi_machine::Error> {
+        match self.0 {}
+    }
+
+    fn content(&mut self, _: WorkloadId) -> Result<ContentId, togi_machine::Error> {
         match self.0 {}
     }
 

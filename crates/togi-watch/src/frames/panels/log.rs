@@ -112,7 +112,7 @@ pub(super) fn arrivals(log: &Log<'_>, colours: Colours) -> Vec<Clause> {
         return Vec::new();
     }
     let count = format!("{} {}", log.arrived, noun(log.arrived, "new event"));
-    let amber = |text: String| Line::styled(text, Paint::Hunt.style(colours));
+    let amber = |text: String| Line::styled(text, Paint::Warn.style(colours));
     vec![Clause::new(
         "   ",
         vec![
@@ -653,6 +653,6 @@ mod tests {
             .iter()
             .find(|span| span.content.contains(&count))
             .expect("the count span");
-        assert_eq!(amber.style, Paint::Hunt.style(Colours::Full));
+        assert_eq!(amber.style, Paint::Warn.style(Colours::Full));
     }
 }

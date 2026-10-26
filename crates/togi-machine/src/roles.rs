@@ -301,7 +301,8 @@ impl TrialRole {
 impl TrialSpec {
     /// Checks the trial's roles against the topology: they must be exactly the ones the trial's regime derives
     /// for its request, and its cores and CPUs must be the ones they load. An R8 trial's light core and heavy
-    /// workload and an R9 trial's serial CPU come from the roles themselves.
+    /// workload and an R9 trial's serial CPU come from the roles themselves; an R9 trial loads every logical
+    /// CPU of its cores, which an isolated trial limits to one CCD.
     pub fn check_roles(&self, topology: &[CoreInfo]) -> Result<(), InvalidRoles> {
         let first = self.roles.first().ok_or(InvalidRoles::NoRoles)?;
         let derived = match self.regime {
@@ -327,7 +328,12 @@ impl TrialSpec {
                         matches!(role.schedule, PhaseSchedule::Alternate { serial: true, .. })
                     })
                     .ok_or(InvalidRoles::NoAnchor)?;
-                TrialRole::all_threads(self.workload, serial.cpu, topology)?
+                let loaded: Vec<CoreInfo> = topology
+                    .iter()
+                    .filter(|info| self.cores.contains(&info.core))
+                    .cloned()
+                    .collect();
+                TrialRole::all_threads(self.workload, serial.cpu, &loaded)?
             }
             Regime::R1
             | Regime::R2

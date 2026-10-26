@@ -5,22 +5,22 @@ use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::time::Duration;
 
 use togi_journal::{
-    BackendRetry, Mce, Payload, RetryTarget, Seq, TrialEnd, TrialId, TrialInstance, TrialSignal,
-    TrialStart,
+    BackendRetry, Mce, Payload, RetryTarget, Seq, TaskStart, TrialEnd, TrialId, TrialInstance,
+    TrialSignal, TrialStart, WorkloadContent,
 };
 use togi_machine::{
-    Backend, CancellationToken, Condition, CoreId, CpuId, Error, Partial, PerCore, Running,
-    TargetOffset, TrialResult, TrialRole, TrialSpec, WorkloadId,
+    Backend, CancellationToken, Condition, ControllerContract, CoreId, CoreSet, CpuId, Error,
+    Partial, PerCore, Running, TargetOffset, TrialResult, TrialRole, TrialSpec,
 };
-use togi_tuner::{Load, TrialPlan};
+use togi_tuner::policy::TrialPlan;
 
-use crate::error::{Flow, SessionError, Step};
+use crate::error::{SessionError, Step};
 use crate::evidence::{self, RecordedMce, TrialEvidence};
-use crate::execute::{TunerValues, is_crash_flow};
+use crate::execute::is_crash_flow;
 use crate::recover::append_trial_end;
 use crate::session::{Boundary, Control, Fault, Lifecycle, Session, Stop, Swept, TrialWindow};
 use crate::trial::{self, Journaled};
-use crate::write::{self, ProfileFailure, ProfileRecord, ProfileRequest};
+use crate::write::{self, ProfileRecord, ProfileRequest};
 
 const fn retry_target(backend: Backend) -> RetryTarget {
     match backend {
@@ -36,8 +36,8 @@ struct Trial<'p> {
     since: Duration,
     /// The event the trial's later records cite: its intent, then its start.
     start: Seq,
-    /// The core a trial alone sets and resets around its run.
-    alone: Option<CoreId>,
+    /// The cores the trial loads.
+    cores: CoreSet,
     roles: Vec<TrialRole>,
     controller: Option<togi_journal::ControllerEvidence>,
 }
@@ -92,58 +92,60 @@ struct Waited {
 }
 
 impl Session<'_> {
-    pub(crate) fn run(&mut self, plan: &TrialPlan, tuned: &TunerValues<'_>) -> Step<Control> {
+    pub(crate) fn run(&mut self, plan: &TrialPlan) -> Step<Control> {
         if self.cancel.is_cancelled() {
             return Ok(self.shut_down(Stop::Signal));
         }
-        self.ensure_condition(plan, tuned)?;
-        let core = match plan.load {
-            Load::Single(core) => Some(core),
-            Load::Many(_) => None,
-        };
-        let rotation = self.appender.recovery().rotation(core, plan.regime);
-        let rotation = usize::try_from(rotation).map_err(SessionError::WorkloadRotation)?;
-        let workload = plan.workload_at(rotation);
-        if let stop @ Control::Stop(_) = self.wait_for_backend(workload.backend())? {
-            return Ok(stop);
+        // The task's start is durable before its preparation and waits, so a restart that resumes the task keeps
+        // charging them, and the downtime between, to it.
+        if self
+            .appender
+            .recovery()
+            .task_start(plan.night, plan.task)
+            .is_none()
+        {
+            let start = TaskStart {
+                night: plan.night,
+                task: plan.task,
+            };
+            self.appender
+                .append(Payload::TaskStart(start), &plan.causes)?;
         }
-        self.trial(plan, rotation, workload)?;
+        let task_start = self.appender.recovery().task_start(plan.night, plan.task);
+        self.ensure_profile(plan)?;
+        let mut backends: Vec<Backend> = Vec::new();
+        for workload in plan.workloads() {
+            let backend = workload.backend();
+            if !backends.contains(&backend) {
+                backends.push(backend);
+            }
+        }
+        for backend in backends {
+            if let stop @ Control::Stop(_) = self.wait_for_backend(backend)? {
+                return Ok(stop);
+            }
+        }
+        self.trial(plan, task_start)?;
         Ok(match self.check_dead_end()? {
             Some(stop) => Control::Stop(stop),
             None => Control::Continue,
         })
     }
 
-    /// Puts the machine on the profile the trial's condition calls for: every offset 0 for a trial alone, the profile
-    /// the tuner stands at for one together, the profile the trial froze for a parked one. Nothing is written when
-    /// that profile is applied under that condition already.
-    pub(crate) fn ensure_condition(
-        &mut self,
-        plan: &TrialPlan,
-        tuned: &TunerValues<'_>,
-    ) -> Step<()> {
-        let target: PerCore<TargetOffset> = match plan.condition {
-            Condition::Alone => self
-                .hardware
-                .cores()
-                .iter()
-                .map(|core| (core, TargetOffset::ZERO))
-                .collect(),
-            Condition::Together => {
-                let Some(profile) = tuned.profile.filter(|profile| **profile == plan.profile)
-                else {
-                    return Err(SessionError::PlanDisagrees.into());
-                };
-                profile.offsets()
-            }
-            Condition::Parked => plan.profile.offsets(),
-        };
+    /// Puts the machine on the whole profile the plan runs at. Nothing is written when that profile is applied
+    /// already.
+    pub(crate) fn ensure_profile(&mut self, plan: &TrialPlan) -> Step<()> {
+        let target: PerCore<TargetOffset> = plan
+            .profile
+            .expand(&self.topology)
+            .map_err(togi_tuner::policy::PlanError::from)
+            .map_err(SessionError::Plan)?;
         let applied = self
             .appender
             .recovery()
             .applied(&self.boot)
             .map(|(_, condition)| condition);
-        if applied == Some(plan.condition)
+        if applied == Some(Condition::Together)
             && matches!(
                 &self.lifecycle,
                 Lifecycle::Swept(Swept {
@@ -163,8 +165,6 @@ impl Session<'_> {
         else {
             return Err(SessionError::Unproven.into());
         };
-        let causes: Vec<Seq> = tuned.profile_seq.into_iter().collect();
-        let mut check = write::checker(self.appender.tuner());
         *confirmed = None;
         *confirmed = Some(write::apply_profile(
             &mut self.appender,
@@ -173,36 +173,9 @@ impl Session<'_> {
             &mut self.hardware,
             ProfileRequest {
                 target: &target,
-                causes: &causes,
-                record: ProfileRecord::Applied(plan.condition),
+                causes: &plan.causes,
+                record: ProfileRecord::Applied(Condition::Together),
             },
-            &mut check,
-        )?);
-        Ok(())
-    }
-
-    /// Writes one core's offset and reads it back, as the trial alone does around its run.
-    fn write_core(&mut self, core: CoreId, offset: TargetOffset, causes: &[Seq]) -> Step<()> {
-        let Lifecycle::Swept(Swept {
-            stopped: Some(stopped),
-            confirmed,
-            ..
-        }) = &mut self.lifecycle
-        else {
-            return Err(SessionError::Unproven.into());
-        };
-        let mut check = write::checker(self.appender.tuner());
-        *confirmed = None;
-        let checked = self
-            .hardware
-            .check_set(core, offset, &mut check)
-            .map_err(|refused| Flow::from(ProfileFailure::from(refused)))?;
-        *confirmed = Some(write::apply(
-            &mut self.appender,
-            &mut *self.smu,
-            stopped,
-            checked,
-            causes,
         )?);
         Ok(())
     }
@@ -241,120 +214,80 @@ impl Session<'_> {
         }
     }
 
-    /// The cores a trial loads and the CPUs its workload may use: the first CPU of each core of a joint trial, as
-    /// many of a lone core's CPUs as the workload has threads.
-    fn assign(
-        &self,
-        plan: &TrialPlan,
-        workload: WorkloadId,
-    ) -> Result<(Vec<CoreId>, Vec<CpuId>), SessionError> {
-        let info = |core: CoreId| {
-            self.topology
-                .binary_search_by_key(&core, |info| info.core)
-                .ok()
-                .map(|index| &self.topology[index])
-                .filter(|info| !info.cpus.is_empty())
-                .ok_or(SessionError::NoSuchTrialCore { core })
-        };
-        match plan.load {
-            Load::Many(set) => {
-                let mut cpus = Vec::new();
-                let mut cores = Vec::new();
-                for core in set {
-                    cpus.push(info(core)?.cpus[0]);
-                    cores.push(core);
-                }
-                Ok((cores, cpus))
-            }
-            Load::Single(core) => {
-                let info = info(core)?;
-                let threads = usize::from(workload.workload().threads).max(1);
-                let cpus = info.cpus[..threads.min(info.cpus.len())].to_vec();
-                Ok((vec![core], cpus))
-            }
-        }
-    }
-
-    fn trial(&mut self, plan: &TrialPlan, rotation: usize, workload: WorkloadId) -> Step<()> {
+    fn trial(&mut self, plan: &TrialPlan, task_start: Option<jiff::Timestamp>) -> Step<()> {
         if self.lifecycle.stopped().is_none() {
             return Err(SessionError::Unproven.into());
         }
-        let (cores, cpus) = self.assign(plan, workload)?;
+        let mut content = Vec::new();
+        for workload in plan.workloads() {
+            content.push(WorkloadContent {
+                workload,
+                content: self.content(workload)?,
+            });
+        }
         let id = self.appender.recovery().next_trial_id();
         let boundary = self.kernel_boundary(None, false, &[])?;
-        let mut intent = plan.intent(id.clone(), rotation);
+        let mut intent = plan
+            .intent(id.clone(), &self.topology, content)
+            .map_err(SessionError::Plan)?;
         intent.kernel_cursor = boundary.cursor;
         intent.kernel_error = boundary.error;
+        intent.task_start = task_start;
+        let workload = intent.workload;
         let intent = self
             .appender
-            .append(Payload::TrialIntent(intent), &plan.cause)?;
-        let alone = match (plan.condition, plan.load) {
-            (Condition::Alone, Load::Single(core)) => Some(core),
-            (Condition::Alone, Load::Many(_))
-            | (Condition::Together | Condition::Parked, Load::Single(_) | Load::Many(_)) => None,
-        };
-        if let Some(core) = alone {
-            let offset = plan
-                .profile
-                .get(core)
-                .ok_or(SessionError::NoSuchTrialCore { core })?;
-            self.write_core(core, offset, &[intent])?;
-        }
+            .append(Payload::TrialIntent(intent), &plan.causes)?;
         let since = self
             .appender
             .clock()
             .monotonic()
             .map_err(SessionError::Machine)?;
         let window_start_ns = u64::try_from(since.as_nanos()).map_err(SessionError::Monotonic)?;
+        let roles = plan
+            .roles(intent.get(), &self.topology)
+            .map_err(SessionError::Plan)?;
+        let mut cores: Vec<CoreId> = Vec::new();
+        let mut cpus: Vec<CpuId> = Vec::new();
+        for role in &roles {
+            if !cores.contains(&role.core) {
+                cores.push(role.core);
+            }
+            if !cpus.contains(&role.cpu) {
+                cpus.push(role.cpu);
+            }
+        }
         let spec = TrialSpec {
             id: id.as_str().to_owned(),
-            regime: plan.regime,
+            regime: plan.cell.regime(),
             workload,
-            roles: TrialRole::legacy(
-                plan.regime,
-                workload,
-                intent.get(),
-                &cores,
-                &cpus,
-                &self.topology,
-            )
-            .map_err(SessionError::TrialRoles)?,
-            condition: plan.condition,
+            roles,
+            condition: Condition::Together,
             cores,
             cpus,
-            duration: Duration::from_secs(u64::from(plan.duration.get())),
-            index: rotation,
+            duration: Duration::from_secs(u64::from(plan.cell.duration.get())),
+            index: 0,
             seed: intent.get(),
             offsets: self.hardware.confirmed(),
-            controller: self
-                .controller
+            controller: ControllerContract::Managed
                 .for_trial(self.appender.recovery().controller_rotation()),
         };
-        let controller = if matches!(
-            spec.controller,
-            togi_machine::ControllerMode::Managed { .. }
-        ) {
-            let pid = std::process::id();
-            Some(togi_journal::ControllerEvidence {
-                pid,
-                threads: Vec::new(),
-                workers: std::collections::BTreeMap::default(),
-                tested_cpus: self
-                    .topology
-                    .iter()
-                    .filter(|info| spec.cores.contains(&info.core))
-                    .flat_map(|info| info.cpus.iter().copied())
-                    .collect(),
-            })
-        } else {
-            None
-        };
+        let controller = Some(togi_journal::ControllerEvidence {
+            pid: std::process::id(),
+            threads: Vec::new(),
+            workers: std::collections::BTreeMap::default(),
+            tested_cpus: self
+                .topology
+                .iter()
+                .filter(|info| spec.cores.contains(&info.core))
+                .flat_map(|info| info.cpus.iter().copied())
+                .collect(),
+        });
         let mut trial = Trial {
             plan,
             id,
             since,
             start: intent,
-            alone,
+            cores: spec.cores.iter().copied().collect(),
             roles: spec.roles.clone(),
             controller,
         };
@@ -564,7 +497,7 @@ impl Session<'_> {
         }
     }
 
-    /// Ends the trial: resets the core it set, reads the kernel log for machine checks of its window, adds the
+    /// Ends the trial: reads the kernel log for machine checks of its window, adds the
     /// evidence up and records the end. A trial the machine crashed in with no evidence of its own is left open for
     /// the recovery to close.
     fn end_trial(
@@ -660,7 +593,7 @@ impl Session<'_> {
             mces: &mces,
             reset: None,
             missing: missing.as_deref(),
-            duration: Duration::from_secs(u64::from(trial.plan.duration.get())),
+            duration: Duration::from_secs(u64::from(trial.plan.cell.duration.get())),
             containment,
         }) {
             Ok(adjudication) => adjudication,
@@ -687,9 +620,7 @@ impl Session<'_> {
             kernel_cursor: boundary.cursor,
             kernel_error,
             signal: adjudication.signal,
-            core: adjudication
-                .core
-                .filter(|_| trial.plan.condition != Condition::Alone || process_failure.is_some()),
+            core: adjudication.core,
             tctl_max_c: adjudication.tctl_max_c,
             reason,
             interrupted: interrupted || crashed,
@@ -706,8 +637,8 @@ impl Session<'_> {
         let topology = self.appender.recovery().topology();
         let summary = evidence::summarize_samples(
             self.trials.samples(trial.id.as_str()),
-            trial.plan.load.cores(),
-            trial.plan.regime,
+            trial.cores,
+            trial.plan.cell.regime(),
             |core| topology.get(core).flatten(),
         );
         let mut causes = vec![trial.start];
@@ -775,12 +706,8 @@ impl Session<'_> {
         })
     }
 
-    /// Resets the core a trial alone set, then reads the kernel log: machine checks since the trial's window began
-    /// are the trial's, including those the reset provoked.
+    /// Reads the kernel log: machine checks since the trial's window began are the trial's.
     fn teardown(&mut self, trial: &Trial<'_>) -> Step<Boundary> {
-        if let Some(core) = trial.alone {
-            self.write_core(core, TargetOffset::ZERO, &[trial.start])?;
-        }
         self.kernel_boundary(
             Some(TrialWindow {
                 trial: &trial.id,
@@ -791,6 +718,3 @@ impl Session<'_> {
         )
     }
 }
-
-#[cfg(test)]
-mod tests;

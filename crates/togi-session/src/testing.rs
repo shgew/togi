@@ -1,37 +1,29 @@
 //! A simulated machine, an in-memory journal and an appender over them, for the crate's tests.
 
-use std::collections::BTreeMap;
 use std::io;
-use std::num::{NonZeroU16, NonZeroU32};
 
 use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use togi_config::Config;
 use togi_defect::Entry;
 use togi_journal::{
-    Activity, Build, Event, FixStamp, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart,
-    StateDir, fs::Fault, fs::Op,
+    Build, Event, FixStamp, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart, StateDir,
+    fs::Fault, fs::Op,
 };
 use togi_machine::{
-    BootId, CancellationToken, Condition, CoreId, CoreSet, Machine, ObservedOffset, PerCore,
-    Regime, Smu, SmuValidated, Stopped, TargetOffset, pick_workload,
+    BootId, CancellationToken, Condition, CoreId, CoreSet, Machine, ObservedOffset, PerCore, Smu,
+    SmuValidated, TargetOffset,
 };
-use togi_machine::{Error, Partial, Running, Swept, TrialSpec, Trials};
 use togi_render::Renderer;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
-use togi_tuner::{
-    Action, ClassKey, Load, Profile, Requirement, Secs, TrialContext, TrialPlan, Window,
-    WorkloadChoice,
-};
-use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
 use crate::appender::Appender;
 use crate::boot::BootHandoff;
 use crate::emergency::SweepCleared;
 use crate::error::AppendFailure;
-use crate::execute::TunerValues;
-use crate::session::{ConfigSource, Control, Lifecycle, RunInput, Session, StopPolicy};
-use crate::write::{Hardware, ProfileRecord, ProfileRequest, apply_profile, checker};
+use crate::session::{ConfigSource, Control, Lifecycle, RunInput, Session};
+use crate::write::{Hardware, ProfileRecord, ProfileRequest, apply_profile};
 
 pub(crate) struct Rig {
     pub sim: Simulator,
@@ -266,21 +258,36 @@ impl Bench {
             boot,
             journal,
             machine,
-            policy: StopPolicy::default(),
             publication: crate::publication::PublicationPolicy::OnFinish,
             bootloader: None,
-            prompt: None,
             defects: self.defects,
             resume: None,
-            carry: None,
+            import: None,
             log: None,
             on_append: None,
             renderer: Renderer::default(),
             zone: TimeZone::UTC,
             cancel: CancellationToken::new(),
             report: Box::new(io::sink()),
-            controller: togi_machine::ControllerContract::Legacy,
         }
+    }
+
+    /// When the operator ends a short night: room for one control trial (104 s) and not for a second.
+    pub(crate) fn short_night(&self) -> Timestamp {
+        self.sim.now() + SignedDuration::from_secs(150)
+    }
+
+    /// What a run is given whose operator ends it, as F10 or a stop signal would, at the first event appended at
+    /// or after `at`.
+    pub(crate) fn input_ending_at(&self, at: Timestamp) -> RunInput<'static> {
+        let mut input = self.input();
+        let cancel = input.cancel.clone();
+        input.on_append = Some(Box::new(move |event| {
+            if event.time >= at {
+                cancel.cancel();
+            }
+        }));
+        input
     }
 
     pub(crate) fn open(&self) -> Session<'static> {
@@ -305,71 +312,6 @@ fn rig_starts_a_session() {
     let rig = Rig::new(4);
     assert_eq!(rig.kinds(), ["session.start"]);
     assert_fold_consistent(&rig.appender);
-}
-
-/// A bootloader environment that holds nothing.
-#[derive(Default)]
-pub(crate) struct MemBoot(BTreeMap<String, String>);
-
-impl Environment for MemBoot {
-    fn get(&mut self, name: &str) -> io::Result<Option<String>> {
-        Ok(self.0.get(name).cloned())
-    }
-
-    fn set(&mut self, values: &[(&str, &str)]) -> io::Result<()> {
-        for (name, value) in values {
-            self.0.insert((*name).to_owned(), (*value).to_owned());
-        }
-        Ok(())
-    }
-
-    fn unset(&mut self, names: &[&str]) -> io::Result<()> {
-        for name in names {
-            self.0.remove(*name);
-        }
-        Ok(())
-    }
-}
-
-impl Bootloader for MemBoot {
-    fn clear_saved_entry(&mut self) -> io::Result<SavedEntry> {
-        let before = self.0.remove("saved_entry").unwrap_or_default();
-        Ok(SavedEntry {
-            before,
-            after: String::new(),
-        })
-    }
-}
-
-/// Trials whose sweep fails with `error`; everything else is the simulator's.
-pub(crate) struct SweepFails(pub Box<dyn Trials>, pub fn() -> Error);
-
-impl Trials for SweepFails {
-    fn sweep(&mut self, _cancel: &CancellationToken) -> Result<Swept, Error> {
-        Err((self.1)())
-    }
-
-    fn start(
-        &mut self,
-        cancel: &CancellationToken,
-        spec: TrialSpec,
-        ready: Stopped,
-    ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-        self.0.start(cancel, spec, ready)
-    }
-
-    fn ended(&mut self, id: &str) -> Result<(), Error> {
-        self.0.ended(id)
-    }
-
-    fn samples<'a>(
-        &'a self,
-        id: &'a str,
-    ) -> Box<
-        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
-    > {
-        self.0.samples(id)
-    }
 }
 
 pub(crate) fn offsets(values: &[i64]) -> PerCore<TargetOffset> {
@@ -400,7 +342,6 @@ pub(crate) fn recorded_baseline(session: &mut Session, values: &[i64]) {
 
 pub(crate) fn put(session: &mut Session, values: &[i64]) {
     let target = offsets(values);
-    let mut check = checker(session.appender.tuner());
     apply_profile(
         &mut session.appender,
         &mut *session.smu,
@@ -411,7 +352,6 @@ pub(crate) fn put(session: &mut Session, values: &[i64]) {
             causes: &[],
             record: ProfileRecord::Applied(Condition::Together),
         },
-        &mut check,
     )
     .unwrap();
 }
@@ -423,178 +363,58 @@ pub(crate) fn swept(bench: &Bench) -> Session<'static> {
     session
 }
 
-/// A host whose SMU validation fails with `error`; everything else is the simulator's.
-pub(crate) struct ValidationFails(pub Box<dyn togi_machine::Host>, pub fn() -> Error);
-
-impl togi_machine::Host for ValidationFails {
-    fn boot_id(&mut self) -> Result<BootId, Error> {
-        self.0.boot_id()
-    }
-
-    fn topology(&mut self) -> Result<Vec<togi_machine::CoreInfo>, Error> {
-        self.0.topology()
-    }
-
-    fn validate_smu(&mut self) -> Result<SmuValidated, Error> {
-        Err((self.1)())
-    }
-
-    fn bios_context(&mut self) -> Result<togi_machine::BiosContext, Error> {
-        self.0.bios_context()
-    }
-
-    fn ranking(
-        &mut self,
-    ) -> Result<Vec<togi_machine::CoreRank>, Partial<Vec<togi_machine::CoreRank>>> {
-        self.0.ranking()
-    }
-
-    fn preflight(&mut self) -> Vec<togi_machine::Check> {
-        self.0.preflight()
-    }
-
-    fn watchdog(&mut self) -> togi_machine::Check {
-        self.0.watchdog()
-    }
-}
-
 pub(crate) fn begun(bench: &Bench) -> Session<'static> {
     let mut session = swept(bench);
     assert_eq!(session.begin().unwrap(), Control::Continue);
     session
 }
 
-/// The search trial the tuner would ask for next on `core`, built the way the tuner builds it.
-pub(crate) fn search_plan(session: &Session, core: CoreId, regime: Regime) -> TrialPlan {
-    let topology = session.appender().tuner().topology().unwrap();
-    let offset = session
-        .appender()
-        .journal()
-        .events()
+/// A session on `bench` that ran one cycle and then had a day observer record a boot start, a checkpoint and a
+/// clean stop, closed: the journal a fresh transition archives. Returns its id and the BIOS context it recorded.
+pub(crate) fn finished_with_day_records(
+    bench: &Bench,
+) -> (togi_journal::SessionId, togi_machine::BiosContext) {
+    let input = bench.input_ending_at(bench.short_night());
+    let mut journal = crate::run(input).journal;
+    let events = journal.events();
+    let Payload::SessionStart(start) = &events[0].payload else {
+        panic!("{:?}", events[0].payload);
+    };
+    let session = start.session;
+    let context = events
         .iter()
-        .rev()
         .find_map(|event| {
-            if let Payload::CorePhase(phase) = &event.payload
-                && phase.core == core
-            {
-                Some(phase.offset)
+            if let Payload::SessionContext(context) = &event.payload {
+                Some(context.bios_context())
             } else {
                 None
             }
         })
         .unwrap();
-    let duration = Secs::new(NonZeroU32::new(session.config.search_trial().get()).unwrap());
-    let rotation = session.appender().recovery().rotation(Some(core), regime);
-    let workload = pick_workload(regime, usize::try_from(rotation).unwrap());
-    TrialPlan {
-        regime,
-        workload: WorkloadChoice::Rotate,
-        load: Load::Single(core),
-        condition: Condition::Alone,
-        activity: Activity::Search,
-        profile: Profile::alone(topology, core, offset),
-        duration,
-        requirement: Requirement {
-            context: TrialContext::Search {
-                core,
-                regime,
-                offset,
-            },
-            class: ClassKey::new(workload.id(), std::iter::once(core).collect(), duration),
-            window: Window::Live { since: None },
-            needed: NonZeroU16::MIN,
-        },
-        retry: false,
-        cause: Vec::new(),
+    let stamp = togi_journal::Stamp {
+        time: bench.sim.now(),
+        mono: None,
+    };
+    let offsets: PerCore<ObservedOffset> = [(CoreId::new(0).unwrap(), ObservedOffset(0))]
+        .into_iter()
+        .chain([(CoreId::new(1).unwrap(), ObservedOffset(0))])
+        .collect();
+    for payload in [
+        Payload::DayBootStart(togi_journal::DayBootStart {
+            build: build(),
+            bios: context.clone(),
+            offsets,
+            watchdog: None,
+        }),
+        Payload::DayCheckpoint(togi_journal::DayCheckpoint {
+            applied_secs: 60,
+            load_mix: togi_journal::LoadMix::default(),
+            watchdog: None,
+        }),
+        Payload::DayCleanStop(togi_journal::DayCleanStop {}),
+    ] {
+        journal.append(stamp, payload, &[]).unwrap();
     }
-}
-
-pub(crate) fn tuned_values(session: &Session) -> Profile {
-    Profile::zero(session.appender().tuner().topology().unwrap())
-}
-
-pub(crate) fn run_action(session: &mut Session, action: Action) -> crate::session::Outcome {
-    let profile = tuned_values(session);
-    session.execute(
-        action,
-        &TunerValues {
-            profile: Some(&profile),
-            profile_seq: None,
-            clean_cycles: 0,
-            first_result: false,
-        },
-    )
-}
-
-pub(crate) fn run_plan(session: &mut Session, plan: TrialPlan) -> crate::session::Outcome {
-    run_action(session, Action::RunTrial(plan))
-}
-
-/// A host whose topology or BIOS context cannot be read; everything else is the simulator's.
-pub(crate) struct ReadFails {
-    pub inner: Box<dyn togi_machine::Host>,
-    pub topology: Option<fn() -> Error>,
-    pub context: Option<fn() -> Error>,
-}
-
-impl togi_machine::Host for ReadFails {
-    fn boot_id(&mut self) -> Result<BootId, Error> {
-        self.inner.boot_id()
-    }
-
-    fn topology(&mut self) -> Result<Vec<togi_machine::CoreInfo>, Error> {
-        match self.topology {
-            Some(error) => Err(error()),
-            None => self.inner.topology(),
-        }
-    }
-
-    fn validate_smu(&mut self) -> Result<SmuValidated, Error> {
-        self.inner.validate_smu()
-    }
-
-    fn bios_context(&mut self) -> Result<togi_machine::BiosContext, Error> {
-        match self.context {
-            Some(error) => Err(error()),
-            None => self.inner.bios_context(),
-        }
-    }
-
-    fn ranking(
-        &mut self,
-    ) -> Result<Vec<togi_machine::CoreRank>, Partial<Vec<togi_machine::CoreRank>>> {
-        self.inner.ranking()
-    }
-
-    fn preflight(&mut self) -> Vec<togi_machine::Check> {
-        self.inner.preflight()
-    }
-
-    fn watchdog(&mut self) -> togi_machine::Check {
-        self.inner.watchdog()
-    }
-}
-
-/// A bootloader whose saved entry cannot be cleared.
-#[derive(Default)]
-pub(crate) struct ClearFails(pub MemBoot);
-
-impl Environment for ClearFails {
-    fn get(&mut self, name: &str) -> io::Result<Option<String>> {
-        self.0.get(name)
-    }
-
-    fn set(&mut self, values: &[(&str, &str)]) -> io::Result<()> {
-        self.0.set(values)
-    }
-
-    fn unset(&mut self, names: &[&str]) -> io::Result<()> {
-        self.0.unset(names)
-    }
-}
-
-impl Bootloader for ClearFails {
-    fn clear_saved_entry(&mut self) -> io::Result<SavedEntry> {
-        Err(io::Error::other("GRUB environment unavailable"))
-    }
+    drop(journal.close().unwrap());
+    (session, context)
 }

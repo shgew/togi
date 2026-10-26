@@ -6,7 +6,9 @@ use togi_backend::{Backend as BackendAdapter, Error as BackendError, Line, Plan,
 use togi_machine::{Backend, Check, CpuId, Workload};
 use togi_trial::{BackendIdentity, Backends, IdentityError};
 
-use super::{Account, Outcome, STEPS, Step, check_backends, run, skip};
+use super::{
+    Account, Outcome, SAFETY_STEPS, STEPS, Step, backend_checks, check_backends, run, skip,
+};
 use crate::checks::{CheckName, Skip};
 
 fn ok(name: CheckName) -> Check {
@@ -18,7 +20,7 @@ fn ok(name: CheckName) -> Check {
 }
 
 fn outcomes(privileged: bool, failing: &[Step]) -> Vec<(CheckName, Option<Skip>, bool)> {
-    run(privileged, |step| Check {
+    run(&STEPS, privileged, |step| Check {
         ok: !failing.contains(&step),
         ..ok(step.name())
     })
@@ -130,7 +132,7 @@ fn an_unprivileged_caller_is_told_it_needs_root_before_it_is_told_the_identity_f
 
 #[test]
 fn a_skipped_step_becomes_a_failed_check_carrying_its_reason() {
-    let check = run(false, |step| ok(step.name()))
+    let check = run(&STEPS, false, |step| ok(step.name()))
         .into_iter()
         .map(Outcome::into_check)
         .find(|check| check.name == "readback")
@@ -139,12 +141,25 @@ fn a_skipped_step_becomes_a_failed_check_carrying_its_reason() {
     assert_eq!(check.detail, "needs root");
 }
 
+#[test]
+fn the_safety_steps_are_every_step_but_backend_availability() {
+    let safety: Vec<_> = STEPS
+        .into_iter()
+        .filter(|step| *step != Step::Backends)
+        .collect();
+    assert_eq!(safety, SAFETY_STEPS);
+}
+
 struct BackendCheck {
     kind: Backend,
     executable: bool,
 }
 
 impl BackendAdapter for BackendCheck {
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, BackendError> {
+        Ok(workload.id.as_bytes().to_vec())
+    }
+
     fn kind(&self) -> Backend {
         self.kind
     }
@@ -257,6 +272,37 @@ fn ready_backend_checks_pass_and_name_their_binaries() {
         check.detail
     );
     assert!(check.detail.contains("24-ZN5 ~ Zen 5"), "{}", check.detail);
+}
+
+#[test_case(false, true; "mprime unconfigured")]
+#[test_case(true, false; "ycruncher unconfigured")]
+fn an_unconfigured_backend_leaves_the_other_available(mprime: bool, ycruncher: bool) {
+    let checks = backend_checks(&backends(mprime, ycruncher, true));
+    let available: Vec<_> = checks
+        .iter()
+        .map(|check| (check.backend, check.available))
+        .collect();
+    assert_eq!(
+        available,
+        [(Backend::Mprime, mprime), (Backend::Ycruncher, ycruncher)]
+    );
+    let missing = checks.iter().find(|check| !check.available).unwrap();
+    assert_eq!(
+        missing.detail,
+        format!("backends.{} not configured", missing.backend)
+    );
+}
+
+#[test]
+fn a_nonexecutable_backend_is_unavailable_with_its_cause() {
+    for check in backend_checks(&backends(true, true, false)) {
+        assert!(!check.available, "{}", check.backend);
+        assert!(
+            check.detail.contains("is not an executable regular file"),
+            "{}",
+            check.detail
+        );
+    }
 }
 
 #[test]

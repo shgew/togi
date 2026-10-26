@@ -136,7 +136,7 @@ fn config_is_rejected_with_the_scope_error_wherever_it_is_written(args: &[&str])
     assert_eq!(ran.out, "");
     assert!(
         ran.err
-            .starts_with("error: --config applies only to doctor, run and reset\n"),
+            .starts_with("error: --config applies only to doctor and run\n"),
         "{}",
         ran.err
     );

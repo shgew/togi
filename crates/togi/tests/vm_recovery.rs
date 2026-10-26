@@ -262,6 +262,10 @@ mod vm_recovery {
             Vec::new()
         }
 
+        fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+            Vec::new()
+        }
+
         fn watchdog(&mut self) -> Check {
             Check::default()
         }
@@ -419,6 +423,13 @@ mod vm_recovery {
     struct VmTrials(Runner);
 
     impl Trials for VmTrials {
+        fn content(
+            &mut self,
+            workload: togi_machine::WorkloadId,
+        ) -> Result<togi_machine::ContentId, Error> {
+            self.0.content(workload)
+        }
+
         fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
             if text("fault") == "sweep" {
                 return Err(other("the trial-scope sweep is failed by the test"));
@@ -452,6 +463,13 @@ mod vm_recovery {
     struct Sleeper;
 
     impl Backend for Sleeper {
+        fn configuration(
+            &self,
+            workload: &togi_machine::Workload,
+        ) -> Result<Vec<u8>, togi_backend::Error> {
+            Ok(workload.id.as_bytes().to_vec())
+        }
+
         fn kind(&self) -> togi_machine::Backend {
             togi_machine::Backend::Mprime
         }

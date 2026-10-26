@@ -158,6 +158,32 @@ fn smu_error_clears_the_intent_it_cites() {
     assert!(state.in_flight().is_none());
 }
 
+#[test_case::test_case(true, &[], true; "uncited observation leaves intent open")]
+#[test_case::test_case(true, &[1], true; "unrelated cause leaves intent open")]
+#[test_case::test_case(true, &[2], false; "same boot observation closes cited intent")]
+#[test_case::test_case(false, &[2], true; "next boot observation preserves crash attribution")]
+fn startup_readback_resolves_only_a_cited_same_boot_smu_intent(
+    same_boot: bool,
+    causes: &[u64],
+    still_open: bool,
+) {
+    let readback = at(
+        3,
+        if same_boot { "boot-a" } else { "boot-b" },
+        2,
+        causes,
+        sample(EventKind::SmuReadback),
+    );
+    let events = [start(), smu_intent(2, "boot-a"), readback];
+    let state = replay(&events).unwrap();
+    assert_eq!(state.in_flight().is_some(), still_open);
+    let mut incremental = State::default();
+    for event in &events {
+        incremental.apply(event).unwrap();
+    }
+    assert_eq!(incremental, state);
+}
+
 #[test]
 fn trial_end_closes_only_its_own_trial() {
     let state = replay(&[

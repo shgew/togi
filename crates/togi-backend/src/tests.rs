@@ -243,3 +243,45 @@ fn spawn_control() -> io::Result<std::process::ExitStatus> {
 fn spawn_control_is_referenced_never_run() {
     std::hint::black_box(spawn_control);
 }
+
+fn input(name: &'static str, contents: &str) -> Input {
+    Input {
+        name: FileName::from_static(name),
+        contents: contents.as_bytes().to_vec(),
+    }
+}
+
+#[test_case(&["a", "b"], &[], &["ab"], &[]; "split arguments")]
+#[test_case(&["a"], &[], &[], &[("a", "")]; "argument against input name")]
+#[test_case(&[], &[("a", "bc")], &[], &[("ab", "c")]; "name against contents")]
+#[test_case(&[], &[("a", "")], &[], &[("a", ""), ("a", "")]; "one input against two")]
+fn different_launches_encode_differently(
+    args: &[&str],
+    inputs: &[(&'static str, &str)],
+    other_args: &[&str],
+    other_inputs: &[(&'static str, &str)],
+) {
+    let encode = |args: &[&str], inputs: &[(&'static str, &str)]| {
+        let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+        let inputs: Vec<Input> = inputs.iter().map(|(n, c)| input(n, c)).collect();
+        configuration_bytes(&args, &inputs)
+    };
+    assert_ne!(encode(args, inputs), encode(other_args, other_inputs));
+}
+
+#[test]
+fn the_same_launch_encodes_the_same() {
+    let args = [OsString::from("-t")];
+    let inputs = [input("prime.txt", "x")];
+    assert_eq!(
+        configuration_bytes(&args, &inputs),
+        configuration_bytes(&args, &inputs)
+    );
+}
+
+#[test_case(1, &[0]; "one thread")]
+#[test_case(2, &[0, 1]; "two threads")]
+fn configurations_number_cpus_from_zero(threads: u8, want: &[u16]) {
+    let want: Vec<CpuId> = want.iter().copied().map(CpuId::from).collect();
+    assert_eq!(numbered_cpus(threads), want);
+}

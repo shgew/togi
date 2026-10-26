@@ -133,10 +133,10 @@ fn play(terminal: &Terminal, state: &str, speed: &str) -> Replay {
 #[test]
 fn real_process_playing_on_a_terminal_draws_the_dashboard_and_q_quits() {
     let dir = tempdir().unwrap();
-    install(dir.path(), Scenario::Checking).unwrap();
+    install(dir.path(), Scenario::Controls).unwrap();
     let mut terminal = Terminal::open();
     let mut replay = play(&terminal, dir.path().to_str().unwrap(), "1000000");
-    terminal.wait_for("CYCLE");
+    terminal.wait_for("NIGHT");
     let mut master = File::from(terminal.master.try_clone().unwrap());
     master.write_all(b"q").unwrap();
     let status = terminal.exit(&mut replay);
@@ -146,13 +146,13 @@ fn real_process_playing_on_a_terminal_draws_the_dashboard_and_q_quits() {
 #[test]
 fn real_process_playing_a_recording_with_an_unknown_kind_says_so_in_the_dashboard_and_q_quits() {
     let dir = tempdir().unwrap();
-    install(dir.path(), Scenario::Checking).unwrap();
-    let mut recording = super::plant::recording(Scenario::Checking);
+    install(dir.path(), Scenario::Between).unwrap();
+    let mut recording = super::plant::recording(Scenario::Between);
     super::plant::plant(&mut recording);
     std::fs::write(dir.path().join("events.jsonl"), recording).unwrap();
     let mut terminal = Terminal::open();
     let mut replay = play(&terminal, dir.path().to_str().unwrap(), "1000000");
-    terminal.wait_for("CYCLE");
+    terminal.wait_for("NIGHT");
     terminal.wait_for("skipped");
     let mut master = File::from(terminal.master.try_clone().unwrap());
     master.write_all(b"q").unwrap();
@@ -162,7 +162,7 @@ fn real_process_playing_a_recording_with_an_unknown_kind_says_so_in_the_dashboar
 #[test]
 fn real_process_sigterm_ends_the_dashboard_cleanly_and_restores_the_cursor() {
     let dir = tempdir().unwrap();
-    install(dir.path(), Scenario::Checking).unwrap();
+    install(dir.path(), Scenario::Controls).unwrap();
     let mut terminal = Terminal::open();
     let mut replay = play(&terminal, dir.path().to_str().unwrap(), "1");
     terminal.wait_for("togi");

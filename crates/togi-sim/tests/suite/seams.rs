@@ -91,6 +91,34 @@ fn a_missing_backend_fails_every_start_of_its_workloads() {
     assert!(rig.start(other).is_ok(), "the other backend still starts");
 }
 
+#[test]
+fn simulated_content_is_fixed_per_workload_and_differs_between_workloads() {
+    let mut rig = Rig::new(&two_cores(), 1);
+    let mprime = togi_machine::pick_workload(Regime::R1, 0).id();
+    let ycruncher = togi_machine::pick_workload(Regime::R1, 1).id();
+    let first = rig.machine.trials.content(mprime).expect("content");
+    assert_eq!(first, rig.machine.trials.content(mprime).expect("content"));
+    assert_eq!(first, togi_sim::content_id(mprime));
+    rig.sim.crash();
+    rig.sim.reboot().expect("a representable reboot");
+    assert_eq!(first, rig.machine.trials.content(mprime).expect("content"));
+    let other = rig.machine.trials.content(ycruncher).expect("content");
+    assert_eq!(other.backend, togi_machine::Backend::Ycruncher);
+    assert_ne!(first.executable, other.executable);
+    assert_ne!(first.configuration, other.configuration);
+}
+
+#[test]
+fn a_missing_backend_has_no_simulated_content() {
+    let mut rig = Rig::new(&two_cores(), 1);
+    rig.sim.miss_backend(togi_machine::Backend::Mprime);
+    let mprime = togi_machine::pick_workload(Regime::R1, 0).id();
+    assert!(matches!(
+        rig.machine.trials.content(mprime),
+        Err(Error::BackendMissing)
+    ));
+}
+
 #[test_case(ResetKind::PowerLoss; "power loss")]
 #[test_case(ResetKind::PowerButton; "power button")]
 #[test_case(ResetKind::ThermalTrip; "thermal trip")]

@@ -33,7 +33,6 @@ tempfile = "3"
 test-case = "3"
 thiserror = "2"
 togi-backend = { path = "crates/togi-backend" }
-togi-carry = { path = "crates/togi-carry" }
 togi-command = { path = "crates/togi-command" }
 togi-config = { path = "crates/togi-config" }
 togi-defect = { path = "crates/togi-defect" }
@@ -52,8 +51,8 @@ togi-simrun = { path = "crates/togi-simrun" }
 togi-smu = { path = "crates/togi-smu" }
 togi-statecopy = { path = "crates/togi-statecopy" }
 togi-tool-audit = { path = "crates/togi-tool-audit" }
-togi-tool-forecast = { path = "crates/togi-tool-forecast" }
 togi-tool-modelcheck = { path = "crates/togi-tool-modelcheck" }
+togi-tool-sim = { path = "crates/togi-tool-sim" }
 togi-tool-trialfacts = { path = "crates/togi-tool-trialfacts" }
 togi-trial = { path = "crates/togi-trial" }
 togi-trialfiles = { path = "crates/togi-trialfiles" }
@@ -127,7 +126,6 @@ togi-tool-audit = { opt-level = 0 }
 togi-tool-bench = { opt-level = 0 }
 togi-tool-facts = { opt-level = 0 }
 togi-tool-fit = { opt-level = 0 }
-togi-tool-forecast = { opt-level = 0 }
 togi-tool-modelcheck = { opt-level = 0 }
 togi-tool-replay = { opt-level = 0 }
 togi-tool-sim = { opt-level = 0 }

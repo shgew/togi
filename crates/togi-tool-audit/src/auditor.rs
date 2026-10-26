@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use togi_journal::{Build, CycleEvent, Event, Payload, Seq, ShutdownReason, Skipped};
+use togi_journal::{Build, Event, Payload, Seq, ShutdownReason, Skipped};
 use togi_machine::{BootId, CoreId};
 
-use crate::marks::Marks;
+use crate::rules::Rules;
 use crate::violation::{Check, Completion, Findings, Violation};
 use crate::writes::Writes;
 
@@ -13,7 +13,6 @@ pub(crate) type Seen<'a> = BTreeMap<Seq, &'a Event>;
 struct Conclusion {
     stopped: bool,
     dead_end_pending: bool,
-    passed_full_cycles: u32,
 }
 
 /// `skipped` names the events a lenient read passed over: a gap they fill is no sequence violation, and a cause
@@ -50,7 +49,7 @@ struct Auditor<'a> {
     previous: Option<Seq>,
     seen: Seen<'a>,
     skipped: BTreeSet<Seq>,
-    marks: Marks,
+    rules: Rules,
     writes: Writes,
     conclusion: Conclusion,
     build: Option<&'a Build>,
@@ -71,14 +70,9 @@ impl<'a> Auditor<'a> {
         }
         self.check_sequence(event);
         self.check_causes(event);
-        self.marks.fold(event, &self.seen);
-        self.writes.fold(
-            event,
-            &self.seen,
-            &self.cores,
-            &self.marks,
-            &mut self.findings,
-        );
+        self.rules.fold(event, &self.seen, &mut self.findings);
+        self.writes
+            .fold(event, &self.seen, &self.cores, &mut self.findings);
         self.fold_build(event);
         self.fold_conclusion(event);
         self.seen.insert(event.seq, event);
@@ -169,26 +163,6 @@ impl<'a> Auditor<'a> {
                     | ShutdownReason::Command
                     | ShutdownReason::FirstResult => {}
                 }
-                if shutdown.reason == ShutdownReason::Cycles {
-                    match shutdown.cycles {
-                        None => self.findings.add(
-                            event.seq,
-                            Check::Termination,
-                            "shutdown for completed cycles does not record how many",
-                        ),
-                        Some(requested) if conclusion.passed_full_cycles < requested.get() => {
-                            self.findings.add(
-                                event.seq,
-                                Check::Termination,
-                                format!(
-                                    "shutdown after {requested} requested cycles follows only {} passed full cycles",
-                                    conclusion.passed_full_cycles
-                                ),
-                            );
-                        }
-                        Some(_) => {}
-                    }
-                }
                 if shutdown.reason != ShutdownReason::Signal {
                     conclusion.dead_end_pending = false;
                 }
@@ -208,13 +182,23 @@ impl<'a> Auditor<'a> {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_) => {
                 conclusion.stopped = previous;
-            }
-            Payload::CheckingCycle(cycle)
-                if cycle.event == CycleEvent::End && cycle.passed && cycle.full =>
-            {
-                conclusion.passed_full_cycles += 1;
             }
             Payload::SessionStart(_)
             | Payload::SessionContext(_)
@@ -255,6 +239,7 @@ impl<'a> Auditor<'a> {
             | Payload::DeepeningRound(_)
             | Payload::TunerWarning(_)
             | Payload::BackendRetry(_)
+            | Payload::TaskStart(_)
             | Payload::DefectFound(_)
             | Payload::DefectAnswered(_)
             | Payload::JournalTorn(_)
@@ -319,6 +304,7 @@ impl<'a> Auditor<'a> {
             | Payload::DeepeningRound(_)
             | Payload::TunerWarning(_)
             | Payload::BackendRetry(_)
+            | Payload::TaskStart(_)
             | Payload::CommandReset(_)
             | Payload::DefectFound(_)
             | Payload::DefectAnswered(_)
@@ -332,6 +318,21 @@ impl<'a> Auditor<'a> {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_) => {}
         }
     }

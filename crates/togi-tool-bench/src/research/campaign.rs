@@ -521,7 +521,7 @@ impl Campaign {
                     ),
                 )),
             },
-            Mode::FixedPolicyObservation | Mode::CounterfactualAccounting => Ok(vec![run.seq]),
+            Mode::FixedPolicyObservation => Ok(vec![run.seq]),
         }
     }
 

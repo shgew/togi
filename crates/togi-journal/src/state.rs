@@ -237,6 +237,13 @@ impl State {
                     !(open.kind == EventKind::SmuIntent && event.cause.contains(&open.seq))
                 });
             }
+            Payload::SmuReadback(_) => {
+                self.open.retain(|open| {
+                    !(open.kind == EventKind::SmuIntent
+                        && open.boot == event.boot
+                        && event.cause.contains(&open.seq))
+                });
+            }
             Payload::TrialIntent(intent) => self.push_open(event, Some(intent.trial.clone())),
             Payload::TrialEnd(end) => {
                 self.open.retain(|open| {
@@ -252,7 +259,6 @@ impl State {
             | Payload::SessionArchived(_)
             | Payload::SessionCarried(_)
             | Payload::PreflightCheck(_)
-            | Payload::SmuReadback(_)
             | Payload::ProfileApplied(_)
             | Payload::ProfileChange(_)
             | Payload::ProfileRestored(_)
@@ -291,6 +297,22 @@ impl State {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::TaskStart(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::StateRebuilt(_) => {}
         }
         self.last_seq = Some(event.seq);

@@ -1,6 +1,6 @@
 use togi_journal::fs::MemFs;
 use togi_journal::{Event, SessionId, StateDir};
-use togi_tool_audit::Check::{Avoidance, Termination, WriteProtocol};
+use togi_tool_audit::Check::{Qualification, Termination, WriteProtocol};
 use togi_tool_audit::Completion::{Finished, InProgress};
 use togi_tool_audit::{AuditError, Source, audit_recordings};
 
@@ -70,7 +70,7 @@ fn a_violation_is_attributed_to_its_own_journal() {
     );
     fs.put(
         "/state/events.jsonl",
-        journal(vec![phase(2, 0, Some(-30)), applied(3, [-30, 0])]),
+        journal(vec![day_applied(2, [-30, 0])]),
     );
     let audits = audit_recordings(&open(&fs), InProgress).unwrap();
     let seen: Vec<_> = audits
@@ -91,7 +91,7 @@ fn a_violation_is_attributed_to_its_own_journal() {
                 Source::Archived(session("20251231T000000Z")),
                 vec![(2, WriteProtocol)]
             ),
-            (Source::Live, vec![(3, Avoidance)]),
+            (Source::Live, vec![(2, Qualification)]),
         ]
     );
 }
@@ -110,7 +110,7 @@ fn a_directory_with_archives_only_audits_them_and_an_unfinished_live_journal_is_
         Source::Archived(session("20251231T000000Z"))
     );
 
-    live(&fs, vec![phase(2, 0, None)]);
+    live(&fs, vec![phase(2, 0)]);
     let audits = audit_recordings(&open(&fs), Finished).unwrap();
     assert_eq!(
         audits[1]

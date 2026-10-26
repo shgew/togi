@@ -1,178 +1,91 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
+use jiff::SignedDuration;
 use togi_config::Config;
-use togi_journal::{Activity, Event, Payload};
-use togi_machine::{Backend, CoreId, Regime};
-use togi_sim::MachineDefinition;
-use togi_sim::definition::ModelDef;
-use togi_tuner::State;
+use togi_journal::{
+    Activity, DayBootStart, Event, EventKind, Payload, Queue, SessionStart, Stamp, TrialId,
+};
+use togi_machine::{CoreId, Machine};
+use togi_simrun::day_night::{
+    CalendarConfig, DayClassification, DayObservation, EndAnswer, Night, Policy, Ruleset13,
+    RunError, run_with_policy,
+};
+use togi_tuner::policy::Params;
 
 use crate::Error;
-use crate::simulate::{
-    Stop, Until, crash_trial, default_machine, machine, probe_machine, simulate,
-};
+use crate::simulate::{Halt, build, crash_trial, default_machine, simulate};
 
-/// The seed whose default machine, run through three clean cycles, leaves a core's BIOS offset unconfirmed
-/// after a failure, found by scanning seeds 1 to 60.
-const UNCONFIRMED_SEED: u64 = 43;
+/// The night the simulated operator gives the session: eight hours, as the scenarios have always had.
+const NIGHT: SignedDuration = SignedDuration::from_hours(8);
 
-/// How many consecutive trials crash without naming a core, starting at the first non-R7 checking trial of cycle 4
-/// on after a BIOS profile is confirmed. [INFERENCE: found by scanning; a shorter burst stays within the hold.]
-const BURST: u32 = 6;
+/// The night the operator leaves running until mapping is done: longer than the default machine needs to reach its
+/// first filler trial, about fifty hours in. The bases that need it stop as soon as their state is reached.
+const LONG_NIGHT: SignedDuration = SignedDuration::from_hours(60);
 
-/// The simulated sessions the scenarios and the other named journals are cut from.
+/// The calendar simulator's machine for [`Base::Calendar`]: a deep edge, so the first promotion comes within a month.
+const CALENDAR_MACHINE: &str = "edge-deep";
+
+/// The days [`Base::Calendar`] runs: enough for its first promotion, which lands in the fourth week, and the
+/// reproduction night after it.
+const CALENDAR_DAYS: u32 = 30;
+
+/// How many control trials run before [`Base::DeadEnd`] crashes one: the fourth.
+const CRASH_AFTER: usize = 3;
+
+/// The simulated sessions the scenarios are cut from. Each is the default machine at seed 1.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Base {
-    /// The default machine, seed 1, through its first clean cycle: search, checking with R6, hunts, crash recoveries
-    /// and the stop.
-    Session,
-    /// The default machine, seed 1, through two clean cycles, so checking runs on after phase 2.
-    Concluded,
-    /// The default machine on seed 43 through three clean cycles.
-    Unconfirmed,
-    /// The default machine without crash MCEs through three clean cycles, with six consecutive crashes naming no
-    /// core starting at the first non-R7 checking trial of cycle 4 on after a BIOS profile is confirmed: after a held
-    /// first failure, a second makes a hunt while the confirmed profile shows a held, unconfirmed core.
-    LaterHunt,
-    /// The default machine stopped at its first confirmed BIOS profile.
-    FirstResult,
-    /// The probe machine until its first deepening trial starts.
-    Probe,
-    /// The probe machine to its stop, with the combination it found.
-    Combination,
-    /// The default machine on seed 5 through its first clean cycle, whose checking crashes are followed by a backoff
-    /// that moves the cycle on.
-    CrashedCycle,
-    /// The default machine, seed 1, whose mprime backend goes missing once the first R7 checking cycle trial has
-    /// started: that trial ends, the next mprime trial cannot start, and the session dead-ends without evidence.
+    /// An eight-hour night the operator ends: the first night's CO-0 controls, all passing, and the operator's
+    /// signal interrupting the last of them.
+    Night,
+    /// A night the operator leaves running past its controls into mapping, stopped once the next boot has recorded
+    /// the crash a mapping trial at CCD1, CO -10 causes (about fifteen hours in).
+    Mapped,
+    /// The same long night, stopped once its first filler trial has ended, after mapping has nothing left to do
+    /// (about fifty hours in).
+    Filler,
+    /// A month of Ruleset 13 days and nights on the calendar simulator's `edge-deep` machine, seed 1: the real policy
+    /// decides every night trial and day step, the trial runner runs them on a simulated machine, and the day
+    /// observer's boots, checkpoints and clean stops are the calendar's. Its nights qualify an exact profile, which a
+    /// later cold boot promotes. The one scripted fact is the operator's: the first day after the promotion ends in
+    /// a crash the operator answers as the CPU's, which makes it a CPU-suspect daily event the next night reproduces.
+    /// The session is not `togi run`, so the journal has no `config.loaded`, preflight or SMU transaction; its builds
+    /// are rewritten to [`crate::build`].
+    Calendar,
+    /// The night whose fourth control trial crashes the machine at CO 0, a conclusive failure at stock: the next
+    /// boot records the crash and the session dead-ends.
     DeadEnd,
 }
 
 impl Base {
-    pub const ALL: [Self; 9] = [
-        Self::Session,
-        Self::Concluded,
-        Self::Unconfirmed,
-        Self::LaterHunt,
-        Self::FirstResult,
-        Self::Probe,
-        Self::Combination,
-        Self::CrashedCycle,
+    pub const ALL: [Self; 5] = [
+        Self::Night,
+        Self::Mapped,
+        Self::Filler,
+        Self::Calendar,
         Self::DeadEnd,
     ];
 
     /// Simulates the session afresh. [`Base::events`] is the same journal, simulated once per process.
     pub fn simulate(self) -> Result<Vec<Event>, Error> {
         match self {
-            Self::Session => simulate(
+            Self::Night => simulate(default_machine(1)?, Config::default(), None, NIGHT),
+            Self::Mapped => simulate(
                 default_machine(1)?,
                 Config::default(),
-                None,
-                Stop::cycles(1),
+                Some(Box::new(|event| event.kind() == EventKind::CrashDetected)),
+                LONG_NIGHT,
             ),
-            Self::Concluded => simulate(
+            Self::Filler => simulate(
                 default_machine(1)?,
                 Config::default(),
-                None,
-                Stop::cycles(2),
+                Some(after_first_filler()),
+                LONG_NIGHT,
             ),
-            Self::Unconfirmed => simulate(
-                default_machine(UNCONFIRMED_SEED)?,
-                Config::default(),
-                None,
-                Stop::cycles(3),
-            ),
-            Self::LaterHunt => later_hunt(),
-            Self::FirstResult => simulate(
-                default_machine(1)?,
-                Config::default(),
-                None,
-                Stop::FirstResult,
-            ),
-            Self::Probe => {
-                let (machine, config) = probe_machine()?;
-                let mut deepening = false;
-                simulate(
-                    machine,
-                    config,
-                    Some(Box::new(move |event| match &event.payload {
-                        Payload::TrialIntent(intent) => {
-                            deepening = intent.activity == Some(Activity::Deepening);
-                            false
-                        }
-                        Payload::TrialStart(_) => deepening,
-                        Payload::SessionStart(_)
-                        | Payload::SessionContext(_)
-                        | Payload::SessionBaseline(_)
-                        | Payload::SessionNotice(_)
-                        | Payload::SessionWarning(_)
-                        | Payload::SessionArchived(_)
-                        | Payload::SessionCarried(_)
-                        | Payload::ConfigLoaded(_)
-                        | Payload::PreflightCheck(_)
-                        | Payload::SmuIntent(_)
-                        | Payload::SmuWrite(_)
-                        | Payload::SmuReadback(_)
-                        | Payload::SmuError(_)
-                        | Payload::ProfileApplied(_)
-                        | Payload::ProfileChange(_)
-                        | Payload::ProfileRestored(_)
-                        | Payload::TrialProgress(_)
-                        | Payload::TrialSignal(_)
-                        | Payload::TrialSample(_)
-                        | Payload::TrialEnd(_)
-                        | Payload::TrialCarried(_)
-                        | Payload::Failure(_)
-                        | Payload::FailureCarried(_)
-                        | Payload::Mce(_)
-                        | Payload::CrashDetected(_)
-                        | Payload::TunerDecision(_)
-                        | Payload::CorePhase(_)
-                        | Payload::CheckingCycle(_)
-                        | Payload::CheckingStep(_)
-                        | Payload::CheckingChain(_)
-                        | Payload::HostRanking(_)
-                        | Payload::HuntStart(_)
-                        | Payload::HuntGroup(_)
-                        | Payload::HuntEnd(_)
-                        | Payload::HuntSkipped(_)
-                        | Payload::Combination(_)
-                        | Payload::DeepeningRound(_)
-                        | Payload::TunerWarning(_)
-                        | Payload::BackendRetry(_)
-                        | Payload::CommandReset(_)
-                        | Payload::DefectFound(_)
-                        | Payload::DefectAnswered(_)
-                        | Payload::DeadEnd(_)
-                        | Payload::BootSavedEntry(_)
-                        | Payload::BootLeaveReason(_)
-                        | Payload::Shutdown(_)
-                        | Payload::JournalTorn(_)
-                        | Payload::DayBootStart(_)
-                        | Payload::DayCheckpoint(_)
-                        | Payload::DayOffsetsChanged(_)
-                        | Payload::DayCleanStop(_)
-                        | Payload::DayAnswer(_)
-                        | Payload::DayRecord(_)
-                        | Payload::DayFault(_)
-                        | Payload::DayUncleanEnd(_)
-                        | Payload::StateRebuilt(_) => false,
-                    })),
-                    Stop::cycles(1),
-                )
-            }
-            Self::Combination => {
-                let (machine, config) = probe_machine()?;
-                simulate(machine, config, None, Stop::cycles(1))
-            }
-            Self::CrashedCycle => simulate(
-                default_machine(5)?,
-                Config::default(),
-                None,
-                Stop::cycles(1),
-            ),
+            Self::Calendar => calendar(),
             Self::DeadEnd => dead_end(),
         }
     }
@@ -189,147 +102,146 @@ impl Base {
     }
 }
 
-fn later_hunt() -> Result<Vec<Event>, Error> {
-    // Scripted per-core crashes otherwise draw MCE evidence, turning the intended unnamed burst into named failures.
-    let definition = MachineDefinition {
-        model: ModelDef {
-            crash_mce: 0.0,
-            ..ModelDef::default()
-        },
-        ..MachineDefinition::default()
+/// Halts after the `trial.end` of the first filler trial.
+fn after_first_filler() -> Halt {
+    let mut filler: Option<TrialId> = None;
+    Box::new(move |event| {
+        if let Payload::TrialIntent(intent) = &event.payload {
+            if filler.is_none() && intent.task.is_some_and(|task| task.queue == Queue::Filler) {
+                filler = Some(intent.trial.clone());
+            }
+        } else if let Payload::TrialEnd(end) = &event.payload {
+            return filler.as_ref() == Some(&end.trial);
+        }
+        false
+    })
+}
+
+fn calendar() -> Result<Vec<Event>, Error> {
+    let mut policy = CpuAnswerAfterPromotion {
+        inner: Ruleset13::with_params(Params::SPEC).recording(),
+        answered: false,
     };
-    let machine = machine(&definition, 1)?;
-    let fault = machine.clone();
-    let armed = Rc::new(RefCell::new(Ok(0)));
-    let result = Rc::clone(&armed);
-    let mut state = State::new();
-    let arm: Until = Box::new(move |event| {
-        let mut result = result.borrow_mut();
-        let Ok(count) = result.as_mut() else {
-            return true;
-        };
-        if *count == BURST {
-            return false;
-        }
-        if *count == 0
-            && let Err(error) = state.fold(event)
-        {
-            *result = Err(error.into());
-            return true;
-        }
-        let Payload::TrialIntent(intent) = &event.payload else {
-            return false;
-        };
-        if *count == 0
-            && !(intent.activity == Some(Activity::Checking)
-                && intent.cycle.is_some_and(|cycle| cycle.get() >= 4)
-                && intent.regime != Regime::R7
-                && state
-                    .bios_profile()
-                    .is_some_and(|bios| bios.confirmed.is_some()))
-        {
-            return false;
-        }
-        match CoreId::new(3)
-            .map_err(Error::from)
-            .and_then(|core| crash_trial(&fault, intent.trial.as_str(), 7.0, core))
-        {
-            Ok(()) => {
-                *count += 1;
-                false
-            }
-            Err(error) => {
-                *result = Err(error);
-                true
-            }
-        }
-    });
-    let events = simulate(machine, Config::default(), Some(arm), Stop::cycles(3))?;
-    let count = armed.replace(Ok(0))?;
-    if count != BURST {
-        return Err(Error::Fixture(format!(
-            "the later hunt armed {count} crash trials, not the full burst of {BURST}"
-        )));
+    run_with_policy(
+        CALENDAR_MACHINE,
+        1,
+        CalendarConfig {
+            days: CALENDAR_DAYS,
+            ..CalendarConfig::default()
+        },
+        &mut policy,
+    )?;
+    Ok(policy
+        .inner
+        .events()
+        .unwrap_or_default()
+        .iter()
+        .map(with_fixed_build)
+        .collect())
+}
+
+/// Ruleset 13, except that the first day observed at a promoted profile ends in a crash the operator blames on the
+/// CPU.
+struct CpuAnswerAfterPromotion {
+    inner: Ruleset13,
+    answered: bool,
+}
+
+impl Policy for CpuAnswerAfterPromotion {
+    fn firmware_changed(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        self.inner.firmware_changed(machine)
     }
-    Ok(events)
+
+    fn start_day(&mut self, day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        self.inner.start_day(day, machine)
+    }
+
+    fn observe_day(
+        &mut self,
+        day: u32,
+        evidence: &DayObservation,
+        machine: &mut Machine<'_>,
+    ) -> Result<DayClassification, RunError> {
+        let promoted = self
+            .inner
+            .state()
+            .project()
+            .applied
+            .is_some_and(|profile| !profile.is_zero());
+        if promoted && !self.answered {
+            self.answered = true;
+            let crashed = DayObservation::Ended {
+                active: Duration::from_hours(1),
+                answer: Some(EndAnswer::Cpu),
+            };
+            return self.inner.observe_day(day, &crashed, machine);
+        }
+        self.inner.observe_day(day, evidence, machine)
+    }
+
+    fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        self.inner.night(night, machine)
+    }
+}
+
+/// `event` naming [`crate::build`] instead of the calendar's build, whose version is the crate's.
+fn with_fixed_build(event: &Event) -> Event {
+    let payload = if let Payload::SessionStart(start) = &event.payload {
+        Payload::SessionStart(SessionStart {
+            build: build(),
+            ..start.clone()
+        })
+    } else if let Payload::DayBootStart(boot) = &event.payload {
+        Payload::DayBootStart(DayBootStart {
+            build: build(),
+            ..boot.clone()
+        })
+    } else {
+        return event.clone();
+    };
+    Event::new(
+        event.seq,
+        Stamp {
+            time: event.time,
+            mono: event.mono,
+        },
+        event.boot.clone(),
+        event.cause.clone(),
+        payload,
+    )
 }
 
 fn dead_end() -> Result<Vec<Event>, Error> {
     let machine = default_machine(1)?;
     let fault = machine.clone();
-    let mut checking_r7 = false;
-    let mut armed = false;
-    let arm: Until = Box::new(move |event| {
-        match &event.payload {
-            Payload::TrialIntent(intent) => {
-                checking_r7 = intent.activity == Some(Activity::Checking)
-                    && intent.regime == Regime::R7
-                    && intent.cycle.is_some()
-                    && !intent.rerun;
-            }
-            Payload::TrialStart(_) if checking_r7 && !armed => {
-                fault.miss_backend(Backend::Mprime);
-                armed = true;
-            }
-            Payload::SessionStart(_)
-            | Payload::SessionContext(_)
-            | Payload::SessionBaseline(_)
-            | Payload::SessionNotice(_)
-            | Payload::SessionWarning(_)
-            | Payload::SessionArchived(_)
-            | Payload::SessionCarried(_)
-            | Payload::ConfigLoaded(_)
-            | Payload::PreflightCheck(_)
-            | Payload::SmuIntent(_)
-            | Payload::SmuWrite(_)
-            | Payload::SmuReadback(_)
-            | Payload::SmuError(_)
-            | Payload::ProfileApplied(_)
-            | Payload::ProfileChange(_)
-            | Payload::ProfileRestored(_)
-            | Payload::TrialStart(_)
-            | Payload::TrialProgress(_)
-            | Payload::TrialSignal(_)
-            | Payload::TrialSample(_)
-            | Payload::TrialEnd(_)
-            | Payload::TrialCarried(_)
-            | Payload::Failure(_)
-            | Payload::FailureCarried(_)
-            | Payload::Mce(_)
-            | Payload::CrashDetected(_)
-            | Payload::TunerDecision(_)
-            | Payload::CorePhase(_)
-            | Payload::CheckingCycle(_)
-            | Payload::CheckingStep(_)
-            | Payload::CheckingChain(_)
-            | Payload::HostRanking(_)
-            | Payload::HuntStart(_)
-            | Payload::HuntGroup(_)
-            | Payload::HuntEnd(_)
-            | Payload::HuntSkipped(_)
-            | Payload::Combination(_)
-            | Payload::DeepeningRound(_)
-            | Payload::TunerWarning(_)
-            | Payload::BackendRetry(_)
-            | Payload::CommandReset(_)
-            | Payload::DefectFound(_)
-            | Payload::DefectAnswered(_)
-            | Payload::DeadEnd(_)
-            | Payload::BootSavedEntry(_)
-            | Payload::BootLeaveReason(_)
-            | Payload::Shutdown(_)
-            | Payload::JournalTorn(_)
-            | Payload::DayBootStart(_)
-            | Payload::DayCheckpoint(_)
-            | Payload::DayOffsetsChanged(_)
-            | Payload::DayCleanStop(_)
-            | Payload::DayAnswer(_)
-            | Payload::DayRecord(_)
-            | Payload::DayFault(_)
-            | Payload::DayUncleanEnd(_)
-            | Payload::StateRebuilt(_) => {}
+    let failed: Rc<RefCell<Option<Error>>> = Rc::new(RefCell::new(None));
+    let report = Rc::clone(&failed);
+    let mut intents = 0;
+    let arm: Halt = Box::new(move |event| {
+        let Payload::TrialIntent(intent) = &event.payload else {
+            return false;
+        };
+        if intent.activity != Some(Activity::Control) {
+            return false;
         }
-        false
+        intents += 1;
+        if intents != CRASH_AFTER + 1 {
+            return false;
+        }
+        let crash = CoreId::new(3)
+            .map_err(Error::from)
+            .and_then(|core| crash_trial(&fault, intent.trial.as_str(), 7.0, core));
+        match crash {
+            Ok(()) => false,
+            Err(error) => {
+                *report.borrow_mut() = Some(error);
+                true
+            }
+        }
     });
-    simulate(machine, Config::default(), Some(arm), Stop::cycles(1))
+    let events = simulate(machine, Config::default(), Some(arm), NIGHT)?;
+    if let Some(error) = failed.take() {
+        return Err(error);
+    }
+    Ok(events)
 }

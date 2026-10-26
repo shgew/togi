@@ -1,4 +1,4 @@
-Status: see [the index](README.md).
+Status: superseded by [0080](0080-per-ccd-first.md) and [0084](0084-a-fresh-ruleset-transition.md); Ruleset 13 removes located hunts, request-based charges and tuning carry.
 
 # Locate a multi-core R7 failure at once when passes clear its loaded cores
 

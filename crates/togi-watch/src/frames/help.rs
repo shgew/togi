@@ -2,7 +2,7 @@
 //! otherwise.
 //!
 //! Labels and examples keep whole words and values at every width: a help
-//! example's gauge is clipped by cells first, and its failure point, state
+//! example's gauge is clipped by cells first, and its night edge, state
 //! word or offset are left out whole, never cut. The view shows a scrollbar
 //! whenever its contents need scrolling, and scrolling to the end reaches the
 //! last text row, not trailing blank rows.
@@ -23,8 +23,8 @@ struct Section<'a> {
 
 const SCREEN_TITLE: &str = "READING THE SCREEN";
 
-/// The rows of the reading legend. Applied depth and the failure point share the profile's bar glyph, told
-/// apart by colour; group failures have their own mark.
+/// The rows of the reading legend. Applied depth and the night edge share the profile's bar glyph, told apart
+/// by colour.
 fn screen_items(colours: Colours) -> Vec<(&'static str, &'static str)> {
     let rich = colours == Colours::Rich;
     let pick = |console, rich_| if rich { rich_ } else { console };
@@ -32,35 +32,33 @@ fn screen_items(colours: Colours) -> Vec<(&'static str, &'static str)> {
         ("►", "the core carries load in this trial"),
         (
             pick("▄▄▄", "▆▆▆"),
-            "offset applied now, or saved after a stop restored the hardware; white when this trial judges the core",
+            "offset applied now, or saved after a stop restored the hardware; white when this trial loads the core",
         ),
         ("?", "no hardware offset has been read back for this core"),
         (
             pick("grey ▄▄▄", "grey ▆▆▆"),
-            "the same depth, grey when the core is not judged",
+            "the same depth, grey when the core is not loaded",
         ),
         (
             "···",
-            "depth it reached but does not use now: given back, parked, waiting",
+            "the cap S: how far past the applied offset the night's evidence lets its CCD go",
         ),
-        ("░░░", "depth a combination blocks now"),
         (
             pick("red ▄", "red ▆"),
-            "its failure point: the shallowest offset ruled out for this core, one count wide at Wide and Medium",
+            "the night edge U of its CCD: the shallowest offset that failed in isolation, one count wide at Wide and Medium",
         ),
         (
-            pick("▀", "red ┆"),
-            pick(
-                "a group trial failed with this core at that offset",
-                "a group trial failed with this core at that offset; dashed, not the solid red ▆ of the core's own failure point",
-            ),
+            pick("amber ▄", "amber ▆"),
+            "a censored edge: nothing failed down to the mapping limit",
         ),
         ("cyan", "running now"),
-        ("amber", "a hunt, and what it paused"),
+        (
+            "amber",
+            "a hold, a veto, a retreat, a crash, or classes uncovered for the cap",
+        ),
         ("red", "failures, past and present"),
-        ("green", "passed, done"),
-        ("magenta", "combinations"),
-        ("grey", "idle, parked, still to come"),
+        ("green", "passed, done, covered"),
+        ("grey", "idle, still to come, unknown"),
     ]
 }
 
@@ -86,32 +84,16 @@ const TUNING: Section = Section {
     title: "WHAT TOGI DOES",
     items: &[
         (
-            "SOLO LIMITS",
-            "The cores whose solo limit is found, and the core being searched or confirmed.",
+            "NIGHT",
+            "Until you end it, togi maps each CCD's edge, qualifies profiles, reproduces daily events and runs controls, and fills idle time with cap probes and exact repeats. The stage shows when the night started, its elapsed time and what the current trial tests; the night panel lists each queue's share of that time and the progress.",
         ),
         (
-            "PHASE 1",
-            "Checking toward the first confirmed profile. The stage shows whether phase 1 is open or finished.",
+            "DAY",
+            "The applied profile holds for a number of applied hours before it takes one step. The day panel shows the hold, the last step and what blocks the next one.",
         ),
         (
-            "HUNT",
-            "An amber detour: parked trials that find the core or combination behind a failure. The hunt panel shows its groups and member probes.",
-        ),
-        (
-            "PHASE 2",
-            "Deepening: its rounds and its confirmation cycle. A round lists its candidates and their gaps.",
-        ),
-        (
-            "BIOS PROFILE",
-            "The profile to enter in BIOS, one row per CCD in slot order. A * marks an offset not yet confirmed.",
-        ),
-        (
-            "CYCLE",
-            "Checking: every core at its offset together, through the steps of a cycle. The stage shows the cycle's number and step; the cycle panel lists its steps and R7 parts.",
-        ),
-        (
-            "CLEAN CYCLES",
-            "The count of clean cycles for the current profile.",
+            "CCD TABLES",
+            "One table per CCD: its applied offset D, its cap S, its edge U and how far D is from S, then the classes that cover the cap and a row per core with the offset read back.",
         ),
         (
             "R6",
@@ -119,7 +101,7 @@ const TUNING: Section = Section {
         ),
         (
             "NO ETA",
-            "A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial.",
+            "Nights and days follow the clock, but when a hold completes depends on what runs, so togi shows only what is scheduled and the time left in the current trial.",
         ),
         (
             "RULES",
@@ -132,53 +114,56 @@ const WORDS: Section = Section {
     title: "WORDS",
     items: &[
         (
-            "SEARCH",
-            "finding its solo limit with light and heavy-vector trials alone",
-        ),
-        (
-            "CONFIRM",
-            "checking its candidate solo limit with repeated light and heavy-vector trials alone",
-        ),
-        ("FOUND", "solo limit checked; waiting at 0"),
-        ("WAITING", "at 0, waiting for its first search turn"),
-        (
-            "MEMBER",
-            "kept with its hunt group at its failing offset; another member may be probed",
-        ),
-        (
             "offset",
             "Curve Optimizer counts, 0 to -50; deeper is more negative",
         ),
         ("trial", "one launch of one workload on its target"),
         (
-            "solo limit",
-            "the deepest offset a core confirmed under load alone",
+            "D",
+            "the CCD's applied day offset; 0 before the first day step",
         ),
         (
-            "failure point",
-            "the shallowest ruled-out offset for a core",
+            "S",
+            "the cap: the deepest offset the night's evidence supports, with its slope and what binds it",
         ),
         (
-            "combination",
-            "offsets at which a group of cores failed together",
-        ),
-        ("at its limit", "a core that cannot go deeper"),
-        ("has room", "a core that can still go deeper"),
-        ("suspect", "a core a hunt keeps at its failing offset"),
-        (
-            "parked",
-            "a core a hunt holds no deeper than its failing offset, outside the selected group",
-        ),
-        ("partial part", "an R7 part with the top requesters idle"),
-        (
-            "top requester",
-            "an R7 workload's highest-request group on each CCD, ties included; marked top on the CCD tables",
+            "U",
+            "the night edge: the shallowest offset that failed in isolation; unknown until mapped, censored when nothing failed down to the limit",
         ),
         (
-            "self-sufficient",
-            "observed passing as top requester for this R7 workload",
+            "slope",
+            "how fast a class's failure rate grows with depth: a fallback until enough is measured",
         ),
-        ("cycle", "one pass through the checking schedule"),
+        (
+            "bound by",
+            "what limits S: a class's failure rate, the margin from the edge, or the baseline",
+        ),
+        (
+            "covered",
+            "a class whose evidence backs the cap; an uncovered class does not yet",
+        ),
+        ("hold", "applied hours at D out of the hours a step needs"),
+        (
+            "step",
+            "what the day decided: hold, promote one CCD, retreat, or reset after a firmware change",
+        ),
+        ("veto", "a profile an event forbids until the veto clears"),
+        (
+            "freeze",
+            "keeps D and blocks promotions; a required retreat or firmware reset still applies",
+        ),
+        (
+            "qualifying",
+            "running a whole profile until every class has witnessed it",
+        ),
+        (
+            "reproducing",
+            "re-running a daily event's conditions to see whether it comes back",
+        ),
+        (
+            "share",
+            "the part of the night's elapsed time a queue has used, against the part it is meant to take",
+        ),
     ],
 };
 
@@ -267,25 +252,23 @@ fn section_lines(
     }
     out
 }
-
 /// A help example keeps the text of its row whole: its heads run from the full core, offset and state to
-/// nothing, each with its failure point or without, and the first that fits wins. Only the gauge is clipped by
+/// nothing, each with its night edge or without, and the first that fits wins. Only the gauge is clipped by
 /// cells.
 fn example_row(
     width: usize,
     heads: &[String],
     gauge: &Line<'static>,
-    failure: &str,
+    edge: Option<(&str, Paint)>,
     colours: Colours,
 ) -> Line<'static> {
     for head in heads {
-        for with_failure in [true, false] {
+        for with_edge in [edge.is_some(), false] {
             let head_width = display_width(head, colours);
             let used = head_width
-                + if with_failure {
-                    2 + display_width(failure, colours)
-                } else {
-                    0
+                + match edge {
+                    Some((text, _)) if with_edge => 2 + display_width(text, colours),
+                    Some(_) | None => 0,
                 };
             if used > width {
                 continue;
@@ -296,10 +279,9 @@ fn example_row(
             }
             spans.extend(gauge.spans.iter().cloned());
             let mut line = truncate_styled(&Line::from(spans), width - used + head_width, colours);
-            if with_failure {
+            if let Some((text, paint)) = edge.filter(|_| with_edge) {
                 line.spans.push(Span::raw("  "));
-                line.spans
-                    .push(Paint::Bad.span(colours, failure.to_owned()));
+                line.spans.push(paint.span(colours, text.to_owned()));
             }
             return line;
         }
@@ -320,96 +302,87 @@ fn gauge(colours: Colours, parts: &[(Paint, &str, usize)]) -> Line<'static> {
     Line::from(spans)
 }
 
-fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
-    struct Example {
-        core: u32,
-        offset: i32,
-        failure: i32,
-        state: &'static str,
-        note: &'static str,
-        gauge: Line<'static>,
-    }
+/// One worked example of a core's row.
+struct Example {
+    marker: &'static str,
+    core: u32,
+    /// The offset read back; `None` shows `?`.
+    offset: Option<i32>,
+    state: &'static str,
+    edge: Option<(&'static str, Paint)>,
+    note: &'static str,
+    gauge: Line<'static>,
+}
+
+/// The reading examples: a loaded core under a known edge, an idle core whose CCD has no edge yet, and a core
+/// with no readback under a censored edge.
+fn examples(colours: Colours) -> [Example; 3] {
     let marks = marks(colours);
-    let (applied, failure, group) = (
-        marks.applied.to_string(),
-        marks.failure.to_string(),
-        marks.group.to_string(),
-    );
-    let examples = [
+    let (applied, edge) = (marks.applied.to_string(), marks.edge.to_string());
+    [
         Example {
+            marker: "► ",
             core: 4,
-            offset: -28,
-            failure: -36,
-            state: "AT LIMIT",
-            note: "at its limit: it cannot go deeper",
+            offset: Some(-12),
+            state: "LOADED",
+            edge: Some(("-31", Paint::Bad)),
+            note: "applied -12 under load; the dots run to the cap S at -26; the red mark is the edge U, failed at -31",
             gauge: gauge(
                 colours,
                 &[
-                    (Paint::White, &applied, 28),
-                    (Paint::Combination, "░", 7),
-                    (Paint::Bad, &failure, 1),
+                    (Paint::White, &applied, 12),
+                    (Paint::Grey, "·", 14),
+                    (Paint::Text, " ", 4),
+                    (Paint::Bad, &edge, 1),
                 ],
             ),
         },
         Example {
-            core: 0,
-            offset: -26,
-            failure: -32,
-            state: "HAS ROOM",
-            note: "has room: backed off after a hunt, may deepen",
-            gauge: gauge(
-                colours,
-                &[
-                    (Paint::White, &applied, 26),
-                    (Paint::Grey, "·", 5),
-                    (Paint::Bad, &failure, 1),
-                ],
-            ),
-        },
-        Example {
+            marker: "  ",
             core: 9,
-            offset: 0,
-            failure: -48,
-            state: "PARKED",
-            note: "parked at 0 by a hunt; returns to -47",
+            offset: Some(-8),
+            state: "",
+            edge: None,
+            note: "idle, so grey; the cap S is -14 and its CCD has no edge yet, so there is no red mark",
             gauge: gauge(
                 colours,
-                &[(Paint::Grey, "·", 47), (Paint::Bad, &failure, 1)],
+                &[(Paint::Grey, &applied, 8), (Paint::Grey, "·", 6)],
             ),
         },
         Example {
-            core: 0,
-            offset: -26,
-            failure: -32,
-            state: "PROBE",
-            note: "probe: the group failed with core 00 at -30, -29, -27",
+            marker: "  ",
+            core: 11,
+            offset: None,
+            state: "",
+            edge: Some(("-50", Paint::Warn)),
+            note: "no readback yet; the cap S is -30 and the edge is censored: nothing failed down to -50",
             gauge: gauge(
                 colours,
                 &[
-                    (Paint::White, &applied, 26),
-                    (Paint::Bad, &format!("{group} {group}{group} {failure}"), 1),
+                    (Paint::Grey, "·", 30),
+                    (Paint::Text, " ", 19),
+                    (Paint::Warn, &edge, 1),
                 ],
             ),
         },
-    ];
+    ]
+}
+
+fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
     let mut out = vec![title_rule(SCREEN_TITLE, width, colours), blank()];
-    for example in examples {
-        let marker = if example.state == "PARKED" {
-            "  "
-        } else {
-            "► "
-        };
+    for example in examples(colours) {
         let Example {
+            marker,
             core,
             offset,
-            failure,
             state,
             ..
         } = example;
-        let prefix = format!("{marker}{core:02}  {offset:3}  {state:<8} ");
+        let shown = offset.map_or_else(|| "  ?".to_owned(), |offset| format!("{offset:3}"));
+        let prefix = format!("{marker}{core:02}  {shown}  {state:<8} ");
         let heads = [
             prefix.clone(),
-            format!("{marker}{core:02}  {offset:3} "),
+            format!("{marker}{core:02}  {shown} "),
             format!("{marker}{core:02} "),
             String::new(),
         ];
@@ -417,7 +390,7 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
             width,
             &heads,
             &example.gauge,
-            &format!("{failure:3}"),
+            example.edge,
             colours,
         ));
         let indent = display_width(&prefix, colours).min(width.saturating_sub(20));
@@ -573,7 +546,7 @@ mod tests {
             );
         }
         let text = rows.join("\n");
-        for title in ["THE TOP LINE", "KINDS OF LOAD", "NO ETA", "CLEAN CYCLES"] {
+        for title in ["THE TOP LINE", "KINDS OF LOAD", "NO ETA", "CCD TABLES"] {
             assert!(text.contains(title), "wide help lost {title:?}");
         }
         for (row, line) in body.iter().enumerate() {
@@ -680,19 +653,27 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         for said in [
-            "Checking toward the first confirmed profile.",
-            "its failure point: the shallowest offset ruled out for this core",
-            "the shallowest ruled-out offset for a core",
-            "a core a hunt holds no deeper than its failing offset, outside the selected group",
-            "highest-request group on each CCD, ties included",
+            "the night edge U of its CCD: the shallowest offset that failed in isolation",
+            "the night edge: the shallowest offset that failed in isolation",
+            "the cap: the deepest offset the night's evidence supports",
+            "a class whose evidence backs the cap; an uncovered class does not yet",
+            "applied hours at D out of the hours a step needs",
         ] {
             assert!(words.contains(said), "help lost {said:?}: {words}");
         }
         for gone in [
-            "The first full cycle",
-            "on its own account",
-            "shallower than its failing offset",
-            "setting the shared core voltage",
+            "SOLO LIMITS",
+            "PHASE 1",
+            "PHASE 2",
+            "CLEAN CYCLES",
+            "BIOS PROFILE",
+            "solo limit",
+            "failure point",
+            "combination",
+            "top requester",
+            "self-sufficient",
+            "hunt",
+            "parked",
         ] {
             assert!(!words.contains(gone), "help still says {gone:?}: {words}");
         }
@@ -750,7 +731,7 @@ mod tests {
 
     #[test_case(115; "115 columns")]
     #[test_case(235; "235 columns")]
-    fn full_help_renders_whole_and_explains_the_states(width: usize) {
+    fn full_help_renders_whole_and_explains_the_words(width: usize) {
         let (body, scroll) = help_body(width, 1000, 0, C, Quit::Keys);
         assert!(
             scroll == 0 && !body.is_empty(),
@@ -783,15 +764,15 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         for explanation in [
-            "SEARCH finding its solo limit with light and heavy-vector trials alone",
-            "CONFIRM checking its candidate solo limit with repeated light and heavy-vector trials alone",
-            "FOUND solo limit checked; waiting at 0 WAITING",
-            "WAITING at 0, waiting for its first search turn",
-            "MEMBER kept with its hunt group at its failing offset; another member may be probed",
+            "D the CCD's applied day offset; 0 before the first day step",
+            "S the cap: the deepest offset the night's evidence supports, with its slope and what binds it",
+            "U the night edge: the shallowest offset that failed in isolation; unknown until mapped, censored when nothing failed down to the limit",
+            "covered a class whose evidence backs the cap; an uncovered class does not yet",
+            "veto a profile an event forbids until the veto clears",
         ] {
             assert!(
                 words.contains(explanation),
-                "{width} columns: help lost state explanation {explanation:?}"
+                "{width} columns: help lost explanation {explanation:?}"
             );
         }
         assert!(
@@ -997,19 +978,19 @@ mod tests {
     #[test]
     fn the_title_rule_keeps_whole_words_and_a_dash_track() {
         let text = |title, width| plain(&title_rule(title, width, C), C);
-        assert_eq!(text("SOLO LIMITS", 11), "SOLO LIMITS");
-        assert_eq!(text("SOLO LIMITS", 14), "SOLO LIMITS ──");
-        assert_eq!(text("SOLO LIMITS", 8), "SOLO... ");
-        assert_eq!(text("SOLO LIMITS", 0), "");
-        assert_eq!(text("REQUESTERS", 8), " ───────");
+        assert_eq!(text("NIGHT AND DAY", 13), "NIGHT AND DAY");
+        assert_eq!(text("NIGHT AND DAY", 16), "NIGHT AND DAY ──");
+        assert_eq!(text("NIGHT AND DAY", 9), "NIGHT... ");
+        assert_eq!(text("NIGHT AND DAY", 0), "");
+        assert_eq!(text("COVERAGE", 6), " ─────");
         for width in 0..30 {
-            assert!(line_width(&title_rule("SOLO LIMITS", width, C), C) <= width);
+            assert!(line_width(&title_rule("NIGHT AND DAY", width, C), C) <= width);
         }
     }
 
-    #[test_case("requester", 20, 6, ""; "omit a word that cannot fit")]
-    #[test_case("top requester", 30, 10, "top..."; "shorten at a word")]
-    #[test_case("top requester", 60, 15, "top requester"; "keep a fitting label")]
+    #[test_case("uncovered", 20, 6, ""; "omit a word that cannot fit")]
+    #[test_case("bound by rate", 30, 10, "bound..."; "shorten at a word")]
+    #[test_case("bound by rate", 60, 15, "bound by rate"; "keep a fitting label")]
     fn help_labels_keep_whole_words(
         label: &'static str,
         width: usize,
@@ -1036,30 +1017,21 @@ mod tests {
 
     #[test]
     fn help_examples_keep_whole_values() {
-        let examples: [&[&str]; 4] = [
-            &["►", "04", "-28", "AT", "LIMIT", "-36"],
-            &["►", "00", "-26", "HAS", "ROOM", "-32"],
-            &["09", "0", "PARKED", "-48"],
-            &["►", "00", "-26", "PROBE", "-32"],
+        let examples: [(&[&str], bool); 3] = [
+            (&["►", "04", "-12", "LOADED", "-31"], true),
+            (&["09", "-8"], false),
+            (&["11", "?", "-50"], true),
         ];
         for width in 1..=100 {
             let lines = reading(width, C);
             let mut at = 2;
-            for (i, tokens) in examples.iter().enumerate() {
+            for (i, (tokens, has_edge)) in examples.iter().enumerate() {
                 let row = plain(&lines[at], C);
                 let fields: Vec<&str> = row.split_whitespace().collect();
                 for field in &fields {
                     assert!(
-                        field.trim_matches(['▄', '░', '·', '▀']).is_empty()
-                            || tokens.contains(field),
+                        field.trim_matches(['▄', '·']).is_empty() || tokens.contains(field),
                         "width {width} example {i}: text or value cut to {field:?}: {row:?}"
-                    );
-                }
-                for pair in [("AT", "LIMIT"), ("HAS", "ROOM")] {
-                    assert_eq!(
-                        fields.contains(&pair.0),
-                        fields.contains(&pair.1),
-                        "width {width} example {i}: state word cut: {row:?}"
                     );
                 }
                 assert!(
@@ -1067,10 +1039,11 @@ mod tests {
                     "width {width} example {i}: row exceeds width: {row:?}"
                 );
                 if width == 100 {
+                    let edge_ok = !has_edge || fields.last() == tokens.last();
                     assert!(
-                        fields.last() == tokens.last()
-                            && fields.contains(&tokens[tokens.len() - 2]),
-                        "wide example {i} lost its state or failure point: {row:?}"
+                        edge_ok
+                            && fields.contains(&tokens[tokens.len() - 1 - usize::from(*has_edge)]),
+                        "wide example {i} lost its state or night edge: {row:?}"
                     );
                 }
                 while !plain(&lines[at], C).is_empty() {
@@ -1087,16 +1060,16 @@ mod tests {
         let sc = screen(View::Help, width, 60, C, false);
         let (buf, _) = render_missing(&sc);
         for line in rows_of(&buf) {
-            let fields: Vec<&str> = line.split_whitespace().collect();
-            assert!(
-                !fields.contains(&"-2"),
-                "width {width}: help example cut a value: {line:?}"
-            );
-            assert_eq!(
-                fields.contains(&"AT"),
-                fields.contains(&"LIMIT"),
-                "width {width}: help example cut a state word: {line:?}"
-            );
+            for field in line.split_whitespace() {
+                let digits = field
+                    .strip_prefix('-')
+                    .filter(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()));
+                assert!(
+                    digits.is_none()
+                        || ["-8", "-12", "-14", "-26", "-30", "-31", "-50"].contains(&field),
+                    "width {width}: help example cut a value to {field:?}: {line:?}"
+                );
+            }
         }
     }
 
@@ -1322,13 +1295,13 @@ mod tests {
         }
     }
 
-    #[test_case(Colours::Rich, "▆▆▆", "red ▆", "red ┆"; "rich")]
-    #[test_case(Colours::Full, "▄▄▄", "red ▄", "▀"; "console")]
+    #[test_case(Colours::Rich, "▆▆▆", "red ▆", "amber ▆"; "rich")]
+    #[test_case(Colours::Full, "▄▄▄", "red ▄", "amber ▄"; "console")]
     fn the_legend_names_the_profiles_own_gauge_glyphs(
         colours: Colours,
         applied: &str,
-        failure: &str,
-        group: &str,
+        edge: &str,
+        censored: &str,
     ) {
         let (help, _) = help_body(115, 1000, 0, colours, Quit::Keys);
         let rows = plain_rows_in(&help, colours);
@@ -1339,44 +1312,40 @@ mod tests {
                 .clone()
         };
         assert!(row_of(applied).contains("offset applied now"));
-        assert!(row_of(failure).contains("its failure point"));
-        assert!(row_of(group).contains("a group trial failed"));
+        assert!(row_of(edge).contains("the night edge U of its CCD"));
+        assert!(row_of(censored).contains("a censored edge"));
         let text = rows.join("\n");
         let rich = colours == Colours::Rich;
-        assert_eq!(text.contains("dashed"), rich);
         assert!(!text.contains('▬'));
-        for glyph in ['▄', '▀'] {
-            assert_eq!(text.contains(glyph), !rich, "{glyph:?}");
-        }
+        assert!(!text.contains('▀'));
+        assert_eq!(text.contains('▄'), !rich, "the console's bar glyph");
     }
 
     #[test_case(Colours::Console; "console")]
     #[test_case(Colours::Rich; "rich")]
-    fn examples_draw_the_failure_and_group_marks_at_their_counts(colours: Colours) {
+    fn examples_draw_the_edge_marks_at_their_counts(colours: Colours) {
         let marks = super::marks(colours);
         let lines = reading(100, colours);
-        let gauge_of = |row: usize| {
-            let text = plain(&lines[row], colours);
-            let at = text.find([marks.applied, '·']).expect("a gauge");
-            text[at..].chars().take(50).collect::<Vec<_>>()
+        let gauge_of = |core: &str| {
+            let row = lines
+                .iter()
+                .map(|line| plain(line, colours))
+                .find(|text| {
+                    text.trim_start()
+                        .trim_start_matches('►')
+                        .trim_start()
+                        .starts_with(core)
+                })
+                .unwrap_or_else(|| panic!("no example row for core {core}"));
+            let at = row.find([marks.applied, '·']).expect("a gauge");
+            row[at..].chars().take(50).collect::<Vec<_>>()
         };
-        let first = gauge_of(2);
-        assert!(first[..28].iter().all(|&c| c == marks.applied));
-        assert!(first[28..35].iter().all(|&c| c == '░'));
-        assert_eq!(first[35], marks.failure, "-36 is the 36th cell");
-        let mut at = 2;
-        while !plain(&lines[at], colours).contains("PROBE") {
-            at += 1;
-        }
-        let probe: String = gauge_of(at).into_iter().collect();
-        assert!(
-            probe.starts_with(&format!(
-                "{}{g} {g}{g} {f}",
-                marks.applied.to_string().repeat(26),
-                g = marks.group,
-                f = marks.failure,
-            )),
-            "{probe}"
-        );
+        let loaded = gauge_of("04");
+        assert!(loaded[..12].iter().all(|&c| c == marks.applied));
+        assert!(loaded[12..26].iter().all(|&c| c == '·'));
+        assert_eq!(loaded[30], marks.edge, "-31 is the 31st cell");
+        let censored = gauge_of("11");
+        assert!(censored[..30].iter().all(|&c| c == '·'));
+        assert_eq!(censored[49], marks.edge, "-50 is the 50th cell");
     }
 }

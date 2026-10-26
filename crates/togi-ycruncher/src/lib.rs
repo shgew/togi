@@ -9,7 +9,10 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 use regex::bytes::Regex as BytesRegex;
-use togi_backend::{Backend, Error, FileName, Input, Line, Plan, Ready, check_executable};
+use togi_backend::{
+    Backend, Error, FileName, Input, Line, Plan, Ready, check_executable, configuration_bytes,
+    numbered_cpus,
+};
 use togi_machine::{CpuId, Workload};
 
 const NAME: &str = "y-cruncher";
@@ -56,6 +59,26 @@ fn config(cpus: &[CpuId], tests: &[&str]) -> String {
     format!(
         "{{\n    Action : \"StressTest\"\n    StressTest : {{\n        AllocateLocally : \"true\"\n        LogicalCores : [{logical}]\n        TotalMemory : {memory}\n        SecondsPerTest : 30\n        SecondsTotal : 0\n        StopOnError : \"true\"\n        Tests : [\n{tests}        ]\n    }}\n}}\n"
     )
+}
+
+/// How y-cruncher launches in `dir`, where its configuration file lives; with no directory the
+/// arguments are the directory-independent part of the configuration.
+fn launch_args(dir: &Path) -> Vec<OsString> {
+    vec![
+        OsString::from("skip-warnings"),
+        OsString::from("pause:-2"),
+        OsString::from("status:none"),
+        OsString::from("config"),
+        dir.join(CONFIG.as_str()).into_os_string(),
+    ]
+}
+
+/// The input files for a run on `cpus`.
+fn inputs(profile: Profile, cpus: &[CpuId]) -> Vec<Input> {
+    vec![Input {
+        name: CONFIG,
+        contents: config(cpus, profile.tests).into_bytes(),
+    }]
 }
 
 /// The output and file-name patterns, compiled once when the adapter is built.
@@ -245,17 +268,8 @@ impl Ycruncher {
         let binaries = discover()?;
         Ok(Plan {
             program: binaries.path(profile.isa),
-            args: vec![
-                OsString::from("skip-warnings"),
-                OsString::from("pause:-2"),
-                OsString::from("status:none"),
-                OsString::from("config"),
-                dir.join(CONFIG.as_str()).into_os_string(),
-            ],
-            inputs: vec![Input {
-                name: CONFIG,
-                contents: config(cpus, profile.tests).into_bytes(),
-            }],
+            args: launch_args(dir),
+            inputs: inputs(profile, cpus),
             watched: Vec::new(),
         })
     }
@@ -272,6 +286,17 @@ impl Backend for Ycruncher {
 
     fn plan(&self, workload: &Workload, dir: &Path, cpus: &[CpuId]) -> Result<Plan, Error> {
         self.plan_with(workload, dir, cpus, || self.discover())
+    }
+
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, Error> {
+        let profile = Profile::of(workload.base).ok_or(Error::Unsupported {
+            backend: self.kind(),
+            workload: workload.id(),
+        })?;
+        Ok(configuration_bytes(
+            &launch_args(Path::new("")),
+            &inputs(profile, &numbered_cpus(workload.threads)),
+        ))
     }
 
     fn classify(&self, line: &str) -> Line {

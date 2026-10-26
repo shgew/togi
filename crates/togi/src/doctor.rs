@@ -35,7 +35,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Prints the check rows with ok, FAIL, warn or skipped, then ready, not fully checked, or not
 /// ready with the failed checks: those run would refuse at startup. A missing
 /// hardware watchdog is a warning, as in a run started outside the tuning boot. A changed BIOS
-/// context is a warning too: run archives the session and starts a new one. A journal with a
+/// context is a warning too: run records the new context and the session continues under it. A journal with a
 /// newer schema, ruleset or evidence epoch, or with unknown event kinds, is refused as run refuses
 /// it. On a platform other than
 /// Linux it reports that hardware runs need Linux and exits 1 before reading anything.
@@ -47,7 +47,9 @@ pub struct Args {
 }
 
 const COMMAND: &str = "doctor";
-const WARNINGS: [&str; 2] = ["watchdog", "bios_context"];
+/// Checks whose failure is reported as `warn` and never makes the machine not ready: backend availability excludes
+/// only the backend from a night.
+const WARNINGS: [&str; 3] = ["watchdog", "bios_context", "backends"];
 
 /// Makes the checks and prints the table.
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {

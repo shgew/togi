@@ -2,11 +2,11 @@
 
 use std::collections::BTreeMap;
 use std::time::Duration;
-use togi_machine::{BiosContext, Regime, ResetKind, Signal};
+use togi_machine::{ALL_REGIMES, BiosContext, Regime, ResetKind, Signal};
 use togi_sim::definition::{DEFAULT_GROWTH, DEFAULT_ONSET_S, ScriptDef, Weights};
 use togi_sim::file::{self, LoadError};
 use togi_sim::model::Script;
-use togi_sim::{MachineDefinition, Model, Problem, RunSettings, WEIGHTED_SIGNALS};
+use togi_sim::{MachineDefinition, Model, RunSettings, WEIGHTED_SIGNALS};
 
 use test_case::test_case;
 
@@ -90,6 +90,60 @@ fn a_full_machine_decodes_with_its_metadata() {
     );
 }
 
+#[test]
+fn r8_and_r9_have_their_own_signal_mix_else_their_model_regimes_else_the_pooled_one() {
+    let weight = |text: &str, regime: Regime| {
+        let definition = file::decode(text).expect("decodes");
+        model(&definition)
+            .signal_mix(regime)
+            .weight(Signal::ComputationError)
+    };
+    let pooled = r#"{"model":{"signals":{"computation_error":3,"crash":1}}}"#;
+    let listed = r#"{"model":{"signals":{"crash":1},"regime_signals":{"R2":{"computation_error":5,"crash":1},"R7":{"computation_error":11,"crash":1}}}}"#;
+    let own = r#"{"model":{"signals":{"crash":1},"regime_signals":{"R2":{"computation_error":5,"crash":1},"R7":{"computation_error":11,"crash":1},"R8":{"computation_error":7,"crash":1},"R9":{"computation_error":13,"crash":1}}}}"#;
+    for regime in [Regime::R8, Regime::R9] {
+        assert_eq!(weight(pooled, regime), 3.0);
+    }
+    assert_eq!(weight(listed, Regime::R8), 5.0, "R8 follows R2");
+    assert_eq!(weight(listed, Regime::R9), 11.0, "R9 follows R7");
+    assert_eq!(weight(listed, Regime::R3), 0.0);
+    assert_eq!(weight(own, Regime::R8), 7.0);
+    assert_eq!(weight(own, Regime::R9), 13.0);
+    assert_eq!(weight(own, Regime::R2), 5.0);
+    assert_eq!(weight(own, Regime::R7), 11.0);
+}
+
+#[test]
+fn a_joint_covers_the_regimes_it_names_and_the_ones_modeled_as_them() {
+    let covered = |regimes: &str| {
+        let text = format!(r#"{{"joint":[{{"members":{{"0":-5}},"regimes":[{regimes}]}}]}}"#);
+        let set = model(&file::decode(&text).expect("decodes")).joints()[0].regimes;
+        ALL_REGIMES.map(|regime| set.covers(regime))
+    };
+    let want = |named: &[Regime]| ALL_REGIMES.map(|regime| named.contains(&regime));
+    assert_eq!(
+        covered(r#""R7""#),
+        want(&[Regime::R7, Regime::R9]),
+        "R9 is R7"
+    );
+    assert_eq!(covered(r#""R9""#), want(&[Regime::R9]));
+    assert_eq!(
+        covered(r#""R2""#),
+        want(&[Regime::R2, Regime::R8]),
+        "R8 is R2"
+    );
+    assert_eq!(covered(r#""R8""#), want(&[Regime::R8]));
+    assert_eq!(
+        covered(r#""R7","R8""#),
+        want(&[Regime::R7, Regime::R8, Regime::R9])
+    );
+    assert_eq!(
+        covered(""),
+        want(&ALL_REGIMES),
+        "no regimes is every regime"
+    );
+}
+
 fn load_text(text: &str) -> Result<MachineDefinition, LoadError> {
     let dir = crate::common::MemoryFiles::default();
     let path = dir.write(&dir.path().join("machine.json"), text);
@@ -140,24 +194,13 @@ fn malformed_documents_are_refused_with_the_file_named(text: &str, want: &str) {
     assert!(message.contains(want), "{message} lacks {want:?}");
 }
 
-#[test_case(r#"{"joint":[{"members":{"0":-5},"regimes":["R8"]}]}"#, "joint[0].regimes[0]"; "r8 in joint regimes")]
-#[test_case(r#"{"joint":[{"members":{"0":-5},"regimes":["R7","R9"]}]}"#, "joint[0].regimes[1]"; "r9 in joint regimes")]
-#[test_case(r#"{"model":{"regime_signals":{"R8":{"crash":1}}}}"#, "model.regime_signals.R8"; "r8 in regime_signals")]
-#[test_case(r#"{"model":{"regime_signals":{"R9":{"crash":1}}}}"#, "model.regime_signals.R9"; "r9 in regime_signals")]
-fn role_regimes_the_simulator_does_not_model_are_refused(text: &str, at: &str) {
-    let error = load_text(text).expect_err("an unmodeled regime");
-    let message = togi_machine::error_chain(&error);
-    let LoadError::Invalid { source, .. } = error else {
-        panic!("{message}");
-    };
-    assert_eq!(
-        (source.path.as_str(), source.problem),
-        (at, Problem::UnmodeledRegime)
-    );
-    assert!(
-        message.contains("is a role regime the simulator does not model"),
-        "{message}"
-    );
+#[test]
+fn every_regime_may_be_named_in_a_joint_and_in_regime_signals() {
+    let definition = file::decode(
+        r#"{"joint":[{"members":{"0":-5},"regimes":["R7","R8","R9"]}],"model":{"regime_signals":{"R8":{"crash":1},"R9":{"crash":1}}}}"#,
+    )
+    .expect("decodes");
+    model(&definition);
 }
 
 #[test]

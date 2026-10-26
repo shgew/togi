@@ -1,0 +1,150 @@
+---
+source: crates/togi/tests/read/status.rs
+expression: text(&ran.stdout)
+---
+night since 08:00, 39m30s elapsed: qualification (task qualification #0)
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
+  boost limit 5700 MHz
+in flight: [#11733] trial night-trial-2632 core 00 offset -1 R1 mprime SSE
+  4K-21K 90 s together qualification task qualification #0 night #11644
+
+CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
+0   0-7   0   -1  fallback rate     censored -50 1         105     129
+  bound by R9 ycruncher-snt-svt-all-threads serial cpu 6 120s isolated
+1   8-15  0   0   fallback rate     censored -50 0         105     119
+  bound by R9 ycruncher-bkt-sftv4-all-threads serial cpu 29 120s isolated
+  CCD 0 uncovered for the cap, no observations: R8
+    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 0 120s
+    isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+    core 1 120s isolated; R8
+    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 2 120s
+    isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+    core 3 120s isolated; R8
+    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 4 120s
+    isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+    core 5 120s isolated; R8
+    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 6 120s
+    isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+    core 7 120s isolated; R9 ycruncher-bkt-sftv4-all-threads serial cpu 21 120s
+    isolated
+  CCD 0 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
+    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
+    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
+    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
+    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
+    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
+    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
+    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
+    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
+    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    1 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 2 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 3 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    7 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 0 600s exact
+  CCD 1 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
+    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
+    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
+    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
+    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
+    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
+    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
+    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
+    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
+    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    9 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 10 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 11 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    15 120s exact
+  A class is uncovered for the cap when mapping has not adequately exposed it or
+    it lies outside the mapping projection; uncovered is never read as safe.
+
+Day policy
+applied profile: CCD 0 0, CCD 1 0
+hold: none recorded
+latest step [#11636] at cold boot calendar-boot-31: holds, blocked by: every CCD
+  is at its cap
+freeze: off
+firmware: valid
+
+Night since 08:00
+elapsed: 39m30s
+QUEUE            SHARE  USED  TIME
+reproduction     25%    0%    0s
+qualification    75%    0%    0s
+mapping          10%    100%  39m30s
+control          5%     0%    0s
+requalification  10%    0%    0s
+current task: qualification (task qualification #0)
+mapping CCD 0: next offset -41
+mapping CCD 1: next offset -42
+qualification: CCD 0 -1, CCD 1 0 (next step) started
+qualifying CCD 0 -1, CCD 1 0: 0 cells witnessed, 259 outstanding
+  outstanding R1 mprime-sse-4k-21k 90s exact x16; R1 ycruncher-bkt-sftv4 90s
+    exact x16; R1 ycruncher-snt-svt 90s exact x16; R2 mprime-avx2-36k-248k 90s
+    exact x16; R2 mprime-avx512-36k-248k 90s exact x16; R2
+    ycruncher-fftv4-n63-vt3 90s exact x16; R3 mprime-sse-4k-21k-steps 120s exact
+    x16; R3 ycruncher-bkt-sftv4-steps 120s exact x16; R3 ycruncher-snt-svt-steps
+    120s exact x16; R4 mprime-sse-4k-21k-duty25 120s exact x16; R4
+    ycruncher-bkt-sftv4-duty50 120s exact x16; R4 ycruncher-snt-svt-duty75 120s
+    exact x16; R5 mprime-sse-4k-21k-smt 120s exact x16; R6
+    mprime-sse-4k-21k-idle 900s exact; R7 mprime-avx2-36k-248k-allcore 120s
+    exact x15; R7 mprime-avx2-36k-248k-allcore 600s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    3 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 4 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 5 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    9 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 10 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 11 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    15 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 0 600s exact; R9 mprime-sse-4k-21k-all-threads serial cpu 0 120s exact;
+    R9 mprime-sse-4k-21k-all-threads serial cpu 1 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 2 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 3 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 4 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 5 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 6 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 7 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 8 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 9 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 10 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 11 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 12 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 13 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 14 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 15 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 0 600s exact
+
+Day
+boots observed: 22; clean ends: 22; unclean ends: 0
+hardware watchdog at the last observer check: not recorded
+Applied hours per read-back profile (changed intervals excluded):
+  00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0
+    15:0: 176.000 h
+all profiles: 176.0h observed, 0 crashes (12 unknown intervals)
+stock (CO 0): 176.0h observed, 0 crashes
+totals are observations, not a bound
+last unclean end: none

@@ -346,3 +346,32 @@ fn a_defect_id_of_zero_is_refused(kind: EventKind) {
     line["data"]["id"] = json!(0);
     assert!(Event::decode(&line.to_string()).is_err(), "{kind}");
 }
+
+#[test_case("-1.0"; "negative rate")]
+#[test_case("1e999"; "nonfinite rate")]
+fn a_cap_budget_that_is_not_a_nonnegative_finite_rate_is_refused(budget: &str) {
+    let cap = samples()
+        .into_iter()
+        .find(|payload| matches!(payload, Payload::CcdCap(_)))
+        .unwrap();
+    let line = line_of(cap).to_string();
+    let corrupted = line.replacen(
+        r#""budget":0.00016666666666666666"#,
+        &format!(r#""budget":{budget}"#),
+        1,
+    );
+    assert_ne!(line, corrupted, "the sample's budget text changed");
+    assert!(Event::decode(&corrupted).is_err());
+}
+
+#[test]
+fn an_unknown_day_step_kind_is_refused() {
+    let step = samples()
+        .into_iter()
+        .find(|payload| matches!(payload, Payload::DayStep(_)))
+        .unwrap();
+    let line = line_of(step)
+        .to_string()
+        .replacen(r#""kind":"promote""#, r#""kind":"leap""#, 1);
+    assert!(Event::decode(&line).is_err());
+}

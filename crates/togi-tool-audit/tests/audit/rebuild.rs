@@ -35,7 +35,7 @@ fn config_loaded(seq: u64, fixes: u32) -> togi_journal::Event {
     )
 }
 
-#[test_case::test_case(case("no rebuild", vec![phase(2, 0, None)], InProgress, &[]); "no rebuild")]
+#[test_case::test_case(case("no rebuild", vec![phase(2, 0)], InProgress, &[]); "no rebuild")]
 #[test_case::test_case(case(
             "a snapshot behind the journal is stale, not wrong",
             vec![rebuilt(2, &["cores", "last_seq"])],
@@ -86,7 +86,7 @@ fn config_loaded(seq: u64, fixes: u32) -> togi_journal::Event {
         ); "a run archived without recording its build")]
 #[test_case::test_case(case(
             "a later boot without the build",
-            vec![rebuilt(2, &["cores"]), boot(phase(3, 0, None), "c")],
+            vec![rebuilt(2, &["cores"]), boot(phase(3, 0), "c")],
             InProgress,
             &[(2, Replay)],
         ); "a later boot without the build")]

@@ -5,24 +5,23 @@
 //! tuning loop runs [`Session::check_dead_end`] and [`Session::execute`] on every action, and every exit, whatever
 //! ended the run, goes through [`Session::close`], which hands the journal back.
 
-use std::io::{self, Write};
-use std::num::NonZeroU32;
+use std::collections::BTreeMap;
+use std::io::Write;
 use std::time::Duration;
 
 use jiff::tz::TimeZone;
-use togi_carry::PendingCarry;
 use togi_config::{Config, DeadEndThreshold};
-use togi_defect::FindingView;
 use togi_journal::{
     Build, ConfigLoaded, DeadEnd, DeadEndAction, DeadEndCondition, Journal, Mce, Operation,
     Payload, Seq, SessionStart, SessionWarning, Shutdown, ShutdownReason, TrialId, Verdict,
 };
 use togi_machine::{
-    BootId, CancellationToken, CoreInfo, CoreSet, Error, Host, Kernel, KernelCursor, Machine,
-    Partial, Smu, SmuValidated, Stopped, Trials,
+    Backend, BootId, CancellationToken, ContentId, CoreInfo, CoreSet, Error, Host, Kernel,
+    KernelCursor, Machine, Partial, Smu, SmuValidated, Stopped, Trials, WorkloadId,
 };
 use togi_render::Renderer;
 use togi_tuner::Topology;
+use togi_tuner::policy::EndReason;
 use togi_tuningboot::Bootloader;
 
 use crate::appender::{AppendHook, Appender, Unresumed};
@@ -30,19 +29,11 @@ use crate::boot::{self, BootHandoff};
 use crate::emergency::{self, SweepCleared};
 use crate::error::{Flow, SessionError, Step};
 use crate::evidence::{self, Placement, Window};
+use crate::prepare::PendingImport;
 use crate::recover::KernelUnreadable;
 use crate::recovery::Cited;
 use crate::resume::ResumeCapsule;
 use crate::write::{Hardware, Verified};
-
-/// When a run that met no dead end stops on its own.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct StopPolicy {
-    /// The clean cycles to run after phase 2 concluded.
-    pub cycles: Option<NonZeroU32>,
-    /// Stop at the next round or cycle start once the BIOS profile is confirmed.
-    pub first_result: bool,
-}
 
 /// Where the configuration came from, as `config.loaded` records it.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -50,20 +41,6 @@ pub struct ConfigSource {
     pub path: String,
     /// Whether a file was read; otherwise the defaults are in force.
     pub file: bool,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum PromptError {
-    #[error("cancelled")]
-    Cancelled,
-    #[error(transparent)]
-    Io(#[from] io::Error),
-}
-
-/// Asks the person at the terminal about a defect finding.
-pub trait Prompt {
-    /// Whether to reset the cores the finding affected.
-    fn reset_cores(&mut self, finding: &FindingView<'_>) -> Result<bool, PromptError>;
 }
 
 pub struct RunInput<'machine> {
@@ -74,20 +51,15 @@ pub struct RunInput<'machine> {
     pub boot: BootId,
     pub journal: Journal,
     pub machine: Machine<'machine>,
-    pub policy: StopPolicy,
-    /// Explicit opt-in to the Ruleset13 controller experiment; ordinary runs use Legacy.
-    pub controller: togi_machine::ControllerContract,
     pub publication: crate::publication::PublicationPolicy,
     /// Set only in the tuning boot, where a dead end hands the next boot back to the normal system.
     pub bootloader: Option<Box<dyn Bootloader>>,
-    /// `None` when no terminal can answer.
-    pub prompt: Option<Box<dyn Prompt>>,
     /// The defects this build knows; [`togi_defect::KNOWN_DEFECTS`] outside tests.
     pub defects: &'static [togi_defect::Entry],
     /// What the previous run on this journal left; adopted only when it covers exactly the journal.
     pub resume: Option<ResumeCapsule>,
-    /// What a transition carries into a new session.
-    pub carry: Option<PendingCarry>,
+    /// The fresh transition's import, recorded in the session before its first trial.
+    pub import: Option<PendingImport>,
     /// Receives each appended event's line.
     pub log: Option<Box<dyn Write>>,
     /// Called with every appended event once, in order, after it is durable and its log line is written.
@@ -103,8 +75,8 @@ pub struct RunInput<'machine> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Stop {
     Signal,
-    Cycles,
-    FirstResult,
+    /// The night policy ended the night at a dead end.
+    Night(EndReason),
     DeadEnd {
         dead_end: DeadEnd,
         /// The events the dead end cites.
@@ -304,10 +276,9 @@ pub(crate) struct Session<'machine> {
     pub(crate) build: Build,
     pub(crate) config: Config,
     pub(crate) source: ConfigSource,
-    pub(crate) policy: StopPolicy,
-    pub(crate) controller: togi_machine::ControllerContract,
-    pub(crate) prompt: Option<Box<dyn Prompt>>,
-    pub(crate) carry: Option<PendingCarry>,
+    /// What each workload the policy asked about runs, asked of the trial runner once.
+    pub(crate) contents: std::collections::BTreeMap<WorkloadId, ContentId>,
+    pub(crate) import: Option<PendingImport>,
     pub(crate) cancel: CancellationToken,
     pub(crate) report: Box<dyn Write>,
     /// Sorted by core id, as [`Session::open`] read it.
@@ -338,14 +309,11 @@ impl<'machine> Session<'machine> {
             boot,
             journal,
             machine,
-            policy,
-            controller,
             publication,
             mut bootloader,
-            prompt,
             defects,
             resume,
-            carry,
+            import,
             log,
             on_append,
             renderer,
@@ -432,10 +400,8 @@ impl<'machine> Session<'machine> {
             build,
             config,
             source,
-            policy,
-            controller,
-            prompt,
-            carry,
+            contents: std::collections::BTreeMap::new(),
+            import,
             cancel,
             report,
             topology,
@@ -455,9 +421,15 @@ impl<'machine> Session<'machine> {
         &self.appender
     }
 
-    #[cfg(test)]
-    pub(crate) fn cores(&self) -> CoreSet {
-        self.hardware.cores()
+    /// The backends excluded for the rest of the night, each with the events that excluded it: the night plans
+    /// around them and cites those.
+    pub(crate) fn unavailable_backends(&self) -> BTreeMap<Backend, Vec<Seq>> {
+        self.appender
+            .recovery()
+            .unavailable_backends(self.inconclusive_threshold())
+            .into_iter()
+            .map(|(backend, unavailable)| (backend, unavailable.causes().to_vec()))
+            .collect()
     }
 
     pub(crate) const fn same_boot(&self) -> bool {
@@ -488,20 +460,16 @@ impl<'machine> Session<'machine> {
         {
             return Ok(Control::Stop(stop));
         }
-        if let Some((core, _)) = self
-            .config
-            .overrides()
-            .find(|(core, _)| !cores.contains(*core))
-        {
-            return Err(SessionError::NoSuchCore { core });
-        }
         self.hardware = Hardware::new(cores);
         if self.appender.recovery().pending_dead_end().is_some() {
             return Ok(Control::Continue);
         }
         if !self.appender.recovery().started() {
             let now = self.appender.clock().now();
-            let session = self.appender.journal().state_dir().session_id(now)?;
+            let session = match &self.import {
+                Some(import) => import.destination(),
+                None => self.appender.journal().state_dir().session_id(now)?,
+            };
             let start = SessionStart {
                 build: self.build.clone(),
                 session,
@@ -796,17 +764,16 @@ impl<'machine> Session<'machine> {
     }
 
     pub(crate) fn record_shutdown(&mut self, stop: &Stop) {
-        let (reason, cycles) = match stop {
-            Stop::Signal => (ShutdownReason::Signal, None),
-            Stop::DeadEnd { .. } => (ShutdownReason::DeadEnd, None),
-            Stop::Cycles => (ShutdownReason::Cycles, self.policy.cycles),
-            Stop::FirstResult => (ShutdownReason::FirstResult, None),
+        let reason = match stop {
+            Stop::Signal => ShutdownReason::Signal,
+            Stop::DeadEnd { .. } | Stop::Night(EndReason::DeadEnd) => ShutdownReason::DeadEnd,
+            Stop::Night(EndReason::Unavailable) => ShutdownReason::DeadEnd,
         };
         self.shutdown = Some(Shutdown {
             reason,
             kernel_cursor: None,
             kernel_error: None,
-            cycles,
+            cycles: None,
         });
     }
 
@@ -827,13 +794,13 @@ impl<'machine> Session<'machine> {
         }
     }
 
-    /// The dead end the recorded evidence supports, strongest first.
+    /// The dead end the recorded evidence supports, strongest first. Unavailable backends are never one: only the
+    /// scheduler's `Unavailable` ends a night that has no runnable work left.
     pub(crate) fn check_dead_end(&mut self) -> Result<Option<Stop>, SessionError> {
         let recovery = self.appender.recovery();
         let cited = |condition, cited: Option<&Cited>| {
             cited.map(|cited| (condition, cited.detail.clone(), vec![cited.seq]))
         };
-        let inconclusive = self.inconclusive_threshold();
         let stray_limit = self.config.dead_ends().stray_crashes_in_a_row().get() as usize;
         let unreadable = self.unreadable.as_ref().map(|unreadable| {
             (
@@ -844,22 +811,12 @@ impl<'machine> Session<'machine> {
         });
         let found = cited(DeadEndCondition::ThermalTrip, recovery.thermal_evidence())
             .or(unreadable)
-            .or_else(|| cited(DeadEndCondition::NoEvidence, recovery.missing_evidence()))
             .or_else(|| cited(DeadEndCondition::Smu, recovery.smu_evidence()))
-            .or_else(|| cited(DeadEndCondition::Containment, recovery.containment_evidence()))
             .or_else(|| {
-                recovery
-                    .exhausted_backend(inconclusive)
-                    .map(|(backend, streak)| {
-                        (
-                            DeadEndCondition::NoEvidence,
-                            format!(
-                                "backend {backend} inconclusive {} times in a row after retries at 1, 5 and 30 min",
-                                streak.len()
-                            ),
-                            streak.to_vec(),
-                        )
-                    })
+                cited(
+                    DeadEndCondition::Containment,
+                    recovery.containment_evidence(),
+                )
             })
             .or_else(|| {
                 let stray = recovery.stray();
@@ -1009,6 +966,3 @@ fn leaving(
     }
     errors
 }
-
-#[cfg(test)]
-mod tests;

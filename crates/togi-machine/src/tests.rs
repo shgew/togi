@@ -4,6 +4,7 @@ use proptest::prelude::*;
 use std::io::{Cursor, Write};
 use test_case::test_case;
 
+mod ccd_profile;
 mod evidence;
 mod load;
 mod object_only;

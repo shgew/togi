@@ -1,18 +1,15 @@
-//! What the journal's defects ask of the run: the findings it records, the questions it puts to the person at the
-//! terminal and the resets an answer queues.
+//! What the journal's defects ask of the run: the findings it records and the stop a too-aggressive one makes.
 
-use togi_journal::{
-    CommandReset, DeadEnd, DeadEndCondition, DefectAnswer, DefectAnswered, DefectDirection,
-    DefectFound, DefectId, Payload, ResetTarget, Seq,
-};
+use togi_journal::{DeadEnd, DeadEndCondition, DefectDirection, DefectFound, Payload, Seq};
 use togi_machine::CoreSet;
 
 use crate::error::SessionError;
-use crate::session::{PromptError, Session, Stop};
+use crate::session::{Session, Stop};
 
 impl Session<'_> {
-    /// Records the defects the journal's decisions match, queues the resets of every answered "yes", and puts each
-    /// unanswered finding to the prompt. Without one, a finding that says the tuner was too aggressive is a dead end.
+    /// Records the defects the journal's decisions match. A too-aggressive finding is unresolved for the rest of the
+    /// session, since only `togi reset --all` starts a fresh one, so it is a dead end: no nonzero work runs while it
+    /// stands. A too-cautious finding lets the night continue.
     pub(crate) fn check_defects(&mut self) -> Result<Option<Stop>, SessionError> {
         let found: Vec<_> = self
             .appender
@@ -33,94 +30,39 @@ impl Session<'_> {
             self.appender
                 .append(Payload::DefectFound(payload), &decisions)?;
         }
-        self.queue_resets()?;
-        let unanswered: Vec<DefectId> = self
+        let Some((seq, dead_end)) = self
             .appender
             .defects()
-            .unanswered()
-            .map(|finding| finding.id)
-            .collect();
-        for id in unanswered {
-            if let Some(stop) = self.settle_finding(id)? {
-                return Ok(Some(stop));
-            }
-        }
-        Ok(None)
-    }
-
-    fn settle_finding(&mut self, id: DefectId) -> Result<Option<Stop>, SessionError> {
-        let Some(finding) = self
-            .appender
-            .defects()
-            .unanswered()
-            .find(|finding| finding.id == id)
+            .findings()
+            .find(|finding| finding.direction == DefectDirection::TooAggressive)
+            .map(|finding| {
+                let detail = format!(
+                    "defect {} ({}) affected decisions [{}] on cores {}; togi reset --all archives this session and starts fresh",
+                    finding.id,
+                    finding.title,
+                    seq_list(finding.decisions),
+                    core_list(finding.cores),
+                );
+                (
+                    finding.seq,
+                    DeadEnd {
+                        condition: DeadEndCondition::Defect,
+                        core: None,
+                        detail,
+                        action: None,
+                    },
+                )
+            })
         else {
             return Ok(None);
         };
-        let (seq, cores, direction, title) = (
-            finding.seq,
-            finding.cores,
-            finding.direction,
-            finding.title.to_owned(),
-        );
-        let Some(prompt) = self.prompt.as_mut() else {
-            if direction != DefectDirection::TooAggressive {
-                return Ok(None);
-            }
-            let dead_end = DeadEnd {
-                condition: DeadEndCondition::Defect,
-                core: None,
-                detail: format!(
-                    "defect {id} ({title}) affected cores {}; run in a terminal to decide whether to reset them",
-                    core_list(cores)
-                ),
-                action: None,
-            };
-            return self.dead_end(dead_end, &[seq]).map(Some);
-        };
-        let reset = match prompt.reset_cores(&finding) {
-            Ok(reset) => reset,
-            Err(PromptError::Cancelled) => {
-                return Ok(Some(self.signal_stop()));
-            }
-            Err(PromptError::Io(source)) => {
-                return Err(SessionError::Prompt { defect: id, source });
-            }
-        };
-        let answered = DefectAnswered {
-            id,
-            cores,
-            answer: if reset {
-                DefectAnswer::Yes
-            } else {
-                DefectAnswer::No
-            },
-        };
-        self.appender
-            .append(Payload::DefectAnswered(answered), &[seq])?;
-        if reset {
-            self.queue_resets()?;
-        }
-        Ok(None)
+        self.dead_end(dead_end, &[seq]).map(Some)
     }
+}
 
-    fn signal_stop(&mut self) -> Stop {
-        self.record_shutdown(&Stop::Signal);
-        Stop::Signal
-    }
-
-    /// A reset for every core a "yes" answer named that has none yet, each citing the answer.
-    fn queue_resets(&mut self) -> Result<(), SessionError> {
-        let missing: Vec<(Seq, _)> = self.appender.defects().missing_resets().collect();
-        for (answer, core) in missing {
-            let reset = CommandReset {
-                target: ResetTarget::Core(core),
-            };
-            self.appender
-                .append(Payload::CommandReset(reset), &[answer])?;
-        }
-        Ok(())
-    }
+fn seq_list(decisions: &[Seq]) -> String {
+    let named: Vec<String> = decisions.iter().map(|seq| format!("#{seq}")).collect();
+    named.join(" ")
 }
 
 fn core_list(cores: CoreSet) -> String {

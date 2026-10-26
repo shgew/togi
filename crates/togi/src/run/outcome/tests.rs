@@ -52,9 +52,7 @@ fn conclusion(stop: Option<&Stop>, errors: &[SessionError]) -> (super::Outcome, 
 }
 
 #[test_case(&Stop::Signal ; "signal")]
-#[test_case(&Stop::Cycles ; "cycles")]
-#[test_case(&Stop::FirstResult ; "first result")]
-fn a_signal_the_cycles_and_the_first_result_exit_zero_in_silence(stop: &Stop) {
+fn a_signal_exits_zero_in_silence(stop: &Stop) {
     let (outcome, err) = conclusion(Some(stop), &[]);
     assert_eq!(outcome.exit, Exit::Ok);
     assert!(!outcome.reboot);
@@ -139,12 +137,7 @@ fn the_summary_and_each_evidence_line_are_whole_decorated_lines_in_the_system_jo
 }
 
 #[test]
-fn a_missing_core_is_a_usage_error_and_another_error_is_a_failure() {
-    let core = togi_machine::CoreId::new(15).unwrap();
-    let (outcome, err) = conclusion(None, &[SessionError::NoSuchCore { core }]);
-    assert_eq!(outcome.exit, Exit::Usage);
-    assert!(err.starts_with("togi run: "), "{err}");
-
+fn a_session_error_is_a_failure() {
     let other = SessionError::Panicked("read failed\x1b[2J\nforged".to_owned());
     let (outcome, err) = conclusion(None, &[other]);
     assert_eq!(outcome.exit, Exit::Error);

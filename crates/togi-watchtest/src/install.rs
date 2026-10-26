@@ -8,8 +8,8 @@ use togi_journal::{Build, DirError, Event, Payload, Seq, SmuIntentReceipt, Stamp
 use crate::error::InstallError;
 use crate::{Error, Scenario};
 
-/// Writes the scenario's journal as `events.jsonl` in `dir` through the journal's own writer, one open journal per
-/// boot, and returns the build its session started under. A directory that already holds a journal is refused, since
+/// Writes the scenario's journal as `events.jsonl` in `dir` through the journal's own writer, kept open across each
+/// recorded reboot as the simulator keeps it, so no boot re-reads the journal written so far, and returns the build its session started under. A directory that already holds a journal is refused, since
 /// the writer would append the scenario after it.
 pub fn install(dir: &Path, scenario: Scenario) -> Result<Build, Error> {
     install_events(dir, &scenario.events()?)
@@ -54,7 +54,10 @@ fn lock(dir: &Path) -> Result<StateDir, togi_journal::LockError> {
 }
 
 fn write(dir: &Path, events: &[Event], fs: Option<Arc<dyn Fs>>) -> Result<Build, InstallError> {
-    let Some(Payload::SessionStart(start)) = events.first().map(|event| &event.payload) else {
+    let Some((Payload::SessionStart(start), start_boot, start_time)) = events
+        .first()
+        .map(|event| (&event.payload, event.boot.clone(), event.time))
+    else {
         return Err(InstallError::NoSession);
     };
     let build = start.build.clone();
@@ -62,7 +65,7 @@ fn write(dir: &Path, events: &[Event], fs: Option<Arc<dyn Fs>>) -> Result<Build,
         clippy::disallowed_methods,
         reason = "fixture installers explicitly supply their memory or non-durable filesystem"
     )]
-    let mut state = match &fs {
+    let state = match &fs {
         Some(fs) => StateDir::lock_with_fs(Arc::clone(fs), dir)?,
         None => lock(dir)?,
     };
@@ -81,9 +84,16 @@ fn write(dir: &Path, events: &[Event], fs: Option<Arc<dyn Fs>>) -> Result<Build,
     if exists {
         return Err(InstallError::NotEmpty);
     }
-    for boot in events.chunk_by(|a, b| a.boot == b.boot) {
-        let now = boot[0].time;
-        let mut journal = state.open_at(boot[0].boot.clone(), now)?;
+    let mut journal = state.open_at(start_boot, start_time)?;
+    for (index, boot) in events.chunk_by(|a, b| a.boot == b.boot).enumerate() {
+        if index > 0 {
+            journal
+                .reboot(boot[0].boot.clone())
+                .map_err(|source| InstallError::Reboot {
+                    seq: boot[0].seq.get(),
+                    source,
+                })?;
+        }
         let mut intents: HashMap<Seq, SmuIntentReceipt> = HashMap::new();
         for event in boot {
             let stamp = Stamp {
@@ -154,6 +164,7 @@ fn write(dir: &Path, events: &[Event], fs: Option<Arc<dyn Fs>>) -> Result<Build,
                 | Payload::DeepeningRound(_)
                 | Payload::TunerWarning(_)
                 | Payload::BackendRetry(_)
+                | Payload::TaskStart(_)
                 | Payload::CommandReset(_)
                 | Payload::DefectFound(_)
                 | Payload::DefectAnswered(_)
@@ -169,6 +180,21 @@ fn write(dir: &Path, events: &[Event], fs: Option<Arc<dyn Fs>>) -> Result<Build,
                 | Payload::DayAnswer(_)
                 | Payload::DayRecord(_)
                 | Payload::DayFault(_)
+                | Payload::SessionImported(_)
+                | Payload::ExposureObserved(_)
+                | Payload::CcdEdge(_)
+                | Payload::CcdCap(_)
+                | Payload::NightPlan(_)
+                | Payload::NightQualification(_)
+                | Payload::NightReproduction(_)
+                | Payload::DayStep(_)
+                | Payload::DayApplied(_)
+                | Payload::DayEvent(_)
+                | Payload::DayVeto(_)
+                | Payload::DayHold(_)
+                | Payload::DayFreeze(_)
+                | Payload::DayInterval(_)
+                | Payload::DayImported(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_)) => {
                     journal
@@ -177,8 +203,7 @@ fn write(dir: &Path, events: &[Event], fs: Option<Arc<dyn Fs>>) -> Result<Build,
                 }
             }
         }
-        state = journal.close()?;
     }
-    drop(state);
+    drop(journal.close()?);
     Ok(build)
 }

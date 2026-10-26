@@ -23,7 +23,9 @@ pub(crate) fn compare_bios_context(recorded: &BiosContext, current: &BiosContext
         None => passed(CheckName::BiosContext, "matches the session"),
         Some(mismatch) => failed(
             CheckName::BiosContext,
-            format!("{mismatch}; run archives this session and starts a new one"),
+            format!(
+                "{mismatch}; run records the new context and the session continues, re-qualifying under it"
+            ),
         ),
     }
 }
@@ -37,7 +39,7 @@ pub(crate) trait Survey {
 
 impl<R: HostReadings> Survey for SystemHost<R> {
     fn steps(&self, privileged: bool) -> Vec<Outcome> {
-        self.run_steps(privileged)
+        self.run_steps(&crate::preflight::STEPS, privileged)
     }
 
     fn watchdog(&self) -> Check {
@@ -62,7 +64,10 @@ pub(crate) fn diagnose_with(
             Outcome::Skipped(skip) => skipped.push(skip),
         }
     }
-    let all_passed = ran.iter().all(|check| check.ok);
+    // Backend availability is a warning, never a mandatory check, so it does not hold back the comparison.
+    let all_passed = ran
+        .iter()
+        .all(|check| check.ok || check.name == CheckName::Backends.as_str());
     ran.push(survey.watchdog());
     let mut bios_context_error = None;
     if let Some(recorded) = recorded {

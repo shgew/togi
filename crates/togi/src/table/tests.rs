@@ -52,28 +52,6 @@ fn columns_align_with_two_spaces_and_the_last_is_unpadded() {
 }
 
 #[test]
-fn notes_wrap_under_their_row_and_do_not_widen_the_table() {
-    let long = vec!["note"; 40].join(" ");
-    let mut out = String::new();
-    table(
-        &mut out,
-        &[
-            Row::new(["A", "B"].map(String::from)),
-            Row::new(["x", "y"].map(String::from)).note("label", long),
-        ],
-    );
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[..2], ["A  B", "x  y"]);
-    assert!(lines[2].starts_with("  label note"));
-    assert!(
-        lines[3..]
-            .iter()
-            .all(|line| line.starts_with("        note"))
-    );
-    assert!(lines.iter().all(|line| line.chars().count() <= WIDTH));
-}
-
-#[test]
 fn a_row_wider_than_the_width_wraps_without_dropping_a_value() {
     let wide = vec!["value"; 20].join(" ");
     let mut out = String::new();
@@ -118,23 +96,6 @@ fn a_combining_word_that_exactly_fills_the_room_stays_on_the_first_line() {
     assert!(word.chars().count() > room);
     let out = wrapped(first, "    ", &format!("{word} tail"));
     assert_eq!(out, format!("{first}{word}\n    tail\n"));
-}
-
-#[test]
-fn wide_decision_notes_wrap_under_their_row_within_the_width() {
-    let note = "決定 ".repeat(30);
-    let mut out = String::new();
-    table(
-        &mut out,
-        &[
-            Row::new(["A", "B"].map(String::from)),
-            Row::new(["x", "y"].map(String::from)).note("last decision", note),
-        ],
-    );
-    for line in out.lines() {
-        assert!(cells(line) <= WIDTH, "{} cells: {line}", cells(line));
-    }
-    assert!(out.lines().count() > 3, "{out}");
 }
 
 #[test]

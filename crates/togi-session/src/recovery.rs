@@ -7,12 +7,12 @@ use std::time::Duration;
 use jiff::Timestamp;
 use togi_config::DeadEndThreshold;
 use togi_journal::{
-    Build, CarriedCore, CorePhase, CrashDetected, DeadEnd, DeadEndCondition, Event, EventKind,
-    Outcome, Payload, RetryTarget, Seq, ShutdownReason, SmuCommand, TrialId, TrialIntent,
+    Build, CrashDetected, DeadEnd, DeadEndCondition, Event, EventKind, NightId, Outcome, Payload,
+    RetryTarget, Seq, ShutdownReason, SmuCommand, TaskId, TaskStart, TrialId, TrialIntent,
 };
 use togi_machine::{
-    Backend, BiosContext, BootId, CcdId, Condition, CoreId, CoreSet, CpuId, KernelCursor,
-    ObservedOffset, PerCore, Regime, ResetReason, TargetOffset,
+    Backend, BiosContext, BootId, CcdId, Condition, CpuId, KernelCursor, ObservedOffset, PerCore,
+    ResetReason, TargetOffset,
 };
 use togi_tuner::{CrashKind, recorded_kind};
 
@@ -165,53 +165,12 @@ impl MceKey {
     }
 }
 
-/// The registers of one boot as far as the journal proves them: the baseline, lowered to every target an intent
-/// asked for, and uncertain until a readback.
-#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct Registers {
-    offsets: PerCore<ObservedOffset>,
-    uncertain: CoreSet,
-}
-
-impl Registers {
-    pub(crate) fn offset(&self, core: CoreId) -> Option<ObservedOffset> {
-        self.offsets.get(core)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn uncertain(&self, core: CoreId) -> bool {
-        self.uncertain.contains(core)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn offsets(&self) -> &PerCore<ObservedOffset> {
-        &self.offsets
-    }
-
-    /// Whether a readback answered every write the boot asked for.
-    pub(crate) fn certain(&self) -> bool {
-        self.uncertain.is_empty()
-    }
-
-    fn lower(&mut self, core: CoreId, target: i64) {
-        let held = self.offsets.get(core).map_or(0, |offset| offset.0);
-        self.offsets.set(core, ObservedOffset(held.min(target)));
-        self.uncertain.insert(core);
-    }
-
-    fn read(&mut self, core: CoreId, observed: ObservedOffset) {
-        self.offsets.set(core, observed);
-        self.uncertain.remove(core);
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct BootRecord {
     last_kind: EventKind,
     applied: Option<(Seq, Condition)>,
     applied_mono: Option<Duration>,
     applying: bool,
-    registers: Option<Registers>,
 }
 
 impl BootRecord {
@@ -221,7 +180,6 @@ impl BootRecord {
             applied: None,
             applied_mono: None,
             applying: false,
-            registers: None,
         }
     }
 }
@@ -232,6 +190,10 @@ struct BackendState {
     followed: bool,
     last_reason: Option<String>,
     streak: Vec<Seq>,
+    /// The event that found the backend missing this night: its failed `backends.<backend>` preflight check, or
+    /// a trial that found its program missing. It excludes the backend at once, without retries.
+    #[serde(default)]
+    missing: Option<Seq>,
 }
 
 /// The latest dead end and what has followed it.
@@ -265,9 +227,6 @@ pub(crate) struct RecoveryState {
     context: Option<BiosContext>,
     topology: PerCore<Option<CcdId>>,
     baseline: Option<(Seq, PerCore<ObservedOffset>)>,
-    noticed: bool,
-    phases: PerCore<Option<CorePhase>>,
-    carried: Option<(Seq, PerCore<Option<CarriedCore>>)>,
     boots: Vec<BootId>,
     records: BTreeMap<BootId, BootRecord>,
     crashes: BTreeMap<BootId, (Seq, CrashDetected)>,
@@ -280,16 +239,19 @@ pub(crate) struct RecoveryState {
     #[serde(serialize_with = "togi_machine::serde_pairs::serialize_set")]
     mce_keys: HashSet<MceKey>,
     recovered: Vec<RecoveredMce>,
-    pending_idle: Vec<Seq>,
     smu: Option<Cited>,
     containment: Option<Cited>,
-    missing: Option<Cited>,
     thermal: Option<Cited>,
     stray: Vec<Seq>,
     trials: u32,
-    index: BTreeMap<Regime, PerCore<Option<u32>>>,
-    all_index: BTreeMap<Regime, u32>,
     dead_end: Option<PendingDeadEnd>,
+    /// The boot the open night's first plan was made in: a day boot in another boot closes that night.
+    #[serde(default)]
+    night_boot: Option<BootId>,
+    /// The night task whose start is recorded but whose trial is not, with that start: a restart that resumes the
+    /// task keeps it.
+    #[serde(default)]
+    task: Option<(TaskStart, Timestamp)>,
 }
 
 impl RecoveryState {
@@ -345,35 +307,22 @@ impl RecoveryState {
                     loaded.kernel_error.as_deref(),
                 );
             }
-            Payload::Shutdown(shutdown) => self.kernel_boundary(
-                event,
-                shutdown.kernel_cursor.as_ref(),
-                shutdown.kernel_error.as_deref(),
-            ),
+            Payload::Shutdown(shutdown) => {
+                self.kernel_boundary(
+                    event,
+                    shutdown.kernel_cursor.as_ref(),
+                    shutdown.kernel_error.as_deref(),
+                );
+                if matches!(
+                    shutdown.reason,
+                    ShutdownReason::Signal | ShutdownReason::DeadEnd
+                ) {
+                    self.close_night();
+                }
+            }
             Payload::SessionContext(context) => self.context = Some(context.bios_context()),
             Payload::SessionBaseline(baseline) => {
-                let record = self.record(event);
-                if record.registers.is_none() {
-                    record.registers = Some(Registers {
-                        offsets: baseline.offsets,
-                        uncertain: CoreSet::default(),
-                    });
-                }
                 self.baseline = Some((seq, baseline.offsets));
-            }
-            Payload::SessionNotice(_) => self.noticed = true,
-            Payload::SessionCarried(carried) => {
-                self.carried = Some((
-                    seq,
-                    carried
-                        .carried
-                        .iter()
-                        .map(|core| (core.core, Some(core.clone())))
-                        .collect(),
-                ));
-            }
-            Payload::CorePhase(transition) => {
-                self.phases.set(transition.core, Some(transition.to));
             }
             Payload::HuntGroup(_) => self.hunt_group = true,
             Payload::HuntEnd(_) | Payload::ProfileChange(_) => self.hunt_group = false,
@@ -413,6 +362,7 @@ impl RecoveryState {
             Payload::SmuReadback(readback) => self.smu_readback(event, readback),
             Payload::TrialIntent(intent) => {
                 self.hunt_group = self.hunt_group && intent.condition == Condition::Parked;
+                self.task = None;
                 self.unmatched.push(OpenIntent {
                     seq,
                     boot: event.boot.clone(),
@@ -484,16 +434,48 @@ impl RecoveryState {
                     self.open = None;
                 }
             }
-            Payload::Failure(_) => self.pending_idle.retain(|idle| !event.cause.contains(idle)),
             Payload::BackendRetry(retry) => match retry.backend {
                 RetryTarget::KernelLog => self.kernel_retries.push(seq),
                 RetryTarget::Mprime => self.backend_retried(Backend::Mprime, retry),
                 RetryTarget::Ycruncher => self.backend_retried(Backend::Ycruncher, retry),
             },
             Payload::DeadEnd(dead_end) => self.dead_ended(seq, &event.cause, dead_end),
+            Payload::DayBootStart(_) => {
+                if self
+                    .night_boot
+                    .as_ref()
+                    .is_some_and(|boot| *boot != event.boot)
+                {
+                    self.close_night();
+                }
+            }
+            Payload::NightPlan(plan) => {
+                if plan.night.is_none() {
+                    self.night_boot = Some(event.boot.clone());
+                }
+            }
+            Payload::TaskStart(start) => self.task = Some((*start, event.time)),
+            Payload::PreflightCheck(check) => {
+                if !check.ok
+                    && let Some(backend) =
+                        check
+                            .check
+                            .strip_prefix(BACKEND_CHECK_PREFIX)
+                            .and_then(|name| {
+                                [Backend::Mprime, Backend::Ycruncher]
+                                    .into_iter()
+                                    .find(|backend| backend.as_str() == name)
+                            })
+                {
+                    self.backend(backend).missing.get_or_insert(seq);
+                }
+            }
             Payload::SessionWarning(_)
+            | Payload::SessionNotice(_)
+            | Payload::Failure(_)
+            | Payload::CorePhase(_)
             | Payload::SessionArchived(_)
-            | Payload::PreflightCheck(_)
+            | Payload::SessionCarried(_)
             | Payload::TrialCarried(_)
             | Payload::FailureCarried(_)
             | Payload::TunerDecision(_)
@@ -512,13 +494,26 @@ impl RecoveryState {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
-            | Payload::DayBootStart(_)
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -554,6 +549,7 @@ impl RecoveryState {
             | Payload::ProfileChange(_)
             | Payload::ProfileRestored(_)
             | Payload::TrialIntent(_)
+            | Payload::TaskStart(_)
             | Payload::TrialStart(_)
             | Payload::TrialProgress(_)
             | Payload::TrialSignal(_)
@@ -591,6 +587,21 @@ impl RecoveryState {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -649,23 +660,9 @@ impl RecoveryState {
             boot: event.boot.clone(),
             kind: IntentKind::Smu,
         });
-        let baseline = self.baseline.as_ref().map(|(_, offsets)| *offsets);
         let baseline_seq = self.baseline.as_ref().map(|(seq, _)| *seq);
         let open_trial = self.open.is_some();
-        let cores: Vec<CoreId> = self.topology.iter().map(|(core, _)| core).collect();
         let record = self.record(event);
-        let registers = record.registers.get_or_insert_with(|| Registers {
-            offsets: baseline.unwrap_or_default(),
-            uncertain: CoreSet::default(),
-        });
-        match command {
-            SmuCommand::Set { core, offset } => registers.lower(core, offset.get()),
-            SmuCommand::SetAll { offset } => {
-                for core in cores {
-                    registers.lower(core, offset.get());
-                }
-            }
-        }
         if command.offset().get() != 0
             && !open_trial
             && !baseline_seq.is_some_and(|seq| event.cause.contains(&seq))
@@ -687,6 +684,11 @@ impl RecoveryState {
     }
 
     fn smu_readback(&mut self, event: &Event, readback: &togi_journal::SmuReadback) {
+        self.unmatched.retain(|open| {
+            !(matches!(open.kind, IntentKind::Smu)
+                && open.boot == event.boot
+                && event.cause.contains(&open.seq))
+        });
         if let Some(expected) = readback.expected
             && expected.observed() != readback.offset
         {
@@ -699,10 +701,6 @@ impl RecoveryState {
                     expected.get()
                 ),
             });
-        }
-        let known = self.topology.get(readback.core).flatten().is_some();
-        if known && let Some(registers) = &mut self.record(event).registers {
-            registers.read(readback.core, readback.offset);
         }
         if let Some(open) = &mut self.open
             && open.boot == event.boot
@@ -819,9 +817,8 @@ impl RecoveryState {
             .retain(|open| open.boot != detected.previous_boot);
         match outcome {
             CrashKind::Stray => self.stray.push(event.seq),
-            CrashKind::Idle if detected.condition == Some(Condition::Alone) => {}
-            CrashKind::Idle => self.pending_idle.push(event.seq),
-            CrashKind::InTrial | CrashKind::Inconclusive | CrashKind::Thermal => {}
+            CrashKind::Idle | CrashKind::InTrial | CrashKind::Inconclusive | CrashKind::Thermal => {
+            }
         }
     }
 
@@ -830,8 +827,6 @@ impl RecoveryState {
             return;
         };
         let backend = open.intent.workload.backend();
-        let core = open.intent.core;
-        let regime = open.intent.regime;
         let start_cpus = open
             .started
             .as_ref()
@@ -847,13 +842,6 @@ impl RecoveryState {
             }
             Outcome::Pass | Outcome::Failure => {
                 self.backend(backend).streak.clear();
-                match core {
-                    Some(core) => {
-                        let counts = self.index.entry(regime).or_default();
-                        counts.set(core, Some(counts.get(core).flatten().unwrap_or(0) + 1));
-                    }
-                    None => *self.all_index.entry(regime).or_default() += 1,
-                }
             }
         }
         if let Some(detail) =
@@ -865,11 +853,7 @@ impl RecoveryState {
             });
         }
         if end.backend_missing {
-            let reason = end.reason.as_deref().unwrap_or_default();
-            self.missing = Some(Cited {
-                seq: event.seq,
-                detail: format!("backend {backend} is missing: {reason}"),
-            });
+            self.backend(backend).missing.get_or_insert(event.seq);
         }
     }
 
@@ -877,6 +861,14 @@ impl RecoveryState {
         let state = self.backend(backend);
         state.retry = Some((retry.attempt, retry.wait_s));
         state.followed = false;
+    }
+
+    /// A closing witness ends the night: its backend exclusions, retries and started task do not carry into the
+    /// next one.
+    fn close_night(&mut self) {
+        self.backends.clear();
+        self.night_boot = None;
+        self.task = None;
     }
 
     fn dead_ended(&mut self, seq: Seq, causes: &[Seq], dead_end: &DeadEnd) {
@@ -893,8 +885,8 @@ impl RecoveryState {
             DeadEndCondition::NoEvidence => {
                 for state in self.backends.values_mut() {
                     state.streak.clear();
+                    state.missing = None;
                 }
-                self.missing = None;
                 self.kernel_retries.clear();
             }
             DeadEndCondition::ThermalTrip => self.thermal = None,
@@ -902,6 +894,36 @@ impl RecoveryState {
             DeadEndCondition::FailureAtZero
             | DeadEndCondition::Preflight
             | DeadEndCondition::Defect => {}
+        }
+    }
+}
+
+/// The prefix of a backend's own `preflight.check` name, `backends.<backend>`.
+pub(crate) const BACKEND_CHECK_PREFIX: &str = "backends.";
+
+/// Why a backend is excluded for the rest of the night.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Unavailable<'a> {
+    /// The failed preflight check or trial that found it missing.
+    Missing(&'a Seq),
+    /// The trials of the streak that stayed inconclusive through every retry.
+    Exhausted(&'a [Seq]),
+}
+
+impl Unavailable<'_> {
+    pub(crate) fn causes(&self) -> &[Seq] {
+        match self {
+            Self::Missing(seq) => std::slice::from_ref(*seq),
+            Self::Exhausted(streak) => streak,
+        }
+    }
+}
+
+impl std::fmt::Display for Unavailable<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing(_) => f.write_str("missing"),
+            Self::Exhausted(streak) => write!(f, "inconclusive {} times in a row", streak.len()),
         }
     }
 }
@@ -965,18 +987,6 @@ impl RecoveryState {
 
     pub(crate) fn baseline(&self) -> Option<(Seq, &PerCore<ObservedOffset>)> {
         self.baseline.as_ref().map(|(seq, offsets)| (*seq, offsets))
-    }
-
-    pub(crate) const fn noticed(&self) -> bool {
-        self.noticed
-    }
-
-    pub(crate) fn phase(&self, core: CoreId) -> Option<CorePhase> {
-        self.phases.get(core).flatten()
-    }
-
-    pub(crate) fn carried(&self) -> Option<(Seq, &PerCore<Option<CarriedCore>>)> {
-        self.carried.as_ref().map(|(seq, cores)| (*seq, cores))
     }
 
     /// Boots before `current` with no shutdown and no `crash.detected`, oldest first.
@@ -1055,29 +1065,15 @@ impl RecoveryState {
         TrialId::from(format!("{:04}", self.trials + 1))
     }
 
-    /// How many conclusive trials of `regime` ran on `core`, or on every core when `core` is `None`; the
-    /// workload rotates with it.
-    pub(crate) fn rotation(&self, core: Option<CoreId>, regime: Regime) -> u32 {
-        match core {
-            Some(core) => self
-                .index
-                .get(&regime)
-                .and_then(|counts| counts.get(core))
-                .flatten()
-                .unwrap_or(0),
-            None => self.all_index.get(&regime).copied().unwrap_or(0),
-        }
+    /// When `task` of `night` started, if its start is recorded and no trial of it followed yet.
+    pub(crate) fn task_start(&self, night: NightId, task: TaskId) -> Option<Timestamp> {
+        self.task
+            .filter(|(start, _)| start.night == night && start.task == task)
+            .map(|(_, time)| time)
     }
 
     pub(crate) fn kernel_cursor(&self, boot: &BootId) -> Option<&KernelCursor> {
         self.kernel_cursors.get(boot)
-    }
-
-    /// What the journal proves of `core`'s register in `boot`.
-    pub(crate) fn registers(&self, boot: &BootId) -> Option<&Registers> {
-        self.records
-            .get(boot)
-            .and_then(|record| record.registers.as_ref())
     }
 
     /// The profile application of `boot` that no restoration followed: its seq and condition.
@@ -1116,21 +1112,6 @@ impl RecoveryState {
             .map(|(seq, detected)| (*seq, detected))
     }
 
-    /// The idle crashes no failure has answered yet, in the order they were detected.
-    pub(crate) fn idle_crashes(&self) -> impl Iterator<Item = (Seq, &CrashDetected)> + '_ {
-        self.pending_idle.iter().filter_map(|idle| {
-            self.crashes
-                .values()
-                .find(|(seq, _)| seq == idle)
-                .map(|(seq, detected)| (*seq, detected))
-        })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn pending_idle(&self) -> &[Seq] {
-        &self.pending_idle
-    }
-
     pub(crate) fn stray(&self) -> &[Seq] {
         &self.stray
     }
@@ -1141,10 +1122,6 @@ impl RecoveryState {
 
     pub(crate) fn containment_evidence(&self) -> Option<&Cited> {
         self.containment.as_ref()
-    }
-
-    pub(crate) fn missing_evidence(&self) -> Option<&Cited> {
-        self.missing.as_ref()
     }
 
     pub(crate) fn thermal_evidence(&self) -> Option<&Cited> {
@@ -1165,15 +1142,25 @@ impl RecoveryState {
             .and_then(|state| state.last_reason.as_deref())
     }
 
-    /// The backend that stayed inconclusive through every retry, and the trials that were.
-    pub(crate) fn exhausted_backend(
+    /// Every backend excluded for the rest of the night, with the events that excluded it: the failed preflight
+    /// check or trial that found it missing, or the trials of a streak that stayed inconclusive through every retry.
+    pub(crate) fn unavailable_backends(
         &self,
         threshold: DeadEndThreshold,
-    ) -> Option<(Backend, &[Seq])> {
-        self.backends.iter().find_map(|(backend, state)| {
-            evidence::backend_exhausted(state.streak.len(), threshold)
-                .then_some((*backend, state.streak.as_slice()))
-        })
+    ) -> Vec<(Backend, Unavailable<'_>)> {
+        self.backends
+            .iter()
+            .filter_map(|(backend, state)| {
+                let unavailable = match &state.missing {
+                    Some(seq) => Unavailable::Missing(seq),
+                    None if evidence::backend_exhausted(state.streak.len(), threshold) => {
+                        Unavailable::Exhausted(&state.streak)
+                    }
+                    None => return None,
+                };
+                Some((*backend, unavailable))
+            })
+            .collect()
     }
 
     /// The wait to sit out before the next trial of `backend`, and whether a `backend.retry` has to record it:

@@ -1,22 +1,19 @@
-//! `togi reset`: restart one core's search, or archive the whole session.
+//! `togi reset`: archive the whole session.
 
 use std::fs;
 use std::io::{ErrorKind, Read as _};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use clap::{Args as ClapArgs, ValueHint};
-use togi_config::{Config, InitialOverride};
+use clap::Args as ClapArgs;
 use togi_hostlock::Error as HostLockError;
 use togi_journal::{
     ArchiveKind, Build, DirError, Journal, LockError, Marker, OpenError, Operation, SessionId,
     StateDir, Verdict,
 };
-use togi_machine::{BootId, CoreId};
-use togi_render::escape_text;
-use togi_session::{CommandError, reset_all, reset_core};
+use togi_machine::BootId;
+use togi_session::{CommandError, reset_all};
 
-use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::report::{
@@ -25,51 +22,33 @@ use crate::report::{
 use crate::system::{System, SystemClock};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
-    examples(&[
-        (
-            "sudo togi reset --core 3",
-            "Search core 3 again from its baseline",
-        ),
-        (
-            "sudo togi reset --all",
-            "Archive the session and start over",
-        ),
-    ])
+    examples(&[(
+        "sudo togi reset --all",
+        "Archive the session and start over",
+    )])
 });
 
-/// Reset one core, or archive the whole session
+/// Archive the whole session
 ///
-/// Reset one core, so the next run restarts its search from the baseline, or archive the whole
-/// session, so the next run starts a new one that carries nothing from it. Give exactly one of the
-/// two. --core clears its failure point and every combination that includes it. --all warns if a
-/// configured candidate solo limit reached a failure point in the archived session; missing or
-/// invalid configuration does not prevent archiving.
+/// Archive the whole session, so the next run starts a new one. The reset is a permanent boundary:
+/// the new session imports no record from the archived session or anything before it.
 ///
-/// --core refuses a different journal ruleset, schema or evidence epoch; --all archives any of
-/// them. --core, and --all on a journal of the same schema, refuse an unknown event kind or field;
-/// install the build that wrote them. Only one run or reset can own this machine, even with
-/// different state directories. A busy host lock stops reset before it changes the session.
+/// --all archives a journal of any ruleset, schema or evidence epoch, but on a journal of the same
+/// schema refuses an unknown event kind or field; install the build that wrote them. Only one run
+/// or reset can own this machine, even with different state directories. A busy host lock stops
+/// reset before it changes the session.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
     #[command(flatten)]
     pub target: Target,
-
-    #[command(flatten)]
-    pub config: ConfigArgs,
 }
 
-/// What to reset: exactly one of the two.
+/// What to reset: the whole session.
 #[derive(ClapArgs, Debug)]
-#[group(required = true, multiple = false)]
 pub struct Target {
-    /// Reset core N: clear its failure point and every combination that includes it, and restart
-    /// its search from the baseline
-    #[arg(long, value_name = "N", value_hint = ValueHint::Other)]
-    pub core: Option<u8>,
-
     /// Archive the session; the next run starts a new one
-    #[arg(long)]
+    #[arg(long, required = true)]
     pub all: bool,
 }
 
@@ -77,9 +56,8 @@ const COMMAND: &str = "reset";
 const JOURNAL: &str = "events.jsonl";
 
 /// Resets under the host lock and the state directory's writer lock.
-pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
+pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     let system = ctx.system;
-    let all = args.target.all;
     let (path, _) = system.host_lock();
     let _host = match system.acquire_host_lock() {
         Ok(lock) => lock,
@@ -94,7 +72,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     };
     let journal = ctx.state_dir.join(JOURNAL);
     if matches!(journal_nonempty(system, &journal), Err(error) if error.kind() == ErrorKind::NotFound)
-        && !(all && pending_marker(system, ctx.state_dir))
+        && !pending_marker(system, ctx.state_dir)
     {
         return fail(ctx, COMMAND, format!("no journal at {}", journal.display()));
     }
@@ -104,7 +82,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     if let Err(error @ DirError::ForeignJournal { .. }) = &recorded {
         return fail(ctx, COMMAND, togi_render::error_chain(error));
     }
-    if matches!(recorded, Ok(None)) && !(all && pending_marker(system, ctx.state_dir)) {
+    if matches!(recorded, Ok(None)) && !pending_marker(system, ctx.state_dir) {
         return no_session(ctx);
     }
     let boot = match system.boot_id() {
@@ -119,10 +97,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         }
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
-    match args.target.core {
-        Some(core) => reset_one(ctx, dir, boot, core),
-        None => reset_everything(ctx, args, dir, boot),
-    }
+    reset_everything(ctx, dir, boot)
 }
 
 fn no_session(ctx: &mut Context<'_>) -> Exit {
@@ -151,61 +126,6 @@ fn journal_nonempty(system: &dyn System, path: &Path) -> std::io::Result<bool> {
         Some(fs) => fs.open_read(path)?.read(&mut [0]).map(|len| len != 0),
         None => fs::metadata(path).map(|metadata| metadata.len() != 0),
     }
-}
-
-fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Exit {
-    let system = ctx.system;
-    let build = current_build();
-    let recorded = match dir.live_build() {
-        Ok(recorded) => recorded,
-        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
-    };
-    if let Some(recorded) = &recorded
-        && let Verdict::Refuse(refusal) = build.verdict(recorded, Operation::Append)
-    {
-        let message = refusal_message(&refusal, recorded, &build);
-        return exit_with(ctx, COMMAND, message, Exit::Incompatible);
-    }
-    let Ok(id) = CoreId::try_from(core) else {
-        return no_such_core(ctx, core);
-    };
-    let mut journal = match dir.open_at(boot, system.now()) {
-        Ok(journal) => journal,
-        Err(error) => return open_failure(ctx, &error, recorded.as_ref(), &build),
-    };
-    log_torn(ctx, &journal);
-    let opened = journal.events().len();
-    let reset = reset_core(&build, &mut journal, &mut SystemClock(system), id);
-    log_events(ctx, &journal.events()[opened..]);
-    if let Err(error) = reset {
-        return match error {
-            CommandError::NoSuchCore { .. } => no_such_core(ctx, core),
-            error @ (CommandError::NoSession
-            | CommandError::Compatibility(_)
-            | CommandError::Append(_)
-            | CommandError::Fold(_)
-            | CommandError::Archive(_)
-            | CommandError::Close(_)
-            | CommandError::Clock(_)
-            | CommandError::Dir(_)) => command_failure(ctx, &error),
-        };
-    }
-    if let Err(error) = journal.close() {
-        return fail(ctx, COMMAND, togi_render::error_chain(&error));
-    }
-    let queued = format!(
-        "reset of core {core:02} queued; the next togi run restarts its search from the baseline"
-    );
-    emit(ctx, queued).map_or_else(|exit| exit, |()| Exit::Ok)
-}
-
-fn no_such_core(ctx: &mut Context<'_>, core: u8) -> Exit {
-    exit_with(
-        ctx,
-        COMMAND,
-        format!("reset core {core}: no such core"),
-        Exit::Usage,
-    )
 }
 
 fn open_failure(
@@ -248,10 +168,8 @@ fn log_torn(ctx: &mut Context<'_>, journal: &Journal) {
 fn command_failure(ctx: &mut Context<'_>, error: &CommandError) -> Exit {
     match error {
         CommandError::NoSession => no_session(ctx),
-        CommandError::NoSuchCore { .. } => exit_with(ctx, COMMAND, error, Exit::Usage),
         CommandError::Compatibility(_) => exit_with(ctx, COMMAND, error, Exit::Incompatible),
         CommandError::Append(_)
-        | CommandError::Fold(_)
         | CommandError::Archive(_)
         | CommandError::Close(_)
         | CommandError::Clock(_)
@@ -263,7 +181,7 @@ fn archived_line(session: &SessionId) -> String {
     format!("session {session} archived to archive/{session}.jsonl")
 }
 
-fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot: BootId) -> Exit {
+fn reset_everything(ctx: &mut Context<'_>, mut dir: StateDir, boot: BootId) -> Exit {
     let system = ctx.system;
     let build = current_build();
     let recorded = match dir.live_build() {
@@ -278,14 +196,14 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
         return exit_with(ctx, COMMAND, message, Exit::Incompatible);
     }
     let live = dir.live_session().ok().flatten();
-    let dropped = match dir.drop_pending_carry() {
+    let dropped = match dir.drop_pending_import() {
         Ok(dropped) => dropped,
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     let Some(recorded) = recorded else {
         return finish_without_journal(ctx, dir, boot, dropped);
     };
-    let (session, warnings) = match build.verdict(&recorded, Operation::ResetAll) {
+    let session = match build.verdict(&recorded, Operation::ResetAll) {
         Verdict::Archive => {
             return match dir.archive_unreadable(ArchiveKind::ResetAll) {
                 Ok(Some(session)) => emit(
@@ -311,11 +229,10 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
             };
             log_torn(ctx, &journal);
             let opened = journal.events().len();
-            let warnings = solo_limit_warnings(&journal, &args.config, system);
             match reset_all(&build, journal, &mut SystemClock(system)) {
                 Ok((session, _)) => {
                     log_recorded(ctx, Some(&session), opened);
-                    (session, warnings)
+                    session
                 }
                 Err(error) => {
                     log_recorded(ctx, live.as_ref(), opened);
@@ -332,9 +249,6 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
         ),
     ) {
         return exit;
-    }
-    for warning in warnings {
-        let _ = writeln!(ctx.err, "{}", escape_text(&warning));
     }
     Exit::Ok
 }
@@ -379,7 +293,7 @@ fn finish_without_journal(
         Some(session) => emit(
             ctx,
             format!(
-                "carry from session {session} dropped; the next togi run starts a new session with nothing carried"
+                "import from session {session} dropped; the next togi run starts a new session with nothing imported"
             ),
         )
         .map_or_else(|exit| exit, |()| Exit::Ok),
@@ -434,66 +348,6 @@ fn remove_durably(
 )]
 fn sync_directory(path: &Path) -> std::io::Result<()> {
     fs::File::open(path)?.sync_all()
-}
-
-/// A warning for each configured candidate solo limit at or deeper than its core's failure point
-/// in the session about to be archived.
-fn solo_limit_warnings(
-    journal: &togi_journal::Journal,
-    config: &ConfigArgs,
-    system: &dyn System,
-) -> Vec<String> {
-    let config: Config = match config
-        .load_with_source_read(system.config_path(), |path| system.read_config(path))
-        .map(|(config, _)| config)
-    {
-        Ok(config) => config,
-        Err(error) if config.is_explicit() => {
-            return vec![format!(
-                "warning: cannot check candidate solo limits: {}",
-                togi_render::error_chain(&error)
-            )];
-        }
-        Err(_) => return Vec::new(),
-    };
-    let mut limits = config
-        .overrides()
-        .filter_map(|(core, entry)| match entry {
-            InitialOverride::CandidateSoloLimit(offset) => Some((core, offset.get())),
-            InitialOverride::Start(_) => None,
-        })
-        .peekable();
-    if limits.peek().is_none() {
-        return Vec::new();
-    }
-    let state = match togi_session::ReadState::in_dir(journal.dir(), journal.events()) {
-        Ok(state) => state,
-        Err(error) => {
-            return vec![format!(
-                "warning: cannot check candidate solo limits: {}",
-                togi_render::error_chain(&error)
-            )];
-        }
-    };
-    let Some(constraints) = state.tuner().constraints() else {
-        return Vec::new();
-    };
-    limits
-        .filter_map(|(core, limit)| {
-            let point = constraints.failure_points().get(core)?.offset().get();
-            (limit <= point).then(|| {
-                let remedy = if point < 0 {
-                    format!("use {}, the failure point plus one, or remove it", point + 1)
-                } else {
-                    "remove it".to_owned()
-                };
-                format!(
-                    "warning: candidate solo limit {limit} for core {core:02} is at or deeper than its failure point {point} in the archived session; {remedy}",
-                    core = core.get()
-                )
-            })
-        })
-        .collect()
 }
 
 #[cfg(test)]

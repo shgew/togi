@@ -60,6 +60,13 @@ struct Sweeping {
 }
 
 impl Trials for Sweeping {
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, Error> {
+        self.inner.content(workload)
+    }
+
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
         self.log.borrow_mut().push("sweep".into());
         if self.fails {
@@ -121,6 +128,10 @@ impl MachineHost for NoCores {
 
     fn preflight(&mut self) -> Vec<Check> {
         self.inner.preflight()
+    }
+
+    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+        self.inner.backends()
     }
 
     fn watchdog(&mut self) -> Check {

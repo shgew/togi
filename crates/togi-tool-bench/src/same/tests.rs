@@ -33,7 +33,7 @@ use crate::cache::Costs;
 use crate::error::RunError;
 use crate::process::Fleet;
 use crate::suite::RunSpec;
-use togi_tool_forecast::Split;
+use togi_tool_sim::Split;
 
 const SESSION_START: &str = r#"{"seq":1,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"session.start","msg":"session s started by togi old+abc (schema 1, ruleset 7, evidence epoch 2, fixes 3, 2 cores); togi old+abc","data":{"build":{"version":"old","rev":"abc","ruleset":7,"schema":1,"fixes":3,"evidence":2},"session":"s","cores":[]}}"#;
 

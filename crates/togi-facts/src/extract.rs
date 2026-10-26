@@ -215,6 +215,7 @@ impl Extractor {
             | Payload::DeepeningRound(_)
             | Payload::TunerWarning(_)
             | Payload::BackendRetry(_)
+            | Payload::TaskStart(_)
             | Payload::DefectFound(_)
             | Payload::DefectAnswered(_)
             | Payload::DeadEnd(_)
@@ -228,6 +229,21 @@ impl Extractor {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayApplied(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_)
             | Payload::CorePhase(_)
@@ -331,7 +347,9 @@ impl Extractor {
             observation: Observation::Trial {
                 class: TrialClass {
                     workload: intent.workload,
-                    loaded: togi_tuner::Load::recorded(intent.core, intent.cores).cores(),
+                    loaded: intent
+                        .core
+                        .map_or(intent.cores, |core| std::iter::once(core).collect()),
                     duration_s: intent.duration_s,
                 },
                 condition: intent.condition,

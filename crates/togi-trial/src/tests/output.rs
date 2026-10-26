@@ -484,6 +484,10 @@ struct Slow {
 }
 
 impl Backend for Slow {
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, togi_backend::Error> {
+        self.inner.configuration(workload)
+    }
+
     fn kind(&self) -> togi_machine::Backend {
         self.inner.kind()
     }

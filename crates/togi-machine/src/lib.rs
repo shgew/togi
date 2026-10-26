@@ -2,6 +2,8 @@
 //! storage and workloads, with [`Machine`], [`Smu`], [`Kernel`] and [`Trials`] as execution boundaries.
 
 mod cancellation;
+mod ccd_profile;
+mod content;
 mod controller;
 mod core_set;
 mod cpufreq;
@@ -21,6 +23,8 @@ mod vocab;
 mod workloads;
 
 pub use cancellation::{CancellationToken, OnCancel};
+pub use ccd_profile::{CcdProfile, CcdProfileError};
+pub use content::{ContentId, Digest, InvalidDigest};
 pub use controller::{ControllerContract, ControllerMode};
 pub use core_set::CoreSet;
 pub use cpufreq::{CpuFrequency, FrequencyPolicy, FrequencyPolicyId};
@@ -38,10 +42,10 @@ pub use scalars::{
     MIN_OFFSET, ObservedOffset, PER_CORE_MAX, TargetOffset,
 };
 pub use seams::{
-    Check, Clock, CoreRank, CpuTime, Host, Instance, Kernel, KernelError, KernelErrorKind,
-    KernelRead, Machine, Mce, ProcessFault, ProcessFaultKind, PstoreRecord, Reporter, ResetReason,
-    Running, Sample, Smu, SmuValidated, Started, Stopped, Swept, TrialFailure, TrialResult,
-    TrialSpec, Trials, WatchdogState, monotonic_duration,
+    BackendCheck, Check, Clock, CoreRank, CpuTime, Host, Instance, Kernel, KernelError,
+    KernelErrorKind, KernelRead, Machine, Mce, ProcessFault, ProcessFaultKind, PstoreRecord,
+    Reporter, ResetReason, Running, Sample, Smu, SmuValidated, Started, Stopped, Swept,
+    TrialFailure, TrialResult, TrialSpec, Trials, WatchdogState, monotonic_duration,
 };
 pub use topology::{BiosContext, ContextField, ContextMismatch, CoreInfo, order};
 pub use vocab::{

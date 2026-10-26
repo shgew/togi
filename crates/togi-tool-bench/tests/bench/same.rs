@@ -7,14 +7,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::session;
-use togi_sim::MachineDefinition;
 
 struct Trees {
     dir: tempfile::TempDir,
 }
 
 fn recorded(replace: Option<(&str, &str)>) -> String {
-    let events = session::session(&MachineDefinition::default(), 1, None, 2).events;
+    let events = session::session(&session::hunting(), 1, None, 2).events;
     let text: Vec<String> = events
         .iter()
         .map(|event| serde_json::to_string(event).unwrap())

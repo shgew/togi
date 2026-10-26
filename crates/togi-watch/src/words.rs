@@ -1,23 +1,24 @@
-//! The words of the dashboard: the tag column, the tones, the regime and signal words, the phase word and the one
-//! table that gives each kind of journal event its words.
+//! The words of the dashboard: the tag column, the tones, the regime and signal words and the one table that gives
+//! each kind of journal event its words.
 //!
-//! [`words`] returns one [`Words`] per [`EventKind`], with a history entry, a tag, a compact entry and a detailed
-//! entry, and an explicit silent entry where a kind has none. The `match` has no wildcard arm, so a new kind does
-//! not compile until it has its words. Sequence-aware context, such as merging neighbouring lines or naming the
-//! core a failure moved, stays outside the table: an entry that needs it says [`History::Contextual`] or
-//! [`Phrase::Contextual`]. Every text here is built from raw facts; the frames escape at output.
+//! [`words`] returns one [`Words`] per [`EventKind`], with a history entry, a tag and whether the log lists it, and
+//! an explicit silent entry where a kind has none. The `match` has no wildcard arm, so a new kind does not
+//! compile until it has its words. Sequence-aware context, such as merging passes or naming the core a failure
+//! moved, stays outside the table: an entry that needs it says [`History::Contextual`]. The kinds of earlier
+//! rulesets are still decoded; their history line is the message the journal recorded, never an interpretation.
+//! Every text here is built from raw facts; the frames escape at output.
 
 use std::borrow::Cow;
 use std::time::Duration;
 
 use togi_journal::{
-    Activity, Attribution, CheckingChain, CheckingCycle, CheckingStep, Combination, CorePhase,
-    CoreTransition, CycleEvent, DeadEnd, Decision, DeepeningRound, EventKind, Failure, HuntEnd,
-    HuntGroup, HuntOutcome, HuntSkipped, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd,
-    TunerDecision,
+    Attribution, Binding, CcdCap, CcdEdge, CcdVector, Certainty, Classification, DayApplied,
+    DayEvent, DayEventId, DayFreeze, DayHold, DayStep, DayVeto, Edge, EventKind, Failure,
+    FreezeChoice, HoldChange, Mce, NightPlan, NightQualification, NightReproduction,
+    ObservedProfile, Payload, QualificationPurpose, QualificationState, ReproductionState,
+    ReproductionTarget, Resolution, SessionImported, Slope, StepKind, TrialEnd, VetoState,
 };
-use togi_machine::{CoreId, CoreSet, Regime, Signal, TargetOffset, WorkloadId};
-use togi_tuner::{DecisionPayload, GroupState};
+use togi_machine::{CoreId, CoreSet, Regime, Signal, WorkloadId};
 
 /// The tag of a line of what happened: one short word per kind of event, in a column of its own, so the eye finds
 /// a crash without reading the sentence beside it.
@@ -27,50 +28,46 @@ pub enum Tag {
     Start,
     /// A trial passed.
     Pass,
-    /// A trial or a core failed.
+    /// A trial failed.
     Fail,
     /// The machine crashed.
     Crash,
     /// A trial ended without a verdict.
     Unclear,
-    /// Something was skipped.
-    Skip,
     /// A power loss, a reset or a reset command.
     Reset,
-    /// A search step or a checking step.
+    /// A day step was proposed.
     Step,
-    /// A solo limit was found.
-    Limit,
-    /// A core has room to go deeper.
-    Room,
-    /// A core backed off.
-    Backoff,
-    /// A checking cycle.
-    Cycle,
-    /// A hunt.
-    Hunt,
-    /// A combination.
-    Combo,
-    /// A deepening round.
-    Round,
     /// The session stopped.
     Stop,
     /// A machine-check error.
     Mce,
     /// A note.
     Note,
-    /// An R7 chain was derived or closed.
-    Chain,
-    /// A hunt group.
-    Group,
-    /// A member probe.
-    Probe,
-    /// A solo limit is being confirmed.
-    Confirm,
     /// The session resumed.
     Resume,
-    /// A failure was held and nothing moved.
+    /// A day hold changed.
     Hold,
+    /// A night was planned.
+    Night,
+    /// A CCD's edge changed.
+    Edge,
+    /// A CCD's cap changed.
+    Cap,
+    /// A night qualification moved.
+    Qualify,
+    /// A night reproduction moved.
+    Repro,
+    /// A daily event.
+    Day,
+    /// A whole-profile veto.
+    Veto,
+    /// A day profile was applied.
+    Apply,
+    /// Promotion was frozen or unfrozen.
+    Freeze,
+    /// Records were imported.
+    Import,
 }
 
 impl Tag {
@@ -85,25 +82,23 @@ impl Tag {
             Self::Fail => "fail",
             Self::Crash => "crash",
             Self::Unclear => "unclear",
-            Self::Skip => "skip",
             Self::Reset => "reset",
             Self::Step => "step",
-            Self::Limit => "limit",
-            Self::Room => "room",
-            Self::Backoff => "backoff",
-            Self::Cycle => "cycle",
-            Self::Hunt => "hunt",
-            Self::Combo => "combo",
-            Self::Round => "round",
             Self::Stop => "stop",
             Self::Mce => "mce",
             Self::Note => "note",
-            Self::Chain => "chain",
-            Self::Group => "group",
-            Self::Probe => "probe",
-            Self::Confirm => "confirm",
             Self::Resume => "resume",
             Self::Hold => "hold",
+            Self::Night => "night",
+            Self::Edge => "edge",
+            Self::Cap => "cap",
+            Self::Qualify => "qualify",
+            Self::Repro => "repro",
+            Self::Day => "day",
+            Self::Veto => "veto",
+            Self::Apply => "apply",
+            Self::Freeze => "freeze",
+            Self::Import => "import",
         }
     }
 }
@@ -120,10 +115,6 @@ pub enum Tone {
     Bad,
     /// A warning.
     Warn,
-    /// A hunt.
-    Hunt,
-    /// A combination.
-    Combo,
 }
 
 /// A line of what happened as one event words it.
@@ -135,57 +126,6 @@ pub struct Line {
     pub text: String,
     /// How the line is drawn.
     pub tone: Tone,
-}
-
-/// What a state word names: a core in a phase of the search, or the session in an activity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Phase {
-    /// A core's phase.
-    Core(CorePhase),
-    /// The session's activity.
-    Activity(Activity),
-}
-
-impl From<CorePhase> for Phase {
-    fn from(phase: CorePhase) -> Self {
-        Self::Core(phase)
-    }
-}
-
-impl From<Activity> for Phase {
-    fn from(activity: Activity) -> Self {
-        Self::Activity(activity)
-    }
-}
-
-/// The state word the dashboard and `togi status` show for a core in a phase. An activity has no core word and
-/// comes back as its journal value.
-pub fn phase_word(phase: impl Into<Phase>) -> &'static str {
-    match phase.into() {
-        Phase::Core(CorePhase::Search) => "SEARCH",
-        Phase::Core(CorePhase::HasRoom) => "HAS ROOM",
-        Phase::Core(CorePhase::AtLimit) => "AT LIMIT",
-        Phase::Activity(activity) => activity.as_str(),
-    }
-}
-
-/// How a hunt group's outcome reads in the dashboard and `togi status`.
-pub const fn group_word(state: GroupState) -> &'static str {
-    match state {
-        GroupState::Running => "running",
-        GroupState::Passed => "passed",
-        GroupState::Failed => "failed",
-        GroupState::Skipped => "skipped",
-    }
-}
-
-/// What a phase-2 candidate does next: it moves, or its limit is checked again in place.
-pub const fn candidate_word(moving: bool) -> &'static str {
-    if moving {
-        "moving"
-    } else {
-        "checked again in place"
-    }
 }
 
 /// What a regime loads, in a sentence: "light load", "all-core load".
@@ -362,77 +302,6 @@ pub fn lateness(last_sample: Option<Duration>, planned: Option<Duration>) -> &'s
     }
 }
 
-/// The offset a core passed alone, the solo limit a search exit records. A search exit's offset is the margin one
-/// count shallower, so the pass is the limit; an exit with no pass has no solo limit.
-pub fn solo_limit(transition: &CoreTransition) -> Option<i64> {
-    transition.pass.map(TargetOffset::get)
-}
-
-/// The words of a tuner decision as the history tells it.
-pub fn decision_line(d: &TunerDecision) -> Line {
-    let core = d.core.get();
-    let (from, to) = (d.from_offset.get(), d.to_offset.get());
-    match d.decision {
-        Decision::StepDeeper => Line {
-            tag: Tag::Step,
-            text: format!("core {core:02} passed {from}; searches {to} on its next turn"),
-            tone: Tone::Plain,
-        },
-        Decision::CheckSoloLimit => Line {
-            tag: Tag::Confirm,
-            text: format!("core {core:02} confirming {to} as its solo limit"),
-            tone: Tone::Plain,
-        },
-        Decision::Deepen => Line {
-            tag: Tag::Room,
-            text: format!("core {core:02} {from} → {to}"),
-            tone: Tone::Good,
-        },
-        Decision::Yield => Line {
-            tag: Tag::Room,
-            text: format!("core {core:02} yields {from} → {to}, back to its round baseline"),
-            tone: Tone::Plain,
-        },
-        Decision::Hold => Line {
-            tag: Tag::Hold,
-            text: format!("core {core:02} failure held; tuning stays at {from}"),
-            tone: Tone::Warn,
-        },
-        Decision::Backoff => Line {
-            tag: Tag::Backoff,
-            text: format!("core {core:02} {from} → {to}"),
-            tone: Tone::Warn,
-        },
-    }
-}
-
-/// When a core finds its solo limit, has room again or starts its search over; the other changes show on its row.
-pub fn phase_line(d: &CoreTransition) -> Option<Line> {
-    let core = d.core.get();
-    match (d.from, d.to) {
-        (Some(_), CorePhase::Search) => Some(Line {
-            tag: Tag::Step,
-            text: format!("core {core:02} starts over from {}", d.offset.get()),
-            tone: Tone::Warn,
-        }),
-        (Some(CorePhase::Search), CorePhase::HasRoom | CorePhase::AtLimit) => {
-            solo_limit(d).map(|limit| Line {
-                tag: Tag::Limit,
-                text: format!("core {core:02} solo limit {limit}"),
-                tone: Tone::Good,
-            })
-        }
-        (Some(CorePhase::AtLimit), CorePhase::HasRoom) => Some(Line {
-            tag: Tag::Room,
-            text: format!("core {core:02} has room again at {}", d.offset.get()),
-            tone: Tone::Plain,
-        }),
-        (None, CorePhase::Search | CorePhase::HasRoom | CorePhase::AtLimit)
-        | (Some(CorePhase::HasRoom), CorePhase::HasRoom | CorePhase::AtLimit)
-        | (Some(CorePhase::AtLimit), CorePhase::AtLimit) => None,
-    }
-}
-
 /// How a failure reads in the history: a core failing at an offset, or an idle failure; nothing for the rest.
 pub fn failure_line(d: &Failure) -> Option<Line> {
     if d.attribution == Attribution::Attributed {
@@ -452,56 +321,6 @@ pub fn failure_line(d: &Failure) -> Option<Line> {
         });
     }
     None
-}
-
-/// A checking cycle in the history.
-pub fn cycle_line(d: &CheckingCycle) -> Line {
-    let cycle = d.cycle.get();
-    let (text, tone) = if d.event == CycleEvent::Start {
-        (
-            format!("cycle {cycle} started · {}", plural(d.steps.len(), "step")),
-            Tone::Plain,
-        )
-    } else if d.passed && d.full {
-        (format!("cycle {cycle} passed, a full cycle"), Tone::Good)
-    } else if d.passed {
-        (
-            format!("cycle {cycle} passed but missing {}", d.missing.join(", ")),
-            Tone::Warn,
-        )
-    } else {
-        (
-            format!(
-                "cycle {cycle} ended early: {}",
-                d.reason.as_deref().unwrap_or_default()
-            ),
-            Tone::Warn,
-        )
-    };
-    Line {
-        tag: Tag::Cycle,
-        text,
-        tone,
-    }
-}
-
-/// A combination: its members' offsets when a hunt showed them failing together, its cores when it is an
-/// unresolved fallback.
-pub fn combination_text(d: &Combination) -> String {
-    let id = d.combination.get();
-    if d.fallback {
-        return format!(
-            "C{id} over {} · hunt {} unresolved",
-            core_ids(d.members.iter().map(|m| m.core)),
-            d.hunt.get()
-        );
-    }
-    let members: Vec<String> = d
-        .members
-        .iter()
-        .map(|m| format!("{:02} {}", m.core.get(), m.offset.get()))
-        .collect();
-    format!("C{id}: {}", members.join("  "))
 }
 
 /// The tag of a trial end.
@@ -537,224 +356,330 @@ fn mce_line(d: &Mce) -> Option<Line> {
     })
 }
 
-/// How a hunt ends, in the detailed story; `named` is whether the branch assumes a named core, which the hunt
-/// that ends `direct` or `culprit` then calls "the hunt".
-pub fn hunt_end_phrase(d: &HuntEnd, named: bool) -> (String, bool) {
-    let hunt = d.hunt.get();
-    let cores = core_ids(d.cores);
-    match d.result {
-        HuntOutcome::Direct | HuntOutcome::Culprit if named => ("the hunt ends".to_owned(), false),
-        HuntOutcome::Direct | HuntOutcome::Culprit => {
-            (format!("hunt {hunt} ends: {cores} named"), false)
+fn line(tag: Tag, tone: Tone, text: String) -> Line {
+    Line { tag, text, tone }
+}
+
+fn offset_text(offset: togi_machine::TargetOffset) -> String {
+    offset.get().to_string()
+}
+
+/// A CCD vector as "CCD0 -10, CCD1 -5".
+pub fn ccd_vector(profile: &CcdVector) -> String {
+    profile
+        .ccd
+        .iter()
+        .map(|(ccd, at)| format!("CCD{ccd} {}", offset_text(at)))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn ccd_names(ccds: &[togi_machine::CcdId]) -> String {
+    ccds.iter()
+        .map(|ccd| format!("CCD{ccd}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn observed(profile: &ObservedProfile) -> String {
+    match profile {
+        ObservedProfile::Ccd { ccd, .. } => ccd
+            .iter()
+            .map(|(ccd, at)| format!("CCD{ccd} {}", offset_text(at)))
+            .collect::<Vec<_>>()
+            .join(", "),
+        ObservedProfile::PerCore { cores } => {
+            let parts: Vec<String> = cores
+                .iter()
+                .map(|(core, at)| format!("core {:02}: {}", core.get(), at.0))
+                .collect();
+            format!("per-core [{}]", parts.join(", "))
         }
-        HuntOutcome::Fallback => (format!("hunt {hunt} unresolved"), true),
-        HuntOutcome::Combination => (format!("hunt {hunt} keeps {cores} together"), false),
-        HuntOutcome::Cancelled => (format!("hunt {hunt} cancelled"), false),
-        HuntOutcome::Loaded => (
-            format!("hunt {hunt} keeps the failure on loaded {cores}"),
-            false,
+    }
+}
+
+fn event_id(id: &DayEventId) -> String {
+    match id {
+        DayEventId::Boot { boot } => {
+            let boot = boot.as_str();
+            format!("boot {}", boot.get(..8).unwrap_or(boot))
+        }
+        DayEventId::Record { session, seq } => format!("record {session}#{seq}"),
+        DayEventId::Requalification { night } => format!("re-qualification of night {night}"),
+    }
+}
+
+/// An edge U as the dashboard says it: "unknown", "fails at -23", "censored at -50".
+pub fn edge_words(edge: &Edge) -> String {
+    match edge {
+        Edge::Unknown {} => "unknown".to_owned(),
+        Edge::Observed { offset, .. } => format!("fails at {}", offset.get()),
+        Edge::Censored { limit, .. } => format!("censored at {}", limit.get()),
+    }
+}
+
+fn edge_line(d: &CcdEdge) -> Line {
+    let tone = match d.edge {
+        Edge::Observed { .. } => Tone::Warn,
+        Edge::Unknown {} | Edge::Censored { .. } => Tone::Plain,
+    };
+    line(
+        Tag::Edge,
+        tone,
+        format!(
+            "CCD{} edge {} → {}",
+            d.ccd,
+            edge_words(&d.old),
+            edge_words(&d.edge)
+        ),
+    )
+}
+
+/// How a cap's slope reads: "fallback slope" or "measured slope".
+pub const fn slope_words(slope: &Slope) -> &'static str {
+    match slope {
+        Slope::Fallback { .. } => "fallback slope",
+        Slope::Measured { .. } => "measured slope",
+    }
+}
+
+/// What fixed a cap, in words.
+pub fn binding_words(binding: &Binding) -> String {
+    match binding {
+        Binding::Rate { class } => format!("rate of {} {}", class.regime, kind_words(class.regime)),
+        Binding::EdgeMargin {} => "edge margin".to_owned(),
+        Binding::Baseline {} => "no cap yet".to_owned(),
+    }
+}
+
+fn cap_line(d: &CcdCap) -> Line {
+    line(
+        Tag::Cap,
+        Tone::Plain,
+        format!(
+            "CCD{} cap {} → {} · {} · {}",
+            d.ccd,
+            offset_text(d.old),
+            offset_text(d.new),
+            binding_words(&d.binding),
+            slope_words(&d.slope)
+        ),
+    )
+}
+
+/// A night plan: the opening one, or a replan with the time the night has observed so far.
+fn plan_line(d: &NightPlan) -> Line {
+    let tasks = plural(d.tasks.len(), "task");
+    let text = if d.night.is_none() {
+        format!("night opened · {tasks}")
+    } else {
+        let elapsed: u64 = d.budgets.iter().map(|budget| budget.consumed_s).sum();
+        format!(
+            "night replanned · {} elapsed · {tasks}",
+            age(Duration::from_secs(elapsed))
+        )
+    };
+    line(Tag::Night, Tone::Plain, text)
+}
+
+/// A qualification's purpose, in words.
+pub const fn purpose_words(purpose: QualificationPurpose) -> &'static str {
+    match purpose {
+        QualificationPurpose::NextStep => "next step",
+        QualificationPurpose::Requalification => "re-qualification",
+        QualificationPurpose::Firmware => "firmware",
+    }
+}
+
+fn qualification_line(d: &NightQualification) -> Option<Line> {
+    let of = format!("{} ({})", ccd_vector(&d.profile), purpose_words(d.purpose));
+    match &d.state {
+        QualificationState::Start { outstanding } => Some(line(
+            Tag::Qualify,
+            Tone::Plain,
+            format!(
+                "qualifying {of} · {} to witness",
+                plural(outstanding.len(), "cell")
+            ),
+        )),
+        QualificationState::Progress { .. } => None,
+        QualificationState::Complete { witnesses } => Some(line(
+            Tag::Qualify,
+            Tone::Good,
+            format!(
+                "qualified {of} · {} witnessed",
+                plural(witnesses.len(), "cell")
+            ),
+        )),
+        QualificationState::Failed { outstanding, .. } => Some(line(
+            Tag::Qualify,
+            Tone::Bad,
+            format!(
+                "qualification of {of} failed · {} outstanding",
+                plural(outstanding.len(), "cell")
+            ),
+        )),
+    }
+}
+
+fn reproduction_line(d: &NightReproduction) -> Option<Line> {
+    let target = match &d.target {
+        Some(ReproductionTarget::Exact { profile }) => {
+            format!("exact profile {}", ccd_vector(profile))
+        }
+        Some(ReproductionTarget::Isolated { ccd, offset }) => {
+            format!("CCD{ccd} alone at {}", offset_text(*offset))
+        }
+        None => "no profile a night writes".to_owned(),
+    };
+    let source = event_id(&d.source);
+    match d.state {
+        ReproductionState::Pending => None,
+        ReproductionState::Reproduced => Some(line(
+            Tag::Repro,
+            Tone::Bad,
+            format!("{source} reproduced on {target}"),
+        )),
+        ReproductionState::Unreproduced => Some(line(
+            Tag::Repro,
+            Tone::Good,
+            format!("{source} not reproduced on {target}"),
+        )),
+        ReproductionState::Untestable => Some(line(
+            Tag::Repro,
+            Tone::Warn,
+            format!("{source} cannot be retested: {target}"),
+        )),
+    }
+}
+
+fn event_line(d: &DayEvent) -> Line {
+    let (kind, tone) = match d.classification {
+        Classification::CpuSuspect {
+            certainty: Certainty::Definite,
+        } => ("CPU-suspect", Tone::Bad),
+        Classification::CpuSuspect {
+            certainty: Certainty::Provisional,
+        } => ("provisionally CPU-suspect", Tone::Bad),
+        Classification::NonCpu {} => ("not CPU", Tone::Plain),
+        Classification::Unexplained {} => ("unexplained", Tone::Warn),
+    };
+    let resolution = match d.resolution {
+        Resolution::Unresolved {} => "unresolved",
+        Resolution::Resolved { .. } => "resolved",
+    };
+    line(
+        Tag::Day,
+        tone,
+        format!(
+            "{} at {} · {kind}, {resolution}",
+            event_id(&d.event),
+            observed(&d.profile)
+        ),
+    )
+}
+
+fn veto_line(d: &DayVeto) -> Line {
+    match d.state {
+        VetoState::Active => line(
+            Tag::Veto,
+            Tone::Warn,
+            format!(
+                "veto on {} from {}",
+                observed(&d.profile),
+                event_id(&d.event)
+            ),
+        ),
+        VetoState::Cleared => line(
+            Tag::Veto,
+            Tone::Plain,
+            format!(
+                "veto on {} cleared, from {}",
+                observed(&d.profile),
+                event_id(&d.event)
+            ),
         ),
     }
 }
 
-/// A move of one core in the detailed story. `failed` is the core a failure in the same branch named, whose
-/// backoff records its failure point.
-pub fn decision_phrase(d: &TunerDecision, failed: Option<CoreId>) -> String {
-    let core = d.core.get();
-    let (from, to) = (d.from_offset.get(), d.to_offset.get());
-    match d.decision {
-        Decision::Backoff => match (failed, d.failure_point) {
-            (Some(failed), Some(point)) if failed == d.core => {
-                format!("core {core:02} fails at {}, {from} → {to}", point.get())
-            }
-            _ => format!("core {core:02} {from} → {to}"),
-        },
-        Decision::StepDeeper => format!("core {core:02} searches {to} on its next turn"),
-        Decision::CheckSoloLimit => {
-            format!("core {core:02} starts confirming {to} as its solo limit")
-        }
-        Decision::Deepen => format!("core {core:02} deepens {from} → {to}"),
-        Decision::Yield => {
-            format!("core {core:02} yields {from} → {to}, back to its round baseline")
-        }
-        Decision::Hold => format!("core {core:02} failure held at {from}; no tuning move"),
+fn step_line(d: &DayStep) -> Option<Line> {
+    match &d.step {
+        StepKind::Hold { .. } => None,
+        StepKind::Promote { changed } => Some(line(
+            Tag::Step,
+            Tone::Good,
+            format!("promote CCD{changed} to {}", ccd_vector(&d.proposed)),
+        )),
+        StepKind::Retreat { changed, .. } => Some(line(
+            Tag::Step,
+            Tone::Warn,
+            format!(
+                "retreat {} to {}",
+                ccd_names(changed),
+                ccd_vector(&d.proposed)
+            ),
+        )),
+        StepKind::FirmwareZero { changed } => Some(line(
+            Tag::Step,
+            Tone::Warn,
+            format!(
+                "firmware changed: {} to {}",
+                ccd_names(changed),
+                ccd_vector(&d.proposed)
+            ),
+        )),
     }
 }
 
-/// The tag of a core's move to `phase` that has no history line of its own, such as a core entering its search
-/// at the start of a session.
-const fn phase_tag(phase: CorePhase) -> Tag {
-    match phase {
-        CorePhase::Search => Tag::Step,
-        CorePhase::HasRoom => Tag::Room,
-        CorePhase::AtLimit => Tag::Limit,
-    }
+fn applied_line(d: &DayApplied) -> Line {
+    line(
+        Tag::Apply,
+        Tone::Plain,
+        format!("applied day profile {}", ccd_vector(&d.target)),
+    )
 }
 
-fn core_phase_phrase(d: &CoreTransition) -> Option<String> {
-    let core = d.core.get();
-    match (d.from, d.to) {
-        (Some(CorePhase::Search), CorePhase::HasRoom | CorePhase::AtLimit) => {
-            solo_limit(d).map(|limit| format!("core {core:02} solo limit {limit}"))
-        }
-        (Some(_), CorePhase::Search) => Some(format!("core {core:02} starts its search over")),
-        (None, CorePhase::Search) => Some(format!("core {core:02} starts its search")),
-        (
-            None | Some(CorePhase::HasRoom | CorePhase::AtLimit),
-            CorePhase::HasRoom | CorePhase::AtLimit,
-        ) => None,
-    }
-}
-
-fn chain_phrase(d: &CheckingChain) -> String {
-    if d.cores.is_empty() {
-        format!("CCD {} partials end", d.ccd.get())
-    } else {
-        format!("CCD {} partial on {}", d.ccd.get(), core_ids(d.cores))
-    }
-}
-
-/// The history line of a chain note: the cycle and step, the CCD, and the cores the next partial loads, or that
-/// the chain ends. The request groups, their provenance and the profile stay in the journal message.
-fn chain_summary(d: &CheckingChain) -> String {
-    let (cycle, step, ccd) = (d.cycle.get(), d.step.get(), d.ccd.get());
-    if d.cores.is_empty() {
-        format!("cycle {cycle} step {step} · CCD {ccd} partials end")
-    } else {
+fn hold_line(d: &DayHold) -> Option<Line> {
+    let what = match d.change {
+        HoldChange::Credited {} => return None,
+        HoldChange::Reset { .. } => "reset",
+        HoldChange::Recomputed { .. } => "recomputed",
+    };
+    Some(line(
+        Tag::Hold,
+        Tone::Plain,
         format!(
-            "cycle {cycle} step {step} · CCD {ccd} partial {} loads {}",
-            d.part,
-            core_ids(d.cores)
-        )
-    }
+            "hold at {} {what} · {} eligible",
+            ccd_vector(&d.profile),
+            age(Duration::from_secs(d.eligible_s))
+        ),
+    ))
 }
 
-fn cycle_phrase(d: &CheckingCycle) -> String {
-    let cycle = d.cycle.get();
-    if d.event == CycleEvent::Start {
-        format!("cycle {cycle} starts")
-    } else if d.passed && d.full {
-        format!("cycle {cycle} passed, a full cycle")
-    } else if d.passed {
-        format!("cycle {cycle} passed")
-    } else {
-        format!("cycle {cycle} ends")
-    }
+fn freeze_line(d: &DayFreeze) -> Line {
+    let what = match d.choice {
+        FreezeChoice::Freeze => "frozen",
+        FreezeChoice::Unfreeze => "unfrozen",
+    };
+    line(Tag::Freeze, Tone::Plain, format!("promotion {what}"))
 }
 
-fn round_phrase(d: &DeepeningRound) -> String {
-    let round = d.round.get();
-    if d.event == RoundEvent::Start {
-        format!("deepening round {round} starts")
-    } else if d.passed {
-        format!("deepening round {round} passed")
-    } else {
-        format!("deepening round {round} ends")
-    }
-}
-
-fn dead_end_phrase(d: &DeadEnd) -> String {
-    format!("tuning stops: {}", d.condition.as_str().replace('_', " "))
-}
-
-fn hunt_start_phrase(d: &HuntStart) -> String {
-    format!(
-        "hunt {} starts over {}",
-        d.hunt.get(),
-        core_ids(d.candidates)
+fn import_line(d: &SessionImported) -> Line {
+    line(
+        Tag::Import,
+        Tone::Plain,
+        format!(
+            "imported {} of {} selected records from {}",
+            d.counts.imported,
+            d.counts.selected,
+            plural(d.sources.len(), "session")
+        ),
     )
 }
 
-fn backs_off(d: &TunerDecision) -> Option<String> {
-    (d.decision == Decision::Backoff).then(|| "backs off".to_owned())
-}
-
-fn hunt_brief(d: &HuntStart) -> String {
-    format!("hunt {}", d.hunt.get())
-}
-
-fn combination_brief(d: &Combination) -> String {
-    format!("C{}", d.combination.get())
-}
-
-fn combination_phrase(d: &Combination) -> String {
-    format!(
-        "C{} over {}",
-        d.combination.get(),
-        core_ids(d.members.iter().map(|m| m.core))
-    )
-}
-
-const HUNT_ENDS: &str = "hunt ends";
-const TUNING_STOPS: &str = "tuning stops";
-const NO_HUNT: &str = "no hunt";
-
-/// A skipped hunt with the reason the tuner recorded, which may be a known failure, a held failure or nothing.
-fn skip_text(d: &HuntSkipped, lead: &str) -> String {
-    if d.reason.is_empty() {
-        lead.to_owned()
-    } else {
-        format!("{lead}: {}", d.reason)
-    }
-}
-
-fn step_phrase(d: &CheckingStep) -> Option<String> {
-    (d.step.get() > 1).then(|| format!("step {} is done", d.step.get() - 1))
-}
-
-/// The compact entry of a forecast decision: the [`Words::compact`] of the event it would be, without making one.
-#[must_use]
-pub fn decision_brief(decision: &DecisionPayload) -> Option<String> {
-    match decision {
-        DecisionPayload::TunerDecision(d) => backs_off(d),
-        DecisionPayload::HuntStart(d) => Some(hunt_brief(d)),
-        DecisionPayload::HuntEnd(_) => Some(HUNT_ENDS.to_owned()),
-        DecisionPayload::Combination(d) => Some(combination_brief(d)),
-        DecisionPayload::DeadEnd(_) => Some(TUNING_STOPS.to_owned()),
-        DecisionPayload::HuntSkipped(_) => Some(NO_HUNT.to_owned()),
-        DecisionPayload::Failure(_)
-        | DecisionPayload::TunerWarning(_)
-        | DecisionPayload::CorePhase(_)
-        | DecisionPayload::ProfileChange(_)
-        | DecisionPayload::CheckingCycle(_)
-        | DecisionPayload::CheckingStep(_)
-        | DecisionPayload::CheckingChain(_)
-        | DecisionPayload::HuntGroup(_)
-        | DecisionPayload::DeepeningRound(_) => None,
-    }
-}
-
-/// The detailed entry of a forecast decision whose words need no context: the [`Words::detailed`] of the event it
-/// would be, without making one, and `None` where the table says [`Phrase::Contextual`].
-#[must_use]
-pub fn decision_detail(decision: &DecisionPayload) -> Option<String> {
-    match decision {
-        DecisionPayload::TunerDecision(d) => Some(decision_phrase(d, None)),
-        DecisionPayload::CorePhase(d) => core_phase_phrase(d),
-        DecisionPayload::CheckingStep(d) => step_phrase(d),
-        DecisionPayload::CheckingCycle(d) => Some(cycle_phrase(d)),
-        DecisionPayload::CheckingChain(d) => Some(chain_phrase(d)),
-        DecisionPayload::HuntStart(d) => Some(hunt_start_phrase(d)),
-        DecisionPayload::HuntSkipped(d) => Some(skip_text(d, NO_HUNT)),
-        DecisionPayload::Combination(d) => Some(combination_phrase(d)),
-        DecisionPayload::DeepeningRound(d) => Some(round_phrase(d)),
-        DecisionPayload::DeadEnd(d) => Some(dead_end_phrase(d)),
-        DecisionPayload::Failure(_)
-        | DecisionPayload::TunerWarning(_)
-        | DecisionPayload::ProfileChange(_)
-        | DecisionPayload::HuntGroup(_)
-        | DecisionPayload::HuntEnd(_) => None,
-    }
-}
-
-fn group_tag(d: &HuntGroup) -> Tag {
-    if d.skipped || d.inferred.is_some() {
-        Tag::Skip
-    } else if d.probe.is_some() {
-        Tag::Probe
-    } else {
-        Tag::Group
-    }
+/// The line of a kind of an earlier ruleset: the message the journal recorded, and nothing else.
+fn recorded(payload: &Payload) -> Line {
+    line(Tag::Note, Tone::Plain, payload.message())
 }
 
 /// How a kind of event reads in the history.
@@ -765,7 +690,20 @@ pub enum History {
     /// The line one event of this kind words by itself; `None` when this event has none.
     Line(fn(&Payload) -> Option<Line>),
     /// The line depends on earlier events, or changes the lines they began; the history builds it.
-    Contextual,
+    Contextual(Context),
+}
+
+/// The events whose history line needs what came before.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Context {
+    /// The session start.
+    Start,
+    /// A configuration load, which is a resume after the first.
+    Config,
+    /// A trial end, which merges passes and replaces the reboot it reports.
+    TrialEnd,
+    /// A crash, which replaces a resume line.
+    Crash,
 }
 
 /// How a kind of event is tagged in the log.
@@ -779,27 +717,6 @@ pub enum Tagging {
     By(fn(&Payload) -> Tag),
 }
 
-/// How a kind of event reads in a compact outcome, as the first decision a forecast branch records.
-#[derive(Clone, Copy, Debug)]
-pub enum Brief {
-    /// The kind never names a compact outcome.
-    Silent,
-    /// The compact words of this event.
-    Of(fn(&Payload) -> Option<String>),
-}
-
-/// How a kind of event reads in a detailed outcome phrase.
-#[derive(Clone, Copy, Debug)]
-pub enum Phrase {
-    /// The kind never has a phrase.
-    Silent,
-    /// The phrase of one event by itself. The consumer still drops what the branch makes redundant: a branch
-    /// that assumes a named core speaks of "it" and omits the starts-over phrase.
-    Of(fn(&Payload) -> Option<String>),
-    /// The phrase depends on the events around it: known failures, carried hunt groups, how a hunt ends.
-    Contextual,
-}
-
 /// Everything one kind of journal event says.
 #[derive(Clone, Copy, Debug)]
 pub struct Words {
@@ -809,26 +726,34 @@ pub struct Words {
     pub history: History,
     /// Its tag in the log.
     pub tag: Tagging,
-    /// Its compact outcome words.
-    pub compact: Brief,
-    /// Its detailed outcome phrase.
-    pub detailed: Phrase,
 }
 
 impl Words {
-    /// A kind with no words of its own: listed in the log under its kind name, and never in the history or a
-    /// story.
+    /// A kind with no words of its own: listed in the log under its kind name, and never in the history.
     pub const SILENT: Self = Self {
         listed: true,
         history: History::Silent,
         tag: Tagging::Kind,
-        compact: Brief::Silent,
-        detailed: Phrase::Silent,
     };
 
     /// A kind the log does not list and that has no words.
     pub const UNLISTED: Self = Self {
         listed: false,
+        ..Self::SILENT
+    };
+
+    /// A kind whose history line one event words by itself, tagged in the log as its line is.
+    const fn said(tag: Tag, line: fn(&Payload) -> Option<Line>) -> Self {
+        Self {
+            history: History::Line(line),
+            tag: Tagging::Fixed(tag),
+            ..Self::SILENT
+        }
+    }
+
+    /// A kind of an earlier ruleset: its recorded message is its history line, and the log names its kind.
+    const HISTORICAL: Self = Self {
+        history: History::Line(|payload| Some(recorded(payload))),
         ..Self::SILENT
     };
 }
@@ -849,7 +774,7 @@ macro_rules! of {
 pub fn words(kind: EventKind) -> Words {
     match kind {
         EventKind::SessionStart => Words {
-            history: History::Contextual,
+            history: History::Contextual(Context::Start),
             tag: Tagging::Fixed(Tag::Start),
             ..Words::SILENT
         },
@@ -859,15 +784,13 @@ pub fn words(kind: EventKind) -> Words {
         | EventKind::SessionArchived
         | EventKind::SmuError
         | EventKind::ProfileApplied
-        | EventKind::ProfileChange
         | EventKind::ProfileRestored
         | EventKind::TrialStart
         | EventKind::TrialProgress
         | EventKind::TrialSignal
         | EventKind::TrialSample
-        | EventKind::TrialCarried
-        | EventKind::FailureCarried
-        | EventKind::HostRanking
+        | EventKind::TrialIntent
+        | EventKind::TaskStart
         | EventKind::TunerWarning
         | EventKind::DefectAnswered
         | EventKind::BootSavedEntry
@@ -881,7 +804,15 @@ pub fn words(kind: EventKind) -> Words {
         | EventKind::DayRecord
         | EventKind::DayFault
         | EventKind::DayUncleanEnd
-        | EventKind::StateRebuilt => Words::SILENT,
+        | EventKind::ExposureObserved
+        | EventKind::DayInterval
+        | EventKind::DayImported
+        | EventKind::StateRebuilt
+        | EventKind::ProfileChange
+        | EventKind::TrialCarried
+        | EventKind::FailureCarried
+        | EventKind::SessionCarried
+        | EventKind::HostRanking => Words::SILENT,
         EventKind::PreflightCheck
         | EventKind::SmuIntent
         | EventKind::SmuWrite
@@ -896,12 +827,12 @@ pub fn words(kind: EventKind) -> Words {
             }),
             ..Words::SILENT
         },
-        EventKind::SessionCarried | EventKind::ConfigLoaded | EventKind::TrialIntent => Words {
-            history: History::Contextual,
+        EventKind::ConfigLoaded => Words {
+            history: History::Contextual(Context::Config),
             ..Words::SILENT
         },
         EventKind::TrialEnd => Words {
-            history: History::Contextual,
+            history: History::Contextual(Context::TrialEnd),
             tag: Tagging::By(|payload| {
                 if let Payload::TrialEnd(d) = payload {
                     trial_end_tag(d)
@@ -911,148 +842,67 @@ pub fn words(kind: EventKind) -> Words {
             }),
             ..Words::SILENT
         },
-        EventKind::Failure => Words {
-            history: History::Contextual,
-            tag: Tagging::By(|payload| {
-                if let Payload::Failure(d) = payload
-                    && d.known_failure.is_some()
-                {
-                    Tag::Skip
-                } else {
-                    Tag::Fail
-                }
-            }),
-            detailed: Phrase::Contextual,
-            ..Words::SILENT
-        },
+        EventKind::Failure => Words::said(Tag::Fail, of!(Failure, |d| failure_line(d))),
         EventKind::Mce => Words {
             history: History::Line(of!(Mce, |d| mce_line(d))),
             ..Words::SILENT
         },
         EventKind::CrashDetected => Words {
-            history: History::Contextual,
+            history: History::Contextual(Context::Crash),
             tag: Tagging::Fixed(Tag::Crash),
             ..Words::SILENT
         },
-        EventKind::TunerDecision => Words {
-            history: History::Line(of!(TunerDecision, |d| Some(decision_line(d)))),
-            tag: Tagging::By(|payload| {
-                if let Payload::TunerDecision(d) = payload {
-                    decision_line(d).tag
-                } else {
-                    Tag::Backoff
-                }
-            }),
-            compact: Brief::Of(of!(TunerDecision, |d| backs_off(d))),
-            detailed: Phrase::Of(of!(TunerDecision, |d| Some(decision_phrase(d, None)))),
-            ..Words::SILENT
-        },
-        EventKind::CorePhase => Words {
-            history: History::Contextual,
-            tag: Tagging::By(|payload| {
-                if let Payload::CorePhase(d) = payload {
-                    phase_line(d).map_or_else(|| phase_tag(d.to), |line| line.tag)
-                } else {
-                    Tag::Limit
-                }
-            }),
-            detailed: Phrase::Of(of!(CorePhase, |d| core_phase_phrase(d))),
-            ..Words::SILENT
-        },
-        EventKind::CheckingCycle => Words {
-            history: History::Line(of!(CheckingCycle, |d| Some(cycle_line(d)))),
-            tag: Tagging::Fixed(Tag::Cycle),
-            detailed: Phrase::Of(of!(CheckingCycle, |d| Some(cycle_phrase(d)))),
-            ..Words::SILENT
-        },
-        EventKind::CheckingStep => Words {
-            history: History::Contextual,
-            tag: Tagging::Fixed(Tag::Step),
-            detailed: Phrase::Of(of!(CheckingStep, |d| step_phrase(d))),
-            ..Words::SILENT
-        },
-        EventKind::CheckingChain => Words {
-            history: History::Line(of!(CheckingChain, |d| Some(Line {
-                tag: Tag::Chain,
-                text: chain_summary(d),
-                tone: Tone::Plain,
-            }))),
-            detailed: Phrase::Of(of!(CheckingChain, |d| Some(chain_phrase(d)))),
-            ..Words::SILENT
-        },
-        EventKind::HuntStart => Words {
-            history: History::Contextual,
-            tag: Tagging::Fixed(Tag::Hunt),
-            compact: Brief::Of(of!(HuntStart, |d| Some(hunt_brief(d)))),
-            detailed: Phrase::Of(of!(HuntStart, |d| Some(hunt_start_phrase(d)))),
-            ..Words::SILENT
-        },
-        EventKind::HuntGroup => Words {
-            history: History::Contextual,
-            tag: Tagging::By(|payload| {
-                if let Payload::HuntGroup(d) = payload {
-                    group_tag(d)
-                } else {
-                    Tag::Group
-                }
-            }),
-            detailed: Phrase::Contextual,
-            ..Words::SILENT
-        },
-        EventKind::HuntEnd => Words {
-            history: History::Contextual,
-            tag: Tagging::Fixed(Tag::Hunt),
-            compact: Brief::Of(|_| Some(HUNT_ENDS.to_owned())),
-            detailed: Phrase::Contextual,
-            ..Words::SILENT
-        },
-        EventKind::HuntSkipped => Words {
-            history: History::Line(of!(HuntSkipped, |d| Some(Line {
-                tag: Tag::Hunt,
-                text: skip_text(d, "not hunted"),
-                tone: Tone::Plain,
-            }))),
-            tag: Tagging::Fixed(Tag::Hunt),
-            compact: Brief::Of(|_| Some(NO_HUNT.to_owned())),
-            detailed: Phrase::Of(of!(HuntSkipped, |d| Some(skip_text(d, NO_HUNT)))),
-            ..Words::SILENT
-        },
-        EventKind::Combination => Words {
-            history: History::Line(of!(Combination, |d| Some(Line {
-                tag: Tag::Combo,
-                text: combination_text(d),
-                tone: Tone::Combo,
-            }))),
-            tag: Tagging::Fixed(Tag::Combo),
-            compact: Brief::Of(of!(Combination, |d| Some(combination_brief(d)))),
-            detailed: Phrase::Of(of!(Combination, |d| Some(combination_phrase(d)))),
-            ..Words::SILENT
-        },
-        EventKind::DeepeningRound => Words {
-            history: History::Contextual,
-            tag: Tagging::Fixed(Tag::Round),
-            detailed: Phrase::Of(of!(DeepeningRound, |d| Some(round_phrase(d)))),
-            ..Words::SILENT
-        },
+        EventKind::TunerDecision
+        | EventKind::CorePhase
+        | EventKind::CheckingCycle
+        | EventKind::CheckingStep
+        | EventKind::CheckingChain
+        | EventKind::HuntStart
+        | EventKind::HuntGroup
+        | EventKind::HuntEnd
+        | EventKind::HuntSkipped
+        | EventKind::Combination
+        | EventKind::DeepeningRound => Words::HISTORICAL,
         EventKind::CommandReset => Words {
-            history: History::Line(|_| {
-                Some(Line {
-                    tag: Tag::Reset,
-                    text: "requested from the command line".to_owned(),
-                    tone: Tone::Plain,
-                })
+            history: History::Line(|payload| {
+                Some(line(Tag::Reset, Tone::Plain, payload.message()))
             }),
             ..Words::SILENT
         },
+        EventKind::CcdEdge => Words::said(Tag::Edge, of!(CcdEdge, |d| Some(edge_line(d)))),
+        EventKind::CcdCap => Words::said(Tag::Cap, of!(CcdCap, |d| Some(cap_line(d)))),
+        EventKind::NightPlan => Words::said(Tag::Night, of!(NightPlan, |d| Some(plan_line(d)))),
+        EventKind::NightQualification => Words::said(
+            Tag::Qualify,
+            of!(NightQualification, |d| qualification_line(d)),
+        ),
+        EventKind::NightReproduction => {
+            Words::said(Tag::Repro, of!(NightReproduction, |d| reproduction_line(d)))
+        }
+        EventKind::DayEvent => Words::said(Tag::Day, of!(DayEvent, |d| Some(event_line(d)))),
+        EventKind::DayVeto => Words::said(Tag::Veto, of!(DayVeto, |d| Some(veto_line(d)))),
+        EventKind::DayStep => Words::said(Tag::Step, of!(DayStep, |d| step_line(d))),
+        EventKind::DayApplied => {
+            Words::said(Tag::Apply, of!(DayApplied, |d| Some(applied_line(d))))
+        }
+        EventKind::DayHold => Words::said(Tag::Hold, of!(DayHold, |d| hold_line(d))),
+        EventKind::DayFreeze => Words::said(Tag::Freeze, of!(DayFreeze, |d| Some(freeze_line(d)))),
+        EventKind::SessionImported => {
+            Words::said(Tag::Import, of!(SessionImported, |d| Some(import_line(d))))
+        }
         EventKind::DeadEnd => Words {
-            history: History::Line(of!(DeadEnd, |d| Some(Line {
-                tag: Tag::Stop,
-                text: format!("dead end: {}", d.detail),
-                tone: Tone::Bad,
-            }))),
+            history: History::Line(|payload| {
+                if let Payload::DeadEnd(d) = payload {
+                    Some(Line {
+                        tag: Tag::Stop,
+                        text: format!("dead end: {}", d.detail),
+                        tone: Tone::Bad,
+                    })
+                } else {
+                    None
+                }
+            }),
             tag: Tagging::Fixed(Tag::Stop),
-            compact: Brief::Of(|_| Some(TUNING_STOPS.to_owned())),
-            detailed: Phrase::Of(of!(DeadEnd, |d| Some(dead_end_phrase(d)))),
             ..Words::SILENT
         },
         EventKind::Shutdown => Words {
@@ -1076,19 +926,5 @@ pub fn tag_word(payload: &Payload) -> Cow<'static, str> {
         Tagging::Kind => Cow::Owned(kind.as_str().replace('.', " ")),
         Tagging::Fixed(tag) => Cow::Borrowed(tag.word()),
         Tagging::By(of) => Cow::Borrowed(of(payload).word()),
-    }
-}
-
-/// The phrase of a run of hunt groups answered by carried trials, and whether it is a minor one.
-pub fn carried_groups(first: u32, last: u32, inferred: Inference) -> (String, bool) {
-    let groups = if last > first {
-        format!("groups {first}-{last}")
-    } else {
-        format!("group {first}")
-    };
-    if inferred == Inference::Pass {
-        (format!("{groups} answered by existing evidence"), true)
-    } else {
-        (format!("{groups} failed on existing evidence"), false)
     }
 }

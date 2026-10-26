@@ -5,4 +5,7 @@ hardware watchdog at the last observer check: armed (watchdog0 (SP5100 TCO
   timer) active, held by PID 1)
 Applied hours per read-back profile (changed intervals excluded):
   00:-10: 1.500 h
+all profiles: 1.5h observed, 1 crash (0 unknown intervals)
+stock (CO 0): 0.0h observed, 0 crashes
+totals are observations, not a bound
 last unclean end: day-b (reset reason: watchdog)

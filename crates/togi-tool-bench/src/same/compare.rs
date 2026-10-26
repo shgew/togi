@@ -14,7 +14,7 @@ use crate::error::RunError;
 use crate::pool;
 use crate::process::Fleet;
 use crate::suite::RunSpec;
-use togi_tool_forecast::Split;
+use togi_tool_sim::Split;
 
 use super::SameError;
 use super::digests::{DigestCache, SideRecord, inputs};

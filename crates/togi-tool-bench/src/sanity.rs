@@ -45,10 +45,6 @@ pub struct BaselineRun {
     status: String,
     #[serde(default)]
     sim_hours: f64,
-    first_passed_cycle_h: Option<f64>,
-    #[serde(default)]
-    passed_cycles: u32,
-    #[serde(default)]
     crashes: u32,
     #[serde(default)]
     trials: u32,
@@ -57,14 +53,7 @@ pub struct BaselineRun {
     #[serde(default)]
     trial_hours: f64,
     #[serde(default)]
-    hunts: u32,
-    #[serde(default)]
-    combinations: u32,
-    #[serde(default)]
-    depth: i64,
-    #[serde(default)]
     hazard_max_per_h: f64,
-    worst_r7_hazard_per_h: Option<f64>,
 }
 
 /// Reads the baseline's records, one JSON object per line.
@@ -113,26 +102,15 @@ struct Row {
     seed: u64,
     concluded: f64,
     sim_hours: f64,
-    first_passed_cycle_h: Option<f64>,
-    passed_cycles: f64,
     crashes: f64,
     trials: f64,
     real_answer_share: f64,
     trial_hours: f64,
-    hunts: f64,
-    combinations: f64,
-    depth: f64,
     hazard_max_per_h: f64,
-    worst_r7_hazard_per_h: Option<f64>,
 }
 
 fn answer_share(real: u32, trials: u32) -> f64 {
     crate::stats::share(real, trials)
-}
-
-#[expect(clippy::cast_precision_loss, reason = "depths are small integers")]
-fn depth(depth: i64) -> f64 {
-    depth as f64
 }
 
 impl From<&Record> for Row {
@@ -142,17 +120,11 @@ impl From<&Record> for Row {
             seed: r.seed,
             concluded: f64::from(u8::from(r.status == Status::Concluded)),
             sim_hours: r.sim_hours,
-            first_passed_cycle_h: r.first_passed_cycle_h,
-            passed_cycles: f64::from(r.passed_cycles),
             crashes: f64::from(r.crashes),
             trials: f64::from(r.trials),
             real_answer_share: answer_share(r.real_answers, r.trials),
             trial_hours: r.trial_hours,
-            hunts: f64::from(r.hunts),
-            combinations: f64::from(r.combinations),
-            depth: depth(r.depth),
             hazard_max_per_h: r.hazard_max_per_h,
-            worst_r7_hazard_per_h: r.worst_r7_hazard_per_h,
         }
     }
 }
@@ -164,17 +136,11 @@ impl From<&BaselineRun> for Row {
             seed: r.seed,
             concluded: f64::from(u8::from(r.status == "concluded")),
             sim_hours: r.sim_hours,
-            first_passed_cycle_h: r.first_passed_cycle_h,
-            passed_cycles: f64::from(r.passed_cycles),
             crashes: f64::from(r.crashes),
             trials: f64::from(r.trials),
             real_answer_share: answer_share(r.real_answers, r.trials),
             trial_hours: r.trial_hours,
-            hunts: f64::from(r.hunts),
-            combinations: f64::from(r.combinations),
-            depth: depth(r.depth),
             hazard_max_per_h: r.hazard_max_per_h,
-            worst_r7_hazard_per_h: r.worst_r7_hazard_per_h,
         }
     }
 }
@@ -182,17 +148,17 @@ impl From<&BaselineRun> for Row {
 struct Metric {
     name: &'static str,
     band: Band,
-    value: fn(&Row) -> Option<f64>,
+    value: fn(&Row) -> f64,
 }
 
 /// The metrics compared and the band of each. A band's `rel` is the share of the baseline's mean a difference must exceed
 /// and `abs` the size in the metric's unit it must exceed; counts of rare events have wide bands, quantities
 /// every run pins down narrow ones.
-const METRICS: [Metric; 13] = [
+const METRICS: [Metric; 7] = [
     Metric {
         name: CONCLUDED,
         band: Band { rel: 0.0, abs: 0.0 },
-        value: |r| Some(r.concluded),
+        value: |r| r.concluded,
     },
     Metric {
         name: "sim_hours",
@@ -200,23 +166,7 @@ const METRICS: [Metric; 13] = [
             rel: 0.05,
             abs: 1.0,
         },
-        value: |r| Some(r.sim_hours),
-    },
-    Metric {
-        name: "first_passed_cycle_h",
-        band: Band {
-            rel: 0.05,
-            abs: 1.0,
-        },
-        value: |r| r.first_passed_cycle_h,
-    },
-    Metric {
-        name: "passed_cycles",
-        band: Band {
-            rel: 0.15,
-            abs: 0.2,
-        },
-        value: |r| Some(r.passed_cycles),
+        value: |r| r.sim_hours,
     },
     Metric {
         name: "crashes",
@@ -224,7 +174,7 @@ const METRICS: [Metric; 13] = [
             rel: 0.25,
             abs: 2.0,
         },
-        value: |r| Some(r.crashes),
+        value: |r| r.crashes,
     },
     Metric {
         name: "trials",
@@ -232,7 +182,7 @@ const METRICS: [Metric; 13] = [
             rel: 0.05,
             abs: 20.0,
         },
-        value: |r| Some(r.trials),
+        value: |r| r.trials,
     },
     Metric {
         name: "trial_hours",
@@ -240,31 +190,7 @@ const METRICS: [Metric; 13] = [
             rel: 0.05,
             abs: 1.0,
         },
-        value: |r| Some(r.trial_hours),
-    },
-    Metric {
-        name: "hunts",
-        band: Band {
-            rel: 0.30,
-            abs: 1.0,
-        },
-        value: |r| Some(r.hunts),
-    },
-    Metric {
-        name: "combinations",
-        band: Band {
-            rel: 0.50,
-            abs: 0.5,
-        },
-        value: |r| Some(r.combinations),
-    },
-    Metric {
-        name: "depth",
-        band: Band {
-            rel: 0.03,
-            abs: 5.0,
-        },
-        value: |r| Some(r.depth),
+        value: |r| r.trial_hours,
     },
     Metric {
         name: "real_answer_share",
@@ -272,7 +198,7 @@ const METRICS: [Metric; 13] = [
             rel: 0.0,
             abs: 0.05,
         },
-        value: |r| Some(r.real_answer_share),
+        value: |r| r.real_answer_share,
     },
     Metric {
         name: "hazard_max_per_h",
@@ -280,15 +206,7 @@ const METRICS: [Metric; 13] = [
             rel: 0.25,
             abs: 0.02,
         },
-        value: |r| Some(r.hazard_max_per_h),
-    },
-    Metric {
-        name: "worst_r7_hazard_per_h",
-        band: Band {
-            rel: 0.25,
-            abs: 0.2,
-        },
-        value: |r| r.worst_r7_hazard_per_h,
+        value: |r| r.hazard_max_per_h,
     },
 ];
 
@@ -343,7 +261,7 @@ pub fn compare(current: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
                 rows.iter()
                     .copied()
                     .filter(|r| r.scenario == name)
-                    .filter_map(metric.value)
+                    .map(metric.value)
                     .collect()
             };
             let strata: Vec<Stratum> = members

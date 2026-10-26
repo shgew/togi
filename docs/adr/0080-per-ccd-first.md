@@ -1,0 +1,7 @@
+# Tune one offset per CCD first
+
+Status: accepted for the Ruleset 13 stack.
+
+At frequent failures, shared voltage and noisy attribution moved the wrong cores: repeated charges made a requester shallower without removing the failing condition. The owner chose one offset per CCD before any per-core refinement ([#1214](https://github.com/shgew/togi/issues/1214)). [Per-CCD state and isolated night edges](../spec/tuner.md#per-ccd-state) replace inferred per-core constraints; joint failures stay profile-level until an isolated trial supplies evidence.
+
+Retain [honest partial-load generation](../spec/workloads.md#regimes), because load removal still exposes different conditions, but reject request rank as blame and remove hunts, failure points, combinations, voltage-target backoff and singleton/member probes. This supersedes the tuning mechanics in [0023](0023-hunts-that-converge-on-shared-voltage.md), [0038](0038-self-sufficient-cores.md), [0040](0040-located-hunts.md), [0053](0053-escalation-only-located-hunts.md), [0064](0064-locate-when-passes-clear-the-loaded-cores.md), [0065](0065-test-repeated-r7-charges.md), [0066](0066-short-crashes-take-no-voltage-target.md), [0068](0068-cap-named-non-crash-r7-backoffs.md) and [0070](0070-probe-reproduced-singleton-failures.md). Their observations and historical gate records are not invalidated. Per-core refinement needs its own design, not a hidden continuation of this policy.

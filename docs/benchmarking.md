@@ -1,6 +1,6 @@
 # Benchmarking
 
-`togi-tool-bench` (`just bench`) runs a fixed suite of simulated sessions and compares two versions of togi. Use it to show that a tuner change makes sessions conclude sooner, or no later, without giving up depth or leaving a profile that fails. Like `togi-tool-sim`, it is a development program and is not shipped.
+`togi-tool-bench` (`just bench`) runs a fixed suite of simulated sessions and compares two versions of togi. Use it to show that a tuner change makes sessions conclude sooner, or no later, without leaving a profile that fails. Like `togi-tool-sim`, it is a development program and is not shipped.
 
 Autonomous research follows [Research campaigns](#research-campaigns): its modes, limits, prohibitions, record and end state, then the mode's program and the issue's brief. [ADR 0029](adr/0029-bench-verdicts-rest-on-fitted-machines.md) records why target claims require checked fits and real-fact replay.
 
@@ -41,33 +41,20 @@ On `target-shared-voltage`, changing only unloaded cores' offsets cannot change 
 
 Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
 
-### The gate
+### Gates
 
-A ruleset's bench gate is the `gate` object in [`tools/bench/suite.json`](../tools/bench/suite.json), committed before the ruleset is scored. It names the gate `id`, the `baseline` it is judged against (the ruleset and the commits that recorded the runs; a pull request that re-records runs adds its commit), the seed `split`, the `gated` scenarios, the `pooled` subset, the `conclude` scenarios, the `quantiles`, the bootstrap (`confidence`, `resamples`, `bootstrap_seed`) and `max_time_ratio`. The object and its `note` are the definition and the rationale; this page does not restate them per ruleset. The gate comes from [issue #491](https://github.com/shgew/togi/issues/491) and [issue #570](https://github.com/shgew/togi/issues/570).
-
-The legacy session suite has no current gate. Ruleset 13 registers a separate [day/night gate](#daynight-gate) because a session's conclusion cannot measure a profile's daily-use safety.
-
-A gate's `notes` array preserves accompanying provenance and caveats as JSON data; it does not affect scoring. `just bench` prints each `notes` entry of a registered gate as a `suite: ...` line before its summary.
-
-With `--baseline`, `just bench` judges the gate after the generic verdict below, prints each criterion with its estimate, interval, threshold and `PASS` or `FAIL`, then an overall `gate ID: PASS` or `FAIL`, and exits 0 only when the gate passes. Run it as `just bench --split all --baseline tools/bench/baseline.jsonl`, scored once on every seed of the gate's split; a different `--split`, a candidate or baseline run missing for a required seed, a baseline recorded at another ruleset or commit than the gate names, or a missing `worst_r7_hazard_per_h` fails the gate with a refusal that names the cause. A suite without a `gate` prints no gate and exits as before. The criteria, per scenario unless noted:
-
-- **Conclusion:** every seed the baseline concluded is still concluded by the candidate, on each gated and each `conclude` scenario.
-- **Median and 90th percentile** (linear interpolation) of the final-profile `worst_r7_hazard_per_h`: fails only when the `confidence` interval of the change lies entirely above 0. The change is the candidate's quantile minus the baseline's, not the quantile of per-pair differences. The interval resamples seed pairs `resamples` times, drawing from a `StdRng` seeded with `bootstrap_seed` ([Judging the gate](#judging-the-gate)), so a run always prints the same interval. Over 24 seeds the interval is wide, so the 90th-percentile criterion has low power: it catches a large tail rise, not a small one.
-- **Time:** the geometric mean over pairs both concluded of candidate `sim_hours` over baseline's is at most `max_time_ratio`, with no exemption.
-- **Pooled median:** the median over the `pooled` scenarios' seeds together is strictly lower than the baseline's; equal fails.
-
-Maxima and everything else are reported by the summary and the comparison, not gated. Treat a failed gate as the owner's decision, not a threshold to renegotiate after scoring.
+The legacy session suite registers no gate and `just bench` judges none: a session's conclusion cannot measure a profile's daily-use safety. Ruleset 13 registers the separate [day/night gate](#daynight-gate) below. Earlier rulesets' gates are historical records, kept under [`tools/bench/gates/`](../tools/bench/gates/) and not re-scored.
 
 ### Day/night gate
 
-[`tools/bench/day-night.json`](../tools/bench/day-night.json) is the Ruleset 13 registration for [#1216](https://github.com/shgew/togi/issues/1216). It is committed before any scoring. It freezes 200 development seeds and 200 disjoint holdout seeds, 730 calendar days, eight active daily hours, three eight-hour nights a week, the scenario set, incremental hazard budget, thresholds and tail treatment. Iterate on development seeds; reserve holdout for the real policy's once-only confirmation, separately at the fallback slopes 1.5× and 2×. Neither comparator is the real policy, and comparator results cannot pass this gate.
+[`tools/bench/day-night.json`](../tools/bench/day-night.json) is the Ruleset 13 registration for [#1216](https://github.com/shgew/togi/issues/1216). It is committed before any scoring. It freezes 200 development seeds and 200 disjoint holdout seeds, 730 calendar days, eight active daily hours, three eight-hour nights a week, the scenario set, incremental hazard budget, thresholds and tail treatment. Iterate on development seeds; reserve holdout for the real policy's once-only confirmation, separately at the fallback slopes 1.5× and 2×. Neither comparator is the real policy, and comparator results cannot pass this gate. The real policy is `--policy ruleset13 --slope <1.5|2.0>` (the slope is the per-count hazard multiplier; the policy's `beta` is its natural log) and is the only policy whose verdict fails the gate.
 
 ```sh
 just bench-day-night --split dev
 just bench-day-night --split dev --out day-night.jsonl
 ```
 
-The command runs **CO 0 forever** and **fixed margin** over every registered scenario. Output is a per-scenario metrics table; `--out` preserves per-seed metrics as JSON Lines. This experiment is in memory, independent of the legacy session suite and baseline. It does not run hardware. [Simulating](simulating.md#calendar-daynight-experiments) owns the truth, calendar, policy seam and comparator behavior.
+The command runs **CO 0 forever** and **fixed margin** over every registered scenario, or only the policies named by repeating `--policy <name>`. `--slope <1.5|2.0>` sets the fallback slope of a policy that takes one; it must be a slope the registration lists, and a policy without a slope refuses it. `--jobs N` runs that many scenario × seed × policy runs at once (default the available parallelism); records, JSON Lines and tables keep registered scenario order, then seed, then policy order, whatever order the threads finish in. Output is a per-scenario metrics table, then for each policy a Markdown verdict table: each criterion's measured value, its relation to the registered threshold, `✗` on a failing cell, and PASS or FAIL per scenario, ending in `ruleset-13-day-night: PASS|FAIL`. A comparator's table is labelled *diagnostic (not a gate pass)* and the command exits 0; a failing policy under test exits nonzero. A final table gives each scenario's mean night hours and mean run wall seconds, then the total wall time. `--out` preserves per-seed metrics and the run's wall seconds (`wall_s`) as JSON Lines, written once every run has finished. This experiment is in memory, independent of the legacy session suite and baseline. It does not run hardware. [Simulating](simulating.md#calendar-daynight-experiments) owns the truth, calendar, policy seam and comparator behavior.
 
 True safe uses the hazard **CO adds over stock**, not total failures: λ* = 1/3,000 active hours jointly and λ*/CCD-count on each CCD. It is the deepest admissible profile in the write range; both-CCD interaction risk must satisfy the joint bound too. The reference repeats the ordered eight-hour daily mix and sixteen-hour sleep at periodic thermal equilibrium, integrating hidden classes, delayed onsets and intended durations. Policy-dependent night heating changes actual simulated risk, not this reference target. Total depth wins, then balanced CCD depth, then lexicographically smaller depths break ties. Only metrics can inspect the oracle; policies see machine-seam observations, never true safe.
 
@@ -77,11 +64,13 @@ The registration is authoritative: covered-class climb is crash-free in at least
 
 ### Historical gates
 
-The Ruleset 9 gate is defined by [ADR 0038](adr/0038-self-sufficient-cores.md) and [#105](https://github.com/shgew/togi/issues/105); [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate. The [Ruleset 11 archive](../tools/bench/gates/ruleset-11/) holds its suite, baseline, candidate and scored report. These are historical records, not current-anchor measurements. Archived Go gates are never re-scored by the current bench ([Judging the gate](#judging-the-gate)).
+The Ruleset 9 gate is defined by [ADR 0038](adr/0038-self-sufficient-cores.md) and [#105](https://github.com/shgew/togi/issues/105); [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate. The [Ruleset 11 archive](../tools/bench/gates/ruleset-11/) holds its suite, baseline, candidate and scored report. These are historical records, not current-anchor measurements. The bench no longer judges any session-suite gate, and the archive is pinned by hash in the bench's tests.
 
 The [#493 measurement record](https://github.com/shgew/togi/issues/493#issuecomment-6040930168) identifies the tuner, simulator and regenerated anchor used for its comparison. Earlier measurements of `target-r7-vf-boost` and `target-r7-request-gap` describe frozen copies, not today's overlays. See [reproducing an older ruleset](#reproducing-an-older-ruleset) before comparing historical builds.
 
 A scenario may also list `smoke` seeds, each one of its dev or holdout seeds: the sessions `just smoke` compares ([below](#proving-unchanged-decisions)). The list holds one session per scenario, the one with the most crashes and the longest history that takes about two seconds of CPU or less on the current simulator, so it changes in a reviewed pull request, never silently.
+
+A scenario may set `night_hours` (a positive whole number, default 8), the simulated hours after which the operator ends each of its nights, and `night_end` (`"operator"`, the default, `"dead_end"`, or `"operator_or_stock"`, which also passes a stock dead end), how the sim suite expects the night to end ([the suite gate](#the-suite-gate)). Every scenario of `tools/bench/suite.json` sets `night_hours` to 48, so a night reaches mapping and the crashes a hunt produces. The bench does not read either.
 
 `--suite FILE` runs another scenario file instead, with machine paths relative to it. The [adversarial search](../tools/bench/adversary.md) scores candidate machines this way and turns confirmed findings into new scenarios.
 
@@ -171,7 +160,7 @@ The checks are one library, `togi-tool-audit`, which the bench, `togi-tool-sim s
 
 Before [#546](https://github.com/shgew/togi/issues/546), `just audit` without directories swept every scenario over 200 seeds in a bench subprocess of its own and flagged wall-time outliers and boot-cap runs; the bench's own audit replaces the sweep, and a censored run is no longer a violation.
 
-The audit checks recorded failure-point and combination avoidance independently of the tuner, SMU intent/write/readback ordering, the offset range ([Invariants](spec/tuner.md#invariants); readbacks and baselines report the hardware and are not bounded), causal references, the conclusion of a finished simulated run, and exact `state.json` replay when the snapshot's `last_seq` matches the replayed journal. A multi-core R7 failure naming a core at CO 0 records a failure point only when a dead end cites it ([R7 request order and attribution](spec/tuner.md#r7-request-order-and-attribution)). A snapshot at another sequence is stale and is skipped: a crash between the journal fsync and the state write can leave it behind by design. A session from another ruleset has no current projection and is skipped too. So is a session started by an older journal schema: replay always stamps the current schema, and the next run archives that session. Likewise, a `state.rebuilt` event is a violation only when its differing `fields` omit `last_seq`, meaning a current snapshot disagreed with replay, and the run's next `config.loaded` records the same build as the previous one; a changed build may project fields an older snapshot lacks, which is a legitimate upgrade. A rebuild whose run ends without a `config.loaded` (its shutdown, dead end, session archive or a later boot, or the end of a finished simulated journal) is a violation too; one at the end of a live journal is deferred. Real journals may still be live, including between a write and its readback. A write followed by a reboot or the end of an archive is an interrupted action, and a same-boot resume's readbacks of every core complete it; archived transitions and reset boundaries are valid session endings. Audit copies of real state directories so the journal and state projection are a consistent snapshot.
+The audit checks SMU intent/write/readback ordering, the offset range ([Invariants](spec/tuner.md#invariants); readbacks and baselines report the hardware and are not bounded), causal references, the conclusion of a finished simulated run, and exact `state.json` replay when the snapshot's `last_seq` matches the replayed journal. It also checks three Ruleset 13 rules against the journal alone, independently of the tuner: a nonzero `day.applied` target needs an earlier complete `night.qualification` of that exact CCD profile under the firmware in force at that point (CO 0 needs none); a `day.step` promotion may not reach a profile at or deeper than an active `day.veto` (a cleared veto forbids nothing); and a live `exposure.observed` must cite, by cause, an existing `trial.intent`, `trial.end` or `failure`, one of which belongs to the trial it names (an imported exposure cites no event of this session). The per-core decision checks of earlier rulesets (failure-point and combination avoidance, hunt, phase and cycle decisions, the R7 zero-naming rule and the cycles-shutdown count) are retired: those events stay decodable in old journals and are no longer judged. A snapshot at another sequence is stale and is skipped: a crash between the journal fsync and the state write can leave it behind by design. A session from another ruleset has no current projection and is skipped too. So is a session started by an older journal schema: replay always stamps the current schema, and the next run archives that session. Likewise, a `state.rebuilt` event is a violation only when its differing `fields` omit `last_seq`, meaning a current snapshot disagreed with replay, and the run's next `config.loaded` records the same build as the previous one; a changed build may project fields an older snapshot lacks, which is a legitimate upgrade. A rebuild whose run ends without a `config.loaded` (its shutdown, dead end, session archive or a later boot, or the end of a finished simulated journal) is a violation too; one at the end of a live journal is deferred. Real journals may still be live, including between a write and its readback. A write followed by a reboot or the end of an archive is an interrupted action, and a same-boot resume's readbacks of every core complete it; archived transitions and reset boundaries are valid session endings. Audit copies of real state directories so the journal and state projection are a consistent snapshot.
 
 ## Proving unchanged decisions
 
@@ -193,16 +182,16 @@ To control concurrency, caching or retention directly, run `togi-tool-bench same
 
 The release's dispatched full check runs every session of `tools/bench/suite.json`, dev and holdout alike, on the simulator (`togi-tool-sim`, [Simulating](simulating.md#the-simulator-command-togi-tool-sim)) as the flake checks `sim-suite-0` to `sim-suite-<N-1>`; pull request CI does not ([ADR 0074](adr/0074-pull-request-ci-gates-landing-on-main.md)). `nix/sim-suite.json` declares N. Each check builds the release `togi-tool-sim`, runs its shard of the suite (the partition gives shard sizes that differ by at most one) with one session per core, and then checks its manifest against exactly the run ids the partition gives that shard. A session passes only when it is `clean`:
 
-- it stopped for its clean cycle: `shutdown` reason `cycles`, never a dead end, a signal or the 1000-boot cap;
+- its simulated night ended the way its scenario expects: by the simulated operator, who ends every night at the scenario's `night_hours` (default 8; every scenario of `tools/bench/suite.json` sets 48) of simulated time, or, for a scenario with `night_end: "dead_end"`, at a dead end its machine produces, or, for `night_end: "operator_or_stock"` (set for every scenario whose machine has a hazard at stock: a `flat` limit or a shared rail), at a conclusive failure at CO 0 whose cited exposure ran every core at zero; never the 1000-boot cap, and never a dead end where the operator's end was expected;
 - its resume state matched a fresh fold of the journal after every crash and at the end;
-- `togi_tuner::replay` folds its whole journal;
+- the Ruleset 13 fold (`togi_session::ReadState::replay`: the journal fold and the tuner's policy fold) accepts its whole journal;
 - `togi-tool-audit` finds no violation in any journal of its state directory, and its published `state.json` equals a fresh fold of the live journal.
 
-In full mode, the aggregating `check` job reads N from `nix/sim-suite.json` and fails unless the selected checks include exactly `sim-suite-0` to `sim-suite-<N-1>`, whether cached or built, so a deleted or renamed shard cannot silently pass. The suite declares no expected dead end, and none is to be invented to pass the gate. `just sim-suite` runs the same suite locally in one shard and checks it; [`togi-tool-sim`](simulating.md#the-simulator-command-togi-tool-sim) also has a test that splits one session across processes by `--max-boots` and requires the same journal and `state.json` as an uninterrupted run.
+In full mode, the aggregating `check` job reads N from `nix/sim-suite.json` and fails unless the selected checks include exactly `sim-suite-0` to `sim-suite-<N-1>`, whether cached or built, so a deleted or renamed shard cannot silently pass. A scenario that expects a dead end says so with `night_end: "dead_end"` in `suite.json`; no dead end is to be invented to pass the gate. `just sim-suite` runs the same suite locally in one shard and checks it; [`togi-tool-sim`](simulating.md#the-simulator-command-togi-tool-sim) also has a test that splits one session across processes by `--max-boots` and requires the same journal and `state.json` as an uninterrupted run.
 
 `just gate`, `just push-fix` and `just check` on Linux run the shards, even without KVM. `just sim-suite` reproduces the whole suite, and `just check-one sim-suite-<i>` reproduces shard `i`. Raise N in `nix/sim-suite.json` whenever a shard's full-check job (`completedAt − startedAt` in `gh run view --json jobs`) is slower than the slowest job of the same run that is not a shard. That keeps the suite within [#627](https://github.com/shgew/togi/issues/627)'s limit that a job is never slower than the current slowest one. The `build` job's `timeout-minutes: 45` stops a session that never concludes, instead of holding a runner for six hours.
 
-This gate is separate from `just bench`: it proves that every session concludes cleanly, not that a tuner change concludes sooner or keeps its depth.
+This gate is separate from `just bench`: it proves that every session concludes cleanly, not that a tuner change concludes sooner.
 
 ## What each check proves
 
@@ -226,7 +215,7 @@ Cite a check as evidence only for the packages it exercises. `just gate` covers 
 | `vm-recovery-tests` | Linux only: builds `togi`'s `vm_recovery` integration-test executable as `togi-vm-recovery` | That the production CLI recovery path and its persistent-fake-machine fixture compile | Runtime recovery or real SMU access: `vm-runtime` runs the executable |
 | `just same` | Both trees' `togi-tool-sim` across every dev and holdout seed of their suites, with journals compared byte for byte (above) | The session, tuner, carry and journal on the paths the suite's scenarios reach, through the simulator's SMU, host, trials and kernel | Any change to trial, detect, smu, hardware or the backends, which the simulator replaces; paths no scenario reaches |
 | `just smoke` | One session per scenario of both trees' `togi-tool-sim`, the suite's `smoke` list, compared as `just same` does | The same simulated paths as `just same`, on the sessions with the most crashes and longest histories of each scenario | Anything `just same` does not prove, and the paths the other sessions reach: run `just same` before relying on it |
-| `just bench` | Simulated sessions for the chosen split (dev by default) and the model checks; with `--baseline FILE`, a comparison with that baseline by metric thresholds and, when the suite registers one, [the gate](#the-gate) | The same simulated paths as `just same` | Unchanged decisions (one changed decision with unchanged totals can pass), or anything about the packages the simulator replaces |
+| `just bench` | Simulated sessions for the chosen split (dev by default) and the model checks; with `--baseline FILE`, a comparison with that baseline by metric thresholds | The same simulated paths as `just same` | Unchanged decisions (one changed decision with unchanged totals can pass), or anything about the packages the simulator replaces |
 | `sim-suite-<i>` | Shard `i` of the 220 suite sessions on the release `togi-tool-sim`, as [above](#the-suite-gate); full mode's `check` job requires every shard `nix/sim-suite.json` declares, cached or built | The session, tuner, carry, journal and simulator on the paths the suite reaches: each session concludes, resumes warm state equal to a cold fold, replays through the tuner and passes the invariant audit | Better or equal tuning (bench scoring does that), or anything about the packages the simulator replaces |
 | `package` | Builds the release `togi` with the revision `dev` and runs it: `togi --version` and `togi completion` for bash, zsh, fish and nushell, as [below](#the-package) | That the package builds and installs, prints `togi <version.txt>+dev` and generates a completion script that names `togi` for each shell | What any command does, the set of commands, or that a completion script loads in its shell |
 | `just hardware` | On the target machine, as root: `cargo test --features hardware --test hardware` on `togi-smu`, `togi-detect`, `togi-trial` and `togi-hardware`, one binary and one test at a time, every binary even after one fails; as any other user it also builds and runs `togi-trial`'s `cached_errors`, which refuses root, and the tests that need root fail. `--no-run` builds them without running | The hardware tests: smu's offset round trip and PM table lanes, detect reading the real kernel log, trial's real systemd scopes (R1 and R2 workloads on core 2 included) and hardware's diagnosis leaving offsets unchanged | R3 to R7 workloads or multi-core loads on real backends, a new offset written to the SMU, the host's full preflight or ranking, or a tuning session: those need `togi doctor` or `togi run` evidence from the target machine. Until the owner runs it at the cutover, smu's, detect's and hardware's tests are only type-checked, by the flake's `clippy` check; `vm-runtime` runs trial's in a NixOS VM, all but the workload test, as root and as a delegated user, `cached_errors` included |
@@ -237,53 +226,19 @@ Cite a check as evidence only for the packages it exercises. `just gate` covers 
 
 - `status`: `concluded` (the session stopped after its clean cycle), `deadend`, `censored` or `error`. `censored` is a session still running when `togi-tool-sim` reached its boot cap (`--max-boots`, default 1000; [simulating](simulating.md)): it did not conclude, and its metrics describe the partial session, so its `sim_hours` and `crashes` are lower bounds on its cost;
 - `sim_hours`: simulated time from `session.start` to the last event, including the 90 s each crash reboot costs. This is the time to conclusion, or for a run that did not conclude the time it ran;
-- `first_passed_cycle_h`: simulated time to the first passed cycle;
-- `crashes`, `trials`, `trial_hours`, `hunts` and `combinations`;
-- `passed_cycles`: completed `checking.cycle` ends marked passed, whether full or not;
+- `crashes`, `trials` and `trial_hours`;
 - `real_answers` and `real_answer_share`: the number and fraction of completed trials answered by matching real facts; inconclusive trials and failures before workload startup count in `trials` but not as real answers;
 - `scenario_real_answer_share`: real answers divided by completed trials across the scenario's selected runs, not an average of per-run fractions;
 - `machine`: the fitted ensemble member selected for the seed.
-- `final_profile` and `depth`, its sum;
-- `hazard_per_h` and `hazard_max_per_h`: failures per hour at the final profile with every core loaded, per regime, from the simulator's own failure model. A profile that passed by luck shows up here, and no journal can show it.
-- `worst_r7_hazard_per_h`, only on shared-voltage machines: the worst final-profile failures per hour across every R7 workload's full load on each CCD, each CCD's request-ordered partial chain with at least two loaded cores, and the all-core load. Each partial removes all loaded cores within 1 mV of the current highest request together, then recomputes requests with the resulting clocks and load before removing the next group. A removal leaving fewer than two cores ends that CCD's chain. Requests come directly from the shared-voltage model, and rates use the same simulator hazard as trials, without synthetic samples or random draws.
+- `hazard_per_h` and `hazard_max_per_h`: failures per hour at the session's last tuning profile (its last `profile.change`, or its baseline before one) with every core loaded, per regime, from the simulator's own failure model. A profile that passed by luck shows up here, and no journal can show it.
 
 The commit, a dirty flag and the ruleset are recorded with every run.
 
-The summary counts each scenario's runs, `concluded` runs and `censored` runs. Its time, crash and depth columns include every status, so a censored run's time and crashes enter them as lower bounds.
+The summary counts each scenario's runs, `concluded` runs and `censored` runs. Its time and crash columns include every status, so a censored run's time and crashes enter them as lower bounds.
 
 The summary prints each scenario's `real_answer_share` and a pooled total. Comparison scenario rows and the verdict line print the candidate and baseline shares over paired runs. These fractions describe how much of the observed path has direct real evidence, not a confidence score. Unfinished trials of a censored session have no recorded outcome and are not counted. Hazard metrics and model checks still describe the fitted fallback, not an empirical oracle hazard.
 
 For example, `real_answer_share = 0.2` means matching real facts answered one fifth of completed trials, not one fifth of simulated hours or one fifth of the profile's risk. The rest of the path used the fitted fallback or includes completed trials that cannot count as real answers. A low share can simply mean the tuner explored profiles or load classes absent from the extract; it does not measure fit quality. Replay is enabled by the suite, not by the presence of `facts` in a machine file.
-
-For shared-voltage runs the summary also prints `worst_r7_hazard/h`, the maximum `worst_r7_hazard_per_h` over the scenario's measured runs, and `worst_r7_runs`, their count. Legacy machines omit the JSON field and these diagnostic rows; their existing hazard metrics and reports remain unchanged.
-
-### Scoring an intermediate profile
-
-Bench records compute `worst_r7_hazard_per_h` only for `final_profile`, even when a run is censored. They do not score every journal profile, and no command scores another one: the bench's helper is private to its `metrics` module. To score an intermediate checkpoint, add a scratch unit test to `mod tests` in `crates/togi-tool-bench/src/metrics.rs`. Run it, then delete it; it never lands. The test uses the same machine file and the run's seed, as the bench does:
-
-```rust
-#[test]
-fn score_checkpoint() {
-    let machine = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/bench/machines/MACHINE.json");
-    let seed = SEED;
-    let checkpoint = r#"PROFILE"#;
-    let model = Model::new(&togi_sim::file::load(machine).unwrap(), seed).unwrap();
-    let checkpoint: PerCore<TargetOffset> = serde_json::from_str(checkpoint).unwrap();
-    let profile: Vec<TargetOffset> = (0..model.cores())
-        .map(|index| core(index).and_then(|core| checkpoint.get(core)).unwrap_or(TargetOffset::ZERO))
-        .collect();
-    let worst = worst_r7_hazard_per_h(&model, &profile)
-        .unwrap()
-        .expect("a 16-core machine with a shared-voltage R7 model");
-    println!("worst_r7_hazard_per_h={worst:.6}");
-}
-```
-
-```sh
-just focus togi-tool-bench --lib --no-capture score_checkpoint
-```
-
-Replace `MACHINE.json`, `SEED` and `PROFILE`. `PROFILE` is the checkpoint's profile object as the journal records it, keyed by core ID (`{"0":-20,"1":-18,…}`); a core it leaves out scores at 0. A `profile.change` event's `to` gives the tuning profile after that change; a `trial.intent` event's `profile` gives the entire applied trial profile, which may instead be a parked hunt profile. Choose the one the checkpoint means. Score with the metric and machine from the same pinned revision used for the comparison. This is fitted steady-state risk, without replay draws or an assertion that the checkpoint passed a cycle.
 
 ## Comparing two versions
 
@@ -293,18 +248,13 @@ Run the base version with `--out base.jsonl` and the candidate with `--baseline 
 - `ACCEPT`: no violation and the interval's upper bound below 1.0;
 - `NEUTRAL`: anything else.
 
-This generic verdict is separate from [the gate](#the-gate), which a suite registers for its ruleset and which sets the exit status.
-
 Violations:
 
 - **V1:** a run the base concluded no longer concludes, including a censored run.
 - **V2:** a run's `hazard_max_per_h` rises by more than 0.01.
-- **V3:** depth gets shallower: by more than 1 count averaged over a scenario, or by more than 5 in one run.
-- **V4:** `target`, the target machine's replay-oracle ensemble, gets slower overall.
+- **V3:** `target`, the target machine's replay-oracle ensemble, gets slower overall.
 
-When both sides of a pair recorded `worst_r7_hazard_per_h`, comparison also reports `max_worst_r7_hazard_delta` (the largest candidate-minus-baseline difference) and `worst_r7_pairs` (the number of such pairs). Missing values are unavailable, not zero: older baselines cannot supply this comparison. This metric is diagnostic only; V2 continues to use `hazard_max_per_h`, and no verdict threshold changes.
-
-`depth_delta` is the mean of **candidate minus baseline** profile sums over paired runs, including runs that did not conclude. Offsets are negative: a positive delta is shallower and a negative delta is deeper. For example, changing one core from −30 to −28 adds +2; changing it to −32 adds −2. It is a profile-sum difference in counts, not an average per-core offset. `crash_delta` and `max_hazard_delta` also use candidate minus baseline.
+`crash_delta` and `max_hazard_delta` are the mean and the largest of **candidate minus baseline** over paired runs, including runs that did not conclude.
 
 Seeds are deterministic: the same commit always produces the same runs, so rerunning cannot change a result. A change to how the tuner decides moves later sessions onto different random paths, so compare whole scenarios, not single seeds.
 
@@ -314,7 +264,7 @@ Record the baseline again whenever the tuner on `main`, the suite, the facts or 
 just bench-baseline
 ```
 
-The recorded run lives at `tools/bench/baseline.jsonl`, the path the research program compares against. It includes both dev and holdout seeds. The recipe runs `just bench --split all --out` into a temporary file and commits a projection of it that leaves out `model_check` (the fitted-machine check, repeated in every run of its machine and 93% of the full file), `wall_s` (each run's real duration) and `partial_seconds` (retired); every other field stays. Comparison reads none of the three, so it prints the same against the slim file as against the full one; `--out` itself still writes the full records. Baselines recorded before the oracle ensemble do not cover `target`; do not reuse them for V4.
+The recorded run lives at `tools/bench/baseline.jsonl`, the path the research program compares against. It includes both dev and holdout seeds. The recipe runs `just bench --split all --out` into a temporary file and commits a projection of it that leaves out `model_check` (the fitted-machine check, repeated in every run of its machine and 93% of the full file), `wall_s` (each run's real duration) and `partial_seconds` (retired); every other field stays. Comparison reads none of the three, so it prints the same against the slim file as against the full one; `--out` itself still writes the full records. Baselines recorded before the oracle ensemble do not cover `target`; do not reuse them for V3.
 
 `just bench-baseline OUT` writes the same projection to another file and leaves the committed one alone:
 
@@ -330,106 +280,20 @@ Compare a candidate with the recorded baseline:
 just bench --split all --baseline tools/bench/baseline.jsonl
 ```
 
-The active baseline is Ruleset 11, recorded whole by `just bench-baseline` at a clean commit; the Ruleset 10 baseline it replaced is archived with the Ruleset 11 gate. That Ruleset 10 baseline had one partial re-recording, [#563](https://github.com/shgew/togi/issues/563): the two anchor overlays changed from frozen copies to genuine overlays of today's anchor, so only their two 24-seed scenarios (`target-r7-vf-boost`, `target-r7-request-gap`) were re-recorded at `21052983`, and the recording commit was appended to the gate's `baseline.commits` ([#659](https://github.com/shgew/togi/issues/659)).
+The active baseline is Ruleset 11, recorded by `just bench-baseline` at a clean commit and then projected to the metrics `just bench` still keeps; the Ruleset 10 baseline it replaced is archived with the Ruleset 11 gate.
 
-## Forecasting a real run
+## Copying a real state directory
 
-Before a hardware run, record what the simulator expects it to do, so that [`just stats` can score it afterwards](reviewing.md#scoring-a-forecast):
+`just copy-state SRC DST` copies `events.jsonl`, `state.json` when present and every archive entry named after a session (archived journals and the carry, compatibility and `reset --all` markers) into `DST`, creating it; it leaves out `trials/` and everything else. An archive entry so named that is not a regular file, such as a symbolic link, fails the copy naming it before anything is written. The copy is the input of `just facts` ([below](#checking-a-machine-against-real-evidence)) and of replaying a session on the simulator.
 
-```sh
-just forecast COPY-OF-STATE-DIR --out tools/bench/forecasts/<session>-<seq>.json
-```
-
-The ensemble is the suite's `target` scenario with all its dev and holdout seeds, each run on its fitted member with real-fact replay, so new members join the forecast unchanged. For each run, the tool copies the given directory into the run's own directory as `just copy-state` does (below): `events.jsonl`, `state.json` and every archive entry the journal reads sessions from (archived `archive/<session>.jsonl` journals, the `archive/<session>-carry-pending` and `archive/<session>-compat-pending` markers of an interrupted transition, and `archive/<session>-reset-all` markers). It resumes that copy with `togi-tool-sim` until it concludes, as `togi run --cycles 1` would: under the configuration the copy's latest `config.loaded` recorded, with its backend store paths, durations, evidence and checking cycle, so the passes on record keep counting. A live journal of an older schema contributes only its backend store paths, on top of the default configuration ([simulating](simulating.md)). That recorded snapshot stands in for the configuration file the real machine would load, so a forecast matches the next real run only while that file is unchanged since the recorded `config.loaded`; the given directory is only read. An archive entry of those names that is not a regular file, such as a symlink, fails the forecast with an error naming it.
-
-From a checkout on the target machine, copy those files with `just copy-state` and forecast from the copy (the sources are read-only). The state directory is root's, so the copy runs as root, building under root's home, and the copy is then handed back to you. Take the copy while togi is not running a trial: a journal that ends inside a trial resumes, in every run, as a crash of that trial.
+The state directory is root's, so the copy runs as root, building under root's home, and the copy is then handed back to you. Take the copy while togi is not running a trial: a journal that ends inside a trial resumes, in every replay, as a crash of that trial.
 
 ```sh
 copy=$(mktemp -d)
 trap 'rm -rf "$copy"' EXIT
 sudo nix develop --command just copy-state /var/lib/togi "$copy"
 sudo chown -R "$(id -u):$(id -g)" "$copy"
-just forecast "$copy" --out tools/bench/forecasts/<session>-<seq>.json
 ```
-
-`just copy-state SRC DST` copies `events.jsonl`, `state.json` when present and every archive entry named after a session (archived journals and the carry, compatibility and `reset --all` markers) into `DST`, creating it; it leaves out `trials/` and everything else. An archive entry so named that is not a regular file, such as a symbolic link, fails the copy naming it before anything is written.
-
-The anchor is the last complete event of the copied live journal: its session, sequence and time, with a SHA-256 of the session's journal lines through it. Only events after the anchor count, and the outcome ends at the run's first conclusion or dead end after the anchor: events after that point do not count. A simulated run stops there; a real run that kept checking past its conclusion, as a tuning boot does, is therefore scored by `just stats` as what a `togi run --cycles 1` run with the same history would have recorded. For each run, the forecast records:
-
-- `status`: `concluded` (the run reached the clean cycle `togi run --cycles 1` stops at), `deadend`, or `censored` (still running at the simulator's boot cap). A run that errors fails the whole forecast;
-- `hours`: run time after the anchor through the conclusion, or through the last event of a run that did not conclude, counted as `just stats --forecast` counts a real run's ([Scoring a forecast](reviewing.md#scoring-a-forecast)): invocations and the downtime before one that detects a crash, not clean stops;
-- `crashes`: `crash.detected` events;
-- `hunts`: hunts that ran a trial; a hunt answered only by carried facts runs none;
-- `profile` and `depth`: the newest session's final profile and its sum, as in `just bench` (its checking profile, or its baseline before one exists).
-
-The output names the anchor, the commit, the ruleset and the runs by status, then for each core's offset, the depth, hours, crashes and hunts the median, the 10th to 90th percentile and the minimum to maximum. Percentiles use the nearest rank, so each is a value some run produced; the median of an even count averages the middle two. Hours cover concluded runs only; the other rows include every run, so the crashes and hunts of runs that did not conclude enter as lower bounds. The model checks follow, as in `just bench`. Hours are simulated time, reported as is and not corrected: a simulated crash reboot takes 90 s, while real recovery took a median of 141 s on 2026-10-03, about 37 minutes over that session, so a real run takes longer than its forecast hours. The output prints this bias too.
-
-The output and the record are identical for a fixed copy, commit, suite, machine files and facts extract: they hold no wall times or local paths. `--out FILE` writes the record as JSON. Name it `tools/bench/forecasts/<session>-<seq>.json` after the anchor and commit it in a pull request that merges before the run starts, so the history shows that the forecast predates the run and anyone can score it again with `just stats`. The record holds the anchor's identity and simulated outcomes only, no journal content.
-
-The crate `togi-tool-forecast` defines the record, which `togi-tool-bench forecast` writes ([below](#the-forecast-command)) and `stats --forecast` ([#820](https://github.com/shgew/togi/issues/820)) scores. It holds the anchor; the short commit, a dirty flag and the ruleset; the evidence epoch; `files`, each machine file and facts extract the ensemble read, by path relative to the suite and SHA-256; each run's machine, seed, split and `outcome`, a nested object (status, hours, crashes, hunts, the profile as an object of core to offset, and the depth); and the summary of statuses and ranges, `summary.cores` an object of core to range. It hashes the anchor session's journal lines as the file holds them. The crate refuses a record in another layout, a Go-written one included, and an array or an unknown key where it expects an object. The build reads no Go-written journal, state or archive ([Reset and compatibility](spec/runtime.md#reset-and-compatibility)), and likewise no forecast the Go tool wrote.
-
-`--split`, `--baseline` and `--same` are usage errors with `--forecast`. `--keep DIR` retains every run directory under a new directory in DIR. Without it, each successful run is deleted as it finishes; a forecast whose runs failed keeps the failed runs and prints where, and a forecast that fails after every run succeeded, such as on writing `--out`, removes its run directory and prints none.
-
-## Counterfactual pass and cost of the R7 requirements
-
-`just pass-cost` computes, without simulating, what the checking cycle's R7 part requirements cost at a fixed profile when every trial fails with a known probability ([#490](https://github.com/shgew/togi/issues/490)). It is readiness tooling for #490's observation-only study: it reads no journal, writes nothing, and no number it prints is tuner evidence or feeds a tuner rule. Running it is not running that study.
-
-```sh
-just pass-cost [--hazard PER_HOUR,…] [--ccds 2] [--config FILE] [--launches 40] [--hours 4] [--extra-short N,…]
-just pass-cost --machine FILE --profile OFFSETS [--seed 1] [--workload ID] [--cores CORES] [--config FILE] [--launches 40] [--hours 4] [--extra-short N,…]
-```
-
-Each part's requirement comes from the tuner (`togi_tuner::r7_part_passes`), under `--config` or the built-in defaults: three passes at `short_trial_s` and one long pass whose duration depends on the part and the CCD count ([Checking](spec/tuner.md#checking)), so the defaults on two CCDs ask 3×120 s + 1×300 s of a CCD or partial part and 3×120 s + 1×600 s of the all-core part. The failure probability of each trial comes from one of two sources:
-
-- **Constant hazards** (the default): `--hazard` lists failures per hour, by default #490's grid 0, 0.1, 0.5, 1, 2, 4, 8 and 16. A trial of `d` seconds fails with probability `1 - exp(-h·d/3600)`, with no onset boost. `--ccds` sets the long durations; a partial's requirement is its CCD part's.
-- **A simulator machine**: `--machine` and `--profile` (one offset per core) evaluate the machine's model at that fixed profile with `failure_probability`, every source counted, background, onset boost and delays included. For each R7 workload (or `--workload`), the step's parts are each CCD's full part, its request-ordered partials of at least two cores when the machine has a shared rail, and the all-core part on several CCDs, as `worst_r7_hazard_per_h` derives them ([What a run records](#what-a-run-records)); `--cores` evaluates only the part that loads those cores. `--seed` draws the hidden limits of a machine file that sets none. A step row chains its parts.
-
-For each part, the output prints the passes, each trial's failure probability and:
-
-- `first`: the probability that every required trial passes on its first launch, the exact product of `1 - p` over the trials. This is the chance that a part at this profile qualifies, including by luck at a high hazard.
-- `launches` and `hours`: the expected launches and time to meet the requirement when it is retried at the same profile until met. Each requirement waits for its passes in a row, `Σ_{i=1..n} (1-p)^-i` launches, since a failure invalidates the passes of its own class and leaves those of the part's other classes ([Evidence](spec/tuner.md#evidence)).
-- `done≤L` and `done≤H`: the probability of meeting the requirement within `--launches` launches and within `--hours` hours, by dynamic programming over the passes earned and the launches or seconds elapsed; the censored share is `1 - done`. `spent_n` and `spent_h` are the expected launches and hours spent before the requirement is met or the horizon ends.
-- With `--extra-short N`, a row per part with N more short passes, and `+launches` and `+hours`, its expected extra cost over the current requirement.
-
-Only `first` on a current-requirement row describes the current rules; on a `+N short` row it is the first-attempt probability of a requirement the tuner never asks for. Everything else is **counterfactual**, and the output says so: the tuner answers a multi-core R7 failure by backing off ([R7 voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff)), not by retrying at the same profile, and it never asks for extra short passes. Trials are independent at a fixed profile; a failed trial is charged its full intended duration, so hours are an upper bound; a step counts one R7 occurrence, not the counts a later occurrence of the same workload adds. The probability that a part passes on its first attempt is not the probability that a retried part eventually earns its passes, and the two columns stay apart.
-
-The counterfactual short-pass count caps at `u32::MAX`, the requirement field's ceiling; adding passes never wraps that count.
-
-A trial of 120 s at 2 failures per hour fails with probability 0.0645 and one of 300 s with 0.1535, so a CCD part qualifies on its first attempt with probability 0.6930:
-
-```text
-hazard 2.00/h
-  part                                 passes         fail_p           first  launches    hours   done≤40 done≤4.00h  spent_n spent_h +launches  +hours
-  ccd                                  3x120s+1x300s  0.0645/0.1535   0.6930       4.6     0.21    1.0000     1.0000      4.6    0.21
-  ccd +2 short                         5x120s+1x300s  0.0645/0.1535   0.6065       7.3     0.30    1.0000     1.0000      7.3    0.30       2.7    0.09
-```
-
-## Counterfactual re-derivation accounting
-
-`just stats --counterfactual` accounts a journal's R7 chain re-derivations ([ADR 0055](adr/0055-rederive-r7-chains-after-a-backoff.md)) under the three candidate rules of [#896](https://github.com/shgew/togi/issues/896)'s brief ([`tools/bench/research/896.md`](../tools/bench/research/896.md)). It is readiness tooling for that campaign: it reads one journal, never changes the tuner, and no number it prints is tuner evidence. Removing a derivation's trials from a journal is not what a tuner with that rule would have done, so every figure is an upper bound and the output says so.
-
-```sh
-just stats --state-dir <copied-state-dir> --counterfactual [--witnesses records.jsonl]
-```
-
-It folds the journal into the tuner event by event and attributes each `checking.chain` event and its trials as [`--chains`](reviewing.md#the-stats-tool-togi-tool-stats) does. Each candidate decides every derivation before the tuner folds it:
-
-- **coalesce** skips a re-derivation that a later derivation of the same cycle, step and CCD replaces at the same or an earlier part, as if repeated derivations were merged before the chain returned to the step.
-- **defer** skips a re-derivation of a step before the cycle's last R7 step, made before that step began, as if earlier steps' re-tests waited for it.
-- **tie** keeps a position's earlier set instead of a changed one when every core the earlier set idles requests within one count (`VOLTS_PER_COUNT`) of the CCD's highest request in the order the tuner derived the changed set from (`State::chain_order`); when that order is not the recorded one the case is unresolved. Later positions are re-derived from the kept set with the tuner's order and must match the recorded set to stay resolved.
-
-First derivations are never skipped. A skipped derivation's seconds count only in a cycle that ends passed with every final chain class covered; the rest stay unresolved:
-
-- A derivation whose `source_seqs`, or whose re-derived order's sources, cite a skipped trial, and every position after one the candidate could not re-derive, are unresolved.
-- A skipped failing trial is reported as **delayed** when the step's final chain still holds its set (coalesce and defer) and as **lost** otherwise; from it on, every derivation and the cycles it and later ones end are unresolved, since the tuner's backoff would not have happened.
-- A tuner decision, hunt, combination, deepening round or core phase whose `cause` cites a skipped trial, such as a backoff whose target rests on that trial's passes or a located hunt those passes justify, ends the candidate's resolved accounting the same way: every later derivation and every cycle ending after it are unresolved, since its offsets could differ.
-- At each passed cycle end the coverage is counted by the tuner's evidence ledger (`State::evidence`) for every partial R7 part of `State::cycle_plan`, as the candidate holds the chain: each class's short and long requirements, at the cycle's ending checking profile and within the cycle's window. A part's quota is the tuner's base quota times one more than the earlier parts of its workload that hold the candidate's set there, as the tuner counts its own sets, and a class needs the largest quota among its parts, since a later part's quota already includes the earlier ones'. A pass the candidate skipped, or one of a derivation it leaves unresolved, is no witness: needed passes fall back to those passes, which count as **required** seconds to run again, then to **unobserved** passes the journal does not have, also required at their duration.
-
-`avoidable_s` is the skipped seconds less the required seconds, and may be negative. Every chain trial second is kept, skipped or unresolved, so the three add up to the chain trial seconds; reruns belong to no cycle and are not counted. The **Candidates** table prints these totals per candidate with the avoidable hours and their fraction of the time from the session's first event to its first clean cycle's end (or its last event). **Skipped failures** lists each lost or delayed failure.
-
-`--witnesses FILE` writes the records as JSON Lines, tagged by `record`: `derivation` for each derivation a candidate does not keep (`verdict` `skipped` or `unresolved`, with `reason` `after_failure`, `after_decision`, `source`, `diverged` or `order`, its trials and seconds); `failure` for each skipped failure; `cycle` for each cycle that held a derivation, with `status` (`covered`, `diverged`, `unidentified` when the final chain or its evidence cannot be told, `abandoned`, `open`), the ending `profile` and per class `needed` passes, the `witnesses`' and `rerun` passes' `trial.end` sequences, `unobserved` and, for a tie-kept set, `instead_of` the recorded one; and one `summary` per candidate.
-
-`just counterfactuals RUNS OUT` runs `--counterfactual --witnesses` and `--chains` over every development session of the one bench run a `--keep RUNS` directory holds, writing four files per session to `OUT`; it refuses a directory holding several runs, and names each session it cannot read, which gets no files, exiting 1 once it has accounted the rest. #896's brief runs it over its frozen corpus, `tools/bench/research/896/suite.json`.
 
 ## Research campaigns
 
@@ -442,19 +306,16 @@ A research campaign is a finite run of experiments by an agent following one iss
 | Model development | [`tools/fit/program.md`](../tools/fit/program.md) | the failure model and the fitter | a report; a kept model becomes a model-only pull request |
 | Production policy experiment | [`tools/bench/program.md`](../tools/bench/program.md) | tuner decisions in `crates/togi-tuner` | a report; kept changes become sub-issues of the open `Ruleset N` |
 | Fixed-policy observation | the issue's brief | analysis tools and research-only fixtures; the tuner, configuration and simulator stay unchanged | a report |
-| Counterfactual accounting | the issue's brief | the same as observation; alternatives are computed offline, never executed | a report |
 
-Observation and accounting measure the unchanged tuner. Their conclusions about another policy are labelled counterfactual: removing events from an observed journal is not what a different tuner would have done. #490 and #896 start only in these two modes. A simulated gain never lifts their evidence freeze or the [evidence volume](../tools/bench/program.md#hard-rules) rule; a production change for either needs a validated #480 forward score and an owner-approved design under #979.
+Observation measures the unchanged tuner. Its conclusions about another policy are labelled counterfactual: removing events from an observed journal is not what a different tuner would have done. #503 starts only in this mode. A simulated gain never lifts its evidence freeze or the [evidence volume](../tools/bench/program.md#hard-rules) rule; a production change for either needs a validated #480 forward score and an owner-approved design under #979.
 
 | Issue | Mode | Brief |
 |---|---|---|
 | [#427](https://github.com/shgew/togi/issues/427) | model development | [`tools/fit/research/427.md`](../tools/fit/research/427.md) |
 | [#480](https://github.com/shgew/togi/issues/480) | model development, diagnostic only | [`tools/fit/research/480.md`](../tools/fit/research/480.md) |
-| [#490](https://github.com/shgew/togi/issues/490) | fixed-policy observation | [`tools/bench/research/490.md`](../tools/bench/research/490.md) |
-| [#896](https://github.com/shgew/togi/issues/896) | counterfactual accounting | [`tools/bench/research/896.md`](../tools/bench/research/896.md) |
 | [#503](https://github.com/shgew/togi/issues/503) | fixed-policy observation, feasibility only | [`tools/bench/research/503.md`](../tools/bench/research/503.md) |
 
-An issue without a brief has no campaign; #428's brief waits for #427's parameterization. Each brief names its mode, its finite candidate queue, permitted and forbidden data, writable paths, metrics, keep and stop rules, result format and prerequisites. A prerequisite that has not landed stops the campaign before its first candidate. Every campaign runs through the `just research` dispatcher, which validates its manifest and writes its record ([below](#the-dispatcher)).
+An issue without a brief has no campaign; #428's brief waits for #427's parameterization, and #490 and #896 were retired by Ruleset 13 ([#1217](https://github.com/shgew/togi/issues/1217)) together with the stats analyses they read. Each brief names its mode, its finite candidate queue, permitted and forbidden data, writable paths, metrics, keep and stop rules, result format and prerequisites. A prerequisite that has not landed stops the campaign before its first candidate. Every campaign runs through the `just research` dispatcher, which validates its manifest and writes its record ([below](#the-dispatcher)).
 
 ### Limits
 
@@ -467,7 +328,7 @@ The bench's per-simulator `--timeout` and `--max-boots` bound one simulated sess
 In every mode a campaign never:
 
 - runs `togi run`, `togi reset` or `just hardware`, or touches hardware, the SMU, the watchdog, the boot loader or a live state directory;
-- refreshes evidence (`just facts`), forecasts (`just forecast`), regenerates fitted machines, the anchor or overlays into `tools/bench/machines/`, or re-records a baseline (`just bench-baseline`);
+- refreshes evidence (`just facts`), regenerates fitted machines, the anchor or overlays into `tools/bench/machines/`, or re-records a baseline (`just bench-baseline`);
 - acquires target evidence, deploys or merges;
 - writes outside its brief's writable paths and the campaign's output directory.
 
@@ -506,7 +367,7 @@ The campaign stops with one reason: its queue is exhausted, a limit is exhausted
 | `resume --run DIR` | Records the runs a killed dispatcher left unfinished as incomplete, then lets the campaign continue. |
 | `report --run DIR --notes FILE` | Writes `report.md` from the ledger and the researcher's notes on the remaining uncertainty. |
 
-A manifest is JSON. Hashes are SHA-256 in lowercase hex; a gzip input is pinned by its decompressed bytes. `inputs` is for model development and `suite` (`path`, `sha256`, `split`) for observation and accounting. `limits` defaults to the values above. The owner writes, for example:
+A manifest is JSON. Hashes are SHA-256 in lowercase hex; a gzip input is pinned by its decompressed bytes. `inputs` is for model development and `suite` (`path`, `sha256`, `split`) for observation. `limits` defaults to the values above. The owner writes, for example:
 
 ```json
 {
@@ -527,21 +388,21 @@ A manifest is JSON. Hashes are SHA-256 in lowercase hex; a gzip input is pinned 
 }
 ```
 
-The dispatcher refuses a manifest whose issue has no brief or names another mode, whose sessions are not that issue's approved ones, which leaves the environment or the brief unpinned, or whose writable paths overlap evidence, fitted machines, baselines, the tuner, the run loop, the hardware path, the dispatcher, the programs and briefs, the build environment or a pinned file. Observation and accounting may not write the simulator or the fitter either.
+The dispatcher refuses a manifest whose issue has no brief or names another mode, whose sessions are not that issue's approved ones, which leaves the environment or the brief unpinned, or whose writable paths overlap evidence, fitted machines, baselines, the tuner, the run loop, the hardware path, the dispatcher, the programs and briefs, the build environment or a pinned file. Observation may not write the simulator or the fitter either.
 
 Before `exec` and `outcome` record anything, the dispatcher checks that the campaign has not stopped, that no run is left unfinished, that wall time remains, that every pinned file still has its hash and that each facts input still holds exactly its named sessions. It also checks that `HEAD` descends from the checkout and that every changed path is a writable one. A failed check after the start stops the campaign with its reason. A refused command records nothing.
 
 If the current wall time precedes the campaign's recorded start, the dispatcher refuses the action with an elapsed-time error and records nothing. It does not treat an inverted interval as zero or restore the full wall-time budget.
 
-`exec` allows only its mode's evaluators. Model development's `forward` evaluator invokes `just fit --forward-only` (`--facts`, `--seal`, `--jobs`, `--records`); `fit` finalizes a confirmed candidate (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`), alongside the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the committed extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation and accounting run only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`), and `--jobs` defaults to the worker limit and may not exceed it. Each run waits for the host-shared lock, then makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
+`exec` allows only its mode's evaluators. Model development's `forward` evaluator invokes `just fit --forward-only` (`--facts`, `--seal`, `--jobs`, `--records`); `fit` finalizes a confirmed candidate (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`), alongside the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the committed extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation runs only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`), and `--jobs` defaults to the worker limit and may not exceed it. Each run waits for the host-shared lock, then makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
 
-An observation or accounting campaign analyses what its `bench` run kept with tools that simulate nothing, such as `just stats --backoffs` over the kept journals and `just pass-cost`. They are not evaluators and run outside `exec`: they read the run directory and the frozen fixtures, write only under the run directory, and the report names each command. [#490's brief](../tools/bench/research/490.md#procedure) is the worked example.
+An observation campaign analyses what its `bench` run kept with tools that simulate nothing. They are not evaluators and run outside `exec`: they read the run directory and the frozen fixtures, write only under the run directory, and the report names each command.
 
 The roles enforce the comparison's order:
 
 - A `reference` run needs the tree at the reference revision.
 - A `candidate` run past the candidate limit stops the campaign.
-- In model development, `kept` needs a complete candidate run paired with a complete reference run of the same command and data, where each run's `--records` path may differ; otherwise the campaign stops as unpaired. Observation and accounting need a complete candidate run.
+- In model development, `kept` needs a complete candidate run paired with a complete reference run of the same command and data, where each run's `--records` path may differ; otherwise the campaign stops as unpaired. Observation needs a complete candidate run.
 - A `confirmation` needs a kept candidate whose changes are unchanged since its run, and a confirmation the manifest allows. It is spent when its start line is written. Its `confirmation-reference` run follows it, and its outcome needs both to be complete.
 - `confirmation-failed` stops the campaign. A `finalization` run needs a passed confirmation at the same changes.
 
@@ -551,7 +412,7 @@ A campaign completes its approved experiments, records every outcome, writes the
 
 ## The bench (`togi-tool-bench`)
 
-`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same`, `just smoke` and `just forecast` run its `same` and `forecast` commands ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). `just pass-cost` runs its `pass-cost` command, [above](#counterfactual-pass-and-cost-of-the-r7-requirements). `just research` runs its `research` command, the [campaign dispatcher](#the-dispatcher). The gate report is [below](#judging-the-gate) ([#822](https://github.com/shgew/togi/issues/822)).
+`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same` and `just smoke` run its `same` command ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). `just research` runs its `research` command, the [campaign dispatcher](#the-dispatcher).
 
 ```sh
 just bench --split dev --baseline BEFORE.jsonl --out AFTER.jsonl
@@ -560,21 +421,13 @@ just bench sanity --records AFTER.jsonl
 
 The suite is `tools/bench/suite.json`, read by strict rules (unknown keys refused, a machine file per scenario, a replay oracle for `replay: true`); every scenario's machines and replay oracle are loaded and checked whatever `--split` selects. A run builds `togi-tool-sim` from this tree with `cargo build --release --locked`, copies the binary into a private directory, and starts that copy as a subprocess for every run with a temporary `--state-dir` whose journal the bench reads after it exits ([ADR 0060](adr/0060-bench-children-keep-temporary-journals.md)), in a process group of its own, with the flags `just sim` takes; `--sim PATH` copies and runs a given binary instead. `--jobs` (default: the CPU count) bounds the simulators at once, `--timeout SECONDS` is the hang safety limit of one run (an overrun is a harness error, not a run outcome), and `--max-boots` (default 1000) is the boot cap that makes a run censored. A harness error stops the simulators still running and is what the bench reports. A session a signal killed or stopped is an `error` record and is not cached. `--keep DIR` retains every run directory and skips the cache. The records come out in suite order whatever `--jobs` is, so they do not depend on scheduling. The bench records the tree's commit and dirty flag, so it runs inside a Git work tree. Ctrl-C stops the simulators that are running, discards kept run directories and exits non-zero.
 
-After a run's record is read and before its state directory is removed, the bench audits every journal of the directory, archives included, with [the audit](#the-audit-togi-tool-audit)'s library ([#546](https://github.com/shgew/togi/issues/546)). A `concluded` or `deadend` run is audited as finished, so its live journal must end in its conclusion and its `state.json` must equal a fresh fold; a `censored` or `error` run is audited as an unfinished prefix. A journal the lenient read left anything out of is a warning. The report prints `audit: audited=N violations=M` after the model checks, then each violation as `audit: RUN [JOURNAL] [seq N] CHECK: reason`; a run with a violation is not cached, and the bench exits 1 with `the journal audit found M violations` after writing its records and report, whose gate verdict, with a baseline, is still printed: the audit's exit comes before the gate's `gate failed`. A cached record was audited when it was made. The `same` and `forecast` commands audit nothing: `same` compares journals byte for byte, and `forecast` continues a copy of a real state directory, which `just audit` covers.
+After a run's record is read and before its state directory is removed, the bench audits every journal of the directory, archives included, with [the audit](#the-audit-togi-tool-audit)'s library ([#546](https://github.com/shgew/togi/issues/546)). A `concluded` or `deadend` run is audited as finished, so its live journal must end in its conclusion and its `state.json` must equal a fresh fold; a `censored` or `error` run is audited as an unfinished prefix. A journal the lenient read left anything out of is a warning. The report prints `audit: audited=N violations=M` after the model checks, then each violation as `audit: RUN [JOURNAL] [seq N] CHECK: reason`; a run with a violation is not cached, and the bench exits 1 with `the journal audit found M violations` after writing its records and report. A cached record was audited when it was made. The `same` command audits nothing: it compares journals byte for byte.
 
-The record is JSON Lines: every field is required except `machine`, `model_check`, `wall_s` and `worst_r7_hazard_per_h`, which are left out when absent (a baseline file written by `--baseline-out` leaves out `model_check` and `wall_s` on every line; comparison and gates read neither, so `--baseline` prints the same against it as against the full `--out` records) (`first_passed_cycle_h` must be present and may be null), an unknown key is refused, `final_profile` is an object of core ID to offset (`{"0":-23,"1":-15,…}`: the last `profile.change`, or the session's baseline before one), `hazard_per_h` an object by regime, `model_check` counts `eligible_groups`, `flagged_groups` and `idle_failures` (the flagged groups themselves are in the printed report), and `evidence` and `ruleset` are the build's `togi_tuner::EVIDENCE_EPOCH` and `RULESET`. A run's real answers come from the same extraction as the facts extract and count only decisive trials whose `trial.start` was journaled. The comparison, summary and verdict rules (V1–V4, the equal-scenario-weight bootstrap seeded with 1, 10000 resamples) are those of [Comparing two versions](#comparing-two-versions), except that the warning about unmatched runs counts the candidate runs without a baseline and the baseline runs in the candidate's splits without a candidate directly, so it never prints a negative count. A record file with a run twice, or of the earlier Go format, is refused: `--baseline` takes records of this format only.
+The record is JSON Lines: every field is required except `machine`, `model_check` and `wall_s`, which are left out when absent (a baseline file written by `--baseline-out` leaves out `model_check` and `wall_s` on every line; comparison reads neither, so `--baseline` prints the same against it as against the full `--out` records), an unknown key is refused, `hazard_per_h` is an object by regime, `model_check` counts `eligible_groups`, `flagged_groups` and `idle_failures` (the flagged groups themselves are in the printed report), and `evidence` and `ruleset` are the build's `togi_tuner::EVIDENCE_EPOCH` and `RULESET`. A run's real answers come from the same extraction as the facts extract and count only decisive trials whose `trial.start` was journaled. The comparison, summary and verdict rules (V1–V3, the equal-scenario-weight bootstrap seeded with 1, 10000 resamples) are those of [Comparing two versions](#comparing-two-versions), except that the warning about unmatched runs counts the candidate runs without a baseline and the baseline runs in the candidate's splits without a candidate directly, so it never prints a negative count. A record file with a run twice, or of the earlier Go format, is refused: `--baseline` takes records of this format only.
 
 The cache holds finished records under `$XDG_CACHE_HOME/togi/bench` (or `~/.cache/togi/bench` on Linux and `~/Library/Caches/togi/bench` on macOS; `--cache DIR` and `--no-cache` override), a directory per tree key and the eight most recently used kept. The tree key binds the SHA-256 of the simulator copy that runs, the bench's own executable's SHA-256 and `--max-boots`; an entry also binds the suite file's bytes, the run's scenario, split and seed, the replay flag, and the bytes of the machine file, every file it extends and its facts extract. Any change misses. A failed cache write is a warning; the record is kept. A cache hit restamps the commit and dirty flag, so a cached record is the one a fresh run would write.
 
-`togi-tool-bench sanity --records FILE` compares a run of the whole suite with the scores in the recorded `tools/bench/baseline.jsonl`. A change to the tuner or simulator can move any seed's outcome, so what must agree is each metric's mean over a scenario's seeds. A line is flagged when the means differ by more than the metric's absolute floor and its relative band (5% for hours and trials, 3% for depth) and by more than 3 standard errors (Welch within a scenario; for the total, stratified by scenario), so only a difference the seeds' spread does not explain counts. Any drop in the share of concluded runs is flagged by its size alone, and so is a metric that one side measured and the other did not, or measured on a different number of runs; the table prints both run counts. The bands are in `crates/togi-tool-bench/src/sanity.rs`. It exits 1 when any line is flagged: a flag is a question to answer, not a gate. With 8 runs a side, 3 standard errors is a two-sided p between about 0.01 and 0.02 under Student's t, and the table has about 150 lines, so a flag in a small scenario is expected now and then by chance; answer it with fresh seeds of that scenario on the candidate and on the commit that recorded the baseline.
-
-### Judging the gate
-
-`just bench --split all --baseline BASELINE.jsonl` judges the `gate` object of the suite, when it registers one, after the generic comparison, prints each criterion and an overall `gate ID: PASS` or `FAIL`, and exits 1 (with `gate failed` on stderr) unless it passes. The criteria and the refusals are those of [the gate](#the-gate): conclusion, the median and 90th percentile of the final-profile `worst_r7_hazard_per_h` by the interval of the change, the time ratio, and the pooled median. A gate without `--baseline` is read and checked, and nothing is judged; a suite without a gate prints none. The baseline is a file of records as `--out` of an earlier run wrote it; a file of Go records is refused.
-
-The gate object is typed, strict and checked before any session runs: an unknown key is refused; `split` is `dev`, `holdout` or `all`; `bootstrap_seed` is one integer; `resamples` is 1 to 10,000,000; a scenario is not listed twice, nor both gated and concluded (a gated scenario's conclusion is already a criterion); a quantile label keeps its decimals (`p99.5`). The bootstrap resamples seed pairs with a [`StdRng`](https://docs.rs/rand/0.10.3/rand/rngs/struct.StdRng.html) seeded with `bootstrap_seed`, one generator per quantile criterion, drawn on one thread in a fixed order, so an interval is the same on every run and on every machine with any number of threads or cores. A time criterion with no pair that both sides concluded fails and prints `ratio=none timed=0`.
-
-**Archived Go gates are not re-scored.** The Ruleset 11 archive's bootstrap draws came from Go's PCG, which the bench does not port, and its records are Go's, so the bench cannot reproduce its intervals. The archive stays as the record of what was scored: its four files are pinned by hash (`the_archived_go_gate_is_kept_unchanged_and_never_re_scored` in the bench crate), and no `just bench` mode judges existing records. The bench refuses the archive before any session runs: a gate whose `bootstrap_seed` is a pair, Go's PCG seed, stops the run with `archived Go gates are kept as records and are not re-scored`, and the record reader refuses the archive's `baseline.jsonl` and `candidate.jsonl`. The next ruleset's gate is registered in the current format and scored by the bench.
+`togi-tool-bench sanity --records FILE` compares a run of the whole suite with the scores in the recorded `tools/bench/baseline.jsonl`. A change to the tuner or simulator can move any seed's outcome, so what must agree is each metric's mean over a scenario's seeds. A line is flagged when the means differ by more than the metric's absolute floor and its relative band (5% for hours and trials) and by more than 3 standard errors (Welch within a scenario; for the total, stratified by scenario), so only a difference the seeds' spread does not explain counts. Any drop in the share of concluded runs is flagged by its size alone, and so is a metric that one side measured and the other did not, or measured on a different number of runs; the table prints both run counts. The bands are in `crates/togi-tool-bench/src/sanity.rs`. It exits 1 when any line is flagged: a flag is a question to answer, not a gate. With 8 runs a side, 3 standard errors is a two-sided p between about 0.01 and 0.02 under Student's t, and the table has about 150 lines, so a flag in a small scenario is expected now and then by chance; answer it with fresh seeds of that scenario on the candidate and on the commit that recorded the baseline.
 
 ### The `same` command
 
@@ -586,17 +439,11 @@ A difference prints the session, the first journal that differs and its first di
 
 Each side's digest is cached under `same/<key>` in the cache directory (`--cache DIR`, default `$XDG_CACHE_HOME/togi/bench` or `~/.cache/togi/bench`), the eight most recently used kept. The key binds the simulator binary's SHA-256 and `--max-boots`; an entry also binds the session's identity, its replay flag and the bytes of its machine files and facts extract, by name relative to the suite, but not the suite file, so adding a scenario leaves the others cached. A base that does not change the simulator is a cache hit across commits, and when both trees build byte-identical simulators and read the same inputs the bench says so and runs nothing. A side with a cached record is not run again, but a difference reruns a cached side to have its journal to show. Sessions run longest first by their recorded times. The bench reports the summed time of the compared simulators and the sessions where the head took more than twice its base's as information that never decides the verdict; this is the wall time of the simulator process, which is noisy when sessions outnumber cores.
 
-### The `forecast` command
-
-`just forecast STATE_DIR [--out FILE] [--suite FILE] [--keep DIR] [--jobs N] [--max-boots N] [--timeout SECONDS] [--sim FILE]` runs `togi-tool-bench forecast`, which does what [the forecast above](#forecasting-a-real-run) describes with the simulator: it copies the directory into each run's own directory as `just copy-state` does (a link in it, or an archive entry named after a session that is not a regular file, fails the run), resumes the copy on `togi-tool-sim` for every dev and holdout seed of the suite's `target` scenario, and counts only the events after the anchor. The copy is read, never written. An exit 1 is a dead end only when the run reached one after the anchor: a `deadend` event after it, or the simulator's own `sim: dead end` log line; a dead end the copy already held is not the run's. An exit that is neither a conclusion, a dead end nor the boot cap, or a simulator that records no event after the anchor, fails the forecast.
-
-The record is `togi-tool-forecast`'s `Record` with the commit and the dirty flag the command reads from git in its working directory, the ruleset and evidence epoch of this build, `files` (each machine file and facts extract the ensemble reads, by path relative to the suite, with its SHA-256, in the order the machines list them: a machine file before the files it extends) and the runs. The printed report names the anchor, the commit (with `(dirty)` when the tree has changes other than `--out`), the ruleset and the runs by status, then a table of each core's final offset, the depth, hours, crashes and hunts as median, 10th to 90th percentile and range, and the target machines' model checks. It holds no wall time and no local path: a machine file is named by its path relative to the suite's directory, in the record and in the model checks, however the suite names it, and a file outside that directory is refused. A failed run stops the simulators still running, and the forecast names the runs that failed, not those it stopped. A forecast whose runs failed keeps the failed runs' directories and prints where; one that fails later, on writing `--out`, or is interrupted keeps nothing; `--keep DIR` keeps every run, an interrupted one's directory included. There is no flag that conflicts with `forecast`: `--split`, `--baseline` and `--same` do not exist for it.
-
 ## Checking a machine against real evidence
 
 A machine file may declare `"facts": "../facts/target.jsonl.gz"`, resolved relative to the machine JSON file. Every `target-fit-*.json` declares the committed target-machine extract. Files without `facts` are not checked.
 
-Regenerate the extract from a temporary copy of the state directory, never the live state: `togi-tool-facts` takes the directory's writer lock. Copy it as for [a forecast](#forecasting-a-real-run), while togi is not running a trial:
+Regenerate the extract from a temporary copy of the state directory, never the live state: `togi-tool-facts` takes the directory's writer lock. Copy it as [above](#copying-a-real-state-directory), while togi is not running a trial:
 
 ```sh
 copy=$(mktemp -d)

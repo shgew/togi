@@ -317,7 +317,13 @@ fn a_reason_an_archived_journal_holds_is_cleared_without_a_new_event() {
     let dir = rig
         .appender
         .into_journal()
-        .archive(stamp, ArchiveKind::Transition, &[])
+        .archive(
+            stamp,
+            ArchiveKind::Transition {
+                destination: "20260101T000100Z".parse().unwrap(),
+            },
+            &[],
+        )
         .unwrap();
     let journal = dir.open_at(boot, sim.now()).unwrap();
     grub.allow();

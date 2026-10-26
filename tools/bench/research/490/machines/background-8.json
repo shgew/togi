@@ -1,7 +1,0 @@
-{
-  "description": "#490 research fixture: the seeded default machine plus a CO-independent R7 hazard of 8 failures per hour on each loaded CCD, whatever the profile; an all-core load sees both CCDs'. Not part of the bench suite.",
-  "cores": 16,
-  "ccd": {
-    "log_rate": -6.1092475827643655
-  }
-}

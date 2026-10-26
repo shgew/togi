@@ -185,7 +185,7 @@ fn published_in_a_crashing_simulation(replay: Replay) -> (usize, usize) {
     let SimOutcome::Stopped(finished) = simulate(input).unwrap() else {
         panic!("capped");
     };
-    assert_eq!(finished.stop, Some(Stop::Cycles));
+    assert_eq!(finished.stop, Some(Stop::Signal));
     let boots = assert_unpublished_during_runs(&seen);
     assert!(
         boots > 1,

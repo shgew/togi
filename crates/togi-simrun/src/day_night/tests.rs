@@ -10,8 +10,8 @@ use togi_sim::day_night::{Scenario, TrialClass, TruthState};
 
 use super::machine::Runtime;
 use super::{
-    CalendarConfig, Comparator, DayClassification, DayObservation, EndAnswer, FixedMargin, Night,
-    Policy, RunError, run, run_with_policy,
+    CalendarConfig, DayClassification, DayObservation, EndAnswer, FixedMargin, Night, Policy,
+    PolicyKind, RunError, run, run_with_policy,
 };
 
 #[derive(Default)]
@@ -156,7 +156,7 @@ fn night_work_cannot_pay_the_fixed_comparators_daily_hold() {
     let metrics = run(
         "no-write-limit-failure",
         1,
-        Comparator::FixedMargin,
+        PolicyKind::FixedMargin,
         CalendarConfig {
             days: 10,
             active_hours: 1.0,
@@ -181,7 +181,7 @@ fn stock_nonconvergence_is_retained_as_right_censoring() {
     let metrics = run(
         "no-write-limit-failure",
         1,
-        Comparator::CoZero,
+        PolicyKind::CoZero,
         CalendarConfig {
             days: 1,
             ..CalendarConfig::default()
@@ -454,6 +454,13 @@ struct EdgeTrials {
     edges: PerCore<u8>,
 }
 impl Trials for EdgeTrials {
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, togi_machine::Error> {
+        Ok(togi_sim::content_id(workload))
+    }
+
     fn sweep(&mut self, _cancel: &CancellationToken) -> Result<Swept, togi_machine::Error> {
         Ok(Swept {
             detail: String::new(),
@@ -817,4 +824,66 @@ fn convergence_records_day_and_depth_and_ends_the_climb() {
         metrics.climb_co_crashes,
         vec![policy.endings(|day| day < 2)]
     );
+}
+
+#[test_case("co-zero", PolicyKind::CoZero; "stock")]
+#[test_case("fixed-margin", PolicyKind::FixedMargin; "fixed margin")]
+fn a_label_resolves_to_the_policy_that_prints_it(label: &str, expected: PolicyKind) {
+    let kind = PolicyKind::by_label(label, None).unwrap();
+    assert_eq!(kind, expected);
+    assert_eq!(kind.label(), label);
+}
+
+#[test]
+fn the_gate_label_needs_a_slope() {
+    assert_eq!(
+        PolicyKind::by_label("ruleset13", None),
+        Err(super::PolicyError::SlopeRequired("ruleset13"))
+    );
+}
+
+#[test_case(1.5; "the first registered slope")]
+#[test_case(2.0; "the second registered slope")]
+fn the_gate_label_resolves_with_the_slope_it_is_given(slope: f64) {
+    let kind = PolicyKind::by_label("ruleset13", Some(slope)).unwrap();
+    assert_eq!(
+        kind,
+        PolicyKind::Ruleset13 {
+            fallback_slope: slope
+        }
+    );
+    assert_eq!(kind.label(), "ruleset13");
+    assert_eq!(kind.role(), super::PolicyRole::Gate);
+}
+
+#[test]
+fn an_unknown_label_lists_the_known_ones_and_a_slope_needs_a_policy_that_takes_one() {
+    assert_eq!(
+        PolicyKind::by_label("ruleset14", None),
+        Err(super::PolicyError::Unknown {
+            name: "ruleset14".to_owned(),
+            known: "co-zero, fixed-margin, ruleset13".to_owned(),
+        })
+    );
+    assert_eq!(
+        PolicyKind::by_label("co-zero", Some(1.5)),
+        Err(super::PolicyError::SlopeUnused("co-zero"))
+    );
+}
+
+#[test]
+fn a_factory_built_policy_runs_exactly_like_the_same_policy_built_by_hand() {
+    let calendar = CalendarConfig {
+        days: 14,
+        ..CalendarConfig::default()
+    };
+    let built = run("edge-shallow", 1, PolicyKind::FixedMargin, calendar.clone()).unwrap();
+    let by_hand = run_with_policy(
+        "edge-shallow",
+        1,
+        calendar.clone(),
+        &mut FixedMargin::new(calendar.fixed_margin, calendar.day_step).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(built, by_hand);
 }

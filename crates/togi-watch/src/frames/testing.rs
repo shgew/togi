@@ -8,7 +8,6 @@ use jiff::{SignedDuration, Timestamp};
 use ratatui::buffer::{Buffer, Cell};
 use ratatui::style::{Color, Style};
 use togi_journal::Event;
-use togi_watchtest::Scenario;
 
 use super::colours::Paint;
 use super::fit::is_console_glyph;
@@ -27,14 +26,6 @@ pub(crate) struct Fixture {
 }
 
 impl Fixture {
-    pub(crate) fn scenario(scenario: Scenario) -> Self {
-        Self::of(
-            &scenario
-                .events()
-                .unwrap_or_else(|error| panic!("{}: {error}", scenario.name())),
-        )
-    }
-
     pub(crate) fn of(events: &[Event]) -> Self {
         let last = events.last().expect("an event").time;
         Self {
@@ -165,15 +156,14 @@ pub(crate) fn text_snapshot(buf: &Buffer) -> String {
     out
 }
 
-const LETTERS: [(Paint, char); 12] = [
+const LETTERS: [(Paint, char); 11] = [
     (Paint::Text, 't'),
     (Paint::Grey, 'g'),
     (Paint::White, 'w'),
     (Paint::Running, 'c'),
-    (Paint::Hunt, 'a'),
+    (Paint::Warn, 'a'),
     (Paint::Good, 'p'),
     (Paint::Bad, 'f'),
-    (Paint::Combination, 'm'),
     (Paint::Track, 'k'),
     (Paint::Chip, 'h'),
     (Paint::Lamp, 'l'),

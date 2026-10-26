@@ -998,7 +998,7 @@ fn real_process_a_started_idle_trial_holds_the_dashboard_still() {
 
 #[test]
 fn real_process_a_running_trial_redraws_the_dashboard_s_clock() {
-    let (_state, mut pty, helper) = dashboard(Scenario::Checking, "SOLO LIMITS");
+    let (_state, mut pty, helper) = dashboard(Scenario::Controls, "NIGHT since");
     assert!(
         !pty.falls_quiet(QUIET, QUIET),
         "the clock of a running trial stood still"

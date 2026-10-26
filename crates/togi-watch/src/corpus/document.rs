@@ -1,5 +1,5 @@
 //! The Markdown the exporter writes: the phrase catalogue, the forwarded journal messages, the manifest of source
-//! phrases with the cases that rendered them, and the `togi status` corpus.
+//! phrases with the cases that rendered them.
 //!
 //! The catalogue is a reading aid, not the raw record. [`catalogue`] reduces the templates the collector kept, per
 //! producer, in two steps that never invent a phrase:
@@ -322,17 +322,14 @@ fn build(collector: &Collector) -> Catalogue {
     }
 }
 
-/// Writes the whole document; `status` is the `togi status` corpus, appended as it is.
-pub(super) fn write(collector: &Collector, run: &TestRun, swept: &Swept, status: &str) -> String {
+/// Writes the whole document.
+pub(super) fn write(collector: &Collector, run: &TestRun, swept: &Swept) -> String {
     let catalogue = build(collector);
     let mut out = String::new();
     intro(&mut out, &catalogue, run, swept);
     phrases(&mut out, &catalogue);
     messages(&mut out, &catalogue);
     manifest_section(&mut out, collector);
-    out.push_str("## `togi status` corpus\n\n");
-    out.push_str(status.trim());
-    out.push('\n');
     out
 }
 
@@ -356,8 +353,8 @@ fn intro(out: &mut String, catalogue: &Catalogue, run: &TestRun, swept: &Swept) 
          the planned end. A started idle (R6) trial freezes its frame, so no planned-end clocks are sampled for \
          it: it is drawn at \
          240x67 at the event's own time and 40 s later, and at the other two sizes 40 s later only, and the sweep \
-         asserts the frame reports itself held. {} scenario cuts, each projected under its own case, were drawn at \
-         the three sizes too, with the journal states, help and the journal view ({} frames in all). Credited as \
+         asserts the frame reports itself held. {} scenario cuts and hand-built staged frames, each under its own \
+         case, were drawn at the three sizes too, with the journal states, help and the journal view ({} frames in all). Credited as \
          `sweep`.\n\
          - **Clauses and templates.** A rendered phrase is cut into clauses at ` · `, ` ─ `, ` │ `, ` → ` and \
          runs of two spaces, and a clause with no letter is dropped. A clause becomes a template by folding its \
@@ -386,11 +383,9 @@ fn intro(out: &mut String, catalogue: &Catalogue, run: &TestRun, swept: &Swept) 
     );
     out.push_str(
         "## Regenerating\n\n\
-         Both exporters are ignored tests. `<repo>` is the checkout and `<status-export>` an absolute path for the \
-         status corpus the second one reads; the first writes it, the second writes this document.\n\n\
+         The exporter is an ignored test. `<repo>` is the checkout.\n\n\
          ```sh\n\
-         TOGI_NARRATION_CORPUS=<status-export> \\\n    cargo test --locked -p togi narration_corpus -- --ignored --nocapture\n\
-         TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \\\n    cargo test --locked -p togi-watch narration_corpus -- --ignored --nocapture\n\
+         TOGI_NARRATION_CORPUS=<repo>/docs/narration-phrases.md \\\n    cargo test --locked -p togi-watch narration_corpus -- --ignored --nocapture\n\
          ```\n\n",
     );
     let _ = writeln!(out, "### Sweep journals\n");
@@ -734,12 +729,17 @@ mod tests {
     /// `is_sweep` can tell.
     #[test]
     fn sweep_folds_and_projections_are_credited_to_sweep_cases() {
-        let rerun = togi_watchtest::cycle_completed_by_rerun().expect("the rerun journals");
+        let night = togi_watchtest::Base::Night
+            .events()
+            .expect("the night journal");
+        let controls = togi_watchtest::Scenario::Controls
+            .events()
+            .expect("the controls journal");
         crate::corpus::start();
         let mut swept = Swept::default();
-        crate::frames::corpus::sweep_journal(&mut swept, "rerun", &rerun.ended);
-        crate::frames::corpus::whole(&mut swept, "scenario/rerun-0", &rerun.running[0]);
-        crate::frames::corpus::views(&mut swept, "rerun", &rerun.ended);
+        crate::frames::corpus::sweep_journal(&mut swept, "night", night);
+        crate::frames::corpus::whole(&mut swept, "scenario/controls", &controls);
+        crate::frames::corpus::views(&mut swept, "night", night);
         let collector = crate::corpus::finish();
         let folded: Vec<_> = collector
             .items

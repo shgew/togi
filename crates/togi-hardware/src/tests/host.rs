@@ -11,14 +11,14 @@ fn find<'a>(checks: &'a [Check], name: &str) -> &'a Check {
     checks.iter().find(|check| check.name == name).unwrap()
 }
 
-const ALL_CHECKS: [&str; 9] = [
+/// The mandatory checks, in order: backend availability is not one of them.
+const ALL_CHECKS: [&str; 8] = [
     "root",
     "cpu",
     "ryzen_smu",
     "readback",
     "pm_table",
     "slot_mapping",
-    "backends",
     "backend_user",
     "systemd_run",
 ];
@@ -50,7 +50,6 @@ mod unvalidated {
             "readback",
             "pm_table",
             "slot_mapping",
-            "backends",
             "backend_user",
             "systemd_run",
         ] {
@@ -166,7 +165,17 @@ mod unvalidated {
         assert!(!find(&checks, "readback").ok);
         assert!(!find(&checks, "slot_mapping").ok);
         assert!(find(&checks, "pm_table").ok);
-        assert!(!find(&checks, "backends").ok);
+        let backends = host.backends();
+        assert_eq!(
+            backends
+                .iter()
+                .map(|check| (check.backend, check.available))
+                .collect::<Vec<_>>(),
+            [
+                (togi_machine::Backend::Mprime, false),
+                (togi_machine::Backend::Ycruncher, false)
+            ]
+        );
         let user = find(&checks, "backend_user");
         assert!(!user.ok);
         assert_eq!(user.detail, "no backend account is configured");

@@ -15,7 +15,6 @@ use super::{Workspace, WorkspaceError};
 pub enum Mode {
     ModelDevelopment,
     FixedPolicyObservation,
-    CounterfactualAccounting,
 }
 
 impl Mode {
@@ -23,7 +22,6 @@ impl Mode {
         match self {
             Self::ModelDevelopment => "model development",
             Self::FixedPolicyObservation => "fixed-policy observation",
-            Self::CounterfactualAccounting => "counterfactual accounting",
         }
     }
 }
@@ -33,8 +31,6 @@ impl Mode {
 pub enum Issue {
     StructuredSingleton,
     SharedVoltageDiagnosis,
-    IntermittentHazard,
-    Rederivation,
     OnlineRisk,
 }
 
@@ -56,8 +52,6 @@ impl Issue {
         match number {
             427 => Some(Self::StructuredSingleton),
             480 => Some(Self::SharedVoltageDiagnosis),
-            490 => Some(Self::IntermittentHazard),
-            896 => Some(Self::Rederivation),
             503 => Some(Self::OnlineRisk),
             _ => None,
         }
@@ -67,8 +61,6 @@ impl Issue {
         match self {
             Self::StructuredSingleton => 427,
             Self::SharedVoltageDiagnosis => 480,
-            Self::IntermittentHazard => 490,
-            Self::Rederivation => 896,
             Self::OnlineRisk => 503,
         }
     }
@@ -76,8 +68,7 @@ impl Issue {
     pub fn mode(self) -> Mode {
         match self {
             Self::StructuredSingleton | Self::SharedVoltageDiagnosis => Mode::ModelDevelopment,
-            Self::IntermittentHazard | Self::OnlineRisk => Mode::FixedPolicyObservation,
-            Self::Rederivation => Mode::CounterfactualAccounting,
+            Self::OnlineRisk => Mode::FixedPolicyObservation,
         }
     }
 
@@ -85,8 +76,6 @@ impl Issue {
         match self {
             Self::StructuredSingleton => "tools/fit/research/427.md",
             Self::SharedVoltageDiagnosis => "tools/fit/research/480.md",
-            Self::IntermittentHazard => "tools/bench/research/490.md",
-            Self::Rederivation => "tools/bench/research/896.md",
             Self::OnlineRisk => "tools/bench/research/503.md",
         }
     }
@@ -94,27 +83,21 @@ impl Issue {
     fn development_sessions(self) -> &'static [&'static str] {
         match self {
             Self::StructuredSingleton | Self::SharedVoltageDiagnosis => &DEVELOPMENT_SESSIONS,
-            Self::IntermittentHazard | Self::Rederivation | Self::OnlineRisk => &[],
+            Self::OnlineRisk => &[],
         }
     }
 
     fn confirmation_sessions(self) -> &'static [&'static str] {
         match self {
             Self::StructuredSingleton => &[HISTORICAL_CONFIRMATION],
-            Self::SharedVoltageDiagnosis
-            | Self::IntermittentHazard
-            | Self::Rederivation
-            | Self::OnlineRisk => &[],
+            Self::SharedVoltageDiagnosis | Self::OnlineRisk => &[],
         }
     }
 
     pub fn max_confirmations(self) -> u32 {
         match self {
             Self::StructuredSingleton => 1,
-            Self::SharedVoltageDiagnosis
-            | Self::IntermittentHazard
-            | Self::Rederivation
-            | Self::OnlineRisk => 0,
+            Self::SharedVoltageDiagnosis | Self::OnlineRisk => 0,
         }
     }
 }
@@ -146,7 +129,7 @@ const NEVER_WRITABLE: &[&str] = &[
     "tools/fit",
 ];
 
-/// Paths observation and accounting campaigns also leave alone: the simulator and the fitter.
+/// Paths observation campaigns also leave alone: the simulator and the fitter.
 const MODEL_PATHS: &[&str] = &[
     "crates/togi-sim",
     "crates/togi-simrun",
@@ -387,7 +370,7 @@ impl Manifest {
                     return invalid("model development names no bench suite".to_owned());
                 }
             }
-            Mode::FixedPolicyObservation | Mode::CounterfactualAccounting => {
+            Mode::FixedPolicyObservation => {
                 if !self.inputs.is_empty() {
                     return invalid(format!("{} reads no real sessions", issue.mode().name()));
                 }
@@ -448,7 +431,7 @@ impl Manifest {
         }
         let model_paths: &[&str] = match issue.mode() {
             Mode::ModelDevelopment => &[],
-            Mode::FixedPolicyObservation | Mode::CounterfactualAccounting => MODEL_PATHS,
+            Mode::FixedPolicyObservation => MODEL_PATHS,
         };
         let pinned = self
             .inputs

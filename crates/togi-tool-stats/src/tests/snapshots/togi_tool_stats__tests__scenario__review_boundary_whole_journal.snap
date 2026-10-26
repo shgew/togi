@@ -5,7 +5,7 @@ expression: "report(&journal, None)"
 Session
 field     value
 id        20260101T000000Z
-rulesets  2
+rulesets  3
 builds    1.2.3
 events    31
 first     2026-01-01T00:00:00Z
@@ -49,68 +49,6 @@ reason  count
 Recovery gap
 count  min seconds  median seconds  max seconds
 0      -            -               -
-
-Hunts
-hunt  start                 hours  failing trial  parked offsets  candidates  planned/run/inferred/skipped  trials  crashes  result       members/culprit  commitment
-1     2026-01-01T00:12:00Z  0.033  trigger        #7              2           1/0/0/1                       0       0        cancelled    -                none
-2     2026-01-01T00:15:00Z  0.250  trigger        #7              2           3/3/0/0                       3       0        combination  00:-10,01:-10    none
-
-Checking
-metric                      count
-cycles started              1
-cycles ended                1
-full cycles                 1
-reruns                      0
-reruns failing first trial  0
-
-Checking steps and together outcomes
-cycle  regime  loaded cores  outcome  trials
-1      R6      00,01         pass     1
-1      R6      00,01         failure  1
-
-Evidence quality
-warning                                        count
-monotonicity                                   1
-decisions resting on a single carried failure  0
-prior evidence queries unavailable             5
-
-Failures after prior passes
-trial class  failures with prior passes
-
-Prior evidence per hunt group
-hunt  group  stage  prior passes  required  established  passes again  failures again  trials  hours
-2     1      part   -             1         -            1             0               1       0.017
-2     2      part   -             1         -            0             1               1       0.017
-2     3      part   -             1         -            0             0               1       0.017
-
-Prior evidence by hunt and stage
-hunt  stage  ran groups  established groups  passed again  failed again  redundant trials  redundant hours
-2     part   3           -                   -             -             -                 -
-
-R7 voltage-targeted backoffs
-seq  phase  decision  core  from  to  counts  failure  loaded cores  requirement  causes  reason
-
-R7 failures and backoffs by phase
-phase  failures  carried  charged  backoffs  counts
-all    0         0        0        0         0
-
-R7 failures by counts charged
-counts  failures
-
-R7 chain derivations
-seq  cycle  step  CCD  workload  part  request groups  loaded cores  kind  moved  result  held  trials  trial s  sources
-
-R7 chain cost by derivation
-kind  result  derivations  trials  trial s  hours  failed s  recovery s  failures
-none
-
-R7 chain attribution
-field                                           derivations  trials  trial s  hours  failed s  recovery s  failures
-unchanged after a move on the other CCD         0            0       0        0.000  0         0           0
-changed back to a set the step required before  0            0       0        0.000  0         0           0
-changed to a set the step never required        0            0       0        0.000  0         0           0
-sets the step's chain no longer holds           0            0       0        0.000  0         0           0
-reruns of derived sets, not in the cost above   0            0       0        0.000  0         0           0
 
 Failure rate by depth
 regime / workload / loaded cores / duration  shallowest offset  trials  failures  rate

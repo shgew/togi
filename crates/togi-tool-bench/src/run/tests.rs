@@ -153,6 +153,7 @@ impl SessionRunner for MemoryRunner {
         std::thread::yield_now();
         let mut events = self.events.to_vec();
         if self.mode == "signal-first" && call == 0 {
+            events.truncate(UNCONCLUDED);
             let mut event = serde_json::to_value(events.last().unwrap()).unwrap();
             event["cause"] = serde_json::json!([event["seq"].clone()]);
             event["seq"] = (event["seq"].as_u64().unwrap() + 1).into();
@@ -562,23 +563,6 @@ fn the_report_lists_the_summary_for_each_scenario_and_the_cache_line() {
     }
 }
 
-#[test]
-fn the_report_prints_the_suites_notes_before_the_summary_and_none_without_a_gate() {
-    let bench = Bench::new();
-    let options = bench.options(bench.simulator("sim", 0, "", ""));
-    assert!(
-        !report_text(&run(&options))
-            .lines()
-            .any(|line| line.starts_with("suite:"))
-    );
-    bench.write(
-        bench.path("suite.json"),
-        r#"{"gate":{"id":"g","notes":["first","second"],"baseline":{"ruleset":1,"commits":["x"]},"split":"dev","gated":["default"],"quantiles":[0.5],"confidence":0.95,"resamples":10,"bootstrap_seed":1,"max_time_ratio":2},"scenarios":[{"name":"default","dev":[1]}]}"#,
-    );
-    let text = report_text(&run(&options));
-    assert!(text.starts_with("suite: first\nsuite: second\n"), "{text}");
-    assert_eq!(text.matches("suite:").count(), 2, "{text}");
-}
 #[test]
 fn a_journal_that_ends_in_a_signal_is_an_error_record_and_is_not_cached() {
     let bench = Bench::new();

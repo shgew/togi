@@ -19,7 +19,7 @@ mod support;
 
 use std::path::Path;
 
-use fixtures::{applied, header, phase, stop};
+use fixtures::{day_applied, header, phase, stop};
 use serde_json::{Value, json};
 use support::Memory;
 use togi_journal::Event;
@@ -29,7 +29,7 @@ fn text(bytes: &[u8]) -> String {
 }
 
 fn dirty() -> Vec<Event> {
-    vec![header(), phase(2, 0, Some(-30)), applied(3, [-30, 0])]
+    vec![header(), day_applied(2, [-30, 0])]
 }
 
 /// Compares a compiled snapshot's body without a runtime snapshot filesystem adapter.
@@ -102,7 +102,7 @@ fn given_directories_are_audited() {
 #[test]
 fn a_given_directory_may_be_in_progress() {
     let mut memory = Memory::default();
-    memory.state(Path::new("/fixture/open"), &[header(), phase(2, 0, None)]);
+    memory.state(Path::new("/fixture/open"), &[header(), phase(2, 0)]);
     let output = memory.run(["/fixture/open"]);
     assert_eq!(output.status.code(), Some(0), "{}", text(&output.stdout));
 }
@@ -132,8 +132,7 @@ fn a_given_directory_reports_what_its_lenient_read_left_out_and_is_still_audited
         &[
             header_with_unknown_field(),
             future_event(2),
-            line(&phase(3, 0, Some(-30))),
-            line(&applied(4, [-30, 0])),
+            line(&day_applied(3, [-30, 0])),
         ],
     );
     let output = memory.run([dir]);
@@ -142,8 +141,8 @@ fn a_given_directory_reports_what_its_lenient_read_left_out_and_is_still_audited
     assert_eq!(
         brief(&text(&output.stdout)),
         [
-            "journal=\"live\" seq=4 \"avoidance\": \"core 0 offset -30 reaches failure point -30 recorded at seq 3 \
-             (tuner.md: P[c] <= fail[c])\""
+            "journal=\"live\" seq=3 \"qualification\": \"day.applied target CCD0=-30,CCD1=0 has no earlier complete \
+             night.qualification of that exact profile under the current firmware context\""
         ]
     );
     let skipped = format!(

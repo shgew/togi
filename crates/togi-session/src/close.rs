@@ -3,14 +3,11 @@
 //! The workload is joined before a step of the run returns, so a run that reaches the cleanup holds the proof that
 //! nothing runs, or holds a fault that says why it does not. Restoration needs that proof and no fault; a latched
 //! journal failure is answered by the emergency instead; the `shutdown` is recorded last, and only on a machine whose
-//! offsets are back where the run found them and whose owed decisions were all recorded. A decision that cannot be
-//! recorded is an error of the run, but it never leaves the offsets on the machine.
+//! offsets are back at CO 0.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use togi_journal::{DeadEndCondition, Payload};
-use togi_machine::{PerCore, TargetOffset};
-use togi_tuner::DecisionPayload;
 
 use crate::emergency::{self, Access};
 use crate::error::{Flow, JournalFailure, SessionError};
@@ -64,33 +61,15 @@ impl Session<'_> {
         self.finish(stop, errors, emergency, panic)
     }
 
-    /// Records the decisions a signalled stop owes, restores the machine and records the shutdown. A panic out of
-    /// the drain is kept as an error and the restoration still runs, with no shutdown after it; a panic out of the
-    /// restoration or the shutdown interrupts the journal, and a dead end the restoration recorded before it is
-    /// kept. Either is the cleanup's panic for the caller to resume.
+    /// Restores the machine to CO 0 and records the shutdown. A panic out of the restoration or the shutdown
+    /// interrupts the journal, and a dead end the restoration recorded before it is kept. Either is the cleanup's
+    /// panic for the caller to resume.
     fn clean_up(&mut self, stop: Option<Stop>) -> Cleanup {
         let mut cleanup = Cleanup {
             stop,
             errors: Vec::new(),
             panic: None,
         };
-        let mut drain_failed = false;
-        if matches!(cleanup.stop, Some(Stop::Signal)) {
-            match catch_unwind(AssertUnwindSafe(|| self.record_drained())) {
-                Ok(Ok(Some(dead_end))) => cleanup.stop = Some(dead_end),
-                Ok(Ok(None)) => {}
-                Ok(Err(error)) => {
-                    cleanup.errors.push(self.keep(error));
-                    drain_failed = true;
-                }
-                Err(payload) => {
-                    let message = message_of(&*payload).to_owned();
-                    cleanup.errors.push(SessionError::Panicked(message));
-                    cleanup.panic = Some(Panic::new(payload));
-                    drain_failed = true;
-                }
-            }
-        }
         if self.lifecycle.fault().is_some() || self.appender.failure().is_some() {
             return cleanup;
         }
@@ -99,8 +78,7 @@ impl Session<'_> {
             if smu_dead_end(stop) {
                 Reached::Settled
             } else {
-                let held = self.held();
-                self.restore_and_settle(stop, &held)
+                self.restore_and_settle(stop)
             }
         }));
         match reached {
@@ -114,9 +92,6 @@ impl Session<'_> {
                 self.interrupted(&mut cleanup, payload);
                 return cleanup;
             }
-        }
-        if drain_failed {
-            return cleanup;
         }
         let shutdown = catch_unwind(AssertUnwindSafe(|| {
             if self.unreconciled() {
@@ -134,7 +109,7 @@ impl Session<'_> {
     }
 
     /// Interrupts the journal for a panic out of the restoration or the shutdown and keeps it as an error of the
-    /// cleanup, and as its panic unless the drain already panicked.
+    /// cleanup.
     fn interrupted(&mut self, cleanup: &mut Cleanup, payload: Box<dyn std::any::Any + Send>) {
         let message = message_of(&*payload).to_owned();
         self.appender.interrupt(&message);
@@ -151,8 +126,8 @@ impl Session<'_> {
         error
     }
 
-    fn restore_and_settle(&mut self, stop: Option<&Stop>, held: &PerCore<TargetOffset>) -> Reached {
-        match self.restore(held) {
+    fn restore_and_settle(&mut self, stop: Option<&Stop>) -> Reached {
+        match self.restore() {
             Ok(restoration) if restoration.is_complete() => Reached::Settled,
             Ok(_) => Reached::Unsettled(None),
             Err(Flow::Fatal(error)) => Reached::Unsettled(Some(self.keep(error))),
@@ -169,18 +144,6 @@ impl Session<'_> {
                 }
             }
         }
-    }
-
-    /// Appends the decisions the tuner owes, in order, before the machine is restored. The first dead end among
-    /// them is recorded as the run's dead end and replaces the stop; what follows it stays owed.
-    pub(crate) fn record_drained(&mut self) -> Result<Option<Stop>, SessionError> {
-        while let Some(action) = self.appender.tuner().drain() {
-            if let DecisionPayload::DeadEnd(dead_end) = action.payload {
-                return self.dead_end(dead_end, &action.cause).map(Some);
-            }
-            self.appender.append(action.payload.into(), &action.cause)?;
-        }
-        Ok(None)
     }
 
     fn append_shutdown(&mut self) -> Result<(), SessionError> {
@@ -262,6 +225,3 @@ fn smu_dead_end(stop: Option<&Stop>) -> bool {
         Some(Stop::DeadEnd { dead_end, .. }) if dead_end.condition == DeadEndCondition::Smu
     )
 }
-
-#[cfg(test)]
-mod tests;

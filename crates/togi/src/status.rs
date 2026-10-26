@@ -1,31 +1,28 @@
 //! `togi status`: the session at a glance, rendered from the journal.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
-use togi_config::FULL_CYCLE;
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use togi_journal::{
-    CorePhase, DayQuestions, DeadEndCondition, DefectDirection, Event, HuntStage, Payload,
-    ResetTarget, Seq, State as JournalState, TrialId,
+    DayQuestions, DeadEndCondition, DefectDirection, Event, Payload, ResetTarget, Seq,
+    State as JournalState,
 };
-use togi_machine::{BootId, CoreId, CoreSet, Regime};
+use togi_machine::{BootId, CoreId, CoreSet};
 use togi_render::escape_text;
-use togi_tuner::{HuntGroup, PhaseNo, Projection};
+use togi_tuner::policy::Projection;
 use togi_watch::day;
-use togi_watch::model::{FoldError, Snapshot};
-use togi_watch::words::{candidate_word, group_word, noun, phase_word};
+use togi_watch::model::FoldError;
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::read;
 use crate::report::fail;
-use crate::table::{Row, table, wrap};
+use crate::table::wrap;
 
-/// The widest a hunt group's core list may be and stay in its table cell: the other columns take 37
-/// of the 80 cells, so a wider list moves to a note under the row.
-const GROUP_CORES_MAX: usize = 43;
+mod policy;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
@@ -39,15 +36,20 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 
 /// Show the session at a glance
 ///
-/// The search, hunt, phase 2 round or checking activity and the phase; the BIOS profile to enter,
-/// marked * while unconfirmed; then each core's offset, BIOS offset, failure point, phase, queued
-/// work and last decision, and its combinations. In phase 2 it lists the candidates with their
-/// remaining gaps and the most rounds left if none fails, then one full cycle. An open hunt shows
-/// groups and trials; an open phase 2 round shows checks and passes. Evidence lists the workloads'
-/// valid passes and the Tctl peak since the last profile change, and between-trial MCEs without
-/// treating them as failures. It shows each core's observed self-sufficiency for each R7 workload
-/// and the CCD's current top requesters, with offsets standing in only when request telemetry is
-/// absent, and lists reset commands for too-cautious defects until each affected core is reset.
+/// The activity (the open night with its start, elapsed observed time and the task it runs, the
+/// day, a stop or a dead end);
+/// session and BIOS context; then one table row per CCD: its cores, the applied day offset D, the
+/// cap S with its slope (fallback or measured) and binding, the edge U (unknown, fails at an offset
+/// or censored at the write limit), the distance still to go from D to S and how many trial classes
+/// are covered and uncovered for the cap, with the uncovered classes listed below. A Day policy
+/// part shows the applied profile, the hold's applied hours, the latest day step and what blocks
+/// it, freeze, firmware validity and the daily events and vetoes. A Night part shows when the night
+/// started (and the boot that ended it), the elapsed observed time, each queue's soft share beside
+/// the part of that time it used, the current task, mapping progress, qualification cells
+/// witnessed and outstanding and the reproductions. Status shows what the tuner committed; it
+/// computes no cap or eligibility itself. Between-trial MCEs are listed without treating them as
+/// failures, and a defect names its recorded decisions and the `togi reset --all` that starts
+/// fresh.
 /// After daily observations exist, a Day section lists boots, checkpointed hours per read-back
 /// profile, clean/unclean ends and the last unclean boot's reset reason.
 /// Each unclean end of a day-observed boot becomes a question until answered: what togi saw, the
@@ -73,7 +75,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
         Some(fs) => togi_watch::model::Model::read_in(&*fs, ctx.state_dir, events),
         None => togi_watch::model::Model::read(ctx.state_dir, events),
     };
-    let text = match render_model(events, &model) {
+    let text = match render_model(events, &model, &ctx.system.zone()) {
         Ok(text) => text,
         Err(Problem::NoSession) => {
             let message = format!("no session in {}", ctx.state_dir.display());
@@ -103,21 +105,10 @@ enum Problem {
     Replay(FoldError),
 }
 
-/// Where a hunt's parked offsets came from, as the journal's own message tells them apart.
-#[derive(Clone)]
-enum Parked {
-    Zero,
-    CycleEnd(Seq),
-    Held(CoreSet),
-}
-
-/// What the events say that no fold keeps: notes, hunt and combination sequence numbers, defects.
+/// What the events say that no fold keeps: notes and defects.
 #[derive(Default)]
 struct Scan<'a> {
-    carried: Vec<(Seq, &'a str)>,
     between: Vec<(Seq, &'a str)>,
-    hunt_start: BTreeMap<u32, (Seq, Parked)>,
-    combination_seq: BTreeMap<u32, Seq>,
     defects: Vec<Defect<'a>>,
 }
 
@@ -125,6 +116,7 @@ struct Defect<'a> {
     id: u32,
     title: &'a str,
     pr: u32,
+    direction: DefectDirection,
     decisions: &'a [Seq],
     cores: CoreSet,
 }
@@ -134,43 +126,25 @@ impl<'a> Scan<'a> {
         let mut scan = Self::default();
         for event in events {
             match &event.payload {
-                Payload::SessionCarried(_) => scan.carried.push((event.seq, &event.msg)),
                 Payload::Mce(mce) if mce.between_trials => {
                     scan.between.push((event.seq, &event.msg));
                 }
-                Payload::HuntStart(start) => {
-                    let parked = if let Some(seq) = start.parked_seq {
-                        Parked::CycleEnd(seq)
-                    } else if start.parked.iter().any(|(_, offset)| offset.get() != 0) {
-                        Parked::Held(start.cores)
-                    } else {
-                        Parked::Zero
-                    };
-                    scan.hunt_start
-                        .insert(start.hunt.get(), (event.seq, parked));
-                }
-                Payload::Combination(combination) => {
-                    scan.combination_seq
-                        .insert(combination.combination.get(), event.seq);
-                }
-                Payload::DefectFound(found) if found.direction == DefectDirection::TooCautious => {
-                    scan.defects.push(Defect {
-                        id: found.id.get(),
-                        title: &found.title,
-                        pr: found.pr,
-                        decisions: &found.decisions,
-                        cores: found.cores,
-                    });
-                }
+                Payload::DefectFound(found) => scan.defects.push(Defect {
+                    id: found.id.get(),
+                    title: &found.title,
+                    pr: found.pr,
+                    direction: found.direction,
+                    decisions: &found.decisions,
+                    cores: found.cores,
+                }),
                 Payload::CommandReset(reset) => match reset.target {
                     ResetTarget::All => scan.defects.clear(),
-                    ResetTarget::Core(core) => {
-                        for defect in &mut scan.defects {
-                            defect.cores.remove(core);
-                        }
-                    }
+                    ResetTarget::Core(_) => {}
                 },
-                Payload::SessionStart(_)
+                Payload::SessionCarried(_)
+                | Payload::HuntStart(_)
+                | Payload::Combination(_)
+                | Payload::SessionStart(_)
                 | Payload::DayBootStart(_)
                 | Payload::DayCheckpoint(_)
                 | Payload::DayOffsetsChanged(_)
@@ -179,6 +153,21 @@ impl<'a> Scan<'a> {
                 | Payload::DayAnswer(_)
                 | Payload::DayRecord(_)
                 | Payload::DayFault(_)
+                | Payload::SessionImported(_)
+                | Payload::ExposureObserved(_)
+                | Payload::CcdEdge(_)
+                | Payload::CcdCap(_)
+                | Payload::NightPlan(_)
+                | Payload::NightQualification(_)
+                | Payload::NightReproduction(_)
+                | Payload::DayStep(_)
+                | Payload::DayApplied(_)
+                | Payload::DayEvent(_)
+                | Payload::DayVeto(_)
+                | Payload::DayHold(_)
+                | Payload::DayFreeze(_)
+                | Payload::DayInterval(_)
+                | Payload::DayImported(_)
                 | Payload::SessionContext(_)
                 | Payload::SessionBaseline(_)
                 | Payload::SessionNotice(_)
@@ -216,7 +205,7 @@ impl<'a> Scan<'a> {
                 | Payload::DeepeningRound(_)
                 | Payload::TunerWarning(_)
                 | Payload::BackendRetry(_)
-                | Payload::DefectFound(_)
+                | Payload::TaskStart(_)
                 | Payload::DefectAnswered(_)
                 | Payload::DeadEnd(_)
                 | Payload::BootSavedEntry(_)
@@ -230,28 +219,28 @@ impl<'a> Scan<'a> {
     }
 }
 
-#[cfg(test)]
-fn render(events: &[Event]) -> Result<String, Problem> {
-    render_model(events, &togi_watch::model::project(events))
-}
-
-fn render_model(events: &[Event], model: &togi_watch::model::Model) -> Result<String, Problem> {
+fn render_model(
+    events: &[Event],
+    model: &togi_watch::model::Model,
+    zone: &TimeZone,
+) -> Result<String, Problem> {
     if let Some(problem) = model.problem() {
         return Err(Problem::Replay(problem.clone()));
     }
     let journal = model.journal_state();
-    let projection = model.tuner_state().project();
     if journal.session.is_none() {
         return Err(Problem::NoSession);
     }
     let scan = Scan::of(events);
+    let projection = model.snapshot().policy;
+    let closed = night_closed_at(events, projection);
     let mut out = String::new();
     Status {
         out: &mut out,
         journal,
-        projection: &projection,
-        snap: model.snapshot(),
+        policy: projection,
         scan: &scan,
+        at: policy::Where { zone, closed },
     }
     .write();
     render_day(&mut out, events);
@@ -259,11 +248,24 @@ fn render_model(events: &[Event], model: &togi_watch::model::Model) -> Result<St
     Ok(out)
 }
 
-/// The line `togi status` opens with, which says what the tuner is doing and the plan it follows; `None` when the
-/// journal has no session yet. `togi night` shows it as what the night will do.
+/// When the `day.boot_start` that closed the latest night was written, when the journal holds it.
+fn night_closed_at(events: &[Event], projection: &Projection) -> Option<Timestamp> {
+    let closed_by = projection
+        .night
+        .as_ref()
+        .and_then(|night| night.closed_by)?;
+    events
+        .iter()
+        .find(|event| event.seq == closed_by)
+        .map(|event| event.time)
+}
+
+/// The line `togi status` opens with, which says what the tuner is doing; `None` when the journal has no
+/// session yet. `togi night` shows it as what the night will do.
 pub(crate) fn plan(
     events: &[Event],
     model: &togi_watch::model::Model,
+    zone: &TimeZone,
 ) -> Result<Option<String>, FoldError> {
     if let Some(problem) = model.problem() {
         return Err(problem.clone());
@@ -272,15 +274,18 @@ pub(crate) fn plan(
     if journal.session.is_none() {
         return Ok(None);
     }
-    let projection = model.tuner_state().project();
+    let projection = model.snapshot().policy;
     let scan = Scan::of(events);
     let mut out = String::new();
     let line = Status {
         out: &mut out,
         journal,
-        projection: &projection,
-        snap: model.snapshot(),
+        policy: projection,
         scan: &scan,
+        at: policy::Where {
+            zone,
+            closed: night_closed_at(events, projection),
+        },
     }
     .header();
     Ok(Some(line))
@@ -341,7 +346,8 @@ fn render_questions(out: &mut String, events: &[Event]) {
 
 fn render_day(out: &mut String, events: &[Event]) {
     let ledger = crate::day::Ledger::of(events);
-    if ledger.boots.is_empty() {
+    let totals = togi_watch::day_totals::DayTotals::of(events);
+    if ledger.boots.is_empty() && totals.is_empty() {
         return;
     }
     let clean = ledger.boots.values().filter(|boot| boot.clean).count();
@@ -379,6 +385,7 @@ fn render_day(out: &mut String, events: &[Event]) {
         );
         wrap(out, "  ", "    ", &text);
     }
+    render_totals(out, &totals);
     if let Some((boot, reason)) = ledger.last_unclean {
         let reason = reason.kind.map_or("unknown", |kind| kind.as_str());
         let text = format!(
@@ -391,12 +398,22 @@ fn render_day(out: &mut String, events: &[Event]) {
     }
 }
 
+/// The observed totals beside the CO 0 totals. They count what togi saw and what was imported, never a rate.
+fn render_totals(out: &mut String, totals: &togi_watch::day_totals::DayTotals) {
+    let unknown = togi_watch::day_totals::unknown_intervals(totals.unknown_intervals());
+    let all = format!("all profiles: {} ({unknown})", totals.all().describe());
+    wrap(out, "", "  ", &all);
+    let stock = format!("stock (CO 0): {}", totals.stock().describe());
+    wrap(out, "", "  ", &stock);
+    out.push_str("totals are observations, not a bound\n");
+}
+
 struct Status<'a> {
     out: &'a mut String,
     journal: &'a JournalState,
-    projection: &'a Projection,
-    snap: Snapshot<'a>,
+    policy: &'a Projection,
     scan: &'a Scan<'a>,
+    at: policy::Where<'a>,
 }
 
 fn esc(text: &str) -> String {
@@ -415,31 +432,6 @@ fn cores_of(cores: impl IntoIterator<Item = CoreId>) -> String {
     }
 }
 
-/// `count` rounds with the noun in agreement.
-fn rounds(count: u32) -> String {
-    format!("{count} {}", noun(count as usize, "round"))
-}
-
-/// What a cycle of `steps` lacks of the coverage a full cycle needs, one entry per regime.
-fn missing_coverage(steps: impl IntoIterator<Item = Regime, IntoIter: Clone>) -> Vec<String> {
-    let steps = steps.into_iter();
-    FULL_CYCLE
-        .iter()
-        .filter_map(|&(regime, least)| {
-            let got = steps.clone().filter(|&step| step == regime).count();
-            (got < least).then(|| {
-                let more = least - got;
-                format!("{regime}: {more} more {}", noun(more, "step"))
-            })
-        })
-        .collect()
-}
-
-/// The header's search activity: the cores still searching, with the noun in agreement.
-fn search_left(searching: usize) -> String {
-    format!("search: {searching} {} left", noun(searching, "core"))
-}
-
 /// A dead end's condition in the words the status shows; the journal records its wire name.
 const fn dead_end_label(condition: DeadEndCondition) -> &'static str {
     match condition {
@@ -453,99 +445,6 @@ const fn dead_end_label(condition: DeadEndCondition) -> &'static str {
         DeadEndCondition::ThermalTrip => "thermal trip",
     }
 }
-
-/// The BIOS note while stepped-back offsets of `cores` since `since` wait for a passed full cycle;
-/// every other BIOS offset comes from the profile `confirmed` confirmed.
-fn unconfirmed_note(
-    since: u64,
-    cores: impl IntoIterator<Item = CoreId, IntoIter: ExactSizeIterator>,
-    confirmed: Seq,
-) -> String {
-    let cores = cores.into_iter();
-    let count = cores.len();
-    let listed = cores_of(cores);
-    let shown = if count == 1 {
-        format!("core {listed} shows a stepped-back offset")
-    } else {
-        format!("cores {listed} show stepped-back offsets")
-    };
-    format!(
-        "* unconfirmed since [#{since}]: {shown}; other BIOS offsets come from the profile confirmed by the passed full cycle [#{confirmed}]. A passed full cycle confirms the changes, except a held failure's stepped-back offset, which stays marked until the hold ends"
-    )
-}
-
-/// The R7 table's self-sufficiency cell for a core with `passes` passing trials as top requester.
-fn self_sufficiency(passes: u32) -> String {
-    if passes > 0 {
-        format!(
-            "observed ({passes} passing {})",
-            noun(passes as usize, "trial")
-        )
-    } else {
-        "not yet demonstrated".to_owned()
-    }
-}
-
-/// Where a hunt's parked offsets came from.
-fn parked_source(parked: &Parked) -> String {
-    match parked {
-        Parked::Zero => "parked offsets all-zero".to_owned(),
-        Parked::CycleEnd(seq) => format!("parked offsets from cycle end #{seq}"),
-        Parked::Held(loaded) => format!(
-            "loaded cores {} held at their failing offsets, the rest parked at 0",
-            cores_of(*loaded)
-        ),
-    }
-}
-
-/// The failure a hunt runs down: in the regime's trial that failed, or with no trial in flight for
-/// an idle failure.
-fn hunt_failure(signal: &str, regime: Regime, trial: Option<&TrialId>) -> String {
-    match trial {
-        Some(trial) => format!(
-            "unattributed {} in {} trial {}",
-            esc(signal),
-            esc(regime.as_str()),
-            esc(trial.as_str())
-        ),
-        None => format!("unattributed {} with no trial in flight", esc(signal)),
-    }
-}
-
-/// A hunt group's CORES cell, with the note that says what the cell stands for when the cores do
-/// not fit or the group is not a plain set of loaded cores.
-fn group_cores(group: &HuntGroup) -> (String, Option<(&'static str, String)>) {
-    if group.stage == HuntStage::Locate {
-        let note = "reruns the failed load with its loaded cores at their failing offsets and every unloaded core at 0";
-        return ("locate".to_owned(), Some(("locate", note.to_owned())));
-    }
-    if let Some(probe) = group.probe {
-        let held: Vec<String> = group
-            .held
-            .iter()
-            .map(|member| format!("{:02} at {}", member.core.get(), member.offset.get()))
-            .collect();
-        let note = format!(
-            "{:02} at {} with {}",
-            probe.core.get(),
-            probe.offset.get(),
-            held.join(", ")
-        );
-        return ("probe".to_owned(), Some(("probe", note)));
-    }
-    let cores = cores_of(group.cores);
-    if cores.len() > GROUP_CORES_MAX {
-        (
-            format!("{} cores", group.cores.len()),
-            Some(("cores", cores)),
-        )
-    } else {
-        (cores, None)
-    }
-}
-
-/// What the evidence table counts.
-const EVIDENCE_HEADING: &str = "Valid passes supporting the checking profile (live and not alone, on the active backend, at equal or deeper offsets; carried passes excluded)";
 
 impl Status<'_> {
     fn line(&mut self, first: &str, rest: &str, text: &str) {
@@ -590,336 +489,20 @@ impl Status<'_> {
             );
             self.line("", "  ", &text);
         }
-        for (seq, msg) in &self.scan.carried {
-            let text = format!("carried: [#{seq}] {}", esc(msg));
-            self.line("", "  ", &text);
-        }
         self.out.push('\n');
-        self.cores();
-        self.bios_note();
-        self.combinations();
-        self.r7();
+        policy::sections(self.out, self.policy, self.at);
         for (seq, msg) in &self.scan.between {
             let text = format!("between-trial evidence [#{seq}]: {}", esc(msg));
             self.line("\n", "  ", &text);
         }
-        self.hunt();
-        self.phase2();
         self.defects();
-        self.evidence();
     }
 
+    /// The header's activity: a dead end and a stop come before the night or the day.
     fn header(&self) -> String {
-        let searching = self
-            .projection
-            .cores
-            .iter()
-            .filter(|core| core.phase == Some(CorePhase::Search))
-            .count();
-        let plan = &self.projection.cycle_plan;
-        let activity = if searching > 0 {
-            search_left(searching)
-        } else if let Some(hunt) = &self.projection.hunt_plan {
-            let group = hunt.groups.last().map_or(0, |group| group.number);
-            format!("hunt {}, group {group}", hunt.number)
-        } else if let Some(round) = &self.projection.deepening {
-            let done = round
-                .checks
-                .iter()
-                .filter(|check| check.passed >= check.needed)
-                .count();
-            format!(
-                "phase 2 round {}, checks {done}/{}",
-                round.round,
-                round.checks.len()
-            )
-        } else if let Some(number) = plan.number.filter(|_| !plan.steps.is_empty()) {
-            let done = plan.steps.iter().filter(|step| step.done).count();
-            let mut text = format!("checking cycle {number}, steps {done}/{}", plan.steps.len());
-            let missing = missing_coverage(plan.steps.iter().map(|step| step.regime));
-            if !missing.is_empty() {
-                text.push_str(", not full: ");
-                text.push_str(&missing.join("; "));
-            }
-            text
-        } else {
-            "checking not started".to_owned()
-        };
-        match self.phase_clause() {
-            Some(clause) => format!("{activity} | {clause}"),
-            None => activity,
-        }
-    }
-
-    fn phase_clause(&self) -> Option<String> {
-        let plan = self.projection.phase_plan.as_ref()?;
-        Some(match plan.phase {
-            PhaseNo::One => "phase 1".to_owned(),
-            PhaseNo::Concluded => format!(
-                "phase 2 concluded: clean cycles {}, latest clean cycle {}",
-                self.projection.clean_cycles,
-                self.projection
-                    .last_clean_cycle
-                    .map_or(0, std::num::NonZero::get)
-            ),
-            PhaseNo::Two if plan.confirming => "phase 2: confirmation cycle".to_owned(),
-            PhaseNo::Two => format!(
-                "phase 2: {} left if none fails, then one full cycle",
-                rounds(plan.rounds_left)
-            ),
-        })
-    }
-
-    fn bios_cell(&self, core: CoreId) -> String {
-        let Some(bios) = self.snap.bios else {
-            return "-".to_owned();
-        };
-        let Some(offset) = bios.shown.get(core) else {
-            return "-".to_owned();
-        };
-        if bios.unconfirmed.iter().any(|mark| mark.core == core) {
-            format!("{}*", offset.get())
-        } else {
-            offset.get().to_string()
-        }
-    }
-
-    fn cores(&mut self) {
-        let mut rows = vec![Row::new(
-            [
-                "CORE", "CCD", "SLOT", "OFFSET", "BIOS", "PHASE", "FAILURE", "QUEUED",
-            ]
-            .map(String::from),
-        )];
-        for view in &self.projection.cores {
-            let facts = self.journal.core(view.core);
-            let model = self.snap.cores.iter().find(|core| core.id == view.core);
-            let mut row = Row::new([
-                format!("{:02}", view.core.get()),
-                facts.map_or("-".to_owned(), |facts| facts.ccd.to_string()),
-                (view.core.get() % 8).to_string(),
-                view.offset.get().to_string(),
-                self.bios_cell(view.core),
-                view.phase
-                    .map_or("-".to_owned(), |phase| esc(phase_word(phase))),
-                view.failure_point
-                    .map_or("-".to_owned(), |point| point.get().to_string()),
-                model
-                    .and_then(|core| core.queued)
-                    .map_or("-".to_owned(), |_| "reset".to_owned()),
-            ]);
-            let combos: Vec<String> = self
-                .snap
-                .combos
-                .iter()
-                .filter(|combo| combo.members.iter().any(|member| member.core == view.core))
-                .map(|combo| format!("C{}", combo.id.get()))
-                .collect();
-            if !combos.is_empty() {
-                row = row.note("combinations", combos.join(", "));
-            }
-            if let Some(decision) = facts.and_then(|facts| facts.last_decision.as_ref()) {
-                row = row.note(
-                    "last decision",
-                    format!("[#{}] {}", decision.seq, esc(&decision.msg)),
-                );
-            }
-            rows.push(row);
-        }
-        table(self.out, &rows);
-    }
-
-    fn bios_note(&mut self) {
-        let phase_one = self
-            .projection
-            .phase_plan
-            .as_ref()
-            .is_some_and(|plan| plan.phase == PhaseNo::One);
-        let profile = self.projection.bios_profile.as_ref();
-        let text = match profile.and_then(|bios| bios.confirmed.map(|confirmed| (bios, confirmed)))
-        {
-            None if phase_one => {
-                "BIOS profile: none confirmed yet; phase 1 has not passed a full cycle".to_owned()
-            }
-            None => return,
-            Some((bios, confirmed)) if bios.unconfirmed.is_empty() => format!(
-                "BIOS profile confirmed by the passed full cycle [#{}]",
-                confirmed.seq
-            ),
-            Some((bios, confirmed)) => {
-                let cores = bios.unconfirmed.iter().map(|mark| mark.core);
-                unconfirmed_note(bios.since().map_or(0, Seq::get), cores, confirmed.seq)
-            }
-        };
-        self.line("", "  ", &text);
-    }
-
-    fn combinations(&mut self) {
-        if self.snap.combos.is_empty() {
-            return;
-        }
-        self.out.push_str("\ncombinations:\n");
-        for combo in self.snap.combos {
-            let members: Vec<String> = combo
-                .members
-                .iter()
-                .map(|member| format!("core {:02} {}", member.core.get(), member.offset.get()))
-                .collect();
-            let source = if combo.fallback {
-                format!("fallback over every candidate of hunt {}", combo.hunt)
-            } else {
-                format!("observed in hunt {}", combo.hunt)
-            };
-            let seq = self
-                .scan
-                .combination_seq
-                .get(&combo.id.get())
-                .map_or(0, |seq| seq.get());
-            let text = format!(
-                "C{} {}, {source} [#{seq}]",
-                combo.id.get(),
-                members.join(" + ")
-            );
-            self.line("  ", "      ", &text);
-        }
-    }
-
-    fn r7(&mut self) {
-        let mut status: Vec<_> = self.snap.r7.to_vec();
-        if status.is_empty() {
-            return;
-        }
-        status.sort_by_key(|entry| (entry.workload, entry.core));
-        self.line(
-            "\n",
-            "  ",
-            "R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a guarantee)",
-        );
-        let mut rows = vec![Row::new(
-            ["CORE", "CCD", "SELF-SUFFICIENT", "TOP REQUESTER"].map(String::from),
-        )];
-        for entry in status {
-            let own = self_sufficiency(entry.passes);
-            let mut top = if entry.top_requester { "yes" } else { "no" }.to_owned();
-            if entry.offset_proxy {
-                top.push_str(" (offset fallback)");
-            }
-            rows.push(
-                Row::new([
-                    format!("{:02}", entry.core.get()),
-                    entry.ccd.to_string(),
-                    own,
-                    top,
-                ])
-                .note("workload", esc(entry.workload.as_str())),
-            );
-        }
-        table(self.out, &rows);
-    }
-
-    fn hunt(&mut self) {
-        let Some(hunt) = self.snap.hunt else {
-            return;
-        };
-        let plan = hunt.plan;
-        let (start_seq, parked) = self
-            .scan
-            .hunt_start
-            .get(&plan.number)
-            .cloned()
-            .unwrap_or((plan.failure, Parked::Zero));
-        let parked = parked_source(&parked);
-        let signal = hunt
-            .facts
-            .cause
-            .signal
-            .map_or("failure", |signal| signal.as_str());
-        let text = format!(
-            "hunt {} [#{start_seq}]: {}; {parked}",
-            plan.number,
-            hunt_failure(signal, plan.regime, plan.trial.as_ref()),
-        );
-        self.line("\n", "  ", &text);
-        self.line(
-            "  ",
-            "    ",
-            &format!("candidates {}", cores_of(plan.candidates)),
-        );
-        let mut rows = vec![Row::new(
-            ["GROUP", "CORES", "OUTCOME", "PASS EVIDENCE", "NEED"].map(String::from),
-        )];
-        for group in &plan.groups {
-            let (cores, note) = group_cores(group);
-            let mut row = Row::new([
-                format!("G{}", group.number),
-                cores,
-                group_word(group.outcome).to_owned(),
-                group.passed.to_string(),
-                group.needed.to_string(),
-            ]);
-            if let Some((label, text)) = note {
-                row = row.note(label, text);
-            }
-            rows.push(row);
-        }
-        table(self.out, &rows);
-    }
-
-    fn phase2(&mut self) {
-        let plan = self.projection.phase_plan.as_ref();
-        let round = self.projection.deepening.as_ref();
-        if let Some(round) = round {
-            let text = format!("phase 2 round {} [#{}]", round.round, round.seq);
-            self.line("\n", "  ", &text);
-        }
-        if let Some(plan) = plan.filter(|plan| plan.phase == PhaseNo::Two) {
-            if !plan.candidates.is_empty() {
-                let mut rows = vec![Row::new(
-                    ["CANDIDATE", "OFFSET", "SOLO", "GAP", "STATE"].map(String::from),
-                )];
-                for candidate in &plan.candidates {
-                    let state = if !candidate.moving && !candidate.carried {
-                        "waits"
-                    } else {
-                        candidate_word(candidate.moving)
-                    };
-                    rows.push(Row::new([
-                        format!("{:02}", candidate.core.get()),
-                        candidate.offset.get().to_string(),
-                        candidate
-                            .solo_limit
-                            .map_or("-".to_owned(), |limit| limit.get().to_string()),
-                        candidate.gap.to_string(),
-                        state.to_owned(),
-                    ]));
-                }
-                self.out.push('\n');
-                table(self.out, &rows);
-            }
-            let text = if plan.confirming && round.is_none() {
-                "no core can move: the confirmation cycle is all that is left".to_owned()
-            } else {
-                format!(
-                    "worst case if no round fails: {} left, then one full cycle",
-                    rounds(plan.rounds_left)
-                )
-            };
-            self.line("\n", "  ", &text);
-        }
-        if let Some(round) = round {
-            let mut rows = vec![Row::new(["CHECK", "CORES", "PASSES"].map(String::from))];
-            for check in &round.checks {
-                rows.push(Row::new([
-                    format!(
-                        "{} {}",
-                        esc(check.regime.as_str()),
-                        esc(check.workload.as_str())
-                    ),
-                    cores_of(check.cores),
-                    format!("{}/{}", check.passed, check.needed),
-                ]));
-            }
-            table(self.out, &rows);
+        match self.journal.dead_end {
+            Some(_) => "dead end".to_owned(),
+            None => policy::activity(self.policy, self.at),
         }
     }
 
@@ -933,8 +516,12 @@ impl Status<'_> {
                 .iter()
                 .map(|seq| format!("#{seq}"))
                 .collect();
+            let direction = match defect.direction {
+                DefectDirection::TooCautious => "too cautious",
+                DefectDirection::TooAggressive => "too aggressive",
+            };
             let text = format!(
-                "defect {}: {} (fixed by pull request #{}); decisions {} affected cores {}",
+                "defect {}: {} ({direction}; fixed by pull request #{}); decisions {} affected cores {}",
                 defect.id,
                 esc(defect.title),
                 defect.pr,
@@ -942,41 +529,10 @@ impl Status<'_> {
                 cores_of(defect.cores)
             );
             wrap(self.out, "\n", "  ", &text);
-            for core in defect.cores {
-                let _ = writeln!(self.out, "  togi reset --core {}", core.get());
-            }
-        }
-    }
-
-    fn evidence(&mut self) {
-        let checking = &self.projection.checking;
-        if checking.profile.is_none() {
-            return;
-        }
-        self.line("\n", "  ", EVIDENCE_HEADING);
-        let mut rows = vec![Row::new(
-            ["REGIME", "WORKLOAD", "VALID PASSES"].map(String::from),
-        )];
-        for (workload, trials) in &checking.exposure {
-            rows.push(Row::new([
-                esc(workload.regime().as_str()),
-                esc(workload.as_str()),
-                trials.to_string(),
-            ]));
-        }
-        table(self.out, &rows);
-        if let Some(peak) = checking.peak {
-            let _ = writeln!(
-                self.out,
-                "Tctl max since last profile change {}°C [#{}]",
-                peak.celsius, peak.seq
-            );
+            self.out.push_str("  togi reset --all\n");
         }
     }
 }
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod corpus;

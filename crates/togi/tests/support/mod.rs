@@ -478,7 +478,7 @@ impl System for Host {
     }
 }
 
-/// A state directory holding the simulated journal of a session at its first search trial.
+/// A state directory holding the simulated journal of a session at its first night's first control trial.
 pub struct Session {
     pub dir: MemoryDir,
     pub fs: Arc<MemFs>,
@@ -487,7 +487,7 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self {
-        Self::of(Scenario::Confirm)
+        Self::of(Scenario::Controls)
     }
 
     pub fn of(scenario: Scenario) -> Self {

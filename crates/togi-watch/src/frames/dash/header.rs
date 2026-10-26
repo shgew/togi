@@ -51,7 +51,7 @@ pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'st
             vec![
                 Form::new(
                     paint(
-                        Paint::Hunt,
+                        Paint::Warn,
                         format!("paused · planned end {}", scene.wall_minute(until)),
                     ),
                     3,
@@ -129,11 +129,11 @@ pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'st
             GAP,
             vec![
                 Form::new(
-                    paint(Paint::Hunt, format!("screen paused · planned end {minute}")),
+                    paint(Paint::Warn, format!("screen paused · planned end {minute}")),
                     4,
                 ),
                 Form::new(
-                    paint(Paint::Hunt, format!("paused · planned end {minute}")),
+                    paint(Paint::Warn, format!("paused · planned end {minute}")),
                     3,
                 ),
                 Form::empty(),

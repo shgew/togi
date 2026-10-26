@@ -11,6 +11,7 @@
 #[cfg(test)]
 mod corpus;
 pub mod day;
+pub mod day_totals;
 mod derive;
 mod describe;
 mod facts;

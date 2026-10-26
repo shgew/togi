@@ -24,6 +24,7 @@ fn original() -> SessionFacts {
         ..start(super::first(), &[7, 1, 3], 4)
     });
     s.add(togi_journal::TrialIntent {
+        task_start: None,
         cores: set(&[7, 3]),
         profile: profile(&[(1, -20), (3, -30), (7, -40)]),
         duration_s: 120,
@@ -73,6 +74,7 @@ fn copy_into(
     }
     s.boot("own-boot");
     s.add(togi_journal::TrialIntent {
+        task_start: None,
         profile: profile(&[(1, -10), (3, 0), (7, 0)]),
         core: Some(core(1)),
         offset: Some(super::offset(-10)),

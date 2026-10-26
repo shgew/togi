@@ -32,6 +32,10 @@ mod cached_errors {
     }
 
     impl Backend for Shell {
+        fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, Error> {
+            Ok(workload.id.as_bytes().to_vec())
+        }
+
         fn kind(&self) -> togi_machine::Backend {
             togi_machine::Backend::Mprime
         }

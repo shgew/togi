@@ -1,18 +1,16 @@
-use std::num::NonZeroU32;
 use test_case::test_case;
-use togi_journal::{Dimension, Refusal};
+use togi_journal::{Dimension, ImportClass, MissingFact, Refusal, Stamp};
 
 use togi_journal::{Build, Journal, Marker, Payload, SessionId, StateDir};
 use togi_machine::BiosContext;
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
 
-use togi_carry::CarryError;
 use togi_journal::MemFs;
 use togi_journal::fs::{Fault, FileKind, Op};
 
 use super::*;
-use crate::testing::{Bench, build, simulated};
+use crate::testing::{Bench, build, finished_with_day_records, simulated};
 use crate::{Ended, Stop, run};
 
 fn bench() -> Bench {
@@ -26,12 +24,9 @@ fn bench() -> Bench {
     })
 }
 
-fn ended(bench: &Bench, carry: Option<PendingCarry>) -> Ended {
-    let mut input = bench.input();
-    input.policy.cycles = Some(NonZeroU32::MIN);
-    input.carry = carry;
-    let ended = run(input);
-    assert_eq!(ended.stop, Some(Stop::Cycles));
+fn ended(bench: &Bench) -> Ended {
+    let ended = run(bench.input_ending_at(bench.short_night()));
+    assert!(matches!(ended.stop, Some(Stop::Signal)), "{:?}", ended.stop);
     ended
 }
 
@@ -43,31 +38,9 @@ fn session_of(journal: &Journal) -> SessionId {
     start.session
 }
 
-fn recorded_context(journal: &Journal) -> BiosContext {
-    journal
-        .events()
-        .iter()
-        .find_map(|event| {
-            if let Payload::SessionContext(context) = &event.payload {
-                Some(context.bios_context())
-            } else {
-                None
-            }
-        })
-        .unwrap()
-}
-
-fn prepared(bench: &Bench, build: &Build, context: Option<&BiosContext>) -> Prepared {
+fn prepared(bench: &Bench, build: &Build) -> Prepared {
     let boot = bench.sim.seams().host.boot_id().unwrap();
-    prepare(
-        simulated(&bench.mem),
-        build,
-        boot,
-        bench.sim.now(),
-        context,
-        bench.defects,
-    )
-    .unwrap()
+    prepare(simulated(&bench.mem), build, boot, bench.sim.now()).unwrap()
 }
 
 fn marked(journal: &Journal) -> Vec<(Marker, SessionId)> {
@@ -78,95 +51,120 @@ fn archived(journal: &Journal) -> Vec<SessionId> {
     journal.dir().archives().unwrap()
 }
 
-fn finished(bench: &Bench) -> (SessionId, BiosContext) {
-    let journal = ended(bench, None).journal;
-    let facts = (session_of(&journal), recorded_context(&journal));
-    drop(journal.close().unwrap());
-    facts
+fn finished(bench: &Bench) -> SessionId {
+    finished_with_day_records(bench).0
+}
+
+fn next_build() -> Build {
+    Build {
+        ruleset: 2,
+        ..build()
+    }
 }
 
 #[test]
-fn a_changed_bios_context_archives_the_live_journal_as_a_transition_and_carries_it() {
+fn a_journal_of_another_ruleset_archives_and_imports_only_its_day_records() {
     let bench = bench();
-    let (id, context) = finished(&bench);
-    let changed = BiosContext {
-        bios_version: "other".into(),
-        ..context
-    };
-    let prepared = prepared(&bench, &build(), Some(&changed));
+    let id = finished(&bench);
+    let prepared = prepared(&bench, &next_build());
     assert!(prepared.journal.events().is_empty());
     assert_eq!(archived(&prepared.journal), [id]);
-    assert_eq!(marked(&prepared.journal), [(Marker::CarryPending, id)]);
-    let carry = prepared.carry.unwrap();
-    assert_eq!(carry.sources()[0].session, id);
+    assert_eq!(marked(&prepared.journal), [(Marker::ImportPending, id)]);
+    let import = prepared.import.unwrap();
+    assert_eq!(import.source(), id);
+    assert!(import.destination() > id);
+    let pending = prepared.journal.dir().pending_import().unwrap().unwrap();
+    assert_eq!(pending.source, id);
+    assert_eq!(pending.destination, import.destination());
+
+    let manifest = import.manifest();
+    let kinds: Vec<_> = manifest
+        .records()
+        .iter()
+        .map(|record| record.original_kind.as_str())
+        .collect();
+    assert_eq!(
+        kinds,
+        ["day.boot_start", "day.checkpoint", "day.clean_stop"]
+    );
+    assert!(manifest.records().iter().all(|r| r.original.session == id));
+    assert!(manifest.unknown().is_empty());
+    let counts = manifest.commitment().counts;
+    assert_eq!(
+        (counts.selected, counts.imported, counts.duplicates),
+        (3, 3, 0)
+    );
+    assert_eq!(counts.excluded, 0);
 }
 
-#[test_case(true; "unchanged context")]
-#[test_case(false; "unknown context")]
-fn an_unchanged_or_unknown_context_leaves_the_live_journal_and_carries_nothing(
-    known_context: bool,
-) {
+#[test]
+fn an_imported_record_names_what_its_payload_lacked() {
     let bench = bench();
-    let (id, context) = finished(&bench);
+    finished(&bench);
+    let import = prepared(&bench, &next_build()).import.unwrap();
+    let records = import.manifest().records();
+    let (start, checkpoint, stop) = (&records[0], &records[1], &records[2]);
+    assert_eq!(start.class, ImportClass::Boot);
+    assert!(start.missing.is_empty());
+    assert!(start.build.is_some() && start.firmware.is_some() && start.profile.is_some());
+    assert_eq!(checkpoint.class, ImportClass::Checkpoint);
+    for fact in [
+        MissingFact::Build,
+        MissingFact::Firmware,
+        MissingFact::Profile,
+    ] {
+        assert!(checkpoint.missing.contains(&fact), "{fact:?}");
+    }
+    assert_eq!(stop.class, ImportClass::End);
+}
 
-    let current = known_context.then_some(context);
-    let prepared = prepared(&bench, &build(), current.as_ref());
+#[test]
+fn a_changed_bios_context_is_no_transition_the_live_journal_stays_and_imports_nothing() {
+    let bench = bench();
+    let id = finished(&bench);
+    let mut host = bench.sim.seams().host;
+    let context = host.bios_context().unwrap();
+    bench.sim.set_bios_context(BiosContext {
+        bios_version: "other".into(),
+        ..context
+    });
+
+    let prepared = prepared(&bench, &build());
     assert_eq!(session_of(&prepared.journal), id);
     assert!(archived(&prepared.journal).is_empty());
     assert!(marked(&prepared.journal).is_empty());
-    assert!(prepared.carry.is_none());
+    assert!(prepared.import.is_none());
     drop(prepared.journal.close().unwrap());
 }
 
 #[test]
-fn a_journal_without_a_recorded_context_is_kept_whatever_the_current_one() {
-    let rig = crate::testing::Rig::new(2);
-    let bench = Bench {
-        mem: rig.mem.clone(),
-        ..bench()
-    };
-    drop(rig.appender);
-    let other = BiosContext {
-        bios_version: "other".into(),
-        ..BiosContext::default()
-    };
-    let prepared = prepared(&bench, &build(), Some(&other));
-    assert_eq!(prepared.journal.events().len(), 1);
-    assert!(archived(&prepared.journal).is_empty());
-}
-
-#[test]
-fn a_journal_of_another_ruleset_is_archived_unread_and_prepare_repeats_the_same_carry() {
+fn a_journal_of_another_ruleset_is_archived_unread_and_prepare_repeats_the_same_import() {
     let bench = bench();
-    let (id, context) = finished(&bench);
-    let next = Build {
-        ruleset: 2,
-        ..build()
-    };
-    let first = prepared(&bench, &next, Some(&context));
+    let id = finished(&bench);
+    let first = prepared(&bench, &next_build());
     assert!(first.journal.events().is_empty());
     assert_eq!(archived(&first.journal), [id]);
-    let carry = first.carry.clone().unwrap();
-    assert_eq!(carry.sources()[0].session, id);
+    let import = first.import.clone().unwrap();
+    assert_eq!(import.source(), id);
+    assert_eq!(import.manifest().records().len(), 3);
     drop(first.journal.close().unwrap());
 
-    let again = prepared(&bench, &next, Some(&context));
+    let again = prepared(&bench, &next_build());
     assert_eq!(archived(&again.journal), [id]);
-    assert_eq!(again.carry, Some(carry));
+    assert_eq!(again.import, Some(import));
 }
 
 #[test]
-fn an_interrupted_bios_archive_is_finished_and_prepare_repeats_the_same_carry() {
+fn an_interrupted_archive_is_finished_and_prepare_repeats_the_same_import() {
     let bench = bench();
-    let (id, context) = finished(&bench);
-    let changed = BiosContext {
-        bios_version: "other".into(),
-        ..context
-    };
+    let id = finished(&bench);
     let clean = self::bench();
     finished(&clean);
-    let expected = prepared(&clean, &build(), Some(&changed)).carry.unwrap();
+    let expected = prepared(&clean, &next_build()).import.unwrap();
 
+    let destination = simulated(&bench.mem)
+        .import_destination(&id, bench.sim.now())
+        .unwrap();
     let boot = bench.sim.seams().host.boot_id().unwrap();
     let live = simulated(&bench.mem)
         .open_at(boot, bench.sim.now())
@@ -179,33 +177,34 @@ fn an_interrupted_bios_archive_is_finished_and_prepare_repeats_the_same_carry() 
         time: bench.sim.now(),
         mono: None,
     };
-    live.archive(stamp, ArchiveKind::Transition, &[])
+    live.archive(stamp, ArchiveKind::Transition { destination }, &[])
         .unwrap_err();
     let interrupted = bench.mem.contents("/state/events.jsonl").unwrap();
     assert!(interrupted.starts_with(&before));
     assert!(interrupted.len() > before.len());
     let dir = simulated(&bench.mem);
     assert_eq!(dir.live_session().unwrap(), Some(id));
-    assert_eq!(dir.markers().unwrap(), [(Marker::CarryPending, id)]);
+    assert_eq!(dir.markers().unwrap(), [(Marker::ImportPending, id)]);
     assert!(dir.archives().unwrap().is_empty());
     drop(dir);
 
-    let first = prepared(&bench, &build(), Some(&changed));
+    let first = prepared(&bench, &next_build());
     assert!(first.journal.events().is_empty());
     assert_eq!(archived(&first.journal), [id]);
-    assert_eq!(marked(&first.journal), [(Marker::CarryPending, id)]);
+    assert_eq!(marked(&first.journal), [(Marker::ImportPending, id)]);
     assert_eq!(
         bench.mem.contents(format!("/state/archive/{id}.jsonl")),
         Some(interrupted)
     );
-    let carry = first.carry.clone().unwrap();
-    assert_eq!(carry.sources()[0].session, id);
-    assert_eq!(carry, expected);
+    let import = first.import.clone().unwrap();
+    assert_eq!(import.source(), id);
+    assert_eq!(import.destination(), destination);
+    assert_eq!(import, expected);
     drop(first.journal.close().unwrap());
 
-    let again = prepared(&bench, &build(), Some(&changed));
+    let again = prepared(&bench, &next_build());
     assert_eq!(archived(&again.journal), [id]);
-    assert_eq!(again.carry, Some(carry));
+    assert_eq!(again.import, Some(import));
 }
 
 #[test_case(b""; "complete")]
@@ -218,20 +217,12 @@ fn a_journal_this_build_refuses_is_refused_before_it_is_opened_and_left_unchange
     };
 
     let bench = bench();
-    let (_, context) = finished(&bench);
+    let _ = finished(&bench);
     let mut live = bench.mem.contents("/state/events.jsonl").unwrap();
     live.extend_from_slice(tail);
     bench.mem.put("/state/events.jsonl", live.clone());
     let boot = bench.sim.seams().host.boot_id().unwrap();
-    let error = prepare(
-        simulated(&bench.mem),
-        &older,
-        boot,
-        bench.sim.now(),
-        Some(&context),
-        bench.defects,
-    )
-    .unwrap_err();
+    let error = prepare(simulated(&bench.mem), &older, boot, bench.sim.now()).unwrap_err();
     assert!(
         matches!(
             error,
@@ -250,49 +241,139 @@ fn a_journal_this_build_refuses_is_refused_before_it_is_opened_and_left_unchange
 }
 
 #[test]
-fn a_carry_the_live_journal_committed_clears_its_marker_and_is_not_carried_again() {
+fn an_import_the_live_journal_committed_clears_its_marker_and_is_not_imported_again() {
     let bench = bench();
-    let (id, context) = finished(&bench);
-    let next = Build {
-        ruleset: 2,
-        ..build()
-    };
-    let first = prepared(&bench, &next, Some(&context));
-    let carry = first.carry.clone().unwrap();
+    let id = finished(&bench);
+    let first = prepared(&bench, &next_build());
+    let import = first.import.clone().unwrap();
     drop(first.journal.close().unwrap());
-    let mut input = bench.input();
-    input.build = next.clone();
-    input.policy.cycles = Some(NonZeroU32::MIN);
-    input.carry = Some(carry);
+    let mut input = bench.input_ending_at(bench.short_night());
+    input.build = next_build();
+    input.import = Some(import.clone());
     let committed = run(input).journal;
+    assert_eq!(session_of(&committed), import.destination());
+    let imported = committed
+        .events()
+        .iter()
+        .filter(|event| matches!(&event.payload, Payload::DayImported(_)))
+        .count();
+    assert_eq!(imported, 3);
     assert!(
         committed
             .events()
             .iter()
-            .any(|event| matches!(&event.payload, Payload::SessionCarried(_)))
+            .any(|event| matches!(&event.payload, Payload::SessionImported(_)))
     );
-    assert_eq!(marked(&committed), [(Marker::CarryPending, id)]);
+    assert_eq!(marked(&committed), [(Marker::ImportPending, id)]);
     drop(committed.close().unwrap());
 
-    let after = prepared(&bench, &next, Some(&context));
-    assert!(after.carry.is_none());
+    let after = prepared(&bench, &next_build());
+    assert!(after.import.is_none());
     assert!(marked(&after.journal).is_empty());
-    assert_ne!(session_of(&after.journal), id);
+    assert_eq!(session_of(&after.journal), import.destination());
 }
 
 #[test]
-fn a_live_journal_at_the_reset_boundary_is_archived_unchanged_and_the_carry_marker_dropped() {
+fn a_transition_out_of_an_uncommitted_import_keeps_the_original_source_and_counts_the_copies_once()
+{
     let bench = bench();
-    let (older, context) = finished(&bench);
-    let next = Build {
-        ruleset: 2,
+    let id = finished(&bench);
+    let first = prepared(&bench, &next_build());
+    let import = first.import.clone().unwrap();
+    drop(first.journal.close().unwrap());
+
+    let boot = bench.sim.seams().host.boot_id().unwrap();
+    let mut live = simulated(&bench.mem)
+        .open_at(boot, bench.sim.now())
+        .unwrap();
+    let stamp = Stamp {
+        time: bench.sim.now(),
+        mono: None,
+    };
+    live.append(
+        stamp,
+        Payload::SessionStart(togi_journal::SessionStart {
+            build: next_build(),
+            session: import.destination(),
+            cores: Vec::new(),
+        }),
+        &[],
+    )
+    .unwrap();
+    live.append(
+        stamp,
+        Payload::DayImported(import.manifest().records()[0].clone()),
+        &[],
+    )
+    .unwrap();
+    drop(live.close().unwrap());
+
+    let newer = Build {
+        ruleset: 3,
         ..build()
     };
-    let first = prepared(&bench, &next, Some(&context));
+    let second = prepared(&bench, &newer);
+    assert_eq!(archived(&second.journal), [id, import.destination()]);
+    assert_eq!(marked(&second.journal), [(Marker::ImportPending, id)]);
+    let again = second.import.unwrap();
+    assert_eq!(again.source(), id);
+    assert!(again.destination() > import.destination());
+    let manifest = again.manifest();
+    assert_eq!(manifest.records(), import.manifest().records());
+    let counts = manifest.commitment().counts;
+    assert_eq!(
+        (counts.selected, counts.imported, counts.duplicates),
+        (3, 3, 1)
+    );
+}
+
+#[test]
+fn a_transition_out_of_a_committed_import_reads_no_further_back_than_the_committing_session() {
+    let bench = bench();
+    let id = finished(&bench);
+    let first = prepared(&bench, &next_build());
+    let import = first.import.clone().unwrap();
     drop(first.journal.close().unwrap());
-    let mut input = bench.input();
-    input.build = next.clone();
-    input.policy.cycles = Some(NonZeroU32::MIN);
+    let mut input = bench.input_ending_at(bench.short_night());
+    input.build = next_build();
+    input.import = Some(import.clone());
+    drop(run(input).journal.close().unwrap());
+
+    let newer = Build {
+        ruleset: 3,
+        ..build()
+    };
+    let second = prepared(&bench, &newer);
+    let again = second.import.unwrap();
+    assert_eq!(archived(&second.journal), [id, import.destination()]);
+    let manifest = again.manifest();
+    let counts = manifest.commitment().counts;
+    assert_eq!((counts.selected, counts.duplicates), (3, 0));
+    assert!(
+        manifest
+            .records()
+            .iter()
+            .all(|record| record.original.session == id)
+    );
+    let sources = manifest.commitment().sources;
+    assert_eq!(
+        sources
+            .iter()
+            .map(|source| source.session)
+            .collect::<Vec<_>>(),
+        [import.destination()]
+    );
+}
+
+#[test]
+fn a_live_journal_at_the_reset_boundary_is_archived_unchanged_and_the_import_marker_dropped() {
+    let bench = bench();
+    let older = finished(&bench);
+    let first = prepared(&bench, &next_build());
+    drop(first.journal.close().unwrap());
+    let mut input = bench.input_ending_at(bench.short_night());
+    input.build = next_build();
+    input.import = first.import;
     let live = run(input).journal;
     let id = session_of(&live);
     let mut dir = live.close().unwrap();
@@ -300,9 +381,9 @@ fn a_live_journal_at_the_reset_boundary_is_archived_unchanged_and_the_carry_mark
     drop(dir);
     let before = bench.mem.contents("/state/events.jsonl").unwrap();
 
-    let prepared = prepared(&bench, &next, Some(&context));
+    let prepared = prepared(&bench, &next_build());
     assert!(prepared.journal.events().is_empty());
-    assert!(prepared.carry.is_none());
+    assert!(prepared.import.is_none());
     assert_eq!(marked(&prepared.journal), [(Marker::ResetAll, id)]);
     assert_eq!(archived(&prepared.journal), [older, id]);
     assert_eq!(
@@ -312,95 +393,131 @@ fn a_live_journal_at_the_reset_boundary_is_archived_unchanged_and_the_carry_mark
 }
 
 #[test]
-fn a_pending_carry_the_boundary_passed_is_dropped_without_a_carry() {
+fn a_pending_import_the_boundary_passed_is_dropped_without_an_import() {
     let bench = bench();
-    let (id, context) = finished(&bench);
-    let next = Build {
-        ruleset: 2,
-        ..build()
-    };
-    let first = prepared(&bench, &next, Some(&context));
+    let id = finished(&bench);
+    let first = prepared(&bench, &next_build());
     let mut dir = first.journal.close().unwrap();
     dir.mark_reset_all().unwrap();
     drop::<StateDir>(dir);
-    let after = prepared(&bench, &next, Some(&context));
-    assert!(after.carry.is_none());
+    let after = prepared(&bench, &next_build());
+    assert!(after.import.is_none());
     assert_eq!(marked(&after.journal), [(Marker::ResetAll, id)]);
 }
 
 #[test]
-fn an_older_journal_with_events_this_build_cannot_decode_is_archived_unread_and_supplies_no_carry()
-{
+fn a_reset_boundary_ends_the_walk_so_nothing_before_it_is_imported() {
     let bench = bench();
-    let (id, context) = finished(&bench);
-    let mut garbled = bench.mem.contents("/state/events.jsonl").unwrap();
-    garbled.extend_from_slice(b"{\"seq\":99,\"kind\":\"from.the.future\",\"data\":{}}\n");
-    bench.mem.put("/state/events.jsonl", garbled.clone());
-    let next = Build {
-        ruleset: 2,
-        ..build()
+    let old = finished(&bench);
+    let mut dir = simulated(&bench.mem);
+    dir.archive_unreadable(ArchiveKind::ResetAll)
+        .unwrap()
+        .unwrap();
+    dir.mark_reset_all().unwrap();
+    drop(dir);
+    assert_eq!(simulated(&bench.mem).archives().unwrap(), [old]);
+
+    bench.sim.reboot().unwrap();
+    let mut journal = ended(&bench).journal;
+    let id = session_of(&journal);
+    assert_ne!(id, old);
+    let stamp = Stamp {
+        time: bench.sim.now(),
+        mono: None,
     };
-    let prepared = prepared(&bench, &next, Some(&context));
-    assert!(prepared.carry.is_none());
-    assert!(prepared.journal.events().is_empty());
-    assert_eq!(archived(&prepared.journal), [id]);
-    assert_eq!(marked(&prepared.journal), [(Marker::CarryPending, id)]);
+    journal
+        .append(
+            stamp,
+            Payload::DayCleanStop(togi_journal::DayCleanStop {}),
+            &[],
+        )
+        .unwrap();
+    drop(journal.close().unwrap());
+    let prepared = prepared(&bench, &next_build());
+    let import = prepared.import.unwrap();
+    assert_eq!(import.source(), id);
+    assert!(
+        import
+            .manifest()
+            .records()
+            .iter()
+            .all(|record| record.original.session == id)
+    );
+    assert_eq!(import.manifest().records().len(), 1);
+}
+
+#[test]
+fn unknown_kinds_and_unreadable_lines_are_listed_and_never_imported() {
+    let bench = bench();
+    let id = finished(&bench);
+    let mut bytes = bench.mem.contents("/state/events.jsonl").unwrap();
+    bytes.extend_from_slice(
+        b"{\"seq\":99,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b\",\"kind\":\"from.the.future\",\"data\":{}}\nnot json\n",
+    );
+    bench.mem.put("/state/events.jsonl", bytes.clone());
+    let import = prepared(&bench, &next_build()).import.unwrap();
+    let manifest = import.manifest();
+    assert_eq!(manifest.records().len(), 3);
+    let kinds: Vec<_> = manifest
+        .unknown()
+        .iter()
+        .map(|record| record.kind.as_str())
+        .collect();
+    assert_eq!(kinds, ["from.the.future", "unreadable"]);
+    assert!(manifest.unknown().iter().all(|r| r.original.session == id));
+    assert_eq!(manifest.commitment().counts.unknown, 2);
     assert_eq!(
         bench.mem.contents(format!("/state/archive/{id}.jsonl")),
-        Some(garbled)
+        Some(bytes)
     );
 }
 
 #[test]
-fn an_older_archive_this_build_cannot_decode_ends_the_walk_without_failing_the_carry() {
-    let next = Build {
-        ruleset: 2,
-        ..build()
-    };
-    let clean = bench();
-    let (_, context) = finished(&clean);
-    let expected = prepared(&clean, &next, Some(&context)).carry.unwrap();
-
-    let behind = bench();
-    finished(&behind);
-    behind
-        .mem
-        .put("/state/archive/20200101T000000Z.jsonl", "not json\n");
-    let got = prepared(&behind, &next, Some(&context));
-    assert_eq!(got.carry, Some(expected));
-}
-
-#[test]
-fn an_archive_that_cannot_be_read_still_fails_the_carry() {
+fn a_torn_tail_that_parses_is_never_an_imported_record() {
     let bench = bench();
-    let (id, context) = finished(&bench);
-    let next = Build {
-        ruleset: 2,
-        ..build()
-    };
-    drop(
-        prepared(&bench, &next, Some(&context))
-            .journal
-            .close()
-            .unwrap(),
+    let id = finished(&bench);
+    let mut bytes = bench.mem.contents("/state/events.jsonl").unwrap();
+    let last = bytes[..bytes.len() - 1]
+        .split(|byte| *byte == b'\n')
+        .next_back()
+        .unwrap();
+    let mut tail: serde_json::Value = serde_json::from_slice(last).unwrap();
+    tail["seq"] = 99.into();
+    serde_json::to_writer(&mut bytes, &tail).unwrap();
+    assert_eq!(bytes.last(), Some(&b'}'));
+    bench.mem.put("/state/events.jsonl", bytes);
+    let import = prepared(&bench, &next_build()).import.unwrap();
+    let manifest = import.manifest();
+    assert_eq!(manifest.records().len(), 3);
+    assert!(manifest.unknown().is_empty());
+    assert!(
+        manifest
+            .records()
+            .iter()
+            .all(|record| { record.original.session == id && record.original.seq.get() != 99 })
     );
+}
+
+#[test_case(b"\n", true; "terminated")]
+#[test_case(b"", false; "torn")]
+fn only_a_terminated_commitment_line_ends_the_archive_walk(end: &[u8], committed: bool) {
+    let mut bytes = br#"{"seq":1,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"session.imported","data":{}}"#
+        .to_vec();
+    bytes.extend_from_slice(end);
+    assert_eq!(import::commits_import(&bytes), committed);
+}
+
+#[test]
+fn an_archive_that_cannot_be_read_fails_the_preparation() {
+    let bench = bench();
+    let id = finished(&bench);
+    drop(prepared(&bench, &next_build()).journal.close().unwrap());
     bench
         .mem
         .inject(Fault::before(Op::Read, 1).named(format!("{id}.jsonl")));
     let boot = bench.sim.seams().host.boot_id().unwrap();
-    let error = prepare(
-        simulated(&bench.mem),
-        &next,
-        boot,
-        bench.sim.now(),
-        Some(&context),
-        bench.defects,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(&error, PrepareError::Carry(CarryError::Open { session, .. }) if *session == id),
-        "{error:?}"
-    );
+    let error = prepare(simulated(&bench.mem), &next_build(), boot, bench.sim.now()).unwrap_err();
+    assert!(matches!(&error, PrepareError::Dir(_)), "{error:?}");
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -416,13 +533,11 @@ enum BrokenLayout {
 fn a_broken_archive_layout_or_live_header_refuses_the_preparation_and_leaves_the_live_journal_unchanged(
     layout: BrokenLayout,
 ) {
-    let next = Build {
-        ruleset: 2,
-        ..build()
-    };
-
     let bench = bench();
-    let (id, context) = finished(&bench);
+    let id = finished(&bench);
+    let destination = simulated(&bench.mem)
+        .import_destination(&id, bench.sim.now())
+        .unwrap();
     match layout {
         BrokenLayout::ArchiveFile => bench.mem.put("/state/archive", ""),
         BrokenLayout::ArchiveTargetDirectory => {
@@ -432,15 +547,7 @@ fn a_broken_archive_layout_or_live_header_refuses_the_preparation_and_leaves_the
     }
     let before = bench.mem.contents("/state/events.jsonl").unwrap();
     let boot = bench.sim.seams().host.boot_id().unwrap();
-    let error = prepare(
-        simulated(&bench.mem),
-        &next,
-        boot,
-        bench.sim.now(),
-        Some(&context),
-        bench.defects,
-    )
-    .unwrap_err();
+    let error = prepare(simulated(&bench.mem), &next_build(), boot, bench.sim.now()).unwrap_err();
     let expected = match layout {
         BrokenLayout::ArchiveTargetDirectory => {
             matches!(&error, PrepareError::Dir(DirError::ArchiveExists { session }) if *session == id)
@@ -461,90 +568,75 @@ fn a_broken_archive_layout_or_live_header_refuses_the_preparation_and_leaves_the
             .mem
             .contents(format!("/state/archive/{id}.jsonl"))
             .is_none(),
-        "{layout:?}"
+        "{layout:?} (destination {destination})"
     );
 }
 
-fn next_build() -> Build {
-    Build {
-        ruleset: 2,
-        ..build()
-    }
-}
-
-/// Directories in every state `prepare` decides on, each with the build and BIOS context the next boot has.
+/// Directories in every state `prepare` decides on, each with the build the next boot has.
 #[derive(Debug, Clone, Copy)]
 enum ScenarioKind {
     Empty,
     PlainResume,
     ContextChange,
     BuildArchive,
-    CarryUnsettled,
-    CarrySettled,
+    ImportUnsettled,
+    ImportSettled,
     ResetBoundary,
 }
 
-fn scenario(kind: ScenarioKind) -> (Bench, Build, Option<BiosContext>) {
+fn scenario(kind: ScenarioKind) -> (Bench, Build) {
     match kind {
-        ScenarioKind::Empty => (bench(), build(), None),
+        ScenarioKind::Empty => (bench(), build()),
         ScenarioKind::PlainResume => {
             let plain = bench();
-            let (_, context) = finished(&plain);
-            (plain, build(), Some(context))
+            let _ = finished(&plain);
+            (plain, build())
         }
         ScenarioKind::ContextChange => {
-            let transition = bench();
-            let (_, context) = finished(&transition);
-            let changed = BiosContext {
+            let changed = bench();
+            let _ = finished(&changed);
+            let mut host = changed.sim.seams().host;
+            let context = host.bios_context().unwrap();
+            changed.sim.set_bios_context(BiosContext {
                 bios_version: "other".into(),
                 ..context
-            };
-            (transition, build(), Some(changed))
+            });
+            (changed, build())
         }
         ScenarioKind::BuildArchive => {
             let archive = bench();
-            let (_, context) = finished(&archive);
-            (archive, next_build(), Some(context))
+            let _ = finished(&archive);
+            (archive, next_build())
         }
-        ScenarioKind::CarryUnsettled => {
+        ScenarioKind::ImportUnsettled => {
             let unsettled = bench();
-            let (_, context) = finished(&unsettled);
-            drop(
-                prepared(&unsettled, &next_build(), Some(&context))
-                    .journal
-                    .close()
-                    .unwrap(),
-            );
-            (unsettled, next_build(), Some(context))
+            let _ = finished(&unsettled);
+            drop(prepared(&unsettled, &next_build()).journal.close().unwrap());
+            (unsettled, next_build())
         }
-        ScenarioKind::CarrySettled => {
+        ScenarioKind::ImportSettled => {
             let settled = bench();
-            let (_, context) = finished(&settled);
-            let first = prepared(&settled, &next_build(), Some(&context));
+            let _ = finished(&settled);
+            let first = prepared(&settled, &next_build());
             drop(first.journal.close().unwrap());
-            let mut input = settled.input();
+            let mut input = settled.input_ending_at(settled.short_night());
             input.build = next_build();
-            input.policy.cycles = Some(NonZeroU32::MIN);
-            input.carry = first.carry;
+            input.import = first.import;
             drop(run(input).journal.close().unwrap());
-            (settled, next_build(), Some(context))
+            (settled, next_build())
         }
         ScenarioKind::ResetBoundary => {
             let reset = bench();
-            let (_, context) = finished(&reset);
-            drop(
-                prepared(&reset, &next_build(), Some(&context))
-                    .journal
-                    .close()
-                    .unwrap(),
-            );
-            let mut input = reset.input();
+            let _ = finished(&reset);
+            let first = prepared(&reset, &next_build());
+            drop(first.journal.close().unwrap());
+            let mut input = reset.input_ending_at(reset.short_night());
             input.build = next_build();
-            input.policy.cycles = Some(NonZeroU32::MIN);
+            input.import = first.import;
             let mut dir = run(input).journal.close().unwrap();
             dir.mark_reset_all().unwrap();
             drop(dir);
-            (reset, next_build(), Some(context))
+            (reset, next_build())
         }
     }
 }
@@ -563,7 +655,7 @@ fn copy_of(mem: &MemFs) -> MemFs {
     copy
 }
 
-/// Everything a preparation leaves: the journal it hands over, its carry and the directory's files.
+/// Everything a preparation leaves: the journal it hands over, its import and the directory's files.
 fn left(prepared: &Prepared, mem: &MemFs) -> impl PartialEq + std::fmt::Debug {
     let events: Vec<String> = prepared
         .journal
@@ -583,7 +675,7 @@ fn left(prepared: &Prepared, mem: &MemFs) -> impl PartialEq + std::fmt::Debug {
         events,
         prepared.journal.boot().clone(),
         prepared.journal.session(),
-        prepared.carry.clone(),
+        prepared.import.clone(),
         files,
     )
 }
@@ -592,44 +684,28 @@ fn left(prepared: &Prepared, mem: &MemFs) -> impl PartialEq + std::fmt::Debug {
 #[test_case(ScenarioKind::PlainResume; "plain resume")]
 #[test_case(ScenarioKind::ContextChange; "context change")]
 #[test_case(ScenarioKind::BuildArchive; "build archive")]
-#[test_case(ScenarioKind::CarryUnsettled; "carry unsettled")]
-#[test_case(ScenarioKind::CarrySettled; "carry settled")]
+#[test_case(ScenarioKind::ImportUnsettled; "import unsettled")]
+#[test_case(ScenarioKind::ImportSettled; "import settled")]
 #[test_case(ScenarioKind::ResetBoundary; "reset boundary")]
 fn a_kept_journal_is_prepared_as_the_reopened_directory_is(kind: ScenarioKind) {
-    let (bench, build, context) = scenario(kind);
+    let (bench, build) = scenario(kind);
     let rebooted = boot("rebooted");
     let now = bench.sim.now();
     let (closed, kept) = (copy_of(&bench.mem), copy_of(&bench.mem));
-    let expected = prepare(
-        simulated(&closed),
-        &build,
-        rebooted.clone(),
-        now,
-        context.as_ref(),
-        bench.defects,
-    )
-    .unwrap();
+    let expected = prepare(simulated(&closed), &build, rebooted.clone(), now).unwrap();
 
     let mut journal = simulated(&kept).open_at(boot("crashed"), now).unwrap();
     journal.reboot(rebooted.clone()).unwrap();
     kept.record_history();
-    let actual = prepare_kept(
-        journal,
-        &build,
-        rebooted,
-        now,
-        context.as_ref(),
-        bench.defects,
-    )
-    .unwrap();
+    let actual = prepare_kept(journal, &build, rebooted, now).unwrap();
     assert_eq!(
         left(&actual, &kept),
         left(&expected, &closed),
-        "{kind:?}: the files, events and carry differ"
+        "{kind:?}: the files, events and import differ"
     );
     if matches!(
         kind,
-        ScenarioKind::Empty | ScenarioKind::PlainResume | ScenarioKind::CarryUnsettled
+        ScenarioKind::Empty | ScenarioKind::PlainResume | ScenarioKind::ImportUnsettled
     ) {
         assert!(
             kept.reads()
@@ -643,7 +719,7 @@ fn a_kept_journal_is_prepared_as_the_reopened_directory_is(kind: ScenarioKind) {
 #[test]
 fn a_kept_journal_this_build_refuses_is_refused_and_left_unchanged() {
     let bench = bench();
-    let (_, context) = finished(&bench);
+    let _ = finished(&bench);
     let older = Build {
         ruleset: 0,
         ..build()
@@ -652,15 +728,7 @@ fn a_kept_journal_this_build_refuses_is_refused_and_left_unchanged() {
     let now = bench.sim.now();
     let mut journal = simulated(&bench.mem).open_at(boot("crashed"), now).unwrap();
     journal.reboot(boot("rebooted")).unwrap();
-    let error = prepare_kept(
-        journal,
-        &older,
-        boot("rebooted"),
-        now,
-        Some(&context),
-        bench.defects,
-    )
-    .unwrap_err();
+    let error = prepare_kept(journal, &older, boot("rebooted"), now).unwrap_err();
     assert!(matches!(error, PrepareError::Refused(_)), "{error:?}");
     assert_eq!(bench.mem.contents("/state/events.jsonl"), Some(before));
     assert!(simulated(&bench.mem).archives().unwrap().is_empty());

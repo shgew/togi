@@ -1,4 +1,4 @@
-Status: see [the index](README.md).
+Status: superseded by [0080](0080-per-ccd-first.md) and [0081](0081-margin-from-measured-slope.md); voltage-target backoff is removed, so its short-crash threshold is not a Ruleset 13 warm-up rule.
 
 # Short crashes take no voltage target
 

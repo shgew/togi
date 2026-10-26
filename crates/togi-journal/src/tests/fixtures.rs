@@ -3,17 +3,17 @@ use std::num::NonZeroU32;
 
 use jiff::Timestamp;
 use togi_machine::{
-    BankType, BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, EndEvidence,
-    GraphicsDriver, KernelCursor, KernelFault, KernelTail, LoadSchedule, MceCount, ObservedOffset,
-    PerCore, PstoreRecord, Regime, ResetKind, ResetReason, Signal, TargetOffset, WatchdogState,
-    WorkloadId,
+    BankType, BiosContext, BootId, CcdId, CcdProfile, Condition, ContentId, CoreId, CoreInfo,
+    CoreSet, CpuId, Digest, EndEvidence, GraphicsDriver, KernelCursor, KernelFault, KernelTail,
+    LoadSchedule, MceCount, ObservedOffset, PerCore, PstoreRecord, Regime, ResetKind, ResetReason,
+    Signal, TargetOffset, WatchdogState, WorkloadId,
 };
 
 use crate::*;
 
 pub(crate) fn config() -> ConfigSnapshot {
     ConfigSnapshot {
-        start_offsets: [(core(3), target(-10))].into_iter().collect(),
+        start_offsets: Some([(core(3), target(-10))].into_iter().collect()),
         backends: ConfigBackends {
             mprime: Some("/nix/store/x-mprime".into()),
             ycruncher: None,
@@ -24,22 +24,22 @@ pub(crate) fn config() -> ConfigSnapshot {
 
 pub(crate) fn bare_config() -> ConfigSnapshot {
     ConfigSnapshot {
-        start_offsets: PerCore::default(),
-        candidate_solo_limits: PerCore::default(),
-        durations: ConfigDurations {
+        start_offsets: Some(PerCore::default()),
+        candidate_solo_limits: Some(PerCore::default()),
+        durations: Some(ConfigDurations {
             search_trial_s: 90,
             short_trial_s: 120,
             checking_trial_s: 120,
             checking_idle_s: 900,
             checking_all_core_s: 1200,
-        },
-        evidence: ConfigEvidence {
+        }),
+        evidence: Some(ConfigEvidence {
             miss: 0.05,
             rate: 0.5,
-        },
-        checking: ConfigChecking {
+        }),
+        checking: Some(ConfigChecking {
             cycle: vec![Regime::R7, Regime::R2, Regime::R1],
-        },
+        }),
         dead_ends: ConfigDeadEnds {
             inconclusive_in_a_row: 3,
             stray_crashes_in_a_row: 3,
@@ -314,6 +314,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
         TrialIntent {
+            task_start: None,
             trial: trial(),
             kernel_cursor: None,
             kernel_error: Some("cursor lost".into()),
@@ -325,7 +326,18 @@ pub(crate) fn samples() -> Vec<Payload> {
             workload: workload("mprime-avx2-36k-248k"),
             duration_s: 90,
             condition: Condition::Alone,
-            activity: Some(Activity::Search),
+            activity: Some(Activity::Mapping),
+            night: Some(night()),
+            task: Some(TaskId {
+                queue: Queue::Mapping,
+                ordinal: 4,
+            }),
+            content: vec![workload_content()],
+            placement: Some(Placement::Isolated),
+            tested: Some(Tested::Isolated {
+                ccd: ccd(0),
+                offset: target(-32),
+            }),
             retry: true,
             cycle: Some(ord(2)),
             step: Some(ord(1)),
@@ -727,7 +739,347 @@ pub(crate) fn samples() -> Vec<Payload> {
             lines: vec!["[Hardware Error]: Uncorrected".into()],
         }
         .into(),
+        ExposureObserved {
+            source: OriginalSource {
+                session: session(),
+                seq: seq(819),
+                boot: boot(),
+                trial: Some(trial()),
+            },
+            origin: ExposureOrigin::Live {},
+            firmware: bios(),
+            epoch: 1,
+            class: exposure_class(),
+            profile: ccd_vector(&[-20, 0]),
+            tested: Tested::Isolated {
+                ccd: ccd(0),
+                offset: target(-20),
+            },
+            activity: Activity::Mapping,
+            outcome: Outcome::Pass,
+            failures: Vec::new(),
+            eligible_s: 120,
+            uninterrupted_s: 120,
+            exclusions: Vec::new(),
+        }
+        .into(),
+        CcdEdge {
+            ccd: ccd(0),
+            edge: Edge::Observed {
+                offset: target(-25),
+                witness: seq(40),
+            },
+            old: Edge::Unknown {},
+            reason: "first failure while mapping".into(),
+        }
+        .into(),
+        CcdCap {
+            ccd: ccd(1),
+            old: target(-10),
+            new: target(-5),
+            budget: Rate::new(1.0 / 6000.0).unwrap(),
+            edge: Edge::Censored {
+                limit: target(-50),
+                witnesses: vec![seq(30), seq(31)],
+            },
+            adequate: vec![exposure_class()],
+            uncovered: vec![UncoveredClass {
+                class: ExposureClass {
+                    regime: Regime::R9,
+                    ..exposure_class()
+                },
+                reason: UncoveredReason::MappingInadequate,
+            }],
+            cells: vec![RateCell {
+                class: exposure_class(),
+                offset: target(-20),
+                eligible_s: 3600,
+                failures: 0,
+                bound: RateBound::Finite {
+                    per_hour: Rate::new(0.003).unwrap(),
+                },
+            }],
+            slope: Slope::Fallback {
+                beta: Finite::new(1.5_f64.ln()).unwrap(),
+            },
+            candidates: vec![Candidate {
+                class: exposure_class(),
+                offset: target(-5),
+            }],
+            binding: Binding::Rate {
+                class: exposure_class(),
+            },
+        }
+        .into(),
+        NightPlan {
+            night: Some(night()),
+            budgets: vec![Budget {
+                queue: Queue::Mapping,
+                share_pct: 10,
+                consumed_s: 120,
+            }],
+            tasks: vec![PlannedTask {
+                task: TaskId {
+                    queue: Queue::Mapping,
+                    ordinal: 4,
+                },
+                status: TaskStatus::Running,
+            }],
+            unavailable: vec![UnavailableBackend {
+                backend: togi_machine::Backend::Ycruncher,
+                causes: vec![Seq::new(40).unwrap(), Seq::new(41).unwrap()],
+            }],
+        }
+        .into(),
+        TaskStart {
+            night: night(),
+            task: TaskId {
+                queue: Queue::Mapping,
+                ordinal: 4,
+            },
+        }
+        .into(),
+        NightQualification {
+            profile: ccd_vector(&[-20, -10]),
+            firmware: bios(),
+            epoch: 1,
+            contents: vec![workload_content()],
+            matrix: Digest::from_bytes([7; 32]),
+            purpose: QualificationPurpose::NextStep,
+            state: QualificationState::Complete {
+                witnesses: vec![CellWitness {
+                    cell: exposure_class(),
+                    evidence: CellEvidence::Fresh { exposure: seq(60) },
+                }],
+            },
+        }
+        .into(),
+        NightReproduction {
+            source: DayEventId::Boot {
+                boot: BootId::from("7a1b2c3d-0000-0000-0000-000000000000".to_owned()),
+            },
+            target: Some(ReproductionTarget::Isolated {
+                ccd: ccd(1),
+                offset: target(-10),
+            }),
+            night: night(),
+            consumed_s: 1800,
+            remaining: vec![exposure_class()],
+            failures: vec![seq(70)],
+            state: ReproductionState::Pending,
+        }
+        .into(),
+        DayStep {
+            decision: DecisionId(3),
+            cold_boot: boot(),
+            old: ccd_vector(&[-10, -10]),
+            proposed: ccd_vector(&[-15, -10]),
+            step: StepKind::Promote { changed: ccd(0) },
+            predecessor: Some(DecisionId(2)),
+            hours: vec![seq(90), seq(91)],
+            hold_s: 180_000,
+            causes: StepCauses {
+                caps: vec![seq(80)],
+                qualification: Some(seq(60)),
+                vetoes: Vec::new(),
+                events: Vec::new(),
+            },
+            reason: "50 applied hours at the current profile".into(),
+        }
+        .into(),
+        DayApplied {
+            application: ApplicationId(5),
+            cause: ApplyCause::Step {
+                decision: DecisionId(3),
+            },
+            target: ccd_vector(&[-15, -10]),
+            readbacks: day_offsets(-15),
+            transactions: vec![seq(100), seq(101), seq(102)],
+            boot: boot(),
+            mono_ns: 9_000_000_000,
+        }
+        .into(),
+        DayEvent {
+            event: DayEventId::Boot {
+                boot: BootId::from("7a1b2c3d-0000-0000-0000-000000000000".to_owned()),
+            },
+            profile: ObservedProfile::Ccd {
+                ccd: CcdProfile::try_from(BTreeMap::from([
+                    (ccd(0), target(-15)),
+                    (ccd(1), target(-10)),
+                ]))
+                .unwrap(),
+                cores: day_offsets(-15),
+            },
+            boot: Some(BootId::from(
+                "7a1b2c3d-0000-0000-0000-000000000000".to_owned(),
+            )),
+            from: "2026-10-01T08:00:00Z".parse::<Timestamp>().unwrap(),
+            to: "2026-10-01T09:00:00Z".parse::<Timestamp>().unwrap(),
+            witnesses: vec![seq(7), seq(8)],
+            classification: Classification::CpuSuspect {
+                certainty: Certainty::Provisional,
+            },
+            resolution: Resolution::Unresolved {},
+            reason: "unexplained end at a nonzero day profile".into(),
+            predecessor: None,
+            escalation: Some(Escalation::RevertNewest {
+                reverted: DecisionId(3),
+            }),
+            cursors: vec![CcdCursor {
+                ccd: ccd(0),
+                depth: 1,
+            }],
+            consumed: vec![DecisionId(3)],
+            reproduction: ReproductionState::Pending,
+        }
+        .into(),
+        DayVeto {
+            event: DayEventId::Record {
+                session: session(),
+                seq: seq(12),
+            },
+            profile: ObservedProfile::PerCore {
+                cores: day_offsets(-15),
+            },
+            state: VetoState::Active,
+            evidence: vec![seq(7)],
+            reason: "CPU-suspect event at this exact profile".into(),
+        }
+        .into(),
+        DayHold {
+            profile: ccd_vector(&[-15, -10]),
+            application: ApplicationId(5),
+            credited: vec![seq(90), seq(91)],
+            eligible_s: 7200,
+            change: HoldChange::Credited {},
+        }
+        .into(),
+        DayFreeze {
+            choice: FreezeChoice::Freeze,
+            source: FreezeSource::Command { uid: 1000 },
+        }
+        .into(),
+        DayInterval {
+            boot: boot(),
+            start_ns: 1_000_000_000,
+            end_ns: 601_000_000_000,
+            profile: ObservedProfile::PerCore {
+                cores: day_offsets(-15),
+            },
+            application: Some(ApplicationId(5)),
+            state: IntervalState::Applied,
+            checkpoints: vec![seq(90), seq(91)],
+            reason: "checkpointed with unchanged readbacks".into(),
+        }
+        .into(),
+        DayImported {
+            original: Provenance {
+                session: session(),
+                seq: seq(25),
+            },
+            original_kind: EventKind::DayCheckpoint,
+            raw: r#"{"applied_secs":3600}"#.into(),
+            time: "2026-09-30T10:00:00Z".parse::<Timestamp>().unwrap(),
+            boot: boot(),
+            build: None,
+            firmware: None,
+            profile: None,
+            class: ImportClass::Checkpoint,
+            missing: vec![
+                MissingFact::Build,
+                MissingFact::Firmware,
+                MissingFact::Profile,
+            ],
+        }
+        .into(),
+        SessionImported {
+            sources: vec![CarriedSource {
+                session: session(),
+                schema: 1,
+                ruleset: 12,
+            }],
+            selected: vec![Provenance {
+                session: session(),
+                seq: seq(25),
+            }],
+            counts: ImportCounts {
+                selected: 1,
+                imported: 1,
+                duplicates: 0,
+                unknown: 1,
+                excluded: 1,
+            },
+            unknown: vec![ImportedRecordRef {
+                original: Provenance {
+                    session: session(),
+                    seq: seq(26),
+                },
+                kind: "day.future".into(),
+            }],
+            excluded: vec![ImportedRecordRef {
+                original: Provenance {
+                    session: session(),
+                    seq: seq(27),
+                },
+                kind: "trial.end".into(),
+            }],
+            reason: "fresh Ruleset 13 transition; no tuning carry".into(),
+        }
+        .into(),
     ]
+}
+
+fn ccd(id: u8) -> CcdId {
+    CcdId::new(i64::from(id)).unwrap()
+}
+
+fn night() -> NightId {
+    NightId(Seq::new(1).unwrap())
+}
+
+fn ccd_vector(offsets: &[i64]) -> CcdVector {
+    let topology: Vec<_> = (0..u8::try_from(offsets.len()).unwrap())
+        .map(|id| CoreInfo {
+            core: core(id),
+            ccd: ccd(id),
+            cpus: vec![CpuId::from(u16::from(id))],
+        })
+        .collect();
+    let profile = CcdProfile::try_from(
+        offsets
+            .iter()
+            .enumerate()
+            .map(|(id, offset)| (ccd(u8::try_from(id).unwrap()), target(*offset)))
+            .collect::<BTreeMap<_, _>>(),
+    )
+    .unwrap();
+    CcdVector {
+        cores: profile.expand(&topology).unwrap(),
+        ccd: profile,
+    }
+}
+
+fn workload_content() -> WorkloadContent {
+    WorkloadContent {
+        workload: workload("mprime-avx2-36k-248k"),
+        content: ContentId {
+            backend: togi_machine::Backend::Mprime,
+            executable: Digest::from_bytes([1; 32]),
+            configuration: Digest::from_bytes([2; 32]),
+        },
+    }
+}
+
+fn exposure_class() -> ExposureClass {
+    ExposureClass {
+        regime: Regime::R8,
+        workloads: vec![workload_content()],
+        cores: set(&[3]),
+        position: Some(Position::Light { core: core(3) }),
+        duration_s: 120,
+        placement: Placement::Isolated,
+    }
 }
 
 pub(crate) fn bios() -> BiosContext {

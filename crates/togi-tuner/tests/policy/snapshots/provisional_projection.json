@@ -1,0 +1,218 @@
+{
+  "applied": {
+    "0": -1,
+    "1": 0
+  },
+  "ccds": [
+    {
+      "binding": "rate",
+      "cap": -1,
+      "ccd": 0,
+      "cores": [
+        0,
+        1
+      ],
+      "day": -1,
+      "edge": {
+        "kind": "censored",
+        "limit": -50,
+        "witnesses": [
+          1752,
+          1758,
+          1763,
+          1768,
+          1773,
+          1778,
+          1783,
+          1788,
+          1793,
+          1798,
+          1803,
+          1808,
+          1813,
+          1818,
+          1823,
+          1828
+        ]
+      },
+      "remaining": 0
+    },
+    {
+      "binding": "rate",
+      "cap": -1,
+      "ccd": 1,
+      "cores": [
+        2,
+        3
+      ],
+      "day": 0,
+      "edge": {
+        "kind": "censored",
+        "limit": -50,
+        "witnesses": [
+          2106,
+          2112,
+          2117,
+          2122,
+          2127,
+          2132,
+          2137,
+          2142,
+          2147,
+          2152,
+          2157,
+          2162,
+          2167,
+          2172,
+          2177,
+          2182
+        ]
+      },
+      "remaining": 1
+    }
+  ],
+  "day": {
+    "firmware": {
+      "kind": "valid"
+    },
+    "freeze": false,
+    "hold": {
+      "eligible_s": 0,
+      "profile": {
+        "0": -1,
+        "1": 0
+      },
+      "required_s": 180000,
+      "witness": 9843
+    },
+    "last_step": [
+      9844,
+      {
+        "causes": {
+          "caps": [
+            5174,
+            5407
+          ],
+          "events": [
+            9841
+          ],
+          "vetoes": [
+            9842
+          ]
+        },
+        "cold_boot": "day2",
+        "decision": 1,
+        "hold_s": 0,
+        "hours": [],
+        "old": {
+          "ccd": {
+            "0": -1,
+            "1": 0
+          },
+          "cores": {
+            "0": -1,
+            "1": -1,
+            "2": 0,
+            "3": 0
+          }
+        },
+        "predecessor": 0,
+        "proposed": {
+          "ccd": {
+            "0": 0,
+            "1": 0
+          },
+          "cores": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0
+          }
+        },
+        "reason": "step the day profile back",
+        "step": {
+          "cause": {
+            "escalation": {
+              "kind": "revert_newest",
+              "reverted": 0
+            },
+            "event": {
+              "boot": "day1",
+              "kind": "boot"
+            },
+            "kind": "event"
+          },
+          "changed": [
+            0
+          ],
+          "kind": "retreat"
+        }
+      }
+    ],
+    "pending_questions": []
+  },
+  "events": [
+    {
+      "classification": {
+        "certainty": "provisional",
+        "kind": "cpu_suspect"
+      },
+      "event": {
+        "boot": "day1",
+        "kind": "boot"
+      },
+      "reproduction": "pending",
+      "resolution": {
+        "kind": "unresolved"
+      }
+    }
+  ],
+  "night": {
+    "budgets": [
+      {
+        "consumed_s": 0,
+        "queue": "reproduction",
+        "share_pct": 25
+      },
+      {
+        "consumed_s": 694,
+        "queue": "qualification",
+        "share_pct": 75
+      },
+      {
+        "consumed_s": 3840,
+        "queue": "mapping",
+        "share_pct": 10
+      },
+      {
+        "consumed_s": 134,
+        "queue": "control",
+        "share_pct": 5
+      },
+      {
+        "consumed_s": 0,
+        "queue": "requalification",
+        "share_pct": 10
+      },
+      {
+        "consumed_s": 0,
+        "queue": "filler",
+        "share_pct": 0
+      }
+    ],
+    "closed_by": 9835,
+    "filler": 0,
+    "night": 4,
+    "unavailable": []
+  },
+  "stopped": false,
+  "vetoes": [
+    {
+      "event": {
+        "boot": "day1",
+        "kind": "boot"
+      },
+      "state": "active"
+    }
+  ]
+}

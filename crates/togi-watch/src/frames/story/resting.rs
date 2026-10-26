@@ -4,17 +4,15 @@ use std::fmt::Write as _;
 
 use ratatui::text::Line;
 use togi_journal::{Outcome, ShutdownReason};
-use togi_machine::{Condition, CoreId, ResetKind, Signal};
-use togi_tuner::Uncertainty;
+use togi_machine::{CoreId, ResetKind, Signal};
 
 use super::super::colours::Paint;
 use super::super::scene::{Scene, clock};
-use super::super::terms::{cycle_place, trial_name};
-use super::RestingBand;
-use super::outcome::{NEXT_TRIAL, next_trial_words};
-use crate::model::{RecoveryView, TrialEndView};
-use crate::words::{kind_words, lateness, on_cores, signal_words};
+use super::{RestingBand, night};
+use crate::model::{RecoveryView, TrialEndView, TrialView};
+use crate::words::{core_ids, kind_words, lateness, on_cores, signal_words};
 
+const NEXT_TRIAL: &str = "next trial: ";
 const SAVED_ROWS: &str = "Rows show the saved profile, not applied now.";
 
 /// The resting band: no trial in flight, a stop, a dead end, a crashed trial or a recovery.
@@ -42,10 +40,21 @@ fn band(scene: &Scene<'_>) -> RestingBand {
             lines,
         };
     }
+    if s.policy.stopped {
+        let mut lines = vec!["platform unstable at stock: a conclusive failure at CO 0".to_owned()];
+        if s.stopped.is_some_and(|stopped| stopped.saved) {
+            lines.push(SAVED_ROWS.to_owned());
+        }
+        return RestingBand {
+            title: "STOCK FAILURE",
+            paint: Paint::Bad,
+            lines,
+        };
+    }
     if s.crashed_trial() {
         return RestingBand {
             title: "CRASHED, NOT YET RECOVERED",
-            paint: Paint::Hunt,
+            paint: Paint::Warn,
             lines: crashed_lines(scene),
         };
     }
@@ -67,7 +76,7 @@ fn band(scene: &Scene<'_>) -> RestingBand {
     if let Some(recover) = s.recover {
         return RestingBand {
             title: "RECOVERED FROM A CRASH",
-            paint: Paint::Hunt,
+            paint: Paint::Warn,
             lines: recovered_lines(scene, recover),
         };
     }
@@ -86,23 +95,20 @@ fn band(scene: &Scene<'_>) -> RestingBand {
 fn stop_words(reason: ShutdownReason) -> &'static str {
     match reason {
         ShutdownReason::Signal => "stopped by a signal",
-        ShutdownReason::Cycles => "requested clean cycles completed",
-        ShutdownReason::FirstResult => "stopped at the first confirmed result",
+        ShutdownReason::Cycles | ShutdownReason::FirstResult => {
+            "stopped at a run limit an earlier version supported"
+        }
         ShutdownReason::Command => "read-only command finished; no applied offsets changed",
         ShutdownReason::DeadEnd => "tuning stopped at a dead end",
     }
 }
 
-/// What the tuner runs next between trials.
+/// What runs next between trials: the night's next listed task, or nothing the tuner has said.
 fn next_line(scene: &Scene<'_>) -> String {
-    let between = scene.s.forecast.between.as_ref();
-    match between.and_then(|between| between.next.as_ref()) {
-        Some(next) => format!("{NEXT_TRIAL}{}", next_trial_words(scene, next, None, None)),
-        None if between.and_then(|between| between.uncertainty)
-            == Some(Uncertainty::NeedsRanking) =>
-        {
-            format!("{NEXT_TRIAL}read the core ranking before deciding")
-        }
+    let policy = scene.s.policy;
+    match night::next_task(policy) {
+        Some(task) => format!("{NEXT_TRIAL}{}", night::task_words(task)),
+        None if night::open_night(policy).is_some() => format!("{NEXT_TRIAL}filler"),
         None => format!("{NEXT_TRIAL}deciding"),
     }
 }
@@ -124,19 +130,9 @@ fn recovered_lines(scene: &Scene<'_>, recover: &RecoveryView) -> Vec<String> {
         ];
     };
     let mut first = format!("crash in {}", trial_name(trial));
-    let place = cycle_place(trial);
-    if !place.is_empty() {
-        let _ = write!(first, " · {place}");
-    }
-    match &recover.end {
-        Some(end) if end.core.is_some() => {
-            let core = end.core.map_or(0, CoreId::get);
-            let _ = write!(first, " · core {core:02} named");
-        }
-        Some(_) if trial.hunt.is_none() && trial.condition != Condition::Alone => {
-            first.push_str(" · no core named");
-        }
-        _ => {}
+    if let Some(end) = recover.end.as_ref().filter(|end| end.core.is_some()) {
+        let core = end.core.map_or(0, CoreId::get);
+        let _ = write!(first, " · core {core:02} named");
     }
     let mut second = Vec::new();
     if let Some((end, sample)) = recover
@@ -166,10 +162,6 @@ fn crashed_lines(scene: &Scene<'_>) -> Vec<String> {
         return Vec::new();
     };
     let mut first = format!("trial {} · {}", trial.id, trial_name(trial));
-    let place = cycle_place(trial);
-    if !place.is_empty() {
-        let _ = write!(first, " · {place}");
-    }
     if let Some(started) = trial.started {
         let _ = write!(first, " · started {}", scene.wall_second(started));
     }
@@ -180,14 +172,24 @@ fn crashed_lines(scene: &Scene<'_>) -> Vec<String> {
     ]
 }
 
+/// A trial's regime, kind and cores: `R7 all-core on 00-15`.
+fn trial_name(trial: &TrialView) -> String {
+    format!(
+        "{} {} on {}",
+        trial.regime,
+        kind_words(trial.regime),
+        core_ids(trial.cores)
+    )
+}
+
 /// How a trial ended, in one word: a crash is a crash, whatever else the journal says.
-fn end_word(end: &TrialEndView) -> (&'static str, Paint) {
+pub(super) fn end_word(end: &TrialEndView) -> (&'static str, Paint) {
     if end.signal == Some(Signal::Crash) {
         ("CRASH", Paint::Bad)
     } else {
         match end.outcome {
             Outcome::Failure => ("FAILURE", Paint::Bad),
-            Outcome::Inconclusive => ("INCONCLUSIVE", Paint::Hunt),
+            Outcome::Inconclusive => ("INCONCLUSIVE", Paint::Warn),
             Outcome::Pass => ("PASS", Paint::Good),
         }
     }

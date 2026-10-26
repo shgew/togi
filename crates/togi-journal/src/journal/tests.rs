@@ -509,7 +509,13 @@ fn boot_reasons_are_found_live_and_in_archives_by_complete_lines_only() {
     assert!(journal.boot_reason_recorded("r1").unwrap());
     assert!(!journal.boot_reason_recorded("r2").unwrap());
     let dir = journal
-        .archive(stamp(2), ArchiveKind::Transition, &[])
+        .archive(
+            stamp(2),
+            ArchiveKind::Transition {
+                destination: "20231115T000000Z".parse().unwrap(),
+            },
+            &[],
+        )
         .unwrap();
     assert!(dir.boot_reason_recorded("r1").unwrap());
     assert!(!dir.boot_reason_recorded("r2").unwrap());
@@ -561,7 +567,13 @@ fn a_diagnostic_naming_the_reason_is_not_an_acknowledgement() {
     let dir = dir
         .open(boot(2))
         .unwrap()
-        .archive(stamp(2), ArchiveKind::Transition, &[])
+        .archive(
+            stamp(2),
+            ArchiveKind::Transition {
+                destination: "20231115T000000Z".parse().unwrap(),
+            },
+            &[],
+        )
         .unwrap();
     assert_eq!(dir.archives().unwrap().len(), 1);
     assert!(!dir.boot_reason_recorded("r1").unwrap());

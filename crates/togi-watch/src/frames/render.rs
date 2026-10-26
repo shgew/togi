@@ -13,9 +13,7 @@ use super::layout::{Layout, SizeClass};
 use super::measure::measure;
 use super::panels::{context_lines, history_panel, log_arrivals, log_body};
 use super::scene::Scene;
-use super::story::{
-    Story, last_lines, narrator_lines, outcome_lines, problem_story, starting_story, story,
-};
+use super::story::{Story, last_lines, narrator_lines, problem_story, starting_story, story};
 use crate::model::Model;
 use crate::screen::{Drawn, Hold, Journal, Log, Screen, View};
 
@@ -109,12 +107,6 @@ fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -
                 rows(buf, layout.last, last_lines(scene), screen.colours);
             }
             draw_now(buf, &m, scene);
-            rows(
-                buf,
-                m.outcomes,
-                outcome_lines(scene, usize::from(m.outcomes.width), compact),
-                screen.colours,
-            );
             for ccd in &m.ccds {
                 draw_ccd(buf, ccd, scene);
             }

@@ -1,9 +1,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use togi_config::Config;
 use togi_journal::{Event, EventKind, Payload, ShutdownReason};
-use togi_machine::CoreId;
 use togi_session::{SessionError, Stop};
 use togi_simrun::Observe;
 
@@ -25,7 +23,7 @@ fn a_failed_projection_warns_after_the_stop_and_does_not_fail_the_session() {
         Observe::Continue
     }));
     let finished = finish(input);
-    assert_eq!(finished.stop, Some(Stop::Cycles));
+    assert_eq!(finished.stop, Some(Stop::Signal));
     assert!(finished.errors.is_empty(), "{:?}", finished.errors);
 
     let events = bench.events();
@@ -33,7 +31,7 @@ fn a_failed_projection_warns_after_the_stop_and_does_not_fail_the_session() {
         panic!("too few events");
     };
     assert!(
-        matches!(&shutdown.payload, Payload::Shutdown(s) if s.reason == ShutdownReason::Cycles)
+        matches!(&shutdown.payload, Payload::Shutdown(s) if s.reason == ShutdownReason::Signal)
     );
     let Payload::SessionWarning(warning) = &warning.payload else {
         panic!("last event is {}", events.last().unwrap().kind().as_str());
@@ -93,7 +91,7 @@ fn a_crash_right_after_session_start_is_replayed_once() {
         state["facts"]["last_seq"],
         serde_json::json!(last.seq.get())
     );
-    assert_eq!(state["facts"]["cores"].as_array().unwrap().len(), 2);
+    assert_eq!(state["facts"]["cores"].as_array().unwrap().len(), 4);
 }
 
 #[test]
@@ -116,16 +114,20 @@ fn a_resume_reads_the_projection_the_earlier_run_published() {
 }
 
 #[test]
-fn an_invalid_config_begins_no_session_and_publishes_no_projection() {
-    let bench = Bench::new(&hunt_machine(2), 1);
-    let mut input = bench.input();
-    input.config = Config::parse(r#"{"start_offsets": {"15": -10}}"#).unwrap();
-    let finished = finish(input);
+fn a_baseline_that_is_not_zero_starts_no_night() {
+    let mut definition = hunt_machine(4);
+    definition.bios = Some(vec![-5, 0, 0, 0]);
+    let bench = Bench::new(&definition, 1);
+    let finished = finish(bench.input());
     assert!(
-        matches!(finished.errors.as_slice(), [SessionError::NoSuchCore { core }] if *core == CoreId::new(15).unwrap()),
+        matches!(
+            finished.errors.as_slice(),
+            [SessionError::BaselineNotZero { .. }]
+        ),
         "{:?}",
         finished.errors
     );
-    assert!(bench.events().is_empty());
-    assert!(state_json(&bench.fs).is_none());
+    let events = bench.events();
+    assert_eq!(count(&events, EventKind::TrialIntent), 0);
+    assert_eq!(count(&events, EventKind::ProfileApplied), 0);
 }

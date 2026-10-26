@@ -113,8 +113,7 @@ fn state_rebuild_write_failure_warns_and_continues() {
     assert!(!kinds.contains(&"crash.detected"));
     assert_eq!(resumed.preflight().unwrap(), Control::Continue);
     assert_eq!(resumed.sweep().unwrap(), Control::Continue);
-    let held = resumed.held();
-    resumed.reconcile(&held).unwrap();
+    resumed.reconcile().unwrap();
     resumed.record_shutdown(&Stop::Signal);
     let ended = resumed.close(Ok(Stop::Signal));
     assert!(ended.errors.is_empty());
@@ -122,6 +121,66 @@ fn state_rebuild_write_failure_warns_and_continues() {
         ended.journal.events().last().unwrap().payload,
         Payload::Shutdown(_)
     ));
+}
+
+#[test]
+fn startup_readback_resolution_survives_replay_and_rebuilds_a_stale_open_snapshot() {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    session.begin().unwrap();
+    let receipt = session
+        .appender
+        .smu_intent(
+            togi_journal::SmuCommand::Set {
+                core: crate::testing::core(1),
+                offset: togi_machine::TargetOffset::ZERO,
+            },
+            &[],
+        )
+        .unwrap();
+    let intent = receipt.intent();
+    assert!(session.appender.publish_state().unwrap());
+    drop(session);
+
+    let mut resumed = bench.open();
+    assert_eq!(resumed.start().unwrap(), Control::Continue);
+    assert_eq!(resumed.preflight().unwrap(), Control::Continue);
+    assert_eq!(resumed.sweep().unwrap(), Control::Continue);
+    assert_eq!(resumed.reconcile().unwrap(), Control::Continue);
+    assert!(resumed.appender.folds.facts.open.is_empty());
+    assert_eq!(
+        resumed
+            .appender
+            .recovery()
+            .latest_unmatched_intent(resumed.appender.journal().boot()),
+        None
+    );
+    assert!(resumed.appender.journal().events().iter().any(|event| {
+        matches!(event.payload, Payload::SmuReadback(_)) && event.cause == [intent]
+    }));
+    crate::testing::assert_fold_consistent(&resumed.appender);
+    drop(resumed);
+
+    let mut reopened = bench.open();
+    reopened.rebuild_state().unwrap();
+    let Payload::StateRebuilt(rebuilt) =
+        &reopened.appender.journal().events().last().unwrap().payload
+    else {
+        panic!("the stale open-intent snapshot was not rebuilt");
+    };
+    assert!(rebuilt.fields.contains(&"last_seq".to_owned()));
+    assert!(reopened.appender.folds.facts.open.is_empty());
+    assert!(reopened.appender.publish_state().unwrap());
+    let (_, saved): (_, StateDocument) = reopened
+        .appender
+        .journal()
+        .dir()
+        .read_snapshot()
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.facts, reopened.appender.folds.facts);
+    assert_eq!(saved.recovery, *reopened.appender.recovery());
+    crate::testing::assert_fold_consistent(&reopened.appender);
 }
 
 #[test]
@@ -229,12 +288,11 @@ fn live_publishes_after_every_append_and_the_last_state_covers_the_final_event()
         saved.facts,
         togi_journal::State::replay(ended.journal.events()).unwrap()
     );
-    assert_eq!(
-        saved.tuner,
-        togi_tuner::replay(ended.journal.events())
-            .unwrap()
-            .project()
-    );
+    let mut tuner = togi_tuner::policy::State::new(togi_tuner::policy::Params::SPEC);
+    for event in ended.journal.events() {
+        tuner.fold(event).unwrap();
+    }
+    assert_eq!(saved.tuner, tuner.project());
 }
 
 #[test]
@@ -297,7 +355,7 @@ fn reseal(state: &mut serde_json::Value) {
 }
 
 #[test_case("/recovery/trials", serde_json::json!(999), "recovery"; "run recovery")]
-#[test_case("/incremental/poisoned", serde_json::json!(true), "incremental"; "incremental tuner")]
+#[test_case("/incremental/stop", serde_json::json!({}), "incremental"; "incremental tuner")]
 #[test_case("/defects/excluded", serde_json::json!([1]), "defects"; "defect index")]
 #[test_case("/presentation/facts/stopped", serde_json::json!(true), "presentation"; "watch end view")]
 fn boot_replays_independently_even_when_a_wrong_full_fold_has_a_valid_checksum(
@@ -355,7 +413,7 @@ fn every_differing_facts_key_is_named_in_journal_order() {
 #[test]
 fn a_disagreeing_tuner_projection_is_named_apart_from_facts() {
     let fields = rebuilt_after_tampering(|state| {
-        state["tuner"]["clean_cycles"] = serde_json::json!(7);
+        state["tuner"]["stopped"] = serde_json::json!(true);
         state["facts"]["last_seq"] = serde_json::json!(1);
         reseal(state);
     });
@@ -404,7 +462,7 @@ fn a_resealed_prefix_stamp_mismatch_is_rebuilt_and_named() {
 
 #[test_case("/facts/last_seq", serde_json::json!(1); "prefix sequence and facts disagree")]
 #[test_case("/recovery/trials", serde_json::json!(999); "restored fold differs")]
-#[test_case("/tuner/clean_cycles", serde_json::json!(999); "published projection differs")]
+#[test_case("/tuner/stopped", serde_json::json!(true); "published projection differs")]
 fn independent_snapshot_verification_reports_resealed_mismatches(
     pointer: &str,
     value: serde_json::Value,

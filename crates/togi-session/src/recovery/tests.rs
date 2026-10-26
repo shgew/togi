@@ -4,12 +4,11 @@ use test_case::test_case;
 use jiff::Timestamp;
 use proptest::prelude::*;
 use togi_journal::{
-    Activity, BackendRetry, BootLeaveReason, BootSavedEntry, Build, CarriedCore, CorePhase,
-    CoreTransition, CrashDetected, DeadEnd, DeadEndCondition, DefectId, Event, EventKind, FixStamp,
-    HuntEnd, HuntGroup, HuntOutcome, HuntStage, Mce, Outcome, Payload, ProfileApplied,
-    ProfileChange, ProfileRestored, RetryTarget, SCHEMA, Seq, SessionBaseline, SessionCarried,
-    SessionStart, SessionWarning, Shutdown, ShutdownReason, SmuError, SmuOp, SmuReadback, Stamp,
-    TrialEnd, TrialId, TrialIntent, TrialProgress, TrialStart,
+    Activity, BackendRetry, BootLeaveReason, BootSavedEntry, Build, CrashDetected, DeadEnd,
+    DeadEndCondition, DefectId, Event, EventKind, FixStamp, HuntEnd, HuntGroup, HuntOutcome,
+    HuntStage, Mce, Outcome, Payload, ProfileApplied, ProfileChange, ProfileRestored, RetryTarget,
+    SCHEMA, Seq, SessionBaseline, SessionStart, SessionWarning, Shutdown, ShutdownReason, SmuError,
+    SmuOp, SmuReadback, Stamp, TrialEnd, TrialId, TrialIntent, TrialProgress, TrialStart,
 };
 use togi_machine::{
     Backend, BankType, BootId, CcdId, Condition, CoreInfo, CoreSet, CpuId, KernelCursor,
@@ -178,6 +177,12 @@ impl Log {
 
     pub(crate) fn trial_intent(&mut self, id: &str, single: Option<i64>, regime: Regime) -> Seq {
         let intent = TrialIntent {
+            task_start: None,
+            night: None,
+            task: None,
+            content: Vec::new(),
+            placement: None,
+            tested: None,
             trial: TrialId::from(id.to_owned()),
             kernel_cursor: None,
             kernel_error: None,
@@ -510,52 +515,35 @@ fn a_new_smu_intent_replaces_one_nothing_answered_and_a_crash_clears_its_boots()
     assert_eq!(log.state().latest_unmatched_intent(&boot("b0")), None);
 }
 
-#[test]
-fn registers_are_the_baseline_lowered_by_intents_and_certain_after_a_readback_by_core_id() {
+#[test_case(true, true, false; "same boot cited intent closes")]
+#[test_case(true, false, true; "uncited intent stays open")]
+#[test_case(false, true, true; "next boot intent stays attributable")]
+fn startup_readback_resolves_only_a_cited_same_boot_smu_intent(
+    same_boot: bool,
+    cited: bool,
+    still_open: bool,
+) {
     let mut log = Log::new();
-    log.baseline(&[(0, 0), (8, -3)]);
-    let intent = log.intent(8, -12, &[]);
-    let state = log.state();
-    let registers = state.registers(&boot("b0")).unwrap();
-    assert_eq!(registers.offset(core(8)), Some(ObservedOffset(-12)));
-    assert!(registers.uncertain(core(8)));
-    assert_eq!(registers.offset(core(0)), Some(ObservedOffset(0)));
-    assert!(!registers.uncertain(core(0)));
-    assert!(!registers.certain());
-
-    let write = log.written(8, -12, intent);
-    log.readback(8, -12, -12, write);
-    let state = log.state();
-    let registers = state.registers(&boot("b0")).unwrap();
-    assert!(!registers.uncertain(core(8)));
-    assert_eq!(registers.offset(core(8)), Some(ObservedOffset(-12)));
-    assert!(registers.certain());
-    assert_eq!(
-        registers.offsets().iter().collect::<Vec<_>>(),
-        [(core(0), ObservedOffset(0)), (core(8), ObservedOffset(-12))]
+    let intent = log.intent(8, 0, &[]);
+    if !same_boot {
+        log.at("b1", 0);
+    }
+    log.add(
+        Payload::SmuReadback(SmuReadback {
+            core: core(8),
+            offset: ObservedOffset(0),
+            expected: None,
+        }),
+        if cited {
+            std::slice::from_ref(&intent)
+        } else {
+            &[]
+        },
     );
-}
-
-#[test]
-fn an_intent_never_raises_the_conservative_register_and_a_set_all_covers_every_core() {
-    let mut log = Log::new();
-    log.baseline(&[(0, -20), (8, -30)]);
-    log.intent_all(0, &[]);
-    let state = log.state();
-    let registers = state.registers(&boot("b0")).unwrap();
-    assert_eq!(registers.offset(core(0)), Some(ObservedOffset(-20)));
-    assert_eq!(registers.offset(core(8)), Some(ObservedOffset(-30)));
-    assert!(registers.uncertain(core(0)) && registers.uncertain(core(8)));
-}
-
-#[test]
-fn a_boot_that_wrote_before_a_baseline_starts_from_nothing_known() {
-    let mut log = Log::new();
-    log.intent(0, -4, &[]);
-    let state = log.state();
-    let registers = state.registers(&boot("b0")).unwrap();
-    assert_eq!(registers.offset(core(0)), Some(ObservedOffset(-4)));
-    assert_eq!(registers.offset(core(8)), None);
+    assert_eq!(
+        log.state().latest_unmatched_intent(&boot("b0")),
+        still_open.then_some(intent)
+    );
 }
 
 #[test]
@@ -1043,86 +1031,6 @@ fn config_loaded_updates_the_build_the_run_is_judged_by() {
 }
 
 #[test]
-fn trial_ids_and_workload_rotation_advance_on_conclusive_trials_only() {
-    let mut log = Log::new();
-    log.baseline(&[(0, 0), (8, 0)]);
-    let state = log.state();
-    assert_eq!(state.next_trial_id().as_str(), "0001");
-    assert_eq!(state.rotation(Some(core(0)), Regime::R1), 0);
-
-    log.trial_intent("0001", Some(0), Regime::R1);
-    assert_eq!(log.state().next_trial_id().as_str(), "0002");
-    log.ended("0001", Outcome::Inconclusive, &[]);
-    assert_eq!(log.state().rotation(Some(core(0)), Regime::R1), 0);
-    log.trial_intent("0002", Some(0), Regime::R1);
-    log.ended("0002", Outcome::Pass, &[]);
-    log.trial_intent("0003", Some(0), Regime::R1);
-    log.ended("0003", Outcome::Failure, &[]);
-    log.trial_intent("0004", None, Regime::R7);
-    log.ended("0004", Outcome::Pass, &[]);
-    let state = log.state();
-    assert_eq!(state.rotation(Some(core(0)), Regime::R1), 2);
-    assert_eq!(state.rotation(Some(core(8)), Regime::R1), 0);
-    assert_eq!(state.rotation(None, Regime::R7), 1);
-    assert_eq!(state.rotation(None, Regime::R1), 0);
-    assert_eq!(state.next_trial_id().as_str(), "0005");
-}
-
-#[test]
-fn workload_rotation_keeps_sparse_cores_and_regimes_independent() {
-    let mut log = Log::on(&[(3, 0), (15, 1)]);
-    log.trial_intent("0001", Some(15), Regime::R1);
-    log.ended("0001", Outcome::Pass, &[]);
-    log.trial_intent("0002", Some(3), Regime::R1);
-    log.ended("0002", Outcome::Failure, &[]);
-    log.trial_intent("0003", Some(15), Regime::R2);
-    log.ended("0003", Outcome::Pass, &[]);
-    log.trial_intent("0004", Some(15), Regime::R1);
-    log.ended("0004", Outcome::Pass, &[]);
-    let state = log.state();
-    assert_eq!(state.rotation(Some(core(15)), Regime::R1), 2);
-    assert_eq!(state.rotation(Some(core(3)), Regime::R1), 1);
-    assert_eq!(state.rotation(Some(core(15)), Regime::R2), 1);
-    assert_eq!(state.rotation(Some(core(3)), Regime::R2), 0);
-    assert_eq!(state.rotation(Some(core(0)), Regime::R1), 0);
-    assert_eq!(state.rotation(None, Regime::R1), 0);
-}
-
-#[test]
-fn carried_cores_preserve_holes_and_core_order() {
-    let mut log = Log::on(&[(3, 0), (15, 1)]);
-    let seed = |id| CarriedCore {
-        core: core(id),
-        candidate_solo_limit: Some(togi_journal::CarriedLimit {
-            offset: target(-id),
-            from: togi_journal::Provenance {
-                session: "20260101T000000Z".parse().unwrap(),
-                seq: seq(1),
-            },
-        }),
-        failure_point: None,
-    };
-    log.add(
-        Payload::SessionCarried(SessionCarried {
-            sources: Vec::new(),
-            failure_points: false,
-            detail: None,
-            carried: vec![seed(15), seed(3)],
-        }),
-        &[],
-    );
-    let state = log.state();
-    let (_, cores) = state.carried().unwrap();
-    assert_eq!(cores.get_ref(core(0)), None);
-    assert_eq!(cores.get_ref(core(8)), None);
-    assert_eq!(
-        cores.iter_ref().map(|(core, _)| core).collect::<Vec<_>>(),
-        [core(3), core(15)]
-    );
-    assert_eq!(cores.get_ref(core(15)).unwrap().as_ref(), Some(&seed(15)));
-}
-
-#[test]
 fn inconclusive_trials_streak_unless_interrupted_and_a_conclusive_one_ends_it() {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
@@ -1186,34 +1094,134 @@ fn a_backend_inconclusive_through_every_retry_is_exhausted_until_a_no_evidence_d
         let id = format!("{n:04}");
         log.trial_intent(&id, Some(0), Regime::R1);
         log.ended(&id, Outcome::Inconclusive, &[]);
-        let exhausted = log
+        let exhausted: Vec<_> = log
             .state()
-            .exhausted_backend(k)
-            .map(|(backend, streak)| (backend, streak.len()));
-        assert_eq!(
-            exhausted,
-            (n == 4).then_some((Backend::Mprime, 4)),
-            "after {n}"
-        );
+            .unavailable_backends(k)
+            .into_iter()
+            .map(|(backend, unavailable)| (backend, unavailable.causes().len()))
+            .collect();
+        let expected: Vec<_> = (n == 4)
+            .then_some((Backend::Mprime, 4))
+            .into_iter()
+            .collect();
+        assert_eq!(exhausted, expected, "after {n}");
     }
     log.add(dead_end(DeadEndCondition::NoEvidence), &[]);
-    assert!(log.state().exhausted_backend(k).is_none());
+    assert!(log.state().unavailable_backends(k).is_empty());
 }
 
-#[test]
-fn a_missing_backend_is_evidence_until_the_no_evidence_dead_end() {
+#[derive(Clone, Copy, Debug)]
+enum Witness {
+    Signal,
+    DeadEnd,
+    Cycles,
+    Crash,
+    DayBootSameBoot,
+    DayBootLaterBoot,
+}
+
+#[test_case(Witness::Signal, true; "signal shutdown")]
+#[test_case(Witness::DeadEnd, true; "dead end shutdown")]
+#[test_case(Witness::Cycles, false; "cycles shutdown")]
+#[test_case(Witness::Crash, false; "crash without shutdown")]
+#[test_case(Witness::DayBootSameBoot, false; "day boot in the night's boot")]
+#[test_case(Witness::DayBootLaterBoot, true; "day boot in a later boot")]
+fn a_closed_night_carries_no_backend_exclusion_into_the_next(witness: Witness, closes: bool) {
+    let k = togi_config::DeadEndThreshold::new(1).unwrap();
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
-    log.trial_intent("0001", Some(0), Regime::R1);
-    let mut end = trial_end("0001", Outcome::Inconclusive);
-    end.backend_missing = true;
-    end.reason = Some("no such file".into());
-    let ended = log.add(Payload::TrialEnd(end), &[]);
-    let missing = log.state().missing_evidence().cloned().unwrap();
-    assert_eq!(missing.seq, ended);
-    assert_eq!(missing.detail, "backend mprime is missing: no such file");
+    log.add(
+        Payload::NightPlan(togi_journal::NightPlan {
+            night: None,
+            budgets: Vec::new(),
+            tasks: Vec::new(),
+            unavailable: Vec::new(),
+        }),
+        &[],
+    );
+    for n in 1..=4 {
+        let id = format!("{n:04}");
+        log.trial_intent(&id, Some(0), Regime::R1);
+        log.ended(&id, Outcome::Inconclusive, &[]);
+    }
+    log.trial_intent("0005", Some(0), Regime::R1);
+    let mut missing = trial_end("0005", Outcome::Inconclusive);
+    missing.backend_missing = true;
+    log.add(Payload::TrialEnd(missing), &[]);
+    assert_eq!(log.state().unavailable_backends(k).len(), 1);
+    let day_boot = Payload::DayBootStart(togi_journal::DayBootStart {
+        build: build(),
+        bios: togi_machine::BiosContext::default(),
+        offsets: PerCore::default(),
+        watchdog: None,
+    });
+    let closing = match witness {
+        Witness::Signal => Some(shutdown(ShutdownReason::Signal)),
+        Witness::DeadEnd => Some(shutdown(ShutdownReason::DeadEnd)),
+        Witness::Cycles => Some(shutdown(ShutdownReason::Cycles)),
+        Witness::Crash => {
+            log.at("b1", 0);
+            None
+        }
+        Witness::DayBootSameBoot => Some(day_boot),
+        Witness::DayBootLaterBoot => {
+            log.at("b1", 0);
+            Some(day_boot)
+        }
+    };
+    if let Some(payload) = closing {
+        log.add(payload, &[]);
+    }
+    assert_eq!(
+        log.state().unavailable_backends(k).is_empty(),
+        closes,
+        "{witness:?}"
+    );
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Probe {
+    Trial,
+    Preflight,
+}
+
+#[test_case(Probe::Trial; "a trial that found its program missing")]
+#[test_case(Probe::Preflight; "a failed backend preflight check")]
+fn a_missing_backend_is_unavailable_at_once_until_the_no_evidence_dead_end(probe: Probe) {
+    let k = togi_config::DeadEndThreshold::new(3).unwrap();
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    let check = |check: &str, ok| {
+        Payload::PreflightCheck(togi_journal::PreflightCheck {
+            check: check.to_owned(),
+            detail: "missing".to_owned(),
+            ok,
+        })
+    };
+    log.add(check("backends.ycruncher", true), &[]);
+    log.add(check("backend_user", false), &[]);
+    assert!(log.state().unavailable_backends(k).is_empty());
+    let missing = match probe {
+        Probe::Trial => {
+            log.trial_intent("0001", Some(0), Regime::R1);
+            let mut end = trial_end("0001", Outcome::Inconclusive);
+            end.backend_missing = true;
+            log.add(Payload::TrialEnd(end), &[])
+        }
+        Probe::Preflight => log.add(check("backends.mprime", false), &[]),
+    };
+    assert_eq!(
+        log.state()
+            .unavailable_backends(k)
+            .into_iter()
+            .map(|(backend, unavailable)| (backend, unavailable.causes().to_vec()))
+            .collect::<Vec<_>>(),
+        [(Backend::Mprime, vec![missing])]
+    );
+    log.add(check("backends.mprime", true), &[]);
+    assert_eq!(log.state().unavailable_backends(k).len(), 1);
     log.add(dead_end(DeadEndCondition::NoEvidence), &[]);
-    assert!(log.state().missing_evidence().is_none());
+    assert!(log.state().unavailable_backends(k).is_empty());
 }
 
 #[test]
@@ -1284,16 +1292,16 @@ fn crash_with(log: &mut Log, previous: &str, edit: impl FnOnce(&mut CrashDetecte
     log.add(Payload::CrashDetected(detected), &[])
 }
 
-#[test_case(true, false, None, (1, 0, false); "stray")]
-#[test_case(false, true, Some(ResetKind::ThermalTrip), (0, 0, true); "thermal")]
-#[test_case(false, true, Some(ResetKind::PowerButton), (0, 0, false); "power button")]
-#[test_case(false, true, None, (0, 0, false); "unknown reset")]
-#[test_case(false, false, None, (0, 1, false); "idle")]
-fn recorded_crashes_stand_as_stray_idle_or_thermal_evidence_and_nothing_else(
+#[test_case(true, false, None, (1, false); "stray")]
+#[test_case(false, true, Some(ResetKind::ThermalTrip), (0, true); "thermal")]
+#[test_case(false, true, Some(ResetKind::PowerButton), (0, false); "power button")]
+#[test_case(false, true, None, (0, false); "unknown reset")]
+#[test_case(false, false, None, (0, false); "idle")]
+fn recorded_crashes_stand_as_stray_or_thermal_evidence_and_nothing_else(
     case_stray: bool,
     case_inconclusive: bool,
     case_reset: Option<ResetKind>,
-    case_want: (usize, usize, bool),
+    case_want: (usize, bool),
 ) {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
@@ -1304,11 +1312,7 @@ fn recorded_crashes_stand_as_stray_idle_or_thermal_evidence_and_nothing_else(
     });
     let state = log.state();
     assert_eq!(
-        (
-            state.stray().len(),
-            state.pending_idle().len(),
-            state.thermal_evidence().is_some()
-        ),
+        (state.stray().len(), state.thermal_evidence().is_some()),
         case_want
     );
 
@@ -1318,56 +1322,7 @@ fn recorded_crashes_stand_as_stray_idle_or_thermal_evidence_and_nothing_else(
     log.at("b", 0);
     crash_with(&mut log, "a", |_| {});
     let state = log.state();
-    assert!(state.stray().is_empty() && state.pending_idle().is_empty());
-}
-
-#[test]
-fn stray_crashes_and_idle_crashes_stand_until_something_answers_them() {
-    let mut log = Log::new();
-    log.baseline(&[(0, 0), (8, 0)]);
-    let stray = crash_with(&mut log, "x", |detected| detected.stray = true);
-    let idle = crash_with(&mut log, "y", |_| {});
-    let state = log.state();
-    assert_eq!(
-        (state.stray(), state.pending_idle()),
-        (&[stray][..], &[idle][..])
-    );
-    let idle_crashes: Vec<_> = state.idle_crashes().collect();
-    assert_eq!(idle_crashes, [(idle, &crash("y"))]);
-    assert_eq!(state.crash(&boot("x")).map(|(seq, _)| seq), Some(stray));
-    assert!(
-        state
-            .crash(&boot("x"))
-            .is_some_and(|(_, detected)| detected.stray)
-    );
-    log.add(
-        Payload::Failure(togi_journal::Failure {
-            signal: Signal::Crash,
-            attribution: togi_journal::Attribution::Unattributed,
-            core: None,
-            offset: None,
-            trial: None,
-            regime: None,
-            condition: None,
-            profile: None,
-            known_failure: None,
-            reason: None,
-            round: None,
-        }),
-        &[idle],
-    );
-    assert!(log.state().pending_idle().is_empty());
-    assert_eq!(log.state().idle_crashes().count(), 0);
-    log.add(dead_end(DeadEndCondition::BootLoop), &[]);
-    assert!(log.state().stray().is_empty());
-    log.intent(0, -10, &[]);
-    let stray = crash_with(&mut log, "z", |detected| detected.stray = true);
-    assert_eq!(log.state().stray(), [stray]);
-    log.add(applied(Condition::Together), &[]);
-    assert!(
-        log.state().stray().is_empty(),
-        "an application means the next crash is not stray"
-    );
+    assert!(state.stray().is_empty());
 }
 
 #[test]
@@ -1485,58 +1440,6 @@ fn a_dead_end_is_pending_until_its_saved_entry_is_cleared_and_its_shutdown_recor
     assert!(log.state().pending_dead_end().is_none());
     let newer = log.add(dead_end(DeadEndCondition::Smu), &[]);
     assert_eq!(log.state().pending_dead_end().unwrap().seq, newer);
-}
-
-#[test]
-fn baseline_phases_notices_and_carry_are_kept_for_startup() {
-    let mut log = Log::new();
-    let baseline = log.baseline(&[(0, -5), (8, 0)]);
-    log.add(
-        Payload::CorePhase(CoreTransition {
-            core: core(8),
-            from: None,
-            to: CorePhase::AtLimit,
-            offset: target(-3),
-            pass: None,
-            failure_point: None,
-            check_solo_limit: false,
-            workloads: Vec::new(),
-            cleared_combination: Vec::new(),
-            reason: "r".into(),
-        }),
-        &[],
-    );
-    let carried = log.add(
-        Payload::SessionCarried(SessionCarried {
-            sources: Vec::new(),
-            failure_points: false,
-            detail: None,
-            carried: vec![CarriedCore {
-                core: core(8),
-                candidate_solo_limit: None,
-                failure_point: None,
-            }],
-        }),
-        &[],
-    );
-    let state = log.state();
-    let (seq, offsets) = state.baseline().unwrap();
-    assert_eq!(
-        (seq, offsets.get(core(0))),
-        (baseline, Some(ObservedOffset(-5)))
-    );
-    assert_eq!(state.phase(core(8)), Some(CorePhase::AtLimit));
-    assert_eq!(state.phase(core(0)), None);
-    assert_eq!(
-        state.carried().map(|(seq, cores)| (seq, cores.len())),
-        Some((carried, 1))
-    );
-    assert_eq!(state.topology().len(), 2);
-    assert_eq!(
-        state.topology().get(core(8)).flatten(),
-        Some(CcdId::new(1).unwrap())
-    );
-    assert!(!state.noticed());
 }
 
 #[test]
@@ -1772,23 +1675,6 @@ proptest! {
         }
         prop_assert_eq!(resumed, incremental);
     }
-}
-
-#[test]
-fn a_sparse_machine_is_keyed_by_core_id_not_by_position() {
-    let log = Log::on(&[(3, 0), (12, 1)]);
-    let state = log.state();
-    assert_eq!(
-        state
-            .topology()
-            .iter()
-            .map(|(core, _)| core)
-            .collect::<Vec<_>>(),
-        [core(3), core(12)]
-    );
-    assert_eq!(state.topology().get(core(0)), None);
-    assert_eq!(state.topology().get(core(15)), None);
-    assert_eq!(state.phase(core(0)), None);
 }
 
 #[test]

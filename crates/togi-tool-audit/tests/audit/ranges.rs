@@ -35,19 +35,20 @@ fn an_offset_the_tuner_chooses_cannot_leave_the_range_in_a_journal(case: (i64, b
     );
     assert_eq!(
         decodes(
-            "core.phase",
-            json!({"core": 0, "to": "search", "offset": offset, "reason": "r"})
+            "trial.intent",
+            json!({
+                "trial": "0001",
+                "profile": {"0": 0, "8": 0},
+                "regime": "R7",
+                "workload": "mprime-avx2-36k-248k",
+                "duration_s": 60,
+                "condition": "alone",
+                "core": 0,
+                "offset": offset,
+            })
         ),
         readable,
-        "core phase at {offset}"
-    );
-    assert_eq!(
-        decodes(
-            "tuner.decision",
-            json!({"core": 0, "activity": "search", "decision": "backoff", "from_offset": 0, "to_offset": offset, "reason": "r"})
-        ),
-        readable,
-        "tuner decision to {offset}"
+        "trial intent at {offset}"
     );
 }
 

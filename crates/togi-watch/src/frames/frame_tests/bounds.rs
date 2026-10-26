@@ -1,18 +1,19 @@
-//! Every scenario at every size, view, key setting and colour profile stays inside the frame area and draws only
+//! Every staged frame at every size, view, key setting and colour profile stays inside the frame area and draws only
 //! glyphs its profile can draw; help and log scroll to their extent and stay there.
 
 use togi_machine::Regime;
-use togi_watchtest::Scenario;
 
-use super::{ALL_SIZES, Fixture, PROFILES, VIEWS, assert_glyphs_safe};
+use super::{ALL_SIZES, PROFILES, VIEWS, assert_glyphs_safe};
+use crate::frames::hand::{Hand, Staged};
 use crate::frames::testing::screen;
 use crate::screen::{Colours, Hold, Screen, View};
 
-fn every_screen(fx: &Fixture, scenario: Scenario) {
-    let started_idle = fx.model.snapshot().trial.is_some_and(|trial| {
+fn every_screen(fx: &Hand, scenario: Staged) {
+    let scenario = scenario.name();
+    let started_idle = fx.snapshot().trial.is_some_and(|trial| {
         trial.regime == Regime::R6 && trial.started.is_some() && !trial.crashed
     });
-    assert!(started_idle || scenario != Scenario::Idle, "{scenario}");
+    assert!(started_idle || scenario != "idle", "{scenario}");
     let hold = if started_idle {
         Hold::Frozen
     } else {
@@ -39,7 +40,8 @@ fn every_screen(fx: &Fixture, scenario: Scenario) {
     }
 }
 
-fn every_scroll(fx: &Fixture, scenario: Scenario, sample: fn(usize) -> usize) {
+fn every_scroll(fx: &Hand, scenario: Staged, sample: fn(usize) -> usize) {
+    let scenario = scenario.name();
     for view in [View::Help, View::Log] {
         for (width, height) in ALL_SIZES {
             let at = |scroll: usize| {
@@ -80,7 +82,7 @@ macro_rules! scenarios {
             #[test]
             fn screens() {
                 let scenario = $scenario;
-                let fx = Fixture::scenario(scenario);
+                let fx = scenario.hand();
                 every_screen(&fx, scenario);
             }
 
@@ -93,7 +95,7 @@ macro_rules! scenarios {
             #[test_case::test_case(|extent| extent + 100_000; "far past end")]
             fn scrolling(sample: fn(usize) -> usize) {
                 let scenario = $scenario;
-                let fx = Fixture::scenario(scenario);
+                let fx = scenario.hand();
                 every_scroll(&fx, scenario, sample);
             }
         }
@@ -101,22 +103,14 @@ macro_rules! scenarios {
 }
 
 scenarios! {
-    search => Scenario::Search,
-    confirm => Scenario::Confirm,
-    checking => Scenario::Checking,
-    hunt => Scenario::Hunt,
-    member_probe => Scenario::MemberProbe,
-    round => Scenario::Round,
-    confirmation => Scenario::Confirmation,
-    concluded => Scenario::Concluded,
-    unconfirmed => Scenario::Unconfirmed,
-    hunt_bios => Scenario::HuntBios,
-    idle => Scenario::Idle,
-    crashed => Scenario::Crashed,
-    recovering => Scenario::Recovering,
-    combination => Scenario::Combination,
-    between => Scenario::Between,
-    deadend => Scenario::Deadend,
-    first_result => Scenario::FirstResult,
-    stopped => Scenario::Stopped,
+    mapping => Staged::Mapping,
+    qualifying => Staged::Qualifying,
+    reproducing => Staged::Reproducing,
+    day => Staged::Day,
+    idle => Staged::Idle,
+    crashed => Staged::Crashed,
+    recovering => Staged::Recovering,
+    between => Staged::Between,
+    deadend => Staged::Deadend,
+    stopped => Staged::Stopped,
 }

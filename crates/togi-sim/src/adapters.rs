@@ -3,9 +3,9 @@
 use jiff::Timestamp;
 use std::time::Duration;
 use togi_machine::{
-    BiosContext, BootId, CancellationToken, CcdId, Check, Clock, CoreId, CoreInfo, CoreRank, CpuId,
-    Error, Host, Kernel, KernelCursor, KernelRead, MIN_OFFSET, Mce, ObservedOffset, Partial,
-    PstoreRecord, ResetReason, Smu, SmuValidated, Stopped, TargetOffset,
+    Backend, BackendCheck, BiosContext, BootId, CancellationToken, CcdId, Check, Clock, CoreId,
+    CoreInfo, CoreRank, CpuId, Error, Host, Kernel, KernelCursor, KernelRead, MIN_OFFSET, Mce,
+    ObservedOffset, Partial, PstoreRecord, ResetReason, Smu, SmuValidated, Stopped, TargetOffset,
 };
 
 use crate::cores::ids;
@@ -210,13 +210,12 @@ fn validated() -> SmuValidated {
     SmuValidated::checked()
 }
 
-const CHECKS: [&str; 7] = [
+const CHECKS: [&str; 6] = [
     "root",
     "cpu",
     "ryzen_smu",
     "readback",
     "slot_mapping",
-    "backends",
     "systemd_run",
 ];
 
@@ -299,6 +298,27 @@ impl Host for SimHost {
             ok: true,
         });
         checks
+    }
+
+    /// A backend [`crate::Simulator::miss_backend`] made missing is unavailable; every other one is found.
+    fn backends(&mut self) -> Vec<BackendCheck> {
+        let runtime = self.0.borrow();
+        [Backend::Mprime, Backend::Ycruncher]
+            .into_iter()
+            .map(|backend| {
+                let available = !runtime.faults.missing_backends.contains(&backend);
+                BackendCheck {
+                    backend,
+                    detail: if available {
+                        "simulated"
+                    } else {
+                        "simulated backend missing"
+                    }
+                    .to_owned(),
+                    available,
+                }
+            })
+            .collect()
     }
 
     fn watchdog(&mut self) -> Check {

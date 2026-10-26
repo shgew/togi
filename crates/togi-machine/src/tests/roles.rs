@@ -1,5 +1,6 @@
 use super::{core, topology};
 use crate::*;
+use std::ops::Range;
 use std::time::Duration;
 use test_case::test_case;
 
@@ -303,6 +304,20 @@ fn a_generated_r8_spec_passes_its_check_for_every_light_position_and_class() {
             );
         }
     }
+}
+
+#[test_case(0..16, 0; "every core")]
+#[test_case(0..8, 3; "the first CCD")]
+#[test_case(8..16, 9; "the second CCD")]
+fn a_generated_r9_spec_passes_its_check_on_the_cores_it_loads(cores: Range<usize>, serial: u16) {
+    let workload = class(Regime::R9, 0);
+    let loaded: Vec<CoreInfo> = topology()
+        .into_iter()
+        .filter(|info| cores.contains(&info.core.index()))
+        .collect();
+    let roles = TrialRole::all_threads(workload, cpu(serial), &loaded).unwrap();
+    let spec = spec_of(Regime::R9, workload, 1, roles);
+    assert_eq!(spec.check_roles(&topology()), Ok(()));
 }
 
 #[test_case(Regime::R8, 0, InvalidRoles::NotLegacy { regime: Regime::R8 }; "R8 has no legacy roles")]

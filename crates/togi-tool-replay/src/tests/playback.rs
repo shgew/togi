@@ -19,7 +19,7 @@ fn secs(seconds: i64) -> SignedDuration {
 }
 
 fn recorded(stamps: &[Stamp]) -> Vec<Event> {
-    let mut events = Scenario::Search.events().unwrap();
+    let mut events = Scenario::Controls.events().unwrap();
     events.truncate(stamps.len());
     assert_eq!(events.len(), stamps.len());
     for (event, &(wall, boot, mono)) in events.iter_mut().zip(stamps) {

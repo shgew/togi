@@ -1,29 +1,28 @@
 # togi
 
 > [!WARNING]
-> togi is pre-1.0. It writes Curve Optimizer offsets to your CPU through `ryzen_smu`, and finding each core's solo limit means running it until it fails: expect crashes, reboots and lost work in anything else running. A new version can refuse to continue a session written by an older one. Run it at your own risk.
+> togi is pre-1.0. It writes Curve Optimizer offsets to your CPU through `ryzen_smu`, and mapping where each CCD fails means running it until it fails: expect crashes, reboots and lost work in anything else running. A new version can refuse to continue a session written by an older one. Run it at your own risk.
 
-Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them through full checking cycles. Choose how long to keep testing with `run --cycles N`, stop at the first confirmed profile with `run --first-result`, or let checking continue indefinitely.
+Moves a Zen 5 desktop CPU towards deeper per-CCD Curve Optimizer offsets, as far as its own test evidence supports: nights test, days observe. A night runs until you end it (Ctrl-C, F10 in the dashboard, or a reboot); a crash reboot continues it, and the next run after you end it opens the next night.
 
-- [Searches](docs/spec/tuner.md#search) each core alone, makes multi-core R7 cores [self-sufficient](docs/spec/tuner.md#r7-request-order-and-attribution), [hunts](docs/spec/tuner.md#hunt) unattributed failures outside multi-core R7 and on the idle cores of a failed multi-core R7 load, starts [checking](docs/spec/tuner.md#phase-1) one count shallower than each solo limit, [takes that margin back](docs/spec/tuner.md#phase-2) in a bounded phase 2 and confirms it before continuing [checking](docs/spec/tuner.md#checking).
+- Nights [map](docs/spec/tuner.md#night-edge-u) each CCD's failure edge alone, derive each CCD's [cap](docs/spec/tuner.md#cap-s-margin-from-measured-slope) from the measured failure rate, run [CO-0 controls](docs/spec/tuner.md#co-0-controls) and qualify the exact next day profile across the whole [coverage matrix](docs/spec/workloads.md#coverage-matrix).
+- Days [step](docs/spec/tuner.md#day-steps) the profile towards the cap only after a hold, and a CPU-suspect daily event, including your answer about an unclean end, [vetoes the profile and retreats](docs/spec/tuner.md#whole-profile-veto-and-escalation) the step.
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
 - Survives crashes: the next run reads its journal, attributes the crash and continues.
 - Records every action in a plain-text journal you can read to see what it did and why.
-- Reports the offsets; you enter them in BIOS.
+- BIOS stays at CO 0, and a nonzero starting baseline is refused. The day service will apply the day profile at each normal boot ([#1218](https://github.com/shgew/togi/issues/1218)); togi never asks you to enter offsets in BIOS.
 
 *togi* (研ぎ) is Japanese for polishing a blade: coarse stones first, then fine ones, until the edge shows.
 
 ## Status
 
 Works today, on a simulated 16-core machine:
-- the full simulated tuning lifecycle: per-core search, failure hunts, combinations, the two tuning phases, full checking cycles, crash resume and reset;
-- a seeded session after a ruleset update or BIOS change, carrying what [Transitions](docs/spec/journal.md#transitions) and [Fact eligibility](docs/spec/journal.md#fact-eligibility) allow;
-- evidence-based hunt duration and singleton-probe scheduling ([Hunt](docs/spec/tuner.md#hunt));
-- R7 full parts and partial chains ([Together trial sequence](docs/spec/tuner.md#together-trial-sequence)), with [voltage-targeted backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff) of multi-core R7 failures and [located hunts](docs/spec/tuner.md#hunt) of unattributed ones;
-- an all-zero rerun before a failure at CO 0 stops tuning ([Dead ends](docs/spec/tuner.md#dead-ends));
-- reading a session's phase, BIOS profile with its unconfirmed marker, phase 2's remaining work, hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency, valid trials and Tctl peak with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands)).
-- console-compatible dashboard rendering and a [rich truecolour profile](docs/spec/runtime.md#dashboard) using the same colours with Unicode gauges and text.
-- read-only normal-boot observation with `togi day`: checkpointed hours per offset profile, clean/unclean ends with the evidence around them, and a question per unclean end that you answer without root, without changing tuning decisions or applying offsets.
+- the full simulated Ruleset 13 lifecycle: per-CCD mapping of the edge, the cap from the measured slope, CO-0 controls, exact-profile qualification, reproduction, day steps with holds, vetoes and retreats, crash resume and reset;
+- a fresh session after a ruleset update, which maps from scratch and keeps the raw day observations ([Transitions](docs/spec/journal.md#transitions)); a BIOS change stays in the session, which re-qualifies its profile;
+- a conclusive failure at all-zero stops tuning with `platform unstable at stock` ([Dead ends](docs/spec/tuner.md#dead-ends));
+- reading a session's activity, each CCD's D, S and U with its slope and coverage, the night's queues and shares, qualification progress and the day policy (hold, latest step and its blockers, freeze, firmware validity, events and vetoes) with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands));
+- console-compatible dashboard rendering and a [rich truecolour profile](docs/spec/runtime.md#dashboard) using the same colours with Unicode gauges and text;
+- normal-boot observation with `togi day`: checkpointed hours per offset profile, clean/unclean ends with the evidence around them, and a question per unclean end that you answer without root. Answers and evidence classify [daily events](docs/spec/tuner.md#daily-events), which veto profiles and retreat day steps.
 
 Built for real hardware, a Granite Ridge desktop running NixOS, and tested piece by piece on one with GRUB:
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
@@ -32,7 +31,8 @@ Built for real hardware, a Granite Ridge desktop running NixOS, and tested piece
 - the NixOS module and unattended tuning boot support GRUB and systemd-boot, with two service restart-limit retry boots before returning to the normal system and durable leave reasons; VM checks cover switching between day and night without tuning hardware.
 
 Not yet:
-- a full tuning session on real hardware, from search through a clean cycle.
+- applying the day profile in normal boots: the day service will do it ([#1218](https://github.com/shgew/togi/issues/1218));
+- a full night-and-day cycle on real hardware.
 
 `just sim` runs a simulated session from a source checkout, for development; see [docs/simulating.md](docs/simulating.md).
 
@@ -41,25 +41,23 @@ Not yet:
 ```sh
 togi --version                         # version and git revision of this build
 sudo togi doctor                       # check this machine is ready for a run, without starting a session or writing the journal
-sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
+sudo togi run                          # tune tonight; Ctrl-C ends the night, the next run opens the next
 sudo togi night                        # GRUB or systemd-boot: confirm, remember the day's selection and reboot into tuning
 sudo togi day                          # observe daily use after a session exists; stop before run/reset
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
 sudo togi day record                   # journal a crash togi did not observe, with the offsets it ran; stop the day service first
-sudo togi run --cycles 3            # stop after three clean cycles, counted from phase 2's confirmation
-sudo togi run --first-result        # stop at the first confirmed BIOS profile, after phase 1's passed cycle
-togi status                            # phase, BIOS profile, failure points and combinations, per-core offsets and evidence
-togi watch                             # full-width dashboard: current trial, tuner forecasts, every core
+togi status                            # activity, each CCD's D, S and U, night queues, day policy and observations
+togi watch                             # full-width dashboard: current trial, every core
 togi --state-dir <dir> status          # inspect a copied journal
 togi --state-dir <dir> events --core 3 # everything that happened to core 3
 source <(togi completion bash)         # shell completions; the Nix package installs bash, zsh, fish and nushell ones
 ```
 
-`doctor`, `run` and `reset` read JSON configuration from `/etc/togi/config.json`; `--config FILE` selects another file. The NixOS module generates it from `services.togi.settings`. See [Configuration](docs/spec/runtime.md#configuration) for keys, defaults and a hand-written example.
+`doctor` and `run` read JSON configuration from `/etc/togi/config.json`; `--config FILE` selects another file. The NixOS module generates it from `services.togi.settings`. See [Configuration](docs/spec/runtime.md#configuration) for keys, defaults and a hand-written example.
 
-The dashboard adapts to wide and compact terminals. It shows checking's cycle checklist, hunt parts and member probes, or search turns beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. [Commands](docs/spec/runtime.md#commands) describes when the screen redraws.
+The dashboard adapts to wide and compact terminals. It shows the stage line, one table per CCD with its D, S and U, and the night and day panels beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. [Commands](docs/spec/runtime.md#commands) describes when the screen redraws.
 
-`status` adds a Day section after observations exist: observed boots, checkpointed hours per read-back offset profile, clean and unclean ends, and the latest unclean boot's reset reason. Each unclean end becomes a question that `status` and `watch` show, with what togi saw, until you answer it with `togi day answer <boot> <frozen|graphics|power-off|unsure>`; no root shell is needed, and the answer changes no profile or tuning decision. `togi day notify` raises a desktop notification through the installed `notify-send`, with answer buttons on KDE Plasma. Daily observation is read-only. See [day observation](docs/howto.md#daily-observation) for service setup and [answering](docs/howto.md#answering-what-happened).
+`status` adds a Day section after observations exist: observed boots, checkpointed hours per read-back offset profile, clean and unclean ends, and the latest unclean boot's reset reason. Each unclean end becomes a question that `status` and `watch` show, with what togi saw, until you answer it with `togi day answer <boot> <frozen|graphics|power-off|unsure>`; no root shell is needed. The answer counts: `frozen` makes the end CPU-suspect, which vetoes that profile and retreats the day step, and a later answer can reclassify it ([Daily events](docs/spec/tuner.md#daily-events)). `togi day notify` raises a desktop notification through the installed `notify-send`, with answer buttons on KDE Plasma. Observation itself writes no offsets. See [day observation](docs/howto.md#daily-observation) for service setup and [answering](docs/howto.md#answering-what-happened).
 
 The NixOS tuning specialisation supports exactly one of GRUB or systemd-boot. `sudo togi night` selects it persistently, so crash reboots stay in the night; F10 on its dashboard or the power button restores the previous boot selection. See [Night and day](docs/spec/runtime.md#night-and-day) for saved defaults and menu-started nights.
 
@@ -70,14 +68,14 @@ The NixOS tuning specialisation supports exactly one of GRUB or systemd-boot. `s
 |Document|Read it for|
 |---|---|
 |[docs/howto.md](docs/howto.md)|Installing togi and running a tuning session|
-|[docs/how-togi-tunes.md](docs/how-togi-tunes.md)|The tuning sequence, phase costs and ruleset history|
+|[docs/how-togi-tunes.md](docs/how-togi-tunes.md)|The tuning policy in brief: nights and days, D, S and U, costs and ruleset history|
 |[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
-|[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`, scoring a run against its forecast, and writing a run's retro|
-|[docs/benchmarking.md](docs/benchmarking.md)|Comparing tuner changes across simulated machines, and forecasting a real run|
+|[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`, and writing a run's retro|
+|[docs/benchmarking.md](docs/benchmarking.md)|Comparing tuner changes across simulated machines|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
-|[GLOSSARY.md](GLOSSARY.md)|The vocabulary: offsets, phases, regimes, clean cycles|
-|[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, hunted and checked, in two phases|
+|[GLOSSARY.md](GLOSSARY.md)|The vocabulary: offsets, profiles, nights and days, D, S and U|
+|[docs/spec/tuner.md](docs/spec/tuner.md)|The Ruleset 13 rules: evidence, caps, night scheduling and day steps|
 |[docs/spec/workloads.md](docs/spec/workloads.md)|The workload regimes and how failures are detected|
 |[docs/spec/journal.md](docs/spec/journal.md)|The journal, its events and the state file|
 |[docs/spec/runtime.md](docs/spec/runtime.md)|Commands, configuration, the tuning boot and the NixOS module|

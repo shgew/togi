@@ -12,5 +12,5 @@ backends      ok      mprime: /nix/store/mprime/bin/mprime; y-cruncher: /nix/sto
 backend_user  ok      togi-trial: uid 990 gid 990
 systemd_run   ok      scope confined to cpu 0 created
 watchdog      warn    no hardware watchdog state available
-bios_context  warn    bios_version is 3.15; the session recorded 3.14; run archives this session and starts a new one
+bios_context  warn    bios_version is 3.15; the session recorded 3.14; run records the new context and the session continues, re-qualifying under it
 ready

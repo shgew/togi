@@ -1,22 +1,18 @@
-//! What the fold remembers beside the journal's and the tuner's states: the facts only the event stream says,
-//! such as when a trial started, how a group failed, which backoff cleared which combination.
-//! Per-core facts use dense optional slots; trial, cycle, group and combination keys remain dynamic.
+//! What the fold remembers beside the journal's and the policy's states: the facts only the event stream says,
+//! such as when a trial started, what the hardware read back, how the session stopped.
+//! Per-core facts use dense optional slots; trial keys remain dynamic.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Event, HuntStart, Outcome, Payload, ResetTarget, Seq, State as JournalState, TrialEnd, TrialId,
-    TrialIntent,
+    ApplyCause, DecisionId, Event, Payload, State as JournalState, TrialEnd, TrialId, TrialIntent,
 };
-use togi_machine::{
-    BootId, CoreId, CoreSet, ObservedOffset, PerCore, Regime, Signal, TargetOffset,
-};
-use togi_tuner::{CombinationId, Load, State as TunerState, TrialHistory};
+use togi_machine::{BootId, CoreSet, ObservedOffset, PerCore};
 
 use crate::history::{History, LOG_LIMIT, LogEntry};
-use crate::model::{Count, DeadEndView, HuntShape, SessionView, StopView, TrialEndView};
+use crate::model::{DeadEndView, SessionView, StopView, TrialEndView};
 use crate::tuning::TuningClock;
 use crate::words::{tag_word, words};
 
@@ -25,29 +21,6 @@ pub(crate) struct Current {
     pub(crate) intent: TrialIntent,
     pub(crate) boot: BootId,
     pub(crate) boot_ended: bool,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct FailureFacts {
-    pub(crate) at: Option<Timestamp>,
-    pub(crate) signal: Option<Signal>,
-    pub(crate) core: Option<CoreId>,
-    pub(crate) known: bool,
-    pub(crate) carried: bool,
-    pub(crate) regime: Option<Regime>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HuntStartFacts {
-    pub(crate) at: Timestamp,
-    pub(crate) named: bool,
-    pub(crate) live: u32,
-}
-
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct ComboFacts {
-    pub(crate) hunt: u32,
-    pub(crate) fallback: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -63,36 +36,11 @@ pub(crate) struct Facts {
     pub(crate) session: Option<SessionView>,
     pub(crate) intents: HashMap<TrialId, TrialIntent>,
     pub(crate) starts: HashMap<TrialId, Timestamp>,
-    pub(crate) ends: HashMap<TrialId, TrialEndView>,
-    #[serde(with = "togi_machine::serde_pairs")]
-    pub(crate) group_signals: HashMap<(u32, u32), Signal>,
     pub(crate) applied: PerCore<Option<ObservedOffset>>,
-    pub(crate) tuned: PerCore<Option<TargetOffset>>,
     pub(crate) current: Option<Current>,
-    pub(crate) steps: HashMap<TrialId, u32>,
-    pub(crate) counts: HashMap<TrialId, Count>,
-    pub(crate) failed: HashMap<TrialId, TrialHistory>,
-    pub(crate) by_failure: HashMap<Seq, FailureFacts>,
-    pub(crate) backs: PerCore<Option<CombinationId>>,
-    pub(crate) sources: HashMap<Seq, CombinationId>,
-    pub(crate) combination_seqs: HashMap<Seq, CombinationId>,
-    pub(crate) combos: BTreeMap<CombinationId, ComboFacts>,
-    #[serde(serialize_with = "togi_machine::serde_pairs::serialize_set")]
-    pub(crate) probes: HashSet<u32>,
     pub(crate) stopped: bool,
     pub(crate) restored: bool,
     pub(crate) configs: u32,
-    pub(crate) carrying: bool,
-    #[serde(with = "togi_machine::serde_pairs")]
-    pub(crate) check_hunts: HashMap<(u32, u32), Vec<u32>>,
-    pub(crate) cycle_steps: HashMap<u32, Vec<Regime>>,
-    pub(crate) hunt_starts: HashMap<u32, HuntStartFacts>,
-    #[serde(with = "togi_machine::serde_pairs")]
-    pub(crate) groups: HashMap<(u32, u32), togi_journal::HuntGroup>,
-    pub(crate) carried: BTreeSet<Seq>,
-    pub(crate) shapes: BTreeMap<u32, HuntShape>,
-    pub(crate) hunt_started: BTreeMap<u32, Timestamp>,
-    pub(crate) queued: PerCore<Option<Seq>>,
     pub(crate) failures: u32,
     pub(crate) crashes: u32,
     pub(crate) last_failure: Option<Timestamp>,
@@ -106,23 +54,31 @@ pub(crate) struct Facts {
     pub(crate) log_total: usize,
     #[serde(default)]
     pub(crate) day: togi_journal::DayQuestions,
+    #[serde(default)]
+    pub(crate) day_totals: crate::day_totals::DayTotals,
+    /// The day steps a `day.applied` carried out: a proposal not listed here was never committed.
+    #[serde(default)]
+    pub(crate) applied_steps: BTreeSet<DecisionId>,
 }
 
 pub(crate) fn secs(seconds: u32) -> Duration {
     Duration::from_secs(u64::from(seconds))
 }
 
+/// The cores a trial loads: its one core, or its recorded set.
 pub(crate) fn trial_cores(intent: &TrialIntent) -> CoreSet {
-    Load::recorded(intent.core, intent.cores).cores()
+    match intent.core {
+        Some(core) => std::iter::once(core).collect(),
+        None => intent.cores,
+    }
 }
 
 impl Facts {
-    /// Takes one event, after both states took it. The tuner state has folded `event`, so a trial end finds its
-    /// requirement in [`TunerState::trial_history`].
-    pub(crate) fn fold(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
+    /// Takes one event, after the journal's state took it.
+    pub(crate) fn fold(&mut self, event: &Event, journal: &JournalState) {
         self.tuning.fold(event);
         self.day.apply(event);
-        self.clears_combination(event);
+        self.day_totals.apply(event);
         if let Some(current) = &mut self.current {
             if !event.kind().is_day()
                 && !event.boot.as_str().is_empty()
@@ -134,6 +90,11 @@ impl Facts {
             }
         }
         match &event.payload {
+            Payload::DayApplied(applied) => {
+                if let ApplyCause::Step { decision } = applied.cause {
+                    self.applied_steps.insert(decision);
+                }
+            }
             Payload::SessionStart(_) => {
                 self.session = Some(SessionView {
                     start: event.time,
@@ -143,10 +104,6 @@ impl Facts {
             Payload::ConfigLoaded(_) => {
                 self.configs += 1;
                 self.stopped = false;
-            }
-            Payload::CheckingCycle(cycle) if cycle.event == togi_journal::CycleEvent::Start => {
-                self.cycle_steps
-                    .insert(cycle.cycle.get(), cycle.steps.clone());
             }
             Payload::SmuIntent(_) => self.restored = false,
             Payload::SmuReadback(readback) => {
@@ -172,40 +129,9 @@ impl Facts {
                 self.recover = None;
                 self.starts.insert(start.trial.clone(), event.time);
             }
-            Payload::TrialEnd(end) => self.trial_end(event, end, tuner),
-            Payload::CorePhase(transition) => {
-                self.tuned.set(transition.core, Some(transition.offset));
-                self.queued.set(transition.core, None);
-            }
-            Payload::TunerDecision(decision) => {
-                self.tuned.set(decision.core, Some(decision.to_offset));
-                self.set_activity(Some(decision.activity));
-                if decision.decision == togi_journal::Decision::Backoff {
-                    self.backs
-                        .set(decision.core, self.sources.get(&event.seq).copied());
-                }
-            }
-            Payload::ProfileChange(change) => {
-                for (core, offset) in change.to.iter() {
-                    self.tuned.set(core, Some(offset));
-                }
-            }
+            Payload::TrialEnd(end) => self.trial_end(event, end),
             Payload::Failure(failure) => {
                 self.failures += 1;
-                let carried = failure
-                    .known_failure
-                    .is_some_and(|known| self.carried.contains(&known));
-                self.by_failure.insert(
-                    event.seq,
-                    FailureFacts {
-                        at: Some(event.time),
-                        signal: Some(failure.signal),
-                        core: failure.core,
-                        known: failure.known_failure.is_some(),
-                        carried,
-                        regime: failure.regime,
-                    },
-                );
                 if failure.known_failure.is_none() {
                     self.last_failure = Some(event.time);
                 }
@@ -226,50 +152,6 @@ impl Facts {
                 }
                 self.recover = Some(recover);
             }
-            Payload::TrialCarried(carried) => {
-                self.carried.insert(event.seq);
-                self.by_failure.insert(
-                    event.seq,
-                    FailureFacts {
-                        at: None,
-                        signal: carried.signal,
-                        core: None,
-                        known: true,
-                        carried: true,
-                        regime: Some(carried.class.regime),
-                    },
-                );
-            }
-            Payload::FailureCarried(carried) => {
-                self.by_failure.insert(
-                    event.seq,
-                    FailureFacts {
-                        at: None,
-                        signal: Some(carried.failure.signal),
-                        core: carried.failure.core,
-                        known: true,
-                        carried: true,
-                        regime: None,
-                    },
-                );
-            }
-            Payload::HuntStart(start) => self.hunt_start(event, start),
-            Payload::HuntGroup(group) => {
-                if group.probe.is_some() {
-                    self.probes.insert(group.hunt.get());
-                }
-            }
-            Payload::Combination(combination) => {
-                let id = CombinationId::new(combination.combination);
-                self.combination_seqs.insert(event.seq, id);
-                self.combos.insert(
-                    id,
-                    ComboFacts {
-                        hunt: combination.hunt.get(),
-                        fallback: combination.fallback,
-                    },
-                );
-            }
             Payload::DeadEnd(dead_end) => {
                 self.dead_end = Some(DeadEndView {
                     at: event.time,
@@ -285,11 +167,6 @@ impl Facts {
                     saved: self.restored,
                 });
             }
-            Payload::CommandReset(reset) => {
-                if let ResetTarget::Core(core) = reset.target {
-                    self.queued.set(core, Some(event.seq));
-                }
-            }
             Payload::SessionContext(_)
             | Payload::SessionBaseline(_)
             | Payload::SessionNotice(_)
@@ -304,7 +181,6 @@ impl Facts {
             | Payload::TrialSignal(_)
             | Payload::TrialSample(_)
             | Payload::Mce(_)
-            | Payload::CheckingCycle(_)
             | Payload::CheckingStep(_)
             | Payload::CheckingChain(_)
             | Payload::HostRanking(_)
@@ -313,6 +189,7 @@ impl Facts {
             | Payload::DeepeningRound(_)
             | Payload::TunerWarning(_)
             | Payload::BackendRetry(_)
+            | Payload::TaskStart(_)
             | Payload::DefectFound(_)
             | Payload::DefectAnswered(_)
             | Payload::BootSavedEntry(_)
@@ -326,6 +203,30 @@ impl Facts {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::SessionImported(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CorePhase(_)
+            | Payload::TunerDecision(_)
+            | Payload::ProfileChange(_)
+            | Payload::TrialCarried(_)
+            | Payload::FailureCarried(_)
+            | Payload::HuntStart(_)
+            | Payload::HuntGroup(_)
+            | Payload::Combination(_)
+            | Payload::CommandReset(_)
             | Payload::StateRebuilt(_) => {}
         }
         if let Some(line) = self.describe(event, journal) {
@@ -354,23 +255,7 @@ impl Facts {
         }
     }
 
-    fn clears_combination(&mut self, event: &Event) {
-        let Payload::TunerDecision(decision) = &event.payload else {
-            return;
-        };
-        if decision.decision != togi_journal::Decision::Backoff {
-            return;
-        }
-        if let Some(id) = event
-            .cause
-            .iter()
-            .find_map(|cause| self.combination_seqs.get(cause))
-        {
-            self.sources.insert(event.seq, *id);
-        }
-    }
-
-    fn trial_end(&mut self, event: &Event, end: &TrialEnd, tuner: &TunerState) {
+    fn trial_end(&mut self, event: &Event, end: &TrialEnd) {
         let intent = self.intents.get(&end.trial);
         let view = TrialEndView {
             id: end.trial.clone(),
@@ -387,31 +272,6 @@ impl Facts {
             tctl_max_c: end.tctl_max_c,
             voltage_v: end.voltage_request_median_v,
         };
-        if let (Some(intent), Some(signal)) = (intent, end.signal) {
-            if let (Some(hunt), Some(group), Outcome::Failure) =
-                (intent.hunt, intent.group, end.outcome)
-            {
-                self.group_signals.insert((hunt.get(), group.get()), signal);
-            }
-        }
-        if let Some(history) = tuner.trial_history() {
-            if end.outcome == Outcome::Failure {
-                self.failed.insert(end.trial.clone(), history);
-            }
-            self.counts.insert(
-                end.trial.clone(),
-                Count {
-                    passed: history.passed,
-                    index: history.trial,
-                    of: history.needed,
-                },
-            );
-            self.steps.insert(
-                end.trial.clone(),
-                history.step.map_or(0, |step| step.get().get()),
-            );
-        }
-        self.ends.insert(end.trial.clone(), view.clone());
         if let Some(recover) = &mut self.recover {
             if recover
                 .intent
@@ -429,35 +289,5 @@ impl Facts {
             self.current = None;
         }
         self.last = Some(view);
-    }
-
-    fn hunt_start(&mut self, event: &Event, start: &HuntStart) {
-        let hunt = start.hunt.get();
-        self.shapes.insert(
-            hunt,
-            HuntShape {
-                failing: start.failing,
-                parked: start.parked,
-            },
-        );
-        self.hunt_started.insert(hunt, event.time);
-        if let Some(intent) = start
-            .trial
-            .as_ref()
-            .and_then(|trial| self.intents.get(trial))
-        {
-            if let Some(cycle) = intent.cycle {
-                let step = start
-                    .trial
-                    .as_ref()
-                    .and_then(|trial| self.steps.get(trial))
-                    .copied()
-                    .unwrap_or(0);
-                self.check_hunts
-                    .entry((cycle.get(), step))
-                    .or_default()
-                    .push(hunt);
-            }
-        }
     }
 }

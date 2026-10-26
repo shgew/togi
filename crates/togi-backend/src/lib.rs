@@ -6,6 +6,7 @@ mod file_name;
 
 use std::ffi::OsString;
 use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -55,8 +56,45 @@ pub trait Backend: Send + Sync {
     fn check(&self) -> Result<Ready, Error>;
     /// `dir` is where the instance runs; `cpus` are the logical CPUs it may use, in order.
     fn plan(&self, workload: &Workload, dir: &Path, cpus: &[CpuId]) -> Result<Plan, Error>;
+    /// The effective configuration togi generates for `workload`, independent of the instance
+    /// directory and of which CPUs it runs on: what [`Backend::plan`] generates for the workload's
+    /// thread count on CPUs numbered from 0, with the directory left out, encoded by
+    /// [`configuration_bytes`]. It checks nothing on disk.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unsupported`] for a workload the backend does not run.
+    fn configuration(&self, workload: &Workload) -> Result<Vec<u8>, Error>;
     /// Classifies one line of output; the line carries no line terminator.
     fn classify(&self, line: &str) -> Line;
+}
+
+/// The canonical bytes of launch arguments and generated inputs: the argument count and every
+/// argument, then the input count and every input's name and contents, each length-prefixed, so no
+/// two different launches encode alike.
+#[must_use]
+pub fn configuration_bytes(args: &[OsString], inputs: &[Input]) -> Vec<u8> {
+    fn field(bytes: &mut Vec<u8>, value: &[u8]) {
+        bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(value);
+    }
+    let mut bytes = Vec::new();
+    field(&mut bytes, &(args.len() as u64).to_le_bytes());
+    for arg in args {
+        field(&mut bytes, arg.as_bytes());
+    }
+    field(&mut bytes, &(inputs.len() as u64).to_le_bytes());
+    for input in inputs {
+        field(&mut bytes, input.name.as_str().as_bytes());
+        field(&mut bytes, &input.contents);
+    }
+    bytes
+}
+
+/// The logical CPUs `0..threads`: the CPU list a configuration is generated for.
+#[must_use]
+pub fn numbered_cpus(threads: u8) -> Vec<CpuId> {
+    (0..u16::from(threads)).map(CpuId::from).collect()
 }
 
 /// Checks that the named backend's binary at `path` is a regular file with an execute bit.

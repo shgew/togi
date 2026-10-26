@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use crate::day_night::Registration;
 
 fn document() -> serde_json::Value {
@@ -144,6 +146,7 @@ fn gate_refuses_missing_seeds_instead_of_changing_the_denominator() {
         scenario: "edge-shallow".to_owned(),
         seed: 1,
         comparator: "test-policy".to_owned(),
+        wall_s: 0.0,
         metrics: successful_metrics(),
     }];
     assert!(matches!(
@@ -200,7 +203,7 @@ fn hidden_year_one_gate(first_year: [u32; 2], offenders: usize, censored: usize,
 type Call = (
     String,
     u64,
-    togi_simrun::day_night::Comparator,
+    togi_simrun::day_night::PolicyKind,
     u32,
     u32,
     f64,
@@ -224,12 +227,12 @@ fn orchestration(selection: crate::Selection) -> (Vec<Call>, Written, Vec<String
         {"name":"firmware-change","daily_class":"hidden","cap":"firmware"}
     ]);
     let registration = Registration::parse(&serde_json::to_vec(&document).unwrap()).unwrap();
-    let mut calls = Vec::new();
-    let mut run = |scenario: &str,
-                   seed: u64,
-                   comparator: togi_simrun::day_night::Comparator,
-                   calendar: togi_simrun::day_night::CalendarConfig| {
-        calls.push((
+    let calls = std::sync::Mutex::new(Vec::new());
+    let run = |scenario: &str,
+               seed: u64,
+               comparator: togi_simrun::day_night::PolicyKind,
+               calendar: togi_simrun::day_night::CalendarConfig| {
+        calls.lock().unwrap().push((
             scenario.to_owned(),
             seed,
             comparator,
@@ -242,7 +245,7 @@ fn orchestration(selection: crate::Selection) -> (Vec<Call>, Written, Vec<String
             calendar.firmware_change_day,
         ));
         let mut metrics = successful_metrics();
-        if comparator == togi_simrun::day_night::Comparator::CoZero {
+        if comparator == togi_simrun::day_night::PolicyKind::CoZero {
             metrics.true_co_crashes = u32::try_from(seed).unwrap();
             metrics.cpu_suspect_events = 1;
         } else if scenario == "firmware-change" && seed.is_multiple_of(2) {
@@ -251,11 +254,23 @@ fn orchestration(selection: crate::Selection) -> (Vec<Call>, Written, Vec<String
         Ok(metrics)
     };
     let mut jsonl = Vec::new();
-    let records =
-        crate::day_night_report::run_comparators(&registration, selection, &mut run, &mut jsonl)
-            .unwrap();
+    let records = crate::day_night_report::run_policies(
+        &registration,
+        selection,
+        &togi_simrun::day_night::PolicyKind::COMPARATORS,
+        NonZeroUsize::MIN,
+        &run,
+        &mut jsonl,
+    )
+    .unwrap();
     let mut table = Vec::new();
-    crate::day_night_report::report(&mut table, &registration, &records).unwrap();
+    crate::day_night_report::report(
+        &mut table,
+        &registration,
+        &togi_simrun::day_night::PolicyKind::COMPARATORS,
+        &records,
+    )
+    .unwrap();
     let written = String::from_utf8(jsonl)
         .unwrap()
         .lines()
@@ -269,7 +284,7 @@ fn orchestration(selection: crate::Selection) -> (Vec<Call>, Written, Vec<String
         .lines()
         .map(str::to_owned)
         .collect();
-    (calls, written, table)
+    (calls.into_inner().unwrap(), written, table)
 }
 
 #[test_case::test_case(crate::Selection::Dev, [1, 2]; "development seeds")]
@@ -278,15 +293,15 @@ fn orchestration_runs_only_the_selected_seeds_and_reports_them(
     selection: crate::Selection,
     seeds: [u64; 2],
 ) {
-    use togi_simrun::day_night::Comparator;
+    use togi_simrun::day_night::PolicyKind;
     let (calls, written, table) = orchestration(selection);
     let mut expected_calls = Vec::new();
     let mut expected_written = Vec::new();
     for scenario in ["edge-shallow", "firmware-change"] {
         for seed in seeds {
             for (label, comparator) in [
-                ("co-zero", Comparator::CoZero),
-                ("fixed-margin", Comparator::FixedMargin),
+                ("co-zero", PolicyKind::CoZero),
+                ("fixed-margin", PolicyKind::FixedMargin),
             ] {
                 expected_calls.push((
                     scenario.to_owned(),
@@ -313,7 +328,7 @@ fn orchestration_runs_only_the_selected_seeds_and_reports_them(
     assert_eq!(
         table,
         [
-            "test-gate: comparator diagnostics; Ruleset 13 pending #1217; slopes [1.5, 2.0] unscored".to_owned(),
+            "test-gate: policy summary; only ruleset13 can pass the gate; registered slopes [1.5, 2.0]".to_owned(),
             "scenario comparator seeds CO/day suspect year1/CCD climb-free% converge-d overshoot steps final-depth retained% bg-retreat CO-retreat nonCPU-retreat censored".to_owned(),
             format!("edge-shallow co-zero 2 {crashes} 2 0 100.0 90.0 1 7 26.5 100.0 0 0 0 0"),
             "edge-shallow fixed-margin 2 0 0 0 100.0 90.0 1 7 26.5 100.0 0 0 0 0".to_owned(),
@@ -322,4 +337,349 @@ fn orchestration_runs_only_the_selected_seeds_and_reports_them(
             "CO/day counts unique CO-caused daily crashes over seeds; retreats sum per-CCD counts; year1/CCD, overshoot and steps are maxima; convergence is median worst-CCD day (inf = not converged); final-depth is median per-run mean CCD depth. Per-CCD JSON crash counts can charge both CCDs for a joint crash. Censored partial counts are lower bounds.".to_owned(),
         ]
     );
+}
+
+mod selection {
+    use test_case::test_case;
+    use togi_simrun::day_night::{PolicyError, PolicyKind};
+
+    use super::registration;
+    use crate::day_night_gate::{SelectError, select_policies};
+
+    fn names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test_case(&[], &[PolicyKind::CoZero, PolicyKind::FixedMargin]; "no name runs every diagnostic")]
+    #[test_case(&["fixed-margin"], &[PolicyKind::FixedMargin]; "one named policy")]
+    #[test_case(&["fixed-margin", "co-zero"], &[PolicyKind::FixedMargin, PolicyKind::CoZero]; "repeats keep their order")]
+    fn policies_parse_in_the_order_given(given: &[&str], expected: &[PolicyKind]) {
+        assert_eq!(
+            select_policies(&registration(), &names(given), None).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn an_unknown_policy_names_the_known_ones() {
+        let error = select_policies(&registration(), &names(&["ruleset14"]), None).unwrap_err();
+        assert!(matches!(
+            error,
+            SelectError::Policy(PolicyError::Unknown { ref name, ref known })
+                if name == "ruleset14" && known == "co-zero, fixed-margin, ruleset13"
+        ));
+    }
+
+    #[test]
+    fn a_policy_cannot_be_selected_twice() {
+        assert!(matches!(
+            select_policies(&registration(), &names(&["co-zero", "co-zero"]), None),
+            Err(SelectError::Duplicate("co-zero"))
+        ));
+    }
+
+    #[test_case(&[]; "the default comparators")]
+    #[test_case(&["co-zero"]; "a named comparator")]
+    fn a_registered_slope_is_still_refused_by_a_policy_that_takes_none(given: &[&str]) {
+        assert!(matches!(
+            select_policies(&registration(), &names(given), Some(1.5)),
+            Err(SelectError::Policy(PolicyError::SlopeUnused(_)))
+        ));
+    }
+
+    #[test_case(&["ruleset13"], 1.5; "the gate at the first slope")]
+    #[test_case(&["ruleset13"], 2.0; "the gate at the second slope")]
+    fn the_gating_policy_takes_a_registered_slope(given: &[&str], slope: f64) {
+        assert_eq!(
+            select_policies(&registration(), &names(given), Some(slope)).unwrap(),
+            [PolicyKind::Ruleset13 {
+                fallback_slope: slope
+            }]
+        );
+    }
+
+    #[test]
+    fn the_gating_policy_refuses_to_run_without_a_slope() {
+        assert!(matches!(
+            select_policies(&registration(), &names(&["ruleset13"]), None),
+            Err(SelectError::Policy(PolicyError::SlopeRequired("ruleset13")))
+        ));
+    }
+
+    #[test_case(1.25; "between nothing registered")]
+    #[test_case(3.0; "above every registered slope")]
+    fn an_unregistered_slope_is_refused(slope: f64) {
+        let error =
+            select_policies(&registration(), &names(&["co-zero"]), Some(slope)).unwrap_err();
+        assert!(matches!(
+            error,
+            SelectError::SlopeNotRegistered { registered, .. } if registered == [1.5, 2.0]
+        ));
+    }
+}
+
+mod parallel {
+    use std::num::NonZeroUsize;
+    use std::sync::{Condvar, Mutex, PoisonError};
+
+    use togi_simrun::day_night::PolicyKind;
+
+    use super::{document, successful_metrics};
+    use crate::day_night::Registration;
+    use crate::day_night_report::run_policies;
+
+    fn two_scenarios() -> Registration {
+        let mut document = document();
+        document["scenarios"] = serde_json::json!([
+            {"name":"edge-shallow","daily_class":"covered","cap":"fixed"},
+            {"name":"firmware-change","daily_class":"hidden","cap":"firmware"}
+        ]);
+        Registration::parse(&serde_json::to_vec(&document).unwrap()).unwrap()
+    }
+
+    /// Holds the callers of [`Gate::wait`] until another thread has called [`Gate::open`].
+    #[derive(Default)]
+    struct Gate {
+        open: Mutex<bool>,
+        opened: Condvar,
+    }
+
+    impl Gate {
+        fn open(&self) {
+            *self.open.lock().unwrap_or_else(PoisonError::into_inner) = true;
+            self.opened.notify_all();
+        }
+
+        fn wait(&self) {
+            let open = self.open.lock().unwrap_or_else(PoisonError::into_inner);
+            drop(
+                self.opened
+                    .wait_while(open, |open| !*open)
+                    .unwrap_or_else(PoisonError::into_inner),
+            );
+        }
+    }
+
+    type Keys = Vec<(String, u64, String)>;
+
+    fn keys(jobs: usize) -> (Keys, Keys) {
+        let registration = two_scenarios();
+        // With several workers the first registered run holds until the last registered run has returned, so a
+        // pool that wrote in completion order would reverse it. One worker cannot overlap runs.
+        let last_returned = Gate::default();
+        let run = |scenario: &str, seed: u64, policy: PolicyKind, _| {
+            let first = scenario == "edge-shallow" && seed == 1 && policy == PolicyKind::CoZero;
+            let last =
+                scenario == "firmware-change" && seed == 2 && policy == PolicyKind::FixedMargin;
+            if first && jobs > 1 {
+                last_returned.wait();
+            }
+            if last {
+                last_returned.open();
+            }
+            Ok(successful_metrics())
+        };
+        let mut jsonl = Vec::new();
+        let records = run_policies(
+            &registration,
+            crate::Selection::Dev,
+            &PolicyKind::COMPARATORS,
+            NonZeroUsize::new(jobs).unwrap(),
+            &run,
+            &mut jsonl,
+        )
+        .unwrap();
+        let key = |scenario: String, seed, policy| (scenario, seed, policy);
+        let returned = records
+            .into_iter()
+            .map(|record| key(record.scenario, record.seed, record.comparator))
+            .collect();
+        let written = String::from_utf8(jsonl)
+            .unwrap()
+            .lines()
+            .map(|line| {
+                let record: crate::day_night_report::Record = serde_json::from_str(line).unwrap();
+                assert!(record.wall_s > 0.0);
+                key(record.scenario, record.seed, record.comparator)
+            })
+            .collect();
+        (returned, written)
+    }
+
+    #[test]
+    fn records_and_jsonl_keep_registered_order_whatever_order_threads_finish_in() {
+        let mut expected = Vec::new();
+        for scenario in ["edge-shallow", "firmware-change"] {
+            for seed in [1, 2] {
+                for policy in ["co-zero", "fixed-margin"] {
+                    expected.push((scenario.to_owned(), seed, policy.to_owned()));
+                }
+            }
+        }
+        for jobs in [1, 3, 16] {
+            let (returned, written) = keys(jobs);
+            assert_eq!(returned, expected, "{jobs} jobs");
+            assert_eq!(written, expected, "{jobs} jobs");
+        }
+    }
+
+    #[test]
+    fn the_first_failing_run_in_order_is_the_error_even_when_others_fail_sooner() {
+        let registration = two_scenarios();
+        // Every earlier-registered run fails only after a later-registered run has failed.
+        let later_failed = Gate::default();
+        let run = |scenario: &str, _, _, _| {
+            if scenario == "edge-shallow" {
+                later_failed.wait();
+            } else {
+                later_failed.open();
+            }
+            Err(togi_simrun::day_night::RunError::Calendar(
+                if scenario == "edge-shallow" {
+                    "first"
+                } else {
+                    "later"
+                },
+            ))
+        };
+        let error = run_policies(
+            &registration,
+            crate::Selection::Dev,
+            &PolicyKind::COMPARATORS,
+            NonZeroUsize::new(8).unwrap(),
+            &run,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("run day/night"), "{error}");
+        assert!(
+            matches!(
+                error,
+                crate::day_night_report::ComparatorError::Run(
+                    togi_simrun::day_night::RunError::Calendar("first")
+                )
+            ),
+            "{error:?}"
+        );
+    }
+}
+
+mod verdict {
+    use test_case::test_case;
+    use togi_simrun::day_night::{PolicyKind, PolicyRole};
+
+    use super::{registration, successful_metrics};
+    use crate::day_night_gate::{Verdict, any_fails_gate, render_summary, render_verdict};
+    use crate::day_night_report::Record;
+
+    fn records(policy: PolicyKind, overshoot: u8) -> Vec<Record> {
+        [1, 2]
+            .into_iter()
+            .map(|seed| {
+                let mut metrics = successful_metrics();
+                metrics.max_overshoot[0] = overshoot;
+                Record {
+                    scenario: "edge-shallow".to_owned(),
+                    seed,
+                    comparator: policy.label().to_owned(),
+                    wall_s: 1.5 * f64::from(u32::try_from(seed).unwrap()),
+                    metrics,
+                }
+            })
+            .collect()
+    }
+
+    fn verdict(role: PolicyRole, overshoot: u8) -> Verdict {
+        let mut verdict = Verdict::compute(
+            &registration(),
+            crate::Selection::Dev,
+            PolicyKind::FixedMargin,
+            &records(PolicyKind::FixedMargin, overshoot),
+        )
+        .unwrap();
+        verdict.role = role;
+        verdict
+    }
+
+    fn render(verdict: &Verdict) -> String {
+        let mut out = Vec::new();
+        render_verdict(&mut out, &registration(), verdict).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn a_comparator_table_is_labelled_diagnostic_and_a_pass_is_not_a_gate_pass() {
+        assert_eq!(
+            render(&verdict(PolicyRole::Diagnostic, 1)),
+            "\
+### fixed-margin: diagnostic (not a gate pass)
+
+| scenario | climb-free | year-one | overshoot ≤1 | overshoot max | median convergence d | retained | max steps | censored | result |
+|---|---|---|---|---|---|---|---|---|---|
+| edge-shallow | 1.000 ≥ 0.90 | — | 1.000 ≥ 0.95 | 1 ≤ 3 | 90.0 ≤ 90 | — | 7 ≤ 7 | 0/2 | PASS |
+
+test-gate: PASS (fixed-margin, diagnostic, not a gate pass)
+"
+        );
+    }
+
+    #[test]
+    fn a_gating_failure_marks_the_failing_cell_and_the_overall_line() {
+        assert_eq!(
+            render(&verdict(PolicyRole::Gate, 4)),
+            "\
+### fixed-margin
+
+| scenario | climb-free | year-one | overshoot ≤1 | overshoot max | median convergence d | retained | max steps | censored | result |
+|---|---|---|---|---|---|---|---|---|---|
+| edge-shallow | 1.000 ≥ 0.90 | — | 0.000 ≥ 0.95 ✗ | 4 ≤ 3 ✗ | 90.0 ≤ 90 | — | 7 ≤ 7 | 0/2 | FAIL |
+
+test-gate: FAIL
+"
+        );
+    }
+
+    #[test_case(PolicyRole::Gate, 1, false; "a passing gate exits zero")]
+    #[test_case(PolicyRole::Gate, 4, true; "a failing gate exits nonzero")]
+    #[test_case(PolicyRole::Diagnostic, 1, false; "a passing comparator exits zero")]
+    #[test_case(PolicyRole::Diagnostic, 4, false; "a failing comparator still exits zero")]
+    fn only_a_failing_gating_policy_fails_the_command(
+        role: PolicyRole,
+        overshoot: u8,
+        fails: bool,
+    ) {
+        assert_eq!(any_fails_gate(&[verdict(role, overshoot)]), fails);
+    }
+
+    #[test]
+    fn one_failing_gate_among_passing_verdicts_fails_the_command() {
+        assert!(any_fails_gate(&[
+            verdict(PolicyRole::Diagnostic, 4),
+            verdict(PolicyRole::Gate, 1),
+            verdict(PolicyRole::Gate, 4),
+        ]));
+    }
+
+    #[test]
+    fn the_summary_reports_means_per_scenario_and_policy_and_the_total_wall_time() {
+        let mut out = Vec::new();
+        render_summary(
+            &mut out,
+            &registration(),
+            &[PolicyKind::FixedMargin],
+            &records(PolicyKind::FixedMargin, 1),
+            std::time::Duration::from_millis(12_340),
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "\
+| scenario | policy | runs | mean night hours | mean run wall s |
+|---|---|---|---|---|
+| edge-shallow | fixed-margin | 2 | 2504.0 | 2.25 |
+
+total wall time: 12.3 s
+"
+        );
+    }
 }

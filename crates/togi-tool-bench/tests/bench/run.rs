@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 
 use crate::fake::ProcessBench as Bench;
 use crate::session;
-use togi_sim::MachineDefinition;
 use togi_tool_audit::{Check, Kind};
 use togi_tool_bench::{Error, Fleet, Options, Report, RunError, Status, execute};
 
@@ -144,7 +143,7 @@ fn real_process_every_simulated_run_is_audited_with_its_state_directory() {
 #[test]
 fn real_process_a_capped_journal_is_an_unfinished_prefix_when_censored_but_not_when_concluded() {
     let bench = Bench::new();
-    bench.journal(&session::session(&MachineDefinition::default(), 1, None, 2).events);
+    bench.journal(&session::session(&session::hunting(), 1, None, 2).events);
     let mut options = bench.options(bench.simulator("capped", 3, "", ""));
     options.cache = None;
     let censored = run(&options);

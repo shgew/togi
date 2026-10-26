@@ -2,43 +2,46 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use jiff::tz::TimeZone;
-use togi_journal::{Activity, Payload, TrialId, TrialIntent};
-use togi_machine::{Condition, CoreSet, PerCore, Regime, pick_workload};
+use togi_journal::{ApplicationId, ApplyCause, CcdVector, DayApplied, Payload, SessionBaseline};
+use togi_machine::{BootId, CcdId, CcdProfile, ObservedOffset, PerCore};
 use togi_render::Renderer;
 
 use super::Appender;
 use crate::error::{AppendFailure, FoldError, JournalCause, JournalFailure};
-use crate::testing::{Rig, assert_fold_consistent, core, target};
+use crate::testing::{Rig, assert_fold_consistent, core};
 
+/// A day application naming other CCDs than the baseline: the policy cannot fold it.
 fn unscheduled() -> Payload {
-    Payload::TrialIntent(TrialIntent {
-        trial: TrialId::from("0001".to_owned()),
-        kernel_cursor: None,
-        kernel_error: None,
-        profile: PerCore::default(),
-        core: Some(core(0)),
-        cores: CoreSet::default(),
-        offset: Some(target(-10)),
-        regime: Regime::R1,
-        workload: pick_workload(Regime::R1, 0).id(),
-        duration_s: 60,
-        condition: Condition::Alone,
-        activity: Some(Activity::Search),
-        retry: false,
-        cycle: None,
-        step: None,
-        hunt: None,
-        group: None,
-        round: None,
-        rerun: false,
+    Payload::DayApplied(DayApplied {
+        application: ApplicationId(1),
+        cause: ApplyCause::Reapplication {},
+        target: CcdVector {
+            ccd: CcdProfile::zero([CcdId::new(9).unwrap()]).unwrap(),
+            cores: PerCore::default(),
+        },
+        readbacks: PerCore::default(),
+        transactions: Vec::new(),
+        boot: BootId::from("boot".to_owned()),
+        mono_ns: 0,
     })
+}
+
+/// A rig whose journal holds the verified all-zero baseline the day history starts from.
+fn baselined() -> Rig {
+    let mut rig = Rig::new(2);
+    let offsets = (0..2)
+        .map(|index| (core(index), ObservedOffset(0)))
+        .collect();
+    rig.appender
+        .append(Payload::SessionBaseline(SessionBaseline { offsets }), &[])
+        .unwrap();
+    rig
 }
 
 #[test]
 fn every_append_folds_into_the_recovery_the_tuner_and_the_defect_state() {
     let mut rig = Rig::new(2);
     rig.start_at_zero();
-    assert!(rig.appender.tuner().topology().is_some());
     assert_fold_consistent(&rig.appender);
 }
 
@@ -57,7 +60,7 @@ fn the_append_hook_sees_every_event_once_in_order() {
 
 #[test]
 fn an_event_the_tuner_never_planned_is_a_corrupt_journal_now_and_on_resume() {
-    let mut rig = Rig::new(2);
+    let mut rig = baselined();
     let failure = rig.appender.append(unscheduled(), &[]).unwrap_err();
     let AppendFailure::Fold(FoldError::Tuner { seq, .. }) = failure else {
         panic!("{failure:?}");
@@ -78,7 +81,7 @@ fn an_event_the_tuner_never_planned_is_a_corrupt_journal_now_and_on_resume() {
 
 #[test]
 fn an_event_the_run_cannot_fold_latches_the_appender_and_cancels_the_trial() {
-    let mut rig = Rig::new(2);
+    let mut rig = baselined();
     let token = togi_machine::CancellationToken::new();
     rig.appender.watch_trial(Some(token.clone()));
     let before = rig.events().len();
@@ -102,7 +105,7 @@ fn an_event_the_run_cannot_fold_latches_the_appender_and_cancels_the_trial() {
 /// the appender latches, cancels the trial and refuses everything after, and the panic still unwinds.
 #[test]
 fn a_panic_taking_in_a_durable_event_latches_the_appender_and_still_unwinds() {
-    let mut rig = Rig::new(2);
+    let mut rig = baselined();
     rig.appender.on_append = Some(Box::new(|_| panic!("a bug in the hook")));
     let token = togi_machine::CancellationToken::new();
     rig.appender.watch_trial(Some(token.clone()));
@@ -154,7 +157,7 @@ impl togi_machine::Clock for MalformedClock {
 
 #[test]
 fn a_malformed_clock_latches_before_appending_and_cancels_the_trial() {
-    let mut rig = Rig::new(2);
+    let mut rig = baselined();
     rig.appender.clock = Box::new(MalformedClock);
     let token = togi_machine::CancellationToken::new();
     rig.appender.watch_trial(Some(token.clone()));

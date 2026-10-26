@@ -1,5 +1,5 @@
 //! Embedded snapshots of whole frames, every one drawn by `render` through the bounds check: the main view of each
-//! simulated scenario, the colour profiles, the journal states, the help and journal views and one frame.
+//! hand-built [`Staged`] frame, the colour profiles, the journal states, the help and journal views and one frame.
 //!
 //! A text snapshot is the frame's rows; a styled one adds a row of tone letters under each row that has styling.
 
@@ -9,12 +9,12 @@ use jiff::Timestamp;
 use ratatui::buffer::Buffer;
 use ratatui::style::Color;
 use togi_render::OutputFacts;
-use togi_watchtest::Scenario;
 
 use super::colours::colours_for;
+use super::hand::Staged;
 use super::testing::{
-    FIXED_NOW, Fixture, assert_glyphs_drawable, ready, render_checked, rows_of, screen,
-    styled_snapshot, text_snapshot,
+    FIXED_NOW, assert_glyphs_drawable, render_checked, rows_of, screen, styled_snapshot,
+    text_snapshot,
 };
 use crate::screen::{Colours, Journal, Screen, View};
 
@@ -36,57 +36,60 @@ macro_rules! expected {
 fn check(name: &str, body: &str) {
     // Compile the committed fixtures into the test: comparisons never invoke insta's disk/config machinery.
     let snapshot = expected! { name;
+        "help-120x33-rich",
+        "help-160x45",
+        "help-160x45-rich",
+        "help-240x67",
+        "help-240x67-full",
+        "help-240x67-rich",
+        "help-80x24",
+        "help-end-160x45",
+        "help-end-240x67",
+        "help-end-240x67-full",
+        "help-end-80x24",
+        "log-160x45",
+        "log-240x67",
+        "log-240x67-full",
+        "log-80x24",
+        "log-top-160x45",
         "main-between-240x67",
-        "main-stopped-240x67",
-        "main-unconfirmed-240x67",
-        "one-frame-checking-120x33",
-        "one-frame-checking-240x67",
-        "main-checking-120x33",
-        "main-checking-160x45",
-        "main-checking-240x67-console",
-        "main-checking-240x67-full",
-        "main-checking-240x67-none",
-        "main-checking-240x67",
-        "main-concluded-240x67",
-        "main-confirmation-240x67",
+        "main-crashed-240x67",
+        "main-day-120x33",
+        "main-day-160x45",
+        "main-day-240x67",
         "main-deadend-240x67",
-        "main-first-result-240x67",
-        "main-hunt-120x33",
-        "main-hunt-160x45",
-        "main-hunt-240x67",
-        "main-hunt-bios-120x33",
-        "main-hunt-bios-160x45",
-        "main-hunt-bios-240x67",
         "main-idle-120x33",
         "main-idle-160x45",
+        "main-idle-240x67",
         "main-idle-240x67-console",
         "main-idle-240x67-full",
         "main-idle-240x67-none",
-        "main-idle-240x67",
-        "help-160x45",
-        "help-240x67-full",
-        "help-240x67",
-        "help-80x24",
-        "help-end-240x67-full",
-        "help-end-240x67",
-        "help-end-160x45",
-        "help-end-80x24",
-        "main-member-probe-240x67-console",
-        "main-member-probe-240x67-full",
-        "main-member-probe-240x67-none",
-        "main-member-probe-240x67",
+        "main-mapping-120x33",
+        "main-mapping-120x33-rich",
+        "main-mapping-160x45",
+        "main-mapping-160x45-rich",
+        "main-mapping-240x67",
+        "main-mapping-240x67-console",
+        "main-mapping-240x67-full",
+        "main-mapping-240x67-none",
+        "main-mapping-240x67-rich",
+        "main-qualifying-120x33-rich",
+        "main-qualifying-160x45-rich",
+        "main-qualifying-240x67",
+        "main-qualifying-240x67-console",
+        "main-qualifying-240x67-full",
+        "main-qualifying-240x67-none",
+        "main-qualifying-240x67-rich",
         "main-recovering-120x33",
         "main-recovering-160x45",
         "main-recovering-240x67",
-        "main-round-120x33",
-        "main-round-160x45",
-        "main-round-240x67",
-        "main-search-120x33",
-        "main-search-160x45",
-        "main-search-240x67",
+        "main-reproducing-240x67",
+        "main-stopped-240x67",
         "missing-120x33",
         "missing-160x45",
         "missing-240x67",
+        "one-frame-mapping-120x33",
+        "one-frame-mapping-240x67",
         "problem-120x33",
         "problem-160x45",
         "problem-240x67",
@@ -96,27 +99,6 @@ fn check(name: &str, body: &str) {
         "starting-120x33",
         "starting-160x45",
         "starting-240x67",
-        "main-combination-120x33",
-        "main-combination-160x45",
-        "main-combination-240x67",
-        "main-confirm-240x67",
-        "main-crashed-240x67",
-        "main-member-probe-120x33",
-        "main-member-probe-160x45",
-        "log-160x45",
-        "log-240x67-full",
-        "log-240x67",
-        "log-80x24",
-        "log-top-160x45",
-        "main-checking-120x33-rich",
-        "main-checking-160x45-rich",
-        "main-checking-240x67-rich",
-        "main-member-probe-120x33-rich",
-        "main-member-probe-160x45-rich",
-        "main-member-probe-240x67-rich",
-        "help-120x33-rich",
-        "help-160x45-rich",
-        "help-240x67-rich",
     };
     let (_, expected) = snapshot
         .strip_prefix("---\n")
@@ -184,174 +166,120 @@ fn first_row_with<'a>(rows: &'a [String], word: &str) -> &'a str {
         .unwrap_or_else(|| panic!("no row has {word:?}"))
 }
 
-fn assert_nothing_runs(scenario: Scenario, rows: &[String]) {
-    const STATES: [&str; 8] = [
-        "SEARCH", "CONFIRM", "HAS ROOM", "AT LIMIT", "PARKED", "MEMBER", "PROBE", "SUSPECT",
-    ];
-    for row in rows.iter().skip(3) {
-        let table = STATES.iter().any(|state| row.contains(state))
-            || row.contains("search step")
-            || row.contains("confirm:");
-        assert!(
-            !(table && row.contains('►')),
-            "{}: {row:?} marks a core or turn as running",
-            scenario.name()
-        );
-        assert!(
-            !row.contains("► trial"),
-            "{}: {row:?} marks a part as running",
-            scenario.name()
-        );
-        assert!(
-            !row.contains("under load") || row.contains("not under load"),
-            "{}: {row:?} puts cores under load",
-            scenario.name()
-        );
-    }
-}
-
-fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
+/// What a frame's shapes say without colour: the glyphs that carry meaning on their own.
+fn shapes_without_colour(staged: Staged, buf: &Buffer) {
     let rows = rows_of(buf);
-    if matches!(
-        scenario,
-        Scenario::Crashed
-            | Scenario::Recovering
-            | Scenario::Deadend
-            | Scenario::Stopped
-            | Scenario::FirstResult
-            | Scenario::Combination
-            | Scenario::Between
-    ) {
-        assert_nothing_runs(scenario, &rows);
-    }
     let bar = |glyph: char| {
         rows.iter()
             .map(|row| row.trim_start())
             .find(|row| row.starts_with(glyph))
             .unwrap_or_else(|| panic!("no bar row starts with {glyph:?}"))
     };
-    match scenario {
-        Scenario::Checking => {
+    match staged {
+        Staged::Mapping | Staged::Qualifying | Staged::Reproducing | Staged::Day => {
             let elapsed = bar('█');
             assert!(elapsed.trim_start_matches('█').starts_with('░'));
-            let core = first_row_with(&rows, "HAS ROOM");
+            let core = first_row_with(&rows, "LOAD");
             for glyph in ['▄', '·'] {
-                assert!(core.contains(glyph), "{glyph:?} missing from {core:?}");
+                assert!(
+                    core.contains(glyph) || staged != Staged::Mapping,
+                    "{glyph:?} missing from {core:?}"
+                );
             }
         }
-        Scenario::MemberProbe => {
-            let probe = first_row_with(&rows, "PROBE");
-            assert!(probe.contains('▄') && probe.contains('▀'), "{probe:?}");
-            assert!(first_row_with(&rows, "PARKED").contains('·'));
-        }
-        Scenario::Round => {
-            assert!(first_row_with(&rows, "AT LIMIT").contains('░'));
-        }
-        Scenario::Idle => {
+        Staged::Idle => {
             let quiet = bar('░');
             assert!(quiet.trim_start_matches('░').starts_with(' '));
             assert!(!rows.iter().any(|row| row.trim_start().starts_with('█')));
         }
-        Scenario::Deadend => {
+        Staged::Crashed | Staged::Recovering | Staged::Between | Staged::Stopped => {
+            for row in rows.iter().skip(3) {
+                assert!(
+                    !row.contains('►'),
+                    "{}: {row:?} marks a core as running",
+                    staged.name()
+                );
+            }
+        }
+        Staged::Deadend => {
             let stage = &rows[2];
             assert!(!stage.contains('►') && stage.contains('○'), "{stage:?}");
         }
-        Scenario::Between => {
-            for row in &rows {
-                let words: Vec<&str> = row.split_whitespace().collect();
-                for pair in words.windows(2) {
-                    let counts = pair[0].split_once('/');
-                    if let (Some((done, of)), "passed") = (counts, pair[1])
-                        && let (Ok(done), Ok(of)) = (done.parse::<u32>(), of.parse::<u32>())
-                    {
-                        assert!(done <= of, "{row:?} counts more passes than it needs");
-                    }
-                }
-            }
-        }
-        Scenario::Search
-        | Scenario::Confirm
-        | Scenario::Hunt
-        | Scenario::Confirmation
-        | Scenario::Concluded
-        | Scenario::Unconfirmed
-        | Scenario::HuntBios
-        | Scenario::Crashed
-        | Scenario::Recovering
-        | Scenario::Combination
-        | Scenario::FirstResult
-        | Scenario::Stopped => {}
     }
 }
 
-fn main_views(scenario: Scenario, sizes: &[(u16, u16)]) {
-    let Fixture { model, now } = Fixture::scenario(scenario);
-    let journal = ready(&model);
+fn main_views(staged: Staged, sizes: &[(u16, u16)]) {
+    let hand = staged.hand();
+    let journal = hand.journal();
     for &size in sizes {
-        let name = format!("main-{}-{}x{}", scenario.name(), size.0, size.1);
+        let name = format!("main-{}-{}x{}", staged.name(), size.0, size.1);
         let buf = text(
             &name,
             &journal,
-            now,
+            hand.now,
             &screen_of(View::Main, size, Colours::None, 0, false),
         );
         if size == WIDE {
-            shapes_without_colour(scenario, &buf);
+            shapes_without_colour(staged, &buf);
         }
     }
 }
 
-macro_rules! main_view_tests {
-    ($($test:ident: $scenario:ident in $sizes:ident),* $(,)?) => {
-        const LISTED: &[Scenario] = &[$(Scenario::$scenario),*];
-        const MAIN_CASES: &[(Scenario, &[(u16, u16)])] = &[$((Scenario::$scenario, &$sizes)),*];
+// A frame keeps a snapshot at every main size only when it draws a size-dependent panel no other frame draws; the
+// rest keep the wide one, and `every_staged_frame_fits_the_frame_at_every_main_size` still draws them all.
+// mapping: the CCD tables beside each other and stacked, the night's rows. day: the day's rows with no night.
+// idle: the planned end. recovering: the band after a crash. qualifying and reproducing: the night's other rows.
+// The wide-only frames draw panels a kept frame already draws: crashed, between, deadend and stopped a band.
+const MAIN_CASES: &[(Staged, &[(u16, u16)])] = &[
+    (Staged::Mapping, &MAIN_SIZES),
+    (Staged::Qualifying, &WIDE_ONLY),
+    (Staged::Reproducing, &WIDE_ONLY),
+    (Staged::Day, &MAIN_SIZES),
+    (Staged::Idle, &MAIN_SIZES),
+    (Staged::Crashed, &WIDE_ONLY),
+    (Staged::Recovering, &MAIN_SIZES),
+    (Staged::Between, &WIDE_ONLY),
+    (Staged::Deadend, &WIDE_ONLY),
+    (Staged::Stopped, &WIDE_ONLY),
+];
 
+macro_rules! main_view_tests {
+    ($($test:ident: $staged:ident),* $(,)?) => {
         $(
             #[test]
             fn $test() {
-                main_views(Scenario::$scenario, &$sizes);
+                let sizes = MAIN_CASES
+                    .iter()
+                    .find(|(staged, _)| *staged == Staged::$staged)
+                    .map(|&(_, sizes)| sizes)
+                    .expect("the frame is listed in MAIN_CASES");
+                main_views(Staged::$staged, sizes);
             }
         )*
     };
 }
 
-// A cut keeps a snapshot at every main size only when it draws a size-dependent panel no other kept cut draws;
-// the rest keep the wide one, and `every_scenario_fits_the_frame_at_every_main_size` still draws them all.
-// search: the turns table. checking: the cycle and partial tables. hunt: the hunt plan and its parts. member_probe:
-// the probe rows. round: the deepening checks. idle: the planned end. recovering: the band after a crash.
-// combination: the compact member columns. hunt_bios: the hunt's evidence rows and the unconfirmed profile.
-// The wide-only cuts draw panels a kept cut already draws: confirm the turns table (search), confirmation and
-// concluded the cycle table (checking), unconfirmed the unconfirmed profile (hunt_bios), and between, stopped,
-// first_result, deadend and crashed a band or a plain cycle table.
 main_view_tests! {
-    search: Search in MAIN_SIZES,
-    confirm: Confirm in WIDE_ONLY,
-    checking: Checking in MAIN_SIZES,
-    hunt: Hunt in MAIN_SIZES,
-    member_probe: MemberProbe in MAIN_SIZES,
-    round: Round in MAIN_SIZES,
-    confirmation: Confirmation in WIDE_ONLY,
-    concluded: Concluded in WIDE_ONLY,
-    unconfirmed: Unconfirmed in WIDE_ONLY,
-    hunt_bios: HuntBios in MAIN_SIZES,
-    idle: Idle in MAIN_SIZES,
-    crashed: Crashed in WIDE_ONLY,
-    recovering: Recovering in MAIN_SIZES,
-    combination: Combination in MAIN_SIZES,
-    between: Between in WIDE_ONLY,
-    deadend: Deadend in WIDE_ONLY,
-    first_result: FirstResult in WIDE_ONLY,
-    stopped: Stopped in WIDE_ONLY,
+    mapping: Mapping,
+    qualifying: Qualifying,
+    reproducing: Reproducing,
+    day: Day,
+    idle: Idle,
+    crashed: Crashed,
+    recovering: Recovering,
+    between: Between,
+    deadend: Deadend,
+    stopped: Stopped,
 }
 
 #[test]
-fn every_scenario_has_a_main_view_snapshot() {
-    assert_eq!(LISTED.len(), Scenario::ALL.len());
-    for scenario in Scenario::ALL {
+fn every_staged_frame_has_a_main_view_snapshot() {
+    assert_eq!(MAIN_CASES.len(), Staged::ALL.len());
+    for staged in Staged::ALL {
         assert!(
-            LISTED.contains(&scenario),
-            "{} has no test",
-            scenario.name()
+            MAIN_CASES.iter().any(|(listed, _)| *listed == staged),
+            "{} has no snapshot",
+            staged.name()
         );
     }
 }
@@ -359,14 +287,14 @@ fn every_scenario_has_a_main_view_snapshot() {
 #[test_case::test_case(Colours::Console; "console")]
 #[test_case::test_case(Colours::None; "plain")]
 #[test_case::test_case(Colours::Rich; "rich")]
-fn every_scenario_fits_the_frame_at_every_main_size(colours: Colours) {
-    for scenario in Scenario::ALL {
-        let Fixture { model, now } = Fixture::scenario(scenario);
-        let journal = ready(&model);
+fn every_staged_frame_fits_the_frame_at_every_main_size(colours: Colours) {
+    for staged in Staged::ALL {
+        let hand = staged.hand();
+        let journal = hand.journal();
         for size in MAIN_SIZES {
             let sc = screen_of(View::Main, size, colours, 0, false);
-            let (buf, _) = render_checked(&journal, &sc, now);
-            let name = format!("main-{}-{}x{}-{colours:?}", scenario.name(), size.0, size.1);
+            let (buf, _) = render_checked(&journal, &sc, hand.now);
+            let name = format!("main-{}-{}x{}-{colours:?}", staged.name(), size.0, size.1);
             if colours == Colours::Rich {
                 assert!(
                     !text_snapshot(&buf)
@@ -401,7 +329,7 @@ fn no_color_and_journald_map_to_one_profile_and_the_console_to_its_own() {
     assert_eq!(colours_for(journald, linux, None), Colours::None);
 }
 
-fn profiles(scenario: Scenario) {
+fn profiles(staged: Staged) {
     let xterm = Some(OsStr::new("xterm-256color"));
     let linux = Some(OsStr::new("linux"));
     let no_color = OutputFacts {
@@ -412,14 +340,15 @@ fn profiles(scenario: Scenario) {
         journald: true,
         ..terminal()
     };
-    let Fixture { model, now } = Fixture::scenario(scenario);
-    let journal = ready(&model);
+    let hand = staged.hand();
+    let journal = hand.journal();
+    let now = hand.now;
     let full = colours_for(terminal(), xterm, None);
     let console = colours_for(terminal(), linux, None);
     let none = colours_for(no_color, xterm, None);
     assert_eq!(none, colours_for(journald, xterm, None));
     for (profile, colours) in [("full", full), ("console", console), ("none", none)] {
-        let name = format!("main-{}-{}x{}-{profile}", scenario.name(), WIDE.0, WIDE.1);
+        let name = format!("main-{}-{}x{}-{profile}", staged.name(), WIDE.0, WIDE.1);
         let buf = styled(
             &name,
             &journal,
@@ -432,18 +361,18 @@ fn profiles(scenario: Scenario) {
 }
 
 #[test]
-fn checking_in_each_colour_profile() {
-    profiles(Scenario::Checking);
+fn mapping_in_each_colour_profile() {
+    profiles(Staged::Mapping);
 }
 
 #[test]
-fn member_probe_in_each_colour_profile() {
-    profiles(Scenario::MemberProbe);
+fn qualifying_in_each_colour_profile() {
+    profiles(Staged::Qualifying);
 }
 
 #[test]
 fn idle_in_each_colour_profile() {
-    profiles(Scenario::Idle);
+    profiles(Staged::Idle);
 }
 
 #[test]
@@ -482,8 +411,9 @@ fn journal_states_at_the_main_sizes() {
 
 #[test]
 fn help_at_the_view_sizes() {
-    let Fixture { model, now } = Fixture::scenario(Scenario::Checking);
-    let journal = ready(&model);
+    let hand = Staged::Mapping.hand();
+    let journal = hand.journal();
+    let now = hand.now;
     for size in VIEW_SIZES {
         let (width, height) = size;
         text(
@@ -508,8 +438,9 @@ fn help_at_the_view_sizes() {
 
 #[test]
 fn the_journal_view_at_the_view_sizes() {
-    let Fixture { model, now } = Fixture::scenario(Scenario::Stopped);
-    let journal = ready(&model);
+    let hand = Staged::Stopped.hand();
+    let journal = hand.journal();
+    let now = hand.now;
     for size in VIEW_SIZES {
         let (width, height) = size;
         text(
@@ -536,14 +467,15 @@ fn the_journal_view_at_the_view_sizes() {
 
 #[test]
 fn one_frame_prints_the_live_text_without_the_key_footer() {
-    let Fixture { model, now } = Fixture::scenario(Scenario::Checking);
-    let journal = ready(&model);
+    let hand = Staged::Mapping.hand();
+    let journal = hand.journal();
+    let now = hand.now;
     for size in [WIDE, (120, 33)] {
         let (width, height) = size;
         let once = screen_of(View::Main, size, Colours::None, 0, true);
         assert!(!once.keys && once.one_frame);
         let buf = text(
-            &format!("one-frame-checking-{width}x{height}"),
+            &format!("one-frame-mapping-{width}x{height}"),
             &journal,
             now,
             &once,
@@ -563,15 +495,15 @@ fn one_frame_prints_the_live_text_without_the_key_footer() {
 }
 
 fn rich_frames(mut visit: impl FnMut(&str, &Buffer)) {
-    for (scenario, view, prefix) in [
-        (Scenario::Checking, View::Main, "main-checking"),
-        (Scenario::MemberProbe, View::Main, "main-member-probe"),
-        (Scenario::Checking, View::Help, "help"),
+    for (staged, view, prefix) in [
+        (Staged::Mapping, View::Main, "main-mapping"),
+        (Staged::Qualifying, View::Main, "main-qualifying"),
+        (Staged::Mapping, View::Help, "help"),
     ] {
-        let Fixture { model, now } = Fixture::scenario(scenario);
+        let hand = staged.hand();
         for size in MAIN_SIZES {
             let sc = screen_of(view, size, Colours::Rich, 0, false);
-            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
             visit(&format!("{prefix}-{}x{}-rich", size.0, size.1), &buf);
         }
     }
@@ -610,44 +542,44 @@ fn real_fs_generate_snapshots() {
         .unwrap();
     };
     rich_frames(|name, buf| emit(name, styled_snapshot(buf, Colours::Rich)));
-    for &(scenario, sizes) in MAIN_CASES {
-        let Fixture { model, now } = Fixture::scenario(scenario);
+    for &(staged, sizes) in MAIN_CASES {
+        let hand = staged.hand();
         for &size in sizes {
             let sc = screen_of(View::Main, size, Colours::None, 0, false);
-            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
             emit(
-                &format!("main-{}-{}x{}", scenario.name(), size.0, size.1),
+                &format!("main-{}-{}x{}", staged.name(), size.0, size.1),
                 text_snapshot(&buf),
             );
         }
     }
-    for scenario in [Scenario::Checking, Scenario::MemberProbe, Scenario::Idle] {
-        let Fixture { model, now } = Fixture::scenario(scenario);
+    for staged in [Staged::Mapping, Staged::Qualifying, Staged::Idle] {
+        let hand = staged.hand();
         for (profile, colours) in [
             ("full", Colours::Full),
             ("console", Colours::Console),
             ("none", Colours::None),
         ] {
             let sc = screen_of(View::Main, WIDE, colours, 0, false);
-            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
             emit(
-                &format!("main-{}-{}x{}-{profile}", scenario.name(), WIDE.0, WIDE.1),
+                &format!("main-{}-{}x{}-{profile}", staged.name(), WIDE.0, WIDE.1),
                 styled_snapshot(&buf, colours),
             );
         }
     }
-    let Fixture { model, now } = Fixture::scenario(Scenario::Checking);
+    let hand = Staged::Mapping.hand();
     for size in VIEW_SIZES {
         for (prefix, scroll) in [("help", 0), ("help-end", usize::MAX)] {
             let sc = screen_of(View::Help, size, Colours::None, scroll, false);
-            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
             emit(
                 &format!("{prefix}-{}x{}", size.0, size.1),
                 text_snapshot(&buf),
             );
             if size == WIDE {
                 let sc = screen_of(View::Help, size, Colours::Full, scroll, false);
-                let (buf, _) = render_checked(&ready(&model), &sc, now);
+                let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
                 emit(
                     &format!("{prefix}-{}x{}-full", size.0, size.1),
                     styled_snapshot(&buf, Colours::Full),
@@ -657,10 +589,25 @@ fn real_fs_generate_snapshots() {
     }
     for size in [WIDE, (120, 33)] {
         let sc = screen_of(View::Main, size, Colours::None, 0, true);
-        let (buf, _) = render_checked(&ready(&model), &sc, now);
+        let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
         emit(
-            &format!("one-frame-checking-{}x{}", size.0, size.1),
+            &format!("one-frame-mapping-{}x{}", size.0, size.1),
             text_snapshot(&buf),
         );
     }
+    let stopped = Staged::Stopped.hand();
+    for size in VIEW_SIZES {
+        let sc = screen_of(View::Log, size, Colours::None, usize::MAX, false);
+        let (buf, _) = render_checked(&stopped.journal(), &sc, stopped.now);
+        emit(&format!("log-{}x{}", size.0, size.1), text_snapshot(&buf));
+    }
+    let sc = screen_of(View::Log, (160, 45), Colours::None, 0, false);
+    let (buf, _) = render_checked(&stopped.journal(), &sc, stopped.now);
+    emit("log-top-160x45", text_snapshot(&buf));
+    let sc = screen_of(View::Log, WIDE, Colours::Full, usize::MAX, false);
+    let (buf, _) = render_checked(&stopped.journal(), &sc, stopped.now);
+    emit(
+        &format!("log-{}x{}-full", WIDE.0, WIDE.1),
+        styled_snapshot(&buf, Colours::Full),
+    );
 }

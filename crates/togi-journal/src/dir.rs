@@ -14,7 +14,8 @@ use crate::fs::{DiskFs, FileKind, Fs, FsLock, MemFs};
 use crate::session_id::SessionId;
 
 pub use archive::{
-    ArchiveKind, Lifetime, Marker, recorded_build, recorded_build_in, session_entries_in,
+    ArchiveKind, ImportMarker, Lifetime, Marker, recorded_build, recorded_build_in,
+    session_entries_in,
 };
 
 pub(crate) const LOCK_FILE: &str = "lock";
@@ -69,6 +70,8 @@ pub enum DirError {
     ForeignJournal { path: PathBuf },
     #[error("{0} markers are permanent")]
     PermanentMarker(Marker),
+    #[error("{} does not name a session id", path.display())]
+    BadMarker { path: PathBuf },
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -23,14 +23,13 @@ const SOURCES: &[(&str, &str)] = &[
         include_str!("../frames/story/mod.rs"),
     ),
     (
-        "frames/story/outcome.rs",
-        include_str!("../frames/story/outcome.rs"),
+        "frames/story/night.rs",
+        include_str!("../frames/story/night.rs"),
     ),
     (
         "frames/story/resting.rs",
         include_str!("../frames/story/resting.rs"),
     ),
-    ("frames/terms.rs", include_str!("../frames/terms.rs")),
     (
         "frames/dash/header.rs",
         include_str!("../frames/dash/header.rs"),
@@ -41,31 +40,17 @@ const SOURCES: &[(&str, &str)] = &[
     ),
     ("frames/dash/now.rs", include_str!("../frames/dash/now.rs")),
     ("frames/dash/ccd.rs", include_str!("../frames/dash/ccd.rs")),
-    ("frames/dash/r7.rs", include_str!("../frames/dash/r7.rs")),
-    ("frames/notes.rs", include_str!("../frames/notes.rs")),
     (
         "frames/panels/context.rs",
         include_str!("../frames/panels/context.rs"),
-    ),
-    (
-        "frames/panels/cycle.rs",
-        include_str!("../frames/panels/cycle.rs"),
     ),
     (
         "frames/panels/history.rs",
         include_str!("../frames/panels/history.rs"),
     ),
     (
-        "frames/panels/hunt.rs",
-        include_str!("../frames/panels/hunt.rs"),
-    ),
-    (
         "frames/panels/log.rs",
         include_str!("../frames/panels/log.rs"),
-    ),
-    (
-        "frames/panels/search.rs",
-        include_str!("../frames/panels/search.rs"),
     ),
     ("frames/footer.rs", include_str!("../frames/footer.rs")),
     ("frames/help.rs", include_str!("../frames/help.rs")),
@@ -90,44 +75,14 @@ const NOT_PHRASES: &[&str] = &[
     "include_str",
 ];
 
-/// Why the story never tells of a singleton whose probe is done, bracketed or stopped.
-const UNREACHED_DONE: &str = "`hunt_story` words a singleton only while its probe trial runs, and `HuntView::singleton` stages it bracketed or stopped only once its probe is done, which the tuner marks only when its probing ends, which ends the hunt";
-
 /// Literals no case can render, and why. The document lists these with their reason first, even when another
 /// phrase happens to carry their words, and the exporter does not fail on them. Each holds because of the code
 /// the reason names; an entry matching no literal fails the exporter ([`stale`]).
-pub(crate) const SILENT: &[(&str, &str, &str)] = &[
-    (
-        "words.rs",
-        "idle with short bursts",
-        "`regime_words(R6)` has no production caller: `load_words` words R6 itself",
-    ),
-    (
-        "frames/panels/hunt.rs",
-        "→ core {id:02} failed alone; testing its parked offset",
-        "`HuntView::singleton` stages a probe `Anchor` only when its parked offset is the probe's offset, so an anchor without a parked offset never reaches `group_lines`",
-    ),
-    (
-        "frames/story/mod.rs",
-        "A pass sits one count shallower",
-        UNREACHED_DONE,
-    ),
-    (
-        "frames/story/mod.rs",
-        "Core {id:02} is bracketed",
-        UNREACHED_DONE,
-    ),
-    (
-        "frames/story/mod.rs",
-        "Probing stopped without a safe bracket",
-        UNREACHED_DONE,
-    ),
-    (
-        "frames/story/mod.rs",
-        "Probing core {id:02} stopped",
-        UNREACHED_DONE,
-    ),
-];
+pub(crate) const SILENT: &[(&str, &str, &str)] = &[(
+    "words.rs",
+    "idle with short bursts",
+    "`regime_words(R6)` has no production caller: `load_words` words R6 itself",
+)];
 
 /// One phrase literal of the source.
 #[derive(Debug)]

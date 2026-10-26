@@ -25,7 +25,7 @@ use togi_machine::{
     SmuValidated, Started, Stopped, Swept, TargetOffset, TrialResult, TrialSpec, Trials,
 };
 
-use crate::support::{Fake, biased};
+use crate::support::{Fake, simulator, written};
 
 const SCENARIO: &str = "TOGI_RUN_TEST_SCENARIO";
 const DIR: &str = "TOGI_RUN_TEST_DIR";
@@ -162,6 +162,8 @@ struct Faults {
     unconfirmed_stop: bool,
 }
 
+/// Trials that panic once one runs at an offset the run wrote: a night starts with stock controls, which leave
+/// nothing to restore.
 struct PanickingTrials {
     inner: Box<dyn Trials>,
     order: Order,
@@ -170,6 +172,13 @@ struct PanickingTrials {
 }
 
 impl Trials for PanickingTrials {
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, MachineError> {
+        self.inner.content(workload)
+    }
+
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, MachineError> {
         self.inner.sweep(cancel)
     }
@@ -180,11 +189,13 @@ impl Trials for PanickingTrials {
         spec: TrialSpec,
         ready: Stopped,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
+        let armed = written(&spec);
         let inner = self.inner.start(cancel, spec, ready)?;
         Ok(Box::new(PanickingRunning {
             inner,
             order: self.order.clone(),
             panicked: Arc::clone(&self.panicked),
+            armed,
             faults: self.faults,
         }))
     }
@@ -207,6 +218,8 @@ struct PanickingRunning {
     inner: Box<dyn Running>,
     order: Order,
     panicked: Arc<AtomicBool>,
+    /// Whether it runs at a profile the run wrote, so panics.
+    armed: bool,
     faults: Faults,
 }
 
@@ -217,15 +230,21 @@ impl Running for PanickingRunning {
 
     fn wait(
         &mut self,
-        _: &CancellationToken,
-        _: &mut dyn Reporter,
+        cancel: &CancellationToken,
+        report: &mut dyn Reporter,
     ) -> Result<TrialResult, Partial<TrialResult>> {
+        if !self.armed {
+            return self.inner.wait(cancel, report);
+        }
         self.panicked.store(true, Ordering::SeqCst);
         self.order.note("panic");
         panic!("injected panic while a trial runs");
     }
 
     fn stop(self: Box<Self>) -> Result<Stopped, MachineError> {
+        if !self.armed {
+            return self.inner.stop();
+        }
         self.order.note("stop");
         let stopped = self.inner.stop()?;
         if self.faults.unconfirmed_stop {
@@ -482,7 +501,7 @@ fn real_process_helper() {
     };
     let dir = PathBuf::from(std::env::var_os(DIR).unwrap());
     let order = Order::open(&dir);
-    let mut fake = Fake::in_dir(biased(1000, -20), &dir);
+    let mut fake = Fake::in_dir(simulator(1000), &dir);
     fake.real_stderr = true;
     match scenario.as_str() {
         "before_the_host_lock" => fake.panic_in_platform = true,
@@ -609,7 +628,7 @@ fn real_process_helper() {
         other => panic!("unknown scenario {other}"),
     }
     let args: Vec<OsString> = fake
-        .arguments(&["run", "--cycles", "1"])
+        .arguments(&["run"])
         .into_iter()
         .map(Into::into)
         .collect();
@@ -665,6 +684,14 @@ impl Child {
         self.lines()
             .iter()
             .position(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("no line with {needle:?}: {}", self.stderr))
+    }
+
+    /// The index of the last stderr line containing `needle`.
+    fn last_at(&self, needle: &str) -> usize {
+        self.lines()
+            .iter()
+            .rposition(|line| line.contains(needle))
             .unwrap_or_else(|| panic!("no line with {needle:?}: {}", self.stderr))
     }
 
@@ -883,12 +910,19 @@ fn real_process_a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run
         "{}",
         child.stderr
     );
-    // The run was stopped only after the fallback line had been read, so the trial's end and everything after
-    // it came after the fallback, printed once each as event lines by the gate. The trial's end is an event the
-    // summary of a clean stop never prints: only the gate can have printed it.
+    // The run was stopped only after the fallback line had been read, at its first write, which follows the
+    // night's stock controls: the last trial's end and everything after it came after the fallback, and every
+    // trial's end is printed once as an event line by the gate. The trial's end is an event the summary of a
+    // clean stop never prints: only the gate can have printed it.
     let fallback = child.at(FALLBACK);
-    assert_eq!(child.count(" trial.end "), 1, "{}", child.stderr);
-    assert!(fallback < child.at(" trial.end "), "{}", child.stderr);
+    let ended = child
+        .events()
+        .iter()
+        .filter(|kind| **kind == EventKind::TrialEnd)
+        .count();
+    assert!(ended > 0, "{}", child.stderr);
+    assert_eq!(child.count(" trial.end "), ended, "{}", child.stderr);
+    assert!(fallback < child.last_at(" trial.end "), "{}", child.stderr);
     assert_eq!(child.count(" profile.restored "), 1, "{}", child.stderr);
     assert!(
         fallback < child.at(" profile.restored "),

@@ -4,20 +4,17 @@
 use std::time::Duration;
 
 use togi_journal::{
-    Attribution, BackendRetry, CrashDetected, Failure, Mce, Outcome, Payload, RetryTarget, Seq,
-    SessionWarning, TrialEnd, TrialId,
+    BackendRetry, CrashDetected, Mce, Outcome, Payload, RetryTarget, Seq, SessionWarning, TrialEnd,
+    TrialId,
 };
-use togi_machine::{
-    BootId, CancellationToken, CoreId, Error, Kernel, PerCore, Regime, ResetReason, Signal,
-    TargetOffset, Trials,
-};
+use togi_machine::{BootId, CancellationToken, CoreId, Error, Kernel, ResetReason, Signal, Trials};
 use togi_tuner::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 
 use crate::appender::Appender;
 use crate::emergency::SweepCleared;
 use crate::error::{AppendFailure, Flow, SessionError, Step};
 use crate::evidence::{self, RETRY_WAITS};
-use crate::recovery::{RecoveryState, Registers};
+use crate::recovery::RecoveryState;
 
 /// What recovery works with: the journal through its appender, the kernel log, the trial files, the boot the run is
 /// in and the token that cancels a retry wait.
@@ -423,70 +420,11 @@ fn unread_reason() -> ResetReason {
     }
 }
 
-/// Closes the open trial, then answers every idle crash with a failure.
+/// Closes the open trial. An idle crash, one with no open trial to blame, records no failure of its own: Ruleset 13
+/// attributes a crash to the night trial that was open, or to none, never to the deepest profile the registers may
+/// have held.
 fn finish(recovery: &mut Recovery<'_, '_>) -> Step<()> {
-    close_open_trial(recovery)?;
-    let failures: Vec<(Failure, Vec<Seq>)> = {
-        let state = recovery.appender.recovery();
-        state
-            .idle_crashes()
-            .map(|(seq, detected)| {
-                let causes = std::iter::once(seq)
-                    .chain(state.recorded_for(&detected.previous_boot, recovery.boot))
-                    .collect();
-                (idle_failure(state, detected), causes)
-            })
-            .collect()
-    };
-    for (failure, causes) in failures {
-        recovery
-            .appender
-            .append(Payload::Failure(failure), &causes)?;
-    }
-    Ok(())
-}
-
-/// The R6 failure an idle crash stands for, at the deepest profile the crashed boot's registers may have held. It
-/// records that profile only when the journal knows every core's register, and names a core only when, besides,
-/// every write was read back and exactly one register is nonzero.
-fn idle_failure(state: &RecoveryState, detected: &CrashDetected) -> Failure {
-    let registers = state.registers(&detected.previous_boot);
-    let profile: Option<PerCore<TargetOffset>> = registers.and_then(|registers| {
-        state
-            .topology()
-            .iter()
-            .map(|(core, _)| Some((core, TargetOffset::clamped(registers.offset(core)?.0))))
-            .collect()
-    });
-    let sole = profile
-        .as_ref()
-        .filter(|_| registers.is_some_and(Registers::certain))
-        .and_then(sole_nonzero);
-    Failure {
-        signal: Signal::Crash,
-        attribution: if sole.is_some() {
-            Attribution::Attributed
-        } else {
-            Attribution::Unattributed
-        },
-        core: sole.map(|(core, _)| core),
-        offset: sole.map(|(_, offset)| offset),
-        trial: None,
-        regime: Some(Regime::R6),
-        condition: detected.condition,
-        profile,
-        known_failure: None,
-        reason: None,
-        round: None,
-    }
-}
-
-fn sole_nonzero(profile: &PerCore<TargetOffset>) -> Option<(togi_machine::CoreId, TargetOffset)> {
-    let mut nonzero = profile
-        .iter()
-        .filter(|&(_, offset)| offset != TargetOffset::ZERO);
-    let sole = nonzero.next()?;
-    nonzero.next().is_none().then_some(sole)
+    close_open_trial(recovery)
 }
 
 /// What the journal holds of an open trial and of the crash that cut it short, for [`Closure::decide`].
@@ -704,7 +642,7 @@ fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
             .map_err(SessionError::TrialDuration)?,
         )
     };
-    let loaded = togi_tuner::Load::recorded(open.intent.core, open.intent.cores).cores();
+    let loaded = evidence::loaded_cores(&open.intent);
     let topology = state.topology();
     let summary = evidence::summarize_samples(
         recovery.trials.samples(trial.as_str()),
@@ -757,6 +695,3 @@ fn reset_verdict(detected: &CrashDetected) -> Reset {
         reason,
     }
 }
-
-#[cfg(test)]
-mod tests;

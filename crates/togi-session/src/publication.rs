@@ -1,7 +1,7 @@
 use serde::Serialize;
 use togi_journal::{Payload, SessionWarning, StateRebuilt};
 use togi_machine::object_only;
-use togi_tuner::Projection;
+use togi_tuner::policy::Projection;
 
 use crate::appender::{Appender, Folds};
 use crate::error::{AppendFailure, SessionError};
@@ -21,7 +21,7 @@ object_only! {
         pub facts: togi_journal::State,
         pub tuner: Projection,
         pub recovery: crate::recovery::RecoveryState,
-        pub incremental: togi_tuner::State,
+        pub incremental: togi_tuner::policy::State,
         pub defects: togi_defect::DefectState,
         pub presentation: togi_watch::model::Presentation,
     }
@@ -45,7 +45,7 @@ pub(crate) struct StateDocumentRef<'a> {
     facts: &'a togi_journal::State,
     tuner: Projection,
     recovery: &'a crate::recovery::RecoveryState,
-    incremental: &'a togi_tuner::State,
+    incremental: &'a togi_tuner::policy::State,
     defects: &'a togi_defect::DefectState,
     presentation: &'a togi_watch::model::Presentation,
 }

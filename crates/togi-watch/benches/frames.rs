@@ -1,8 +1,8 @@
 //! Frame time and fold time of the dashboard on simulated sessions.
 //!
 //! `frame` draws one 240x67 main-view frame of the longest scenario's folded journal, and of the first R7
-//! checking trial, which has the most panels, into a buffer; `frame-bytes` also encodes the whole frame as the
-//! terminal bytes a first draw writes; `project` folds the checking journal from nothing.
+//! controls trial, which has the most panels, into a buffer; `frame-bytes` also encodes the whole frame as the
+//! terminal bytes a first draw writes; `project` folds the controls journal from nothing.
 
 use std::hint::black_box;
 
@@ -79,16 +79,16 @@ fn benches(c: &mut Criterion) {
         &format!("{} ({} events)", longest.0.name(), longest.1.len()),
         &longest.1,
     );
-    let checking = events(Scenario::Checking);
+    let controls = events(Scenario::Controls);
     frame(
         c,
-        &format!("checking ({} events)", checking.len()),
-        &checking,
+        &format!("controls ({} events)", controls.len()),
+        &controls,
     );
     c.bench_function(
-        &format!("project/checking ({} events)", checking.len()),
+        &format!("project/controls ({} events)", controls.len()),
         |b| {
-            b.iter(|| black_box(project(black_box(&checking))));
+            b.iter(|| black_box(project(black_box(&controls))));
         },
     );
 }

@@ -162,7 +162,7 @@ sql dir="/var/lib/togi" *args: _dev-shell
 bench *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- "$@"
 
-# Run the preregistered two-year day/night comparator experiment
+# Run the preregistered two-year day/night experiment and print its gate verdict (`just bench-day-night --split dev --policy fixed-margin --jobs 32`)
 [group('run')]
 bench-day-night *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- day-night "$@"
@@ -182,41 +182,6 @@ same base="origin/main" *args: _dev-shell
 smoke base="origin/main" *args: _dev-shell
     dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" --smoke "${@:2}"
 
-# Forecast a real run from a copy of its state directory with the target ensemble (`--out FILE` writes the forecast record)
-[group('run')]
-forecast state_dir *args: _dev-shell
-    cargo run --release --locked -p togi-tool-bench -- forecast "$1" "${@:2}"
-
-# Compute the counterfactual pass/cost of the R7 part requirements at a fixed profile, never tuner evidence (`just pass-cost` over the #490 hazard grid, `just pass-cost --machine FILE --profile OFFSETS`)
-[group('run')]
-pass-cost *args: _dev-shell
-    cargo run --release --locked -p togi-tool-bench -- pass-cost "$@"
-
-# Account every development session the one bench run kept under RUNS (its `--keep` directory) holds, for #896: per session S (`<scenario>-<seed>`), `stats --chains` writes OUT/S.report.txt and the chain attribution OUT/S.chains.jsonl, and `stats --counterfactual` writes OUT/S.counterfactual.txt and its witness records OUT/S.witnesses.jsonl; a session stats cannot read gets no files and is named at the end, with exit 1 (`just counterfactuals $RUN/runs-1 $RUN/accounting`; tools/bench/research/896.md)
-[group('run')]
-counterfactuals runs out: _dev-shell
-    #!/usr/bin/env bash
-    set -euo pipefail
-    shopt -s nullglob
-    benches=("$1"/bench-*/)
-    (( ${#benches[@]} == 1 )) || { echo "counterfactuals: $1 holds ${#benches[@]} bench runs, not one" >&2; exit 1; }
-    sessions=("${benches[0]}"*/dev-*/)
-    (( ${#sessions[@]} )) || { echo "counterfactuals: no kept development session under $1" >&2; exit 1; }
-    mkdir -p "$2"
-    cargo build --release --locked -p togi-tool-stats
-    failed=()
-    for dir in "${sessions[@]}"; do
-        seed=$(basename "$dir")
-        name="$(basename "$(dirname "$dir")")-${seed#dev-}"
-        stats=(cargo run --quiet --release --locked -p togi-tool-stats -- --state-dir "$dir")
-        if ! { "${stats[@]}" --chains "$2/$name.chains.jsonl" >"$2/$name.report.txt" \
-            && "${stats[@]}" --counterfactual --witnesses "$2/$name.witnesses.jsonl" >"$2/$name.counterfactual.txt"; }; then
-            rm -f "$2/$name".{report.txt,chains.jsonl,counterfactual.txt,witnesses.jsonl}
-            failed+=("$name")
-        fi
-    done
-    (( ${#failed[@]} == 0 )) || { echo "counterfactuals: could not account ${failed[*]}" >&2; exit 1; }
-
 # Re-record the committed bench baseline over all seeds, without model checks or wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
 [group('run')]
 bench-baseline out="tools/bench/baseline.jsonl": _dev-shell
@@ -227,7 +192,7 @@ bench-baseline out="tools/bench/baseline.jsonl": _dev-shell
 facts state_dir: _dev-shell
     cargo run --release --locked -p togi-tool-facts -- "$1" tools/bench/facts/target.jsonl.gz
 
-# Copy a state directory's live journal, state.json and archived journals and markers for forecast, facts and replay, leaving out trials; as root it builds under root's home (`sudo nix develop --command just copy-state /var/lib/togi DIR`, then chown DIR; docs/benchmarking.md)
+# Copy a state directory's live journal, state.json and archived journals and markers for facts and replay, leaving out trials; as root it builds under root's home (`sudo nix develop --command just copy-state /var/lib/togi DIR`, then chown DIR; docs/benchmarking.md)
 [group('run')]
 copy-state src dst: _dev-shell
     [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/copy-state-target; cargo run --release --locked -p togi-tool-copy-state -- "$1" "$2"

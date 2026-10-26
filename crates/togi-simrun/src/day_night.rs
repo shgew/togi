@@ -2,6 +2,7 @@
 
 mod machine;
 mod policy;
+mod ruleset13;
 
 use std::time::Duration;
 
@@ -10,13 +11,111 @@ use togi_machine::{Machine, TargetOffset, TrialSpec};
 use togi_sim::day_night::{FailureCause, Scenario, TrialClass, TruthError};
 
 pub use policy::{CoZero, FixedMargin};
+pub use ruleset13::Ruleset13;
 
-/// Diagnostic adapters only: neither variant implements the production day policy.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// One policy the runner can build afresh for every scenario and seed. Each variant carries the
+/// parameters its construction needs, so a run is reproducible from its `PolicyKind` alone.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Comparator {
+pub enum PolicyKind {
+    /// Diagnostic: stock CO forever, no night experiments.
     CoZero,
+    /// Diagnostic: observed night edge minus the calendar's fixed margin.
     FixedMargin,
+    /// The production Ruleset 13 policy; `fallback_slope` is the per-count hazard multiplier.
+    Ruleset13 { fallback_slope: f64 },
+}
+
+/// Whether a policy's results may pass the registered gate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PolicyRole {
+    /// A comparator: its scores are diagnostics and can never pass the gate.
+    Diagnostic,
+    /// The policy under test: a failing score fails the gate.
+    Gate,
+}
+
+/// A policy name or slope the registry refuses.
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PolicyError {
+    #[error("unknown day/night policy {name:?}; known policies: {known}")]
+    Unknown { name: String, known: String },
+    #[error("policy {0} takes no fallback slope")]
+    SlopeUnused(&'static str),
+    #[error("policy {0} needs a fallback slope")]
+    SlopeRequired(&'static str),
+}
+
+impl PolicyKind {
+    /// Every diagnostic comparator, in report order. A policy under test is not listed: it needs
+    /// parameters, so it is only reachable through [`PolicyKind::by_label`].
+    pub const COMPARATORS: [Self; 2] = [Self::CoZero, Self::FixedMargin];
+
+    /// The stable label records and reports carry.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::CoZero => "co-zero",
+            Self::FixedMargin => "fixed-margin",
+            Self::Ruleset13 { .. } => "ruleset13",
+        }
+    }
+
+    pub fn role(self) -> PolicyRole {
+        match self {
+            Self::CoZero | Self::FixedMargin => PolicyRole::Diagnostic,
+            Self::Ruleset13 { .. } => PolicyRole::Gate,
+        }
+    }
+
+    /// The fallback slope this policy was built with, when it takes one.
+    pub fn fallback_slope(self) -> Option<f64> {
+        match self {
+            Self::CoZero | Self::FixedMargin => None,
+            Self::Ruleset13 { fallback_slope } => Some(fallback_slope),
+        }
+    }
+
+    /// Resolves a label and the optional `--slope` to a policy.
+    ///
+    /// # Errors
+    /// Refuses an unknown label, and a slope for a policy that takes none.
+    pub fn by_label(label: &str, fallback_slope: Option<f64>) -> Result<Self, PolicyError> {
+        if label == "ruleset13" {
+            return fallback_slope
+                .map(|fallback_slope| Self::Ruleset13 { fallback_slope })
+                .ok_or(PolicyError::SlopeRequired("ruleset13"));
+        }
+        let kind = Self::COMPARATORS
+            .into_iter()
+            .find(|kind| kind.label() == label)
+            .ok_or_else(|| PolicyError::Unknown {
+                name: label.to_owned(),
+                known: Self::COMPARATORS
+                    .map(Self::label)
+                    .into_iter()
+                    .chain(["ruleset13"])
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            })?;
+        match fallback_slope {
+            Some(_) => Err(PolicyError::SlopeUnused(kind.label())),
+            None => Ok(kind),
+        }
+    }
+
+    /// Builds a fresh policy for one run; policies keep per-run state and are never reused.
+    ///
+    /// # Errors
+    /// Refuses parameters the policy cannot run with.
+    pub fn build(self, calendar: &CalendarConfig) -> Result<Box<dyn Policy>, RunError> {
+        Ok(match self {
+            Self::CoZero => Box::new(CoZero),
+            Self::FixedMargin => {
+                Box::new(FixedMargin::new(calendar.fixed_margin, calendar.day_step)?)
+            }
+            Self::Ruleset13 { fallback_slope } => Box::new(Ruleset13::new(fallback_slope)?),
+        })
+    }
 }
 
 /// Calendar day zero is Monday. Hours not spent active or testing are sleep, not exposure.
@@ -67,6 +166,18 @@ pub enum RunError {
     Clock(#[from] togi_sim::ArithmeticError),
     #[error("validate the night trial's placement")]
     Roles(#[from] togi_machine::InvalidRoles),
+    #[error("fallback slope {0} must be a finite per-count hazard multiplier above one")]
+    Slope(f64),
+    #[error("the Ruleset 13 policy never settled: {0}")]
+    Unsettled(&'static str),
+    #[error("fold a journal event into the Ruleset 13 state")]
+    Fold(#[from] togi_tuner::policy::FoldError),
+    #[error("query the Ruleset 13 state")]
+    NotReady(#[from] togi_tuner::policy::NotReady),
+    #[error("build a Ruleset 13 trial")]
+    Plan(#[from] togi_tuner::policy::PlanError),
+    #[error("build a day profile")]
+    Profile(#[from] togi_machine::CcdProfileError),
     #[error("policy requested more trial time than the night's allocation")]
     NightOverrun,
 }
@@ -195,23 +306,18 @@ impl Metrics {
     }
 }
 
-/// Runs a registered scenario using one diagnostic comparator.
+/// Runs a registered scenario using a freshly built `policy`.
 ///
 /// # Errors
 /// Refuses malformed calendars, unknown scenarios, and failed machine operations.
 pub fn run(
     scenario: &str,
     seed: u64,
-    comparator: Comparator,
+    policy: PolicyKind,
     calendar: CalendarConfig,
 ) -> Result<Metrics, RunError> {
-    match comparator {
-        Comparator::CoZero => run_with_policy(scenario, seed, calendar, &mut CoZero),
-        Comparator::FixedMargin => {
-            let mut policy = FixedMargin::new(calendar.fixed_margin, calendar.day_step)?;
-            run_with_policy(scenario, seed, calendar, &mut policy)
-        }
-    }
+    let mut policy = policy.build(&calendar)?;
+    run_with_policy(scenario, seed, calendar, policy.as_mut())
 }
 
 /// Runs any policy using exactly the same calendar and truth-backed machine seams.

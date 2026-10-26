@@ -2,66 +2,66 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
-│ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
-~ gggg   wwwwwwww   gggggggttttt   ggggggggttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggtttttggggggggggg
-│ ■ SOLO ─ ► P1 ─ ○ P2 ─ CLEAN 0 ─ ► CYCLE 1 ─ 1:20 left
-~ pptttttktccwwtktggggtktgggggggtktccwwwwwwwtktwwwwwwwww
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~ gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│ ► NIGHT 0h30m ─ mapping C1 -20 ─ 9:20 left
+~ ccwwwwwwwwwwwtkttttttttttttttttktwwwwwwwww
 │
 │ █ READING THE SCREEN ────────────────────────────────────────────────────────────────────────────────────────────────
 ~ t wwwwwwwwwwwwwwwwww gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │ █
 ~ t
-│ █ ► 04  -28  AT LIMIT ▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆░░░░░░░▆                -36
-~ t wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwmmmmmmmf                fff
-│ █                     at its limit: it cannot go deeper
-~ t                     ggggggggggggggggggggggggggggggggg
+│ █ ► 04  -12  LOADED   ▆▆▆▆▆▆▆▆▆▆▆▆··············    ▆                     -31
+~ t wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwggggggggggggggttttf                     fff
+│ █                     applied -12 under load; the dots run to the cap S at -26; the red mark is the edge U, failed at
+~ t                     ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│ █                     -31
+~ t                     ggg
 │ █
 ~ t
-│ █ ► 00  -26  HAS ROOM ▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆·····▆                    -32
-~ t wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgggggf                    fff
-│ █                     has room: backed off after a hunt, may deepen
-~ t                     ggggggggggggggggggggggggggggggggggggggggggggg
+│ █   09   -8           ▆▆▆▆▆▆▆▆······
+~ t wwwwwwwwwwwwwwwwwwwwgggggggggggggg
+│ █                     idle, so grey; the cap S is -14 and its CCD has no edge yet, so there is no red mark
+~ t                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │ │
 ~ g
-│ │   09    0  PARKED   ···············································▆    -48
-~ g wwwwwwwwwwwwwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggggggf    fff
-│ │                     parked at 0 by a hunt; returns to -47
-~ g                     ggggggggggggggggggggggggggggggggggggg
-│ │
-~ g
-│ │ ► 00  -26  PROBE    ▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆┆ ┆┆ ▆                    -32
-~ g wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwffffff                    fff
-│ │                     probe: the group failed with core 00 at -30, -29, -27
-~ g                     ggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│ │   11    ?           ······························                   ▆  -50
+~ g wwwwwwwwwwwwwwwwwwwwggggggggggggggggggggggggggggggttttttttttttttttttta  aaa
+│ │                     no readback yet; the cap S is -30 and the edge is censored: nothing failed down to -50
+~ g                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │ │
 ~ g
 │ │ ►         the core carries load in this trial
 ~ g w         ttttttttttttttttttttttttttttttttttt
-│ │ ▆▆▆       offset applied now, or saved after a stop restored the hardware; white when this trial judges the core
-~ g www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ ▆▆▆       offset applied now, or saved after a stop restored the hardware; white when this trial loads the core
+~ g www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ │ ?         no hardware offset has been read back for this core
 ~ g w         ttttttttttttttttttttttttttttttttttttttttttttttttttt
-│ │ grey ▆▆▆  the same depth, grey when the core is not judged
+│ │ grey ▆▆▆  the same depth, grey when the core is not loaded
 ~ g wwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttt
-│ │ ···       depth it reached but does not use now: given back, parked, waiting
-~ g www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│ │ ░░░       depth a combination blocks now
-~ g www       tttttttttttttttttttttttttttttt
-│ │ red ▆     its failure point: the shallowest offset ruled out for this core, one count wide at Wide and Medium
-~ g wwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│ │ red ┆     a group trial failed with this core at that offset; dashed, not the solid red ▆ of the core's own failure
-~ g wwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│ │           point
-~ g           ttttt
+│ │ ···       the cap S: how far past the applied offset the night's evidence lets its CCD go
+~ g www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ red ▆     the night edge U of its CCD: the shallowest offset that failed in isolation, one count wide at Wide and
+~ g wwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │           Medium
+~ g           tttttt
+│ │ amber ▆   a censored edge: nothing failed down to the mapping limit
+~ g wwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ │ cyan      running now
 ~ g wwww      ttttttttttt
-│ │ amber     a hunt, and what it paused
-~ g wwwww     tttttttttttttttttttttttttt
+│ │ amber     a hold, a veto, a retreat, a crash, or classes uncovered for the cap
+~ g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ │ red       failures, past and present
 ~ g www       tttttttttttttttttttttttttt
-│ │ green     passed, done
-~ g wwwww     tttttttttttt
+│ │ green     passed, done, covered
+~ g wwwww     ttttttttttttttttttttt
+│ │ grey      idle, still to come, unknown
+~ g wwww      tttttttttttttttttttttttttttt
+│ │
+~ g
+│ │
+~ g
 │
 │  ?  help    l  log    esc  back    q  exit dashboard
 ~ uuu gggg   hhh ggg   hhhhh gggg   hhh gggggggggggggg

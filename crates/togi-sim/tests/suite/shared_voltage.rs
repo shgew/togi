@@ -736,6 +736,26 @@ fn the_background_rate_stays_out_of_other_loads(regime: Regime, workload: &str, 
 }
 
 #[test]
+fn an_r9_load_is_a_multi_core_rail_trial_like_r7() {
+    let model = model(&background_machine(0.001));
+    let workload = togi_machine::pick_workload(Regime::R9, 0).id().as_str();
+    let profile = offsets(&[-35; 16]);
+    let rail = |regime: Regime, workload: &str, cores: &[i64]| {
+        let loaded = load(regime, workload, cores, 120.0);
+        (
+            model.hazard(&profile, &loaded),
+            model.r7_requests(&profile, &loaded).map(|r| r.is_some()),
+        )
+    };
+    assert_eq!(
+        rail(Regime::R9, workload, &[0, 1, 2, 3, 4, 5, 6, 7]),
+        (Ok(0.001), Ok(true))
+    );
+    assert_eq!(rail(Regime::R9, workload, &[0]), (Ok(0.0), Ok(false)));
+    assert_eq!(rail(Regime::R8, "", &[0, 1]), (Ok(0.0), Ok(false)));
+}
+
+#[test]
 fn the_background_is_part_of_the_total_and_never_of_a_numerator() {
     let mut definition = committed_machine("shared-voltage.json");
     definition

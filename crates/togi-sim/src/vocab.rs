@@ -21,12 +21,17 @@ pub const RESETS: [ResetKind; 7] = [
     ResetKind::Unknown,
 ];
 
-/// How many regimes the simulator models: R1 to R7. R8 and R9 name role loads it does not model.
-const MODELED_REGIMES: usize = 7;
+/// How many regimes the simulator models: every one, R1 to R9.
+pub(crate) const MODELED_REGIMES: usize = 9;
 
-/// A regime's number in the simulator's draw keys: R1 to R7 as their position, then R8 and R9. The numbers of
-/// R1 to R7 are part of the simulator's recorded streams.
+/// A regime's number in the simulator's draw keys. The numbers of R1 to R7 are part of the simulator's
+/// recorded streams.
 pub(crate) const fn regime_key(regime: Regime) -> u64 {
+    regime_index(regime) as u64
+}
+
+/// Position of `regime` in the per-regime tables of a machine: R1 to R9 in order.
+pub const fn regime_index(regime: Regime) -> usize {
     match regime {
         Regime::R1 => 0,
         Regime::R2 => 1,
@@ -40,18 +45,27 @@ pub(crate) const fn regime_key(regime: Regime) -> u64 {
     }
 }
 
-/// Position of `regime` among R1 to R7, which the simulator models; `None` for R8 and R9.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "the modeled regime key is below 7 on every pointer width"
-)]
-pub const fn regime_index(regime: Regime) -> Option<usize> {
-    let key = regime_key(regime);
-    if key < MODELED_REGIMES as u64 {
-        Some(key as usize)
-    } else {
-        None
+/// The regime whose limits and, unless a model lists its own, signal mix `regime` takes: R1 to R7 themselves.
+/// R8, a light role beside R2 neighbours on one CCD, is modeled as R2. R9, every thread of every loaded CCD,
+/// is modeled as R7 at its loaded set.
+pub(crate) const fn modeled_as(regime: Regime) -> Regime {
+    match regime {
+        Regime::R8 => Regime::R2,
+        Regime::R9 => Regime::R7,
+        Regime::R1
+        | Regime::R2
+        | Regime::R3
+        | Regime::R4
+        | Regime::R5
+        | Regime::R6
+        | Regime::R7 => regime,
     }
+}
+
+/// The position in a core's `alone` and `together` limits that `regime` reads: R1 to R7 their own, R8 R2's and
+/// R9 R7's ([`modeled_as`]). A core's `workload` overrides still name R8 and R9 catalog entries exactly.
+pub const fn limit_index(regime: Regime) -> usize {
+    regime_index(modeled_as(regime))
 }
 
 pub(crate) const fn signal_slot(signal: Signal) -> Option<usize> {

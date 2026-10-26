@@ -1,4 +1,0 @@
-{
-  "description": "#490 research fixture: the seeded default machine with no added R7 hazard, the grid's 0 failures per hour for both forms. Not part of the bench suite.",
-  "cores": 16
-}

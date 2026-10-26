@@ -323,6 +323,12 @@ fn multi_core_intent() -> TrialIntent {
     intent.offset = None;
     intent.cores = set(&[3, 7]);
     intent.retry = false;
+    intent.activity = Some(Activity::Hunt);
+    intent.night = None;
+    intent.task = None;
+    intent.content = Vec::new();
+    intent.placement = None;
+    intent.tested = None;
     intent.cycle = None;
     intent.step = None;
     intent.round = None;
@@ -332,6 +338,7 @@ fn multi_core_intent() -> TrialIntent {
 #[test]
 fn multi_core_trial_intents_name_every_loaded_core() {
     let hunt = TrialIntent {
+        task_start: None,
         condition: Condition::Parked,
         ..multi_core_intent()
     };
@@ -343,6 +350,7 @@ fn multi_core_trial_intents_name_every_loaded_core() {
     assert!(!text.contains(" offset "), "{text}");
 
     let deepening = TrialIntent {
+        task_start: None,
         condition: Condition::Together,
         hunt: None,
         group: None,
@@ -358,6 +366,7 @@ fn multi_core_trial_intents_name_every_loaded_core() {
 #[test]
 fn a_single_target_trial_intent_says_core_not_cores() {
     let one = TrialIntent {
+        task_start: None,
         condition: Condition::Parked,
         cores: set(&[5]),
         ..multi_core_intent()
@@ -1384,5 +1393,168 @@ fn monotonicity_warnings_use_the_detail_or_the_trial_and_pass_count() {
     assert!(
         text.contains("idle failure") && text.contains("2 passes"),
         "{text}"
+    );
+}
+
+#[test]
+fn an_exposure_names_its_ccd_position_offset_and_evidence() {
+    assert_eq!(
+        message(EventKind::ExposureObserved),
+        "CCD0 R8 light core 03 at -20: 120 s eligible, no failure"
+    );
+}
+
+#[test]
+fn night_activities_are_named_in_the_trial_intent_message() {
+    let text = message(EventKind::TrialIntent);
+    assert!(text.contains("mapping task mapping #4"), "{text}");
+    assert!(text.contains("testing CCD0 at -32"), "{text}");
+}
+
+#[test]
+fn a_failed_requalification_names_its_night() {
+    let Payload::DayVeto(mut veto) = sample(EventKind::DayVeto) else {
+        unreachable!()
+    };
+    veto.event = DayEventId::Requalification {
+        night: NightId(Seq::new(41).unwrap()),
+    };
+    let text = Payload::from(veto).message();
+    assert!(text.contains("re-qualification of night #41"), "{text}");
+}
+
+/// The sample `day.step` with `step` as its kind, the profile from CCD0 -10, CCD1 -10 to `proposed`
+/// and no reason, so the text is the decision's own.
+fn day_step_message(step: StepKind, proposed: &[(i64, i64)]) -> String {
+    let Payload::DayStep(mut sample) = sample(EventKind::DayStep) else {
+        unreachable!()
+    };
+    sample.step = step;
+    sample.proposed.ccd = ccd_profile(proposed);
+    sample.reason = String::new();
+    Payload::from(sample).message()
+}
+
+fn ccd_profile(offsets: &[(i64, i64)]) -> togi_machine::CcdProfile {
+    togi_machine::CcdProfile::try_from(
+        offsets
+            .iter()
+            .map(|&(ccd, at)| (togi_machine::CcdId::new(ccd).unwrap(), target(at)))
+            .collect::<std::collections::BTreeMap<_, _>>(),
+    )
+    .unwrap()
+}
+
+fn requalification(night: u64) -> DayEventId {
+    DayEventId::Requalification {
+        night: NightId(Seq::new(night).unwrap()),
+    }
+}
+
+#[test_case(
+    RetreatCause::ShallowerCap {},
+    "a cap became shallower"
+; "cap")]
+#[test_case(
+    RetreatCause::Event {
+        event: requalification(41),
+        escalation: Escalation::RevertNewest { reverted: DecisionId(2) },
+    },
+    "re-qualification of night #41, reverting the newest step (decision 2)"
+; "event reverting the newest step")]
+#[test_case(
+    RetreatCause::Event {
+        event: requalification(41),
+        escalation: Escalation::EveryCcd { strike: 2 },
+    },
+    "re-qualification of night #41, every CCD one step back (strike 2)"
+; "event stepping every CCD back")]
+#[test_case(
+    RetreatCause::Completion {},
+    "a held retreat is now qualified"
+; "completion")]
+fn a_retreat_message_names_the_ccds_the_profiles_and_the_cause(cause: RetreatCause, because: &str) {
+    let text = day_step_message(
+        StepKind::Retreat {
+            changed: vec![togi_machine::CcdId::new(0).unwrap()],
+            cause,
+            wanted: None,
+        },
+        &[(0, -5), (1, -10)],
+    );
+    assert_eq!(
+        text,
+        format!(
+            "decision 3: retreat CCD0 from CCD0 -10, CCD1 -10 to CCD0 -5, CCD1 -10 because {because} \
+             (proposal; not applied)"
+        )
+    );
+}
+
+#[test]
+fn a_retreat_that_fell_back_to_co_0_names_the_profile_it_waits_for() {
+    let Payload::DayStep(sample) = sample(EventKind::DayStep) else {
+        unreachable!()
+    };
+    let wanted = CcdVector {
+        ccd: ccd_profile(&[(0, -15), (1, -10)]),
+        cores: sample.old.cores,
+    };
+    let text = day_step_message(
+        StepKind::Retreat {
+            changed: [0, 1]
+                .map(|ccd| togi_machine::CcdId::new(ccd).unwrap())
+                .to_vec(),
+            cause: RetreatCause::ShallowerCap {},
+            wanted: Some(wanted),
+        },
+        &[(0, 0), (1, 0)],
+    );
+    assert_eq!(
+        text,
+        "decision 3: retreat CCD0, CCD1 from CCD0 -10, CCD1 -10 to CCD0 0, CCD1 0 because a cap \
+         became shallower; CO 0 holds until CCD0 -15, CCD1 -10 is qualified (proposal; not applied)"
+    );
+}
+
+#[test]
+fn a_firmware_zero_message_names_the_reset_ccds_and_profiles() {
+    let text = day_step_message(
+        StepKind::FirmwareZero {
+            changed: [0, 1]
+                .map(|ccd| togi_machine::CcdId::new(ccd).unwrap())
+                .to_vec(),
+        },
+        &[(0, 0), (1, 0)],
+    );
+    assert_eq!(
+        text,
+        "decision 3: firmware changed: set CCD0, CCD1 from CCD0 -10, CCD1 -10 to CCD0 0, CCD1 0 \
+         (proposal; not applied)"
+    );
+}
+
+#[test]
+fn a_hold_on_a_failed_qualification_names_the_blocked_profile_and_its_witnesses() {
+    let Payload::DayStep(sample) = sample(EventKind::DayStep) else {
+        unreachable!()
+    };
+    let profile = CcdVector {
+        ccd: ccd_profile(&[(0, -15), (1, -10)]),
+        cores: sample.old.cores,
+    };
+    let text = day_step_message(
+        StepKind::Hold {
+            blocked_by: vec![HoldReason::QualificationFailed {
+                profile,
+                witnesses: [12, 15].map(|seq| Seq::new(seq).unwrap()).to_vec(),
+            }],
+        },
+        &[(0, -10), (1, -10)],
+    );
+    assert_eq!(
+        text,
+        "decision 3: hold day profile CCD0 -10, CCD1 -10: CCD0 -15, CCD1 -10 failed qualification \
+         (witnesses #12, #15)"
     );
 }

@@ -2,13 +2,11 @@
 
 Rules for the **production policy experiment** mode of a [research campaign](../../docs/benchmarking.md#research-campaigns): making a tuning session reach its conclusion in less simulated time without making that conclusion worse. The loop is experiments: keep what wins, discard what does not. The campaign's limits, prohibitions, record and end state are in [Research campaigns](../../docs/benchmarking.md#research-campaigns); target-machine deployment stays with the owner.
 
-Observation and accounting campaigns change no tuner code: they measure the unchanged tuner, adding only the analysis tools and research-only fixtures their brief names and leaving the frozen environment below as it is. Their briefs:
+Observation campaigns change no tuner code: they measure the unchanged tuner, adding only the analysis tools and research-only fixtures their brief names and leaving the frozen environment below as it is. Their brief:
 
-- [#490](research/490.md): fixed-policy observation of intermittent R7 hazards over a frozen synthetic grid, analysed with `just stats --backoffs` and `just pass-cost` outside the dispatcher's `exec`.
-- [#896](research/896.md): counterfactual accounting of re-derived R7 parts over a frozen native development corpus, accounted with `just counterfactuals` outside the dispatcher's `exec`.
 - [#503](research/503.md): fixed-policy observation, feasibility of an online risk learner.
 
-#490 and #896 run only in those modes: a simulated gain never lifts the evidence volume freeze below.
+#503 runs only in that mode: a simulated gain never lifts the evidence volume freeze below.
 
 A session concludes at the confirmation cycle's first passed full end ([Phase 2](../../docs/spec/tuner.md#phase-2)); its profile is the confirmed profile. Time to conclusion is simulated time from `session.start` to the last event, including the 90 s charged for each crash reboot. A full cycle records tested coverage, not a guarantee of future stability.
 

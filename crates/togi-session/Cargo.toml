@@ -11,7 +11,6 @@ jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-togi-carry.workspace = true
 togi-config.workspace = true
 togi-defect.workspace = true
 togi-journal.workspace = true
@@ -23,7 +22,6 @@ togi-tuningboot.workspace = true
 togi-watch.workspace = true
 
 [dev-dependencies]
-flate2.workspace = true
 proptest.workspace = true
 test-case.workspace = true
 togi-sim.workspace = true

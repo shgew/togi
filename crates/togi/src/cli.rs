@@ -21,15 +21,15 @@ const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/
 
 static VERSION: LazyLock<String> = LazyLock::new(togi_version::string);
 
-/// The example `togi --help` and `togi run --help` both show for stopping after the confirmation cycle.
-pub const CYCLES_EXAMPLE: (&str, &str) = (
-    "sudo togi run --cycles 1",
-    "Stop once phase 2's confirmation cycle has passed",
+/// The example `togi --help` and `togi run --help` both show for tuning a night.
+pub const RUN_EXAMPLE: (&str, &str) = (
+    "sudo togi run",
+    "Tune this machine tonight until you stop it or a dead end does",
 );
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
-        CYCLES_EXAMPLE,
+        RUN_EXAMPLE,
         ("togi completion zsh", "Print the completion script for zsh"),
     ])
 });
@@ -147,7 +147,7 @@ where
 }
 
 /// The commands that take `--config`, as the usage error names them.
-const CONFIG_SCOPE: &str = "--config applies only to doctor, run and reset";
+const CONFIG_SCOPE: &str = "--config applies only to doctor and run";
 
 /// An argument before the command name, as [`token`] reads it.
 enum Token {

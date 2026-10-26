@@ -70,6 +70,12 @@ pub enum Error {
     Panicked { what: String },
     #[error("the samples file")]
     Storage(#[from] StorageFailure),
+    #[error("read the backend executable {path}")]
+    Executable {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("backend output could not be read cleanly")]
     Output(#[source] OutputFailure),
     #[error("compress the trial files")]
@@ -296,6 +302,7 @@ impl Error {
             | Self::Storage(_)
             | Self::Output(_)
             | Self::Compress(_)
+            | Self::Executable { .. }
             | Self::Unsupported { .. } => Seam::Other,
         }
     }

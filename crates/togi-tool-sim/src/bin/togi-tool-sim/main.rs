@@ -55,9 +55,10 @@ struct SessionArgs {
     /// Answer exact class and profile matches from the machine's same-BIOS facts extract.
     #[arg(long)]
     replay_facts: bool,
-    /// Stop after N clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle.
-    #[arg(long, value_name = "N", default_value = "1")]
-    cycles: NonZeroU32,
+    /// The simulated operator ends the night after this many hours of simulated time, counted from the machine's
+    /// clock when the command starts.
+    #[arg(long, value_name = "HOURS", default_value = "8")]
+    night_hours: NonZeroU32,
     /// Use this state directory, resuming the journal it holds under the configuration that journal recorded;
     /// default a new temporary directory, which is kept and announced.
     #[arg(long, value_name = "DIR")]
