@@ -368,8 +368,9 @@ fn day(
     let fired = trigger.is_some_and(|trigger| trigger.disarm(&bench.mem));
     if ran {
         assert!(!fired, "the day continued after its cut");
+        let events = day.events().to_vec();
         drop(day.journal.close().unwrap());
-        RunEnd::Stopped(None)
+        RunEnd::Stopped(None, events)
     } else if fired {
         RunEnd::Cut(machine_crashed || matches!(fate, Fate::PowerLoss))
     } else {
@@ -442,12 +443,13 @@ fn segment(
     }
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
     let stop = ended.stop;
+    let events = ended.journal.events().to_vec();
     drop(ended.journal.close().unwrap());
-    RunEnd::Stopped(stop)
+    RunEnd::Stopped(stop, events)
 }
 
 enum RunEnd {
-    Stopped(Option<Stop>),
+    Stopped(Option<Stop>, Vec<Event>),
     /// The machine crashed under a trial; it reboots and the run starts again.
     Crashed,
     /// The cut interrupted the run; true when the machine had crashed as well.
@@ -487,8 +489,14 @@ enum Phase {
 const BOOTS: usize = 50;
 
 /// Plays `phase` on `bench`, whose journal holds `base` events, with the journal cut after its `cut`th event if one
-/// is given and `fate` befalling the machine there. Returns how the last run stopped, if the phase ran one.
-fn play(bench: &Bench, phase: Phase, base: usize, cut: Option<(usize, Fate)>) -> Option<Stop> {
+/// is given and `fate` befalling the machine there. Keeps the last run's already decoded journal: reopening it
+/// for each assertion would repeatedly decode the entire scenario prefix at every cut.
+fn play(
+    bench: &Bench,
+    phase: Phase,
+    base: usize,
+    cut: Option<(usize, Fate)>,
+) -> (Option<Stop>, Vec<Event>) {
     let trigger = cut.map(|(after, fate)| {
         AppendTrigger::new(
             after,
@@ -504,19 +512,19 @@ fn play(bench: &Bench, phase: Phase, base: usize, cut: Option<(usize, Fate)>) ->
         let ended = match phase {
             Phase::Boot => {
                 bench.sim.reboot().unwrap();
-                return None;
+                return (None, durable(bench));
             }
             Phase::Run { trials } => segment(bench, trigger.as_ref(), fate, base, trials),
             Phase::Day { hours } => day(bench, trigger.as_ref(), fate, hours, true),
             Phase::Crash { hours } => day(bench, trigger.as_ref(), fate, hours, false),
         };
         match ended {
-            RunEnd::Stopped(stop) => {
+            RunEnd::Stopped(stop, events) => {
                 if matches!(phase, Phase::Crash { .. }) {
                     bench.sim.crash();
                     bench.sim.reboot().unwrap();
                 }
-                return stop;
+                return (stop, events);
             }
             RunEnd::Crashed => bench.sim.reboot().unwrap(),
             RunEnd::Cut(crashed) => {
@@ -640,9 +648,8 @@ fn step(bench: &Bench, played: &mut Vec<Played>, phase: Phase) -> Option<Stop> {
         seen.borrow_mut().push(*operation);
         Ok(())
     });
-    let stop = play(bench, phase, start, None);
+    let (stop, events) = play(bench, phase, start, None);
     bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
-    let events = durable(bench);
     assert_settled(bench, phase, &events);
     played.push(Played {
         phase,
@@ -953,11 +960,10 @@ fn assert_crash_accounted(events: &[Event], after: usize, boot: &BootId) {
 /// machine there, and checks that the journal left is resumable. Returns the journal at the phase's end.
 fn resume(played: &Played, model: &Model, after: usize, fate: Fate) -> Vec<Event> {
     let bench = played.before.bench(model);
-    play(&bench, played.phase, played.start, Some((after, fate)));
+    let (_, mut events) = play(&bench, played.phase, played.start, Some((after, fate)));
     if !matches!(fate, Fate::Killed) {
-        drain_failure(&bench, played.phase);
+        events = drain_failure(&bench, played.phase, events);
     }
-    let events = durable(&bench);
     let facts = togi_journal::State::replay(&events).unwrap();
     assert!(facts.open.is_empty(), "left open: {:?}", facts.open);
     assert_settled(&bench, played.phase, &events);
@@ -993,11 +999,10 @@ fn resume_at_smu(played: &Played, model: &Model, at: usize) -> Vec<Event> {
         }
         Ok(())
     });
-    play(&bench, played.phase, played.start, None);
+    let (_, events) = play(&bench, played.phase, played.start, None);
     bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
     let after = cut.get().expect("the selected SMU access never ran");
-    drain_failure(&bench, played.phase);
-    let events = durable(&bench);
+    let events = drain_failure(&bench, played.phase, events);
     assert!(
         togi_journal::State::replay(&events)
             .unwrap()
@@ -1059,8 +1064,7 @@ fn assert_unchanged_decisions(
         } else {
             Some((after, Fate::Paused))
         };
-        play(&control, played.phase, played.start, append);
-        let reference = durable(&control);
+        let (_, reference) = play(&control, played.phase, played.start, append);
         let got = commitments(&events[played.start..], false);
         let want = commitments(&reference[played.start..], false);
         assert_values_equal(
@@ -1091,11 +1095,10 @@ fn assert_values_equal(got: &Value, want: &Value, path: &str) {
 
 /// Cancellation at the phase's last trial can leave its policy commitments for the next invocation. Give a
 /// recovered failure that invocation before checking its attribution, rather than stopping before it is owed.
-fn drain_failure(bench: &Bench, phase: Phase) {
+fn drain_failure(bench: &Bench, phase: Phase, events: Vec<Event>) -> Vec<Event> {
     if !matches!(phase, Phase::Run { .. }) {
-        return;
+        return events;
     }
-    let events = durable(bench);
     let pending = events.iter().any(|event| {
         if let Payload::TrialEnd(end) = &event.payload
             && end.outcome == Outcome::Failure
@@ -1109,7 +1112,9 @@ fn drain_failure(bench: &Bench, phase: Phase) {
         }
     });
     if pending {
-        play(bench, Phase::Run { trials: 1 }, events.len(), None);
+        play(bench, Phase::Run { trials: 1 }, events.len(), None).1
+    } else {
+        events
     }
 }
 
@@ -1304,7 +1309,11 @@ fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve
             &events[after - 1].boot,
             None,
         );
-        resume(&played[phase], &model, after, Fate::Crashed);
+        // Reset reason can change an open trial's classification. Outside its window both kinds take the
+        // same recovery path, so the power-loss cut already covers it.
+        if trials.contains(&(phase, after)) {
+            resume(&played[phase], &model, after, Fate::Crashed);
+        }
     });
     let smu: Vec<_> = played
         .iter()
@@ -1317,7 +1326,7 @@ fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve
         resume_at_smu(&played[phase], &model, at);
     });
     eprintln!(
-        "crash coverage: {} durable events ({} trial events), {} SMU hooks; no stride",
+        "crash coverage: {} power-loss durable events ({} dual-kind trial events), {} SMU hooks; no stride",
         cuts.len(),
         trials.len(),
         smu.len()
