@@ -8,27 +8,36 @@
 //! The swept window starts with the run that completes night 2's qualification and ends with the final day:
 //! all 380 durable events, without a stride. Projection comparison blanks only shifted sequence, trial and night
 //! references (including `last_step`'s sequence); policy commitments are compared as a sorted multiset.
+//!
+//! Machine crashes also cover every durable event. Power is cut before and after every actual SMU access.
+//! Each resumed phase checks its registers and each crashed trial's duration and failure attribution. Between
+//! night trials, decisions match an uninterrupted control with the reboot's elapsed time charged to its task;
+//! crashes of open trials and day reboots introduce new failure or cadence evidence instead.
 
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use serde_json::Value;
 use togi_config::Config;
-use togi_journal::fs::{AppendPoint, AppendTrigger, FileKind, Fs, MemFs};
+use togi_journal::fs::{AppendPoint, AppendTrigger, Fault, FileKind, Fs, MemFs, Op};
 use togi_journal::{
-    ApplicationId, ApplyCause, CcdVector, DayApplied, DayBootStart, DayCheckpoint, DayCleanStop,
-    DayOffsetsChanged, DayUncleanEnd, Event, Journal, Payload, QualificationState, Seq, Stamp,
-    TrialId,
+    ApplicationId, ApplyCause, Attribution, CcdVector, DayApplied, DayBootStart, DayCheckpoint,
+    DayCleanStop, DayOffsetsChanged, DayUncleanEnd, Event, Journal, Outcome, Payload,
+    QualificationState, Seq, Stamp, Tested, TrialId,
 };
 use togi_machine::{
-    BootId, CancellationToken, EndEvidence, Machine, ObservedOffset, PerCore, ResetReason,
+    BootId, CancellationToken, Condition, EndEvidence, Error, Machine, ObservedOffset, PerCore,
+    ResetReason, Signal,
 };
 use togi_sim::definition::CoreDef;
+use togi_sim::faults::SmuOperation;
 use togi_sim::{MachineDefinition, Model, Persisted, Simulator};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, Params, State};
@@ -109,20 +118,34 @@ fn stamp(machine: &mut Machine<'_>) -> Stamp {
     }
 }
 
-fn read_offsets(machine: &mut Machine<'_>, state: &State) -> PerCore<ObservedOffset> {
+fn read_offsets(
+    machine: &mut Machine<'_>,
+    state: &State,
+) -> Result<PerCore<ObservedOffset>, Error> {
     state
         .project()
         .ccds
         .iter()
         .flat_map(|ccd| ccd.cores.iter())
-        .map(|core| (core, machine.smu.offset(core).unwrap()))
+        .map(|core| machine.smu.offset(core).map(|offset| (core, offset)))
         .collect()
+}
+
+/// Only a selected power cut may make a simulated SMU access fail.
+fn access<T>(result: Result<T, Error>, crashed: &mut bool) -> Option<T> {
+    result
+        .inspect_err(|error| {
+            assert!(matches!(error, Error::Crashed), "{error:?}");
+            *crashed = true;
+        })
+        .ok()
 }
 
 /// The day host's journal and the policy state folded from it.
 struct DayJournal {
     journal: Journal,
     state: State,
+    power: Option<(AppendTrigger, Simulator)>,
 }
 
 impl DayJournal {
@@ -136,6 +159,12 @@ impl DayJournal {
         let stamp = stamp(machine);
         let event = self.journal.append(stamp, payload, causes).ok()?.clone();
         self.state.fold(&event).unwrap();
+        if let Some((trigger, sim)) = &self.power
+            && trigger.lands(&event)
+        {
+            sim.power_loss();
+            return None;
+        }
         Some(())
     }
 
@@ -173,7 +202,13 @@ impl DayJournal {
     clippy::disallowed_methods,
     reason = "the day host applies the day profile to simulated registers only"
 )]
-fn day(bench: &Bench, trigger: Option<&AppendTrigger>, hours: u64, clean: bool) -> bool {
+fn day(
+    bench: &Bench,
+    trigger: Option<&AppendTrigger>,
+    fate: Fate,
+    hours: u64,
+    clean: bool,
+) -> RunEnd {
     let mut machine = bench.sim.seams();
     let boot = machine.host.boot_id().unwrap();
     let journal = simulated(&bench.mem)
@@ -183,13 +218,20 @@ fn day(bench: &Bench, trigger: Option<&AppendTrigger>, hours: u64, clean: bool) 
         trigger.arm(&bench.mem, journal.events().len());
     }
     let state = folded(journal.events());
-    let mut day = DayJournal { journal, state };
+    let mut day = DayJournal {
+        journal,
+        state,
+        power: trigger
+            .filter(|_| matches!(fate, Fate::PowerLoss))
+            .map(|trigger| (trigger.clone(), bench.sim.clone())),
+    };
+    let mut machine_crashed = false;
     let ran = (|| {
         if !day
             .in_boot(&boot)
             .any(|event| matches!(event.payload, Payload::DayBootStart(_)))
         {
-            let offsets = read_offsets(&mut machine, &day.state);
+            let offsets = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
             let bios = machine.host.bios_context().unwrap();
             let start = DayBootStart {
                 build: build(),
@@ -274,9 +316,9 @@ fn day(bench: &Bench, trigger: Option<&AppendTrigger>, hours: u64, clean: bool) 
                 (ApplyCause::Reapplication {}, target)
             };
             for (core, offset) in target.cores.iter() {
-                machine.smu.set_offset(core, offset).unwrap();
+                access(machine.smu.set_offset(core, offset), &mut machine_crashed)?;
             }
-            let readbacks = read_offsets(&mut machine, &day.state);
+            let readbacks = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
             let applications = day
                 .events()
                 .iter()
@@ -293,7 +335,7 @@ fn day(bench: &Bench, trigger: Option<&AppendTrigger>, hours: u64, clean: bool) 
             };
             day.append(&mut machine, applied.into(), &[])?;
         }
-        let readbacks = read_offsets(&mut machine, &day.state);
+        let readbacks = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
         if day.recorded_offsets(&boot) != Some(readbacks) {
             let changed = DayOffsetsChanged { offsets: readbacks };
             day.append(&mut machine, changed.into(), &[])?;
@@ -324,16 +366,27 @@ fn day(bench: &Bench, trigger: Option<&AppendTrigger>, hours: u64, clean: bool) 
     })()
     .is_some();
     let fired = trigger.is_some_and(|trigger| trigger.disarm(&bench.mem));
-    assert_eq!(ran, !fired, "a day append failed without the cut");
     if ran {
+        assert!(!fired, "the day continued after its cut");
         drop(day.journal.close().unwrap());
+        RunEnd::Stopped(None)
+    } else if fired {
+        RunEnd::Cut(machine_crashed || matches!(fate, Fate::PowerLoss))
+    } else {
+        assert!(machine_crashed, "a day append failed without the cut");
+        RunEnd::Crashed
     }
-    ran
 }
 
 /// A run of the session on the current boot that the operator ends once `trials` trials ended uninterrupted in the
 /// journal after its first `base` events.
-fn segment(bench: &Bench, trigger: Option<&AppendTrigger>, base: usize, trials: usize) -> RunEnd {
+fn segment(
+    bench: &Bench,
+    trigger: Option<&AppendTrigger>,
+    fate: Fate,
+    base: usize,
+    trials: usize,
+) -> RunEnd {
     let mut input = bench.input();
     let ended_whole =
         |event: &Event| matches!(&event.payload, Payload::TrialEnd(end) if !end.interrupted);
@@ -345,6 +398,11 @@ fn segment(bench: &Bench, trigger: Option<&AppendTrigger>, base: usize, trials: 
     if whole >= trials {
         cancel.cancel();
     }
+    let power = trigger
+        .filter(|_| matches!(fate, Fate::PowerLoss | Fate::Paused))
+        .cloned();
+    let sim = bench.sim.clone();
+    let mem = bench.mem.clone();
     input.on_append = Some(Box::new(move |event| {
         if ended_whole(event) {
             whole += 1;
@@ -352,17 +410,32 @@ fn segment(bench: &Bench, trigger: Option<&AppendTrigger>, base: usize, trials: 
                 cancel.cancel();
             }
         }
+        if power.as_ref().is_some_and(|trigger| trigger.lands(event)) {
+            if matches!(fate, Fate::Paused) {
+                sim.seams()
+                    .clock
+                    .sleep(&CancellationToken::new(), togi_sim::REBOOT_TIME)
+                    .unwrap();
+            } else {
+                sim.power_loss();
+                mem.inject(Fault::before(Op::Write, 1).named("events.jsonl"));
+            }
+        }
     }));
     if let Some(trigger) = trigger {
         trigger.arm(&bench.mem, input.journal.events().len());
     }
     let ended = crate::run(input);
-    if trigger.is_some_and(|trigger| trigger.disarm(&bench.mem)) {
+    if trigger.is_some_and(|trigger| trigger.disarm(&bench.mem)) && !matches!(fate, Fate::Paused) {
+        bench.mem.clear_faults();
         assert!(
-            ended.capsule.is_none(),
+            ended.capsule.is_none() || matches!(fate, Fate::PowerLoss),
             "the cut event failed, yet the run went on"
         );
-        return RunEnd::Cut(ended.errors.iter().any(crate::SessionError::is_crash));
+        return RunEnd::Cut(
+            matches!(fate, Fate::PowerLoss)
+                || ended.errors.iter().any(crate::SessionError::is_crash),
+        );
     }
     if ended.errors.iter().any(crate::SessionError::is_crash) {
         return RunEnd::Crashed;
@@ -388,6 +461,10 @@ enum Fate {
     Killed,
     /// The machine crashes and boots again.
     Crashed,
+    /// A physical power loss, before any cleanup can run.
+    PowerLoss,
+    /// The uninterrupted control spends the same time as the reboot at this point, without losing evidence.
+    Paused,
 }
 
 /// One step of a scenario as it is played: a reboot, a run, or a day boot.
@@ -412,41 +489,45 @@ const BOOTS: usize = 50;
 /// Plays `phase` on `bench`, whose journal holds `base` events, with the journal cut after its `cut`th event if one
 /// is given and `fate` befalling the machine there. Returns how the last run stopped, if the phase ran one.
 fn play(bench: &Bench, phase: Phase, base: usize, cut: Option<(usize, Fate)>) -> Option<Stop> {
-    let trigger = cut.map(|(after, _)| AppendTrigger::new(after, AppendPoint::BeforeSync));
+    let trigger = cut.map(|(after, fate)| {
+        AppendTrigger::new(
+            after,
+            if matches!(fate, Fate::PowerLoss | Fate::Paused) {
+                AppendPoint::Landed
+            } else {
+                AppendPoint::BeforeSync
+            },
+        )
+    });
     let fate = cut.map_or(Fate::Killed, |(_, fate)| fate);
     for _ in 0..BOOTS {
-        let finished = match phase {
+        let ended = match phase {
             Phase::Boot => {
                 bench.sim.reboot().unwrap();
                 return None;
             }
-            Phase::Run { trials } => match segment(bench, trigger.as_ref(), base, trials) {
-                RunEnd::Stopped(stop) => return stop,
-                RunEnd::Crashed => {
-                    bench.sim.reboot().unwrap();
-                    false
-                }
-                RunEnd::Cut(crashed) => {
-                    assert_eq!(durable_lines(bench), cut.unwrap().0);
-                    if crashed || matches!(fate, Fate::Crashed) {
-                        bench.sim.crash();
-                        bench.sim.reboot().unwrap();
-                    }
-                    false
-                }
-            },
-            Phase::Day { hours } => day(bench, trigger.as_ref(), hours, true),
-            Phase::Crash { hours } => {
-                let ran = day(bench, trigger.as_ref(), hours, false);
-                if ran {
+            Phase::Run { trials } => segment(bench, trigger.as_ref(), fate, base, trials),
+            Phase::Day { hours } => day(bench, trigger.as_ref(), fate, hours, true),
+            Phase::Crash { hours } => day(bench, trigger.as_ref(), fate, hours, false),
+        };
+        match ended {
+            RunEnd::Stopped(stop) => {
+                if matches!(phase, Phase::Crash { .. }) {
                     bench.sim.crash();
                     bench.sim.reboot().unwrap();
                 }
-                ran
+                return stop;
             }
-        };
-        if finished {
-            return None;
+            RunEnd::Crashed => bench.sim.reboot().unwrap(),
+            RunEnd::Cut(crashed) => {
+                assert_eq!(durable_lines(bench), cut.unwrap().0);
+                if crashed || matches!(fate, Fate::Crashed) {
+                    if !crashed {
+                        bench.sim.crash();
+                    }
+                    bench.sim.reboot().unwrap();
+                }
+            }
         }
     }
     panic!("{phase:?} did not finish in {BOOTS} boots");
@@ -540,6 +621,7 @@ struct Played {
     before: Snapshot,
     start: usize,
     events: Vec<Event>,
+    accesses: Vec<SmuOperation>,
 }
 
 impl Played {
@@ -552,12 +634,22 @@ impl Played {
 fn step(bench: &Bench, played: &mut Vec<Played>, phase: Phase) -> Option<Stop> {
     let before = Snapshot::of(bench);
     let start = durable_lines(bench);
+    let accesses = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&accesses);
+    bench.sim.interrupt_smu(move |operation: &SmuOperation| {
+        seen.borrow_mut().push(*operation);
+        Ok(())
+    });
     let stop = play(bench, phase, start, None);
+    bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+    let events = durable(bench);
+    assert_settled(bench, phase, &events);
     played.push(Played {
         phase,
         before,
         start,
-        events: durable(bench),
+        events,
+        accesses: accesses.take(),
     });
     stop
 }
@@ -671,21 +763,354 @@ fn each(cuts: &[(usize, usize)], check: impl Fn(usize, usize) + Sync) {
     );
 }
 
-/// Plays `played`'s phase from its start with the journal cut after its `after`th event and `fate` befalling the
-/// machine there, and checks that the journal left is resumable. Returns the journal at the phase's end.
-fn resume(played: &Played, model: &Model, after: usize, fate: Fate) -> Vec<Event> {
-    let bench = played.before.bench(model);
-    play(&bench, played.phase, played.start, Some((after, fate)));
-    let events = durable(&bench);
-    let facts = togi_journal::State::replay(&events).unwrap();
-    assert!(facts.open.is_empty(), "left open: {:?}", facts.open);
-    folded(&events);
+/// A night restores CO 0, a day holds its applied profile, and a reboot clears the registers.
+fn assert_settled(bench: &Bench, phase: Phase, events: &[Event]) {
+    let mut machine = bench.sim.seams();
+    let state = folded(events);
+    let offsets = read_offsets(&mut machine, &state).unwrap();
+    let target = if matches!(phase, Phase::Day { .. }) {
+        Some(
+            state
+                .project()
+                .applied
+                .unwrap()
+                .expand(&machine.host.topology().unwrap())
+                .unwrap(),
+        )
+    } else {
+        None
+    };
+    for (core, offset) in offsets.iter() {
+        let expected = target.as_ref().map_or(ObservedOffset(0), |target| {
+            target.get(core).unwrap().observed()
+        });
+        assert_eq!(offset, expected, "unsettled core {core} after {phase:?}");
+    }
     assert!(
         bench.sim.violations().is_empty(),
         "{:?}",
         bench.sim.violations()
     );
+}
+
+/// A new boot must account for the lost boot and for its trial, not merely leave a foldable journal.
+fn assert_crash_accounted(events: &[Event], after: usize, boot: &BootId) {
+    let prefix = &events[..after];
+    if !prefix.iter().any(|event| event.boot == *boot)
+        || prefix
+            .iter()
+            .any(|event| event.boot == *boot && matches!(event.payload, Payload::DayCleanStop(_)))
+        || prefix
+            .iter()
+            .rev()
+            .find(|event| {
+                event.boot == *boot
+                    && !matches!(
+                        event.payload,
+                        Payload::SessionWarning(_) | Payload::BootLeaveReason(_)
+                    )
+            })
+            .is_some_and(|event| matches!(event.payload, Payload::Shutdown(_)))
+    {
+        return;
+    }
+    if prefix
+        .iter()
+        .any(|event| event.boot == *boot && matches!(event.payload, Payload::DayBootStart(_)))
+    {
+        assert!(
+            events[after..].iter().any(|event| {
+                matches!(&event.payload, Payload::DayUncleanEnd(end) if end.boot == *boot)
+            }),
+            "no day.unclean_end for {boot}"
+        );
+        return;
+    }
+    let detected = events[after..].iter().find(|event| {
+        matches!(&event.payload, Payload::CrashDetected(crash) if crash.previous_boot == *boot)
+    }).unwrap_or_else(|| panic!("no crash.detected for {boot} after #{after}"));
+    let Some((at, intent)) = prefix.iter().enumerate().rev().find_map(|(at, event)| {
+        if event.boot == *boot
+            && let Payload::TrialIntent(intent) = &event.payload
+        {
+            Some((at, intent))
+        } else {
+            None
+        }
+    }) else {
+        return;
+    };
+    let durable_end = prefix[at..].iter().find_map(|event| {
+        if let Payload::TrialEnd(end) = &event.payload
+            && end.trial == intent.trial
+        {
+            Some(end)
+        } else {
+            None
+        }
+    });
+    let ends: Vec<_> = events[at..]
+        .iter()
+        .filter_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload
+                && end.trial == intent.trial
+            {
+                Some((event, end))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        ends.len(),
+        1,
+        "trial {} closed {} times",
+        intent.trial,
+        ends.len()
+    );
+    let (closed, end) = ends[0];
+    if durable_end.is_none() {
+        let start = prefix[at..].iter().find(|event| {
+            matches!(&event.payload, Payload::TrialStart(start) if start.trial == intent.trial)
+        }).and_then(|event| event.mono);
+        let last = prefix[at..]
+            .iter()
+            .rev()
+            .find(|event| {
+                matches!(
+                    event.payload,
+                    Payload::TrialStart(_)
+                        | Payload::TrialProgress(_)
+                        | Payload::TrialSignal(_)
+                        | Payload::TrialSample(_)
+                )
+            })
+            .and_then(|event| event.mono);
+        let duration = start
+            .zip(last)
+            .map_or(Duration::ZERO, |(start, last)| last.saturating_sub(start));
+        assert_eq!(
+            u64::from(end.duration_s),
+            duration.as_secs(),
+            "trial {}",
+            intent.trial
+        );
+        assert_eq!(end.outcome, Outcome::Failure, "trial {}", intent.trial);
+        assert!(
+            closed.cause.contains(&detected.seq),
+            "trial end does not cite its crash"
+        );
+    }
+    let failures: Vec<_> = events[at..]
+        .iter()
+        .filter_map(|event| {
+            if let Payload::Failure(failure) = &event.payload
+                && failure.trial.as_ref() == Some(&intent.trial)
+            {
+                Some(failure)
+            } else {
+                None
+            }
+        })
+        .collect();
+    if end.outcome == Outcome::Failure {
+        assert_eq!(
+            failures.len(),
+            1,
+            "failure attribution for trial {}",
+            intent.trial
+        );
+        let failure = failures[0];
+        assert_eq!(failure.condition, Some(intent.condition));
+        assert_eq!(failure.profile.as_ref(), Some(&intent.profile));
+        assert_eq!(failure.core, end.core);
+        assert_eq!(failure.signal, end.signal.unwrap_or(Signal::Crash));
+        assert_eq!(
+            failure.attribution,
+            if end.core.is_some() {
+                Attribution::Attributed
+            } else {
+                Attribution::Unattributed
+            }
+        );
+        assert_eq!(
+            failure.offset,
+            match intent.tested {
+                Some(Tested::Isolated { offset, .. }) => Some(offset),
+                Some(Tested::Exact {}) | None => None,
+            }
+        );
+        if intent.condition == Condition::Alone {
+            assert_eq!(failure.core, intent.core);
+            assert_eq!(failure.offset, intent.offset);
+        }
+    } else {
+        assert!(failures.is_empty(), "a successful trial acquired a failure");
+    }
+}
+
+/// Plays `played`'s phase from its start with the journal cut after its `after`th event and `fate` befalling the
+/// machine there, and checks that the journal left is resumable. Returns the journal at the phase's end.
+fn resume(played: &Played, model: &Model, after: usize, fate: Fate) -> Vec<Event> {
+    let bench = played.before.bench(model);
+    play(&bench, played.phase, played.start, Some((after, fate)));
+    if !matches!(fate, Fate::Killed) {
+        drain_failure(&bench, played.phase);
+    }
+    let events = durable(&bench);
+    let facts = togi_journal::State::replay(&events).unwrap();
+    assert!(facts.open.is_empty(), "left open: {:?}", facts.open);
+    assert_settled(&bench, played.phase, &events);
+    if !matches!(fate, Fate::Killed) {
+        assert_crash_accounted(&events, after, &events[after - 1].boot);
+    }
     events
+}
+
+/// The same phase runner, losing power before or after the selected actual SMU access.
+fn resume_at_smu(played: &Played, model: &Model, at: usize) -> Vec<Event> {
+    let bench = played.before.bench(model);
+    let boot = bench.sim.seams().host.boot_id().unwrap();
+    let sim = bench.sim.clone();
+    let mem = bench.mem.clone();
+    let cut = Rc::new(Cell::new(None));
+    let fired = Rc::clone(&cut);
+    let mut accesses = 0;
+    let expected = played.accesses[at - 1];
+    bench.sim.interrupt_smu(move |operation: &SmuOperation| {
+        accesses += 1;
+        if accesses == at {
+            assert_eq!(*operation, expected, "cut another SMU access");
+            let bytes = mem.contents("/state/events.jsonl").unwrap();
+            fired.set(Some(
+                bytes
+                    .split_inclusive(|&byte| byte == b'\n')
+                    .filter(|line| line.ends_with(b"\n"))
+                    .count(),
+            ));
+            sim.power_loss();
+            return Err(Error::Crashed);
+        }
+        Ok(())
+    });
+    play(&bench, played.phase, played.start, None);
+    bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+    let after = cut.get().expect("the selected SMU access never ran");
+    drain_failure(&bench, played.phase);
+    let events = durable(&bench);
+    assert!(
+        togi_journal::State::replay(&events)
+            .unwrap()
+            .open
+            .is_empty()
+    );
+    assert_settled(&bench, played.phase, &events);
+    assert_crash_accounted(&events, after, &boot);
+    assert_unchanged_decisions(played, model, &events, after, &boot, Some(at));
+    events
+}
+
+/// A crash of an open trial is new failure evidence; a day reboot is new cadence/end evidence. Neither may
+/// be compared to a run without that evidence. Between night trials, however, all policy decisions must agree.
+fn assert_unchanged_decisions(
+    played: &Played,
+    model: &Model,
+    events: &[Event],
+    after: usize,
+    boot: &BootId,
+    smu: Option<usize>,
+) {
+    if !matches!(played.phase, Phase::Run { .. }) {
+        return;
+    }
+    let prefix = &events[..after];
+    let open = prefix
+        .iter()
+        .rev()
+        .find_map(|event| {
+            if event.boot != *boot {
+                None
+            } else if matches!(event.payload, Payload::TrialEnd(_)) {
+                Some(false)
+            } else if matches!(event.payload, Payload::TrialIntent(_)) {
+                Some(true)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(false);
+    if !open {
+        // Recovery downtime is charged to the task. Keep it in the uninterrupted control too: comparing to
+        // a faster run would demand identical scheduling from different wall-budget evidence.
+        let control = played.before.bench(model);
+        let append = if let Some(at) = smu {
+            let sim = control.sim.clone();
+            let mut accesses = 0;
+            control.sim.interrupt_smu(move |_: &SmuOperation| {
+                accesses += 1;
+                if accesses == at {
+                    sim.seams()
+                        .clock
+                        .sleep(&CancellationToken::new(), togi_sim::REBOOT_TIME)?;
+                }
+                Ok(())
+            });
+            None
+        } else {
+            Some((after, Fate::Paused))
+        };
+        play(&control, played.phase, played.start, append);
+        let reference = durable(&control);
+        let got = commitments(&events[played.start..], false);
+        let want = commitments(&reference[played.start..], false);
+        assert_values_equal(
+            &serde_json::to_value(got).unwrap(),
+            &serde_json::to_value(want).unwrap(),
+            "decisions",
+        );
+    }
+}
+
+/// Report the first differing leaf rather than printing the entire scenario's evidence.
+fn assert_values_equal(got: &Value, want: &Value, path: &str) {
+    match (got, want) {
+        (Value::Object(got), Value::Object(want)) if got.keys().eq(want.keys()) => {
+            for (key, want) in want {
+                assert_values_equal(&got[key], want, &format!("{path}.{key}"));
+            }
+        }
+        (Value::Array(got), Value::Array(want)) => {
+            assert_eq!(got.len(), want.len(), "{path}: decision count");
+            for (at, (got, want)) in got.iter().zip(want).enumerate() {
+                assert_values_equal(got, want, &format!("{path}[{at}]"));
+            }
+        }
+        _ => assert_eq!(got, want, "{path}"),
+    }
+}
+
+/// Cancellation at the phase's last trial can leave its policy commitments for the next invocation. Give a
+/// recovered failure that invocation before checking its attribution, rather than stopping before it is owed.
+fn drain_failure(bench: &Bench, phase: Phase) {
+    if !matches!(phase, Phase::Run { .. }) {
+        return;
+    }
+    let events = durable(bench);
+    let pending = events.iter().any(|event| {
+        if let Payload::TrialEnd(end) = &event.payload
+            && end.outcome == Outcome::Failure
+        {
+            !events.iter().any(|event| {
+                matches!(&event.payload, Payload::Failure(failure)
+                    if failure.trial.as_ref() == Some(&end.trial))
+            })
+        } else {
+            false
+        }
+    });
+    if pending {
+        play(bench, Phase::Run { trials: 1 }, events.len(), None);
+    }
 }
 
 /// Fields that hold sequence numbers, trial IDs or night IDs, which a resumed journal shifts by the events the cut
@@ -754,7 +1179,7 @@ fn projection(events: &[Event]) -> Value {
 /// The policy commitments among `events` in a canonical order, references blanked, without the observations of
 /// trials a cut interrupted, which only the resumed journal has. Such an observation may also commit an unchanged
 /// cap before the retried trial rather than after it, so the order of the commitments is not compared.
-fn commitments(events: &[Event]) -> Vec<String> {
+fn commitments(events: &[Event], observations: bool) -> Vec<String> {
     let interrupted: Vec<_> = events
         .iter()
         .filter_map(|event| {
@@ -785,7 +1210,8 @@ fn commitments(events: &[Event]) -> Vec<String> {
                     | Payload::DayHold(_)
                     | Payload::DayFreeze(_)
                     | Payload::DayInterval(_)
-            ) || matches!(&event.payload, Payload::ExposureObserved(observed)
+            ) || observations
+                && matches!(&event.payload, Payload::ExposureObserved(observed)
                 if observed.source.trial.as_ref().is_none_or(|trial| !interrupted.contains(&trial)))
         })
         .map(|event| {
@@ -831,8 +1257,8 @@ fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection
         assert_eq!(&events[..after], &reference.events[..after]);
         assert_eq!(projection(&events), wanted[phase]);
         assert_eq!(
-            commitments(&events[after..]),
-            commitments(&reference.events[after..])
+            commitments(&events[after..], true),
+            commitments(&reference.events[after..], true)
         );
     });
 }
@@ -861,11 +1287,39 @@ fn trial_cuts(played: &[Played], from: usize) -> Vec<(usize, usize)> {
 }
 
 #[test]
-fn a_crash_at_every_trial_event_leaves_a_resumable_journal() {
+fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve_decisions() {
     let (model, played, from) = scenario();
-    let cuts = trial_cuts(&played, from);
-    assert!(!cuts.is_empty(), "the swept phases ran no trial");
+    let trials = trial_cuts(&played, from);
+    let cuts = cuts(&played, from);
+    assert!(trials.iter().all(|cut| cuts.contains(cut)));
+    assert_eq!(cuts.len(), 380, "the durable-event crash window changed");
+    assert!(!trials.is_empty(), "the swept phases ran no trial");
     each(&cuts, |phase, after| {
+        let events = resume(&played[phase], &model, after, Fate::PowerLoss);
+        assert_unchanged_decisions(
+            &played[phase],
+            &model,
+            &events,
+            after,
+            &events[after - 1].boot,
+            None,
+        );
         resume(&played[phase], &model, after, Fate::Crashed);
     });
+    let smu: Vec<_> = played
+        .iter()
+        .enumerate()
+        .skip(from)
+        .flat_map(|(phase, played)| (1..=played.accesses.len()).map(move |at| (phase, at)))
+        .collect();
+    assert!(!smu.is_empty(), "the swept phases touched no SMU");
+    each(&smu, |phase, at| {
+        resume_at_smu(&played[phase], &model, at);
+    });
+    eprintln!(
+        "crash coverage: {} durable events ({} trial events), {} SMU hooks; no stride",
+        cuts.len(),
+        trials.len(),
+        smu.len()
+    );
 }
