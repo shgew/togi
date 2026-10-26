@@ -16,7 +16,7 @@ ADR 0016 removed the race detector because its first CI job took 8m00s, against 
 
 ## Measurement
 
-The uncached `vm` build in [check run 36645173270](https://github.com/shgew/togi/actions/runs/36645173270) took 167 seconds (23:26:44–23:29:31 UTC on 2026-09-29); the whole job took 180 seconds. This is the CI time budget for selecting the whole suite rather than only the packages with real concurrency.
+The uncached VM build in [check run 36645173270](https://github.com/shgew/togi/actions/runs/36645173270) took 167 seconds (23:26:44–23:29:31 UTC on 2026-09-29); the whole job took 180 seconds. This is the CI time budget for selecting the whole suite rather than only the packages with real concurrency.
 
 The whole-suite race build in [check run 36694448962](https://github.com/shgew/togi/actions/runs/36694448962) passed but took 303 seconds (09:11:35–09:16:38 UTC on 2026-09-30); the whole job took 314 seconds. Its check phase took 4m48s. That exceeds both the uncached VM build and job, so the automated check covers the four packages with real concurrency instead. The VM job in the same run took 29 seconds because it substituted an unchanged check; comparing that cache hit to a fresh race build would not measure the cost of running the checks.
 
