@@ -13,7 +13,6 @@ use togi_machine::{BootId, CcdProfile, ObservedOffset, PerCore, TargetOffset};
 
 use super::State;
 use super::decision::{Decision, PolicyPayload};
-use super::fold::{journal_event_id, policy_event_id};
 use super::night_query::NotReady;
 use crate::day::{
     Answer, ApplicationKind, Certainty as DayCertainty, Classification, CoreProfile, DailyEvent,
@@ -379,7 +378,7 @@ impl State {
     pub(super) fn reproduction_outcomes(&self) -> BTreeMap<EventId, ReproductionOutcome> {
         let mut outcomes = BTreeMap::new();
         for commit in &self.nights.reproductions {
-            let Some(id) = policy_event_id(&commit.payload.source) else {
+            let Some(id) = self.policy_event_id(&commit.payload.source) else {
                 continue;
             };
             match commit.payload.state {
@@ -599,7 +598,8 @@ impl State {
         };
         let mut owed = Vec::new();
         for event in &view.events {
-            let (Some(id), Some(meta)) = (journal_event_id(&event.id), view.meta.get(&event.id))
+            let (Some(id), Some(meta)) =
+                (self.journal_event_id(&event.id), view.meta.get(&event.id))
             else {
                 continue;
             };
@@ -663,7 +663,7 @@ impl State {
         let mut owed = Vec::new();
         for veto in &active {
             let (Some(id), Some(meta)) =
-                (journal_event_id(&veto.event), view.meta.get(&veto.event))
+                (self.journal_event_id(&veto.event), view.meta.get(&veto.event))
             else {
                 continue;
             };
@@ -697,7 +697,7 @@ impl State {
                 commit.payload.state == VetoState::Active
                     && !active
                         .iter()
-                        .any(|veto| journal_event_id(&veto.event).as_ref() == Some(*id))
+                        .any(|veto| self.journal_event_id(&veto.event).as_ref() == Some(*id))
             })
             .collect();
         cleared.sort_by_key(|(_, commit)| commit.seq);

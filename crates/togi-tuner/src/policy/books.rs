@@ -7,7 +7,8 @@ use jiff::Timestamp;
 use togi_journal::{
     CcdCap, CcdEdge, DayApplied, DayEvent, DayEventId, DayFault, DayHold, DayInterval, DayRecord,
     DayStep, DayUncleanEnd, DayVeto, ExposureObserved, Mce, NightId, NightPlan, NightQualification,
-    NightReproduction, Seq, SessionId, TaskId, TrialEnd, TrialId, TrialIntent, TrialStart,
+    NightReproduction, Provenance, Seq, SessionId, TaskId, TrialEnd, TrialId, TrialIntent,
+    TrialStart,
 };
 use togi_machine::{
     BiosContext, BootId, CcdId, ContentId, CoreInfo, ObservedOffset, PerCore, WorkloadId,
@@ -272,6 +273,9 @@ pub(super) struct LiveMce {
 pub(super) struct ManualRecord {
     pub(super) seq: Seq,
     pub(super) time: Timestamp,
+    /// The journal record this one came from: the original session and seq of an imported copy, else
+    /// the live `day.record`'s own. Absent only for a live record folded before any `session.start`.
+    pub(super) origin: Option<Provenance>,
     pub(super) record: DayRecord,
 }
 

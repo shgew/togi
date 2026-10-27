@@ -2,9 +2,9 @@
 //! historical per-core kinds and every `*.carried` kind never reach the policy.
 
 use togi_journal::{
-    Activity, ApplyCause, DayApplied, DayEvent, DayEventId, DayFreeze, DayImported, DayStep,
-    DeadEndCondition, Event, EventKind, FreezeChoice, Outcome, Payload, Queue, RetreatCause, Seq,
-    StepKind, Tested, TrialEnd, TrialIntent,
+    Activity, ApplyCause, CrashedBoot, DayApplied, DayEvent, DayEventId, DayFreeze, DayImported,
+    DayStep, DeadEndCondition, Event, EventKind, FreezeChoice, Outcome, Payload, Provenance, Queue,
+    RetreatCause, Seq, StepKind, Tested, TrialEnd, TrialIntent,
 };
 use togi_machine::{BootId, CcdProfile, CcdProfileError, Regime};
 
@@ -118,7 +118,13 @@ impl State {
             Payload::DayCleanStop(_) => self.record(event, Observed::CleanStop),
             Payload::DayUncleanEnd(p) => self.unclean(seq, event.time, p.clone()),
             Payload::DayAnswer(p) => self.answer(seq, p),
-            Payload::DayRecord(p) => self.manual(seq, event.time, p.clone()),
+            Payload::DayRecord(p) => {
+                let origin = self
+                    .machine
+                    .session
+                    .map(|session| Provenance { session, seq });
+                self.manual(seq, event.time, origin, p.clone());
+            }
             Payload::DayFault(p) => self.live_fault(seq, event.time, event.boot.clone(), p.clone()),
             Payload::ExposureObserved(p) => self.exposure(seq, p),
             Payload::CcdEdge(p) => {
@@ -373,8 +379,14 @@ impl State {
         self.days.unclean.push(Unclean { seq, time, end });
     }
 
-    /// A manual crash record: the first record of a crash identity counts.
-    fn manual(&mut self, seq: Seq, time: jiff::Timestamp, record: togi_journal::DayRecord) {
+    /// A manual crash record: the first record of a crash identity counts, and keeps its provenance.
+    fn manual(
+        &mut self,
+        seq: Seq,
+        time: jiff::Timestamp,
+        origin: Option<Provenance>,
+        record: togi_journal::DayRecord,
+    ) {
         if self
             .days
             .manual
@@ -383,7 +395,12 @@ impl State {
         {
             return;
         }
-        self.days.manual.push(ManualRecord { seq, time, record });
+        self.days.manual.push(ManualRecord {
+            seq,
+            time,
+            origin,
+            record,
+        });
     }
 
     /// A live fault: only a machine check can be CPU evidence (`docs/spec/tuner.md`, Live faults and
@@ -513,7 +530,7 @@ impl State {
             }
         } else if kind == EventKind::DayRecord {
             if let Ok(record) = serde_json::from_str::<togi_journal::DayRecord>(&imported.raw) {
-                self.manual(seq, imported.time, record);
+                self.manual(seq, imported.time, Some(imported.original), record);
             }
         } else if kind == EventKind::DayFault {
             if let Ok(fault) = serde_json::from_str::<togi_journal::DayFault>(&imported.raw) {
@@ -596,7 +613,7 @@ impl State {
             .events
             .iter()
             .filter_map(|seq| self.days.event_commits.get(seq))
-            .filter_map(|event| policy_event_id(&event.event))
+            .filter_map(|event| self.policy_event_id(&event.event))
             .collect()
     }
 
@@ -631,24 +648,52 @@ impl State {
     }
 }
 
-/// The day policy's name for a journal event identity; a manual record has none until `day.record`
-/// exists.
-pub(super) fn policy_event_id(id: &DayEventId) -> Option<EventId> {
-    match id {
-        DayEventId::Boot { boot } => Some(EventId::Boot(boot.clone())),
-        DayEventId::Requalification { night } => Some(EventId::Requalification(night.0)),
-        DayEventId::Record { .. } => None,
+impl State {
+    /// The day policy's name for a journal event identity. A manual record's identity is its crash's: the
+    /// crashed boot, or the crash instant of one no observer saw. A record the state never folded has none.
+    pub(super) fn policy_event_id(&self, id: &DayEventId) -> Option<EventId> {
+        match id {
+            DayEventId::Boot { boot } => Some(EventId::Boot(boot.clone())),
+            DayEventId::Requalification { night } => Some(EventId::Requalification(night.0)),
+            DayEventId::Record { session, seq } => {
+                let origin = Provenance {
+                    session: *session,
+                    seq: *seq,
+                };
+                self.days
+                    .manual
+                    .iter()
+                    .find(|manual| manual.origin == Some(origin))
+                    .map(|manual| match &manual.record.boot {
+                        CrashedBoot::UncleanEnd { boot } => EventId::Boot(boot.clone()),
+                        CrashedBoot::Unobserved { at } => EventId::Unobserved(*at),
+                    })
+            }
+        }
     }
-}
 
-/// The journal's name for the day policy's event identity.
-pub(super) fn journal_event_id(id: &EventId) -> Option<DayEventId> {
-    match id {
-        EventId::Boot(boot) => Some(DayEventId::Boot { boot: boot.clone() }),
-        EventId::Requalification(at) => Some(DayEventId::Requalification {
-            night: togi_journal::NightId(*at),
-        }),
-        EventId::Unobserved(_) => None,
+    /// The journal's name for the day policy's event identity. A crash no observer saw is named by the
+    /// record that reported it; one whose record has no provenance has none.
+    pub(super) fn journal_event_id(&self, id: &EventId) -> Option<DayEventId> {
+        match id {
+            EventId::Boot(boot) => Some(DayEventId::Boot { boot: boot.clone() }),
+            EventId::Requalification(at) => Some(DayEventId::Requalification {
+                night: togi_journal::NightId(*at),
+            }),
+            EventId::Unobserved(at) => self
+                .days
+                .manual
+                .iter()
+                .find(|manual| match &manual.record.boot {
+                    CrashedBoot::Unobserved { at: recorded } => recorded == at,
+                    CrashedBoot::UncleanEnd { .. } => false,
+                })
+                .and_then(|manual| manual.origin)
+                .map(|origin| DayEventId::Record {
+                    session: origin.session,
+                    seq: origin.seq,
+                }),
+        }
     }
 }
 
