@@ -6,8 +6,8 @@
 //! it stopped.
 //!
 //! The swept window starts with the run that completes night 2's qualification and ends with the final day:
-//! all 380 durable events, without a stride. Projection comparison blanks only shifted sequence, trial and night
-//! references (including `last_step`'s sequence); policy commitments are compared as a sorted multiset.
+//! every durable event, without a stride. Projections and policy commitments are compared by `compare`: sequence,
+//! trial and night identities by name, everything else exactly; policy commitments as a multiset.
 //!
 //! Machine crashes also cover every durable event. Power is cut before and after every actual SMU access.
 //! Each resumed phase checks its registers and each crashed trial's duration and failure attribution. Between
@@ -24,7 +24,6 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use serde_json::Value;
 use test_case::test_case;
 use togi_config::Config;
 use togi_journal::fs::{AppendPoint, AppendTrigger, Fault, FileKind, Fs, MemFs, Op};
@@ -43,6 +42,7 @@ use togi_sim::{MachineDefinition, Model, Persisted, Simulator};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, Params, Projection, State};
 
+use super::compare::Names;
 use crate::Stop;
 use crate::testing::{Bench, build, simulated};
 
@@ -1068,29 +1068,15 @@ fn assert_unchanged_decisions(
         let (_, reference) = play(&control, played.phase, played.start, append);
         let got = commitments(&events[played.start..], false);
         let want = commitments(&reference[played.start..], false);
-        assert_values_equal(
-            &serde_json::to_value(got).unwrap(),
-            &serde_json::to_value(want).unwrap(),
-            "decisions",
-        );
+        assert_lines_equal(&got, &want, "decisions");
     }
 }
 
-/// Report the first differing leaf rather than printing the entire scenario's evidence.
-fn assert_values_equal(got: &Value, want: &Value, path: &str) {
-    match (got, want) {
-        (Value::Object(got), Value::Object(want)) if got.keys().eq(want.keys()) => {
-            for (key, want) in want {
-                assert_values_equal(&got[key], want, &format!("{path}.{key}"));
-            }
-        }
-        (Value::Array(got), Value::Array(want)) => {
-            assert_eq!(got.len(), want.len(), "{path}: decision count");
-            for (at, (got, want)) in got.iter().zip(want).enumerate() {
-                assert_values_equal(got, want, &format!("{path}[{at}]"));
-            }
-        }
-        _ => assert_eq!(got, want, "{path}"),
+/// Report the first differing line rather than printing the entire scenario's evidence.
+fn assert_lines_equal(got: &[String], want: &[String], what: &str) {
+    assert_eq!(got.len(), want.len(), "{what}: count");
+    for (at, (got, want)) in got.iter().zip(want).enumerate() {
+        assert_eq!(got, want, "{what}[{at}]");
     }
 }
 
@@ -1119,77 +1105,21 @@ fn drain_failure(bench: &Bench, phase: Phase, events: Vec<Event>) -> Vec<Event> 
     }
 }
 
-/// Fields that hold sequence numbers, trial IDs or night IDs, which a resumed journal shifts by the events the cut
-/// added.
-const SHIFTED: &[&str] = &[
-    "caps",
-    "checkpoints",
-    "closed_by",
-    "credited",
-    "events",
-    "evidence",
-    "exposure",
-    "failure",
-    "failures",
-    "hours",
-    "last_checkpoint",
-    "night",
-    "qualification",
-    "retreat",
-    "seq",
-    "since",
-    "transactions",
-    "trial",
-    "vetoes",
-    "witness",
-    "witnesses",
-];
-
-/// `value` with every [`SHIFTED`] reference blanked.
-fn unshifted(mut value: Value) -> Value {
-    fn blank(value: &mut Value) {
-        match value {
-            Value::Object(fields) => {
-                for (key, field) in fields.iter_mut() {
-                    let reference = |value: &Value| value.is_number() || value.is_string();
-                    let shifted = SHIFTED.contains(&key.as_str())
-                        && (reference(field)
-                            || field
-                                .as_array()
-                                .is_some_and(|items| items.iter().all(reference)));
-                    if shifted {
-                        *field = Value::Null;
-                    } else if key == "last_step"
-                        && let Some(step) = field.as_array_mut()
-                    {
-                        step[0] = Value::Null;
-                        step.iter_mut().for_each(blank);
-                    } else {
-                        blank(field);
-                    }
-                }
-            }
-            Value::Array(items) => items.iter_mut().for_each(blank),
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
-        }
-    }
-    blank(&mut value);
-    value
-}
-
-/// What a tuner projection is compared by: references blanked.
-fn compared_projection(projection: &Projection) -> Value {
-    unshifted(serde_json::to_value(projection).unwrap())
+/// What a tuner projection is compared by: every field, with the sequence, trial and night identities it cites
+/// named by their first mention.
+fn compared_projection(projection: &Projection) -> Vec<String> {
+    Names::numbered().projection(projection)
 }
 
 /// The tuner's projection of `events`, as it is compared.
-fn projection(events: &[Event]) -> Value {
+fn projection(events: &[Event]) -> Vec<String> {
     compared_projection(&folded(events).project())
 }
 
-/// The policy commitments among `events` in a canonical order, references blanked, without the observations of
-/// trials a cut interrupted, which only the resumed journal has. Such an observation may also commit an unchanged
-/// cap before the retried trial rather than after it, so the order of the commitments is not compared.
+/// The policy commitments among `events`, without the observations of trials a cut interrupted, which only the
+/// resumed journal has. Such an observation may also commit an unchanged cap before the retried trial rather
+/// than after it, so the order of the commitments is not compared: they are sorted by what they say apart from
+/// the identities they cite, then those are named in that order.
 fn commitments(events: &[Event], observations: bool) -> Vec<String> {
     let interrupted: Vec<_> = events
         .iter()
@@ -1203,7 +1133,7 @@ fn commitments(events: &[Event], observations: bool) -> Vec<String> {
             }
         })
         .collect();
-    let mut commitments: Vec<_> = events
+    let mut chosen: Vec<_> = events
         .iter()
         .filter(|event| {
             matches!(
@@ -1225,13 +1155,16 @@ fn commitments(events: &[Event], observations: bool) -> Vec<String> {
                 && matches!(&event.payload, Payload::ExposureObserved(observed)
                 if observed.source.trial.as_ref().is_none_or(|trial| !interrupted.contains(&trial)))
         })
-        .map(|event| {
-            let payload = serde_json::to_value(&event.payload).unwrap();
-            format!("{} {}", event.kind().as_str(), unshifted(payload))
-        })
         .collect();
-    commitments.sort_unstable();
-    commitments
+    let mut shapes = Names::hidden();
+    chosen.sort_by_cached_key(|event| {
+        format!("{} {}", event.kind().as_str(), shapes.payload(&event.payload))
+    });
+    let mut names = Names::numbered();
+    chosen
+        .into_iter()
+        .map(|event| format!("{} {}", event.kind().as_str(), names.payload(&event.payload)))
+        .collect()
 }
 
 /// The kinds the kill sweep must cut after at least once.
