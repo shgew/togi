@@ -605,6 +605,8 @@ impl Session<'_> {
             interrupted: interrupted || crashed,
             escaped: adjudication.escaped,
             excluded: result.excluded.into_iter().collect(),
+            // The journal carries no backend identity for this error. The shared fold deliberately
+            // charges an unlocated mixed failure to every participant, live and after a restart.
             backend_missing: matches!(error, Some(Error::BackendMissing)),
             containment_error: adjudication.containment_error,
             ..evidence::trial_end(
