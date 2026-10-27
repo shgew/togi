@@ -25,12 +25,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use serde_json::Value;
+use test_case::test_case;
 use togi_config::Config;
 use togi_journal::fs::{AppendPoint, AppendTrigger, Fault, FileKind, Fs, MemFs, Op};
 use togi_journal::{
     ApplicationId, ApplyCause, Attribution, CcdVector, DayApplied, DayBootStart, DayCheckpoint,
     DayCleanStop, DayOffsetsChanged, DayUncleanEnd, Event, Journal, Outcome, Payload,
-    QualificationState, Seq, Stamp, Tested, TrialId,
+    QualificationState, RateCell, Seq, Stamp, Tested, TrialId,
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, EndEvidence, Error, Machine, ObservedOffset, PerCore,
@@ -1335,5 +1336,82 @@ fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve
         cuts.len(),
         trials.len(),
         smu.len()
+    );
+}
+
+/// The scenario's whole journal.
+fn scenario_events() -> Vec<Event> {
+    let (_, played, _) = scenario();
+    played.last().unwrap().events.clone()
+}
+
+/// `events` with `change` applied to the first rate cell of the first `ccd.cap` that has one.
+fn with_changed_rate_cell(events: &[Event], change: impl FnOnce(&mut RateCell)) -> Vec<Event> {
+    let mut events = events.to_vec();
+    let cell = events
+        .iter_mut()
+        .find_map(|event| {
+            if let Payload::CcdCap(cap) = &mut event.payload {
+                cap.cells.first_mut()
+            } else {
+                None
+            }
+        })
+        .expect("no ccd.cap of the scenario carries a rate cell");
+    change(cell);
+    events
+}
+
+#[test_case(1, 0; "failure count")]
+#[test_case(0, 1; "eligible seconds")]
+fn a_changed_rate_cell_changes_the_commitments(failures: u32, eligible_s: u64) {
+    let events = scenario_events();
+    let changed = with_changed_rate_cell(&events, |cell| {
+        cell.failures += failures;
+        cell.eligible_s += eligible_s;
+    });
+    assert_ne!(
+        commitments(&changed, true),
+        commitments(&events, true),
+        "a rate cell that counts {failures} more failures and {eligible_s} more seconds compares equal"
+    );
+}
+
+#[test]
+fn a_changed_count_of_cited_events_changes_the_projection() {
+    let projection = folded(&scenario_events()).project();
+    let mut changed = projection.clone();
+    let (seq, step) = changed
+        .day
+        .last_step
+        .as_mut()
+        .expect("the scenario ends after a day step");
+    step.hours.push(*seq);
+    assert_ne!(
+        compared_projection(&changed),
+        compared_projection(&projection)
+    );
+}
+
+#[test]
+fn caps_citing_one_event_instead_of_two_change_the_projection() {
+    let projection = folded(&scenario_events()).project();
+    let witnesses: Vec<_> = projection
+        .ccds
+        .iter()
+        .filter_map(|ccd| ccd.cap.as_ref().map(|cap| cap.witness))
+        .collect();
+    assert!(
+        witnesses.len() >= 2 && witnesses[0] != witnesses[1],
+        "the scenario's CCDs have no two distinct caps: {witnesses:?}"
+    );
+    let mut changed = projection.clone();
+    let first = witnesses[0];
+    for cap in changed.ccds.iter_mut().filter_map(|ccd| ccd.cap.as_mut()) {
+        cap.witness = first;
+    }
+    assert_ne!(
+        compared_projection(&changed),
+        compared_projection(&projection)
     );
 }
