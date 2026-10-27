@@ -11,6 +11,7 @@ mod flow;
 mod night;
 mod qualification;
 mod step_cost;
+mod unobserved;
 
 use std::collections::BTreeMap;
 
