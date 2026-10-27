@@ -4,7 +4,7 @@ use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
 use test_case::test_case;
-use togi_machine::{REGIMES, workload_by_id, workloads};
+use togi_machine::{ALL_REGIMES, workload_by_id, workloads};
 
 fn fake_package() -> TempDir {
     let pkg = TempDir::new().unwrap();
@@ -272,7 +272,7 @@ fn every_catalog_workload_plans() {
     let mprime = Mprime::new(pkg).unwrap();
     let dir = Path::new("/w");
     let mut planned = BTreeSet::new();
-    for regime in REGIMES {
+    for regime in ALL_REGIMES {
         for workload in workloads(regime) {
             if workload.backend != togi_machine::Backend::Mprime {
                 continue;
@@ -314,7 +314,7 @@ fn every_catalog_workload_plans() {
 }
 
 fn mprime_workloads() -> impl Iterator<Item = &'static Workload> {
-    REGIMES
+    ALL_REGIMES
         .into_iter()
         .flat_map(workloads)
         .filter(|workload| workload.backend == togi_machine::Backend::Mprime)

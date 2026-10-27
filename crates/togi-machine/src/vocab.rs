@@ -21,9 +21,8 @@ macro_rules! vocabulary {
 
 vocabulary!(Regime { R1 => "R1", R2 => "R2", R3 => "R3", R4 => "R4", R5 => "R5", R6 => "R6", R7 => "R7", R8 => "R8", R9 => "R9" });
 
-/// The regimes a ruleset schedules: R1 to R7. R8 and R9 are role regimes the runtime can execute but no ruleset yet
-/// schedules; [`ALL_REGIMES`] lists every regime.
-pub const REGIMES: [Regime; 7] = [
+/// R1 to R7: the regimes without roles, and the research model's regime domain. [`ALL_REGIMES`] lists every regime.
+pub const LEGACY_REGIMES: [Regime; 7] = [
     Regime::R1,
     Regime::R2,
     Regime::R3,
@@ -33,7 +32,7 @@ pub const REGIMES: [Regime; 7] = [
     Regime::R7,
 ];
 
-/// Every regime, scheduled or not, in catalog order.
+/// Every regime, in catalog order.
 pub const ALL_REGIMES: [Regime; 9] = [
     Regime::R1,
     Regime::R2,
@@ -61,11 +60,6 @@ impl Regime {
     /// Whether every logical CPU runs the role its trial's roles give it: R8 and R9.
     pub const fn has_roles(self) -> bool {
         matches!(self, Self::R8 | Self::R9)
-    }
-
-    /// Whether a ruleset can schedule trials of this regime: R1 to R7.
-    pub const fn scheduled(self) -> bool {
-        !self.has_roles()
     }
 
     /// Whether the regime runs one instance per loaded core, each on the core's first logical CPU. R9 runs one

@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use togi_facts::Observation;
 use togi_journal::{Event, Payload, TrialId};
-use togi_machine::{CoreId, CoreSet, ObservedOffset, PerCore, REGIMES, Regime, TargetOffset};
+use togi_machine::{
+    CoreId, CoreSet, LEGACY_REGIMES, ObservedOffset, PerCore, Regime, TargetOffset,
+};
 use togi_sim::replay::Replay;
 use togi_sim::{Load, Model};
 
@@ -61,7 +63,7 @@ pub(crate) fn measure_with(
     measured.real_answers = real_answers(events, model, replay)?;
     measured.real_answer_share = share(measured.real_answers, measured.trials);
     let loaded: CoreSet = (0..cores).filter_map(core).collect();
-    for regime in REGIMES {
+    for regime in LEGACY_REGIMES {
         let load = Load {
             regime,
             workload: "",

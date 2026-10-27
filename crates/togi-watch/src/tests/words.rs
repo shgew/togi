@@ -817,7 +817,7 @@ fn the_regime_words(regime: Regime, sentence: &str, kind: &str) {
 
 #[test]
 fn every_regime_has_load_words() {
-    for regime in togi_machine::REGIMES {
+    for regime in togi_machine::ALL_REGIMES {
         assert!(!load_words(regime).is_empty(), "{regime:?}");
     }
     assert_eq!(load_words(Regime::R6), "idle + bursts");
@@ -882,7 +882,7 @@ fn spans_and_lateness() {
 
 #[test]
 fn a_variant_workload_shows_its_base() {
-    for regime in togi_machine::REGIMES {
+    for regime in togi_machine::ALL_REGIMES {
         for entry in togi_machine::workloads(regime) {
             let shown = workload_display(entry.id());
             assert!(!shown.is_empty(), "{regime:?} workload {:?}", entry.id());

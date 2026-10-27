@@ -2,7 +2,7 @@
 // machine without new structure keeps every hazard and failure probability it had (#427's absent-key
 // fixture).
 
-use togi_machine::{REGIMES, Regime, pick_workload};
+use togi_machine::{LEGACY_REGIMES, Regime, pick_workload};
 use togi_sim::file;
 
 use crate::common::{load, model, offsets};
@@ -76,7 +76,7 @@ struct Probe {
 fn singleton_probes(text: &str) -> Vec<Probe> {
     let model = model(&file::decode(text).expect("decodes"));
     let mut probes = Vec::new();
-    for regime in REGIMES {
+    for regime in LEGACY_REGIMES {
         for together in [false, true] {
             for index in 0..2 {
                 let workload = pick_workload(regime, index).id;

@@ -165,21 +165,19 @@ fn the_role_regime_constants_pin_the_documented_durations() {
     assert_eq!(Regime::R8.warm_up(), Some(Duration::from_secs(30)));
     assert_eq!(Regime::R9.warm_up(), Some(Duration::from_secs(30)));
     assert_eq!(R9_PHASE, Duration::from_secs(u64::from(R9_PHASE_S)));
-    for regime in REGIMES {
+    for regime in LEGACY_REGIMES {
         assert_eq!(regime.role_duration(), None, "{regime}");
         assert_eq!(regime.warm_up(), None, "{regime}");
-        assert!(regime.scheduled(), "{regime}");
         assert!(!regime.has_roles(), "{regime}");
     }
     for regime in [Regime::R8, Regime::R9] {
-        assert!(!regime.scheduled(), "{regime}");
         assert!(regime.has_roles(), "{regime}");
     }
 }
 
 #[test]
-fn only_the_scheduled_regimes_are_in_regimes_and_all_regimes_adds_the_role_regimes() {
-    assert_eq!(REGIMES, ALL_REGIMES[..7]);
+fn the_legacy_regimes_are_the_regimes_without_roles_and_all_regimes_adds_the_role_regimes() {
+    assert_eq!(LEGACY_REGIMES, ALL_REGIMES[..7]);
     assert_eq!(ALL_REGIMES[7..], [Regime::R8, Regime::R9]);
 }
 

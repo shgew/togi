@@ -5,7 +5,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
 use test_case::test_case;
-use togi_machine::{REGIMES, workload_by_id, workloads};
+use togi_machine::{ALL_REGIMES, workload_by_id, workloads};
 
 const LOWEST: &str = "05-A64 ~ Kasumi";
 const ZEN5: &str = "24-ZN5 ~ Komari";
@@ -603,7 +603,7 @@ fn every_catalog_workload_plans() {
     let ycruncher = Ycruncher::new(pkg).unwrap();
     let dir = Path::new("/w");
     let mut planned = BTreeSet::new();
-    for regime in REGIMES {
+    for regime in ALL_REGIMES {
         for workload in workloads(regime) {
             if workload.backend != togi_machine::Backend::Ycruncher {
                 continue;
@@ -801,7 +801,7 @@ fn spliced_errors_are_not_erased_by_earlier_success() {
 }
 
 fn ycruncher_workloads() -> impl Iterator<Item = &'static Workload> {
-    REGIMES
+    ALL_REGIMES
         .into_iter()
         .flat_map(workloads)
         .filter(|workload| workload.backend == togi_machine::Backend::Ycruncher)

@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 use togi_machine::{
-    CoreId, PerCore, REGIMES, Regime, Signal, TrialConditions, Workload, workloads,
+    CoreId, LEGACY_REGIMES, PerCore, Regime, Signal, TrialConditions, Workload, workloads,
 };
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ScriptDef;
@@ -13,7 +13,7 @@ use test_case::test_case;
 use crate::common::{Rig, committed_machine, core, machine, spec};
 
 fn two_thread_workload() -> (Regime, Workload) {
-    REGIMES
+    LEGACY_REGIMES
         .iter()
         .find_map(|&regime| {
             workloads(regime)

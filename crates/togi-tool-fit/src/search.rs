@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use togi_machine::{REGIMES, Regime, WorkloadId};
+use togi_machine::{LEGACY_REGIMES, Regime, WorkloadId};
 use togi_sim::{MachineDefinition, Model};
 use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::TrialFact;
@@ -102,7 +102,7 @@ impl Likelihood<'_> {
     pub(crate) fn fit_regime_limits(&mut self) {
         let rail = self.cfg.shared_voltage.is_some();
         for (core, id) in self.core_ids().enumerate() {
-            for (r, regime) in REGIMES.into_iter().enumerate() {
+            for (r, regime) in LEGACY_REGIMES.into_iter().enumerate() {
                 for alone in [true, false] {
                     if alone && r >= 5 {
                         continue;
