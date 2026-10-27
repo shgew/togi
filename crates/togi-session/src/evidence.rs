@@ -182,6 +182,16 @@ pub(crate) struct TrialEvidence<'a> {
     pub missing: Option<&'a str>,
     pub duration: Duration,
     pub containment: Option<&'a str>,
+    /// The kernel's process faults of a trial whose controller was recorded; they place or withdraw the backend's
+    /// failure.
+    pub process: Option<ProcessFaults<'a>>,
+}
+
+/// The process faults a trial's kernel log recorded and the CPUs the trial tested.
+#[derive(Clone, Copy)]
+pub(crate) struct ProcessFaults<'a> {
+    pub recorded: &'a [RecordedProcessFault],
+    pub tested: &'a [CpuId],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -270,20 +280,166 @@ fn adopt_fault(previous: Option<FailureSignal>, fault: &RecordedProcessFault) ->
     }
 }
 
-/// The outcome a trial's evidence adds up to. The first that holds wins: a worker outside its CPUs, containment
-/// that could not be confirmed, a backend signal, a machine check, the reset after a crash, a missing observation
-/// or an inconclusive diagnostic, a short run, and only then a pass.
+/// What each kind of evidence a trial left says, weighed by [`Ladder::decide`]. Live trials and recovered ones fill
+/// the rungs they can know and leave the rest unset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Ladder<'a> {
+    /// The CPUs outside its allowed ones a worker ran on.
+    pub escaped: &'a [CpuId],
+    /// Why containment of the trial's workload could not be confirmed.
+    pub uncontained: Option<&'a str>,
+    /// The backend's failure, as the kernel's process faults left it; the core is not always known.
+    pub failure: Option<FailureSignal>,
+    /// The signal of the machine checks of the trial, when it had any.
+    pub machine_checks: Option<Signal>,
+    pub reset: Option<ResetRuling>,
+    /// An observation that could have been evidence is missing, or the backend reported an inconclusive diagnostic.
+    pub inconclusive: bool,
+    /// The trial did not run its full duration.
+    pub short: bool,
+}
+
+/// What the reset after a crashed trial rules, without its wording.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ResetRuling {
+    pub outcome: Outcome,
+    pub signal: Option<Signal>,
+}
+
+/// The evidence that decided a trial. The ladder's order is the declaration order: a worker outside its CPUs,
+/// containment that could not be confirmed, a backend failure, a machine check, the reset after a crash, a missing
+/// observation or an inconclusive diagnostic, a short run, and only then a pass.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Verdict {
+    Escaped,
+    Uncontained,
+    Failure(FailureSignal),
+    MachineChecks(Signal),
+    Reset(ResetRuling),
+    Inconclusive,
+    Short,
+    Passed,
+}
+
+impl Verdict {
+    pub(crate) const fn outcome(self) -> Outcome {
+        match self {
+            Self::Escaped | Self::Uncontained | Self::Inconclusive | Self::Short => {
+                Outcome::Inconclusive
+            }
+            Self::Failure(_) | Self::MachineChecks(_) => Outcome::Failure,
+            Self::Reset(reset) => reset.outcome,
+            Self::Passed => Outcome::Pass,
+        }
+    }
+
+    pub(crate) const fn signal(self) -> Option<Signal> {
+        match self {
+            Self::Failure(failure) => Some(failure.signal),
+            Self::MachineChecks(signal) => Some(signal),
+            Self::Reset(reset) => reset.signal,
+            Self::Escaped | Self::Uncontained | Self::Inconclusive | Self::Short | Self::Passed => {
+                None
+            }
+        }
+    }
+
+    pub(crate) const fn core(self) -> Option<CoreId> {
+        match self {
+            Self::Failure(failure) => failure.core,
+            Self::MachineChecks(_)
+            | Self::Reset(_)
+            | Self::Escaped
+            | Self::Uncontained
+            | Self::Inconclusive
+            | Self::Short
+            | Self::Passed => None,
+        }
+    }
+}
+
+impl Ladder<'_> {
+    /// The first rung that holds decides.
+    pub(crate) const fn decide(&self) -> Verdict {
+        if !self.escaped.is_empty() {
+            Verdict::Escaped
+        } else if self.uncontained.is_some() {
+            Verdict::Uncontained
+        } else if let Some(failure) = self.failure {
+            Verdict::Failure(failure)
+        } else if let Some(signal) = self.machine_checks {
+            Verdict::MachineChecks(signal)
+        } else if let Some(reset) = self.reset {
+            Verdict::Reset(reset)
+        } else if self.inconclusive {
+            Verdict::Inconclusive
+        } else if self.short {
+            Verdict::Short
+        } else {
+            Verdict::Passed
+        }
+    }
+}
+
+/// The outcome a trial's evidence adds up to, by the order of [`Ladder`].
 pub(crate) fn adjudicate(
     evidence: &TrialEvidence<'_>,
 ) -> Result<Adjudication, crate::SessionError> {
     let result = evidence.result;
     let missing = present(evidence.missing);
-    let mut end = Adjudication {
-        outcome: Outcome::Pass,
-        signal: None,
-        core: None,
-        reason: missing.map(str::to_owned),
-        escaped: Vec::new(),
+    let reported = result.failure.map(FailureSignal::from);
+    let failure = match evidence.process {
+        Some(process) => process_faults_failure(reported, process.recorded, process.tested),
+        None => reported,
+    };
+    // The kernel placed the only failure the backend reported outside the tested CPUs.
+    let inconclusive = if reported.is_some() && failure.is_none() {
+        Some("worker fault executed outside tested CPUs")
+    } else {
+        result.inconclusive.as_deref()
+    };
+    let ladder = Ladder {
+        escaped: &result.escaped,
+        uncontained: evidence.containment,
+        failure,
+        machine_checks: (!evidence.mces.is_empty()).then(|| mce_signal(evidence.mces)),
+        reset: evidence.reset.map(|reset| ResetRuling {
+            outcome: reset.outcome,
+            signal: reset.signal,
+        }),
+        inconclusive: missing.is_some() || inconclusive.is_some(),
+        short: result.ran < evidence.duration,
+    };
+    let verdict = ladder.decide();
+    // A failure whose core the kernel did not place still ends the trial, and words it as the evidence below it would.
+    let worded = if let Verdict::Failure(FailureSignal { core: None, .. }) = verdict {
+        Ladder {
+            failure: None,
+            ..ladder
+        }
+        .decide()
+    } else {
+        verdict
+    };
+    let reason = match worded {
+        Verdict::Escaped => join_diagnostic(Some("backend thread outside allowed cpus"), missing),
+        Verdict::Reset(_) => join_diagnostic(
+            evidence.reset.and_then(|reset| reset.reason.as_deref()),
+            missing,
+        ),
+        Verdict::Inconclusive => join_diagnostic(inconclusive, missing),
+        Verdict::Short => Some("trial ended before its full duration".to_owned()),
+        Verdict::Uncontained
+        | Verdict::Failure(_)
+        | Verdict::MachineChecks(_)
+        | Verdict::Passed => missing.map(str::to_owned),
+    };
+    Ok(Adjudication {
+        outcome: verdict.outcome(),
+        signal: verdict.signal(),
+        core: verdict.core(),
+        reason,
+        escaped: result.escaped.clone(),
         containment_error: evidence.containment.map(str::to_owned),
         duration_s: u32::try_from(result.ran.as_secs())
             .map_err(crate::SessionError::TrialDuration)?,
@@ -292,32 +448,7 @@ pub(crate) fn adjudicate(
             .map(i32::try_from)
             .transpose()
             .map_err(crate::SessionError::TrialTemperature)?,
-    };
-    if !result.escaped.is_empty() {
-        end.outcome = Outcome::Inconclusive;
-        end.escaped.clone_from(&result.escaped);
-        end.reason = join_diagnostic(Some("backend thread outside allowed cpus"), missing);
-    } else if evidence.containment.is_some() {
-        end.outcome = Outcome::Inconclusive;
-    } else if let Some(failure) = result.failure {
-        end.outcome = Outcome::Failure;
-        end.signal = Some(failure.signal);
-        end.core = Some(failure.core);
-    } else if !evidence.mces.is_empty() {
-        end.outcome = Outcome::Failure;
-        end.signal = Some(mce_signal(evidence.mces));
-    } else if let Some(reset) = evidence.reset {
-        end.outcome = reset.outcome;
-        end.signal = reset.signal;
-        end.reason = join_diagnostic(reset.reason.as_deref(), missing);
-    } else if missing.is_some() || result.inconclusive.is_some() {
-        end.outcome = Outcome::Inconclusive;
-        end.reason = join_diagnostic(result.inconclusive.as_deref(), missing);
-    } else if result.ran < evidence.duration {
-        end.outcome = Outcome::Inconclusive;
-        end.reason = Some("trial ended before its full duration".to_owned());
-    }
-    Ok(end)
+    })
 }
 
 /// The last sample of a trial, as much of it as a crash recovery or a trial end reports.

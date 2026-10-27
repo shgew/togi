@@ -15,7 +15,7 @@ use togi_machine::{
 use togi_tuner::policy::TrialPlan;
 
 use crate::error::{SessionError, Step};
-use crate::evidence::{self, RecordedMce, TrialEvidence};
+use crate::evidence::{self, ProcessFaults, RecordedMce, TrialEvidence};
 use crate::execute::is_crash_flow;
 use crate::recover::append_trial_end;
 use crate::session::{Boundary, Control, Fault, Lifecycle, Session, Stop, Swept, TrialWindow};
@@ -508,7 +508,7 @@ impl Session<'_> {
         what: &str,
     ) -> Step<()> {
         let Waited {
-            mut result,
+            result,
             mut error,
             mut joined,
         } = waited;
@@ -562,39 +562,26 @@ impl Session<'_> {
             .into_iter()
             .flat_map(|open| open.faults.iter().map(|fault| fault.seq))
             .collect();
-        let process_failure = open.and_then(|open| {
+        let process = open.and_then(|open| {
             let controller = open.started.as_ref()?.controller.as_ref()?;
-            let failure = evidence::process_faults_failure(
-                result.failure.map(evidence::FailureSignal::from),
-                &open.faults,
-                &controller.tested_cpus,
-            );
-            Some(failure)
+            Some(ProcessFaults {
+                recorded: &open.faults,
+                tested: &controller.tested_cpus,
+            })
         });
-        if let Some(failure) = process_failure {
-            if result.failure.is_some() && failure.is_none() {
-                result.inconclusive = Some("worker fault executed outside tested CPUs".into());
-            }
-            result.failure = failure.and_then(|failure| {
-                failure.core.map(|core| togi_machine::TrialFailure {
-                    signal: failure.signal,
-                    core,
-                    pid: failure.pid.and_then(std::num::NonZeroU32::new),
-                })
-            });
-        }
         let runner = error
             .as_ref()
             .filter(|error| !matches!(error, Error::Cancelled))
             .map(|error| format!("{what}: {}", togi_render::error_chain(error)));
         let missing = evidence::join_diagnostic(kernel_error.as_deref(), runner.as_deref());
-        let mut adjudication = match evidence::adjudicate(&TrialEvidence {
+        let adjudication = match evidence::adjudicate(&TrialEvidence {
             result: &result,
             mces: &mces,
             reset: None,
             missing: missing.as_deref(),
             duration: Duration::from_secs(u64::from(trial.plan.cell.duration.get())),
             containment,
+            process,
         }) {
             Ok(adjudication) => adjudication,
             Err(error) => {
@@ -602,14 +589,6 @@ impl Session<'_> {
                 return Err(error.into());
             }
         };
-        if result.escaped.is_empty()
-            && containment.is_none()
-            && let Some(Some(failure)) = process_failure
-        {
-            adjudication.outcome = togi_journal::Outcome::Failure;
-            adjudication.signal = Some(failure.signal);
-            adjudication.core = failure.core;
-        }
         let interrupted = token.is_cancelled();
         let reason = if interrupted {
             evidence::join_diagnostic(adjudication.reason.as_deref(), Some("stopped by signal"))
