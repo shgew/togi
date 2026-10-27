@@ -143,7 +143,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     }
 }
 
-/// The BIOS context of the session `run` would continue, if one is recorded; `Err` is the exit of
+/// The BIOS context of the session `run` would continue (its latest `session.context`), if one is recorded; `Err` is the exit of
 /// a journal `run` would refuse or cannot read.
 fn recorded_context(
     ctx: &mut Context<'_>,
@@ -170,7 +170,7 @@ fn recorded_context(
             None => fail(ctx, COMMAND, togi_render::error_chain(&error)),
         }
     })?;
-    Ok(recording.events().iter().find_map(|event| {
+    Ok(recording.events().iter().rev().find_map(|event| {
         if let togi_journal::Payload::SessionContext(context) = &event.payload {
             Some(context.bios_context())
         } else {
