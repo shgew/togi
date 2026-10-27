@@ -1,6 +1,6 @@
 # Benchmarking
 
-`togi-tool-bench` (`just bench`) runs a fixed suite of simulated sessions and compares two versions of togi. Use it to show that a tuner change makes sessions conclude sooner, or no later, without leaving a profile that fails. Like `togi-tool-sim`, it is a development program and is not shipped.
+`togi-tool-bench` (`just bench`) runs the legacy session suite and compares simulated session metrics for on-demand research. Its historical time-to-conclusion objective is not the Ruleset 13 production-policy objective; use the registered [day/night gate](#daynight-gate) for that. Like `togi-tool-sim`, it is a development program and is not shipped.
 
 Autonomous research follows [Research campaigns](#research-campaigns): its modes, limits, prohibitions, record and end state, then the mode's program and the issue's brief. [ADR 0029](adr/0029-bench-verdicts-rest-on-fitted-machines.md) records why target claims require checked fits and real-fact replay.
 
@@ -59,6 +59,8 @@ The command runs **CO 0 forever** and **fixed margin** over every registered sce
 True safe uses the hazard **CO adds over stock**, not total failures: λ* = 1/3,000 active hours jointly and λ*/CCD-count on each CCD. It is the deepest admissible profile in the write range; both-CCD interaction risk must satisfy the joint bound too. The reference repeats the ordered eight-hour daily mix and sixteen-hour sleep at periodic thermal equilibrium, integrating hidden classes, delayed onsets and intended durations. Policy-dependent night heating changes actual simulated risk, not this reference target. Total depth wins, then balanced CCD depth, then lexicographically smaller depths break ties. Only metrics can inspect the oracle; policies see machine-seam observations, never true safe.
 
 The table distinguishes true CO-caused daily crashes from CPU-suspect classifications, which can include wrong or missing answers to non-CPU unclean ends. Per-CCD metrics retain first-year crashes, convergence day, maximum overshoot, cap-promotion steps, first converged and final depth, and counts retreated on background alone versus new CO evidence. Sleep is wall time only, not daily or trial exposure. A moving-cap scenario reports steps separately; its count does not enter the fixed-cap bound. A firmware change invalidates prior qualification and returns day offsets to stock.
+
+The calendar gate idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat. Its scores therefore omit that overhead. Actual overhead must be measured on hardware; the [production workload rules](spec/workloads.md#durations-and-checking-schedule) still charge launch/cleanup and required repeats to task time.
 
 The registration is authoritative: covered-class climb is crash-free in at least 90% of seeds; hidden-class first-year crashes are at most two per CCD in at least 90%; maximum overshoot is at most one count in at least 95% and never more than three; median days within one count of true safe is at most 90; after two years on the stock-background scenario at least 90% keep converged depth minus one; fixed caps need at most seven promotions per CCD. Each criterion is evaluated per scenario using each seed's worst CCD, never pooled. Every censored or nonconverged run stays in the denominator, with infinite convergence time; partial counts cannot earn a pass. The committed registration describes applicable scenarios and exact empirical fractions. A failed score is an owner decision, not a reason to relax thresholds.
 
@@ -259,13 +261,13 @@ Violations:
 
 Seeds are deterministic: the same commit always produces the same runs, so rerunning cannot change a result. A change to how the tuner decides moves later sessions onto different random paths, so compare whole scenarios, not single seeds.
 
-Record the baseline again whenever the tuner on `main`, the suite, the facts or the fitted machines change:
+Historical legacy session-suite baselines can be recorded with:
 
 ```sh
 just bench-baseline
 ```
 
-The recorded run lives at `tools/bench/baseline.jsonl`, the path the research program compares against. It includes both dev and holdout seeds. The recipe runs `just bench --split all --out` into a temporary file and commits a projection of it that leaves out `model_check` (the fitted-machine check, repeated in every run of its machine and 93% of the full file), `wall_s` (each run's real duration) and `partial_seconds` (retired); every other field stays. Comparison reads none of the three, so it prints the same against the slim file as against the full one; `--out` itself still writes the full records. Baselines recorded before the oracle ensemble do not cover `target`; do not reuse them for V3.
+The historical legacy session-suite baseline lives at `tools/bench/baseline.jsonl`; model development's F5 check still pins it. It is not the production-policy objective or a reference for day/night scores. It includes both dev and holdout seeds. The recipe runs `just bench --split all --out` into a temporary file and commits a projection of it that leaves out `model_check` (the fitted-machine check, repeated in every run of its machine and 93% of the full file), `wall_s` (each run's real duration) and `partial_seconds` (retired); every other field stays. Comparison reads none of the three, so it prints the same against the slim file as against the full one; `--out` itself still writes the full records. Baselines recorded before the oracle ensemble do not cover `target`; do not reuse them for V3.
 
 `just bench-baseline OUT` writes the same projection to another file and leaves the committed one alone:
 
@@ -275,13 +277,13 @@ just bench-baseline OUT
 
 `OUT` defaults to `tools/bench/baseline.jsonl`. The recipe runs `togi-tool-bench --split all --baseline-out OUT`. The flag writes the same run as `--out` with `model_check` and `wall_s` left out; it may be given together with `--out`, and neither file makes the tree dirty for the `commit` and `dirty` stamps. The projection is `Record::baseline` in the crate, pinned by its tests, not a filter in the recipe. `togi-tool-bench sanity` and `--baseline` read the committed file in this record format.
 
-Compare a candidate with the recorded baseline:
+Compare legacy session-suite metrics with the historical baseline:
 
 ```sh
 just bench --split all --baseline tools/bench/baseline.jsonl
 ```
 
-The active baseline is Ruleset 11, recorded by `just bench-baseline` at a clean commit and then projected to the metrics `just bench` still keeps; the Ruleset 10 baseline it replaced is archived with the Ruleset 11 gate.
+The historical legacy session-suite baseline is Ruleset 11, recorded by `just bench-baseline` at a clean commit and then projected to the metrics `just bench` still keeps; the Ruleset 10 baseline it replaced is archived with the Ruleset 11 gate.
 
 ## Copying a real state directory
 
@@ -305,7 +307,7 @@ A research campaign is a finite run of experiments by an agent following one iss
 | Mode | Rules | May change | Ends in |
 |---|---|---|---|
 | Model development | [`tools/fit/program.md`](../tools/fit/program.md) | the failure model and the fitter | a report; a kept model becomes a model-only pull request |
-| Production policy experiment | [`tools/bench/program.md`](../tools/bench/program.md) | tuner decisions in `crates/togi-tuner` | a report; kept changes become sub-issues of the open `Ruleset N` |
+| Production policy experiment | [`tools/bench/program.md`](../tools/bench/program.md) | tuner decisions in `crates/togi-tuner/src/policy/` | a report; kept changes become sub-issues of the open `Ruleset N` |
 | Fixed-policy observation | the issue's brief | analysis tools and research-only fixtures; the tuner, configuration and simulator stay unchanged | a report |
 
 Observation measures the unchanged tuner. Its conclusions about another policy are labelled counterfactual: removing events from an observed journal is not what a different tuner would have done. #503 starts only in this mode. A simulated gain never lifts its evidence freeze or the [evidence volume](../tools/bench/program.md#hard-rules) rule; a production change for either needs a validated #480 forward score and an owner-approved design under #979.
@@ -320,7 +322,7 @@ An issue without a brief has no campaign; #428's brief waits for #427's paramete
 
 ### Limits
 
-By default a campaign runs at most 8 hours of wall time and 12 substantive candidates, evaluates with 4 workers (`--jobs 4`), and holds the host-shared benchmark lock ([AGENTS.md](../AGENTS.md#commands)) for each benchmark it runs. It stops at the first exhausted limit. A substantive candidate is one entry of the brief's queue evaluated against the reference; reference runs and a confirmation belong to the candidate they serve. The owner may override any limit at launch. A monetary or API spending cap is a launch parameter of the agent runner, never chosen by a brief; without one, a paid agent does not continue unattended.
+By default a campaign runs at most 8 hours of wall time and 12 substantive candidates, evaluates with 4 workers (`--jobs 4`), and holds the [host-shared benchmark lock](https://github.com/shgew/togi/issues/1040) for each benchmark it runs. It stops at the first exhausted limit. A substantive candidate is one entry of the brief's queue evaluated against the reference; reference runs and a confirmation belong to the candidate they serve. The owner may override any limit at launch. A monetary or API spending cap is a launch parameter of the agent runner, never chosen by a brief; without one, a paid agent does not continue unattended.
 
 The bench's per-simulator `--timeout` and `--max-boots` bound one simulated session. They are not campaign limits, and a campaign keeps them.
 
@@ -454,7 +456,7 @@ sudo chown -R "$(id -u):$(id -g)" "$copy"
 just facts "$copy"
 ```
 
-`togi-tool-facts` reads every archived and live session through `togi-tool-trialfacts` and the `togi-facts` extraction, including sessions before `reset --all` and older builds. Its gzip JSON Lines output is byte-stable for fixed inputs. Generation rejects sources with no facts and writes to a temporary file beside the destination; the committed extract is replaced only after extraction and file close succeed, so an unreadable or empty source leaves it unchanged. Records retain session, build, ruleset, BIOS context (the one in force when the trial opened or the idle failure was recorded), sequence, trial ID, kind, class, condition, phase, record-only status, full profile, outcome, signal, measured duration and, when present, `voltage_requests_v`, `top_requesters`, `ccd_mhz` and `stalled_core`. These are machine measurements, not personal data. For older trial ends without request fields, the generator summarizes surviving trial samples using the source session's recorded topology and loaded cores, with the same warmup and minimum-sample rules as live telemetry. They omit journal timestamps, paths, hostnames and boot IDs. `togi-tool-trialfacts` is the shared reader for evaluation tools.
+`togi-tool-facts` reads every archived and live session through `togi-tool-trialfacts` and the `togi-facts` extraction, including sessions before `reset --all` and older builds. Its gzip JSON Lines output is byte-stable for fixed inputs. Generation rejects sources with no facts and writes to a temporary file beside the destination; the committed extract is replaced only after extraction and file close succeed, so an unreadable or empty source leaves it unchanged. Records retain session, build, ruleset, BIOS context (the one in force when the trial opened or the idle failure was recorded), sequence, trial ID, kind, class, condition, phase, record-only status, full profile, outcome, signal, measured duration and, when present, `voltage_requests_v`, `top_requesters`, `ccd_mhz` and `stalled_core`. These are machine measurements, not personal data. Native generation uses only journal fields; request and clock summaries for older trial ends come from the 2026-10-17 Go-era refresh described below, not native sample extraction. Records omit journal timestamps, paths, hostnames and boot IDs. `togi-tool-trialfacts` is the shared reader for evaluation tools.
 The extract also retains an optional attributed `core` on failures, including core 0, so a named computation error constrains the core it actually names rather than the first loaded core. Older records omit it.
 
 The native reader does not import Go-era journal headers. The committed 2026-10-17 refresh used the unmodified Go extractor at `ec7452cbd37fc826fab96fe4d0b877e040668c94`, with persisted per-trial samples to recover request and clock summaries. Its provenance and once-only score are [recorded below](#the-2026-10-17-frozen-score); this is not a native journal compatibility promise.
