@@ -30,10 +30,12 @@ pub mod voltage;
 pub use content::content_id;
 pub use definition::MachineDefinition;
 pub use error::{InvalidMachine, Problem, ShapeError};
-pub use hazard::{HazardSource, Load, SourceKind, saturating_count};
+pub use hazard::{HazardSource, Load, SourceKind, saturating_count, shared_voltage_applies};
 pub use model::Model;
 pub use persisted::{Persisted, RestoreError};
 pub use runtime::{ArithmeticError, History, REBOOT_TIME, RunSettings};
 pub use samples::SampleStorage;
 pub use simulator::{ScriptError, Simulator};
-pub use vocab::{RESETS, ResetMix, SignalMix, WEIGHTED_SIGNALS, limit_index, regime_index};
+pub use vocab::{
+    RESETS, ResetMix, SignalMix, WEIGHTED_SIGNALS, limit_index, modeled_as, regime_index,
+};

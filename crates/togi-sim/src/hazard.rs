@@ -17,6 +17,11 @@ use crate::random::Domain;
 use crate::vocab::{limit_index, modeled_as};
 use crate::voltage::{Voltage, voltage_state};
 
+/// Whether a load is explained by the machine's shared-voltage rail rather than per-core limits.
+pub fn shared_voltage_applies(regime: Regime, loaded: usize, has_rail: bool) -> bool {
+    has_rail && loaded > 1 && modeled_as(regime) == Regime::R7
+}
+
 /// What a trial loads: its regime and workload, the cores running it and its intended duration.
 #[derive(Clone, Copy, Debug)]
 pub struct Load<'a> {
@@ -209,7 +214,7 @@ impl Model {
     /// The shared-voltage model when `load` is a multi-core trial modeled as R7 (R7 and R9) on a machine that has
     /// one.
     pub(crate) fn shared_voltage(&self, load: &Load<'_>) -> Option<&Voltage> {
-        (load.cores.len() > 1 && modeled_as(load.regime) == Regime::R7)
+        shared_voltage_applies(load.regime, load.cores.len(), self.voltage().is_some())
             .then(|| self.voltage())
             .flatten()
     }

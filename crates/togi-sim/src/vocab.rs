@@ -48,7 +48,7 @@ pub const fn regime_index(regime: Regime) -> usize {
 /// The regime whose limits and, unless a model lists its own, signal mix `regime` takes: R1 to R7 themselves.
 /// R8, a light role beside R2 neighbours on one CCD, is modeled as R2. R9, every thread of every loaded CCD,
 /// is modeled as R7 at its loaded set.
-pub(crate) const fn modeled_as(regime: Regime) -> Regime {
+pub const fn modeled_as(regime: Regime) -> Regime {
     match regime {
         Regime::R8 => Regime::R2,
         Regime::R9 => Regime::R7,
