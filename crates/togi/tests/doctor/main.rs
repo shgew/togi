@@ -654,6 +654,34 @@ fn a_current_journal_before_its_session_context_passes_no_context() {
     assert_eq!(host.diagnoses.borrow().as_slice(), [(None, true)]);
 }
 
+#[test]
+fn an_updated_session_context_is_the_one_passed_to_the_checks() {
+    let session = Session::new();
+    let text = session.text();
+    let initial = text
+        .lines()
+        .find(|line| line.contains("\"kind\":\"session.context\""))
+        .unwrap();
+    let last: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    let mut updated: serde_json::Value = serde_json::from_str(initial).unwrap();
+    updated["seq"] = (last["seq"].as_u64().unwrap() + 1).into();
+    updated["time"] = last["time"].clone();
+    updated["boot"] = last["boot"].clone();
+    updated["data"]["bios_version"] = "updated".into();
+    session
+        .fs
+        .put(session.journal(), format!("{text}{updated}\n").into_bytes());
+    let expected = togi_machine::BiosContext {
+        bios_version: "updated".to_owned(),
+        ..session.context.clone()
+    };
+    assert_ne!(expected, session.context);
+    let host = host_with(ready(), session.fs.clone());
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert_eq!(host.diagnoses.borrow().as_slice(), [(Some(expected), true)]);
+}
+
 fn assert_snapshot(snapshot: &str, actual: &str) {
     let expected = snapshot
         .strip_prefix("---\n")
