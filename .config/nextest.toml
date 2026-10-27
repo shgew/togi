@@ -33,5 +33,9 @@ filter = "package(togi-session) & test(/^whole::cut::/)"
 slow-timeout = { period = "60s", terminate-after = 15 }
 
 [[profile.ci.overrides]]
+filter = "(package(togi-tuner) & binary(policy)) | (package(togi-tool-bench) & test(/^metrics::snapshot_tests::/))"
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+[[profile.ci.overrides]]
 filter = "package(togi-smu) & binary(hardware)"
 test-group = "hardware"
