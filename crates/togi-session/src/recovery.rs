@@ -40,6 +40,22 @@ pub(crate) struct OpenIntent {
     pub kind: IntentKind,
 }
 
+/// Legacy intents have no content list; current intents freeze every participating workload there.
+fn trial_backends(intent: &TrialIntent) -> impl Iterator<Item = Backend> + '_ {
+    [Backend::Mprime, Backend::Ycruncher]
+        .into_iter()
+        .filter(|backend| {
+            if intent.content.is_empty() {
+                intent.workload.backend() == *backend
+            } else {
+                intent
+                    .content
+                    .iter()
+                    .any(|entry| entry.workload.backend() == *backend)
+            }
+        })
+}
+
 /// A trial's start and the last time anything of it was recorded.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Started {
@@ -51,6 +67,8 @@ pub(crate) struct Started {
     pub last_mono: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<togi_journal::ControllerEvidence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<togi_machine::TrialRole>,
 }
 
 /// How far the write of the target a trial alone sets before its start got.
@@ -375,7 +393,9 @@ impl RecoveryState {
                     intent.kernel_cursor.as_ref(),
                     intent.kernel_error.as_deref(),
                 );
-                self.backend(intent.workload.backend()).followed = true;
+                for backend in trial_backends(intent) {
+                    self.backend(backend).followed = true;
+                }
             }
             Payload::TrialStart(start) => {
                 if let Some(open) = &mut self.open
@@ -389,6 +409,7 @@ impl RecoveryState {
                         last_time: event.time,
                         last_mono: event.mono,
                         controller: start.controller.clone(),
+                        roles: start.roles.clone(),
                     });
                     if let Some(ns) = start.window_start_ns {
                         open.window_start = Some(Duration::from_nanos(ns));
@@ -826,22 +847,43 @@ impl RecoveryState {
         let Some(open) = &self.open else {
             return;
         };
-        let backend = open.intent.workload.backend();
+        let participants = [Backend::Mprime, Backend::Ycruncher].map(|backend| {
+            trial_backends(&open.intent)
+                .any(|item| item == backend)
+                .then_some(backend)
+        });
+        let located = end.core.and_then(|core| {
+            let roles = &open.started.as_ref()?.roles;
+            let backend = roles
+                .iter()
+                .find(|role| role.core == core)?
+                .workload
+                .backend();
+            roles
+                .iter()
+                .filter(|role| role.core == core)
+                .all(|role| role.workload.backend() == backend)
+                .then_some(backend)
+        });
         let start_cpus = open
             .started
             .as_ref()
             .map(|started| started.cpus.clone())
             .unwrap_or_default();
-        match end.evidence_outcome() {
-            Outcome::Inconclusive => {
-                if !end.interrupted {
-                    let state = self.backend(backend);
-                    state.last_reason.clone_from(&end.reason);
-                    state.streak.push(event.seq);
+        for backend in participants.into_iter().flatten() {
+            let charged = located.is_none_or(|located| located == backend);
+            let state = self.backend(backend);
+            match end.evidence_outcome() {
+                Outcome::Inconclusive => {
+                    if charged && !end.interrupted {
+                        state.last_reason.clone_from(&end.reason);
+                        state.streak.push(event.seq);
+                    }
                 }
+                Outcome::Pass | Outcome::Failure => state.streak.clear(),
             }
-            Outcome::Pass | Outcome::Failure => {
-                self.backend(backend).streak.clear();
+            if charged && end.backend_missing {
+                state.missing.get_or_insert(event.seq);
             }
         }
         if let Some(detail) =
@@ -851,9 +893,6 @@ impl RecoveryState {
                 seq: event.seq,
                 detail,
             });
-        }
-        if end.backend_missing {
-            self.backend(backend).missing.get_or_insert(event.seq);
         }
     }
 

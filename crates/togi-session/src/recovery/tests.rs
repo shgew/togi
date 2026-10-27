@@ -1055,6 +1055,151 @@ fn inconclusive_trials_streak_unless_interrupted_and_a_conclusive_one_ends_it() 
     assert!(log.state().streak(Backend::Mprime).is_empty());
 }
 
+fn mixed_intent(log: &mut Log, id: &str, heavy: Backend) -> Seq {
+    let seq = log.trial_intent(id, Some(0), Regime::R8);
+    let Payload::TrialIntent(intent) = &mut log.events.last_mut().unwrap().payload else {
+        unreachable!()
+    };
+    intent.cores = [core(0), core(8)].into_iter().collect();
+    let heavy = pick_workload(Regime::R2, if heavy == Backend::Mprime { 0 } else { 2 }).id();
+    intent.content = [intent.workload, heavy]
+        .into_iter()
+        .map(|workload| togi_journal::WorkloadContent {
+            workload,
+            content: togi_sim::content_id(workload),
+        })
+        .collect();
+    seq
+}
+
+#[test_case(None; "unlocated setup failure")]
+#[test_case(Some(0); "located light failure")]
+#[test_case(Some(8); "located heavy failure")]
+fn mixed_backend_setup_failure_charges_only_recorded_locations(location: Option<i64>) {
+    let mut log = Log::new();
+    let intent = mixed_intent(&mut log, "0001", Backend::Ycruncher);
+    let start = log.started("0001", None, intent);
+    let Payload::TrialStart(started) = &mut log.events.last_mut().unwrap().payload else {
+        unreachable!()
+    };
+    started.roles = togi_machine::TrialRole::neighbours(
+        pick_workload(Regime::R8, 0).id(),
+        core(0),
+        pick_workload(Regime::R2, 2).id(),
+        1,
+        &[
+            CoreInfo {
+                core: core(0),
+                ccd: CcdId::try_from(0_u8).unwrap(),
+                cpus: vec![CpuId::from(0)],
+            },
+            CoreInfo {
+                core: core(8),
+                ccd: CcdId::try_from(0_u8).unwrap(),
+                cpus: vec![CpuId::from(8)],
+            },
+        ],
+    )
+    .unwrap();
+    let mut end = trial_end("0001", Outcome::Inconclusive);
+    end.core = location.map(core);
+    end.reason = Some("setup failed".into());
+    let ended = log.add(Payload::TrialEnd(end), &[start]);
+    let state = log.state();
+    assert_eq!(
+        state.streak(Backend::Mprime),
+        if location == Some(8) {
+            vec![]
+        } else {
+            vec![ended]
+        }
+    );
+    assert_eq!(
+        state.streak(Backend::Ycruncher),
+        if location == Some(0) {
+            vec![]
+        } else {
+            vec![ended]
+        }
+    );
+}
+
+#[test_case(Outcome::Pass; "pass")]
+#[test_case(Outcome::Failure; "failure")]
+fn mixed_backend_conclusive_completion_clears_every_participant(outcome: Outcome) {
+    let mut log = Log::new();
+    log.trial_intent("0001", Some(0), Regime::R1);
+    let Payload::TrialIntent(intent) = &mut log.events.last_mut().unwrap().payload else {
+        unreachable!()
+    };
+    intent.workload = pick_workload(Regime::R1, 1).id();
+    log.ended("0001", Outcome::Inconclusive, &[]);
+    mixed_intent(&mut log, "0002", Backend::Ycruncher);
+    log.ended("0002", outcome, &[]);
+    assert_eq!(log.state().streak(Backend::Mprime), Vec::<Seq>::new());
+    assert_eq!(log.state().streak(Backend::Ycruncher), Vec::<Seq>::new());
+}
+
+#[test]
+fn mixed_backend_retry_follows_both_participants_and_restarts_agree() {
+    let k = togi_config::DeadEndThreshold::new(1).unwrap();
+    let mut log = Log::new();
+    mixed_intent(&mut log, "0001", Backend::Ycruncher);
+    let first = log.ended("0001", Outcome::Inconclusive, &[]);
+    log.add(
+        Payload::BackendRetry(BackendRetry {
+            backend: RetryTarget::Ycruncher,
+            attempt: 1,
+            wait_s: 60,
+            reason: "setup failed".into(),
+        }),
+        &[],
+    );
+    let mut live = log.state();
+    let restart = log.events.len();
+    mixed_intent(&mut log, "0002", Backend::Ycruncher);
+    let second = log.ended("0002", Outcome::Inconclusive, &[]);
+    for event in &log.events[restart..] {
+        live.apply(event).unwrap();
+    }
+    let replay = log.state();
+    assert_eq!(live, replay);
+    assert_eq!(replay.streak(Backend::Ycruncher), [first, second]);
+    let due = replay.backend_retry_due(Backend::Ycruncher, k).unwrap();
+    assert_eq!((due.attempt, due.record), (2, true));
+}
+
+#[test]
+fn mixed_backend_missing_heavy_without_recorded_identity_excludes_both() {
+    let k = togi_config::DeadEndThreshold::new(3).unwrap();
+    let mut log = Log::new();
+    mixed_intent(&mut log, "0001", Backend::Ycruncher);
+    let mut end = trial_end("0001", Outcome::Inconclusive);
+    end.backend_missing = true;
+    end.reason = Some("setup failed: backend binary missing".into());
+    let missing = log.add(Payload::TrialEnd(end), &[]);
+    assert_eq!(
+        log.state()
+            .unavailable_backends(k)
+            .into_iter()
+            .map(|(backend, state)| (backend, state.causes().to_vec()))
+            .collect::<Vec<_>>(),
+        [
+            (Backend::Mprime, vec![missing]),
+            (Backend::Ycruncher, vec![missing])
+        ]
+    );
+}
+
+#[test]
+fn mixed_backend_same_backend_content_is_charged_once() {
+    let mut log = Log::new();
+    mixed_intent(&mut log, "0001", Backend::Mprime);
+    let ended = log.ended("0001", Outcome::Inconclusive, &[]);
+    assert_eq!(log.state().streak(Backend::Mprime), [ended]);
+    assert_eq!(log.state().streak(Backend::Ycruncher), Vec::<Seq>::new());
+}
+
 #[test]
 fn a_retry_is_recorded_once_per_attempt_and_again_after_a_trial_followed_it() {
     let k = togi_config::DeadEndThreshold::new(1).unwrap();
