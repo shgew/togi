@@ -730,7 +730,10 @@ mod vm_recovery {
             index: 0,
             seed: 1,
             offsets,
-            controller: togi_machine::ControllerMode::Legacy,
+            controller: togi_machine::ControllerMode::Managed {
+                rotation: 0,
+                purpose: togi_machine::Purpose::Exact,
+            },
         };
         let mut running = machine
             .trials

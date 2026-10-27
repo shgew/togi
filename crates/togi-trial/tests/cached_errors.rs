@@ -124,7 +124,10 @@ mod cached_errors {
             seed: 1,
             offsets: togi_machine::PerCore::default(),
             roles,
-            controller: togi_machine::ControllerMode::Legacy,
+            controller: togi_machine::ControllerMode::Managed {
+                rotation: 0,
+                purpose: togi_machine::Purpose::Exact,
+            },
         }
     }
 

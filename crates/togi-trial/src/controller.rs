@@ -2,69 +2,16 @@
 //!
 //! The backend scopes have their own confinement. The session, journal, hardware seams, runtime,
 //! blocking pools and in-process dashboard share one process, so one affinity rule covers them.
-//! [`placement`] supplies the managed shape-dependent contract; [`select`] preserves the legacy
-//! scheduler's evidence contract. [`Threads`] moves every controller thread onto the chosen CPUs
-//! and restores its original affinity after workload teardown.
+//! [`placement`] supplies the managed shape-dependent contract. [`Threads`] moves every controller
+//! thread onto the chosen CPUs and restores its original affinity after workload teardown.
 
-use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, PoisonError};
 
 use rustix::io::Errno;
 use rustix::process::Pid;
 use rustix::thread::CpuSet;
-use togi_machine::{CcdId, CoreId, CoreInfo, CpuId, PerCore, TargetOffset};
-
-/// The CPUs togi's own threads use while a trial loads `loaded` cores and `cpus`, or `None` when
-/// the topology names no core.
-///
-/// A core is loaded when it is one of `loaded` or holds one of `cpus`; all of its logical CPUs
-/// are then off limits while any unloaded core exists. The choice, in order:
-///
-/// 1. every unloaded core at offset 0;
-/// 2. else the least-deep unloaded core;
-/// 3. else, when every core is loaded, the least-deep loaded core.
-///
-/// A core whose offset is not in `offsets` counts as deeper than any known one. Ties go to the
-/// lowest core id. Nothing here refuses a trial: reserving a core would change what an all-core
-/// trial proves.
-pub(crate) fn select(
-    topology: &[CoreInfo],
-    loaded: &[CoreId],
-    cpus: &[CpuId],
-    offsets: &PerCore<TargetOffset>,
-) -> Option<Vec<CpuId>> {
-    let is_loaded =
-        |info: &CoreInfo| loaded.contains(&info.core) || info.cpus.iter().any(|c| cpus.contains(c));
-    let (busy, idle): (Vec<&CoreInfo>, Vec<&CoreInfo>) =
-        topology.iter().partition(|info| is_loaded(info));
-    let at_zero: Vec<&CoreInfo> = idle
-        .iter()
-        .copied()
-        .filter(|info| offsets.get(info.core).map(TargetOffset::get) == Some(0))
-        .collect();
-    let chosen = if at_zero.is_empty() {
-        let least = least_deep(&idle, offsets).or_else(|| least_deep(&busy, offsets))?;
-        vec![least]
-    } else {
-        at_zero
-    };
-    let mut selected: Vec<CpuId> = chosen
-        .iter()
-        .flat_map(|info| info.cpus.iter().copied())
-        .collect();
-    selected.sort_unstable_by_key(|cpu| cpu.get());
-    selected.dedup();
-    (!selected.is_empty()).then_some(selected)
-}
-
-/// The core among `cores` whose offset is the shallowest, the lowest core id among equals.
-fn least_deep<'a>(cores: &[&'a CoreInfo], offsets: &PerCore<TargetOffset>) -> Option<&'a CoreInfo> {
-    cores.iter().copied().min_by_key(|info| {
-        let held = offsets.get(info.core).map_or(i64::MIN, TargetOffset::get);
-        (Reverse(held), info.core)
-    })
-}
+use togi_machine::{CcdId, CoreId, CoreInfo, CpuId, TargetOffset};
 
 /// Where the controller runs. `cpus` are every logical CPU it may use.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -81,12 +28,10 @@ pub(crate) struct Host {
     pub(crate) offset: Option<TargetOffset>,
 }
 
-/// The row of the managed placement table a trial fell into, or the legacy selector's choice,
-/// with what it means for the trial's clock and credit.
+/// The row of the managed placement table a trial fell into, with what it means for the trial's
+/// clock and credit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Contract {
-    /// The legacy selector: no cap, no recorded host, credit unchanged.
-    Legacy,
     /// Single CCD with an unloaded physical core: rotation across the unloaded cores. Capped; the
     /// host is untested and earns no exposure, while every loaded position keeps its credit.
     UnloadedHost(Host),
@@ -107,7 +52,7 @@ impl Contract {
     pub(crate) const fn capped(self) -> bool {
         match self {
             Self::UnloadedHost(_) | Self::ExcludedHost(_) | Self::IdleCcd { .. } => true,
-            Self::Legacy | Self::IdleCore(_) | Self::LoadedHost(_) => false,
+            Self::IdleCore(_) | Self::LoadedHost(_) => false,
         }
     }
 
@@ -115,8 +60,7 @@ impl Contract {
     pub(crate) const fn excluded(self) -> Option<CoreId> {
         match self {
             Self::ExcludedHost(host) => Some(host.core),
-            Self::Legacy
-            | Self::UnloadedHost(_)
+            Self::UnloadedHost(_)
             | Self::IdleCcd { .. }
             | Self::IdleCore(_)
             | Self::LoadedHost(_) => None,
@@ -130,7 +74,6 @@ impl Contract {
             None => format!("core {} at an unknown offset", host.core),
         };
         match self {
-            Self::Legacy => "legacy placement, uncapped".to_owned(),
             Self::UnloadedHost(host) => format!(
                 "rotating unloaded host {}, capped; the host earns no exposure credit",
                 at(host)
@@ -151,14 +94,12 @@ impl Contract {
 
 /// Chooses managed placement from the physical trial shape, not the regime's name or workload
 /// quota, following the controller placement table of the workloads spec in order. `None` when
-/// the trial is not managed or no host has logical CPUs.
+/// no loaded core or host has logical CPUs.
 pub(crate) fn placement(
     topology: &[CoreInfo],
     spec: &togi_machine::TrialSpec,
 ) -> Option<Placement> {
-    let togi_machine::ControllerMode::Managed { rotation, purpose } = spec.controller else {
-        return None;
-    };
+    let togi_machine::ControllerMode::Managed { rotation, purpose } = spec.controller;
     let is_loaded = |info: &&CoreInfo| {
         spec.cores.contains(&info.core) || info.cpus.iter().any(|cpu| spec.cpus.contains(cpu))
     };
@@ -292,22 +233,6 @@ pub(crate) trait Controller: Send + Sync {
     /// Gives every thread the affinity it had before the first `confine` since the last complete
     /// `restore`; an incomplete one stays armed for the next. `None` when nothing was confined.
     fn restore(&self) -> Option<Moved>;
-}
-
-/// A controller that leaves every thread alone. Tests that share a process with other tests use
-/// it; only a re-executed child confines.
-#[cfg(test)]
-pub(crate) struct Idle;
-
-#[cfg(test)]
-impl Controller for Idle {
-    fn confine(&self, _: &[CpuId]) -> Option<Moved> {
-        None
-    }
-
-    fn restore(&self) -> Option<Moved> {
-        None
-    }
 }
 
 /// A call a [`Recording`] controller saw.
@@ -574,6 +499,7 @@ fn is_empty(set: &CpuSet) -> bool {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use togi_machine::PerCore;
 
     use super::*;
 
@@ -608,85 +534,8 @@ mod tests {
         list.iter().map(|&cpu| CpuId::from(cpu)).collect()
     }
 
-    fn pick(loaded: &[u8], with: &[u16], offsets: &[Option<i64>]) -> Option<Vec<CpuId>> {
-        let loaded: Vec<CoreId> = loaded.iter().map(|&n| core(n)).collect();
-        select(&topology(), &loaded, &cpus(with), &held(offsets))
-    }
-
     fn all(values: [i64; 4]) -> Vec<Option<i64>> {
         values.into_iter().map(Some).collect()
-    }
-
-    #[test]
-    fn every_unloaded_core_at_zero_is_chosen_with_both_logical_cpus() {
-        let chosen = pick(&[0], &[0], &all([-20, 0, -5, 0]));
-        assert_eq!(chosen, Some(cpus(&[1, 3, 5, 7])));
-    }
-
-    #[test]
-    fn a_loaded_core_at_zero_is_not_chosen_while_an_unloaded_one_exists() {
-        let chosen = pick(&[0, 1], &[0, 1], &all([0, 0, -5, -9]));
-        assert_eq!(chosen, Some(cpus(&[2, 6])));
-    }
-
-    #[test]
-    fn the_whole_loaded_physical_core_is_excluded_not_just_the_workload_cpu() {
-        let chosen = pick(&[], &[0], &all([0, -3, -3, -3])).unwrap();
-        assert!(
-            !chosen.contains(&CpuId::from(0)) && !chosen.contains(&CpuId::from(4)),
-            "{chosen:?}"
-        );
-        let chosen = pick(&[], &[4], &all([0, -3, -3, -3])).unwrap();
-        assert!(
-            !chosen.contains(&CpuId::from(0)) && !chosen.contains(&CpuId::from(4)),
-            "{chosen:?}"
-        );
-    }
-
-    #[test]
-    fn without_an_unloaded_zero_the_least_deep_unloaded_core_is_chosen() {
-        let chosen = pick(&[0], &[0], &all([0, -10, -3, -7]));
-        assert_eq!(chosen, Some(cpus(&[2, 6])));
-    }
-
-    #[test]
-    fn a_tie_between_unloaded_cores_goes_to_the_lowest_core_id() {
-        let chosen = pick(&[0], &[0], &all([0, -4, -4, -4]));
-        assert_eq!(chosen, Some(cpus(&[1, 5])));
-    }
-
-    #[test]
-    fn a_core_with_an_unknown_offset_counts_as_deeper_than_any_known_one() {
-        let offsets = [Some(0), None, Some(-40), None];
-        assert_eq!(pick(&[0], &[0], &offsets), Some(cpus(&[2, 6])));
-        let offsets = [Some(0), None, None, None];
-        assert_eq!(pick(&[0], &[0], &offsets), Some(cpus(&[1, 5])));
-    }
-
-    #[test]
-    fn when_every_core_is_loaded_the_least_deep_loaded_core_is_chosen() {
-        let chosen = pick(&[0, 1, 2, 3], &[0, 1, 2, 3], &all([-5, -2, -9, -2]));
-        assert_eq!(chosen, Some(cpus(&[1, 5])));
-    }
-
-    #[test]
-    fn an_all_core_trial_at_zero_falls_back_to_the_lowest_loaded_core() {
-        let chosen = pick(&[0, 1, 2, 3], &[0, 1, 2, 3], &all([0, 0, 0, 0]));
-        assert_eq!(chosen, Some(cpus(&[0, 4])));
-    }
-
-    #[test]
-    fn a_core_holding_a_loaded_cpu_counts_as_loaded_without_being_listed() {
-        let chosen = pick(&[], &[5], &all([-1, -1, -1, -1]));
-        assert_eq!(chosen, Some(cpus(&[0, 4])));
-    }
-
-    #[test]
-    fn a_topology_without_cores_selects_nothing() {
-        assert_eq!(
-            select(&[], &[core(0)], &cpus(&[0]), &PerCore::default()),
-            None
-        );
     }
 
     fn managed(
@@ -997,20 +846,6 @@ mod tests {
         let offsets = held(&[Some(-3), None, Some(-3), Some(-3)]);
         let got = managed_with(togi_machine::Regime::R7, &[0, 2], offsets, mode, false);
         assert_eq!(got, Some(on_core(0, Contract::LoadedHost(host_at(0, -3)))));
-    }
-
-    #[test]
-    fn only_a_managed_trial_has_a_managed_placement() {
-        assert_eq!(
-            managed_with(
-                togi_machine::Regime::R7,
-                &[0],
-                held(&all([0; 4])),
-                togi_machine::ControllerMode::Legacy,
-                true,
-            ),
-            None
-        );
     }
 
     #[test]

@@ -25,7 +25,7 @@ mod workloads;
 pub use cancellation::{CancellationToken, OnCancel};
 pub use ccd_profile::{CcdProfile, CcdProfileError};
 pub use content::{ContentId, Digest, InvalidDigest};
-pub use controller::{ControllerContract, ControllerMode, Purpose};
+pub use controller::{ControllerMode, Purpose};
 pub use core_set::CoreSet;
 pub use cpufreq::{CpuFrequency, FrequencyPolicy, FrequencyPolicyId};
 pub use error::{Error, Partial, error_chain};

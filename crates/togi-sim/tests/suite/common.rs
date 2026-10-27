@@ -438,7 +438,10 @@ pub(crate) fn spec(
         index: 0,
         seed,
         offsets: PerCore::default(),
-        controller: togi_machine::ControllerMode::Legacy,
+        controller: togi_machine::ControllerMode::Managed {
+            rotation: 0,
+            purpose: togi_machine::Purpose::Exact,
+        },
     }
 }
 

@@ -20,7 +20,10 @@ fn spec(regime: Regime, seed: u64, index: usize) -> TrialSpec {
         index,
         seed,
         offsets: PerCore::default(),
-        controller: crate::ControllerMode::Legacy,
+        controller: crate::ControllerMode::Managed {
+            rotation: 0,
+            purpose: crate::Purpose::Isolated,
+        },
     }
 }
 

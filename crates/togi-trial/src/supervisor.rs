@@ -220,24 +220,9 @@ async fn confine<O: Os>(
     cancel: &CancellationToken,
     events: &StdSender<Event>,
 ) -> PlacementEvidence {
-    let managed = matches!(
-        spec.controller,
-        togi_machine::ControllerMode::Managed { .. }
-    );
-    let placement = if managed {
-        controller::placement(&env.topology, spec)
-    } else {
-        controller::select(&env.topology, &spec.cores, &spec.cpus, &spec.offsets).map(|cpus| {
-            controller::Placement {
-                cpus,
-                contract: controller::Contract::Legacy,
-            }
-        })
-    };
-    let Some(placement) = placement else {
+    let Some(placement) = controller::placement(&env.topology, spec) else {
         return PlacementEvidence {
-            inconclusive: managed
-                .then(|| "managed controller placement could not select a host".to_owned()),
+            inconclusive: Some("managed controller placement could not select a host".to_owned()),
             excluded: togi_machine::CoreSet::default(),
         };
     };
@@ -266,36 +251,19 @@ async fn confine<O: Os>(
         }
     }
     let moved = env.controller.confine(&placement.cpus);
-    if managed && !moved.is_some_and(Moved::complete) {
+    if !moved.is_some_and(Moved::complete) {
         evidence.inconclusive.get_or_insert_with(|| {
             "managed controller placement did not confine every controller thread".to_owned()
         });
     }
     if let Some(moved) = moved {
-        let line = if managed {
-            format!(
-                "togi controller CPUs {} while the trial loads {}; {}; {}",
-                launch::cpus_list(&placement.cpus),
-                launch::cpus_list(&spec.cpus),
-                placement.contract.describe(),
-                moved.describe(),
-            )
-        } else if moved.complete() {
-            format!(
-                "togi's own threads run on CPUs {} while the trial loads {}: {}",
-                launch::cpus_list(&placement.cpus),
-                launch::cpus_list(&spec.cpus),
-                moved.describe(),
-            )
-        } else {
-            format!(
-                "togi's own threads were not all confined to CPUs {} and may still run on a CPU \
-                 the trial loads ({}): {}",
-                launch::cpus_list(&placement.cpus),
-                launch::cpus_list(&spec.cpus),
-                moved.describe(),
-            )
-        };
+        let line = format!(
+            "togi controller CPUs {} while the trial loads {}; {}; {}",
+            launch::cpus_list(&placement.cpus),
+            launch::cpus_list(&spec.cpus),
+            placement.contract.describe(),
+            moved.describe(),
+        );
         let _ = events.send(Event::Progress(line));
     }
     if let Some(reason) = &evidence.inconclusive {
@@ -402,14 +370,10 @@ pub(crate) async fn start<O: Os>(
         Confinement::Scoped { identity, .. } => Some(identity),
         Confinement::Unscoped => None,
     };
-    // A managed trial never runs beside limits an earlier trial left armed, whatever placement it
-    // takes: they are restored first, and a failed restoration refuses the start.
+    // A trial never runs beside limits an earlier trial left armed, whatever placement it takes:
+    // they are restored first, and a failed restoration refuses the start.
     let mut recovered = Vec::new();
-    if matches!(
-        spec.controller,
-        togi_machine::ControllerMode::Managed { .. }
-    ) && let Err(error) = env.frequency.restore(&cancel, &mut recovered).await
-    {
+    if let Err(error) = env.frequency.restore(&cancel, &mut recovered).await {
         return Err(early(Error::Frequency(error), ready));
     }
     let prepare_until = Instant::now() + env.timing.prepare;

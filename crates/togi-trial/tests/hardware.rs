@@ -623,7 +623,10 @@ mod hardware {
             seed: 1,
             offsets: togi_machine::PerCore::default(),
             roles,
-            controller: togi_machine::ControllerMode::Legacy,
+            controller: togi_machine::ControllerMode::Managed {
+                rotation: 0,
+                purpose: togi_machine::Purpose::Exact,
+            },
         }
     }
 
@@ -1487,7 +1490,10 @@ mod hardware {
                         seed: 0,
                         offsets: togi_machine::PerCore::default(),
                         roles,
-                        controller: togi_machine::ControllerMode::Legacy,
+                        controller: togi_machine::ControllerMode::Managed {
+                            rotation: 0,
+                            purpose: togi_machine::Purpose::Exact,
+                        },
                     };
                     let mut trial = start(&mut runner, spec);
                     let result = trial
@@ -1686,7 +1692,10 @@ mod hardware {
                 .map(|info| (info.core, togi_machine::TargetOffset::ZERO))
                 .collect(),
             roles: roles.to_vec(),
-            controller: togi_machine::ControllerMode::Legacy,
+            controller: togi_machine::ControllerMode::Managed {
+                rotation: 0,
+                purpose: togi_machine::Purpose::Exact,
+            },
         };
         let mut trial = start(&mut runner, spec);
         let record = journal_start(&id, &trial.started(), roles);
