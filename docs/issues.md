@@ -26,4 +26,4 @@ A pull request whose Acceptance needs a run on the target machine (`just hardwar
 
 ## The tech debt register
 
-One pinned issue, "Tech debt register" (#492), indexes findings that no feature owns. A finding becomes a sub-issue of it only when scheduled, in waves, and each sub-issue follows the lifecycle above. An audit runs when the owner asks for one; #492's Status says when the next is planned.
+One pinned issue, "Tech debt register" (#1281), indexes findings that no feature owns; Audits 1 and 2 and their decisions are in the closed #492. A finding becomes a sub-issue of it only when scheduled, in waves, and each sub-issue follows the lifecycle above. An audit runs when the owner asks for one; #1281's Status says when the next is planned.

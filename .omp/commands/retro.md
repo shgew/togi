@@ -41,4 +41,4 @@ Post the retro as a new comment on #260 and reread it there.
 
 ## 6. Report
 
-In chat: the retro link, every issue filed or commented, and your overall take: what works, what worries you and what you would do next, each with the number behind it. Offer to grill it. When #492's Status says an audit is due, say so.
+In chat: the retro link, every issue filed or commented, and your overall take: what works, what worries you and what you would do next, each with the number behind it. Offer to grill it. When #1281's Status says an audit is due, say so.
