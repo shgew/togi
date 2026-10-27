@@ -17,6 +17,53 @@ use super::{
 
 const MINUTE: Duration = Duration::from_secs(60);
 
+#[test_case(false, false, None, 60, false, Outcome::Pass, None; "completed")]
+#[test_case(false, false, None, 30, false, Outcome::Inconclusive, Some("trial ended before its full duration"); "short")]
+#[test_case(false, false, None, 30, true, Outcome::Inconclusive, Some("trial ended before its full duration; stopped by signal"); "operator deadline")]
+#[test_case(false, true, Some("diagnostic"), 30, false, Outcome::Failure, None; "failure precedes diagnostic and short")]
+#[test_case(true, true, Some("diagnostic"), 30, false, Outcome::Inconclusive, Some("backend thread outside allowed cpus"); "escape precedes failure")]
+#[test_case(false, false, Some("diagnostic"), 30, false, Outcome::Inconclusive, Some("diagnostic"); "diagnostic precedes short")]
+#[test_case(false, false, Some(""), 30, true, Outcome::Inconclusive, Some("; stopped by signal"); "empty diagnostic retained")]
+#[test_case(false, true, None, 30, true, Outcome::Failure, Some("stopped by signal"); "interruption preserves failure")]
+fn backend_trial_end(
+    escaped: bool,
+    failed: bool,
+    diagnostic: Option<&str>,
+    seconds: u64,
+    interrupted: bool,
+    outcome: Outcome,
+    reason: Option<&str>,
+) {
+    let result = TrialResult {
+        ran: Duration::from_secs(seconds),
+        failure: failed.then_some(TrialFailure {
+            signal: Signal::ComputationError,
+            core: core(3),
+            pid: None,
+        }),
+        escaped: if escaped {
+            vec![CpuId::from(99)]
+        } else {
+            Vec::new()
+        },
+        inconclusive: diagnostic.map(Into::into),
+        tctl_max_c: Some(72),
+        ..TrialResult::default()
+    };
+    let trial = togi_journal::TrialId::from("0001".to_owned());
+    let actual = crate::adjudicate_trial_end(trial.clone(), &result, MINUTE, interrupted).unwrap();
+    let mut expected = trial_end(trial, outcome, u32::try_from(seconds).unwrap());
+    expected.reason = reason.map(str::to_owned);
+    expected.interrupted = interrupted;
+    expected.escaped = result.escaped;
+    expected.tctl_max_c = Some(72);
+    if failed && !escaped {
+        expected.signal = Some(Signal::ComputationError);
+        expected.core = Some(core(3));
+    }
+    assert_eq!(actual, expected);
+}
+
 fn core(n: i64) -> CoreId {
     CoreId::new(n).unwrap()
 }

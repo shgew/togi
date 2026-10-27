@@ -451,6 +451,54 @@ pub(crate) fn adjudicate(
     })
 }
 
+/// Adjudicates a completed backend result without kernel, reset, containment or sample evidence.
+///
+/// Uses the session's evidence precedence and diagnostics. An operator interruption adds
+/// `stopped by signal` without overriding observed failure evidence. Callers with additional
+/// evidence must use the session runner instead.
+///
+/// # Errors
+/// Returns an error if the measured duration or temperature cannot fit the journal's types.
+pub fn adjudicate_trial_end(
+    trial: TrialId,
+    result: &TrialResult,
+    intended: Duration,
+    interrupted: bool,
+) -> Result<TrialEnd, crate::SessionError> {
+    let decision = adjudicate(&TrialEvidence {
+        result,
+        mces: &[],
+        reset: None,
+        missing: None,
+        duration: intended,
+        containment: None,
+        process: None,
+    })?;
+    let mut end = trial_end(trial, decision.outcome, decision.duration_s);
+    end.signal = decision.signal;
+    end.core = decision.core;
+    // Preserve an explicitly empty backend diagnostic, including its separator
+    // when an interruption follows it.
+    let reason = decision.reason.or_else(|| {
+        (decision.outcome == Outcome::Inconclusive)
+            .then(|| result.inconclusive.as_deref().map(str::to_owned))
+            .flatten()
+    });
+    end.reason = if interrupted {
+        Some(reason.map_or_else(
+            || "stopped by signal".to_owned(),
+            |reason| format!("{reason}; stopped by signal"),
+        ))
+    } else {
+        reason
+    };
+    end.excluded = result.excluded.iter().collect();
+    end.tctl_max_c = decision.tctl_max_c;
+    end.escaped = decision.escaped;
+    end.interrupted = interrupted;
+    Ok(end)
+}
+
 /// The last sample of a trial, as much of it as a crash recovery or a trial end reports.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct LastSample {

@@ -274,8 +274,10 @@ reason, machine check or kernel log, so they read as unknown) and `day.answer` (
 `other` is `graphics`, no answer appends none). The adapter returns CPU-suspect exactly when the folded
 `day.event` is CPU-suspect, definite or provisional. A night has no deadline: the adapter loops `State::next`,
 appends each decision, and runs each trial plan through the machine `Trials` seam as the session does (whole profile
-written and read back, `trial.intent`, `trial.start`, `trial.end` with the measured ran time). The simulated operator
-ends each night when the calendar's night length runs out. A cell starts without asking whether it fits; a trial still
+written and read back, `trial.intent`, `trial.start`, `trial.end` with the measured ran time).
+The backend result is adjudicated by `togi_session::adjudicate_trial_end`, using the session's
+pure evidence precedence without inventing kernel, reset, containment or sample observations.
+The simulated operator ends each night when the calendar's night length runs out. A cell starts without asking whether it fits; a trial still
 running at that moment runs only until then, and the runner returns it as cancelled. The adapter records it as the
 session records a trial an operator's signal stopped: an inconclusive `trial.end` with `interrupted` and the reason
 "trial ended before its full duration; stopped by signal". The night then closes with `shutdown{reason: signal}`
