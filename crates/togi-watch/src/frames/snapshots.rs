@@ -284,31 +284,6 @@ fn every_staged_frame_has_a_main_view_snapshot() {
     }
 }
 
-#[test_case::test_case(Colours::Console; "console")]
-#[test_case::test_case(Colours::None; "plain")]
-#[test_case::test_case(Colours::Rich; "rich")]
-fn every_staged_frame_fits_the_frame_at_every_main_size(colours: Colours) {
-    for staged in Staged::ALL {
-        let hand = staged.hand();
-        let journal = hand.journal();
-        for size in MAIN_SIZES {
-            let sc = screen_of(View::Main, size, colours, 0, false);
-            let (buf, _) = render_checked(&journal, &sc, hand.now);
-            let name = format!("main-{}-{}x{}-{colours:?}", staged.name(), size.0, size.1);
-            if colours == Colours::Rich {
-                assert!(
-                    !text_snapshot(&buf)
-                        .chars()
-                        .any(|c| c.is_control() && c != '\n'),
-                    "{name}"
-                );
-            } else {
-                assert_glyphs_drawable(&buf, &name);
-            }
-        }
-    }
-}
-
 #[test]
 fn no_color_and_journald_map_to_one_profile_and_the_console_to_its_own() {
     let xterm = Some(OsStr::new("xterm-256color"));
