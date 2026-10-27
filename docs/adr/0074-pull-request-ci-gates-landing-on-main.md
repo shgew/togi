@@ -4,7 +4,7 @@ Status: see [the index](README.md).
 
 Supersedes [ADR 0016](0016-every-pull-request-runs-every-check.md)'s check and release gates and [ADR 0061](0061-no-macos-ci.md)'s cancellation of superseded `main` check runs; amends [ADR 0047](0047-gate-before-every-push.md)'s gate contents and [ADR 0051](0051-light-checks-for-review-fixes.md)'s fix-push checks ([#1141](https://github.com/shgew/togi/issues/1141)).
 
-Amended by [ADR 0075](0075-nextest-runs-in-dependency-layer-groups.md) ([#1146](https://github.com/shgew/togi/issues/1146)): the single `nextest` check below is now five checks, `nextest-core`, `nextest-platform`, `nextest-session`, `nextest-tools` and `nextest-repo`, each its own pull request matrix job when uncached, so pull request CI has at most ten jobs rather than six.
+Amended by [ADR 0075](0075-nextest-runs-in-dependency-layer-groups.md) ([#1146](https://github.com/shgew/togi/issues/1146)): the single `nextest` check below is now five checks, `nextest-core`, `nextest-platform`, `nextest-session`, `nextest-tools` and `nextest-repo`, each its own pull request matrix job when uncached, so pull request CI has at most ten jobs rather than six; and by [#1267](https://github.com/shgew/togi/issues/1267): the pull request selection also includes `cargo-deps` and `release-deps`.
 
 ## Context
 
@@ -45,3 +45,7 @@ Local checks already covered clippy, nextest and the cheap checks: 466 pushes us
 - `just gate` and `just push-fix` take longer when package or simulator inputs change. Without Linux or usable KVM, their printed skips disclose the checks deferred to release.
 - Agents gating at once may build VMs in parallel on one host. [ADR 0072](0072-agents-share-a-host-without-locks.md) still forbids recipe locks; Nix builds each derivation once.
 - The target machine runs only release tags, after the full check, rather than following unchecked `main` commits.
+
+## Amendment (#1267)
+
+The decision is unchanged; the pull request selection gains two checks. The `light` job also builds `cargo-deps`, the dev-profile dependency artifact that `clippy`, `doc` and `nextest-<group>` start from, and `release-deps`, the release-profile one that `package` starts from. Like any selected check, each is skipped by the Cachix prefilter when cached and pushed by its job when not; no other check's output references them, so without selection nothing published them and every nextest runner built `cargo-deps` itself. Full mode already selected every attribute, so it is unchanged.

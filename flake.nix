@@ -397,8 +397,10 @@
               // crossCc
             );
             doc = craneLib.cargoDocTest (cargoCheck cratesSource { });
-            # No other check's output references the shared dependency artifact; as a check, CI pushes it to Cachix.
+            # No other check's output references the shared dependency artifacts; as checks, CI pushes them to Cachix.
             cargo-deps = cargoDeps;
+            # The release-profile dependencies `package`, the simulator shards and the VM tests' package start from.
+            release-deps = releaseDeps;
             deny = craneLib.mkCargoDerivation (
               cargoNoDeps manifestSource {
                 pnameSuffix = "-deny";

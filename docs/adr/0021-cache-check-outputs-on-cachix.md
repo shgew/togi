@@ -36,3 +36,7 @@ The decision is unchanged; what a check's output holds is trimmed so the cache f
 ## Amendment (#633, #1038)
 
 With the last Go tool gone ([ADR 0071](0071-no-go-in-the-repository.md)), the `go-tools` check is removed, so no check runs `-shuffle=on`; the decision and its reasons are unchanged.
+
+## Amendment (#1267)
+
+The decision is unchanged; the dependency artifacts are pushed again. ADR 0074's pull request selection had left `cargo-deps` out, and `check.yml` runs only on pull requests and dispatch, so nothing pushed it, and every nextest runner built it. Pull request mode now selects `cargo-deps` like any other check: the Cachix prefilter skips it when cached, and its job pushes it when not. The release-profile dependency artifact, which `package` and the simulator shards build on, is the check `release-deps` and is published the same way.
