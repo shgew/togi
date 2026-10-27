@@ -52,8 +52,8 @@ pub(crate) fn steps(payloads: &[Payload]) -> Vec<&DayStep> {
         .collect()
 }
 
-/// Applies `step` in `boot` as the session would after its readback verified.
-fn apply(journal: &mut Journal, step: &DayStep, application: u64, boot: &str) {
+/// Applies `step` in `boot` as the session would after its readback verified, returning the application's seq.
+pub(crate) fn apply(journal: &mut Journal, step: &DayStep, application: u64, boot: &str) -> Seq {
     let cause = journal
         .events
         .iter()
@@ -75,7 +75,7 @@ fn apply(journal: &mut Journal, step: &DayStep, application: u64, boot: &str) {
         }
         .into(),
         &[cause],
-    );
+    )
 }
 
 /// The qualifications committed so far.

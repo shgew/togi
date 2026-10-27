@@ -1558,3 +1558,34 @@ fn a_hold_on_a_failed_qualification_names_the_blocked_profile_and_its_witnesses(
          (witnesses #12, #15)"
     );
 }
+
+#[test]
+fn a_day_record_effect_says_what_this_build_does_with_the_record() {
+    let Payload::DayRecord(record) = sample(EventKind::DayRecord) else {
+        unreachable!()
+    };
+    assert_eq!(
+        record.effect(),
+        "The tuner treats this record as whole-profile evidence and as a whole-profile veto: when it \
+         chooses day steps and qualifications it never chooses a day profile at or deeper than \
+         offsets [00: -25, 01: -5] on every core, until evidence clears the record. No day profile \
+         is applied at runtime before #1218."
+    );
+}
+
+#[test]
+fn the_effect_of_a_record_naming_a_boot_adds_that_it_answers_no_question() {
+    let Payload::DayRecord(mut record) = sample(EventKind::DayRecord) else {
+        unreachable!()
+    };
+    record.boot = CrashedBoot::UncleanEnd {
+        boot: togi_machine::BootId::from("e8f9aaaa-bbbb-cccc-dddd-eeeeeeeeeeee".to_owned()),
+    };
+    assert!(
+        record
+            .effect()
+            .ends_with(" It does not answer the question about boot e8f9aaaa."),
+        "{}",
+        record.effect()
+    );
+}

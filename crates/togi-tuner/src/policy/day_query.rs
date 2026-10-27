@@ -15,7 +15,6 @@ use super::State;
 use super::books::{Committed, Observed};
 use super::day_events::DayView;
 use super::decision::{Decision, PolicyPayload};
-use super::fold::journal_event_id;
 use super::night_query::NotReady;
 use crate::day::{
     Blocker, CoreProfile, DayDecision, DayInputs, EventId, IntervalKind, Invocation, Readback,
@@ -388,13 +387,15 @@ impl State {
                 }
                 Blocker::UnresolvedEvents { events } => {
                     reasons.extend(events.iter().filter_map(|event| {
-                        journal_event_id(event).map(|event| HoldReason::EventUnresolved { event })
+                        self.journal_event_id(event)
+                            .map(|event| HoldReason::EventUnresolved { event })
                     }));
                 }
                 Blocker::NothingToPromote => reasons.push(HoldReason::AtCap {}),
                 Blocker::Vetoed { veto, .. } => {
                     reasons.extend(
-                        journal_event_id(&veto.event).map(|veto| HoldReason::Vetoed { veto }),
+                        self.journal_event_id(&veto.event)
+                            .map(|veto| HoldReason::Vetoed { veto }),
                     );
                 }
                 Blocker::NotQualified { .. } => {
@@ -450,7 +451,7 @@ impl State {
     }
 
     fn event_commit(&self, id: &EventId) -> Option<Seq> {
-        journal_event_id(id)
+        self.journal_event_id(id)
             .and_then(|id| self.days.events.get(&id))
             .map(|book| book.latest.seq)
     }
@@ -633,7 +634,7 @@ impl State {
                             cited.extend(events.iter().map(|event| event.id.clone()));
                             if first {
                                 if let Some(event) = events.first() {
-                                    let journal = journal_event_id(&event.id);
+                                    let journal = self.journal_event_id(&event.id);
                                     let escalation = journal
                                         .as_ref()
                                         .and_then(|id| self.days.events.get(id))
@@ -657,7 +658,7 @@ impl State {
                 }
                 let mut vetoes: Vec<Seq> = cited
                     .iter()
-                    .filter_map(journal_event_id)
+                    .filter_map(|id| self.journal_event_id(id))
                     .filter_map(|id| self.days.vetoes.get(&id).map(|veto| veto.seq))
                     .collect();
                 vetoes.sort_unstable();

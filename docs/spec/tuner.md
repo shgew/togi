@@ -154,7 +154,7 @@ A night's failed monthly re-qualification enters this same whole-profile event p
 
 ### Manual crash records
 
-Every [`day.record`](journal.md#ruleset-13-events) is a CPU-suspect manual event and a whole-profile veto at its recorded offsets, under [the event rules](#whole-profile-veto-and-escalation). Its crash identity is the named crashed boot for `UncleanEnd { boot }`, otherwise the crash instant for `Unobserved { at }`. Deduplicate a record against that same boot's unclean end and copies in transition imports: these are witnesses of one event, not additional escalation strikes. Keep its entered/read-back offset provenance, provenance timestamp, running category and optional note without treating them as measured trial exposure.
+Every [`day.record`](journal.md#ruleset-13-events) is a CPU-suspect manual event and a whole-profile veto at its recorded offsets, under [the event rules](#whole-profile-veto-and-escalation). Its crash identity is the named crashed boot for `UncleanEnd { boot }`, otherwise the crash instant for `Unobserved { at }`. The journal names an `Unobserved` crash's `day.event`, `day.veto`, retreat cause and `night.reproduction` source by the original session and sequence of the first record of that crash, live or imported (`record`). Deduplicate a record against that same boot's unclean end and copies in transition imports: these are witnesses of one event, not additional escalation strikes. Keep its entered/read-back offset provenance, provenance timestamp, running category and optional note without treating them as measured trial exposure.
 
 
 ## Session start

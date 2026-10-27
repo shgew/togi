@@ -14,6 +14,8 @@ use togi_tuner::policy::{
 };
 
 pub(crate) const START: i64 = 1_700_000_000;
+/// The session every journal starts with.
+pub(crate) const SESSION: &str = "20231114T221320Z";
 
 pub(crate) fn at(second: i64) -> Timestamp {
     Timestamp::from_second(START + second).unwrap()
@@ -173,7 +175,7 @@ impl Journal {
         journal.append(
             SessionStart {
                 build: build(),
-                session: "20231114T221320Z".parse().unwrap(),
+                session: SESSION.parse().unwrap(),
                 cores,
             }
             .into(),
