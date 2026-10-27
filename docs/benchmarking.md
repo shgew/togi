@@ -178,6 +178,8 @@ This is on-demand research, not a check: it needs two builds. `just bench` canno
 
 To control concurrency, caching or retention directly, run `togi-tool-bench same` with its own flags, described [below](#the-same-command).
 
+<a id="the-suite-gate"></a>
+
 ## The session suite
 
 The session suite is a research and development tool, not a correctness check ([ADR 0087](adr/0087-simulations-are-research-tools-not-checks.md)). No flake check, `just gate`, `just push-fix`, `just check`, pull request CI or the release's full check runs it; ordinary nextest tests are the correctness checks. Run it on demand when a change to the tuner, the session or the simulator raises a question about how simulated sessions end.
