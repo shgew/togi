@@ -352,7 +352,7 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     just _heavy-gate push-fix
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; never merges
+# Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; fail at once when it conflicts with its base; never merges
 [group('github')]
 land number: _dev-shell
     #!/usr/bin/env bash
@@ -360,9 +360,13 @@ land number: _dev-shell
     last=
     while true; do
         while true; do
-            read -r state head < <(gh pr view "$1" --json state,headRefOid --jq '"\(.state) \(.headRefOid)"')
+            read -r state head mergeable < <(gh pr view "$1" --json state,headRefOid,mergeable --jq '"\(.state) \(.headRefOid) \(.mergeable)"')
             if [[ "$state" != OPEN ]]; then
                 echo "land: #$1 is $state" >&2
+                exit 1
+            fi
+            if [[ "$mergeable" == CONFLICTING ]]; then
+                echo "land: #$1 conflicts with its base; GitHub runs no pull request CI until it is resolved" >&2
                 exit 1
             fi
             waiting=()
@@ -392,9 +396,13 @@ land number: _dev-shell
             echo "$unresolved" >&2
             exit 1
         fi
-        read -r state current < <(gh pr view "$1" --json state,headRefOid --jq '"\(.state) \(.headRefOid)"')
+        read -r state current mergeable < <(gh pr view "$1" --json state,headRefOid,mergeable --jq '"\(.state) \(.headRefOid) \(.mergeable)"')
         if [[ "$state" != OPEN ]]; then
             echo "land: #$1 is $state" >&2
+            exit 1
+        fi
+        if [[ "$mergeable" == CONFLICTING ]]; then
+            echo "land: #$1 conflicts with its base; GitHub runs no pull request CI until it is resolved" >&2
             exit 1
         fi
         if [[ "$current" == "$head" ]]; then
