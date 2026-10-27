@@ -2,6 +2,112 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.12.0] - 2026-10-27
+
+### Added
+
+- `togi watch --tuning-boot`, which the tuning boot's dashboard service passes, ignores `q`, `Q`, Ctrl-C and Ctrl-D in every view and leaves the quit key out of the help and footer; stopping the service still ends it ([#978]).
+- `just sql` opens DuckDB on a state directory with views over its current and archived events, trials and per-trial samples, for questions across trials and sessions ([Reviewing a run](https://github.com/shgew/togi/blob/main/docs/reviewing.md#querying-journals-and-samples-just-sql)) ([#1066]).
+- `just copy-state SRC DST` copies a state directory's live journal, `state.json` and the archived journals and markers of its sessions for facts and replay, refusing an archive entry that is not a regular file ([#1090]).
+- `just fit-artifact FILE` writes the original seven-session research artifact after checking its hash ([#1099]).
+- Opt-in kmscon tuning-boot display with a shipped DejaVu Sans Mono font, configurable font size and automatic fallback to the Linux console after repeated display failures, without affecting tuning ([#1147]).
+- The dashboard uses its existing palette as truecolour in capable terminals, with Unicode text and sub-cell trial progress; both rendering profiles use one-count Wide and Medium core gauges with matching-height applied and red failure segments, and a uniform trial bar without an underline. Redraw timing stays unchanged ([#1149]).
+- Conditions samples record every physical core’s clock, including idle cores; loaded-core summaries remain loaded-only ([#1174]).
+- `togi day`, enabled with `services.togi.day.enable`, records each normal boot's offsets, its applied hours, clean stops, and unclean ends with their reset reason, without writing the SMU ([#1228]).
+- `togi status` shows a Day section with boots observed, applied hours per offset profile, and clean and unclean ends ([#1228]).
+- `services.togi.day.watchdog` arms a 60 s hardware watchdog in normal boots with the day service; it is off by default ([#1228]).
+- Trial start events record each loaded logical CPU's role: its core, workload, instance and phase schedule ([#1229]).
+- After an unclean end, `togi day` records the reset reason, MCEs, graphics resets, oopses and hung tasks from the crashed boot, and asks what happened in a desktop notification, `togi status` and `togi watch` ([#1230]).
+- `togi day answer` lets users listed in `services.togi.day.users` answer without root; a later answer supersedes an earlier one ([#1230]).
+- A kernel-reported fault (segmentation, bus, illegal instruction, general protection or abort) of a trial's worker process or the dashboard during a trial is journaled as a `trial.progress` line naming the process and the fault. It is evidence only and does not change the trial's outcome ([#1232]).
+- The day service records each machine check, kernel oops, RCU stall, soft lockup and illegal-instruction, bus-error or general-protection crash once per boot as `day.fault`, with the boot and the offsets in force ([#1237]).
+- Day checkpoints carry the share of sampled daily time spent in each load shape (single thread, light beside busy cores, all threads, idle transitions, quiet and other) ([#1237]).
+- `togi day record` journals a crash togi did not observe, with the offsets, whether they were entered or read back, and what was running; see [recording a crash](../docs/howto.md#recording-a-crash-togi-did-not-observe) ([#1238]).
+- `services.togi.day.watchdog` stops PID 1's hardware watchdog before every suspend or hibernation and restarts it on resume, so a sleep longer than the watchdog timeout cannot reset the machine ([#1240]).
+- The day observer records in `day.boot_start` whether PID 1's hardware watchdog is armed, and `togi status` shows it ([#1240]).
+- `togi night` shows what the night will do, asks, then reboots into the tuning boot without the GRUB menu; the night runs until you end it, and crash reboots stay in it ([#1245]).
+- `F10` in the tuning dashboard asks to reboot into the day cycle, and `n` in a root `togi watch` asks to reboot into the night ([#1245]).
+- `togi night-end`, an internal command of the tuning boot ([#1245]).
+- Support systemd-boot tuning nights with persistent crash-reboot selection and exact restoration of the previous default and saved-entry state, preserving newer user choices ([#1258]).
+
+### Changed
+
+- **BREAKING** An active Rust ruleset-1 session is archived into a seeded ruleset-2 session; covered live R7 failures locate immediately, covered carried failures stay unmoved, and carried failures no longer take voltage targets from later passes ([#969]).
+- **BREAKING** The first `togi run` after updating archives the current session and starts a new one that maps from scratch, keeping the raw day observations, because Ruleset 13 now tests at night and steps the day profile one CCD at a time; its first night runs stock controls before mapping, see [how togi tunes](../docs/how-togi-tunes.md) ([#1261]).
+- **BREAKING** A night has no end time: `togi run` tunes until you end the night with Ctrl-C, `F10`, the power button or a reboot, or until a dead end stops it, so remove `--until`, `--cycles` and `--first-result` from anything that runs it ([#1261]).
+- **BREAKING** An unresolved too-aggressive known-defect finding stops the run as a dead end (exit 17) until `togi reset --all`, instead of asking to reset the affected cores ([#1261]).
+- Fit target machines through one shared-voltage model and objective by default; forward checks now report workload and CCD rows and accept a diagnostic reference ensemble ([#972]).
+- The `togi watch` header shows the tuning time beside the session age: the time togi ran, crash reboots included and the time between runs left out, counting a crash reboot's gap at most 30 minutes ([#977]).
+- Refresh target replay facts and record the failed frozen shared-voltage forward score without replacing the committed machine ensemble or benchmark baseline ([#980]).
+- Repeated unattributed R7 charges now test a partial load with the charged request group idle before rerunning the full load, including all-core loads; a disagreeing stalled core accelerates that probe without becoming a culprit ([#1022]).
+- A located hunt that keeps an R7 failure on its loaded cores is not repeated until that load passes, an unloaded tuning offset changes, or a reset rearms it ([#1022]).
+- Multi-core R7 crashes with less than 60 seconds of recorded last evidence take no passing voltage target, avoiding large backoffs based on truncated request summaries while preserving CO-0 step-down and failure-point safety ([#1023]).
+- Named non-crash multi-core R7 computation errors and unexpected exits now limit each voltage-target step to three counts, without weakening recorded failure points or zero-offset diagnostics, to avoid surrendering a large offset gap to a passing target set by another requester ([#1025]).
+- A failed phase-2 round still rolls innocent movers back, but keeps them eligible for later rounds and reuses valid matching check evidence instead of permanently finishing them; the blamed offset remains forbidden ([#1026]).
+- Hunts can probe a reproduced singleton failure toward a tested passing parked anchor, finding its failure boundary without repeating a full hunt for every count; an untested or failed zero-offset anchor is never assumed safe. A transition on the same BIOS carries that refined failure point rather than the original failing offset, so a deep candidate limit starts shallower than it ([#1027]).
+- `togi run` reports a signal listener that cannot start by its failed step, such as `start the signal listener: register the signal handlers: <cause>`, instead of `listen for signals: <cause>` ([#1045]).
+- `togi emergency-stop` reports a failed zero write as `16 of 16 cores did not read back 0: set every core to 0: <cause>` ([#1045]).
+- A dashboard thread that cannot start is reported as `dashboard: spawn the dashboard thread: <cause>; printing events instead` ([#1045]).
+- The bench, audit, simulator and other development tools report each failure as its operation followed by every cause once, such as `check model X: build the machine's model: <cause>` ([#1049]).
+- Event lines colour `hunt.end` results like the dashboard: `combination`, `fallback` and `loaded` are yellow, `culprit` and `direct` stay green and `cancelled` stays plain ([#1052]).
+- A trial made inconclusive by a malformed `/proc` stat now names the file, and a failed preflight scope probe no longer prefixes its cause with `systemd-run` ([#1068]).
+- `just fit` needs `--facts`, and `--out` when it writes machine files, and reads sessions recorded after the original research artifact only with `--current-extract` ([#1099]).
+- Without `--current-extract`, an extract holding any of the original research artifact's sessions must be that exact artifact, and `just fit --forward-only --reference-machine` needs `--current-extract` ([#1099]).
+- Every fit and forward-check report opens with the `Facts: sha256` of the rows it read, and a run on the original research artifact says whether it scored or sealed the historical confirmation session ([#1099]).
+- `just bench` audits the journals of every simulated run, names each run that breaks a check, does not cache it and exits 1; a run that reaches the boot cap is audited as unfinished and is no longer a violation ([#1107]).
+- Publish complete, readable folded state in `state.json`; read-only consumers and copied-state simulations restore verified same-build snapshots plus the journal tail, while hardware runs retain independent full replay and rebuild rejected caches ([#1202]).
+- A watchdog reset whose crashed boot ended at a suspend or hibernation entry is now classified as sleep-related instead of falling through to the tail or reset-reason classes, and the day question says the log ended at a sleep entry ([#1240]).
+- Every return from the tuning boot, the power button, a dead end and the restart limit included, restores the boot selection `togi night` replaced instead of selecting the first menu entry ([#1245]).
+- A missing or unconfigured backend no longer refuses `togi run` (exit 15): `togi doctor` shows it as `warn`, the night runs what the other backend can, and only when no runnable work is left does it end as no evidence (exit 12) ([#1261]).
+
+### Removed
+
+- **BREAKING** The settings `start_offsets`, `candidate_solo_limits`, `durations.search_trial_s`, `durations.short_trial_s`, `durations.checking_trial_s`, `durations.checking_idle_s`, `durations.checking_all_core_s`, `evidence.miss`, `evidence.rate` and `checking.cycle` are retired: a configuration that sets one fails to load with an error naming it, so remove them ([#1261]).
+- **BREAKING** `togi reset --core` and `togi reset --config` are removed; `togi reset --all` archives the session and starts over ([#1261]).
+- The `just audit` sweep and its `--seeds`, `--jobs`, `--suite`, `--timeout`, `--keep`, `--records`, `--root`, `--bench` and `--sim` flags, with its wall-time and bench-status checks: `just audit` audits the state directories it is given ([#1107]).
+- Use `just fit --forward-only` and `just fit --shared-voltage-in-sample` instead of the redundant fit aliases ([#1154]).
+
+### Fixed
+
+- Keep togi's own threads on unloaded cores during each trial when possible, choosing zero-offset cores first and the least-deep core as a fallback ([#950]).
+- Recover abnormal systemd service exits by removing leftover trial scopes, zeroing offsets through the validated SMU interface and reading every core back before restarting ([#950]).
+- Simulations with sample files no longer flush the drive after every trial ([#956]).
+- Keep failure attribution and HUNT uncertainty visible on the 160×45 Medium dashboard, shorten TURNS and HUNT descriptions, and summarize checking-chain notes without changing the full journal messages ([#958]).
+- Keep the dashboard stopped after a shutdown until the next run's `config.loaded`, so a reset queued afterwards stays shown as queued and no longer makes the stopped session look running, and stop the stopped cycle checklist from drawing a running marker ([#970]).
+- Stop the hunt panel from listing cores held at their failing offsets under "parked at 0": loaded cores held, candidates kept at a failing offset, cores parked at a nonzero offset and cores parked at 0 are now named apart ([#971]).
+- The dashboard's `q` hint now reads "exit dashboard" instead of the false "closes this view only" ([#978]).
+- Crash recovery refuses a pstore `dmesg.txt` that its group or other users can write, as it already refused symlinks and foreign owners ([#1011]).
+- Preflight no longer fails when the PM table reader cannot start; the `pm_table` check reports the table unavailable and trials record no voltage requests, as for an unreadable table ([#1012]).
+- A trial whose launch fails while its output cleanup also reports a problem keeps each error's causes in `trial.end.reason`, such as the launch's I/O error and the output log that could not be written ([#1018]).
+- Named R7 backoffs now take voltage targets only from loads wholly on the named core's CCD, count repeated passes separately per load and profile, and use the failing load's latest measured clock when its failure has none, with an inclusive 25 MHz candidate tolerance; run `togi reset --core N` for an affected previously tuned core to retune it under the new rule ([#1024]).
+- Crash recovery retains machine checks decoded before malformed kernel-log output, journals them before retry waits and uses relevant evidence even when the remaining log stays unreadable ([#1029]).
+- Trials with unreadable or corrupt conditions samples now warn and omit all sample-derived fields; use `togi reset --core N` for each loaded core whose earlier trial used such samples to discard affected evidence ([#1030]).
+- `togi status` now qualifies phase 2's remaining round count with “if none fails”, matching the dashboard instead of implying failures cannot add rounds ([#1034]).
+- A trial whose setup fails and whose cleanup cannot be confirmed keeps the setup error, its causes and each cleanup failure in `trial.end.reason` and `trial.end.containment_error`, instead of only "trial cleanup could not be confirmed" ([#1035]).
+- Preserve configuration and session error causes in diagnostics without hiding distinct failures with identical messages ([#1039]).
+- Include previously lost trial setup, containment and storage causes in journal diagnostics without changing event kinds or fields ([#1039]).
+- `togi run` creates a state directory below a symlinked ancestor, such as a temporary directory under macOS's `/var`, instead of failing with "sync directory: Not a directory" ([#1055]).
+- `togi run` on a machine with more than three CCDs is refused with exit 15 before anything is written to the journal, and leaves the tuning boot, instead of exiting 1 on a first event it cannot fold ([#1117]).
+- The dashboard shows `?` without an applied-depth gauge for a core whose hardware offset has not been read back, instead of claiming that zero or the tuning profile is applied ([#1140]).
+- Refuse trial durations and monotonic timestamps that exceed their journal fields instead of clamping them or silently omitting their time ([#1157]).
+- Report invalid sample elapsed times as conditions-sample warnings instead of silently dropping their fields, without discarding trial safety evidence ([#1157]).
+- `togi doctor` reports topologies the tuner cannot work on, including machines with more than three CCDs, as not supported instead of ready ([#1164]).
+- Refuse zero or oversized recorded hunt and deepening-round trial counts, and explicit zero deepening-round durations, instead of silently substituting values during journal replay ([#1175]).
+- Stats evidence reports use the tuner's historical pass counts, including admitted carried observations and excluding passes from other backend packages. Evidence after an event the tuner refuses is reported as unavailable instead of a fabricated count ([#1187]).
+- Refuse malformed kernel monotonic clock readings instead of substituting zero, stopping journal writes when their event clock is unavailable ([#1188]).
+- Oversized unsigned core, CCD and CPU IDs retain the rejected number in their error instead of reporting a substituted signed maximum ([#1193]).
+- Stats and simulation history refuse unrepresentable recorded time and count values instead of silently substituting zero, absence or a capped count ([#1197]).
+- `just reviews` refuses overflowing diff and coverage line numbers instead of treating them as the largest line number; `just cover` retains exact checked line-span indices ([#1200]).
+- Reject unrepresentable kernel, process, sensor and sample observations instead of capping them or silently dropping recognized numeric values ([#1203]).
+- Reject recorded voltage requests that cannot fit the stats report's voltage bins instead of silently clipping their numeric value ([#1208]).
+- Simulator timestamp and boot-number overflow now fail with an operation-specific error instead of resetting the clock to the epoch or overflowing the next boot identity ([#1209]).
+- The day observer no longer stops on a kernel log or coredump message longer than 4096 bytes, so a clean reboot is no longer recorded as an unclean end ([#1251]).
+- `togi day notify` shows a pending crash question instead of failing to decode it and restarting every ten seconds ([#1252]).
+- The day watchdog reloads SP5100 after sleep before re-arming PID 1, retains the pre-sleep pause for s2idle, and still requests re-arming if reloading fails or stalls ([#1255]).
+- Watchdog checks reject present counters that are unreadable, malformed or greater than the timeout, while drivers without a counter retain their state-only check; day observation records refreshed checks after sleep and at checkpoints instead of reporting only startup state ([#1255]).
+- Dashboard timers advance evenly on whole-second screen refreshes without quick jumps or long pauses caused by extra journal redraws, and follow the journal's clock after wall-clock changes or suspend and during accelerated replay ([#1260]).
+- A same-boot restart resolves an interrupted SMU intent with the startup readback, so `togi status` no longer reports a write in flight after restoration found every core already at CO 0 ([#1261]).
+
 ## [0.11.2] - 2026-10-13
 
 ### Changed
@@ -444,6 +550,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.11.2]: https://github.com/shgew/togi/releases/tag/v0.11.2
 
+[0.12.0]: https://github.com/shgew/togi/releases/tag/v0.12.0
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -603,3 +711,68 @@ All notable changes to togi are documented in this file. The format is based on 
 [#945]: https://github.com/shgew/togi/pull/945
 [#946]: https://github.com/shgew/togi/pull/946
 [#949]: https://github.com/shgew/togi/pull/949
+[#950]: https://github.com/shgew/togi/pull/950
+[#956]: https://github.com/shgew/togi/pull/956
+[#958]: https://github.com/shgew/togi/pull/958
+[#969]: https://github.com/shgew/togi/pull/969
+[#970]: https://github.com/shgew/togi/pull/970
+[#971]: https://github.com/shgew/togi/pull/971
+[#972]: https://github.com/shgew/togi/pull/972
+[#977]: https://github.com/shgew/togi/pull/977
+[#978]: https://github.com/shgew/togi/pull/978
+[#980]: https://github.com/shgew/togi/pull/980
+[#1011]: https://github.com/shgew/togi/pull/1011
+[#1012]: https://github.com/shgew/togi/pull/1012
+[#1018]: https://github.com/shgew/togi/pull/1018
+[#1022]: https://github.com/shgew/togi/pull/1022
+[#1023]: https://github.com/shgew/togi/pull/1023
+[#1024]: https://github.com/shgew/togi/pull/1024
+[#1025]: https://github.com/shgew/togi/pull/1025
+[#1026]: https://github.com/shgew/togi/pull/1026
+[#1027]: https://github.com/shgew/togi/pull/1027
+[#1029]: https://github.com/shgew/togi/pull/1029
+[#1030]: https://github.com/shgew/togi/pull/1030
+[#1034]: https://github.com/shgew/togi/pull/1034
+[#1035]: https://github.com/shgew/togi/pull/1035
+[#1039]: https://github.com/shgew/togi/pull/1039
+[#1045]: https://github.com/shgew/togi/pull/1045
+[#1049]: https://github.com/shgew/togi/pull/1049
+[#1052]: https://github.com/shgew/togi/pull/1052
+[#1055]: https://github.com/shgew/togi/pull/1055
+[#1066]: https://github.com/shgew/togi/pull/1066
+[#1068]: https://github.com/shgew/togi/pull/1068
+[#1090]: https://github.com/shgew/togi/pull/1090
+[#1099]: https://github.com/shgew/togi/pull/1099
+[#1107]: https://github.com/shgew/togi/pull/1107
+[#1117]: https://github.com/shgew/togi/pull/1117
+[#1140]: https://github.com/shgew/togi/pull/1140
+[#1147]: https://github.com/shgew/togi/pull/1147
+[#1149]: https://github.com/shgew/togi/pull/1149
+[#1154]: https://github.com/shgew/togi/pull/1154
+[#1157]: https://github.com/shgew/togi/pull/1157
+[#1164]: https://github.com/shgew/togi/pull/1164
+[#1174]: https://github.com/shgew/togi/pull/1174
+[#1175]: https://github.com/shgew/togi/pull/1175
+[#1187]: https://github.com/shgew/togi/pull/1187
+[#1188]: https://github.com/shgew/togi/pull/1188
+[#1193]: https://github.com/shgew/togi/pull/1193
+[#1197]: https://github.com/shgew/togi/pull/1197
+[#1200]: https://github.com/shgew/togi/pull/1200
+[#1202]: https://github.com/shgew/togi/pull/1202
+[#1203]: https://github.com/shgew/togi/pull/1203
+[#1208]: https://github.com/shgew/togi/pull/1208
+[#1209]: https://github.com/shgew/togi/pull/1209
+[#1228]: https://github.com/shgew/togi/pull/1228
+[#1229]: https://github.com/shgew/togi/pull/1229
+[#1230]: https://github.com/shgew/togi/pull/1230
+[#1232]: https://github.com/shgew/togi/pull/1232
+[#1237]: https://github.com/shgew/togi/pull/1237
+[#1238]: https://github.com/shgew/togi/pull/1238
+[#1240]: https://github.com/shgew/togi/pull/1240
+[#1245]: https://github.com/shgew/togi/pull/1245
+[#1251]: https://github.com/shgew/togi/pull/1251
+[#1252]: https://github.com/shgew/togi/pull/1252
+[#1255]: https://github.com/shgew/togi/pull/1255
+[#1258]: https://github.com/shgew/togi/pull/1258
+[#1260]: https://github.com/shgew/togi/pull/1260
+[#1261]: https://github.com/shgew/togi/pull/1261
