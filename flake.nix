@@ -163,7 +163,7 @@
                     {
                       pname = "togi-${group}";
                       cargoExtraArgs = "--locked ${lib.concatMapStringsSep " " (crate: "-p ${crate}") crates}";
-                      cargoNextestExtraArgs = "--profile ci";
+                      cargoNextestExtraArgs = ''--profile ci --test-threads "$NIX_BUILD_CORES"'';
                       nativeCheckInputs = [
                         pkgs.gitMinimal
                         pkgs.bashInteractive
