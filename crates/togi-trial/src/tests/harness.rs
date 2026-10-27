@@ -63,7 +63,10 @@ pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpe
             seed: 7,
             offsets: offsets(&topology),
             roles: Vec::new(),
-            controller: togi_machine::ControllerMode::Legacy,
+            controller: togi_machine::ControllerMode::Managed {
+                rotation: 0,
+                purpose: togi_machine::Purpose::Isolated,
+            },
         },
         &topology,
     )
@@ -74,6 +77,22 @@ fn offsets(topology: &[CoreInfo]) -> togi_machine::PerCore<TargetOffset> {
         .iter()
         .map(|info| (info.core, TargetOffset::ZERO))
         .collect()
+}
+
+pub(super) fn frequency(topology: &[CoreInfo]) -> Arc<dyn togi_machine::CpuFrequency> {
+    Arc::new(crate::frequency::fake::Fake::new(
+        topology
+            .iter()
+            .map(|info| togi_machine::FrequencyPolicy {
+                id: togi_machine::FrequencyPolicyId::new(u32::from(info.core.get())),
+                related_cpus: info.cpus.clone(),
+                cpuinfo_min_khz: 400_000,
+                scaling_min_khz: 400_000,
+                scaling_max_khz: 5_700_000,
+                available_khz: None,
+            })
+            .collect(),
+    ))
 }
 
 /// Gives `spec` the roles its regime derives for its own cores and logical CPUs over `topology`.
@@ -111,7 +130,10 @@ fn spec_of(
         seed: 7,
         offsets: offsets(&topology()),
         roles,
-        controller: togi_machine::ControllerMode::Legacy,
+        controller: togi_machine::ControllerMode::Managed {
+            rotation: 0,
+            purpose: togi_machine::Purpose::Isolated,
+        },
     }
 }
 
@@ -214,9 +236,9 @@ pub(super) fn rig_edit(
         log_sink: None,
         supervisors: std::cell::RefCell::default(),
         preparer: crate::prepare::Preparer::with_fs(fs.clone()),
-        controller: Arc::new(crate::controller::Idle),
+        controller: Arc::new(crate::controller::Recording::default()),
         frequency: Arc::new(crate::frequency::Limits::new(
-            Arc::new(crate::frequency::Sysfs::default()),
+            frequency(&topology()),
             dir.path().join("trials"),
             Some(fs.clone()),
             crate::samples::Durability::Unsynced,
