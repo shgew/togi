@@ -96,6 +96,10 @@ pub(in crate::terminal) fn open(directory: &Path) -> Result<Inotify, WatchError>
     })?;
     let fd = inotify::init(CreateFlags::CLOEXEC | CreateFlags::NONBLOCK)
         .map_err(|errno| failed("open journal notifications", errno))?;
+    #[expect(
+        deprecated,
+        reason = "tokio deprecated the safe AsyncFd constructors for descriptors that may close under them; an OwnedFd stays open for the AsyncFd's life"
+    )]
     let fd = AsyncFd::new(fd).map_err(|source| WatchError {
         operation: "open journal notifications",
         source,

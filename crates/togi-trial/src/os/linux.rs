@@ -200,6 +200,10 @@ impl Os for Linux {
         let refused = self.pidfd_refused;
         #[cfg(not(test))]
         let refused = false;
+        #[expect(
+            deprecated,
+            reason = "tokio deprecated the safe AsyncFd constructors for descriptors that may close under them; an OwnedFd stays open for the AsyncFd's life"
+        )]
         let opened = if refused {
             Err(io::Error::other("pidfd_open refused"))
         } else {
