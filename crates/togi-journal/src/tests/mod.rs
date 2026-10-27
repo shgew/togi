@@ -2,6 +2,7 @@ mod build;
 mod config_snapshot;
 mod day;
 mod filter;
+mod fingerprint;
 mod fixtures;
 mod lenient;
 mod message;

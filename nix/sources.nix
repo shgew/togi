@@ -2,10 +2,11 @@
 # dependency closure leave its derivation hash alone.
 #
 # A source keeps the workspace manifests and `Cargo.lock`, so Cargo resolves the workspace and `--locked` holds, and
-# the files of the members the derivation builds. Cargo still insists that every member has its declared target files,
-# and nextest's filters see only the targets Cargo finds, so `postPatch` creates an empty file at each target path the
-# source leaves out. The stubs are made at build time, not in a source derivation, so crane reads the source without
-# import-from-derivation.
+# the files of the members the derivation builds. A member built but not tested (`code`) leaves out its test-only
+# files, so a test edit does not change the derivation of the package, the simulator or the VM checks. Cargo still
+# insists that every member has its declared target files, and nextest's filters see only the targets Cargo finds, so
+# `postPatch` creates an empty file at each target path the source leaves out. The stubs are made at build time, not in a source derivation, so crane
+# reads the source without import-from-derivation.
 { lib }:
 let
   inherit (lib) fileset;
@@ -23,17 +24,69 @@ let
   );
   dir = name: cratesDir + "/${name}";
   manifest = name: lib.importTOML (dir name + "/Cargo.toml");
-  # Files outside its directory that a crate reads when it compiles.
+  # Test-only sources: files compiled only under `cfg(test)`. By name, `tests.rs`, `*_tests.rs` and any `tests` or
+  # `*_tests` directory under a member's `src`; the rest are listed in `crates/test-only.txt`, which the journal's
+  # snapshot fingerprint (`crates/togi-journal/build/fingerprint.rs`) reads by the same rule.
+  testNamed =
+    path:
+    lib.concatLists (
+      lib.mapAttrsToList (
+        entry: type:
+        if type == "directory" then
+          if entry == "tests" || lib.hasSuffix "_tests" entry then
+            [ (path + "/${entry}") ]
+          else
+            testNamed (path + "/${entry}")
+        else if type == "regular" && (entry == "tests.rs" || lib.hasSuffix "_tests.rs" entry) then
+          [ (path + "/${entry}") ]
+        else
+          [ ]
+      ) (builtins.readDir path)
+    );
+  testListed = lib.filter (line: line != "" && !lib.hasPrefix "#" line) (
+    map lib.trim (lib.splitString "\n" (builtins.readFile ../crates/test-only.txt))
+  );
+  # A listed path that does not exist fails evaluation.
+  testOnly =
+    crate:
+    fileset.unions (
+      lib.optionals (builtins.pathExists (dir crate + "/src")) (testNamed (dir crate + "/src"))
+      ++ map (line: cratesDir + "/${line}") (
+        lib.filter (line: lib.hasPrefix "${crate}/" line) testListed
+      )
+    );
+
+  rustIn = path: fileset.intersection (fileset.fileFilter (file: file.hasExt "rs") cratesDir) path;
+
+  # A member's production `.rs` files under `src`.
+  productionSrc = crate: fileset.difference (rustIn (dir crate + "/src")) (testOnly crate);
+
+  # A member's `.rs` files under `src` and `benches` without its test-only files.
+  productionRs =
+    crate:
+    fileset.difference (rustIn (
+      fileset.unions (
+        map (sub: fileset.maybeMissing (dir crate + "/${sub}")) [
+          "src"
+          "benches"
+        ]
+      )
+    )) (testOnly crate);
+
+  # Files outside its directory that a crate reads when it compiles. The journal's build script hashes the
+  # production source of the reducer crates, its test-only list and its fingerprint module.
   compileInputs = {
     togi-version = [ ../version.txt ];
     togi-journal = [
       ../version.txt
+      ../crates/test-only.txt
       ../crates/togi-journal/build.rs
+      ../crates/togi-journal/build
     ]
     ++
       lib.concatMap
         (name: [
-          (dir name + "/src")
+          (productionSrc name)
           (dir name + "/Cargo.toml")
         ])
         [
@@ -125,9 +178,8 @@ let
       ++ discovered "autoexamples" "examples"
     );
 
-  rustIn = path: fileset.intersection (fileset.fileFilter (file: file.hasExt "rs") cratesDir) path;
-
-  # `code`: members built but not tested, as their `.rs` files under `src` and `benches`.
+  # `code`: members built but not tested, as their production `.rs` files under `src` and `benches`, without the
+  # test-only files.
   # `rs`: members as all their `.rs` files, tests included, for tools that read code and no data.
   # `full`: members as their whole directory, test data included.
   # `files`: other files, such as fixtures a test reads. Every target path a member's selection leaves out is
@@ -156,17 +208,7 @@ let
             ../clippy.toml
           ]
           ++ map (crate: dir crate + "/Cargo.toml") members
-          ++ map (
-            crate:
-            rustIn (
-              fileset.unions (
-                map (sub: fileset.maybeMissing (dir crate + "/${sub}")) [
-                  "src"
-                  "benches"
-                ]
-              )
-            )
-          ) code
+          ++ map productionRs code
           ++ map (crate: rustIn (dir crate)) rs
           ++ map dir full
           ++ lib.concatMap (crate: compileInputs.${crate} or [ ]) included
