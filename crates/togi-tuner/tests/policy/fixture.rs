@@ -367,7 +367,13 @@ impl Journal {
         let task_start = intent_at
             .checked_sub(jiff::SignedDuration::from_secs(waited))
             .unwrap();
-        self.run_from(plan, Ending::Pass, &content(), Some(task_start), &PerCore::default())
+        self.run_from(
+            plan,
+            Ending::Pass,
+            &content(),
+            Some(task_start),
+            &PerCore::default(),
+        )
     }
 
     fn run_from(

@@ -3,11 +3,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use test_case::test_case;
 use togi_journal::{
     Activity, CommandReset, NightId, Payload, QualificationState, Queue, ResetTarget, Seq,
     Shutdown, ShutdownReason, TaskId, Tested, UnavailableBackend,
 };
-use togi_machine::{Backend, BootId, CoreId, CoreSet, PerCore};
+use togi_machine::{Backend, BootId, CoreId, CoreSet, PerCore, Regime};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::night::{PackageLoad, Roles};
 use togi_tuner::policy::{Action, DayQuery, EndReason, Params, TrialPlan};
@@ -604,6 +605,87 @@ fn a_full_ccd_load_that_reorders_the_partials_leaves_the_failed_partials_rerun_s
     let rerun = rerun_of(&mut journal, &failed);
     assert_eq!(rerun.task.queue, Queue::Control);
     assert_eq!(rerun.cell, failed.cell);
+}
+
+/// Drives a night of passing trials until its isolated CCD0 mapping step asks for a cell of `regime`, and
+/// fails that trial on core 4, a CO-0 core of CCD1.
+fn fail_first_isolated_ccd0_cell_of(journal: &mut Journal, regime: Regime) -> TrialPlan {
+    for step in 0..5_000_i64 {
+        let plan = journal.until_trial(at(100 + step));
+        assert_ne!(
+            plan.task.queue,
+            Queue::Filler,
+            "the night never mapped CCD0 under {regime:?}"
+        );
+        if is_isolated_ccd0_mapping(&plan) && plan.cell.regime() == regime {
+            journal.run(&plan, Ending::Fail(Some(4)));
+            return plan;
+        }
+        journal.run(&plan, Ending::Pass);
+    }
+    panic!("the night never mapped CCD0 under {regime:?}");
+}
+
+#[test_case(Regime::R1; "single core")]
+#[test_case(Regime::R2; "single core of another regime")]
+#[test_case(Regime::R7; "full CCD package")]
+#[test_case(Regime::R8; "light neighbours")]
+#[test_case(Regime::R9; "all threads with a serial CPU")]
+fn a_zero_core_failure_reruns_the_cell_rebuilt_from_its_recorded_class(regime: Regime) {
+    let mut journal = eight_core_night();
+    let failed = fail_first_isolated_ccd0_cell_of(&mut journal, regime);
+    let rerun = rerun_of(&mut journal, &failed);
+    assert_eq!(rerun.task.queue, Queue::Control);
+    assert_eq!(rerun.cell, failed.cell);
+    assert_eq!(rerun.workloads(), failed.workloads());
+}
+
+/// Drives the stock controls with passing trials until they ask for the first cell of `regime` and
+/// `sustained`, and fails it conclusively.
+fn fail_first_control_cell(journal: &mut Journal, regime: Regime, sustained: bool) {
+    for step in 0..5_000_i64 {
+        let plan = journal.until_trial(at(100 + step));
+        assert_eq!(
+            plan.task.queue,
+            Queue::Control,
+            "the controls never asked for {regime:?} (sustained: {sustained})"
+        );
+        if plan.cell.regime() == regime && plan.cell.sustained == sustained {
+            journal.run(&plan, Ending::Fail(None));
+            return;
+        }
+        journal.run(&plan, Ending::Pass);
+    }
+    panic!("the controls never asked for {regime:?} (sustained: {sustained})");
+}
+
+#[test_case(Regime::R5, false; "SMT pair")]
+#[test_case(Regime::R6, false; "idle then burst")]
+#[test_case(Regime::R7, true; "sustained package")]
+#[test_case(Regime::R8, true; "sustained neighbours")]
+#[test_case(Regime::R9, true; "sustained all threads")]
+fn a_conclusive_failure_of_any_stock_control_cell_is_a_dead_end_naming_its_regime(
+    regime: Regime,
+    sustained: bool,
+) {
+    let mut journal = eight_core_night();
+    fail_first_control_cell(&mut journal, regime, sustained);
+    assert_eq!(
+        journal.until_end(at(30_000), &BTreeMap::new()).unwrap_err(),
+        EndReason::DeadEnd
+    );
+    let detail = journal
+        .events
+        .iter()
+        .find_map(|event| {
+            if let Payload::DeadEnd(dead_end) = &event.payload {
+                Some(dead_end.detail.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert!(detail.contains(&format!("{regime:?}")), "{detail}");
 }
 
 #[test]

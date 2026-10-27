@@ -165,7 +165,9 @@ pub(super) fn cell_of_class(
             .flatten()
     };
     let roles = match class.regime {
-        Regime::R1 | Regime::R2 | Regime::R3 | Regime::R4 => Roles::SingleCore { core: one_core()? },
+        Regime::R1 | Regime::R2 | Regime::R3 | Regime::R4 => {
+            Roles::SingleCore { core: one_core()? }
+        }
         Regime::R5 => Roles::SmtPair { core: one_core()? },
         Regime::R6 => Roles::AllCoresIdle,
         Regime::R7 => Roles::Package(package_load(class.cores, topology)?),
