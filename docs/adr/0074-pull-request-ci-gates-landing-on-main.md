@@ -45,3 +45,7 @@ Local checks already covered clippy, nextest and the cheap checks: 466 pushes us
 - `just gate` and `just push-fix` take longer when package or simulator inputs change. Without Linux or usable KVM, their printed skips disclose the checks deferred to release.
 - Agents gating at once may build VMs in parallel on one host. [ADR 0072](0072-agents-share-a-host-without-locks.md) still forbids recipe locks; Nix builds each derivation once.
 - The target machine runs only release tags, after the full check, rather than following unchecked `main` commits.
+
+## Amendment (#1269)
+
+[ADR 0085](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md) supersedes the exclusion of VM tests and simulator shards from pull request CI above: pull request mode selects every flake check behind the Cachix prefilter, and the gate publishes the outputs it builds. The rest of the decision remains.
