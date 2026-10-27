@@ -9,7 +9,6 @@ use togi_machine::{
     TargetOffset, WorkloadId, pick_workload,
 };
 
-use super::exposure::warm_up_secs;
 use crate::numbers::index;
 use crate::{HonestChain, Secs, Topology, UncoveredReason};
 
@@ -124,7 +123,7 @@ impl Cell {
     pub fn eligible_seconds(&self) -> u32 {
         self.duration
             .get()
-            .saturating_sub(warm_up_secs(self.regime()))
+            .saturating_sub(self.regime().warm_up_s())
     }
 
     /// Whether a launch hosted on `host` credits this cell's position: the rotating host earns none.

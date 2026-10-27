@@ -1,9 +1,14 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use test_case::test_case;
 use togi_machine::{CcdId, CoreId, CoreSet, PerCore, PmTable, TrialConditions};
 
-use super::{MIN_SAMPLES, Telemetry, WARMUP_MS, groups, summarize, top};
+use super::{MIN_SAMPLES, Telemetry, groups, summarize, top};
+
+/// The R1–R7 warm-up, written out rather than taken from the regime, so these tests pin it independently.
+const WARMUP_MS: i64 = 5000;
+const WARM_UP: Duration = Duration::from_millis(5000);
 
 fn core(id: i64) -> CoreId {
     CoreId::new(id).unwrap()
@@ -72,7 +77,7 @@ fn summarize_uses_samples_after_warmup() {
             )
         }
     });
-    let got = summarize(seq, &placed(&[0, 1, 8])).expect("20 samples after the warmup");
+    let got = summarize(seq, &placed(&[0, 1, 8]), WARM_UP).expect("20 samples after the warmup");
     let want = Telemetry {
         requests: per_core(&[(0, lane(1.100)), (1, lane(1.0995)), (8, lane(1.050))]),
         top_requesters: cores(&[0, 1, 8]),
@@ -84,16 +89,28 @@ fn summarize_uses_samples_after_warmup() {
     assert_eq!(got, want);
 }
 
-#[test]
-fn summarize_needs_min_samples_after_warmup() {
+#[test_case(5000; "the R1 to R7 warm-up")]
+#[test_case(30000; "the role regimes' warm-up")]
+fn summarize_needs_min_samples_after_warmup(warm_up_ms: i64) {
+    let warm_up = Duration::from_millis(warm_up_ms.unsigned_abs());
     let steady = |_| (vec![(3, 1.1)], vec![(3, 5000)]);
-    let last = |count: usize| WARMUP_MS + (i64::try_from(count).unwrap() - 1) * 1000;
+    let last = |count: usize| warm_up_ms + (i64::try_from(count).unwrap() - 1) * 1000;
     assert!(
-        summarize(samples(0, last(MIN_SAMPLES - 1), steady), &placed(&[3])).is_none(),
+        summarize(
+            samples(0, last(MIN_SAMPLES - 1), steady),
+            &placed(&[3]),
+            warm_up
+        )
+        .is_none(),
         "19 samples after the warmup summarized"
     );
     assert!(
-        summarize(samples(0, last(MIN_SAMPLES), steady), &placed(&[3])).is_some(),
+        summarize(
+            samples(0, last(MIN_SAMPLES), steady),
+            &placed(&[3]),
+            warm_up
+        )
+        .is_some(),
         "20 samples after the warmup did not summarize"
     );
 }
@@ -112,7 +129,7 @@ fn summarize_needs_min_clock_samples_per_ccd() {
             (vec![(0, 1.1), (8, 1.05)], mhz)
         },
     );
-    let got = summarize(seq, &placed(&[0, 8])).expect("20 samples after the warmup");
+    let got = summarize(seq, &placed(&[0, 8]), WARM_UP).expect("20 samples after the warmup");
     let want = Telemetry {
         requests: per_core(&[(0, lane(1.1)), (8, lane(1.05))]),
         top_requesters: cores(&[0, 8]),
@@ -128,24 +145,24 @@ fn summarize_skips_samples_without_lanes() {
         core_mhz: per_core(&[(2, 5000)]),
         ..TrialConditions::default()
     });
-    assert!(summarize(seq, &placed(&[2])).is_none());
+    assert!(summarize(seq, &placed(&[2]), WARM_UP).is_none());
 }
 
 #[test]
 fn summarize_without_cores_is_none() {
     let seq = samples(WARMUP_MS, 30000, |_| (vec![(0, 1.1)], vec![(0, 5000)]));
-    assert!(summarize(seq, &PerCore::default()).is_none());
+    assert!(summarize(seq, &PerCore::default(), WARM_UP).is_none());
 }
 
 #[test]
 fn summarize_ignores_cleared_sparse_core_entries() {
     let seq = samples(WARMUP_MS, 30000, |_| (vec![(3, 1.1)], vec![(3, 5000)]));
     let mut cores = placed(&[3]);
-    let expected = summarize(seq.clone(), &cores);
+    let expected = summarize(seq.clone(), &cores, WARM_UP);
     cores.set(core(15), None);
-    assert_eq!(summarize(seq, &cores), expected);
+    assert_eq!(summarize(seq, &cores, WARM_UP), expected);
     cores.set(core(3), None);
-    assert_eq!(summarize([], &cores), None);
+    assert_eq!(summarize([], &cores, WARM_UP), None);
 }
 
 #[test]
@@ -154,8 +171,8 @@ fn summarize_counts_a_repeated_core_once() {
         let step = f32::from(u16::try_from(ms / 1000).unwrap());
         (vec![(0, 1.0 + step * 0.01)], vec![(0, 5000 + ms / 1000)])
     });
-    let once = summarize(seq.clone(), &placed(&[0])).unwrap();
-    let twice = summarize(seq, &placed(&[0, 0])).unwrap();
+    let once = summarize(seq.clone(), &placed(&[0]), WARM_UP).unwrap();
+    let twice = summarize(seq, &placed(&[0, 0]), WARM_UP).unwrap();
     assert_eq!(placed(&[0, 0]).len(), 1);
     assert_eq!(once, twice);
     assert_eq!(
@@ -192,12 +209,15 @@ fn summarize_skips_samples_with_a_non_finite_lane() {
             .collect::<Vec<_>>()
     };
     let min = i64::try_from(MIN_SAMPLES).unwrap();
-    assert!(summarize(noisy(min - 1), &placed(&[0, 1])).is_none());
-    let got = summarize(noisy(min), &placed(&[0, 1])).unwrap();
-    assert_eq!(got, summarize(finite_only(min), &placed(&[0, 1])).unwrap());
+    assert!(summarize(noisy(min - 1), &placed(&[0, 1]), WARM_UP).is_none());
+    let got = summarize(noisy(min), &placed(&[0, 1]), WARM_UP).unwrap();
+    assert_eq!(
+        got,
+        summarize(finite_only(min), &placed(&[0, 1]), WARM_UP).unwrap()
+    );
     assert!(got.requests.iter().all(|(_, request)| request.is_finite()));
     let unloaded = broken(WARMUP_MS, f32::NAN);
-    assert!(summarize(finite_only(min).chain([unloaded]), &placed(&[0])).is_some());
+    assert!(summarize(finite_only(min).chain([unloaded]), &placed(&[0]), WARM_UP).is_some());
 }
 
 #[test_case(i64::MIN, i64::MIN; "minimum reading")]
@@ -205,6 +225,6 @@ fn summarize_skips_samples_with_a_non_finite_lane() {
 #[test_case(9_007_199_254_740_993, 9_007_199_254_740_992; "approximate beyond float integer precision")]
 fn summarize_clock_endpoint_rounding_is_approximate(mhz: i64, expected: i64) {
     let seq = samples(WARMUP_MS, 30000, |_| (vec![(0, 1.1)], vec![(0, mhz)]));
-    let got = summarize(seq, &placed(&[0])).unwrap();
+    let got = summarize(seq, &placed(&[0]), WARM_UP).unwrap();
     assert_eq!(got.ccd_mhz[&CcdId::new(0).unwrap()], expected);
 }

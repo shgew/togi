@@ -49,8 +49,6 @@ pub const ALL_REGIMES: [Regime; 9] = [
 pub const R8_DURATION: Duration = Duration::from_secs(120);
 /// The default duration of an R9 trial.
 pub const R9_DURATION: Duration = Duration::from_secs(120);
-/// How long a role regime's load warms up before its trial's telemetry summaries start counting.
-pub const ROLE_WARM_UP: Duration = Duration::from_secs(30);
 /// How many seconds each R9 phase lasts: all threads loaded, then one thread loaded.
 pub const R9_PHASE_S: u32 = 10;
 /// How long each R9 phase lasts; [`R9_PHASE_S`] as a duration.
@@ -77,12 +75,18 @@ impl Regime {
         }
     }
 
-    /// The warm-up of a role regime's trial, whose telemetry summaries skip it; the legacy regimes have none.
-    pub const fn warm_up(self) -> Option<Duration> {
+    /// Seconds a trial of this regime warms up inside its intended duration, never added to it, before exposure and
+    /// its telemetry summaries count: 5 for R1–R7, 30 for R8 and R9 (`docs/spec/workloads.md`, Warm-up boundary).
+    pub const fn warm_up_s(self) -> u32 {
         match self {
-            Self::R8 | Self::R9 => Some(ROLE_WARM_UP),
-            Self::R1 | Self::R2 | Self::R3 | Self::R4 | Self::R5 | Self::R6 | Self::R7 => None,
+            Self::R1 | Self::R2 | Self::R3 | Self::R4 | Self::R5 | Self::R6 | Self::R7 => 5,
+            Self::R8 | Self::R9 => 30,
         }
+    }
+
+    /// [`Self::warm_up_s`] as a duration.
+    pub const fn warm_up(self) -> Duration {
+        Duration::from_secs(self.warm_up_s() as u64)
     }
 }
 

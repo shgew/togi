@@ -7,11 +7,10 @@
 //! `summarize` or arithmetic on them.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use togi_machine::{CcdId, CoreId, CoreSet, PER_CORE_MAX, PerCore, TrialConditions};
 
-/// Skips the samples taken while the load ramps up.
-pub const WARMUP_MS: i64 = 5000;
 pub const MIN_SAMPLES: usize = 20;
 /// The spread within which cores count as one top.
 pub const TIE_V: f64 = 0.001;
@@ -26,11 +25,12 @@ pub struct Telemetry {
     pub ccd_mhz: BTreeMap<CcdId, i64>,
 }
 
-/// Summarizes the loaded `cores`, each on its CCD. Uses the samples after the warmup that decode request lanes, and
+/// Summarizes the loaded `cores`, each on its CCD. Uses the samples at or after `warm_up` that decode request lanes, and
 /// returns `None` when fewer than [`MIN_SAMPLES`] remain.
 pub fn summarize(
     samples: impl IntoIterator<Item = TrialConditions>,
     cores: &PerCore<Option<CcdId>>,
+    warm_up: Duration,
 ) -> Option<Telemetry> {
     let cores = || cores.iter().filter_map(|(core, ccd)| Some((core, ccd?)));
     cores().next()?;
@@ -39,7 +39,9 @@ pub fn summarize(
     let mut per_ccd: BTreeMap<CcdId, Vec<f64>> = BTreeMap::new();
     let mut count = 0_usize;
     for sample in samples {
-        if sample.elapsed_ms < WARMUP_MS {
+        let warmed =
+            u64::try_from(sample.elapsed_ms).is_ok_and(|ms| Duration::from_millis(ms) >= warm_up);
+        if !warmed {
             continue;
         }
         let Some(table) = &sample.pm_table else {

@@ -3,9 +3,7 @@ use std::num::NonZeroU32;
 use test_case::test_case;
 use togi_machine::Regime;
 use togi_tuner::Secs;
-use togi_tuner::night::{
-    Conclusion, Credit, Launch, PlacementValidity, adequately_exposed, warm_up_secs,
-};
+use togi_tuner::night::{Conclusion, Credit, Launch, PlacementValidity, adequately_exposed};
 
 fn launch(regime: Regime, intended: u32, ran: u32) -> Launch {
     Launch {
@@ -23,7 +21,7 @@ fn launch(regime: Regime, intended: u32, ran: u32) -> Launch {
 #[test_case(Regime::R8, 30)]
 #[test_case(Regime::R9, 30)]
 fn the_warm_up_boundary_is_per_regime(regime: Regime, secs: u32) {
-    assert_eq!(warm_up_secs(regime), secs);
+    assert_eq!(regime.warm_up_s(), secs);
 }
 
 #[test]
