@@ -16,6 +16,7 @@ use togi_machine::{
 use tokio::sync::Notify;
 use tokio::time::{Instant, sleep_until};
 
+use crate::samples::Durability;
 use crate::sweep::until_cancelled;
 
 mod sysfs;
@@ -100,19 +101,22 @@ pub(crate) struct Limits {
 }
 
 enum Storage {
-    Disk,
+    /// `Unsynced` skips the file and directory syncs, for disposable output only.
+    Disk(Durability),
     Memory(Arc<dyn Fs>),
 }
 
 impl Limits {
+    /// `durability` applies to disk storage; memory storage records its syncs in the `Fs`.
     pub(crate) fn new(
         machine: Arc<dyn CpuFrequency>,
         dir: PathBuf,
         memory: Option<Arc<dyn Fs>>,
+        durability: Durability,
     ) -> Self {
         Self {
             machine,
-            storage: memory.map_or(Storage::Disk, Storage::Memory),
+            storage: memory.map_or(Storage::Disk(durability), Storage::Memory),
             dir,
         }
     }
@@ -444,7 +448,7 @@ impl Limits {
     fn load(&self) -> io::Result<Option<Pending>> {
         let path = self.dir.join(PENDING);
         let read = match &self.storage {
-            Storage::Disk => std::fs::read(path),
+            Storage::Disk(_) => std::fs::read(path),
             Storage::Memory(fs) => fs.read(&path),
         };
         match read {
@@ -468,7 +472,7 @@ impl Limits {
         let staging = self.dir.join(STAGING);
         let path = self.dir.join(PENDING);
         match &self.storage {
-            Storage::Disk => {
+            Storage::Disk(durability) => {
                 absent(std::fs::remove_file(&staging))?;
                 let mut file = std::fs::File::from(rustix::fs::open(
                     &staging,
@@ -480,9 +484,15 @@ impl Limits {
                     Mode::from_raw_mode(0o600),
                 )?);
                 file.write_all(&bytes)?;
-                file.sync_all()?;
+                match durability {
+                    Durability::Durable => file.sync_all()?,
+                    Durability::Unsynced => {}
+                }
                 std::fs::rename(staging, path)?;
-                std::fs::File::open(&self.dir)?.sync_all()
+                match durability {
+                    Durability::Durable => std::fs::File::open(&self.dir)?.sync_all(),
+                    Durability::Unsynced => Ok(()),
+                }
             }
             Storage::Memory(fs) => {
                 absent(fs.remove_file(&staging))?;
@@ -502,9 +512,12 @@ impl Limits {
     fn remove(&self) -> io::Result<()> {
         let path = self.dir.join(PENDING);
         match &self.storage {
-            Storage::Disk => {
+            Storage::Disk(durability) => {
                 std::fs::remove_file(path)?;
-                std::fs::File::open(&self.dir)?.sync_all()
+                match durability {
+                    Durability::Durable => std::fs::File::open(&self.dir)?.sync_all(),
+                    Durability::Unsynced => Ok(()),
+                }
             }
             Storage::Memory(fs) => {
                 fs.remove_file(&path)?;
