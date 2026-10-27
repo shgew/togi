@@ -7,7 +7,7 @@ use togi_facts::{Decisive, TrialClass};
 use togi_machine::{CcdId, CoreId, Regime, TargetOffset, pick_workload, workloads};
 use togi_sim::definition::{SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef};
 use togi_sim::voltage::core_watts;
-use togi_sim::{MachineDefinition, Model, saturating_count};
+use togi_sim::{MachineDefinition, Model, modeled_as, saturating_count, shared_voltage_applies};
 use togi_tool_trialfacts::{Profile, TrialFact};
 
 use crate::evidence::{load_of, regime_of, trial_class};
@@ -111,7 +111,7 @@ fn fit_requests(v: &mut SharedVoltageDef, records: &[&TrialFact], id: &str) {
         let Some(class) = trial_class(fact) else {
             continue;
         };
-        if class.workload.regime() != Regime::R7 || class.workload.as_str() != id {
+        if modeled_as(class.workload.regime()) != Regime::R7 || class.workload.as_str() != id {
             continue;
         }
         for (core, slot) in points.iter_mut().enumerate() {
@@ -213,7 +213,9 @@ fn fit_clocks(v: &mut SharedVoltageDef, records: &[&TrialFact], id: &str) {
         .iter()
         .copied()
         .filter_map(|fact| trial_class(fact).map(|class| (fact, class)))
-        .filter(|(_, class)| class.workload.regime() == Regime::R7 && class.workload.as_str() == id)
+        .filter(|(_, class)| {
+            modeled_as(class.workload.regime()) == Regime::R7 && class.workload.as_str() == id
+        })
         .collect();
     for (fact, class) in &r7 {
         let mut counts = [0_usize; 2];
@@ -320,7 +322,7 @@ pub(crate) fn voltage_penalty(v: &SharedVoltageDef) -> f64 {
     penalty + 0.5 * width * width
 }
 
-/// A failure that names a loaded core of a multi-core R7 trial.
+/// A failure that names a loaded core of a multi-core trial modeled as R7.
 pub(crate) struct NamedFailure {
     pub(crate) profile: Profile,
     pub(crate) class: TrialClass,
@@ -333,7 +335,7 @@ pub(crate) fn named_failures(records: &[&TrialFact]) -> Vec<NamedFailure> {
         let Some(class) = trial_class(fact) else {
             continue;
         };
-        if regime_of(fact) != Regime::R7 || class.loaded.len() < 2 {
+        if !shared_voltage_applies(regime_of(fact), class.loaded.len(), true) {
             continue;
         }
         let Decisive::Failure { core, stalled, .. } = fact.outcome else {
@@ -400,9 +402,11 @@ fn voltage_of(def: &mut MachineDefinition) -> Option<&mut SharedVoltageDef> {
 
 impl Likelihood<'_> {
     /// Fits the shared-voltage parameters: thresholds, then rate, margin and background, each minimizing
-    /// the shared augmented objective on the multi-core R7 observations.
+    /// the shared augmented objective on observations explained by the rail.
     pub(crate) fn fit_voltage(&mut self) {
-        let indices = self.select(|o| o.regime() == Regime::R7 && o.class.loaded.len() > 1);
+        let rail = self.cfg.shared_voltage.is_some();
+        let indices =
+            self.select(|o| shared_voltage_applies(o.regime(), o.class.loaded.len(), rail));
         if indices.is_empty() {
             return;
         }
