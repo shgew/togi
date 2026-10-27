@@ -40,7 +40,7 @@ use togi_sim::definition::CoreDef;
 use togi_sim::faults::SmuOperation;
 use togi_sim::{MachineDefinition, Model, Persisted, Simulator};
 use togi_tuner::day::{Invocation, Pause};
-use togi_tuner::policy::{DayQuery, Params, State};
+use togi_tuner::policy::{DayQuery, Params, Projection, State};
 
 use crate::Stop;
 use crate::testing::{Bench, build, simulated};
@@ -1176,9 +1176,14 @@ fn unshifted(mut value: Value) -> Value {
     value
 }
 
-/// The tuner's projection of `events`, references blanked.
+/// What a tuner projection is compared by: references blanked.
+fn compared_projection(projection: &Projection) -> Value {
+    unshifted(serde_json::to_value(projection).unwrap())
+}
+
+/// The tuner's projection of `events`, as it is compared.
 fn projection(events: &[Event]) -> Value {
-    unshifted(serde_json::to_value(folded(events).project()).unwrap())
+    compared_projection(&folded(events).project())
 }
 
 /// The policy commitments among `events` in a canonical order, references blanked, without the observations of
