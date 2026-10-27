@@ -449,7 +449,10 @@ impl Ruleset13 {
             index: 0,
             seed: intent.get(),
             offsets: confirmed,
-            controller: ControllerMode::Managed { rotation },
+            controller: ControllerMode::Managed {
+                rotation,
+                purpose: plan.cell.purpose,
+            },
         };
         let cancel = CancellationToken::new();
         let stopped = machine.trials.sweep(&cancel)?.stopped;

@@ -268,8 +268,10 @@ impl Session<'_> {
             index: 0,
             seed: intent.get(),
             offsets: self.hardware.confirmed(),
-            controller: ControllerContract::Managed
-                .for_trial(self.appender.recovery().controller_rotation()),
+            controller: ControllerContract::Managed.for_trial(
+                self.appender.recovery().controller_rotation(),
+                plan.cell.purpose,
+            ),
         };
         let controller = Some(togi_journal::ControllerEvidence {
             pid: std::process::id(),

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
 use togi_machine::{
-    CcdId, CcdProfile, CcdProfileError, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Regime,
+    CcdId, CcdProfile, CcdProfileError, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Purpose, Regime,
     TargetOffset, WorkloadId, pick_workload,
 };
 
@@ -87,18 +87,6 @@ pub enum Roles {
     Neighbours { light: CoreId },
     /// R9: every logical CPU of every loaded core; `serial` never stops.
     AllThreads { core: CoreId, serial: CpuId },
-}
-
-/// The placement contract a cell is trialled under ([controller placement]).
-///
-/// [controller placement]: ../../../../docs/spec/workloads.md
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Purpose {
-    /// Other CCDs at CO 0 and unloaded; the quieter mapping contract.
-    Isolated,
-    /// The exact profile, qualified at its own placement.
-    Exact,
 }
 
 /// One trial a matrix schedules.

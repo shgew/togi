@@ -1750,6 +1750,7 @@ mod hardware {
         cores: Vec<CoreId>,
         regime: Regime,
         rotation: u64,
+        purpose: togi_machine::Purpose,
     ) -> TrialSpec {
         let workload = pick_workload(regime, 0).id();
         let cpus: Vec<_> = cores
@@ -1778,7 +1779,7 @@ mod hardware {
                 .iter()
                 .map(|info| (info.core, togi_machine::TargetOffset::ZERO))
                 .collect(),
-            controller: togi_machine::ControllerMode::Managed { rotation },
+            controller: togi_machine::ControllerMode::Managed { rotation, purpose },
         }
     }
 
@@ -1834,7 +1835,13 @@ mod hardware {
         let mut runner = managed_runner(&staged, &topology);
         let mut trial = start(
             &mut runner,
-            managed_spec(&topology, vec![target.core], Regime::R1, 0),
+            managed_spec(
+                &topology,
+                vec![target.core],
+                Regime::R1,
+                0,
+                togi_machine::Purpose::Isolated,
+            ),
         );
         let observed: Vec<_> = affected
             .iter()
@@ -1879,6 +1886,7 @@ mod hardware {
                 topology.iter().map(|info| info.core).collect(),
                 Regime::R7,
                 rotation,
+                togi_machine::Purpose::Exact,
             ),
         );
         let affinity = rustix::thread::sched_getaffinity(None).unwrap();

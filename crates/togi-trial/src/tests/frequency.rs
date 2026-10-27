@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use togi_machine::{
     CancellationToken, ControllerMode, CpuFrequency as _, CpuId, FrequencyPolicy,
-    FrequencyPolicyId, Regime, Signal,
+    FrequencyPolicyId, Purpose, Regime, Signal,
 };
 
 use super::harness::{core, finish, local, printing, rig_edit, spec, topology};
@@ -43,7 +43,10 @@ fn rig(machine: &Fake) -> super::harness::Rig {
 
 fn managed() -> togi_machine::TrialSpec {
     let mut trial = spec(Regime::R1, &[2], Duration::from_secs(5));
-    trial.controller = ControllerMode::Managed { rotation: 0 };
+    trial.controller = ControllerMode::Managed {
+        rotation: 0,
+        purpose: Purpose::Isolated,
+    };
     trial
 }
 
@@ -198,7 +201,10 @@ fn single_ccd_excludes_only_host_and_keeps_other_workers_uncapped() {
             &[0, 1, 2, 3, 4, 5, 6, 7],
             Duration::from_secs(5),
         );
-        trial.controller = ControllerMode::Managed { rotation: 2 };
+        trial.controller = ControllerMode::Managed {
+            rotation: 2,
+            purpose: Purpose::Exact,
+        };
         let handle = rig.start(trial).await.unwrap();
         assert_eq!(
             machine.scaling_max_khz(FrequencyPolicyId::new(2)).unwrap(),
@@ -239,7 +245,10 @@ fn single_ccd_shared_policy_with_another_worker_is_refused() {
             &[0, 1, 2, 3, 4, 5, 6, 7],
             Duration::from_secs(5),
         );
-        trial.controller = ControllerMode::Managed { rotation: 2 };
+        trial.controller = ControllerMode::Managed {
+            rotation: 2,
+            purpose: Purpose::Exact,
+        };
         let handle = rig.start(trial).await.unwrap();
         let run = finish(&handle).await;
         assert!(run.finished.result.inconclusive.is_some());
@@ -250,7 +259,10 @@ fn single_ccd_shared_policy_with_another_worker_is_refused() {
 /// Every core of both CCDs is tested, so the controller takes an idle core uncapped.
 fn uncapped() -> togi_machine::TrialSpec {
     let mut trial = spec(Regime::R7, &[2, 10], Duration::from_secs(5));
-    trial.controller = ControllerMode::Managed { rotation: 0 };
+    trial.controller = ControllerMode::Managed {
+        rotation: 0,
+        purpose: Purpose::Exact,
+    };
     trial
 }
 
