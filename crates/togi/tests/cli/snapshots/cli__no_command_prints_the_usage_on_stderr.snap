@@ -2,15 +2,6 @@
 source: crates/togi/tests/cli/main.rs
 expression: stderr(&ran)
 ---
-   __              _
-  / /_____  ____ _(_)
- / __/ __ \/ __ `/ /
-/ /_/ /_/ / /_/ / /
-\__/\____/\__, /_/
-         /____/
-
-  per-core Curve Optimizer
-
 Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs
 
 Usage: togi [OPTIONS] <COMMAND>

@@ -17,8 +17,6 @@ use crate::{
     watch,
 };
 
-const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/ __ `/ /\n/ /_/ /_/ / /_/ / /\n\\__/\\____/\\__, /_/\n         /____/\n\n  per-core Curve Optimizer\n\n";
-
 static VERSION: LazyLock<String> = LazyLock::new(togi_version::string);
 
 /// The example `togi --help` and `togi run --help` both show for tuning a night.
@@ -293,13 +291,9 @@ fn report(error: &clap::Error, out: &mut dyn Write, err: &mut dyn Write) -> Exit
             }
         };
     }
-    let kind = error.kind();
-    if kind == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand {
-        let _ = err.write_all(BANNER.as_bytes());
-    } else if kind == ErrorKind::MissingSubcommand {
-        // Flags without a command, such as `--state-dir /x`: the same wordmark and help as no
-        // arguments at all, in place of clap's error text.
-        let _ = err.write_all(BANNER.as_bytes());
+    if error.kind() == ErrorKind::MissingSubcommand {
+        // Flags without a command, such as `--state-dir /x`: the same help as no arguments,
+        // in place of clap's error text.
         let _ = err.write_all(command().render_help().to_string().as_bytes());
         return Exit::Usage;
     }
