@@ -145,14 +145,29 @@ fn an_interrupted_failing_trial_is_committed_once(fate: Fate) {
 fn a_between_trial_power_cut_preserves_commitments_with_matched_downtime() {
     let bench = Bench::defined(&small_definition());
     let mut phases = Vec::new();
-    step(&bench, &mut phases, Phase::Run { trials: 3 });
+    step(&bench, &mut phases, Phase::Run { trials: 120 });
     let phase = &phases[0];
+    let trial = phase.events.iter().find_map(|event| {
+        if let Payload::TrialIntent(intent) = &event.payload
+            && matches!(intent.tested, Some(Tested::Isolated { offset, .. }) if offset.get() < 0)
+        {
+            Some(&intent.trial)
+        } else {
+            None
+        }
+    }).expect("the bounded run reaches isolated mapping");
     let after = phase
         .events
         .iter()
-        .position(|event| matches!(event.payload, Payload::TrialEnd(_)))
-        .expect("the bounded run ends a trial")
+        .position(|event| matches!(&event.payload, Payload::TrialEnd(end) if &end.trial == trial))
+        .expect("the mapping trial ends")
         + 1;
+    assert!(
+        phase.events[after..]
+            .iter()
+            .any(|event| matches!(event.payload, Payload::CcdCap(_))),
+        "the cut must precede a policy cap commitment"
+    );
     let events = resume(phase, &bench.sim.model(), after, Fate::PowerLoss);
     assert_unchanged_decisions(
         phase,
