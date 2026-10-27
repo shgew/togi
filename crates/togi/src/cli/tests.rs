@@ -85,7 +85,9 @@ fn no_command_prints_the_usage_to_stderr_and_exits_2() {
     assert_eq!(ran.exit, Exit::Usage);
     assert_eq!(ran.out, "");
     assert!(
-        ran.err.starts_with("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs\n"),
+        ran.err.starts_with(
+            "Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs\n"
+        ),
         "{}",
         ran.err
     );
@@ -99,7 +101,9 @@ fn state_dir_without_a_command_prints_the_usage_to_stderr_and_exits_2(args: &[&s
     assert_eq!(ran.exit, Exit::Usage);
     assert_eq!(ran.out, "");
     assert!(
-        ran.err.starts_with("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs\n"),
+        ran.err.starts_with(
+            "Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs\n"
+        ),
         "{}",
         ran.err
     );

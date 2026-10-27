@@ -134,7 +134,9 @@ fn state_dir_without_a_command_prints_the_usage_on_stderr(args: &[&str]) {
     assert_eq!(ran.status.code(), Some(2));
     assert_eq!(stdout(&ran), "");
     assert!(
-        stderr(&ran).starts_with("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs\n"),
+        stderr(&ran).starts_with(
+            "Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs\n"
+        ),
         "{}",
         stderr(&ran)
     );
