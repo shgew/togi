@@ -45,10 +45,13 @@ fn a_bounded_crash_resume_has_identical_warm_and_cold_journal_and_state_bytes() 
     fn bounded(replay: Replay) -> (Vec<u8>, Vec<u8>) {
         let fs = MemFs::new();
         let persistence = Persistence::Memory(fs.clone());
-        let machine = simulator(&togi_sim::MachineDefinition {
-            cores: 2,
-            ..togi_sim::MachineDefinition::default()
-        }, 1);
+        let machine = simulator(
+            &togi_sim::MachineDefinition {
+                cores: 2,
+                ..togi_sim::MachineDefinition::default()
+            },
+            1,
+        );
         let mut sim = input(machine.clone(), persistence.clone());
         sim.stop_at = Some(machine.now() + jiff::SignedDuration::from_secs(150));
         sim.max_boots = nz(2);
@@ -57,9 +60,26 @@ fn a_bounded_crash_resume_has_identical_warm_and_cold_journal_and_state_bytes() 
         let outcome = simulate(sim).unwrap();
         assert!(matches!(outcome, SimOutcome::Stopped(_)), "{replay:?}");
         let journal = events(&persistence).unwrap();
-        assert_eq!(journal.iter().filter(|event| matches!(event.payload, Payload::ConfigLoaded(_))).count(), 2, "{replay:?}");
-        assert_eq!(journal.iter().filter(|event| matches!(event.payload, Payload::CrashDetected(_))).count(), 1, "{replay:?}");
-        (fs.contents("/state/events.jsonl").unwrap(), state_json(&fs).unwrap())
+        assert_eq!(
+            journal
+                .iter()
+                .filter(|event| matches!(event.payload, Payload::ConfigLoaded(_)))
+                .count(),
+            2,
+            "{replay:?}"
+        );
+        assert_eq!(
+            journal
+                .iter()
+                .filter(|event| matches!(event.payload, Payload::CrashDetected(_)))
+                .count(),
+            1,
+            "{replay:?}"
+        );
+        (
+            fs.contents("/state/events.jsonl").unwrap(),
+            state_json(&fs).unwrap(),
+        )
     }
 
     assert_eq!(bounded(Replay::Warm), bounded(Replay::Cold));
