@@ -6,8 +6,12 @@
 //! it stopped.
 //!
 //! The swept window starts with the run that completes night 2's qualification and ends with the final day:
-//! all 380 durable events, without a stride. Projection comparison blanks only shifted sequence, trial and night
-//! references (including `last_step`'s sequence); policy commitments are compared as a sorted multiset.
+//! every durable event, without a stride. Projections and policy commitments compare all rendered values exactly,
+//! naming identities by first mention. Sequence citations (including night IDs) also compare their target's kind
+//! and identity-hidden policy payload in the whole journal, or kind alone for raw facts; missing targets are
+//! distinct from local ones. Exposure anchors also hide the source boot because a resumed trial can run on a new
+//! boot; directly compared exposures keep it exact. These bounded anchors do not recursively compare target
+//! citations. Policy commitments compare as a multiset; trial identities compare only by first-mention aliasing.
 //!
 //! Machine crashes also cover every durable event. Power is cut before and after every actual SMU access.
 //! Each resumed phase checks its registers and each crashed trial's duration and failure attribution. Between
@@ -24,13 +28,13 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use serde_json::Value;
+use test_case::test_case;
 use togi_config::Config;
 use togi_journal::fs::{AppendPoint, AppendTrigger, Fault, FileKind, Fs, MemFs, Op};
 use togi_journal::{
     ApplicationId, ApplyCause, Attribution, CcdVector, DayApplied, DayBootStart, DayCheckpoint,
     DayCleanStop, DayOffsetsChanged, DayUncleanEnd, Event, Journal, Outcome, Payload,
-    QualificationState, Seq, Stamp, Tested, TrialId,
+    QualificationState, RateCell, Seq, Stamp, Tested, TrialId,
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, EndEvidence, Error, Machine, ObservedOffset, PerCore,
@@ -40,8 +44,9 @@ use togi_sim::definition::CoreDef;
 use togi_sim::faults::SmuOperation;
 use togi_sim::{MachineDefinition, Model, Persisted, Simulator};
 use togi_tuner::day::{Invocation, Pause};
-use togi_tuner::policy::{DayQuery, Params, State};
+use togi_tuner::policy::{DayQuery, Params, Projection, State};
 
+use super::compare::Names;
 use crate::Stop;
 use crate::testing::{Bench, build, simulated};
 
@@ -1065,31 +1070,17 @@ fn assert_unchanged_decisions(
             Some((after, Fate::Paused))
         };
         let (_, reference) = play(&control, played.phase, played.start, append);
-        let got = commitments(&events[played.start..], false);
-        let want = commitments(&reference[played.start..], false);
-        assert_values_equal(
-            &serde_json::to_value(got).unwrap(),
-            &serde_json::to_value(want).unwrap(),
-            "decisions",
-        );
+        let got = commitments(events, played.start, false);
+        let want = commitments(&reference, played.start, false);
+        assert_lines_equal(&got, &want, "decisions");
     }
 }
 
-/// Report the first differing leaf rather than printing the entire scenario's evidence.
-fn assert_values_equal(got: &Value, want: &Value, path: &str) {
-    match (got, want) {
-        (Value::Object(got), Value::Object(want)) if got.keys().eq(want.keys()) => {
-            for (key, want) in want {
-                assert_values_equal(&got[key], want, &format!("{path}.{key}"));
-            }
-        }
-        (Value::Array(got), Value::Array(want)) => {
-            assert_eq!(got.len(), want.len(), "{path}: decision count");
-            for (at, (got, want)) in got.iter().zip(want).enumerate() {
-                assert_values_equal(got, want, &format!("{path}[{at}]"));
-            }
-        }
-        _ => assert_eq!(got, want, "{path}"),
+/// Report the first differing line rather than printing the entire scenario's evidence.
+fn assert_lines_equal(got: &[String], want: &[String], what: &str) {
+    assert_eq!(got.len(), want.len(), "{what}: count");
+    for (at, (got, want)) in got.iter().zip(want).enumerate() {
+        assert_eq!(got, want, "{what}[{at}]");
     }
 }
 
@@ -1118,74 +1109,23 @@ fn drain_failure(bench: &Bench, phase: Phase, events: Vec<Event>) -> Vec<Event> 
     }
 }
 
-/// Fields that hold sequence numbers, trial IDs or night IDs, which a resumed journal shifts by the events the cut
-/// added.
-const SHIFTED: &[&str] = &[
-    "caps",
-    "checkpoints",
-    "closed_by",
-    "credited",
-    "events",
-    "evidence",
-    "exposure",
-    "failure",
-    "failures",
-    "hours",
-    "last_checkpoint",
-    "night",
-    "qualification",
-    "retreat",
-    "seq",
-    "since",
-    "transactions",
-    "trial",
-    "vetoes",
-    "witness",
-    "witnesses",
-];
-
-/// `value` with every [`SHIFTED`] reference blanked.
-fn unshifted(mut value: Value) -> Value {
-    fn blank(value: &mut Value) {
-        match value {
-            Value::Object(fields) => {
-                for (key, field) in fields.iter_mut() {
-                    let reference = |value: &Value| value.is_number() || value.is_string();
-                    let shifted = SHIFTED.contains(&key.as_str())
-                        && (reference(field)
-                            || field
-                                .as_array()
-                                .is_some_and(|items| items.iter().all(reference)));
-                    if shifted {
-                        *field = Value::Null;
-                    } else if key == "last_step"
-                        && let Some(step) = field.as_array_mut()
-                    {
-                        step[0] = Value::Null;
-                        step.iter_mut().for_each(blank);
-                    } else {
-                        blank(field);
-                    }
-                }
-            }
-            Value::Array(items) => items.iter_mut().for_each(blank),
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
-        }
-    }
-    blank(&mut value);
-    value
+/// Every projection field, with citation aliasing and the whole journal's bounded target anchors.
+fn compared_projection(events: &[Event], projection: &Projection) -> Vec<String> {
+    Names::numbered(events).projection(projection)
 }
 
-/// The tuner's projection of `events`, references blanked.
-fn projection(events: &[Event]) -> Value {
-    unshifted(serde_json::to_value(folded(events).project()).unwrap())
+/// The tuner's projection of `events`, as it is compared.
+fn projection(events: &[Event]) -> Vec<String> {
+    compared_projection(events, &folded(events).project())
 }
 
-/// The policy commitments among `events` in a canonical order, references blanked, without the observations of
-/// trials a cut interrupted, which only the resumed journal has. Such an observation may also commit an unchanged
-/// cap before the retried trial rather than after it, so the order of the commitments is not compared.
-fn commitments(events: &[Event], observations: bool) -> Vec<String> {
-    let interrupted: Vec<_> = events
+/// The policy commitments from `from` onward, without observations of interrupted trials, which only the resumed
+/// journal has. An observation may commit an unchanged cap before a retried trial rather than after it, so
+/// commitments are sorted by identity-hidden shape before naming citations. Anchors use the whole journal,
+/// including records before `from`, so a suffix's citations do not accidentally become outside-journal names.
+fn commitments(events: &[Event], from: usize, observations: bool) -> Vec<String> {
+    let compared = &events[from..];
+    let interrupted: Vec<_> = compared
         .iter()
         .filter_map(|event| {
             if let Payload::TrialEnd(end) = &event.payload
@@ -1197,7 +1137,7 @@ fn commitments(events: &[Event], observations: bool) -> Vec<String> {
             }
         })
         .collect();
-    let mut commitments: Vec<_> = events
+    let mut chosen: Vec<_> = compared
         .iter()
         .filter(|event| {
             matches!(
@@ -1219,13 +1159,26 @@ fn commitments(events: &[Event], observations: bool) -> Vec<String> {
                 && matches!(&event.payload, Payload::ExposureObserved(observed)
                 if observed.source.trial.as_ref().is_none_or(|trial| !interrupted.contains(&trial)))
         })
-        .map(|event| {
-            let payload = serde_json::to_value(&event.payload).unwrap();
-            format!("{} {}", event.kind().as_str(), unshifted(payload))
-        })
         .collect();
-    commitments.sort_unstable();
-    commitments
+    let mut shapes = Names::hidden();
+    chosen.sort_by_cached_key(|event| {
+        format!(
+            "{} {}",
+            event.kind().as_str(),
+            shapes.payload(&event.payload)
+        )
+    });
+    let mut names = Names::numbered(events);
+    chosen
+        .into_iter()
+        .map(|event| {
+            format!(
+                "{} {}",
+                event.kind().as_str(),
+                names.payload(&event.payload)
+            )
+        })
+        .collect()
 }
 
 /// The kinds the kill sweep must cut after at least once.
@@ -1241,17 +1194,37 @@ const KINDS: &[&str] = &[
     "day.applied",
 ];
 
-#[test]
-fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments() {
-    let (model, played, from) = scenario();
-    let cuts = cuts(&played, from);
-    assert_eq!(cuts.len(), 380, "the durable-event sweep window changed");
+/// The fewest swept phases that cut something: after the run that completes night 2's qualification, the scenario
+/// holds that run, three days, the crashed day boot and night 3's run.
+const MIN_SWEPT_PHASES: usize = 6;
+
+/// What the sweep window must hold for a sweep over it to mean anything, however many events a legitimate change
+/// adds to it: a cut after every kind of [`KINDS`], one inside a trial, and the scenario's swept phases.
+fn assert_window(played: &[Played], from: usize, cuts: &[(usize, usize)]) {
     let cut: BTreeSet<_> = cuts
         .iter()
         .map(|&(phase, after)| played[phase].events[after - 1].kind().as_str())
         .collect();
     let missed: Vec<_> = KINDS.iter().filter(|kind| !cut.contains(*kind)).collect();
     assert!(missed.is_empty(), "no cut after {missed:?}");
+    let trials = trial_cuts(played, from);
+    assert!(
+        !trials.is_empty() && trials.iter().all(|cut| cuts.contains(cut)),
+        "the swept phases cut no trial"
+    );
+    let phases: BTreeSet<_> = cuts.iter().map(|&(phase, _)| phase).collect();
+    assert!(
+        phases.len() >= MIN_SWEPT_PHASES,
+        "only {} swept phases hold a cut, fewer than {MIN_SWEPT_PHASES}",
+        phases.len()
+    );
+}
+
+#[test]
+fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments() {
+    let (model, played, from) = scenario();
+    let cuts = cuts(&played, from);
+    assert_window(&played, from, &cuts);
     let wanted: Vec<_> = played
         .iter()
         .map(|phase| projection(&phase.events))
@@ -1262,8 +1235,8 @@ fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection
         assert_eq!(&events[..after], &reference.events[..after]);
         assert_eq!(projection(&events), wanted[phase]);
         assert_eq!(
-            commitments(&events[after..], true),
-            commitments(&reference.events[after..], true)
+            commitments(&events, after, true),
+            commitments(&reference.events, after, true)
         );
     });
 }
@@ -1296,9 +1269,7 @@ fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve
     let (model, played, from) = scenario();
     let trials = trial_cuts(&played, from);
     let cuts = cuts(&played, from);
-    assert!(trials.iter().all(|cut| cuts.contains(cut)));
-    assert_eq!(cuts.len(), 380, "the durable-event crash window changed");
-    assert!(!trials.is_empty(), "the swept phases ran no trial");
+    assert_window(&played, from, &cuts);
     each(&cuts, |phase, after| {
         let events = resume(&played[phase], &model, after, Fate::PowerLoss);
         assert_unchanged_decisions(
@@ -1330,5 +1301,161 @@ fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve
         cuts.len(),
         trials.len(),
         smu.len()
+    );
+}
+
+/// The scenario's whole journal.
+fn scenario_events() -> Vec<Event> {
+    let (_, played, _) = scenario();
+    played.last().unwrap().events.clone()
+}
+
+/// `events` with `change` applied to the first rate cell of the first `ccd.cap` that has one.
+fn with_changed_rate_cell(events: &[Event], change: impl FnOnce(&mut RateCell)) -> Vec<Event> {
+    let mut events = events.to_vec();
+    let cell = events
+        .iter_mut()
+        .find_map(|event| {
+            if let Payload::CcdCap(cap) = &mut event.payload {
+                cap.cells.first_mut()
+            } else {
+                None
+            }
+        })
+        .expect("no ccd.cap of the scenario carries a rate cell");
+    change(cell);
+    events
+}
+
+#[test_case(1, 0; "failure count")]
+#[test_case(0, 1; "eligible seconds")]
+fn a_changed_rate_cell_changes_the_commitments(failures: u32, eligible_s: u64) {
+    let events = scenario_events();
+    let changed = with_changed_rate_cell(&events, |cell| {
+        cell.failures += failures;
+        cell.eligible_s += eligible_s;
+    });
+    assert_ne!(
+        commitments(&changed, 0, true),
+        commitments(&events, 0, true),
+        "a rate cell that counts {failures} more failures and {eligible_s} more seconds compares equal"
+    );
+}
+
+#[test]
+fn a_changed_count_of_cited_events_changes_the_projection() {
+    let events = scenario_events();
+    let projection = folded(&events).project();
+    let mut changed = projection.clone();
+    let (seq, step) = changed
+        .day
+        .last_step
+        .as_mut()
+        .expect("the scenario ends after a day step");
+    step.hours.push(*seq);
+    assert_ne!(
+        compared_projection(&events, &changed),
+        compared_projection(&events, &projection)
+    );
+}
+
+#[test]
+fn caps_citing_one_event_instead_of_two_change_the_projection() {
+    let events = scenario_events();
+    let projection = folded(&events).project();
+    let witnesses: Vec<_> = projection
+        .ccds
+        .iter()
+        .filter_map(|ccd| ccd.cap.as_ref().map(|cap| cap.witness))
+        .collect();
+    assert!(
+        witnesses.len() >= 2 && witnesses[0] != witnesses[1],
+        "the scenario's CCDs have no two distinct caps: {witnesses:?}"
+    );
+    let mut changed = projection.clone();
+    let first = witnesses[0];
+    for cap in changed.ccds.iter_mut().filter_map(|ccd| ccd.cap.as_mut()) {
+        cap.witness = first;
+    }
+    assert_ne!(
+        compared_projection(&events, &changed),
+        compared_projection(&events, &projection)
+    );
+}
+
+#[test]
+fn a_qualification_citing_a_different_exposure_changes_the_commitments() {
+    let events = scenario_events();
+    let qualification = events
+        .iter()
+        .find(|event| matches!(&event.payload, Payload::NightQualification(record)
+            if matches!(&record.state, QualificationState::Complete { witnesses } if !witnesses.is_empty())))
+        .expect("the scenario completes a qualification");
+    let Payload::NightQualification(record) = &qualification.payload else {
+        unreachable!();
+    };
+    let QualificationState::Complete { witnesses } = &record.state else {
+        unreachable!();
+    };
+    let cited: Vec<_> = witnesses
+        .iter()
+        .map(|witness| match witness.evidence {
+            togi_journal::CellEvidence::Fresh { exposure }
+            | togi_journal::CellEvidence::Reused { exposure } => exposure,
+        })
+        .collect();
+    let replacement = events
+        .iter()
+        .find(|event| {
+            matches!(event.payload, Payload::ExposureObserved(_)) && !cited.contains(&event.seq)
+        })
+        .expect("the scenario has an exposure outside this qualification");
+    let original = events.iter().find(|event| event.seq == cited[0]).unwrap();
+    let compared = vec![original.clone(), replacement.clone(), qualification.clone()];
+    let mut changed = compared.clone();
+    let Payload::NightQualification(record) = &mut changed[2].payload else {
+        unreachable!();
+    };
+    let QualificationState::Complete { witnesses } = &mut record.state else {
+        unreachable!();
+    };
+    match &mut witnesses[0].evidence {
+        togi_journal::CellEvidence::Fresh { exposure }
+        | togi_journal::CellEvidence::Reused { exposure } => *exposure = replacement.seq,
+    }
+    assert_ne!(
+        commitments(&changed, 0, false),
+        commitments(&compared, 0, false),
+        "qualification witness changed from {} to {} with both exposures unchanged",
+        original.seq,
+        replacement.seq
+    );
+}
+
+#[test]
+fn a_cap_citing_a_different_event_changes_the_projection() {
+    let events = scenario_events();
+    let cap_at = events
+        .iter()
+        .position(|event| matches!(event.payload, Payload::CcdCap(_)))
+        .expect("the scenario commits a cap");
+    let events = &events[..=cap_at];
+    let projection = folded(events).project();
+    let mut changed = projection.clone();
+    let replacement = events
+        .iter()
+        .find(|event| matches!(event.payload, Payload::TrialIntent(_)))
+        .expect("the scenario runs a trial");
+    let cap = changed.ccds[0]
+        .cap
+        .as_mut()
+        .expect("the scenario has a cap");
+    let original = cap.witness;
+    cap.witness = replacement.seq;
+    assert_ne!(
+        compared_projection(events, &changed),
+        compared_projection(events, &projection),
+        "cap witness changed from {original} to {} with both target events unchanged",
+        replacement.seq
     );
 }

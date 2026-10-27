@@ -1,5 +1,6 @@
 //! Whole nights over the simulated machine and the in-memory journal, through the public `run`.
 
+mod compare;
 mod cut;
 
 use jiff::{SignedDuration, Timestamp};
