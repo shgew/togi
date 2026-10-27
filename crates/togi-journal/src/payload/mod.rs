@@ -20,8 +20,9 @@ pub use config::{
 };
 pub use day::{
     CrashedBoot, DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayCrashes,
-    DayFault, DayOffsetsChanged, DayQuestions, DayRecord, DayUncleanEnd, EndClass, LiveFault,
-    LoadMix, OffsetSource, OffsetsError, RecordableEnd, RecordedOffsets, Running, Trap,
+    DayFault, DayIntervalBoot, DayIntervalCredit, DayIntervals, DayOffsetsChanged, DayQuestions,
+    DayRecord, DayUncleanEnd, EndClass, LiveFault, LoadMix, OffsetSource, OffsetsError,
+    RecordableEnd, RecordedOffsets, Running, Trap,
 };
 pub use domain::{
     Activity, Attribution, Certainty, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition,
