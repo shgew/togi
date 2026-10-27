@@ -7,12 +7,12 @@ use togi_journal::{
     Activity, CommandReset, NightId, Payload, QualificationState, Queue, ResetTarget, Seq,
     Shutdown, ShutdownReason, TaskId, Tested, UnavailableBackend,
 };
-use togi_machine::{Backend, BootId};
+use togi_machine::{Backend, BootId, CoreId, CoreSet, PerCore};
 use togi_tuner::day::{Invocation, Pause};
-use togi_tuner::night::Roles;
-use togi_tuner::policy::{Action, DayQuery, EndReason, TrialPlan};
+use togi_tuner::night::{PackageLoad, Roles};
+use togi_tuner::policy::{Action, DayQuery, EndReason, Params, TrialPlan};
 
-use crate::fixture::{Ending, Journal, at, cores};
+use crate::fixture::{Ending, Journal, at, cores, cores_per_ccd};
 
 /// Runs `trials` passing trials, returning the night they ran in.
 fn run_trials(journal: &mut Journal, trials: i64) -> NightId {
@@ -508,6 +508,102 @@ fn a_failure_on_a_co_zero_core_owes_an_all_zero_rerun_that_charges_no_ccd() {
         let edge = &projection["ccds"][ccd]["edge"];
         assert_ne!(edge["kind"], "observed", "CCD{ccd}: {edge}");
     }
+}
+
+fn core_at(id: i64) -> CoreId {
+    CoreId::new(id).unwrap()
+}
+
+/// What a full-CCD R7 load of the four cores 0–3 measures: core `i` requests `volts[i]`.
+fn requests_of(volts: [f64; 4]) -> PerCore<f64> {
+    (0..4_i64)
+        .zip(volts)
+        .map(|(id, volts)| (core_at(id), volts))
+        .collect()
+}
+
+/// Whether `plan` is a mapping trial of CCD0 at a nonzero offset.
+fn is_isolated_ccd0_mapping(plan: &TrialPlan) -> bool {
+    plan.task.queue == Queue::Mapping
+        && matches!(plan.tested, Tested::Isolated { ccd, offset }
+            if ccd.get() == 0 && offset.get() < 0)
+}
+
+/// A night on two CCDs of four cores, so every CCD derives honest R7 partials.
+fn eight_core_night() -> Journal {
+    Journal::ready_on(Params::SPEC, cores_per_ccd(4))
+}
+
+/// Drives a night of passing trials until its isolated CCD0 mapping step asks for its first R7 partial. The
+/// step's full-CCD R7 load measures `requests` on the way; the partial fails on core 4, a CO-0 core of CCD1.
+/// Returns that full-CCD plan and the failed partial.
+fn fail_first_r7_partial_of_ccd0(
+    journal: &mut Journal,
+    requests: &PerCore<f64>,
+) -> (TrialPlan, TrialPlan) {
+    let mut full = None;
+    for step in 0..5_000_i64 {
+        let plan = journal.until_trial(at(100 + step));
+        assert_ne!(
+            plan.task.queue,
+            Queue::Filler,
+            "the night never failed an R7 partial of CCD0"
+        );
+        let roles = plan.cell.roles;
+        match roles {
+            Roles::Package(PackageLoad::FullCcd { ccd }) if is_isolated_ccd0_mapping(&plan) => {
+                assert_eq!(ccd.get(), 0, "{plan:?}");
+                journal.run_requesting(&plan, requests);
+                full = Some(plan);
+            }
+            Roles::Package(PackageLoad::Partial { .. }) if is_isolated_ccd0_mapping(&plan) => {
+                let Some(full) = full else {
+                    panic!("the step runs its full-CCD load before its partials");
+                };
+                journal.run(&plan, Ending::Fail(Some(4)));
+                return (full, plan);
+            }
+            Roles::Package(_)
+            | Roles::SingleCore { .. }
+            | Roles::SmtPair { .. }
+            | Roles::AllCoresIdle
+            | Roles::Neighbours { .. }
+            | Roles::AllThreads { .. } => {
+                journal.run(&plan, Ending::Pass);
+            }
+        }
+    }
+    panic!("the night never failed an R7 partial of CCD0");
+}
+
+/// Drives the night with passing trials until it asks for the all-zero rerun of `failed`'s cell.
+fn rerun_of(journal: &mut Journal, failed: &TrialPlan) -> TrialPlan {
+    for step in 0..5_000_i64 {
+        let plan = journal.until_trial(at(20_000 + step));
+        if plan.activity == Activity::Control && plan.profile.is_zero() && plan.cell == failed.cell
+        {
+            return plan;
+        }
+        assert_ne!(plan.task.queue, Queue::Filler, "the night never reran it");
+        journal.run(&plan, Ending::Pass);
+    }
+    panic!("the night never reran the failed cell");
+}
+
+#[test]
+fn a_full_ccd_load_that_reorders_the_partials_leaves_the_failed_partials_rerun_scheduled() {
+    let mut journal = eight_core_night();
+    let (full, failed) =
+        fail_first_r7_partial_of_ccd0(&mut journal, &requests_of([1.0, 1.1, 1.2, 1.3]));
+    // The highest requests idle first: the failed partial loads cores 0–2.
+    let loaded: CoreSet = [0, 1, 2].map(core_at).into_iter().collect();
+    assert_eq!(failed.cell.loaded, loaded);
+    // The same load measures the opposite order, so CCD0's partials are now cores 1–3 and 2–3: the failed
+    // cell is no longer among today's partials.
+    journal.run_requesting(&full, &requests_of([1.3, 1.2, 1.1, 1.0]));
+    let rerun = rerun_of(&mut journal, &failed);
+    assert_eq!(rerun.task.queue, Queue::Control);
+    assert_eq!(rerun.cell, failed.cell);
 }
 
 #[test]

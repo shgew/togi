@@ -41,8 +41,13 @@ pub(crate) fn zero() -> CcdProfile {
 
 /// Each core's observed offset under `profile`.
 pub(crate) fn offsets_of(profile: &CcdProfile) -> PerCore<ObservedOffset> {
-    cores()
-        .into_iter()
+    offsets_on(&cores(), profile)
+}
+
+/// Each of `machine`'s cores' observed offset under `profile`.
+fn offsets_on(machine: &[CoreInfo], profile: &CcdProfile) -> PerCore<ObservedOffset> {
+    machine
+        .iter()
         .map(|info| {
             let offset = profile.get(info.ccd).map_or(0, TargetOffset::get);
             (info.core, ObservedOffset(offset))
@@ -67,10 +72,15 @@ pub(crate) fn firmware(bios_version: &str) -> SessionContext {
 
 /// The machine's four cores, two per CCD, each with two CPUs.
 pub(crate) fn cores() -> Vec<CoreInfo> {
-    (0..4_u8)
+    cores_per_ccd(2)
+}
+
+/// A machine of two CCDs with `per_ccd` cores each, each core with two CPUs.
+pub(crate) fn cores_per_ccd(per_ccd: u8) -> Vec<CoreInfo> {
+    (0..2 * per_ccd)
         .map(|id| CoreInfo {
             core: CoreId::new(i64::from(id)).unwrap(),
-            ccd: CcdId::try_from(id / 2).unwrap(),
+            ccd: CcdId::try_from(id / per_ccd).unwrap(),
             cpus: vec![
                 CpuId::new(i64::from(id)).unwrap(),
                 CpuId::new(i64::from(id) + 32).unwrap(),
@@ -89,17 +99,20 @@ pub(crate) struct Journal {
     shift: i64,
     /// The content every workload runs from now on.
     built: ContentId,
+    /// The machine's cores, as every session start lists them.
+    machine: Vec<CoreInfo>,
 }
 
 impl Journal {
-    /// An empty journal folded by a policy with `params`.
-    pub(crate) fn bare_with(params: Params) -> Self {
+    /// An empty journal of the machine `machine` folded by a policy with `params`.
+    fn bare_on(params: Params, machine: Vec<CoreInfo>) -> Self {
         Self {
             events: Vec::new(),
             state: State::new(params),
             boot: "boot".to_owned(),
             shift: 0,
             built: content(),
+            machine,
         }
     }
 
@@ -151,12 +164,17 @@ impl Journal {
     }
 
     fn started_with(params: Params) -> Self {
-        let mut journal = Self::bare_with(params);
+        Self::started_on(params, cores())
+    }
+
+    fn started_on(params: Params, machine: Vec<CoreInfo>) -> Self {
+        let mut journal = Self::bare_on(params, machine);
+        let cores = journal.machine.clone();
         journal.append(
             SessionStart {
                 build: build(),
                 session: "20231114T221320Z".parse().unwrap(),
-                cores: cores(),
+                cores,
             }
             .into(),
             &[],
@@ -166,11 +184,12 @@ impl Journal {
 
     /// Starts the fresh session `session` on the same machine and firmware.
     pub(crate) fn start_session(&mut self, session: &str) {
+        let cores = self.machine.clone();
         self.append(
             SessionStart {
                 build: build(),
                 session: session.parse().unwrap(),
-                cores: cores(),
+                cores,
             }
             .into(),
             &[],
@@ -183,7 +202,11 @@ impl Journal {
     }
 
     fn contextual_with(params: Params) -> Self {
-        let mut journal = Self::started_with(params);
+        Self::contextual_on(params, cores())
+    }
+
+    fn contextual_on(params: Params, machine: Vec<CoreInfo>) -> Self {
+        let mut journal = Self::started_on(params, machine);
         journal.append(context().into(), &[]);
         journal
     }
@@ -202,11 +225,12 @@ impl Journal {
         profile: &CcdProfile,
     ) -> Seq {
         self.reboot(boot);
+        let offsets = offsets_on(&self.machine, profile);
         self.append(
             DayBootStart {
                 build: build(),
                 bios: firmware(bios_version).bios_context(),
-                offsets: offsets_of(profile),
+                offsets,
                 watchdog: None,
             }
             .into(),
@@ -237,14 +261,14 @@ impl Journal {
 
     /// A journal ready for its first night, folded by a policy with `params`.
     pub(crate) fn ready_with(params: Params) -> Self {
-        let mut journal = Self::contextual_with(params);
-        journal.append(
-            SessionBaseline {
-                offsets: offsets_of(&zero()),
-            }
-            .into(),
-            &[],
-        );
+        Self::ready_on(params, cores())
+    }
+
+    /// A journal of the machine `machine` ready for its first night, folded by a policy with `params`.
+    pub(crate) fn ready_on(params: Params, machine: Vec<CoreInfo>) -> Self {
+        let mut journal = Self::contextual_on(params, machine);
+        let offsets = offsets_on(&journal.machine, &zero());
+        journal.append(SessionBaseline { offsets }.into(), &[]);
         journal
     }
 
@@ -326,7 +350,14 @@ impl Journal {
 
     /// Journals one trial of `plan` whose every workload ran the backend build `built`.
     pub(crate) fn run_built(&mut self, plan: &TrialPlan, ending: Ending, built: &ContentId) -> Seq {
-        self.run_from(plan, ending, built, None)
+        self.run_from(plan, ending, built, None, &PerCore::default())
+    }
+
+    /// Journals one passing trial of `plan` whose end measured each loaded core's voltage request in
+    /// `requests`, as a full-CCD R7 load reports them.
+    pub(crate) fn run_requesting(&mut self, plan: &TrialPlan, requests: &PerCore<f64>) -> Seq {
+        let built = self.built.clone();
+        self.run_from(plan, Ending::Pass, &built, None, requests)
     }
 
     /// Journals one passing trial of `plan` whose task began `waited` seconds before its intent, as when the
@@ -336,7 +367,7 @@ impl Journal {
         let task_start = intent_at
             .checked_sub(jiff::SignedDuration::from_secs(waited))
             .unwrap();
-        self.run_from(plan, Ending::Pass, &content(), Some(task_start))
+        self.run_from(plan, Ending::Pass, &content(), Some(task_start), &PerCore::default())
     }
 
     fn run_from(
@@ -345,6 +376,7 @@ impl Journal {
         ending: Ending,
         built: &ContentId,
         task_start: Option<Timestamp>,
+        requests: &PerCore<f64>,
     ) -> Seq {
         let id = TrialId::from(format!("t{}", self.events.len() + 1));
         let content = plan
@@ -355,7 +387,7 @@ impl Journal {
                 content: built.clone(),
             })
             .collect();
-        let cores = cores();
+        let cores = self.machine.clone();
         let mut intent = plan.intent(id.clone(), &cores, content).unwrap();
         intent.task_start = task_start;
         let duration_s = intent.duration_s;
@@ -378,7 +410,8 @@ impl Journal {
         if let Some(core) = core {
             end["core"] = serde_json::json!(core);
         }
-        let end: TrialEnd = serde_json::from_value(end).unwrap();
+        let mut end: TrialEnd = serde_json::from_value(end).unwrap();
+        end.voltage_requests_v = *requests;
         self.append(end.into(), &[intent])
     }
 
@@ -394,7 +427,7 @@ impl Journal {
                 content: self.built.clone(),
             })
             .collect();
-        let intent = plan.intent(id.clone(), &cores(), content).unwrap();
+        let intent = plan.intent(id.clone(), &self.machine, content).unwrap();
         let intent = self.append(intent.into(), &plan.causes);
         let end: TrialEnd = serde_json::from_value(serde_json::json!({
             "trial": id.as_str(), "outcome": "inconclusive", "duration_s": 0, "interrupted": true
