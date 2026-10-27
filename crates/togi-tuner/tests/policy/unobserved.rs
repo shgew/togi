@@ -3,8 +3,9 @@
 //! it stops blocking promotion once both are done while its veto stands.
 
 use togi_journal::{
-    Classification, CrashedBoot, DayEventId, DayRecord, HoldReason, OffsetSource, Payload, Queue,
-    RecordedOffsets, ReproductionState, RetreatCause, Running, StepKind, VetoState,
+    Classification, CrashedBoot, DayEventId, DayImported, DayRecord, EventKind, HoldReason,
+    ImportClass, OffsetSource, Payload, Provenance, Queue, RecordedOffsets, ReproductionState,
+    RetreatCause, Running, Seq, StepKind, VetoState,
 };
 use togi_machine::CcdProfile;
 
@@ -78,6 +79,71 @@ fn an_unobserved_crash_record_commits_a_cpu_suspect_event_an_active_veto_and_a_r
     };
     assert_eq!(*cited, id);
     assert!(retreat.proposed.ccd.is_zero());
+}
+
+#[test]
+fn an_imported_unobserved_crash_keeps_its_original_record_identity_for_event_and_veto() {
+    let (mut journal, d) = promoted();
+    journal.boot_start("day2");
+    let original = Provenance {
+        session: "20231113T221320Z".parse().unwrap(),
+        seq: Seq::new(7).unwrap(),
+    };
+    let record = DayRecord {
+        boot: CrashedBoot::Unobserved { at: at(50_000) },
+        offsets: RecordedOffsets::new(offsets_of(&d)).unwrap(),
+        source: OffsetSource::Entered { at: at(50_100) },
+        running: Running::Build,
+        note: None,
+    };
+    let imported_seq = journal.append(
+        DayImported {
+            original,
+            original_kind: EventKind::DayRecord,
+            raw: serde_json::to_string(&record).unwrap(),
+            time: at(50_100),
+            boot: "original-day".to_owned().into(),
+            build: None,
+            firmware: None,
+            profile: None,
+            class: ImportClass::Manual,
+            missing: vec![],
+        }
+        .into(),
+        &[],
+    );
+    assert_ne!(imported_seq, original.seq);
+    assert_ne!(original.session, SESSION.parse().unwrap());
+    let id = DayEventId::Record {
+        session: original.session,
+        seq: original.seq,
+    };
+    let committed = journal.settle_day(&cold_boot("day2", 61_000));
+    let events = committed
+        .iter()
+        .filter_map(|payload| {
+            if let Payload::DayEvent(event) = payload {
+                Some((
+                    &event.event,
+                    matches!(event.classification, Classification::CpuSuspect { .. }),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(events, vec![(&id, true)]);
+    let vetoes = committed
+        .iter()
+        .filter_map(|payload| {
+            if let Payload::DayVeto(veto) = payload {
+                Some((&veto.event, veto.state))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(vetoes, vec![(&id, VetoState::Active)]);
 }
 
 #[test]
