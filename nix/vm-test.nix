@@ -1385,7 +1385,12 @@ let
       }
     );
 in
-{
+pkgs.lib.mapAttrs (
+  _: test:
+  test.overrideAttrs (old: {
+    passthru = (old.passthru or { }) // { tier = "ci"; };
+  })
+) {
   grub = grouped "grub" 3 [
     {
       name = "tuning";

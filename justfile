@@ -77,7 +77,7 @@ lint: _dev-shell
 fmt:
     nix fmt
 
-# Run the gate in two stages, each stopping at its first failure: format, lint through Cargo, one Nix build of the light and nextest-<group> flake checks, then the doctests, cargo-deny and cargo-shear; then, on Linux with writable /dev/kvm, one Nix build of the VM tests (Nix rebuilds only what changed), then publish the built check outputs to Cachix when a push token is present; cargo-deny's advisory audit runs only in the deny flake check
+# Run the local checks, stopping at the first failure, then publish built outputs; CI-tier checks run on CI runners or through their opt-in recipes
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -90,33 +90,32 @@ gate: _dev-shell
     cargo test --locked --doc
     cargo deny --locked check bans licenses sources
     cargo shear
-    just _heavy-gate gate
     just _publish gate
 
-# Print the nextest-<group> flake checks, space-separated
+# Print the local nextest flake checks, space-separated
 _nextest-checks:
-    @nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: builtins.match "nextest-.*" name != null) (builtins.attrNames checks))'
+    @nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: builtins.match "nextest-.*" name != null && (checks.${name}.tier or null) != "ci") (builtins.attrNames checks))'
 
-_heavy-checks:
+# Print every local-tier flake check; CI and release discover all checks independently
+_local-checks:
+    @nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: (checks.${name}.tier or null) != "ci") (builtins.attrNames checks))'
+
+# Build VM checks on demand (`just vm` or `just vm vm-grub vm-runtime`); needs Linux and writable KVM
+[group('nix')]
+vm *names: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
-    [[ '{{ os() }}' == linux ]] || exit 0
-    nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: checks.${name} ? driver) (builtins.attrNames checks))'
-
-_heavy-gate name:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [[ '{{ os() }}' != linux ]]; then
-        echo "$1: the VM tests build on Linux only; pull request CI builds them"
-        exit 0
+    [[ '{{ os() }}' == linux && -w /dev/kvm ]] || { echo 'vm: Linux with writable /dev/kvm is required' >&2; exit 1; }
+    available=$(nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: checks.${name} ? driver) (builtins.attrNames checks))')
+    if (($#)); then
+        for name in "$@"; do
+            [[ " $available " == *" $name "* ]] || { echo "vm: not a VM check: $name" >&2; exit 1; }
+        done
+        just check-one "$@"
+    else
+        read -r -a checks <<< "$available"
+        just check-one "${checks[@]}"
     fi
-    names=$(just _heavy-checks)
-    read -r -a checks <<< "$names"
-    if [[ ! -w /dev/kvm ]]; then
-        echo "$1: /dev/kvm is not writable; skipping the VM tests; pull request CI builds them"
-        exit 0
-    fi
-    if ((${#checks[@]})); then just check-one "${checks[@]}"; fi
 
 # Push the output of every flake check of this tree that is in the local store, as the checks just built it, to the togi Cachix cache when a push token is present (CACHIX_AUTH_TOKEN, or the one `cachix authtoken` stored), so pull request CI finds it cached; with no token it says so and publishes nothing
 _publish name:
@@ -143,10 +142,14 @@ _publish name:
     echo "$1: publishing ${#built[@]} check outputs to the togi Cachix cache"
     printf '%s\n' "${built[@]}" | cachix push togi || echo "$1: cachix push failed; pull request CI builds what it does not find" >&2
 
-# Run every flake check this host builds, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package and, on Linux, trial-scope-tests and the VM tests
+# Build every local-tier flake check; includes package and the advisory audit beyond the gate
 [group('nix')]
-check *args:
-    nix flake check --print-build-logs "$@" --max-jobs 1 --cores {{ jobs }}
+check: _dev-shell
+    #!/usr/bin/env bash
+    set -euo pipefail
+    names=$(just _local-checks)
+    read -r -a checks <<< "$names"
+    just check-one "${checks[@]}"
 
 # Build named flake checks, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, vm-grub, vm-runtime, vm-display and vm-efi (`just check-one module`)
 [group('nix')]
@@ -354,7 +357,7 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
     just gate
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Push a review fix: format, lint, check doc links, build the nextest-<group> checks, board and SQL views and the VM tests on Linux with writable /dev/kvm (Nix rebuilds only what changed), publish the built check outputs to Cachix when a push token is present, then push as `just ship` does; the first push uses `just ship`
+# Push a review fix: format, lint, check doc links, build local nextest checks and changed board/SQL views, publish built outputs, then push as `just ship` does
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -375,7 +378,6 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     names=$(just _nextest-checks)
     read -r -a nextest <<< "$names"
     just check-one "${nextest[@]}"
-    just _heavy-gate push-fix
     just _publish push-fix
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
