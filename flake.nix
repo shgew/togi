@@ -323,6 +323,7 @@
             {
               packages = [
                 pkgs.gh
+                pkgs.cachix
                 pkgs.gh-token
                 pkgs.just
                 pkgs.nixfmt
