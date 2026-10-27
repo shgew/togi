@@ -511,14 +511,13 @@ impl Ruleset13 {
         }
         let end =
             togi_session::adjudicate_trial_end(id, &result, intended, ended == Ended::Interrupted)
-                .map_err(|error| match error {
-                    togi_session::SessionError::TrialDuration(_) => {
+                .map_err(|error| {
+                    // The backend-only helper can only reject duration or temperature.
+                    if let togi_session::SessionError::TrialDuration(_) = error {
                         RunError::Calendar("trial duration")
-                    }
-                    togi_session::SessionError::TrialTemperature(_) => {
+                    } else {
                         RunError::Calendar("trial temperature")
                     }
-                    _ => RunError::Calendar("trial adjudication"),
                 })?;
         self.append(machine, end.into(), &[intent])?;
         Ok(ended)

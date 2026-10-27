@@ -55,7 +55,7 @@ fn backend_trial_end(
     let mut expected = trial_end(trial, outcome, u32::try_from(seconds).unwrap());
     expected.reason = reason.map(str::to_owned);
     expected.interrupted = interrupted;
-    expected.escaped = result.escaped.clone();
+    expected.escaped = result.escaped;
     expected.tctl_max_c = Some(72);
     if failed && !escaped {
         expected.signal = Some(Signal::ComputationError);
