@@ -1414,7 +1414,7 @@ fn day_record(p: &DayRecord) -> String {
 
 pub(super) fn day_record_effect(p: &DayRecord) -> String {
     let mut text = format!(
-        "Ruleset 13 will treat this record as a whole-profile veto: it never applies a day profile at or deeper than offsets {} on every core, until evidence clears the record. This build only records it; nothing reads it yet.",
+        "The tuner treats this record as whole-profile evidence and as a whole-profile veto: when it chooses day steps and qualifications it never chooses a day profile at or deeper than offsets {} on every core, until evidence clears the record. No day profile is applied at runtime before #1218.",
         offsets(p.offsets.get(), |offset| offset.0.to_string())
     );
     if let CrashedBoot::UncleanEnd { boot } = &p.boot {

@@ -662,9 +662,10 @@ impl State {
         let active = vetoes(&view.events);
         let mut owed = Vec::new();
         for veto in &active {
-            let (Some(id), Some(meta)) =
-                (self.journal_event_id(&veto.event), view.meta.get(&veto.event))
-            else {
+            let (Some(id), Some(meta)) = (
+                self.journal_event_id(&veto.event),
+                view.meta.get(&veto.event),
+            ) else {
                 continue;
             };
             let desired = DayVeto {
