@@ -70,7 +70,7 @@ lint: _dev-shell
 fmt:
     nix fmt
 
-# Run the local checks cheapest first with a warm cargo cache and the nextest-<group> flake checks, then build the VM tests and sim shards on Linux (Nix rebuilds only what changed); cargo-deny's advisory audit runs only in the deny flake check
+# Run the local checks cheapest first with a warm cargo cache and the nextest-<group> flake checks, then build the VM tests and sim shards on Linux (Nix rebuilds only what changed), then publish the built check outputs to Cachix when a push token is present; cargo-deny's advisory audit runs only in the deny flake check
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -87,6 +87,7 @@ gate: _dev-shell
     cargo deny --locked check bans licenses sources
     cargo shear
     just _heavy-gate gate
+    just _publish gate
 
 # Print the nextest-<group> flake checks, space-separated
 _nextest-checks:
@@ -102,13 +103,13 @@ _heavy-gate name:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ '{{ os() }}' != linux ]]; then
-        echo "$1: the VM tests and simulator shards build on Linux only; the release's full check runs them"
+        echo "$1: the VM tests and simulator shards build on Linux only; pull request CI builds them"
         exit 0
     fi
     names=$(just _heavy-checks)
     read -r -a checks <<< "$names"
     if [[ ! -w /dev/kvm ]]; then
-        echo "$1: /dev/kvm is not writable; skipping the VM tests, but building the simulator shards; the release's full check runs the VM tests"
+        echo "$1: /dev/kvm is not writable; skipping the VM tests, but building the simulator shards; pull request CI builds the VM tests"
         shards=()
         for check in "${checks[@]}"; do
             if [[ "$check" == sim-suite-* ]]; then shards+=("$check"); fi
@@ -117,12 +118,37 @@ _heavy-gate name:
     fi
     if ((${#checks[@]})); then just check-one "${checks[@]}"; fi
 
-# Run every flake check this host builds, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+# Push the output of every flake check of this tree that is in the local store, as the checks just built it, to the togi Cachix cache when a push token is present (CACHIX_AUTH_TOKEN, or the one `cachix authtoken` stored), so pull request CI finds it cached; with no token it says so and publishes nothing
+_publish name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ '{{ system }}' != x86_64-linux ]]; then
+        echo "$1: pull request CI looks up x86_64-linux check outputs; nothing was published from {{ system }}"
+        exit 0
+    fi
+    config="${XDG_CONFIG_HOME:-$HOME/.config}/cachix/cachix.dhall"
+    if [[ -z "${CACHIX_AUTH_TOKEN:-}" ]] && ! { [[ -r "$config" ]] && tr '\n' ' ' < "$config" | grep -Eq 'authToken[[:space:]]*=[[:space:]]*(Some[[:space:]]+)?"[^"]'; }; then
+        echo "$1: no Cachix push token in CACHIX_AUTH_TOKEN or cachix's config; nothing was published"
+        exit 0
+    fi
+    outs=$(nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep "\n" (map (name: checks.${name}.outPath) (builtins.attrNames checks))')
+    built=()
+    while IFS= read -r out; do
+        if nix-store --check-validity "$out" 2>/dev/null; then built+=("$out"); fi
+    done <<< "$outs"
+    if ((${#built[@]} == 0)); then
+        echo "$1: no check output of this tree is in the local store; nothing was published"
+        exit 0
+    fi
+    echo "$1: publishing ${#built[@]} check outputs to the togi Cachix cache"
+    printf '%s\n' "${built[@]}" | cachix push togi || echo "$1: cachix push failed; pull request CI builds what it does not find" >&2
+
+# Run every flake check this host builds, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm-grub, vm-runtime, vm-display and vm-efi (`just check-one module`)
+# Build named flake checks, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm-grub, vm-runtime, vm-display and vm-efi (`just check-one module`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -328,7 +354,7 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
     just gate
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Push a review fix: format, lint, check doc links, build the nextest-<group> checks, board and SQL views, the VM tests and sim shards on Linux (Nix rebuilds only what changed), then push as `just ship` does; the first push uses `just ship`
+# Push a review fix: format, lint, check doc links, build the nextest-<group> checks, board and SQL views, the VM tests and sim shards on Linux (Nix rebuilds only what changed), publish the built check outputs to Cachix when a push token is present, then push as `just ship` does; the first push uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -350,6 +376,7 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     read -r -a nextest <<< "$names"
     just check-one "${nextest[@]}"
     just _heavy-gate push-fix
+    just _publish push-fix
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
 # Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; fail at once when it conflicts with its base; never merges

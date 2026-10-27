@@ -1,7 +1,9 @@
-# Pull request CI gates landing on main: clippy, doc and each `nextest-<group>` check in its own job, and one
-# light job for fmt, changes, deny, shear, module, board-test, sql-test, doc-links and package. A workflow_dispatch
-# runs every Linux flake check, one job per check so the VM tests boot in parallel (ADR 0074, ADR 0075). The release
-# dispatches and waits for this full run on the exact main head before making its release commit.
+# Every flake check runs, on pull requests and on workflow_dispatch alike, unless the public Cachix cache `togi`
+# already holds its output, which the owner's gate publishes for what it built (ADR 0085, ADR 0074). A pull request
+# builds the cheap checks named in the eval step together in one light job and every other uncached check, such as
+# clippy, doc, each `nextest-<group>`, the simulator shards and the VM tests, in a job of its own so the VM tests
+# boot in parallel (ADR 0075). The release dispatches and waits for a run on the exact main head before making its
+# release commit; a check that run finds cached counts as passed.
 # No job runs on macOS (ADR 0061): `just lint` and `just gate` clippy the Rust workspace for
 # aarch64-apple-darwin from Linux, and a breakage found on a Mac is fixed as a bug.
 # eval skips outputs already in the public Cachix cache `togi`; build jobs substitute from it and push
@@ -40,16 +42,12 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          selected='builtins.attrNames checks'
-          if [[ "$EVENT_NAME" == pull_request ]]; then
-            selected='[ "clippy" "doc" "fmt" "changes" "deny" "shear" "module" "board-test" "sql-test" "doc-links" "package" ] ++ builtins.filter (name: builtins.substring 0 8 name == "nextest-") all'
-          fi
-          info=$(nix eval --json .#checks.x86_64-linux --apply "
+          info=$(nix eval --json .#checks.x86_64-linux --apply '
             checks: let all = builtins.attrNames checks; in {
               all-checks = all;
-              vm-checks = builtins.filter (name: checks.\${name} ? driver) all;
-              selected = map (name: { inherit name; out = checks.\${name}.outPath; }) ($selected);
-            }")
+              vm-checks = builtins.filter (name: checks.${name} ? driver) all;
+              selected = map (name: { inherit name; out = checks.${name}.outPath; }) all;
+            }')
           jq -e '.selected | length > 0' <<< "$info" > /dev/null
           rows=$(jq -er '.selected[] | [.name, .out] | @tsv' <<< "$info")
           matrix_checks=()
@@ -63,7 +61,7 @@ jobs:
               continue
             fi
             printf '%-24s %s\n' "$name" no
-            if [[ "$EVENT_NAME" == pull_request && "$name" != clippy && "$name" != doc && "$name" != nextest-* ]]; then
+            if [[ "$EVENT_NAME" == pull_request && " fmt changes deny shear module board-test sql-test doc-links package " == *" $name "* ]]; then
               light_checks+=("$name")
             else
               matrix_checks+=("$name")

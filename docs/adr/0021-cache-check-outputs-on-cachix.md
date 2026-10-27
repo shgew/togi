@@ -36,3 +36,7 @@ The decision is unchanged; what a check's output holds is trimmed so the cache f
 ## Amendment (#633, #1038)
 
 With the last Go tool gone ([ADR 0071](0071-no-go-in-the-repository.md)), the `go-tools` check is removed, so no check runs `-shuffle=on`; the decision and its reasons are unchanged.
+
+## Amendment (#1269)
+
+[ADR 0085](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md) adds a second publisher: `just gate` and `just push-fix` push the check outputs they built to the cache when a push token is present on the host, and a result published by the owner's gate counts as passed in CI. The decision's rule that CI pushes what it builds, and the cache's role, are unchanged.
