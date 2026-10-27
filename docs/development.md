@@ -23,6 +23,8 @@ The VM tests are four grouped checks, `vm-grub`, `vm-runtime`, `vm-display` and 
 
 `just board-test` runs the Nushell board's fixed-fixture assertions without GitHub access; `just sql-test` does the same for the SQL views over fixed state directories. Both run in the gate and their flake checks; review fixes run them when `tools/board/` or `tools/sql/`, respectively, changed. The `doc-links` flake check runs in the gate and review-fix path and rejects relative Markdown links to missing files or headings.
 
+The default recovery witnesses in `togi-session` cover interrupted failure attribution, between-trial downtime and day-profile register settlement; the short-night integration checks independent `ReadState` replay. `togi-simrun` also keeps a two-boot warm/cold comparison of exact journal and state bytes. These bounded checks pin selected recovery boundaries, not every position in a full recovery sweep.
+
 ## Crates and toolchain
 
 A new crate needs a `Cargo.toml` with `[lints] workspace = true` and registration in `nextestGroups` in `flake.nix`; evaluation rejects missing registrations. Register fixtures read outside `crates/` in `crateFixtures` there. The exact toolchain in `rust-toolchain.toml` changes only in its own pull request.

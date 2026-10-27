@@ -14,6 +14,8 @@
 //! night trials, decisions match an uninterrupted control with the reboot's elapsed time charged to its task;
 //! crashes of open trials and day reboots introduce new failure or cadence evidence instead.
 
+mod witnesses;
+
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
