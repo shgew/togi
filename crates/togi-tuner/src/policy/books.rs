@@ -167,9 +167,6 @@ pub(super) struct Exposure {
     pub(super) observed: ExposureObserved,
     pub(super) task: Option<TaskId>,
     pub(super) night: Option<NightId>,
-    /// The durable filler cursor of a filler trial's exposure: the matrix ordinal and rotation that chose
-    /// its cell.
-    pub(super) filler: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]

@@ -3,17 +3,13 @@
 
 use std::collections::HashSet;
 
-use togi_journal::{Queue, Tested};
 use togi_machine::CcdProfile;
 
 use super::State;
 use super::books::Exposure;
-use super::ledger::Sig;
+use super::ledger::{Sig, cell_of_class};
 use super::night_query::NotReady;
-use crate::night::{
-    Cell, ControlCause, Layout, Matrix, Reason, Reuse, Stock, Work, control_cells, mapping_cells,
-    qualification_cells, reproduction_cells,
-};
+use crate::night::{Cell, ControlCause, Layout, Reason, Stock, Work, control_cells};
 
 impl State {
     /// The durable ordinal of the controls under the current evidence context: how many firmware or content
@@ -23,49 +19,11 @@ impl State {
         Ok(self.machine.evidence_changes)
     }
 
-    /// The matrix cell that produced an exposure, recomputed from its task.
-    pub(super) fn exposure_cell(layout: &Layout<'_>, record: &Exposure) -> Result<Cell, NotReady> {
-        let task = record.task.ok_or(NotReady::UnmatchedCell)?;
-        let profile = &record.observed.profile.ccd;
-        let sig = Sig::of_class(&record.observed.class);
-        let matrices: Vec<Matrix> = match task.queue {
-            Queue::Control => vec![control_cells(layout, profile, task.ordinal)?],
-            Queue::Qualification | Queue::Requalification => vec![qualification_cells(
-                layout,
-                profile,
-                task.ordinal,
-                &Reuse::AllFresh,
-            )?],
-            Queue::Mapping => match record.observed.tested {
-                Tested::Isolated { ccd, offset } => {
-                    vec![mapping_cells(layout, ccd, offset, task.ordinal)?]
-                }
-                Tested::Exact {} => Vec::new(),
-            },
-            Queue::Reproduction => reproduction_cells(layout, profile, task.ordinal)?
-                .into_iter()
-                .map(|attempt| attempt.matrix)
-                .collect(),
-            Queue::Filler => {
-                let cursor = record.filler.ok_or(NotReady::UnmatchedCell)?;
-                match record.observed.tested {
-                    Tested::Isolated { ccd, offset } => {
-                        vec![mapping_cells(layout, ccd, offset, cursor)?]
-                    }
-                    Tested::Exact {} => vec![qualification_cells(
-                        layout,
-                        profile,
-                        cursor,
-                        &Reuse::AllFresh,
-                    )?],
-                }
-            }
-        };
-        matrices
-            .iter()
-            .flat_map(|matrix| matrix.cells.iter())
-            .map(|planned| planned.cell)
-            .find(|cell| Sig::of_cell(cell) == sig)
+    /// The matrix cell that produced an exposure, rebuilt from its recorded class. The class carries
+    /// everything the cell is, so the answer does not depend on today's partial chains.
+    pub(super) fn exposure_cell(&self, record: &Exposure) -> Result<Cell, NotReady> {
+        let topology = self.machine.topology.as_ref().ok_or(NotReady::NoSession)?;
+        cell_of_class(&record.observed.class, topology, &self.machine.cores)
             .ok_or(NotReady::UnmatchedCell)
     }
 
@@ -79,7 +37,7 @@ impl State {
             .min_by_key(|record| record.seq)
         {
             return Ok(Stock::Unstable {
-                class: Self::exposure_cell(layout, record)?,
+                class: self.exposure_cell(record)?,
             });
         }
         let zero = CcdProfile::zero(self.ccds())?;
@@ -112,12 +70,12 @@ impl State {
             });
         }
         Ok(Stock::Cleared {
-            rerun: self.pending_rerun(layout)?,
+            rerun: self.pending_rerun()?,
         })
     }
 
     /// The oldest nonzero-profile failure that named a core at CO 0 and has no all-zero rerun since.
-    fn pending_rerun(&self, layout: &Layout<'_>) -> Result<Option<Work>, NotReady> {
+    fn pending_rerun(&self) -> Result<Option<Work>, NotReady> {
         let mut candidates: Vec<&Exposure> = self
             .current_groups()
             .flat_map(|group| group.zero_core_failures.iter())
@@ -134,7 +92,7 @@ impl State {
                     .is_some_and(|&later| later > record.seq)
             });
             if !rerun {
-                let cell = Self::exposure_cell(layout, record)?;
+                let cell = self.exposure_cell(record)?;
                 return Ok(Some(Work::co_zero_rerun(&cell, &observed.profile.ccd)));
             }
         }

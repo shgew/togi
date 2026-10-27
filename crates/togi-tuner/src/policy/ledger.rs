@@ -10,8 +10,8 @@ use togi_journal::{
     SessionId, TaskId, Tested, TunerWarning, WarningKind, WorkloadContent,
 };
 use togi_machine::{
-    BiosContext, CcdId, CcdProfile, CoreId, CoreSet, PhaseSchedule, Regime, Signal, TargetOffset,
-    WorkloadId,
+    BiosContext, CcdId, CcdProfile, CoreId, CoreInfo, CoreSet, PhaseSchedule, Regime, Signal,
+    TargetOffset, WorkloadId,
 };
 
 use super::State;
@@ -20,10 +20,11 @@ use super::decision::{Decision, PolicyPayload};
 use super::plan::workloads_of;
 use crate::EVIDENCE_EPOCH;
 use crate::Secs;
+use crate::Topology;
 use crate::cap;
 use crate::night::{
-    Cell, Conclusion, Credit, Launch, PlacementValidity, Purpose, Roles, adequately_exposed,
-    warm_up_secs,
+    Cell, Conclusion, Credit, Launch, PackageLoad, PlacementValidity, Purpose, Roles,
+    SUSTAINED_DURATION, Workloads, adequately_exposed, warm_up_secs,
 };
 
 /// The evidence context a monotonicity cache was built under.
@@ -133,6 +134,83 @@ impl Sig {
             },
         }
     }
+}
+
+/// The matrix cell a recorded exposure class is, rebuilt from the class and the machine alone: the
+/// workloads, loaded cores, duration and placement are the class's own, the roles come from its regime,
+/// cores and position under `topology` and `cores`, and a cell of the sustained duration is a sustained
+/// block. The coverage matrix is not consulted, so a partial chain or rotation that has changed since the
+/// trial ran cannot lose the cell. `None` for a malformed shape: a class no matrix cell has.
+pub(super) fn cell_of_class(
+    class: &ExposureClass,
+    topology: &Topology,
+    cores: &[CoreInfo],
+) -> Option<Cell> {
+    let [first, rest @ ..] = class.workloads.as_slice() else {
+        return None;
+    };
+    let workloads = match (class.regime == Regime::R8, rest) {
+        (true, [heavy]) => Workloads::LightHeavy {
+            light: first.workload,
+            heavy: heavy.workload,
+        },
+        (false, []) => Workloads::One {
+            workload: first.workload,
+        },
+        _ => return None,
+    };
+    let one_core = || {
+        (class.cores.len() == 1)
+            .then(|| class.cores.first())
+            .flatten()
+    };
+    let roles = match class.regime {
+        Regime::R1 | Regime::R2 | Regime::R3 | Regime::R4 => {
+            Roles::SingleCore { core: one_core()? }
+        }
+        Regime::R5 => Roles::SmtPair { core: one_core()? },
+        Regime::R6 => Roles::AllCoresIdle,
+        Regime::R7 => Roles::Package(package_load(class.cores, topology)?),
+        Regime::R8 => match class.position? {
+            Position::Light { core } => Roles::Neighbours { light: core },
+            Position::Serial { .. } => return None,
+        },
+        Regime::R9 => match class.position? {
+            Position::Serial { cpu } => Roles::AllThreads {
+                core: cores.iter().find(|info| info.cpus.contains(&cpu))?.core,
+                serial: cpu,
+            },
+            Position::Light { .. } => return None,
+        },
+    };
+    let duration = Secs::new(std::num::NonZeroU32::new(class.duration_s)?);
+    let cell = Cell {
+        workloads,
+        loaded: class.cores,
+        roles,
+        duration,
+        purpose: match class.placement {
+            Placement::Isolated => Purpose::Isolated,
+            Placement::Exact => Purpose::Exact,
+        },
+        sustained: duration == SUSTAINED_DURATION,
+    };
+    // A class whose regime, workloads or position the roles do not account for is not this cell.
+    (Sig::of_cell(&cell) == Sig::of_class(class)).then_some(cell)
+}
+
+/// Which packages' loaded sets an R7 class of `loaded` cores is: a whole CCD, every core of a
+/// multi-CCD machine, or a partial of one CCD.
+fn package_load(loaded: CoreSet, topology: &Topology) -> Option<PackageLoad> {
+    if let Some(&(ccd, _)) = topology.ccds().iter().find(|(_, cores)| *cores == loaded) {
+        return Some(PackageLoad::FullCcd { ccd });
+    }
+    if topology.ccds().len() > 1 && loaded == topology.all() {
+        return Some(PackageLoad::AllCcds);
+    }
+    let ccd = topology.ccd_of(loaded.first()?)?;
+    let within = loaded.iter().all(|core| topology.ccd_of(core) == Some(ccd));
+    (within && loaded.len() >= 2).then_some(PackageLoad::Partial { ccd })
 }
 
 /// Whole wall seconds from `from` to `to`; a clock that ran backwards counts as none.
