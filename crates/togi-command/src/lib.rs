@@ -398,6 +398,10 @@ impl Leader {
         }
         #[cfg(target_os = "linux")]
         {
+            #[expect(
+                deprecated,
+                reason = "tokio deprecated the safe AsyncFd constructors for descriptors that may close under them; an OwnedFd stays open for the AsyncFd's life"
+            )]
             let pidfd = rustix::process::pidfd_open(self.pid, rustix::process::PidfdFlags::empty())
                 .map_err(io::Error::from)
                 .and_then(|fd| {
