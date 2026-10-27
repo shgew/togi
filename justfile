@@ -70,19 +70,16 @@ lint: _dev-shell
 fmt:
     nix fmt
 
-# Run the local checks cheapest first with a warm cargo cache and the nextest-<group> flake checks, then build the VM tests and sim shards on Linux (Nix rebuilds only what changed), then publish the built check outputs to Cachix when a push token is present; cargo-deny's advisory audit runs only in the deny flake check
+# Run the gate in two stages, each stopping at its first failure: format, lint through Cargo, one Nix build of the light and nextest-<group> flake checks, then the doctests, cargo-deny and cargo-shear; then, on Linux, one Nix build of the sim shards and VM tests (Nix rebuilds only what changed), then publish the built check outputs to Cachix when a push token is present; cargo-deny's advisory audit runs only in the deny flake check
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
     just check-one fmt
     just lint
-    just check-one module changes doc-links
-    just board-test
-    just sql-test
     names=$(just _nextest-checks)
     read -r -a nextest <<< "$names"
-    just check-one "${nextest[@]}"
+    just check-one module changes doc-links board-test sql-test "${nextest[@]}"
     cargo test --locked --doc
     cargo deny --locked check bans licenses sources
     cargo shear
