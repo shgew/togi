@@ -118,11 +118,7 @@ pub(crate) fn files(
 }
 
 /// The hex SHA-256 of `files` and `rev`, each file under its name relative to `root`.
-pub(crate) fn digest(
-    root: &Path,
-    files: &[PathBuf],
-    rev: &str,
-) -> Result<String, Box<dyn Error>> {
+pub(crate) fn digest(root: &Path, files: &[PathBuf], rev: &str) -> Result<String, Box<dyn Error>> {
     let mut digest = Sha256::new();
     for path in files {
         let name = path.strip_prefix(root)?.to_string_lossy();

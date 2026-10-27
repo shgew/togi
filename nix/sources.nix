@@ -52,9 +52,7 @@ let
     crate:
     fileset.unions (
       lib.optionals (builtins.pathExists (dir crate + "/src")) (testNamed (dir crate + "/src"))
-      ++ map (line: cratesDir + "/${line}") (
-        lib.filter (line: lib.hasPrefix "${crate}/" line) testListed
-      )
+      ++ map (line: cratesDir + "/${line}") (lib.filter (line: lib.hasPrefix "${crate}/" line) testListed)
     );
 
   rustIn = path: fileset.intersection (fileset.fileFilter (file: file.hasExt "rs") cratesDir) path;

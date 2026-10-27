@@ -26,7 +26,10 @@ fn workspace() -> TempDir {
         ("Cargo.lock", "version = 4\n"),
         ("rust-toolchain.toml", "[toolchain]\n"),
         ("version.txt", "1.0.0\n"),
-        ("crates/test-only.txt", "# Compiled only under cfg(test).\na/src/support.rs\na/src/fakes\n"),
+        (
+            "crates/test-only.txt",
+            "# Compiled only under cfg(test).\na/src/support.rs\na/src/fakes\n",
+        ),
         ("crates/a/Cargo.toml", "[package]\n"),
         ("crates/a/src/lib.rs", "mod model;\n"),
         ("crates/a/src/model/mod.rs", "pub struct Model;\n"),
@@ -35,9 +38,15 @@ fn workspace() -> TempDir {
         ("crates/a/src/tests.rs", "#[test] fn one() {}\n"),
         ("crates/a/src/model_tests.rs", "#[test] fn two() {}\n"),
         ("crates/a/src/tests/case.rs", "#[test] fn three() {}\n"),
-        ("crates/a/src/model/model_tests/case.rs", "#[test] fn four() {}\n"),
+        (
+            "crates/a/src/model/model_tests/case.rs",
+            "#[test] fn four() {}\n",
+        ),
         ("crates/a/src/support.rs", "pub fn listed() {}\n"),
-        ("crates/a/src/fakes/clock.rs", "pub fn listed_directory() {}\n"),
+        (
+            "crates/a/src/fakes/clock.rs",
+            "pub fn listed_directory() {}\n",
+        ),
         ("crates/a/tests/cli.rs", "#[test] fn five() {}\n"),
     ] {
         write(root, name, contents);
@@ -49,7 +58,12 @@ fn fingerprint(root: &Path, revision: &str) -> String {
     let files = inputs::files(
         root,
         &["a", "b"],
-        &["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "version.txt"],
+        &[
+            "Cargo.toml",
+            "Cargo.lock",
+            "rust-toolchain.toml",
+            "version.txt",
+        ],
     )
     .unwrap();
     inputs::digest(root, &files, revision).unwrap()
