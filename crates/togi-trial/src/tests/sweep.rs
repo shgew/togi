@@ -1763,7 +1763,8 @@ mod killed_owner {
         assert!(begun.elapsed() < sweep_timing.teardown + Duration::from_secs(1));
         assert_eq!(
             swept.detail,
-            "removed 1 leftover trial scopes; no trial unit or process remains"
+            "removed 1 leftover trial scopes; no trial unit or process remains; \
+             togi's own threads run on their own CPUs again: 0 threads"
         );
         assert!(
             !descendant.alive(),

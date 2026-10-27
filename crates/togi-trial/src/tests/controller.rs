@@ -36,15 +36,13 @@ fn secs(n: u64) -> Duration {
     Duration::from_secs(n)
 }
 
-/// Every logical CPU of the idle CCD, ascending.
-fn idle_ccd(loaded: u8) -> Vec<CpuId> {
-    let mut cpus: Vec<CpuId> = topology()
+/// Every logical CPU of the lowest-ID unloaded CO-0 core.
+fn idle_core(loaded: u8) -> Vec<CpuId> {
+    topology()
         .into_iter()
-        .filter(|info| info.ccd.get() != loaded / 8)
-        .flat_map(|info| info.cpus)
-        .collect();
-    cpus.sort_unstable_by_key(|cpu| cpu.get());
-    cpus
+        .find(|info| info.core != core(loaded))
+        .unwrap()
+        .cpus
 }
 
 fn recorded() -> (Arc<Recording>, impl FnOnce(&mut Env<Fake>)) {
@@ -61,7 +59,7 @@ fn ordinary_supervision_requests_use_managed_placement() {
         base_spec(Regime::R1, &[2], secs(5)).controller,
         togi_machine::ControllerMode::Managed {
             rotation: 0,
-            purpose: togi_machine::Purpose::Isolated,
+            purpose: togi_machine::Purpose::Exact,
         }
     );
 }
@@ -88,12 +86,12 @@ fn the_controller_set_is_in_place_before_the_launch_and_follows_each_trials_load
                 early.load(Ordering::SeqCst),
                 "the confinement came after the launch"
             );
-            assert_eq!(recording.calls(), [Call::Confine(idle_ccd(2))]);
+            assert_eq!(recording.calls(), [Call::Confine(idle_core(2))]);
             let run = finish(&first).await;
             assert!(run.finished.teardown.is_ok());
             assert_eq!(
                 recording.calls(),
-                [Call::Confine(idle_ccd(2)), Call::Restore],
+                [Call::Confine(idle_core(2)), Call::Restore],
                 "restored once the teardown confirmed"
             );
             assert!(
@@ -105,13 +103,13 @@ fn the_controller_set_is_in_place_before_the_launch_and_follows_each_trials_load
             );
 
             let second = rig
-                .start(base_spec(Regime::R1, &[10], secs(5)))
+                .start(base_spec(Regime::R1, &[0], secs(5)))
                 .await
                 .unwrap();
             finish(&second).await;
             assert_eq!(
                 recording.calls()[2..],
-                [Call::Confine(idle_ccd(10)), Call::Restore]
+                [Call::Confine(idle_core(0)), Call::Restore]
             );
         })
         .await;
@@ -137,7 +135,7 @@ fn a_start_that_fails_to_launch_restores_after_its_confirmed_rollback() {
             );
             assert_eq!(
                 recording.calls(),
-                [Call::Confine(idle_ccd(2)), Call::Restore]
+                [Call::Confine(idle_core(2)), Call::Restore]
             );
             assert!(
                 matches!(crate_error(&failed.error), Some(Error::Launch { .. })),
@@ -183,7 +181,7 @@ fn a_teardown_that_cannot_confirm_leaves_the_threads_confined() {
             assert!(run.finished.teardown.is_err(), "the teardown confirmed");
             assert_eq!(
                 recording.calls(),
-                [Call::Confine(idle_ccd(2))],
+                [Call::Confine(idle_core(2))],
                 "restored although nothing proved the workload stopped"
             );
         })
@@ -323,11 +321,11 @@ fn an_incomplete_confinement_and_restoration_warn_in_the_trials_progress(
             assert!(run.finished.teardown.is_ok(), "{moved:?}");
             assert_eq!(
                 controller.recording.calls(),
-                [Call::Confine(idle_ccd(2)), Call::Restore]
+                [Call::Confine(idle_core(2)), Call::Restore]
             );
             let confined = format!(
-                "togi controller CPUs {} while the trial loads {loaded}; idle CO-0 CCD 1, capped; {counts}",
-                cpus_list(&idle_ccd(2))
+                "togi controller CPUs {} while the trial loads {loaded}; idle CO-0 host core 0 at CO 0, uncapped; {counts}",
+                cpus_list(&idle_core(2))
             );
             let restored = retry_line(counts);
             let reports: Vec<&str> = run
@@ -373,7 +371,7 @@ fn a_start_that_fails_to_launch_returns_an_incomplete_restoration_with_its_error
             );
             assert_eq!(
                 controller.recording.calls(),
-                [Call::Confine(idle_ccd(2)), Call::Restore]
+                [Call::Confine(idle_core(2)), Call::Restore]
             );
             let Some(Error::Joined(joined)) = crate_error(&failed.error) else {
                 panic!("the restoration was not joined: {:?}", failed.error);

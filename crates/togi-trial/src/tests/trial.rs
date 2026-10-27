@@ -78,7 +78,14 @@ fn progress_comes_from_stdout_and_stderr_progress_is_ignored() {
             });
             let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
             let run = finish(&handle).await;
-            assert_eq!(run.progress(), ["ok step one"]);
+            assert_eq!(
+                run.progress(),
+                [
+                    "togi controller CPUs 1,33 while the trial loads 0; idle CO-0 host core 1 at CO 0, uncapped; 0 threads",
+                    "ok step one",
+                    "togi's own threads run on their own CPUs again: 0 threads",
+                ]
+            );
         })
         .await;
     });
@@ -249,7 +256,15 @@ fn r7_runs_one_instance_per_core_and_progress_names_the_core() {
             let run = finish(&handle).await;
             let mut progress = run.progress();
             progress.sort_unstable();
-            assert_eq!(progress, ["core 01 ok working", "core 05 ok working"]);
+            assert_eq!(
+                progress,
+                [
+                    "core 01 ok working",
+                    "core 05 ok working",
+                    "togi controller CPUs 0,32 while the trial loads 1,5; idle CO-0 host core 0 at CO 0, uncapped; 0 threads",
+                    "togi's own threads run on their own CPUs again: 0 threads",
+                ]
+            );
             assert_eq!(run.finished.result.failure, None);
             assert_eq!(
                 (run.finished.result.stops, run.finished.result.conts),

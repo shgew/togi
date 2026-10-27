@@ -65,7 +65,7 @@ pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpe
             roles: Vec::new(),
             controller: togi_machine::ControllerMode::Managed {
                 rotation: 0,
-                purpose: togi_machine::Purpose::Isolated,
+                purpose: togi_machine::Purpose::Exact,
             },
         },
         &topology,
@@ -132,7 +132,7 @@ fn spec_of(
         roles,
         controller: togi_machine::ControllerMode::Managed {
             rotation: 0,
-            purpose: togi_machine::Purpose::Isolated,
+            purpose: togi_machine::Purpose::Exact,
         },
     }
 }
