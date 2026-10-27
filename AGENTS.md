@@ -5,7 +5,7 @@ Rust CLI that finds and keeps testing per-core Curve Optimizer offsets on Zen 5 
 ## Docs
 
 - `README.md`: status and common commands. `GLOSSARY.md`: vocabulary for code, events and docs.
-- `docs/how-togi-tunes.md`: read first for tuning phases, costs and history; specs own the rules.
+- `docs/how-togi-tunes.md`: read first for nights, days, costs and ruleset history; specs own the rules.
 - `docs/spec/`: normative behavior (`tuner.md`, `workloads.md`, `journal.md`, `runtime.md`). Read the relevant spec before changing behavior; update spec and code together, in one pull request or stack merged together.
 - `docs/adr/README.md`: decisions and rejected alternatives. Specs win disagreements; reversing a decision requires a new ADR and index update.
 - `docs/issues.md`: read before filing, triaging or claiming issues; owns labels, lifecycle, `Touches:` and the target-machine queue.
