@@ -14,7 +14,7 @@ use crate::fs::{DiskFs, FileKind, Fs, FsLock, MemFs};
 use crate::session_id::SessionId;
 
 pub use archive::{
-    ArchiveKind, ImportMarker, Lifetime, Marker, recorded_build, recorded_build_in,
+    ArchiveKind, ImportMarker, Lifetime, Marker, markers_in, recorded_build, recorded_build_in,
     session_entries_in,
 };
 
