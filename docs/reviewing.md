@@ -103,9 +103,12 @@ copy=$(mktemp -d)
 trap 'rm -rf "$copy"' EXIT
 sudo nix develop --command just copy-state /var/lib/togi "$copy"
 sudo chown -R "$(id -u):$(id -g)" "$copy"
-just sim --state-dir "$copy"
+just sim --state-dir "$copy" --night-hours 24
 just togi --state-dir "$copy" events --kind session.imported,day.imported
+just togi --state-dir "$copy" events --kind task.start
 ```
+
+The first night after the transition runs the [CO-0 controls](spec/tuner.md#co-0-controls), the whole coverage matrix at all-zero. On the default simulator machine they take about 8.5 simulated hours, longer than the default 8-hour night ([`--night-hours`](simulating.md)), so the recipe sets a 24-hour night. `togi events --kind task.start` shows whether they completed: the night's `night #N: control task K started` lines are followed by the first task of another queue, such as `night #N: mapping task 0 started`, and `sim` reported no dead end before it.
 
 What the transition archives and imports is in [Fact eligibility](spec/journal.md#fact-eligibility). What the simulated session does after the transition draws outcomes from the simulator, not from hardware measurements.
 
