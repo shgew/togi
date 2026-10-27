@@ -11,14 +11,14 @@ use jiff::{SignedDuration, Timestamp};
 use togi_journal::{
     ApplicationId, ApplyCause, Build, CcdVector, DayAnswer, DayAnswerKind, DayApplied,
     DayBootStart, DayCheckpoint, DayCleanStop, DayEventId, DayOffsetsChanged, DayUncleanEnd, Event,
-    FixStamp, Outcome, Payload, SCHEMA, Seq, SessionBaseline, SessionContext, SessionId,
-    SessionStart, Shutdown, ShutdownReason, Stamp, TrialEnd, TrialId, TrialInstance, TrialSignal,
-    TrialStart, WorkloadContent,
+    FixStamp, Payload, SCHEMA, Seq, SessionBaseline, SessionContext, SessionId, SessionStart,
+    Shutdown, ShutdownReason, Stamp, TrialId, TrialInstance, TrialSignal, TrialStart,
+    WorkloadContent,
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, ControllerMode, CoreInfo, EndEvidence, Machine,
     ObservedOffset, Partial, PerCore, Reporter, ResetReason, Sample, Signal, TargetOffset,
-    TrialResult, TrialRole, TrialSpec,
+    TrialRole, TrialSpec,
 };
 use togi_tuner::cap::Beta;
 use togi_tuner::day::{Invocation, Pause};
@@ -27,9 +27,6 @@ use togi_tuner::policy::{
 };
 
 use super::{DayClassification, DayObservation, EndAnswer, Night, Policy, RunError};
-
-/// The diagnostic the session adds to a trial an operator's signal stopped.
-const STOPPED_BY_SIGNAL: &str = "stopped by signal";
 
 /// How a night trial ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -512,7 +509,17 @@ impl Ruleset13 {
                 &[intent],
             )?;
         }
-        let end = adjudicate(id, &result, intended, ended == Ended::Interrupted)?;
+        let end =
+            togi_session::adjudicate_trial_end(id, &result, intended, ended == Ended::Interrupted)
+                .map_err(|error| match error {
+                    togi_session::SessionError::TrialDuration(_) => {
+                        RunError::Calendar("trial duration")
+                    }
+                    togi_session::SessionError::TrialTemperature(_) => {
+                        RunError::Calendar("trial temperature")
+                    }
+                    _ => RunError::Calendar("trial adjudication"),
+                })?;
         self.append(machine, end.into(), &[intent])?;
         Ok(ended)
     }
@@ -687,85 +694,6 @@ impl Policy for Ruleset13 {
         }
         Ok(())
     }
-}
-
-/// The trial end the session's adjudication records for `result` of a trial intended to run
-/// `intended`: escaped threads and runner diagnostics are inconclusive, an observed failure fails,
-/// and a short run without one is inconclusive. A trial the operator's signal `interrupted` adds the
-/// session's "stopped by signal" diagnostic and is marked interrupted.
-fn adjudicate(
-    trial: TrialId,
-    result: &TrialResult,
-    intended: Duration,
-    interrupted: bool,
-) -> Result<TrialEnd, RunError> {
-    let (outcome, signal, core, reason) = if !result.escaped.is_empty() {
-        (
-            Outcome::Inconclusive,
-            None,
-            None,
-            Some("backend thread outside allowed cpus".to_owned()),
-        )
-    } else if let Some(failure) = result.failure {
-        (
-            Outcome::Failure,
-            Some(failure.signal),
-            Some(failure.core),
-            None,
-        )
-    } else if let Some(reason) = &result.inconclusive {
-        (Outcome::Inconclusive, None, None, Some(reason.to_string()))
-    } else if result.ran < intended {
-        (
-            Outcome::Inconclusive,
-            None,
-            None,
-            Some("trial ended before its full duration".to_owned()),
-        )
-    } else {
-        (Outcome::Pass, None, None, None)
-    };
-    let reason = if interrupted {
-        Some(reason.map_or_else(
-            || STOPPED_BY_SIGNAL.to_owned(),
-            |reason| format!("{reason}; {STOPPED_BY_SIGNAL}"),
-        ))
-    } else {
-        reason
-    };
-    Ok(TrialEnd {
-        trial,
-        kernel_cursor: None,
-        kernel_error: None,
-        outcome,
-        signal,
-        core,
-        duration_s: u32::try_from(result.ran.as_secs())
-            .map_err(|_| RunError::Calendar("trial duration"))?,
-        excluded: result.excluded.iter().collect(),
-        tctl_max_c: result
-            .tctl_max_c
-            .map(i32::try_from)
-            .transpose()
-            .map_err(|_| RunError::Calendar("trial temperature"))?,
-        voltage_request_median_v: None,
-        voltage_request_min_v: None,
-        voltage_requests_v: PerCore::default(),
-        top_requesters: togi_machine::CoreSet::default(),
-        ccd_mhz: std::collections::BTreeMap::new(),
-        last_sample_s: None,
-        last_sample_tctl_c: None,
-        last_sample_min_mhz: None,
-        last_sample_max_mhz: None,
-        stalled_core: None,
-        worker_stalled_ms: None,
-        reason,
-        interrupted,
-        last_evidence: false,
-        escaped: result.escaped.clone(),
-        backend_missing: false,
-        containment_error: None,
-    })
 }
 
 fn read_offsets(
