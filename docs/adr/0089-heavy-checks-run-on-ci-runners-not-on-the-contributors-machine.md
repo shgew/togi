@@ -2,7 +2,7 @@
 
 Status: see [the index](README.md).
 
-Amends [ADR 0074](0074-pull-request-ci-gates-landing-on-main.md) and [ADR 0085](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md)'s local-heavy-gate policy. Keeps ADR 0085's all-check PR discovery, publication and cache trust. [ADR 0016](0016-every-pull-request-runs-every-check.md)'s rejected “VM only at release” remains rejected: VM checks still gate every PR in CI. Implements [#1328](https://github.com/shgew/togi/issues/1328).
+Amends [ADR 0074](0074-pull-request-ci-gates-landing-on-main.md) and [ADR 0085](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md)'s local-heavy-gate policy, and [ADR 0036](0036-flake-checks-stay-hermetic.md)'s claim that `just check` covers the full CI inventory; hermeticity stays in force. Keeps ADR 0085's all-check PR discovery, publication and cache trust. [ADR 0016](0016-every-pull-request-runs-every-check.md)'s rejected “VM only at release” remains rejected: VM checks still gate every PR in CI. Implements [#1328](https://github.com/shgew/togi/issues/1328).
 
 ## Context
 

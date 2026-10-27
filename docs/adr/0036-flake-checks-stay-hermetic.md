@@ -26,3 +26,7 @@ The mechanism after the Rust cutover; the decision and its reasons are unchanged
 ## Amendment (#633, #1038)
 
 With the last Go tool gone ([ADR 0071](0071-no-go-in-the-repository.md)), the `go-tools` check is removed, and no check starts from a Go cache; the decision and its reasons are unchanged.
+
+## Amendment (#1328)
+
+[ADR 0089](0089-heavy-checks-run-on-ci-runners-not-on-the-contributors-machine.md) narrows `just check` to the local tier. CI and release still select every flake check; every check remains hermetic, including those built explicitly with `just vm`.
