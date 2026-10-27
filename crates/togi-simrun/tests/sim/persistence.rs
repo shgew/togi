@@ -188,7 +188,9 @@ fn watch_state_json(
 /// Within-boot equality was checked online; return consecutive publications and boot count.
 fn observed_publications(seen: &Seen) -> (usize, usize) {
     let seen = seen.borrow();
-    let seen = seen.as_ref().expect("the run appended no events");
+    let Some(seen) = seen.as_ref() else {
+        panic!("the run appended no events");
+    };
     (seen.published, seen.boots)
 }
 
