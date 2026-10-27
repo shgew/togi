@@ -6,6 +6,8 @@ Read this guide when setting up a checkout, choosing checks, adding a crate, cha
 
 Enter the dev shell with `nix develop`, or `direnv allow` once per checkout. Recipes using Cargo, Nushell, DuckDB or `gh` stop with that hint outside it. `just hardware` enters it itself because `sudo` drops the environment; run it only on the target machine ([provisioning](howto.md#host-lock-and-delegated-hardware-tests)). Set `CARGO_TARGET_DIR` according to the [per-worktree rule](../AGENTS.md#commands).
 
+Run heavy commands through the host job queue where your host has one; otherwise run them bare ([ADR 0086](adr/0086-heavy-runs-wait-for-memory.md)).
+
 Choose checks by the action:
 
 - While editing: `just test`, `just focus <crate>` or `just typecheck <crate>`.
