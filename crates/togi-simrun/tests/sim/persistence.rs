@@ -130,22 +130,52 @@ fn copied_snapshot_resume_matches_full_replay(seed: u64) {
     assert_eq!(results[0], results[1]);
 }
 
-type Seen = Rc<RefCell<Vec<(BootId, Option<Vec<u8>>)>>>;
+struct Publications {
+    boot: BootId,
+    state: Option<Vec<u8>>,
+    boots: usize,
+    published: usize,
+}
 
-/// Records, at every appended event, the in-memory `state.json` beside the event's boot; the observer answers `stop`.
+type Seen = Rc<RefCell<Option<Publications>>>;
+
+/// Checks every event's exact `state.json` bytes online, retaining only the current boot's snapshot.
 fn watch_state_json(
     input: &mut SimInput,
     fs: &MemFs,
     stop: impl Fn(EventKind) -> bool + 'static,
 ) -> Seen {
-    let seen: Seen = Rc::new(RefCell::new(Vec::new()));
+    let seen: Seen = Rc::new(RefCell::new(None));
     let sink = Rc::clone(&seen);
     let fs = fs.clone();
     input.observer = Some(Box::new(move |event| {
-        sink.borrow_mut().push((
-            event.boot.clone(),
-            fs.contents(format!("{STATE}/state.json")),
-        ));
+        let state = fs.contents(format!("{STATE}/state.json"));
+        let mut seen = sink.borrow_mut();
+        match seen.as_mut() {
+            None => {
+                assert_eq!(state, None, "a fresh state directory had a state.json");
+                *seen = Some(Publications {
+                    boot: event.boot.clone(),
+                    state,
+                    boots: 1,
+                    published: 1,
+                });
+            }
+            Some(seen) => {
+                if seen.boot == event.boot {
+                    assert_eq!(
+                        state, seen.state,
+                        "state.json changed during the run of boot {:?}",
+                        seen.boot
+                    );
+                } else {
+                    seen.boots += 1;
+                    seen.published += usize::from(state != seen.state);
+                    seen.boot = event.boot.clone();
+                    seen.state = state;
+                }
+            }
+        }
         if stop(event.kind()) {
             Observe::Stop
         } else {
@@ -155,21 +185,11 @@ fn watch_state_json(
     seen
 }
 
-/// No run publishes `state.json` while it appends: what each boot sees is what the boot before it left.
-fn assert_unpublished_during_runs(seen: &Seen) -> usize {
+/// Within-boot equality was checked online; return consecutive publications and boot count.
+fn observed_publications(seen: &Seen) -> (usize, usize) {
     let seen = seen.borrow();
-    assert!(!seen.is_empty());
-    assert_eq!(seen[0].1, None, "a fresh state directory had a state.json");
-    let mut boots = 0;
-    for run in seen.chunk_by(|left, right| left.0 == right.0) {
-        boots += 1;
-        assert!(
-            run.iter().all(|(_, state)| *state == run[0].1),
-            "state.json changed during the run of boot {:?}",
-            run[0].0
-        );
-    }
-    boots
+    let seen = seen.as_ref().expect("the run appended no events");
+    (seen.published, seen.boots)
 }
 
 /// Runs the crashing machine to its stop in memory and returns how many distinct `state.json` files the runs saw, and
@@ -186,14 +206,11 @@ fn published_in_a_crashing_simulation(replay: Replay) -> (usize, usize) {
         panic!("capped");
     };
     assert_eq!(finished.stop, Some(Stop::Signal));
-    let boots = assert_unpublished_during_runs(&seen);
+    let (published, boots) = observed_publications(&seen);
     assert!(
         boots > 1,
         "the run never crashed, so no capsule was published"
     );
-    let seen = seen.borrow();
-    let mut published = seen.iter().map(|(_, state)| state).collect::<Vec<_>>();
-    published.dedup();
     assert!(
         !events(&Persistence::Memory(fs.clone()))
             .unwrap()
@@ -202,7 +219,7 @@ fn published_in_a_crashing_simulation(replay: Replay) -> (usize, usize) {
         "a boot found no published state.json and rebuilt it"
     );
     assert!(fs.contents(format!("{STATE}/state.json")).is_some());
-    (published.len(), boots)
+    (published, boots)
 }
 
 #[test]
@@ -233,7 +250,7 @@ fn a_capped_simulation_leaves_the_crashed_runs_state_json() {
         simulate(input).unwrap(),
         SimOutcome::Capped { .. }
     ));
-    assert_eq!(assert_unpublished_during_runs(&seen), 1);
+    assert_eq!(observed_publications(&seen).1, 1);
     assert!(fs.contents(format!("{STATE}/state.json")).is_some());
 }
 
@@ -249,7 +266,7 @@ fn a_signalled_run_publishes_state_json_when_it_stops() {
         panic!("capped");
     };
     assert_eq!(finished.stop, Some(Stop::Signal));
-    assert_unpublished_during_runs(&seen);
+    observed_publications(&seen);
     assert!(fs.contents(format!("{STATE}/state.json")).is_some());
 }
 
