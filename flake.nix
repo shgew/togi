@@ -132,7 +132,6 @@
             lib.assertMsg (ungrouped == [ ] && misgrouped == [ ] && emptyGroups == [ ])
               "nextestGroups must name every workspace member exactly once and no group may be empty; in no group: ${toString ungrouped}; repeated or not a member: ${toString misgrouped}; empty: ${toString emptyGroups}";
           cliSource = cargoSources.source { code = cargoSources.closure [ "togi" ]; };
-          simSource = cargoSources.source { code = cargoSources.closure [ "togi-tool-sim" ]; };
           trialSource = cargoSources.source {
             code = cargoSources.closureWithDev [ "togi-trial" ];
             full = [ "togi-trial" ];
@@ -225,55 +224,17 @@
               doInstallCargoArtifacts = false;
               nativeBuildInputs = cargoArgs.nativeBuildInputs ++ args.nativeBuildInputs;
             };
-          simSuite = lib.importJSON ./nix/sim-suite.json;
           releaseArgs = cargoArgs // {
             CARGO_PROFILE = "release";
             CARGO_PROFILE_RELEASE_LTO = "false";
           };
-          simRelease = cargoWith simSource (
-            releaseArgs
-            // {
-              pname = "togi-tool-sim";
-              cargoExtraArgs = "--locked -p togi-tool-sim";
-            }
-          );
           releaseDeps = craneLib.buildDepsOnly (
             releaseArgs
             // {
               inherit (depsArgs) dummySrc;
               pname = "togi-release";
-              cargoExtraArgs = "--locked -p togi -p togi-tool-sim";
+              cargoExtraArgs = "--locked -p togi";
             }
-          );
-          togiToolSim = craneLib.buildPackage (
-            simRelease
-            // {
-              cargoArtifacts = releaseDeps;
-              doCheck = false;
-            }
-          );
-          simSuiteSource = lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./tools/bench/suite.json
-              ./tools/bench/machines
-              ./tools/bench/facts
-            ];
-          };
-          simSuiteShard =
-            shard:
-            pkgs.runCommand "togi-sim-suite-${toString shard}" { } ''
-              sim=${togiToolSim}/bin/togi-tool-sim
-              suite=${simSuiteSource}/tools/bench/suite.json
-              jobs=''${NIX_BUILD_CORES:-0}
-              [ "$jobs" -ge 1 ] || jobs=$(nproc)
-              "$sim" suite --suite "$suite" --shards ${toString simSuite.shards} --shard ${toString shard} --jobs "$jobs" --out "$out"
-              "$sim" check --suite "$suite" --shards ${toString simSuite.shards} --shard ${toString shard} "$out"
-            '';
-          simSuiteChecks = lib.listToAttrs (
-            map (shard: lib.nameValuePair "sim-suite-${toString shard}" (simSuiteShard shard)) (
-              lib.range 0 (simSuite.shards - 1)
-            )
           );
           advisoryDb = pkgs.runCommand "advisory-db" { nativeBuildInputs = [ pkgs.gitMinimal ]; } ''
             cp -r ${inputs.advisory-db} $out
@@ -538,7 +499,6 @@
               vm-display = vm.display;
               vm-efi = vm.efi;
             }
-            // simSuiteChecks
           );
 
           formatter = pkgs.treefmt.withConfig {

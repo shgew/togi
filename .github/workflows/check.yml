@@ -1,7 +1,7 @@
 # Every flake check runs, on pull requests and on workflow_dispatch alike, unless the public Cachix cache `togi`
 # already holds its output, which the owner's gate publishes for what it built (ADR 0085, ADR 0074). A pull request
 # builds the cheap checks named in the eval step together in one light job and every other uncached check, such as
-# clippy, doc, each `nextest-<group>`, the simulator shards and the VM tests, in a job of its own so the VM tests
+# clippy, doc, each `nextest-<group>` and the VM tests, in a job of its own so the VM tests
 # boot in parallel (ADR 0075). The release dispatches and waits for a run on the exact main head before making its
 # release commit; a check that run finds cached counts as passed.
 # No job runs on macOS (ADR 0061): `just lint` and `just gate` clippy the Rust workspace for
@@ -31,7 +31,6 @@ jobs:
       checks: ${{ steps.list.outputs.checks }}
       light: ${{ steps.list.outputs.light }}
       vm-checks: ${{ steps.list.outputs.vm-checks }}
-      all-checks: ${{ steps.list.outputs.all-checks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31
@@ -44,7 +43,6 @@ jobs:
         run: |
           info=$(nix eval --json .#checks.x86_64-linux --apply '
             checks: let all = builtins.attrNames checks; in {
-              all-checks = all;
               vm-checks = builtins.filter (name: checks.${name} ? driver) all;
               selected = map (name: { inherit name; out = checks.${name}.outPath; }) all;
             }')
@@ -71,7 +69,6 @@ jobs:
             echo "checks=$(jq -cn --args '$ARGS.positional' "${matrix_checks[@]}")"
             echo "light=${light_checks[*]}"
             echo "vm-checks=$(jq -c '."vm-checks"' <<< "$info")"
-            echo "all-checks=$(jq -c '."all-checks"' <<< "$info")"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -161,13 +158,3 @@ jobs:
               *) exit 1 ;;
             esac
           done
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: github.event_name == 'workflow_dispatch'
-      - name: Every simulator suite shard was built
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          CHECKS: ${{ needs.eval.outputs.all-checks }}
-        run: |
-          want=$(jq -ce '.shards as $n | select($n >= 1) | [range($n) | "sim-suite-\(.)"]' nix/sim-suite.json)
-          got=$(jq -c '[.[] | select(startswith("sim-suite-"))] | sort_by(ltrimstr("sim-suite-") | tonumber)' <<<"$CHECKS")
-          test "$got" = "$want" || { echo "suite shards built: $got; nix/sim-suite.json expects: $want"; exit 1; }

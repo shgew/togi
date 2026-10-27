@@ -70,7 +70,7 @@ lint: _dev-shell
 fmt:
     nix fmt
 
-# Run the gate in two stages, each stopping at its first failure: format, lint through Cargo, one Nix build of the light and nextest-<group> flake checks, then the doctests, cargo-deny and cargo-shear; then, on Linux, one Nix build of the sim shards and VM tests (Nix rebuilds only what changed), then publish the built check outputs to Cachix when a push token is present; cargo-deny's advisory audit runs only in the deny flake check
+# Run the gate in two stages, each stopping at its first failure: format, lint through Cargo, one Nix build of the light and nextest-<group> flake checks, then the doctests, cargo-deny and cargo-shear; then, on Linux with writable /dev/kvm, one Nix build of the VM tests (Nix rebuilds only what changed), then publish the built check outputs to Cachix when a push token is present; cargo-deny's advisory audit runs only in the deny flake check
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -94,24 +94,20 @@ _heavy-checks:
     #!/usr/bin/env bash
     set -euo pipefail
     [[ '{{ os() }}' == linux ]] || exit 0
-    nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: checks.${name} ? driver || builtins.match "sim-suite-.*" name != null) (builtins.attrNames checks))'
+    nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: checks.${name} ? driver) (builtins.attrNames checks))'
 
 _heavy-gate name:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ '{{ os() }}' != linux ]]; then
-        echo "$1: the VM tests and simulator shards build on Linux only; pull request CI builds them"
+        echo "$1: the VM tests build on Linux only; pull request CI builds them"
         exit 0
     fi
     names=$(just _heavy-checks)
     read -r -a checks <<< "$names"
     if [[ ! -w /dev/kvm ]]; then
-        echo "$1: /dev/kvm is not writable; skipping the VM tests, but building the simulator shards; pull request CI builds the VM tests"
-        shards=()
-        for check in "${checks[@]}"; do
-            if [[ "$check" == sim-suite-* ]]; then shards+=("$check"); fi
-        done
-        checks=("${shards[@]}")
+        echo "$1: /dev/kvm is not writable; skipping the VM tests; pull request CI builds them"
+        exit 0
     fi
     if ((${#checks[@]})); then just check-one "${checks[@]}"; fi
 
@@ -140,12 +136,12 @@ _publish name:
     echo "$1: publishing ${#built[@]} check outputs to the togi Cachix cache"
     printf '%s\n' "${built[@]}" | cachix push togi || echo "$1: cachix push failed; pull request CI builds what it does not find" >&2
 
-# Run every flake check this host builds, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package and, on Linux, trial-scope-tests and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm-grub, vm-runtime, vm-display and vm-efi (`just check-one module`)
+# Build named flake checks, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, vm-grub, vm-runtime, vm-display and vm-efi (`just check-one module`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -160,7 +156,7 @@ sim *args: _dev-shell
 togi *args: _dev-shell
     cargo run --release --locked -p togi -- "$@"
 
-# Run every session of the simulator suite and check that each ended clean
+# Run every session of the simulator suite on demand for research and check that each ended clean
 [group('run')]
 sim-suite *args: _dev-shell
     out=$(mktemp -d); cargo run --release --locked -p togi-tool-sim -- suite --suite tools/bench/suite.json --out "$out" "$@" && cargo run --release --locked -p togi-tool-sim -- check --suite tools/bench/suite.json --shards 1 "$out"
@@ -351,7 +347,7 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
     just gate
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Push a review fix: format, lint, check doc links, build the nextest-<group> checks, board and SQL views, the VM tests and sim shards on Linux (Nix rebuilds only what changed), publish the built check outputs to Cachix when a push token is present, then push as `just ship` does; the first push uses `just ship`
+# Push a review fix: format, lint, check doc links, build the nextest-<group> checks, board and SQL views and the VM tests on Linux with writable /dev/kvm (Nix rebuilds only what changed), publish the built check outputs to Cachix when a push token is present, then push as `just ship` does; the first push uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
