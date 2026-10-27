@@ -154,10 +154,7 @@ impl Names {
             QualificationState::Progress {
                 witnesses,
                 outstanding,
-            } => format!(
-                "progress {} {outstanding:?}",
-                self.witnesses(witnesses)
-            ),
+            } => format!("progress {} {outstanding:?}", self.witnesses(witnesses)),
             QualificationState::Complete { witnesses } => {
                 format!("complete {}", self.witnesses(witnesses))
             }
@@ -629,7 +626,9 @@ impl Names {
             }
             None => "None".to_owned(),
         };
-        format!("ccd {ccd:?} cores={cores:?} edge={edge} cap={cap} day={day:?} remaining={remaining:?}")
+        format!(
+            "ccd {ccd:?} cores={cores:?} edge={edge} cap={cap} day={day:?} remaining={remaining:?}"
+        )
     }
 
     fn day_projection(&mut self, day: &DayProjection) -> String {

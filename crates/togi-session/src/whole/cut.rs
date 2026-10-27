@@ -1158,12 +1158,22 @@ fn commitments(events: &[Event], observations: bool) -> Vec<String> {
         .collect();
     let mut shapes = Names::hidden();
     chosen.sort_by_cached_key(|event| {
-        format!("{} {}", event.kind().as_str(), shapes.payload(&event.payload))
+        format!(
+            "{} {}",
+            event.kind().as_str(),
+            shapes.payload(&event.payload)
+        )
     });
     let mut names = Names::numbered();
     chosen
         .into_iter()
-        .map(|event| format!("{} {}", event.kind().as_str(), names.payload(&event.payload)))
+        .map(|event| {
+            format!(
+                "{} {}",
+                event.kind().as_str(),
+                names.payload(&event.payload)
+            )
+        })
         .collect()
 }
 
@@ -1180,17 +1190,37 @@ const KINDS: &[&str] = &[
     "day.applied",
 ];
 
-#[test]
-fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments() {
-    let (model, played, from) = scenario();
-    let cuts = cuts(&played, from);
-    assert_eq!(cuts.len(), 380, "the durable-event sweep window changed");
+/// The fewest swept phases that cut something: after the run that completes night 2's qualification, the scenario
+/// holds that run, three days, the crashed day boot and night 3's run.
+const MIN_SWEPT_PHASES: usize = 6;
+
+/// What the sweep window must hold for a sweep over it to mean anything, however many events a legitimate change
+/// adds to it: a cut after every kind of [`KINDS`], one inside a trial, and the scenario's swept phases.
+fn assert_window(played: &[Played], from: usize, cuts: &[(usize, usize)]) {
     let cut: BTreeSet<_> = cuts
         .iter()
         .map(|&(phase, after)| played[phase].events[after - 1].kind().as_str())
         .collect();
     let missed: Vec<_> = KINDS.iter().filter(|kind| !cut.contains(*kind)).collect();
     assert!(missed.is_empty(), "no cut after {missed:?}");
+    let trials = trial_cuts(played, from);
+    assert!(
+        !trials.is_empty() && trials.iter().all(|cut| cuts.contains(cut)),
+        "the swept phases cut no trial"
+    );
+    let phases: BTreeSet<_> = cuts.iter().map(|&(phase, _)| phase).collect();
+    assert!(
+        phases.len() >= MIN_SWEPT_PHASES,
+        "only {} swept phases hold a cut, fewer than {MIN_SWEPT_PHASES}",
+        phases.len()
+    );
+}
+
+#[test]
+fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments() {
+    let (model, played, from) = scenario();
+    let cuts = cuts(&played, from);
+    assert_window(&played, from, &cuts);
     let wanted: Vec<_> = played
         .iter()
         .map(|phase| projection(&phase.events))
@@ -1235,9 +1265,7 @@ fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve
     let (model, played, from) = scenario();
     let trials = trial_cuts(&played, from);
     let cuts = cuts(&played, from);
-    assert!(trials.iter().all(|cut| cuts.contains(cut)));
-    assert_eq!(cuts.len(), 380, "the durable-event crash window changed");
-    assert!(!trials.is_empty(), "the swept phases ran no trial");
+    assert_window(&played, from, &cuts);
     each(&cuts, |phase, after| {
         let events = resume(&played[phase], &model, after, Fate::PowerLoss);
         assert_unchanged_decisions(
