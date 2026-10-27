@@ -16,7 +16,9 @@ pub(crate) const PR_URL: &str = "https://github.com/shgew/togi/pull/700";
 pub(crate) const PREVIOUS_URL: &str = "https://github.com/shgew/togi/pull/700#issuecomment-4242";
 
 pub(crate) type Handler = Box<dyn FnMut(&[String]) -> Output>;
-pub(crate) type IsolatedHandler = Box<dyn FnMut(&Path, &[String]) -> Output>;
+/// Answers an isolated git call in a directory, given its arguments and its standard input (empty for a call
+/// without input).
+pub(crate) type IsolatedHandler = Box<dyn FnMut(&Path, &[String], &[u8]) -> Output>;
 
 /// gh, git and the isolated git as handlers; every call is recorded, and a program without a handler
 /// fails the test when called.
@@ -54,12 +56,16 @@ impl Programs for Fake {
     }
 
     fn isolated_git(&mut self, dir: &Path, args: &[&str]) -> Output {
+        self.isolated_git_input(dir, args, &[])
+    }
+
+    fn isolated_git_input(&mut self, dir: &Path, args: &[&str], input: &[u8]) -> Output {
         let args = owned(args);
         self.isolated_calls.push((dir.to_owned(), args.clone()));
         let Some(handle) = self.isolated.as_mut() else {
             panic!("unexpected isolated git {args:?} in {}", dir.display());
         };
-        handle(dir, &args)
+        handle(dir, &args, input)
     }
 }
 

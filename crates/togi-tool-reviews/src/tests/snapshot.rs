@@ -565,7 +565,7 @@ fn local_diff_harness(gh: Handler, mut isolated: Option<IsolatedAnswer>) -> Harn
         Err(fail(&format!("unexpected git {args:?}")))
     });
     let mut h = Harness::new(Some(gh), Some(git));
-    h.fake.isolated = Some(Box::new(move |_dir: &Path, args: &[String]| {
+    h.fake.isolated = Some(Box::new(move |_dir: &Path, args: &[String], _input: &[u8]| {
         if let Some(answer) = isolated.as_mut().and_then(|isolated| isolated(args)) {
             return answer;
         }

@@ -266,6 +266,10 @@ impl Programs for Real {
     fn isolated_git(&mut self, dir: &Path, args: &[&str]) -> Output {
         self.system.isolated_git(dir, args)
     }
+
+    fn isolated_git_input(&mut self, dir: &Path, args: &[&str], input: &[u8]) -> Output {
+        self.system.isolated_git_input(dir, args, input)
+    }
 }
 
 fn snapshot(programs: &mut Real, tmp: &Path) -> Result<(), crate::Error> {
