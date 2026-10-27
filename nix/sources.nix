@@ -3,9 +3,10 @@
 #
 # A source keeps the workspace manifests and `Cargo.lock`, so Cargo resolves the workspace and `--locked` holds, and
 # the files of the members the derivation builds. A member built but not tested (`code`) leaves out its test-only
-# files, so a test edit does not change the derivation of the package, the simulator or the VM checks. Cargo still
-# insists that every member has its declared target files, and nextest's filters see only the targets Cargo finds, so
-# `postPatch` creates an empty file at each target path the source leaves out. The stubs are made at build time, not in a source derivation, so crane
+# files, so a test edit does not change the derivation of the package, the simulator or the VM checks. Lint
+# configuration (`clippy.toml`) is a file only the lint check asks for. Cargo still insists that every member has its
+# declared target files, and nextest's filters see only the targets Cargo finds, so `postPatch` creates an empty file
+# at each target path the source leaves out. The stubs are made at build time, not in a source derivation, so crane
 # reads the source without import-from-derivation.
 { lib }:
 let
@@ -205,7 +206,6 @@ let
             ../Cargo.toml
             ../Cargo.lock
             ../rust-toolchain.toml
-            ../clippy.toml
           ]
           ++ map (crate: dir crate + "/Cargo.toml") members
           ++ map productionRs code

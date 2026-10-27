@@ -143,10 +143,11 @@
           };
           # Documentation tests need crate-local fixtures, not external benchmark inputs.
           cratesSource = cargoSources.source { full = allCrates; };
-          # clippy compiles every crate's tests, which include some fixtures at compile time.
+          # clippy compiles every crate's tests, which include some fixtures at compile time, and reads the lint
+          # configuration; no other derivation does.
           testSource = cargoSources.source {
             full = allCrates;
-            files = testFixtures allCrates;
+            files = testFixtures allCrates ++ [ ./clippy.toml ];
           };
           nextestChecks =
             assert validGroups;
