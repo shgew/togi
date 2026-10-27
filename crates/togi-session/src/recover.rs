@@ -13,7 +13,7 @@ use togi_tuner::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 use crate::appender::Appender;
 use crate::emergency::SweepCleared;
 use crate::error::{AppendFailure, Flow, SessionError, Step};
-use crate::evidence::{self, RETRY_WAITS};
+use crate::evidence::{self, RETRY_WAITS, Verdict};
 use crate::recovery::RecoveryState;
 
 /// What recovery works with: the journal through its appender, the kernel log, the trial files, the boot the run is
@@ -443,8 +443,8 @@ struct Cut<'a> {
     reset: &'a Reset,
 }
 
-/// How an open trial closes. The first evidence that holds decides: a backend failure the journal recorded, a
-/// machine check inside the trial, the reset after a crash, and last that togi just stopped.
+/// How an open trial closes. [`evidence::Ladder`] decides which evidence holds first: a backend failure the journal
+/// recorded, a machine check inside the trial, the reset after a crash, and last that togi just stopped.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Closure {
     /// The backend reported a failure; a crash after it changes nothing but why the end is not clean.
@@ -485,49 +485,75 @@ impl Closure {
         let mut causes = vec![facts.trial];
         causes.extend(facts.machine_checks);
         let crashed = facts.crash.is_some();
-        if let Some((signal, core)) = facts.backend_failure {
-            if let Some(cut) = &facts.crash
-                && matches!(signal, Signal::CorrectedMce | Signal::UncorrectedMce)
-            {
-                causes.extend(cut.recorded);
-            }
-            return Self::BackendFailure {
-                signal,
-                core,
-                crashed,
-                causes,
-            };
-        }
-        if !facts.machine_checks.is_empty()
-            || facts
-                .crash
-                .as_ref()
-                .is_some_and(|cut| !cut.recorded.is_empty())
-        {
-            if let Some(cut) = &facts.crash {
-                if facts.machine_checks.is_empty() {
-                    causes = vec![cut.seq];
+        let cut = facts.crash.as_ref();
+        // A recovered trial knows no containment, escape or diagnostics, and it never ran its full duration: what
+        // the ladder leaves unmatched is that togi stopped.
+        let ladder = evidence::Ladder {
+            escaped: &[],
+            uncontained: None,
+            failure: facts
+                .backend_failure
+                .map(|(signal, core)| evidence::FailureSignal {
+                    signal,
+                    core,
+                    pid: None,
+                }),
+            machine_checks: (!facts.machine_checks.is_empty()
+                || cut.is_some_and(|cut| !cut.recorded.is_empty()))
+            .then(|| evidence::machine_check_signal(facts.machine_check_corrected)),
+            reset: cut.map(|cut| evidence::ResetRuling {
+                outcome: cut.reset.outcome,
+                signal: cut.reset.signal,
+            }),
+            inconclusive: false,
+            short: true,
+        };
+        match (ladder.decide(), cut) {
+            (Verdict::Failure(failure), cut) => {
+                if let Some(cut) = cut
+                    && matches!(failure.signal, Signal::CorrectedMce | Signal::UncorrectedMce)
+                {
+                    causes.extend(cut.recorded);
                 }
-                for &seq in cut.recorded {
-                    if !causes.contains(&seq) {
-                        causes.push(seq);
+                Self::BackendFailure {
+                    signal: failure.signal,
+                    core: failure.core,
+                    crashed,
+                    causes,
+                }
+            }
+            (Verdict::MachineChecks(signal), cut) => {
+                if let Some(cut) = cut {
+                    if facts.machine_checks.is_empty() {
+                        causes = vec![cut.seq];
+                    }
+                    for &seq in cut.recorded {
+                        if !causes.contains(&seq) {
+                            causes.push(seq);
+                        }
                     }
                 }
+                Self::MachineChecks {
+                    signal,
+                    crashed,
+                    causes,
+                }
             }
-            return Self::MachineChecks {
-                signal: evidence::machine_check_signal(facts.machine_check_corrected),
-                crashed,
-                causes,
-            };
-        }
-        match &facts.crash {
-            Some(cut) => Self::Crashed {
+            (Verdict::Reset(_), Some(cut)) => Self::Crashed {
                 reset: cut.reset.clone(),
                 causes: std::iter::once(cut.seq)
                     .chain(cut.recorded.iter().copied())
                     .collect(),
             },
-            None => Self::Stopped { causes },
+            (Verdict::Reset(_), None)
+            | (
+                Verdict::Escaped
+                | Verdict::Uncontained
+                | Verdict::Inconclusive
+                | Verdict::Short
+                | Verdict::Passed,
+                _,
+            ) => Self::Stopped { causes },
         }
     }
 
