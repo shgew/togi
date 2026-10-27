@@ -444,21 +444,12 @@ impl State {
             .and_then(|id| self.trials.get(id));
         let task = trial.and_then(Trial::task);
         let night = trial.and_then(Trial::night);
-        // Filler trial indexes ascend: each is pushed when its intent folds.
-        let filler = observed
-            .source
-            .trial
-            .as_ref()
-            .and_then(|id| self.trials.index.get(id))
-            .and_then(|at| self.trials.fillers.binary_search(at).ok())
-            .map(|cursor| u32::try_from(cursor).unwrap_or(u32::MAX));
         let index = self.ledger.records.len();
         self.ledger.records.push(Exposure {
             seq,
             observed: observed.clone(),
             task,
             night,
-            filler,
         });
         if let Some(task) = task {
             self.ledger.by_task.entry(task).or_default().push(index);
