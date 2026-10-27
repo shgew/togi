@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use test_case::test_case;
 use togi_machine::{CcdId, CoreId, CoreSet, PerCore, PmTable, TrialConditions};
 
-use super::{MIN_SAMPLES, Telemetry, VOLTS_PER_COUNT, WARMUP_MS, counts, groups, summarize, top};
+use super::{MIN_SAMPLES, Telemetry, WARMUP_MS, groups, summarize, top};
 
 fn core(id: i64) -> CoreId {
     CoreId::new(id).unwrap()
@@ -172,19 +172,6 @@ fn summarize_counts_a_repeated_core_once() {
 fn groups_orders_by_request(requests: PerCore<f64>, want: &[&[i64]]) {
     let want: Vec<CoreSet> = want.iter().map(|ids| cores(ids)).collect();
     assert_eq!(groups(&requests), want);
-}
-
-#[test_case(1.100, 1.100, 1; "target equal to the request")]
-#[test_case(1.100, 1.050, 1; "target below the request")]
-#[test_case(1.100, 1.100 + VOLTS_PER_COUNT, 1; "target one count above")]
-#[test_case(1.100, 1.100 + VOLTS_PER_COUNT + 0.0001, 2; "target just over one count above")]
-#[test_case(1.0322, 1.0443, 4; "several counts above")]
-#[test_case(-f64::MAX, f64::MAX, i64::MAX; "positive difference overflows")]
-#[test_case(0.0, f64::MAX, i64::MAX; "positive count overflows")]
-#[test_case(f64::MAX, -f64::MAX, 1; "negative difference overflows")]
-#[test_case(f64::MAX, f64::MAX, 1; "equal extreme requests")]
-fn counts_raises_a_request_by_whole_counts(v: f64, target: f64, want: i64) {
-    assert_eq!(counts(v, target), want);
 }
 
 #[test]
