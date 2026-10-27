@@ -1090,12 +1090,12 @@ fn mixed_backend_setup_failure_charges_only_recorded_locations(location: Option<
         &[
             CoreInfo {
                 core: core(0),
-                ccd: CcdId::try_from(0).unwrap(),
+                ccd: CcdId::try_from(0_u8).unwrap(),
                 cpus: vec![CpuId::from(0)],
             },
             CoreInfo {
                 core: core(8),
-                ccd: CcdId::try_from(0).unwrap(),
+                ccd: CcdId::try_from(0_u8).unwrap(),
                 cpus: vec![CpuId::from(8)],
             },
         ],
