@@ -4,12 +4,13 @@ use togi_config::DeadEndThreshold;
 
 use togi_journal::{Outcome, Seq};
 use togi_machine::{
-    BootId, CcdId, CoreId, CoreSet, CpuId, PerCore, PmTable, Regime, Signal, TrialConditions,
-    TrialFailure, TrialResult,
+    BootId, CcdId, CoreId, CoreSet, CpuId, PerCore, PmTable, ProcessFaultKind, Regime, Signal,
+    TrialConditions, TrialFailure, TrialResult,
 };
 
 use super::{
-    Adjudication, Placement, RecordedMce, ResetVerdict, TrialEvidence, Window, adjudicate,
+    Adjudication, FailureSignal, Ladder, Placement, ProcessFaults, RecordedMce,
+    RecordedProcessFault, ResetRuling, ResetVerdict, TrialEvidence, Verdict, Window, adjudicate,
     backend_exhausted, backend_retry, crash_owns, join_diagnostic, kernel_retry, mce_in_window,
     mce_signal, place_kernel_mce, summarize_samples, trial_end,
 };
@@ -51,6 +52,7 @@ impl Case {
             missing: self.missing.as_deref(),
             duration: MINUTE,
             containment: self.containment.as_deref(),
+            process: None,
         })
         .unwrap()
     }
@@ -763,4 +765,160 @@ fn ccd_frequency_narrowing_is_checked_before_filling_any_fields(clock: i64, fits
         assert!(matches!(result, Err(togi_machine::SampleError::Clock(_))));
         assert_eq!(end, before);
     }
+}
+
+fn tested() -> CpuId {
+    CpuId::from(2)
+}
+
+fn fault(
+    cpu: Option<CpuId>,
+    core: Option<CoreId>,
+    worker_core: Option<CoreId>,
+) -> RecordedProcessFault {
+    RecordedProcessFault {
+        seq: Seq::new(9).unwrap(),
+        pid: 1,
+        kind: ProcessFaultKind::Segmentation,
+        monotonic_ns: 0,
+        process_pid: 100,
+        cpu,
+        core,
+        worker_core,
+    }
+}
+
+fn with_faults(case: &Case, faults: &[RecordedProcessFault]) -> Adjudication {
+    adjudicate(&TrialEvidence {
+        result: &case.result,
+        mces: &case.mces,
+        reset: case.reset.as_ref(),
+        missing: case.missing.as_deref(),
+        duration: MINUTE,
+        containment: case.containment.as_deref(),
+        process: Some(ProcessFaults {
+            recorded: faults,
+            tested: &[tested()],
+        }),
+    })
+    .unwrap()
+}
+
+fn unexpected_exit() -> TrialFailure {
+    TrialFailure {
+        signal: Signal::UnexpectedExit,
+        core: core(3),
+        pid: None,
+    }
+}
+
+#[test]
+fn a_kernel_placed_fault_replaces_the_workers_core_of_an_unexpected_exit() {
+    let mut case = Case::new();
+    case.result.failure = Some(unexpected_exit());
+    let end = with_faults(&case, &[fault(Some(tested()), Some(core(4)), None)]);
+    assert_eq!(
+        (end.outcome, end.signal, end.core),
+        (Outcome::Failure, Some(Signal::UnexpectedExit), Some(core(4)))
+    );
+}
+
+#[test]
+fn an_exit_the_kernel_placed_outside_the_tested_cpus_is_inconclusive() {
+    let mut case = Case::new();
+    case.result.failure = Some(unexpected_exit());
+    let end = with_faults(
+        &case,
+        &[fault(Some(CpuId::from(99)), Some(core(4)), Some(core(3)))],
+    );
+    assert_eq!(
+        (end.outcome, end.signal, end.core),
+        (Outcome::Inconclusive, None, None)
+    );
+    assert_eq!(
+        end.reason.as_deref(),
+        Some("worker fault executed outside tested CPUs")
+    );
+}
+
+#[test]
+fn a_fault_without_a_core_still_fails_the_trial_and_is_worded_by_the_evidence_below_it() {
+    let mut case = Case::new();
+    case.result.ran = MINUTE / 2;
+    let end = with_faults(&case, &[fault(Some(tested()), None, None)]);
+    assert_eq!(
+        (end.outcome, end.signal, end.core),
+        (Outcome::Failure, Some(Signal::UnexpectedExit), None)
+    );
+    assert_eq!(
+        end.reason.as_deref(),
+        Some("trial ended before its full duration")
+    );
+}
+
+#[test]
+fn a_fault_without_a_core_outranks_machine_checks_and_a_reset_but_not_an_escape() {
+    let mut case = Case::new();
+    case.mces = vec![mce(true)];
+    case.reset = Some(ResetVerdict {
+        outcome: Outcome::Failure,
+        signal: Some(Signal::Crash),
+        reason: None,
+    });
+    let faults = [fault(Some(tested()), None, None)];
+    let end = with_faults(&case, &faults);
+    assert_eq!(
+        (end.outcome, end.signal, end.core),
+        (Outcome::Failure, Some(Signal::UnexpectedExit), None)
+    );
+    case.result.escaped = vec![CpuId::from(99)];
+    let end = with_faults(&case, &faults);
+    assert_eq!((end.outcome, end.signal), (Outcome::Inconclusive, None));
+}
+
+const CLEAR: Ladder<'static> = Ladder {
+    escaped: &[],
+    uncontained: None,
+    failure: None,
+    machine_checks: None,
+    reset: None,
+    inconclusive: false,
+    short: false,
+};
+
+const CRASH: ResetRuling = ResetRuling {
+    outcome: Outcome::Failure,
+    signal: Some(Signal::Crash),
+};
+
+#[test_case(CLEAR, Verdict::Passed; "nothing")]
+#[test_case(Ladder { short: true, ..CLEAR }, Verdict::Short; "short")]
+#[test_case(Ladder { inconclusive: true, short: true, ..CLEAR }, Verdict::Inconclusive; "inconclusive")]
+#[test_case(Ladder { reset: Some(CRASH), inconclusive: true, ..CLEAR }, Verdict::Reset(CRASH); "reset")]
+#[test_case(Ladder { machine_checks: Some(Signal::UncorrectedMce), reset: Some(CRASH), ..CLEAR }, Verdict::MachineChecks(Signal::UncorrectedMce); "machine checks")]
+#[test_case(Ladder { failure: Some(UNPLACED), machine_checks: Some(Signal::UncorrectedMce), ..CLEAR }, Verdict::Failure(UNPLACED); "failure")]
+#[test_case(Ladder { uncontained: Some("unconfirmed"), failure: Some(UNPLACED), ..CLEAR }, Verdict::Uncontained; "uncontained")]
+#[test_case(Ladder { escaped: &[CpuId::from(99)], uncontained: Some("unconfirmed"), ..CLEAR }, Verdict::Escaped; "escaped")]
+fn the_ladder_decides_by_the_first_rung_that_holds(ladder: Ladder<'_>, verdict: Verdict) {
+    assert_eq!(ladder.decide(), verdict);
+}
+
+const UNPLACED: FailureSignal = FailureSignal {
+    signal: Signal::Stall,
+    core: None,
+    pid: None,
+};
+
+#[test_case(Verdict::Failure(UNPLACED), Outcome::Failure, Some(Signal::Stall); "failure")]
+#[test_case(Verdict::MachineChecks(Signal::CorrectedMce), Outcome::Failure, Some(Signal::CorrectedMce); "machine checks")]
+#[test_case(Verdict::Reset(CRASH), Outcome::Failure, Some(Signal::Crash); "reset")]
+#[test_case(Verdict::Reset(ResetRuling { outcome: Outcome::Inconclusive, signal: None }), Outcome::Inconclusive, None; "inconclusive reset")]
+#[test_case(Verdict::Short, Outcome::Inconclusive, None; "short")]
+#[test_case(Verdict::Passed, Outcome::Pass, None; "passed")]
+fn a_verdict_names_its_outcome_and_signal(
+    verdict: Verdict,
+    outcome: Outcome,
+    signal: Option<Signal>,
+) {
+    assert_eq!((verdict.outcome(), verdict.signal()), (outcome, signal));
 }
