@@ -155,7 +155,7 @@ pub(crate) fn placement(
     topology: &[CoreInfo],
     spec: &togi_machine::TrialSpec,
 ) -> Option<Placement> {
-    let togi_machine::ControllerMode::Managed { rotation } = spec.controller else {
+    let togi_machine::ControllerMode::Managed { rotation, .. } = spec.controller else {
         return None;
     };
     let is_loaded = |info: &&CoreInfo| {
@@ -696,7 +696,10 @@ mod tests {
             regime,
             loaded,
             held(&all(offsets)),
-            togi_machine::ControllerMode::Managed { rotation },
+            togi_machine::ControllerMode::Managed {
+                rotation,
+                purpose: togi_machine::Purpose::Isolated,
+            },
             single_ccd,
         )
     }
@@ -763,6 +766,36 @@ mod tests {
         );
         let contract = got.unwrap().contract;
         assert_eq!((contract.capped(), contract.excluded()), (true, None));
+    }
+
+    /// The same shape and offsets under each purpose, for a trial that loads cores 0 and 1 of one
+    /// CCD beside an entire idle CO-0 CCD.
+    fn idle_ccd_shape(purpose: togi_machine::Purpose) -> Option<Placement> {
+        managed_with(
+            togi_machine::Regime::R1,
+            &[0, 1],
+            held(&all([-20, -20, 0, 0])),
+            togi_machine::ControllerMode::Managed {
+                rotation: 3,
+                purpose,
+            },
+            false,
+        )
+    }
+
+    #[test]
+    fn exact_and_isolated_trials_of_one_shape_get_the_same_idle_ccd_placement() {
+        let isolated = idle_ccd_shape(togi_machine::Purpose::Isolated);
+        assert_eq!(
+            isolated,
+            Some(Placement {
+                cpus: cpus(&[2, 3, 6, 7]),
+                contract: Contract::IdleCcd {
+                    ccd: CcdId::new(1).unwrap()
+                },
+            })
+        );
+        assert_eq!(idle_ccd_shape(togi_machine::Purpose::Exact), isolated);
     }
 
     #[test]
@@ -922,7 +955,10 @@ mod tests {
             togi_machine::Regime::R7,
             &[0, 1, 2, 3],
             held(&all([0, 0, 0, 0])),
-            togi_machine::ControllerMode::Managed { rotation: 5 },
+            togi_machine::ControllerMode::Managed {
+                rotation: 5,
+                purpose: togi_machine::Purpose::Exact,
+            },
             true,
         );
         assert_eq!(
@@ -935,7 +971,10 @@ mod tests {
     #[test]
     fn a_missing_offset_is_recorded_as_unknown_never_as_zero() {
         let offsets = held(&[Some(-3), None, Some(-3), Some(-3)]);
-        let mode = togi_machine::ControllerMode::Managed { rotation: 0 };
+        let mode = togi_machine::ControllerMode::Managed {
+            rotation: 0,
+            purpose: togi_machine::Purpose::Exact,
+        };
         // Core 1 is the lone unloaded core of the single CCD.
         let got = managed_with(togi_machine::Regime::R7, &[0, 2, 3], offsets, mode, true);
         assert_eq!(

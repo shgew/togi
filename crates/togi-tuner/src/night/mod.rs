@@ -17,7 +17,7 @@ pub use exposure::{
 };
 pub use matrix::{
     Attempt, AttemptScope, Cell, HostPool, IDLE_DURATION, Layout, Matrix, MatrixError, PackageLoad,
-    PlannedCell, Purpose, Reuse, Roles, SEARCH_DURATION, SHORT_DURATION, SUSTAINED_DURATION,
+    PlannedCell, Reuse, Roles, SEARCH_DURATION, SHORT_DURATION, SUSTAINED_DURATION,
     Source, Uncovered, Workloads, control_cells, mapping_cells, minimum_position_seconds,
     qualification_cells, reproduction_cells, zeroed,
 };
@@ -27,3 +27,4 @@ pub use schedule::{
     QUALIFICATION_SHARE_PCT, Queue, REPRODUCTION_SHARE_PCT, REQUALIFICATION_SHARE_PCT, Reason,
     Reproduction, ReproductionStage, RequalificationDue, Stock, WallSecs, Work, next_task,
 };
+pub use togi_machine::Purpose;

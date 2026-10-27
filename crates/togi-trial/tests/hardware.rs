@@ -1778,7 +1778,10 @@ mod hardware {
                 .iter()
                 .map(|info| (info.core, togi_machine::TargetOffset::ZERO))
                 .collect(),
-            controller: togi_machine::ControllerMode::Managed { rotation },
+            controller: togi_machine::ControllerMode::Managed {
+                rotation,
+                purpose: togi_machine::Purpose::Exact,
+            },
         }
     }
 
