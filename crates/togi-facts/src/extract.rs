@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use togi_journal::{
-    Attribution, Build, ConfigLoaded, Event, Failure, FailureCarried, Outcome, Payload,
-    ResetTarget, Seq, SessionId, SessionStart, TrialCarried, TrialEnd, TrialId, TrialIntent,
+    Attribution, Build, ConfigLoaded, Event, Failure, FailureCarried, Outcome, Payload, Seq,
+    SessionId, SessionStart, TrialCarried, TrialEnd, TrialId, TrialIntent,
 };
 use togi_machine::{Backend, BiosContext, Condition, CoreSet};
 
@@ -10,7 +10,7 @@ use crate::error::FactsError;
 use crate::fact::{
     BackendIdentity, Decisive, Fact, FactSource, Observation, Telemetry, TrialClass,
 };
-use crate::session::{Effect, Reset, ResetCutoffs, SessionFacts, TrialActivity};
+use crate::session::{SessionFacts, TrialActivity};
 
 pub fn extract<E>(
     session: SessionId,
@@ -74,13 +74,9 @@ pub(crate) struct Extractor {
     context: Option<BiosContext>,
     facts: Vec<Fact>,
     carried: Vec<Fact>,
-    resets: Vec<Reset>,
-    reset_index: HashMap<Seq, usize>,
-    cutoffs: ResetCutoffs,
     open: BTreeMap<Seq, Open>,
     open_by_trial: HashMap<TrialId, Seq>,
     decided: HashSet<TrialId>,
-    carry_commit: Option<Seq>,
     shutdown: Option<Seq>,
 }
 
@@ -113,13 +109,9 @@ impl Extractor {
             context: None,
             facts: Vec::new(),
             carried: Vec::new(),
-            resets: Vec::new(),
-            reset_index: HashMap::new(),
-            cutoffs: ResetCutoffs::default(),
             open: BTreeMap::new(),
             open_by_trial: HashMap::new(),
             decided: HashSet::new(),
-            carry_commit: None,
             shutdown: None,
         })
     }
@@ -176,21 +168,10 @@ impl Extractor {
                 let fact = carried_failure(event.seq, carried)?;
                 self.carried.push(fact);
             }
-            Payload::CommandReset(reset) => {
-                self.reset_index.insert(event.seq, self.resets.len());
-                self.resets.push(Reset {
-                    seq: event.seq,
-                    target: reset.target,
-                    effects: Vec::new(),
-                    applied: None,
-                });
-                self.cutoffs.record(event.seq, reset.target);
-            }
-            Payload::SessionCarried(_) => {
-                self.carry_commit.get_or_insert(event.seq);
-            }
             Payload::Shutdown(_) => self.shutdown = Some(event.seq),
             Payload::SessionBaseline(_)
+            | Payload::CommandReset(_)
+            | Payload::SessionCarried(_)
             | Payload::SessionNotice(_)
             | Payload::SessionWarning(_)
             | Payload::PreflightCheck(_)
@@ -249,7 +230,6 @@ impl Extractor {
             | Payload::CorePhase(_)
             | Payload::SessionArchived(_) => {}
         }
-        self.record_reset_effects(event);
         Ok(())
     }
 
@@ -406,37 +386,6 @@ impl Extractor {
         });
     }
 
-    fn record_reset_effects(&mut self, event: &Event) {
-        for cause in &event.cause {
-            let Some(&index) = self.reset_index.get(cause) else {
-                continue;
-            };
-            let reset = &mut self.resets[index];
-            reset.effects.push(Effect {
-                seq: event.seq,
-                kind: event.kind(),
-            });
-            if let Payload::CorePhase(phase) = &event.payload
-                && reset.target == ResetTarget::Core(phase.core)
-            {
-                reset.applied = Some(event.seq);
-            }
-        }
-        if matches!(event.payload, Payload::SessionArchived(_)) {
-            for reset in &mut self.resets {
-                if reset.target == ResetTarget::All && reset.applied.is_none() {
-                    reset.applied = Some(event.seq);
-                    if !reset.effects.iter().any(|effect| effect.seq == event.seq) {
-                        reset.effects.push(Effect {
-                            seq: event.seq,
-                            kind: event.kind(),
-                        });
-                    }
-                }
-            }
-        }
-    }
-
     pub(crate) fn finish(self) -> SessionFacts {
         SessionFacts {
             id: self.id,
@@ -446,10 +395,7 @@ impl Extractor {
             cores: self.cores,
             facts: self.facts,
             carried: self.carried,
-            resets: self.resets,
-            cutoffs: self.cutoffs,
             open_trials: self.open.into_values().map(|open| open.activity).collect(),
-            carry_commit: self.carry_commit,
             shutdown: self.shutdown,
         }
     }
@@ -458,7 +404,6 @@ impl Extractor {
     pub(crate) fn retained(&self) -> usize {
         self.facts.len()
             + self.carried.len()
-            + self.resets.len()
             + self.open.len()
             + self.open_by_trial.len()
             + self.decided.len()

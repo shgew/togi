@@ -376,18 +376,6 @@ fn empty_topology_rejected() {
 fn stamps_and_markers_come_from_their_own_events() {
     let mut s = Script::begin(&[0]);
     s.add(config_loaded(refreshed(&build(1), "9.9.9")));
-    let carried = s.add(togi_journal::SessionCarried {
-        sources: Vec::new(),
-        failure_points: true,
-        detail: None,
-        carried: Vec::new(),
-    });
-    s.add(togi_journal::SessionCarried {
-        sources: Vec::new(),
-        failure_points: true,
-        detail: None,
-        carried: Vec::new(),
-    });
     s.add(Shutdown {
         reason: ShutdownReason::Signal,
         kernel_cursor: None,
@@ -403,7 +391,6 @@ fn stamps_and_markers_come_from_their_own_events() {
     let facts = s.extract();
     assert_eq!(facts.build, build(1));
     assert_eq!(facts.epoch(), 1);
-    assert_eq!(facts.carry_commit, Some(carried));
     assert_eq!(facts.shutdown, Some(latest));
     assert_eq!(facts.topology.len(), 1);
     assert_eq!(facts.cores, set(&[0]));
