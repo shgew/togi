@@ -8,7 +8,7 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │ ► NIGHT 0h30m ─ mapping C1 -20
 ~ ccwwwwwwwwwwwtkttttttttttttttt
 │
-│ ▌  Mapping CCD 1 at -20 (mapping task 3).
+│ ▌  Mapping CCD 1 at -20 (mapping task 2).
 ~ c  tttttttttttttttttttttttttttttttttttttt
 │
 │  R1   light load  on 08-15   mprime SSE 4K-21K · 8 workers                                       MAPPING CCD 1 AT -20

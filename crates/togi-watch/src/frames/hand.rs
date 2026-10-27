@@ -141,12 +141,12 @@ pub(crate) fn running_trial(regime: Regime, cores: &[u8]) -> TrialView {
     }
 }
 
-/// A trial that tests CCD `ccd` alone at `offset` for the night's mapping queue.
-pub(crate) fn mapping_trial(ccd_id: u8, offset: i64, cores: &[u8]) -> TrialView {
+/// Mapping task `ordinal` of the night, testing CCD `ccd` alone at `offset`.
+pub(crate) fn mapping_trial(ordinal: u32, ccd_id: u8, offset: i64, cores: &[u8]) -> TrialView {
     TrialView {
         task: Some(TaskId {
             queue: Queue::Mapping,
-            ordinal: 3,
+            ordinal,
         }),
         tested: Some(Tested::Isolated {
             ccd: ccd(ccd_id),
@@ -487,7 +487,7 @@ impl Staged {
                         bracket: None,
                     }];
                 }
-                trial = Some(mapping_trial(1, -20, &ids(8..16)));
+                trial = Some(mapping_trial(2, 1, -20, &ids(8..16)));
             }
             Self::Qualifying => {
                 load(&mut cores, 0..16);

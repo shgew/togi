@@ -328,7 +328,7 @@ fn night_hand() -> Hand {
         bare(vec![ccd_row(0, &[0], 0), ccd_row(1, &[8], 0)]),
     );
     hand.policy.night = Some(night(Some((Queue::Mapping, 2, Activity::Mapping))));
-    hand.trial = Some(mapping_trial(1, -15, &[8]));
+    hand.trial = Some(mapping_trial(2, 1, -15, &[8]));
     hand
 }
 
