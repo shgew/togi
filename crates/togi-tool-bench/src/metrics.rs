@@ -22,6 +22,7 @@ pub struct Measured {
     pub real_answers: u32,
     pub real_answer_share: f64,
     pub trial_hours: f64,
+    /// All-core steady-state failures/hour over R1 to R7 only; R8 and R9 are not yet scored.
     pub hazard_per_h: BTreeMap<Regime, f64>,
     pub hazard_max_per_h: f64,
 }
@@ -63,6 +64,7 @@ pub(crate) fn measure_with(
     measured.real_answers = real_answers(events, model, replay)?;
     measured.real_answer_share = share(measured.real_answers, measured.trials);
     let loaded: CoreSet = (0..cores).filter_map(core).collect();
+    // Hazard scoring covers R1 to R7 only; R8 and R9 are not yet scored.
     for regime in LEGACY_REGIMES {
         let load = Load {
             regime,

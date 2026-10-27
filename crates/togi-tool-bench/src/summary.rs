@@ -10,7 +10,7 @@ use crate::stats::{percentile, share};
 pub fn report(w: &mut impl io::Write, records: &[Record]) -> io::Result<()> {
     writeln!(
         w,
-        "summary: time and crashes include all run statuses; hazard is steady-state failures/hour with all cores loaded."
+        "summary: time and crashes include all run statuses; hazard is steady-state failures/hour with all cores loaded, over R1 to R7 (R8 and R9 not yet scored)."
     )?;
     writeln!(
         w,

@@ -2,7 +2,7 @@
 source: crates/togi-tool-bench/tests/bench/compare.rs
 expression: "text(|out| summary::report(out, &candidates()))"
 ---
-summary: time and crashes include all run statuses; hazard is steady-state failures/hour with all cores loaded.
+summary: time and crashes include all run statuses; hazard is steady-state failures/hour with all cores loaded, over R1 to R7 (R8 and R9 not yet scored).
 summary: censored runs reached the simulator's boot cap without concluding; their time and crashes are lower bounds.
 scenario          runs concluded censored median_h mean_h median_crashes max_hazard/h real_answer_share
 zeta                 3         1        1   10.000  104.667            4.0     0.015000          0.000222
