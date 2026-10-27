@@ -5,17 +5,17 @@ use jiff::Timestamp;
 use proptest::prelude::*;
 use togi_journal::{
     Activity, BackendRetry, BootLeaveReason, BootSavedEntry, Build, CrashDetected, DeadEnd,
-    DeadEndCondition, DefectId, Event, EventKind, FixStamp, HuntEnd, HuntGroup, HuntOutcome,
-    HuntStage, Mce, Outcome, Payload, ProfileApplied, ProfileChange, ProfileRestored, RetryTarget,
-    SCHEMA, Seq, SessionBaseline, SessionStart, SessionWarning, Shutdown, ShutdownReason, SmuError,
-    SmuOp, SmuReadback, Stamp, TrialEnd, TrialId, TrialIntent, TrialProgress, TrialStart,
+    DeadEndCondition, DefectId, Event, EventKind, FixStamp, HuntGroup, HuntStage, Mce, Outcome,
+    Payload, ProfileApplied, ProfileRestored, RetryTarget, SCHEMA, Seq, SessionBaseline,
+    SessionStart, SessionWarning, Shutdown, ShutdownReason, SmuError, SmuOp, SmuReadback, Stamp,
+    TrialEnd, TrialId, TrialIntent, TrialProgress, TrialStart,
 };
 use togi_machine::{
     Backend, BankType, BootId, CcdId, Condition, CoreInfo, CoreSet, CpuId, KernelCursor,
     ObservedOffset, PerCore, Regime, ResetKind, Signal, pick_workload,
 };
 
-use super::{IntentKind, RecoveryState, TargetWrite};
+use super::{IntentKind, RecoveryState};
 use crate::error::FoldError;
 use crate::testing::{build, core, target};
 
@@ -471,8 +471,7 @@ impl Prev for Seq {
 fn the_latest_unanswered_intent_of_a_boot_is_found_not_the_last_event() {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
-    let trial = log.trial_intent("0001", Some(0), Regime::R1);
-    let smu = log.intent(0, -10, &[trial]);
+    let smu = log.intent(0, -10, &[]);
     log.add(warning("noise"), &[]);
     let state = log.state();
     assert_eq!(state.latest_unmatched_intent(&boot("b0")), Some(smu));
@@ -482,20 +481,18 @@ fn the_latest_unanswered_intent_of_a_boot_is_found_not_the_last_event() {
         .iter()
         .map(|open| open.kind.clone())
         .collect();
-    assert_eq!(
-        kinds,
-        [
-            IntentKind::Trial(TrialId::from("0001".to_owned())),
-            IntentKind::Smu
-        ]
-    );
+    assert_eq!(kinds, [IntentKind::Smu]);
 
     let write = log.written(0, -10, smu);
+    assert_eq!(log.state().latest_unmatched_intent(&boot("b0")), None);
+    log.readback(0, -10, -10, write);
+    log.add(applied(Condition::Together), &[write]);
+    let trial = log.trial_intent("0001", None, Regime::R1);
+    log.add(warning("noise"), &[]);
     assert_eq!(
         log.state().latest_unmatched_intent(&boot("b0")),
         Some(trial)
     );
-    log.readback(0, -10, -10, write);
     log.ended("0001", Outcome::Pass, &[]);
     assert_eq!(log.state().latest_unmatched_intent(&boot("b0")), None);
 }
@@ -547,7 +544,7 @@ fn startup_readback_resolves_only_a_cited_same_boot_smu_intent(
 }
 
 #[test]
-fn a_nonzero_write_outside_a_trial_is_an_application_together_or_parked_once_a_group_arms_it() {
+fn a_nonzero_write_outside_a_trial_is_an_application_but_baseline_reads_and_zeroing_are_not() {
     let mut log = Log::new();
     let baseline = log.baseline(&[(0, 0), (8, 0)]);
     log.intent(0, -10, &[baseline]);
@@ -563,25 +560,22 @@ fn a_nonzero_write_outside_a_trial_is_an_application_together_or_parked_once_a_g
         log.state().applied(&boot("b0")),
         Some((first, Condition::Together))
     );
-
-    let mut parked = Log::new();
-    parked.baseline(&[(0, 0), (8, 0)]);
-    parked.add(hunt_group(), &[]);
-    assert!(parked.state().hunt_group_armed());
-    let first = parked.intent(0, -10, &[]);
-    assert_eq!(
-        parked.state().applied(&boot("b0")),
-        Some((first, Condition::Parked))
-    );
 }
 
 #[test]
-fn a_trial_in_flight_makes_no_application() {
+fn a_profile_application_stays_attributable_during_a_trial_and_its_zeroing() {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
-    log.trial_intent("0001", Some(0), Regime::R1);
-    log.intent(0, -10, &[]);
-    assert_eq!(log.state().applied(&boot("b0")), None);
+    let intent = log.intent(0, -10, &[]);
+    let write = log.written(0, -10, intent);
+    log.readback(0, -10, -10, write);
+    let application = log.add(applied(Condition::Together), &[write]);
+    log.trial_intent("0001", None, Regime::R1);
+    log.intent_all(0, &[]);
+    assert_eq!(
+        log.state().applied(&boot("b0")),
+        Some((application, Condition::Together))
+    );
 }
 
 pub(crate) fn hunt_group() -> Payload {
@@ -613,76 +607,27 @@ fn applied(condition: Condition) -> Payload {
     })
 }
 
-#[test]
-fn a_hunt_group_stays_armed_through_a_restoration_until_something_replaces_it() {
+#[test_case(Condition::Together; "whole profile")]
+#[test_case(Condition::Parked; "historical parked profile")]
+fn restoration_clears_the_recorded_profile_application(condition: Condition) {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
-    log.add(hunt_group(), &[]);
-    log.add(applied(Condition::Parked), &[]);
-    assert!(log.state().hunt_group_armed());
+    let application = log.add(applied(condition), &[]);
+    assert_eq!(
+        log.state().applied(&boot("b0")),
+        Some((application, condition))
+    );
     log.add(
         Payload::ProfileRestored(ProfileRestored {
             offsets: PerCore::default(),
         }),
         &[],
     );
-    assert!(log.state().hunt_group_armed());
     assert_eq!(log.state().applied(&boot("b0")), None);
     let again = log.intent(0, -10, &[]);
     assert_eq!(
         log.state().applied(&boot("b0")),
-        Some((again, Condition::Parked))
-    );
-}
-
-#[test_case(applied(Condition::Together); "together application")]
-#[test_case(Payload::ProfileChange(ProfileChange {
-            from: None,
-            to: PerCore::default(),
-        }); "profile change")]
-#[test_case(Payload::HuntEnd(HuntEnd {
-            hunt: std::num::NonZeroU32::MIN,
-            result: HuntOutcome::Fallback,
-            cores: CoreSet::default(),
-            members: Vec::new(),
-            groups: 1,
-            reason: "r".into(),
-        }); "hunt end")]
-fn a_together_application_a_profile_change_or_the_hunts_end_disarms_the_group(payload: Payload) {
-    let mut log = Log::new();
-    log.baseline(&[(0, 0), (8, 0)]);
-    log.add(hunt_group(), &[]);
-    let kind = payload.kind();
-    log.add(payload, &[]);
-    assert!(!log.state().hunt_group_armed(), "{kind:?}");
-
-    let mut log = Log::new();
-    log.add(hunt_group(), &[]);
-    log.trial_intent("0001", Some(0), Regime::R1);
-    assert!(!log.state().hunt_group_armed(), "a together trial intent");
-}
-
-#[test]
-fn idle_evidence_starts_at_the_applications_first_write() {
-    let mut log = Log::new();
-    log.baseline(&[(0, 0), (8, 0)]);
-    log.mono(1000).intent(0, -10, &[]);
-    log.mono(2000).intent(8, -5, &[]);
-    assert_eq!(
-        log.state().applied_mono(&boot("b0")),
-        Some(Duration::from_secs(1))
-    );
-    assert!(log.state().applying(&boot("b0")));
-    log.mono(3000).add(applied(Condition::Together), &[]);
-    assert_eq!(
-        log.state().applied_mono(&boot("b0")),
-        Some(Duration::from_secs(1))
-    );
-    assert!(!log.state().applying(&boot("b0")));
-    log.mono(4000).intent(0, -11, &[]);
-    assert_eq!(
-        log.state().applied_mono(&boot("b0")),
-        Some(Duration::from_secs(4))
+        Some((again, Condition::Together))
     );
 }
 
@@ -1823,54 +1768,25 @@ proptest! {
 }
 
 #[test]
-fn a_trial_alone_s_window_starts_at_the_readback_of_its_target_and_not_before_the_write() {
-    let window = |log: &Log| {
-        let state = log.state();
-        let open = state.open_trial().unwrap();
-        (open.target, open.window_start)
-    };
+fn a_profile_is_written_before_trial_intent_and_start_records_its_kernel_window() {
     let mut log = Log::new();
-    log.at("b0", 1_000);
-    let trial = log.trial_intent("0001", Some(0), Regime::R7);
-    assert_eq!(window(&log), (None, Some(Duration::from_secs(1))));
+    log.baseline(&[(0, 0), (8, 0)]);
+    let intent = log.mono(1_000).intent(0, -10, &[]);
+    let write = log.mono(2_000).written(0, -10, intent);
+    log.mono(3_000).readback(0, -10, -10, write);
+    log.add(applied(Condition::Together), &[write]);
+    let trial = log.mono(4_000).trial_intent("0001", None, Regime::R7);
+    let state = log.state();
+    let open = state.open_trial().unwrap();
+    assert_eq!(open.window_start, Some(Duration::from_secs(4)));
+    assert!(!open.includes_mce(Some(Duration::from_millis(3_999))));
+    assert!(open.includes_mce(Some(Duration::from_secs(4))));
 
-    log.mono(2_000);
-    let other = log.intent(8, -10, &[trial]);
-    log.written(8, -10, other);
-    assert_eq!(window(&log), (None, Some(Duration::from_secs(1))));
-
-    let intent = log.intent(0, -10, &[trial]);
-    assert_eq!(
-        window(&log),
-        (
-            Some(TargetWrite::Intended(intent)),
-            Some(Duration::from_secs(1))
-        )
-    );
-    let mut unwritten = Log {
-        events: log.events.clone(),
-        boot: log.boot.clone(),
-        mono_ms: log.mono_ms,
-        wall: log.wall,
-    };
-    unwritten.mono(3_000).readback(0, -10, -10, intent);
-    assert_eq!(
-        window(&unwritten).1,
-        Some(Duration::from_secs(1)),
-        "a readback without the write does not start the window"
-    );
-
-    log.mono(3_000);
-    let write = log.written(0, -10, intent);
-    assert_eq!(
-        window(&log),
-        (
-            Some(TargetWrite::Written(write)),
-            Some(Duration::from_secs(1))
-        )
-    );
-    log.mono(4_000).readback(0, -9, -10, write);
-    assert_eq!(window(&log).1, Some(Duration::from_secs(1)));
-    log.mono(5_000).readback(0, -10, -10, write);
-    assert_eq!(window(&log).1, Some(Duration::from_secs(5)));
+    log.mono(5_000).started("0001", Some(3_000_000_000), trial);
+    let state = log.state();
+    let open = state.open_trial().unwrap();
+    assert_eq!(open.window_start, Some(Duration::from_secs(3)));
+    assert!(!open.includes_mce(Some(Duration::from_millis(2_999))));
+    assert!(open.includes_mce(Some(Duration::from_secs(3))));
+    assert!(open.includes_mce(Some(Duration::from_secs(4))));
 }
