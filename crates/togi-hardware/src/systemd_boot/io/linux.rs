@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path};
@@ -89,7 +90,11 @@ impl BootIo for SystemIo {
         } else {
             Ok(())
         };
-        result.and(restore)
+        let operation = match value {
+            Some(_) => Operation::Write,
+            None => Operation::Delete,
+        };
+        combine(operation, name, result, restore)
     }
 
     fn load_state(&mut self) -> io::Result<Option<Vec<u8>>> {
@@ -274,3 +279,53 @@ fn durable_directory(path: &Path) -> io::Result<()> {
         Err(error) => Err(error),
     }
 }
+
+/// What `write_variable` did to the EFI variable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Operation {
+    Write,
+    Delete,
+}
+
+impl fmt::Display for Operation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Write => "write",
+            Self::Delete => "delete",
+        })
+    }
+}
+
+/// The variable operation failed, and so did restoring the variable's immutable flag afterwards,
+/// which may have left the variable unprotected.
+#[derive(Debug, thiserror::Error)]
+#[error("{operation} EFI variable {name} (restoring its immutable flag then failed: {restore})")]
+struct RestoreFailed {
+    operation: Operation,
+    name: String,
+    #[source]
+    source: io::Error,
+    restore: io::Error,
+}
+
+/// The result of a variable operation followed by its flag restoration. A single failure is
+/// returned as it is; a double failure keeps both errors, the operation's as the source.
+fn combine(
+    operation: Operation,
+    name: &str,
+    result: io::Result<()>,
+    restore: io::Result<()>,
+) -> io::Result<()> {
+    match (result, restore) {
+        (Err(source), Err(restore)) => Err(io::Error::other(RestoreFailed {
+            operation,
+            name: name.to_owned(),
+            source,
+            restore,
+        })),
+        (result, restore) => result.and(restore),
+    }
+}
+
+#[cfg(test)]
+mod tests;
