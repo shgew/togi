@@ -1278,6 +1278,7 @@ let
     name: cores: cohorts:
     pkgs.testers.runNixOSTest {
       name = "togi-${name}";
+      passthru.tier = "ci";
       nodes.machine =
         {
           config,
@@ -1377,6 +1378,7 @@ let
       scenarios.${scenario}
       // {
         name = "togi-${name}";
+        passthru.tier = "ci";
         testScript =
           "with subtest(\"${scenario}\"):\n"
           + pkgs.lib.concatMapStringsSep "\n" (line: "    " + line) (
@@ -1385,12 +1387,7 @@ let
       }
     );
 in
-pkgs.lib.mapAttrs (
-  _: test:
-  test.overrideAttrs (old: {
-    passthru = (old.passthru or { }) // { tier = "ci"; };
-  })
-) {
+{
   grub = grouped "grub" 3 [
     {
       name = "tuning";
