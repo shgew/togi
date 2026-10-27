@@ -17,8 +17,8 @@ pub use exposure::{
 };
 pub use matrix::{
     Attempt, AttemptScope, Cell, HostPool, IDLE_DURATION, Layout, Matrix, MatrixError, PackageLoad,
-    PlannedCell, Reuse, Roles, SEARCH_DURATION, SHORT_DURATION, SUSTAINED_DURATION,
-    Source, Uncovered, Workloads, control_cells, mapping_cells, minimum_position_seconds,
+    PlannedCell, Reuse, Roles, SEARCH_DURATION, SHORT_DURATION, SUSTAINED_DURATION, Source,
+    Uncovered, Workloads, control_cells, mapping_cells, minimum_position_seconds,
     qualification_cells, reproduction_cells, zeroed,
 };
 pub use reproduction::{AttemptLog, AttemptNight, reproduction_stage};
