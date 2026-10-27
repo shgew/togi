@@ -56,6 +56,17 @@ fn recorded() -> (Arc<Recording>, impl FnOnce(&mut Env<Fake>)) {
 }
 
 #[test]
+fn ordinary_supervision_requests_use_managed_placement() {
+    assert_eq!(
+        base_spec(Regime::R1, &[2], secs(5)).controller,
+        togi_machine::ControllerMode::Managed {
+            rotation: 0,
+            purpose: togi_machine::Purpose::Isolated,
+        }
+    );
+}
+
+#[test]
 fn the_controller_set_is_in_place_before_the_launch_and_follows_each_trials_loaded_core() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
