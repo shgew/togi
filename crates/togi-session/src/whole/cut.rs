@@ -6,8 +6,12 @@
 //! it stopped.
 //!
 //! The swept window starts with the run that completes night 2's qualification and ends with the final day:
-//! every durable event, without a stride. Projections and policy commitments are compared by `compare`: sequence,
-//! trial and night identities by name, everything else exactly; policy commitments as a multiset.
+//! every durable event, without a stride. Projections and policy commitments compare all rendered values exactly,
+//! naming identities by first mention. Sequence citations (including night IDs) also compare their target's kind
+//! and identity-hidden policy payload in the whole journal, or kind alone for raw facts; missing targets are
+//! distinct from local ones. Exposure anchors also hide the source boot because a resumed trial can run on a new
+//! boot; directly compared exposures keep it exact. These bounded anchors do not recursively compare target
+//! citations. Policy commitments compare as a multiset; trial identities compare only by first-mention aliasing.
 //!
 //! Machine crashes also cover every durable event. Power is cut before and after every actual SMU access.
 //! Each resumed phase checks its registers and each crashed trial's duration and failure attribution. Between
@@ -1066,8 +1070,8 @@ fn assert_unchanged_decisions(
             Some((after, Fate::Paused))
         };
         let (_, reference) = play(&control, played.phase, played.start, append);
-        let got = commitments(&events[played.start..], false);
-        let want = commitments(&reference[played.start..], false);
+        let got = commitments(events, played.start, false);
+        let want = commitments(&reference, played.start, false);
         assert_lines_equal(&got, &want, "decisions");
     }
 }
@@ -1105,23 +1109,23 @@ fn drain_failure(bench: &Bench, phase: Phase, events: Vec<Event>) -> Vec<Event> 
     }
 }
 
-/// What a tuner projection is compared by: every field, with the sequence, trial and night identities it cites
-/// named by their first mention.
-fn compared_projection(projection: &Projection) -> Vec<String> {
-    Names::numbered().projection(projection)
+/// Every projection field, with citation aliasing and the whole journal's bounded target anchors.
+fn compared_projection(events: &[Event], projection: &Projection) -> Vec<String> {
+    Names::numbered(events).projection(projection)
 }
 
 /// The tuner's projection of `events`, as it is compared.
 fn projection(events: &[Event]) -> Vec<String> {
-    compared_projection(&folded(events).project())
+    compared_projection(events, &folded(events).project())
 }
 
-/// The policy commitments among `events`, without the observations of trials a cut interrupted, which only the
-/// resumed journal has. Such an observation may also commit an unchanged cap before the retried trial rather
-/// than after it, so the order of the commitments is not compared: they are sorted by what they say apart from
-/// the identities they cite, then those are named in that order.
-fn commitments(events: &[Event], observations: bool) -> Vec<String> {
-    let interrupted: Vec<_> = events
+/// The policy commitments from `from` onward, without observations of interrupted trials, which only the resumed
+/// journal has. An observation may commit an unchanged cap before a retried trial rather than after it, so
+/// commitments are sorted by identity-hidden shape before naming citations. Anchors use the whole journal,
+/// including records before `from`, so a suffix's citations do not accidentally become outside-journal names.
+fn commitments(events: &[Event], from: usize, observations: bool) -> Vec<String> {
+    let compared = &events[from..];
+    let interrupted: Vec<_> = compared
         .iter()
         .filter_map(|event| {
             if let Payload::TrialEnd(end) = &event.payload
@@ -1133,7 +1137,7 @@ fn commitments(events: &[Event], observations: bool) -> Vec<String> {
             }
         })
         .collect();
-    let mut chosen: Vec<_> = events
+    let mut chosen: Vec<_> = compared
         .iter()
         .filter(|event| {
             matches!(
@@ -1164,7 +1168,7 @@ fn commitments(events: &[Event], observations: bool) -> Vec<String> {
             shapes.payload(&event.payload)
         )
     });
-    let mut names = Names::numbered();
+    let mut names = Names::numbered(events);
     chosen
         .into_iter()
         .map(|event| {
@@ -1231,8 +1235,8 @@ fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection
         assert_eq!(&events[..after], &reference.events[..after]);
         assert_eq!(projection(&events), wanted[phase]);
         assert_eq!(
-            commitments(&events[after..], true),
-            commitments(&reference.events[after..], true)
+            commitments(&events, after, true),
+            commitments(&reference.events, after, true)
         );
     });
 }
@@ -1332,15 +1336,16 @@ fn a_changed_rate_cell_changes_the_commitments(failures: u32, eligible_s: u64) {
         cell.eligible_s += eligible_s;
     });
     assert_ne!(
-        commitments(&changed, true),
-        commitments(&events, true),
+        commitments(&changed, 0, true),
+        commitments(&events, 0, true),
         "a rate cell that counts {failures} more failures and {eligible_s} more seconds compares equal"
     );
 }
 
 #[test]
 fn a_changed_count_of_cited_events_changes_the_projection() {
-    let projection = folded(&scenario_events()).project();
+    let events = scenario_events();
+    let projection = folded(&events).project();
     let mut changed = projection.clone();
     let (seq, step) = changed
         .day
@@ -1349,14 +1354,15 @@ fn a_changed_count_of_cited_events_changes_the_projection() {
         .expect("the scenario ends after a day step");
     step.hours.push(*seq);
     assert_ne!(
-        compared_projection(&changed),
-        compared_projection(&projection)
+        compared_projection(&events, &changed),
+        compared_projection(&events, &projection)
     );
 }
 
 #[test]
 fn caps_citing_one_event_instead_of_two_change_the_projection() {
-    let projection = folded(&scenario_events()).project();
+    let events = scenario_events();
+    let projection = folded(&events).project();
     let witnesses: Vec<_> = projection
         .ccds
         .iter()
@@ -1372,7 +1378,84 @@ fn caps_citing_one_event_instead_of_two_change_the_projection() {
         cap.witness = first;
     }
     assert_ne!(
-        compared_projection(&changed),
-        compared_projection(&projection)
+        compared_projection(&events, &changed),
+        compared_projection(&events, &projection)
+    );
+}
+
+#[test]
+fn a_qualification_citing_a_different_exposure_changes_the_commitments() {
+    let events = scenario_events();
+    let qualification = events
+        .iter()
+        .find(|event| matches!(&event.payload, Payload::NightQualification(record)
+            if matches!(&record.state, QualificationState::Complete { witnesses } if !witnesses.is_empty())))
+        .expect("the scenario completes a qualification");
+    let Payload::NightQualification(record) = &qualification.payload else {
+        unreachable!();
+    };
+    let QualificationState::Complete { witnesses } = &record.state else {
+        unreachable!();
+    };
+    let cited: Vec<_> = witnesses
+        .iter()
+        .map(|witness| match witness.evidence {
+            togi_journal::CellEvidence::Fresh { exposure }
+            | togi_journal::CellEvidence::Reused { exposure } => exposure,
+        })
+        .collect();
+    let replacement = events
+        .iter()
+        .find(|event| {
+            matches!(event.payload, Payload::ExposureObserved(_)) && !cited.contains(&event.seq)
+        })
+        .expect("the scenario has an exposure outside this qualification");
+    let original = events.iter().find(|event| event.seq == cited[0]).unwrap();
+    let compared = vec![original.clone(), replacement.clone(), qualification.clone()];
+    let mut changed = compared.clone();
+    let Payload::NightQualification(record) = &mut changed[2].payload else {
+        unreachable!();
+    };
+    let QualificationState::Complete { witnesses } = &mut record.state else {
+        unreachable!();
+    };
+    match &mut witnesses[0].evidence {
+        togi_journal::CellEvidence::Fresh { exposure }
+        | togi_journal::CellEvidence::Reused { exposure } => *exposure = replacement.seq,
+    }
+    assert_ne!(
+        commitments(&changed, 0, false),
+        commitments(&compared, 0, false),
+        "qualification witness changed from {} to {} with both exposures unchanged",
+        original.seq,
+        replacement.seq
+    );
+}
+
+#[test]
+fn a_cap_citing_a_different_event_changes_the_projection() {
+    let events = scenario_events();
+    let cap_at = events
+        .iter()
+        .position(|event| matches!(event.payload, Payload::CcdCap(_)))
+        .expect("the scenario commits a cap");
+    let events = &events[..=cap_at];
+    let projection = folded(events).project();
+    let mut changed = projection.clone();
+    let replacement = events
+        .iter()
+        .find(|event| matches!(event.payload, Payload::TrialIntent(_)))
+        .expect("the scenario runs a trial");
+    let cap = changed.ccds[0]
+        .cap
+        .as_mut()
+        .expect("the scenario has a cap");
+    let original = cap.witness;
+    cap.witness = replacement.seq;
+    assert_ne!(
+        compared_projection(events, &changed),
+        compared_projection(events, &projection),
+        "cap witness changed from {original} to {} with both target events unchanged",
+        replacement.seq
     );
 }

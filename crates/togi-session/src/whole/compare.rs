@@ -1,9 +1,14 @@
 //! The semantic comparison behind the cutpoint sweeps: what a resumed journal must share with the uninterrupted one.
 //!
-//! A resumed journal numbers its events differently, so sequence, trial and night identities are compared by
-//! name: each is named by the order in which a comparison first meets it. Two values then agree exactly when they
-//! have the same shape and cite the same things in the same places. Everything else is compared as it is: counts,
-//! profiles, durations, boots and times.
+//! A resumed journal numbers its events differently. Sequence names retain first-mention aliasing and anchor
+//! each citation to its target's kind and identity-hidden policy payload in the whole compared journal. Only in
+//! an exposure anchor, its source boot is hidden too: a resumed trial legitimately runs on a new boot. Direct
+//! exposure comparisons still compare that boot exactly, along with every other nonidentity field. Raw-fact
+//! targets contribute only their kind: trial intents carry task start times and trial ends carry interruption
+//! evidence that legitimately changes across a resume. Missing targets are explicitly marked outside-journal.
+//! This is a bounded anchor, not recursive graph equality: targets with the same kind and hidden payload can
+//! still agree. Night identities share their plan sequence's anchor; trial identities retain first-mention names.
+//! All other rendered values, including counts, profiles, durations, boots and times, compare exactly.
 //!
 //! The types that cite an identity, directly or through a field, are taken apart by exhaustive destructuring,
 //! so a new field fails to compile until this module says how it compares. A type that cites no identity is
@@ -25,23 +30,26 @@ use togi_tuner::policy::{
 
 /// How identities are named.
 #[derive(Default)]
-pub(super) struct Names {
+pub(super) struct Names<'events> {
     numbered: bool,
-    seqs: HashMap<Seq, usize>,
+    events: HashMap<Seq, &'events togi_journal::Event>,
+    seqs: HashMap<Seq, String>,
     trials: HashMap<TrialId, usize>,
 }
 
-impl Names {
+impl<'events> Names<'events> {
     /// Names every identity alike: what a value looks like without the identities it cites.
     pub(super) fn hidden() -> Self {
         Self::default()
     }
 
-    /// Names each identity by the order of its first mention.
-    pub(super) fn numbered() -> Self {
+    /// Names identities by first mention, anchoring sequences in the whole journal, not just a compared suffix.
+    pub(super) fn numbered(events: &'events [togi_journal::Event]) -> Self {
         Self {
             numbered: true,
-            ..Self::default()
+            events: events.iter().map(|event| (event.seq, event)).collect(),
+            seqs: HashMap::new(),
+            trials: HashMap::new(),
         }
     }
 
@@ -50,7 +58,22 @@ impl Names {
             return "#".to_owned();
         }
         let next = self.seqs.len();
-        format!("#{}", self.seqs.entry(seq).or_insert(next))
+        self.seqs
+            .entry(seq)
+            .or_insert_with(|| {
+                let anchor = match self.events.get(&seq) {
+                    Some(event) => {
+                        let kind = event.kind().as_str();
+                        match Self::hidden().rendered_payload(&event.payload, true) {
+                            Some(shape) => format!("{kind} {shape}"),
+                            None => kind.to_owned(),
+                        }
+                    }
+                    None => "outside-journal".to_owned(),
+                };
+                format!("#{next} ({anchor})")
+            })
+            .clone()
     }
 
     fn opt_seq(&mut self, seq: Option<Seq>) -> String {
@@ -289,7 +312,7 @@ impl Names {
         format!("[{}]", backends.join(", "))
     }
 
-    fn exposure_observed(&mut self, observed: &ExposureObserved) -> String {
+    fn exposure_observed(&mut self, observed: &ExposureObserved, hide_source_boot: bool) -> String {
         let ExposureObserved {
             source,
             origin,
@@ -315,8 +338,13 @@ impl Names {
             Some(trial) => format!("Some({})", self.trial(trial)),
             None => "None".to_owned(),
         };
+        let boot = if hide_source_boot {
+            "boot".to_owned()
+        } else {
+            format!("{boot:?}")
+        };
         format!(
-            "source={session:?} {} {boot:?} {trial} origin={origin:?} firmware={firmware:?} epoch={epoch} \
+            "source={session:?} {} {boot} {trial} origin={origin:?} firmware={firmware:?} epoch={epoch} \
              class={class:?} profile={profile:?} tested={tested:?} activity={activity:?} outcome={outcome:?} \
              failures={failures:?} eligible_s={eligible_s} uninterrupted_s={uninterrupted_s} \
              exclusions={exclusions:?}",
@@ -516,9 +544,17 @@ impl Names {
     /// A policy commitment or an exposure observation, named: its shape and what it cites. Every other payload is
     /// no commitment; the caller selects which are compared.
     pub(super) fn payload(&mut self, payload: &Payload) -> String {
-        match payload {
+        self.rendered_payload(payload, false)
+            .unwrap_or_else(|| panic!("{} is compared by no rule", payload.kind().as_str()))
+    }
+
+    /// One nonrecursive anchor layer: hidden names never look up another target.
+    fn rendered_payload(&mut self, payload: &Payload, hide_source_boot: bool) -> Option<String> {
+        Some(match payload {
             Payload::DeadEnd(dead_end) => format!("{dead_end:?}"),
-            Payload::ExposureObserved(observed) => self.exposure_observed(observed),
+            Payload::ExposureObserved(observed) => {
+                self.exposure_observed(observed, hide_source_boot)
+            }
             Payload::CcdEdge(edge) => self.ccd_edge(edge),
             Payload::CcdCap(cap) => self.ccd_cap(cap),
             Payload::NightPlan(plan) => self.night_plan(plan),
@@ -590,10 +626,8 @@ impl Names {
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
             | Payload::TaskStart(_)
-            | Payload::DayImported(_) => {
-                panic!("{} is compared by no rule", payload.kind().as_str())
-            }
-        }
+            | Payload::DayImported(_) => return None,
+        })
     }
 
     fn ccd_projection(&mut self, ccd: &CcdProjection) -> String {
