@@ -22,7 +22,7 @@ All notable changes to togi are documented in this file. The format is based on 
 - A kernel-reported fault (segmentation, bus, illegal instruction, general protection or abort) of a trial's worker process or the dashboard during a trial is journaled as a `trial.progress` line naming the process and the fault. It is evidence only and does not change the trial's outcome ([#1232]).
 - The day service records each machine check, kernel oops, RCU stall, soft lockup and illegal-instruction, bus-error or general-protection crash once per boot as `day.fault`, with the boot and the offsets in force ([#1237]).
 - Day checkpoints carry the share of sampled daily time spent in each load shape (single thread, light beside busy cores, all threads, idle transitions, quiet and other) ([#1237]).
-- `togi day record` journals a crash togi did not observe, with the offsets, whether they were entered or read back, and what was running; see [recording a crash](../docs/howto.md#recording-a-crash-togi-did-not-observe) ([#1238]).
+- `togi day record` journals a crash togi did not observe, with the offsets, whether they were entered or read back, and what was running; see [recording a crash](docs/howto.md#recording-a-crash-togi-did-not-observe) ([#1238]).
 - `services.togi.day.watchdog` stops PID 1's hardware watchdog before every suspend or hibernation and restarts it on resume, so a sleep longer than the watchdog timeout cannot reset the machine ([#1240]).
 - The day observer records in `day.boot_start` whether PID 1's hardware watchdog is armed, and `togi status` shows it ([#1240]).
 - `togi night` shows what the night will do, asks, then reboots into the tuning boot without the GRUB menu; the night runs until you end it, and crash reboots stay in it ([#1245]).
@@ -33,7 +33,7 @@ All notable changes to togi are documented in this file. The format is based on 
 ### Changed
 
 - **BREAKING** An active Rust ruleset-1 session is archived into a seeded ruleset-2 session; covered live R7 failures locate immediately, covered carried failures stay unmoved, and carried failures no longer take voltage targets from later passes ([#969]).
-- **BREAKING** The first `togi run` after updating archives the current session and starts a new one that maps from scratch, keeping the raw day observations, because Ruleset 13 now tests at night and steps the day profile one CCD at a time; its first night runs stock controls before mapping, see [how togi tunes](../docs/how-togi-tunes.md) ([#1261]).
+- **BREAKING** The first `togi run` after updating archives the current session and starts a new one that maps from scratch, keeping the raw day observations, because Ruleset 13 now tests at night and steps the day profile one CCD at a time; its first night runs stock controls before mapping, see [how togi tunes](docs/how-togi-tunes.md) ([#1261]).
 - **BREAKING** A night has no end time: `togi run` tunes until you end the night with Ctrl-C, `F10`, the power button or a reboot, or until a dead end stops it, so remove `--until`, `--cycles` and `--first-result` from anything that runs it ([#1261]).
 - **BREAKING** An unresolved too-aggressive known-defect finding stops the run as a dead end (exit 17) until `togi reset --all`, instead of asking to reset the affected cores ([#1261]).
 - Fit target machines through one shared-voltage model and objective by default; forward checks now report workload and CCD rows and accept a diagnostic reference ensemble ([#972]).
