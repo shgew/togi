@@ -6,7 +6,7 @@ use test_case::test_case;
 use std::ffi::OsString;
 use std::os::unix::ffi::OsStringExt;
 
-use super::{BANNER, Cli, config_after_command, examples, run};
+use super::{Cli, config_after_command, examples, run};
 use crate::exit::Exit;
 
 struct Run {
@@ -80,21 +80,33 @@ fn help_goes_to_stdout_and_exits_0(args: &[&str]) {
 }
 
 #[test]
-fn no_command_prints_the_wordmark_and_usage_to_stderr_and_exits_2() {
+fn no_command_prints_the_usage_to_stderr_and_exits_2() {
     let ran = togi(&[]);
     assert_eq!(ran.exit, Exit::Usage);
     assert_eq!(ran.out, "");
-    assert!(ran.err.starts_with(BANNER), "{}", ran.err);
+    assert!(
+        ran.err.starts_with(
+            "Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs\n"
+        ),
+        "{}",
+        ran.err
+    );
     assert!(ran.err.contains("Usage: togi"), "{}", ran.err);
 }
 
 #[test_case(&["--state-dir", "/x"] ; "separate value")]
 #[test_case(&["--state-dir=/x"] ; "attached value")]
-fn state_dir_without_a_command_prints_the_wordmark_and_usage_to_stderr_and_exits_2(args: &[&str]) {
+fn state_dir_without_a_command_prints_the_usage_to_stderr_and_exits_2(args: &[&str]) {
     let ran = togi(args);
     assert_eq!(ran.exit, Exit::Usage);
     assert_eq!(ran.out, "");
-    assert!(ran.err.starts_with(BANNER), "{}", ran.err);
+    assert!(
+        ran.err.starts_with(
+            "Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs\n"
+        ),
+        "{}",
+        ran.err
+    );
     assert!(ran.err.contains("Usage: togi"), "{}", ran.err);
     assert!(ran.err.contains("Commands:"), "{}", ran.err);
 }
