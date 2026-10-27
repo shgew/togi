@@ -41,7 +41,7 @@ After an unattended run on the target machine, write a retro as a new comment on
 A full retro has these sections:
 
 - **Session:** session ID, togi version and ruleset, machine and BIOS context, wall time, trials, crashes and how they recovered, and any earlier run that got no retro.
-- **What happened:** the phases in order with their hours, each hunt with groups run and inferred, and the profile at the end.
+- **What happened:** the nights in order with their hours and tasks, each qualification with its outcome, each mapping edge and cap with its change, the day steps, the daily events with their vetoes, and the day profile at the end of the run.
 - **What went well** and **what went badly**, each with the numbers that show it.
 - **Actions:** one line each, linking the issue or pull request that carries it; file the issue first if none exists. An action that would change tuner decisions becomes a sub-issue of the open pinned `Ruleset N` issue; any other action becomes an ordinary issue in its block ([`docs/issues.md`](issues.md)). Link both kinds here.
 
@@ -94,7 +94,7 @@ order by core, "offset" desc;
 
 ## Inspecting a transition on recorded state
 
-A copy of the target machine's journals shows what the next real run would carry. `togi-tool-sim --state-dir` resumes the copy on the simulator under the current build, so a journal recorded under an older ruleset or schema goes through the transition the next `togi run` would make (`docs/simulating.md`), and `togi events --kind session.carried,trial.carried,failure.carried` lists what it carried, each fact with the session it came from. Run it only on a copy: preparation archives the live journal.
+A copy of the target machine's journals shows what the next real run would archive and import. `togi-tool-sim --state-dir` resumes the copy on the simulator under the current build, so a journal recorded under an older ruleset or schema goes through the transition the next `togi run` would make (`docs/simulating.md`): it archives the source journal unchanged and imports only its raw day records ([Transitions](spec/journal.md#transitions)). `togi events --kind session.imported,day.imported` lists what it imported, each record with the session and sequence it came from. Run it only on a copy: preparation archives the live journal.
 
 From a checkout on the target machine, copy the journals, `state.json` and the archive markers with [`just copy-state`](benchmarking.md#copying-a-real-state-directory) (the sources are read-only), while togi is not running a trial:
 
@@ -103,11 +103,14 @@ copy=$(mktemp -d)
 trap 'rm -rf "$copy"' EXIT
 sudo nix develop --command just copy-state /var/lib/togi "$copy"
 sudo chown -R "$(id -u):$(id -g)" "$copy"
-just sim --state-dir "$copy"
-just togi --state-dir "$copy" events --kind session.carried,trial.carried,failure.carried
+just sim --state-dir "$copy" --night-hours 24
+just togi --state-dir "$copy" events --kind session.imported,day.imported
+just togi --state-dir "$copy" events --kind task.start
 ```
 
-What carries into the new session is in [Fact eligibility](spec/journal.md#fact-eligibility). What the simulated session does after the transition draws outcomes from the simulator, not from hardware measurements.
+The first night after the transition runs the [CO-0 controls](spec/tuner.md#co-0-controls), the whole coverage matrix at all-zero. On the default simulator machine they take about 8.5 simulated hours, longer than the default 8-hour night ([`--night-hours`](simulating.md)), so the recipe sets a 24-hour night. `togi events --kind task.start` shows whether they completed: the night's `night #N: control task K started` lines are followed by the first task of another queue, such as `night #N: mapping task 0 started`, and `sim` reported no dead end before it.
 
-To inspect request telemetry from older trial ends, also copy their `archive/<session>-trials/` directories and the live `trials/` directory, or copy the whole state directory. Journal-only copies retain fields already recorded in trial ends but cannot recover measurements from absent samples.
+What the transition archives and imports is in [Fact eligibility](spec/journal.md#fact-eligibility). What the simulated session does after the transition draws outcomes from the simulator, not from hardware measurements.
+
+The transition reads no trial samples, so a copy without `trials/` and the archived `<session>-trials/` directories is enough. To query request telemetry from older trial ends with [`just sql`](#querying-journals-and-samples-just-sql), copy the whole state directory instead.
 
