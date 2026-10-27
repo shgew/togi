@@ -338,11 +338,9 @@ impl Verdict {
             Self::Failure(failure) => Some(failure.signal),
             Self::MachineChecks(signal) => Some(signal),
             Self::Reset(reset) => reset.signal,
-            Self::Escaped
-            | Self::Uncontained
-            | Self::Inconclusive
-            | Self::Short
-            | Self::Passed => None,
+            Self::Escaped | Self::Uncontained | Self::Inconclusive | Self::Short | Self::Passed => {
+                None
+            }
         }
     }
 

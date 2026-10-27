@@ -690,6 +690,7 @@ fn trial_maximum_temperature_is_checked(value: i64, fits: bool) {
         missing: None,
         duration: MINUTE,
         containment: None,
+        process: None,
     });
     if fits {
         assert_eq!(result.unwrap().tctl_max_c.map(i64::from), Some(value));
@@ -819,7 +820,11 @@ fn a_kernel_placed_fault_replaces_the_workers_core_of_an_unexpected_exit() {
     let end = with_faults(&case, &[fault(Some(tested()), Some(core(4)), None)]);
     assert_eq!(
         (end.outcome, end.signal, end.core),
-        (Outcome::Failure, Some(Signal::UnexpectedExit), Some(core(4)))
+        (
+            Outcome::Failure,
+            Some(Signal::UnexpectedExit),
+            Some(core(4))
+        )
     );
 }
 

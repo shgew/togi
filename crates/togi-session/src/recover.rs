@@ -511,7 +511,10 @@ impl Closure {
         match (ladder.decide(), cut) {
             (Verdict::Failure(failure), cut) => {
                 if let Some(cut) = cut
-                    && matches!(failure.signal, Signal::CorrectedMce | Signal::UncorrectedMce)
+                    && matches!(
+                        failure.signal,
+                        Signal::CorrectedMce | Signal::UncorrectedMce
+                    )
                 {
                     causes.extend(cut.recorded);
                 }
