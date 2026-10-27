@@ -337,6 +337,7 @@
                   touch "$out"
                 '';
             # Relative links and heading anchors in every Markdown file, offline: a link may name any file.
+            # This source has the whole tree, unlike nextest groups, so also validate every test-only path here.
             doc-links =
               pkgs.runCommand "togi-doc-links"
                 {
@@ -350,6 +351,13 @@
                 }
                 ''
                   cd "$src"
+                  while read -r path || [[ -n "$path" ]]; do
+                    case "$path" in ""|\#*) continue ;; esac
+                    if [[ ! -e "crates/$path" ]]; then
+                      echo "Missing test-only path: crates/$path" >&2
+                      exit 1
+                    fi
+                  done < crates/test-only.txt
                   HOME=$TMPDIR lychee --offline --hidden --include-fragments --no-progress --format compact './**/*.md'
                   touch "$out"
                 '';

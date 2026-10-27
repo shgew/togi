@@ -120,21 +120,9 @@ fn repository() -> PathBuf {
 }
 
 #[test]
-fn real_fs_every_listed_test_only_path_exists() {
+fn real_fs_the_build_fingerprint_is_this_modules_digest_of_the_build_source() {
     let root = repository();
-    let list = fs::read_to_string(root.join(inputs::TEST_ONLY_LIST)).unwrap();
-    let missing: Vec<&str> = list
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .filter(|line| !root.join("crates").join(line).exists())
-        .collect();
-    assert_eq!(missing, Vec::<&str>::new());
-}
-
-#[test]
-fn real_fs_the_build_fingerprint_is_this_modules_digest_of_the_workspace() {
-    let root = repository();
+    // The sandbox includes every reducer's production source for build.rs, but not every crate's tests.
     let files = inputs::reducer_files(&root).unwrap();
     assert_eq!(
         inputs::digest(&root, &files, option_env!("TOGI_REV").unwrap_or("dev")).unwrap(),
@@ -147,9 +135,12 @@ fn real_fs_the_build_fingerprint_is_this_modules_digest_of_the_workspace() {
 #[test_case("crates/togi-journal/src/tests/fingerprint.rs", false; "a tests directory")]
 #[test_case("crates/togi-journal/src/snapshot_tests.rs", false; "a _tests.rs file")]
 #[test_case("crates/togi-journal/src/testing.rs", false; "a listed test module")]
-#[test_case("crates/togi-watch/src/corpus/manifest.rs", false; "a file in a listed directory")]
-fn real_fs_the_workspace_fingerprint_covers_production_source_only(file: &str, covered: bool) {
+fn real_fs_the_build_source_fingerprint_covers_production_source_only(file: &str, covered: bool) {
     let root = repository();
+    assert!(
+        root.join(file).exists(),
+        "{file} must be present to test its coverage"
+    );
     let files = inputs::reducer_files(&root).unwrap();
     assert_eq!(files.contains(&root.join(file)), covered);
 }
