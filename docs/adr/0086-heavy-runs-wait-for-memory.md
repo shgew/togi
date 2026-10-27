@@ -10,7 +10,7 @@ One cold `just gate` on a 32 GiB, 32-thread host raised memory in use by about 1
 
 ## Decision
 
-Recipes still take no lock, and a run never waits for another run to finish merely because it started first. Heavy commands go through the host job queue where the host has one: gates (`just ship`, `just gate`, `just push-fix`), `just check`, `just check-one`, `just land`, test suites, coverage, benchmarks and Nix builds of checks.
+Recipes still take no lock, and a run never waits for another run to finish merely because it started first. Heavy commands go through the host job queue where the host has one: gates (`just ship`, `just gate`, `just push-fix`), `just check`, `just check-one`, test suites, coverage, benchmarks and Nix builds of checks.
 
 A [host job queue](../../GLOSSARY.md#development) is a wrapper outside this repository. It starts a run once the memory it needs is free, counts the Nix builds the run requests and limits each invocation's parallel Nix builds according to host-wide policy so one invocation fits. When runs together outgrow memory, they slow down first; if they must be killed, they are killed before anything else on the machine. The host job queue does not contain or kill a run for its own size.
 
