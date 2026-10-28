@@ -189,3 +189,8 @@ A since-fixed bug that changed a recorded decision, identifiable from its cause 
 
 **State**:
 The current situation derived from the journal, kept as a file for readers.
+
+### Development
+
+**Host job queue**:
+A host-provided wrapper that admits heavy development runs when their expected memory fits, including the Nix builds they request.
