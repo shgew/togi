@@ -25,6 +25,8 @@ use unicode_width::UnicodeWidthStr as _;
 
 use crate::support::{Session, append_between_trial_mce, append_event, text, togi};
 
+const _: () = assert!(Base::ALL.len() == 5, "every base needs a status sweep case");
+
 /// Every scenario's golden and snapshot restore boundaries share its base simulation.
 /// Separate exhaustive sweeps keep the five bases parallel without rebuilding any base.
 #[test_case::test_case(Base::Night; "night")]
