@@ -60,10 +60,6 @@ pub(crate) fn audit(
             ))]);
         }
     };
-    let fresh = togi_session::ReadState::replay(events);
-    let verification = fresh
-        .as_ref()
-        .map(|fresh| fresh.verify_snapshot(dir, events));
     if snapshot.facts.last_seq != Some(last) {
         return Ok(if finished {
             vec![violation(format!(
@@ -77,6 +73,7 @@ pub(crate) fn audit(
             Vec::new()
         });
     }
+    let fresh = togi_session::ReadState::replay(events);
     let mut found = Vec::new();
     let facts = fresh.as_ref().map_or_else(
         |_| togi_journal::State::replay(events),
@@ -111,6 +108,9 @@ pub(crate) fn audit(
         ))),
     }
     if found.is_empty() {
+        let verification = fresh
+            .as_ref()
+            .map(|fresh| fresh.verify_document(dir, document, events));
         match verification {
             Ok(Ok(togi_session::SnapshotStatus::Matches)) => {}
             Ok(Ok(status)) => found.push(violation(format!(
