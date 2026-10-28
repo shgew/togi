@@ -301,6 +301,18 @@ fn sums_of(record: &mut Record) -> &mut Sums {
 #[test_case(|r| r[2] = r[6].clone(), Defect::WrongSession { line: 3 }; "trial of another session")]
 #[test_case(
     |r| {
+        let Record::Session { session: other, .. } = r[8] else {
+            panic!("{:?} is no session summary", r[8]);
+        };
+        if let Record::Session { session, .. } = &mut r[4] {
+            *session = other;
+        }
+    },
+    Defect::WrongSession { line: 5 };
+    "summary of another session than its trial lines"
+)]
+#[test_case(
+    |r| {
         let mut empty = r[4].clone();
         let sums = sums_of(&mut empty);
         sums.trials = 0;
