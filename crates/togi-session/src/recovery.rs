@@ -12,7 +12,7 @@ use togi_journal::{
 };
 use togi_machine::{
     Backend, BiosContext, BootId, CcdId, Condition, CpuId, KernelCursor, ObservedOffset, PerCore,
-    ResetReason, TargetOffset,
+    ResetReason,
 };
 use togi_tuner::{CrashKind, recorded_kind};
 
@@ -71,15 +71,6 @@ pub(crate) struct Started {
     pub roles: Vec<togi_machine::TrialRole>,
 }
 
-/// How far the write of the target a trial alone sets before its start got.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(crate) enum TargetWrite {
-    /// The intent to write the target, citing the trial's intent.
-    Intended(Seq),
-    /// The write that intent asked for, whose readback starts the trial's window.
-    Written(Seq),
-}
-
 /// The trial that has an intent and no end.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OpenTrial {
@@ -92,10 +83,9 @@ pub(crate) struct OpenTrial {
     pub corrected: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub faults: Vec<evidence::RecordedProcessFault>,
-    /// The monotonic time from which machine checks count as the trial's: its intent, then the start the backend
-    /// reported, then the readback of its target.
+    /// The monotonic time from which machine checks count as the trial's: its intent until
+    /// `trial.start` records the post-profile-readback window.
     pub window_start: Option<Duration>,
-    pub target: Option<TargetWrite>,
     pub kernel_error: Option<String>,
 }
 
@@ -111,7 +101,6 @@ impl OpenTrial {
             corrected: false,
             faults: Vec::new(),
             window_start: event.mono,
-            target: None,
             kernel_error: None,
         }
     }
@@ -187,8 +176,6 @@ impl MceKey {
 struct BootRecord {
     last_kind: EventKind,
     applied: Option<(Seq, Condition)>,
-    applied_mono: Option<Duration>,
-    applying: bool,
 }
 
 impl BootRecord {
@@ -196,8 +183,6 @@ impl BootRecord {
         Self {
             last_kind: kind,
             applied: None,
-            applied_mono: None,
-            applying: false,
         }
     }
 }
@@ -251,7 +236,6 @@ pub(crate) struct RecoveryState {
     backends: BTreeMap<Backend, BackendState>,
     kernel_retries: Vec<Seq>,
     kernel_cursors: BTreeMap<BootId, KernelCursor>,
-    hunt_group: bool,
     unmatched: Vec<OpenIntent>,
     open: Option<OpenTrial>,
     #[serde(serialize_with = "togi_machine::serde_pairs::serialize_set")]
@@ -301,7 +285,6 @@ impl RecoveryState {
         }
         self.follow_dead_end(event);
         self.track_boot(event);
-        let armed = self.hunt_group;
         let seq = event.seq;
         match &event.payload {
             Payload::SessionStart(start) => {
@@ -342,34 +325,17 @@ impl RecoveryState {
             Payload::SessionBaseline(baseline) => {
                 self.baseline = Some((seq, baseline.offsets));
             }
-            Payload::HuntGroup(_) => self.hunt_group = true,
-            Payload::HuntEnd(_) | Payload::ProfileChange(_) => self.hunt_group = false,
             Payload::ProfileApplied(applied) => {
-                self.hunt_group = self.hunt_group && applied.condition == Condition::Parked;
                 let record = self.record(event);
                 record.applied = Some((seq, applied.condition));
-                if !record.applying {
-                    record.applied_mono = event.mono;
-                }
-                record.applying = false;
                 self.stray.clear();
             }
             Payload::ProfileRestored(_) => {
                 let record = self.record(event);
                 record.applied = None;
-                record.applying = false;
             }
-            Payload::SmuIntent(intent) => self.smu_intent(event, intent.command(), armed),
-            Payload::SmuWrite(_) => {
-                self.drop_smu_intent();
-                if let Some(open) = &mut self.open
-                    && open.boot == event.boot
-                    && let Some(TargetWrite::Intended(target)) = open.target
-                    && event.cause.contains(&target)
-                {
-                    open.target = Some(TargetWrite::Written(seq));
-                }
-            }
+            Payload::SmuIntent(intent) => self.smu_intent(event, intent.command()),
+            Payload::SmuWrite(_) => self.drop_smu_intent(),
             Payload::SmuError(error) => {
                 self.drop_smu_intent();
                 self.smu = Some(Cited {
@@ -379,7 +345,6 @@ impl RecoveryState {
             }
             Payload::SmuReadback(readback) => self.smu_readback(event, readback),
             Payload::TrialIntent(intent) => {
-                self.hunt_group = self.hunt_group && intent.condition == Condition::Parked;
                 self.task = None;
                 self.unmatched.push(OpenIntent {
                     seq,
@@ -505,6 +470,9 @@ impl RecoveryState {
             | Payload::CheckingChain(_)
             | Payload::HostRanking(_)
             | Payload::HuntStart(_)
+            | Payload::HuntGroup(_)
+            | Payload::HuntEnd(_)
+            | Payload::ProfileChange(_)
             | Payload::HuntSkipped(_)
             | Payload::Combination(_)
             | Payload::DeepeningRound(_)
@@ -664,18 +632,8 @@ impl RecoveryState {
             .retain(|open| !matches!(open.kind, IntentKind::Smu));
     }
 
-    fn smu_intent(&mut self, event: &Event, command: SmuCommand, armed: bool) {
+    fn smu_intent(&mut self, event: &Event, command: SmuCommand) {
         self.drop_smu_intent();
-        if let Some(open) = &mut self.open
-            && open.boot == event.boot
-            && open.started.is_none()
-            && event.cause.contains(&open.seq)
-            && command.core().is_some()
-            && command.core() == open.intent.core
-            && open.intent.offset == Some(command.offset())
-        {
-            open.target = Some(TargetWrite::Intended(event.seq));
-        }
         self.unmatched.push(OpenIntent {
             seq: event.seq,
             boot: event.boot.clone(),
@@ -688,18 +646,7 @@ impl RecoveryState {
             && !open_trial
             && !baseline_seq.is_some_and(|seq| event.cause.contains(&seq))
         {
-            record.applied = Some((
-                event.seq,
-                if armed {
-                    Condition::Parked
-                } else {
-                    Condition::Together
-                },
-            ));
-            if !record.applying {
-                record.applied_mono = event.mono;
-                record.applying = true;
-            }
+            record.applied = Some((event.seq, Condition::Together));
             self.stray.clear();
         }
     }
@@ -722,18 +669,6 @@ impl RecoveryState {
                     expected.get()
                 ),
             });
-        }
-        if let Some(open) = &mut self.open
-            && open.boot == event.boot
-            && open.started.is_none()
-            && let Some(TargetWrite::Written(write)) = open.target
-            && event.cause.contains(&write)
-            && open.intent.core == Some(readback.core)
-            && readback.expected.is_some()
-            && readback.expected == open.intent.offset
-            && readback.expected.map(TargetOffset::observed) == Some(readback.offset)
-        {
-            open.window_start = event.mono;
         }
     }
 
@@ -1118,25 +1053,6 @@ impl RecoveryState {
     /// The profile application of `boot` that no restoration followed: its seq and condition.
     pub(crate) fn applied(&self, boot: &BootId) -> Option<(Seq, Condition)> {
         self.records.get(boot).and_then(|record| record.applied)
-    }
-
-    /// The monotonic time the profile application of `boot` first wrote at.
-    #[cfg(test)]
-    pub(crate) fn applied_mono(&self, boot: &BootId) -> Option<Duration> {
-        self.records
-            .get(boot)
-            .and_then(|record| record.applied_mono)
-    }
-
-    /// Whether `boot` began applying a profile that `profile.applied` has not completed.
-    #[cfg(test)]
-    pub(crate) fn applying(&self, boot: &BootId) -> bool {
-        self.records.get(boot).is_some_and(|record| record.applying)
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn hunt_group_armed(&self) -> bool {
-        self.hunt_group
     }
 
     #[cfg(test)]
