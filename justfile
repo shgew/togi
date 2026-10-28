@@ -156,6 +156,10 @@ check: _dev-shell
 check-one +names:
     nix build --no-link --print-build-logs --max-jobs 1 --cores {{ jobs }} $(printf '.#checks.{{ system }}.%s ' "$@")
 
+# Run the exhaustive recovery campaigns explicitly; ordinary nextest keeps their bounded witnesses
+[group('nix')]
+recovery: (check-one "nextest-recovery")
+
 # Run a simulated session, flags as `togi-tool-sim` takes them (`just sim --seed 7 --max-boots 20`)
 [group('run')]
 sim *args: _dev-shell

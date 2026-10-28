@@ -179,6 +179,30 @@
                 )
               )
             ) nextestGroups;
+          recoveryCrates = [
+            "togi-session"
+            "togi-simrun"
+          ];
+          recoveryCheck = craneLib.cargoNextest (
+            cargoCheck
+              (cargoSources.source {
+                code = cargoSources.closureWithDev recoveryCrates;
+                full = recoveryCrates;
+                files = testFixtures recoveryCrates;
+              })
+              {
+                pname = "togi-recovery";
+                cargoExtraArgs = "--locked ${lib.concatMapStringsSep " " (crate: "-p ${crate}") recoveryCrates}";
+                # Run precisely the excluded campaigns; their inner cut pools are bounded separately.
+                cargoNextestExtraArgs = "--profile ci --ignore-default-filter --test-threads 1 -E 'not default()'";
+                passthru.tier = "ci";
+                nativeCheckInputs = [
+                  pkgs.gitMinimal
+                  pkgs.bashInteractive
+                  pkgs.nushell
+                ];
+              }
+          );
           # Tools that read code or manifests and no data.
           codeSource = cargoSources.source { rs = allCrates; };
           manifestSource = cargoSources.source { files = [ ./deny.toml ]; };
@@ -312,6 +336,7 @@
           );
 
           checks = {
+            nextest-recovery = recoveryCheck;
             board-test =
               pkgs.runCommand "togi-board-test"
                 {

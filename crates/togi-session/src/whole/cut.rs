@@ -22,7 +22,6 @@ mod witnesses;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
-use std::num::NonZeroUsize;
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -735,13 +734,15 @@ fn cuts(played: &[Played], from: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
+/// CI runs the sweep tests sequentially; each sweep uses this many cut workers, independent of the host.
+const CUT_WORKERS: usize = 2;
+
 /// Runs `check` on every cut in parallel, and fails with every cut it failed on.
 fn each(cuts: &[(usize, usize)], check: impl Fn(usize, usize) + Sync) {
     let next = AtomicUsize::new(0);
     let failed = Mutex::new(Vec::new());
-    let workers = std::thread::available_parallelism().map_or(4, NonZeroUsize::get);
     std::thread::scope(|scope| {
-        for _ in 0..workers {
+        for _ in 0..CUT_WORKERS {
             scope.spawn(|| {
                 while let Some(&(phase, after)) = cuts.get(next.fetch_add(1, Ordering::Relaxed)) {
                     let checked =
