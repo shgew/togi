@@ -308,19 +308,31 @@ pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
 
 /// `text` with its links relative to `CHANGELOG.md` at the repository root instead of to [`FRAGMENT_DIR`], where
 /// the fragment was written: each inline link or image destination starting with `../`, after optional spaces
-/// and an optional `<`, loses that step. Code spans and backslash-escaped characters are text, not links, and
-/// stay as written, as do other links.
+/// and an optional `<`, loses that step. A link needs an unescaped `[` before its `](`; code spans and
+/// backslash-escaped characters are text, not links, and stay as written, as do other links.
 fn relocate_links(text: &str) -> Cow<'_, str> {
     let bytes = text.as_bytes();
     let mut out: Option<String> = None;
     // `text[..copied]` is in `out`, rewritten.
     let mut copied = 0;
+    // Unescaped `[` not yet closed by a `]`.
+    let mut openers = 0usize;
     let mut i = 0;
     while i < bytes.len() {
         match bytes[i] {
             b'\\' => i += 2,
             b'`' => i = code_span_end(bytes, i),
-            b']' if bytes.get(i + 1) == Some(&b'(') => {
+            b'[' => {
+                openers += 1;
+                i += 1;
+            }
+            b']' if openers == 0 => i += 1,
+            b']' if bytes.get(i + 1) != Some(&b'(') => {
+                openers -= 1;
+                i += 1;
+            }
+            b']' => {
+                openers -= 1;
                 let mut start = i + 2;
                 while matches!(bytes.get(start), Some(b' ' | b'\t')) {
                     start += 1;

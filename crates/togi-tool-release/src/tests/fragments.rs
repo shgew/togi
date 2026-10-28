@@ -121,6 +121,9 @@ fn assembles_release_section() {
 )]
 #[test_case("A stray ` then [docs](../docs/howto.md).", "A stray ` then [docs](docs/howto.md) ([#7])." ; "unmatched backtick")]
 #[test_case(r"Not a link: [x\](../y) or \[x\](../y).", r"Not a link: [x\](../y) or \[x\](../y) ([#7])." ; "escaped bracket")]
+#[test_case(r"Not a link: \[docs](../docs/howto.md).", r"Not a link: \[docs](../docs/howto.md) ([#7])." ; "escaped opener")]
+#[test_case("Not a link: docs](../docs/howto.md).", "Not a link: docs](../docs/howto.md) ([#7])." ; "no opener")]
+#[test_case("See [a [nested] link](../docs/howto.md).", "See [a [nested] link](docs/howto.md) ([#7])." ; "nested brackets")]
 fn assembles_links_relative_to_changelog(text: &str, want: &str) {
     let files = BTreeMap::from([("7.md".to_owned(), format!("### Fixed\n\n- {text}\n"))]);
     let (body, _) = assemble(&parse_fragments(&files).unwrap());
