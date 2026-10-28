@@ -1,6 +1,5 @@
 use togi_journal::{
-    Certainty, Classification, CorePhase, CycleEvent, Decision, Edge, HuntOutcome, Outcome,
-    Payload, QualificationState, RoundEvent, StepKind, VetoState,
+    Certainty, Classification, Edge, Outcome, Payload, QualificationState, StepKind, VetoState,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -10,7 +9,6 @@ pub enum Style {
     Red,
     RedBold,
     Green,
-    GreenBold,
     Yellow,
     Dim,
 }
@@ -22,7 +20,6 @@ impl Style {
             Self::Red => Some("\x1b[31m"),
             Self::RedBold => Some("\x1b[1;31m"),
             Self::Green => Some("\x1b[32m"),
-            Self::GreenBold => Some("\x1b[1;32m"),
             Self::Yellow => Some("\x1b[33m"),
             Self::Dim => Some("\x1b[2m"),
         }
@@ -36,11 +33,9 @@ impl Style {
 /// The colour of an event's human-readable line, per the table in `docs/spec/journal.md` (Colors).
 ///
 /// Plain, deliberately: a passed `trial.end`, `smu.*`, `profile.*`, `trial.*` other than the end,
-/// `mce`, the carried copies, `checking.step` and `checking.chain`, `host.ranking`, `hunt.group`
-/// (even with an inferred failure), `hunt.skipped`, `hunt.end` result `cancelled`, cycle and round
-/// starts, a failed or non-full cycle end, a failed deepening end,
-/// core transitions other than reaching the limit or leaving search with room, the `check_solo_limit`
-/// and `hold` decisions, `defect.answered`, `command.reset` and every session, boot and journal
+/// `mce`, the carried copies, every `tuner.decision`, `core.phase`, `checking.*`,
+/// `deepening.round`, `hunt.*` and `combination` event, `host.ranking`, `defect.answered`,
+/// `command.reset` and every session, boot and journal
 /// event except `session.warning`. Ruleset 13 kinds are plain except a `ccd.edge` with an observed failure, a failed
 /// qualification and a CPU-suspect `day.event` (red), a shallower `ccd.cap`, a retreat or firmware-zero
 /// `day.step` and an active `day.veto` (yellow), and a complete qualification and promoting step (green).
@@ -55,45 +50,9 @@ pub fn style_for(payload: &Payload) -> Style {
         },
         Payload::Failure(_) | Payload::CrashDetected(_) => Style::Red,
         Payload::DeadEnd(_) => Style::RedBold,
-        Payload::TunerDecision(decision) => match decision.decision {
-            Decision::StepDeeper | Decision::Deepen => Style::Green,
-            Decision::Backoff | Decision::Yield => Style::Yellow,
-            Decision::CheckSoloLimit | Decision::Hold => Style::Plain,
-        },
-        Payload::HuntEnd(end) => match end.result {
-            HuntOutcome::Culprit | HuntOutcome::Direct => Style::Green,
-            HuntOutcome::Combination | HuntOutcome::Fallback | HuntOutcome::Loaded => Style::Yellow,
-            HuntOutcome::Cancelled => Style::Plain,
-        },
-        Payload::CorePhase(transition) => {
-            let reaches_limit = transition.to == CorePhase::AtLimit;
-            let leaves_search_with_room =
-                transition.to == CorePhase::HasRoom && transition.from == Some(CorePhase::Search);
-            if reaches_limit || leaves_search_with_room {
-                Style::GreenBold
-            } else {
-                Style::Plain
-            }
+        Payload::DefectFound(_) | Payload::TunerWarning(_) | Payload::SessionWarning(_) => {
+            Style::Yellow
         }
-        Payload::CheckingCycle(cycle) => {
-            if cycle.event == CycleEvent::End && cycle.passed && cycle.full {
-                Style::GreenBold
-            } else {
-                Style::Plain
-            }
-        }
-        Payload::DeepeningRound(round) => {
-            if round.event == RoundEvent::End && round.passed {
-                Style::GreenBold
-            } else {
-                Style::Plain
-            }
-        }
-        Payload::DefectFound(_)
-        | Payload::HuntStart(_)
-        | Payload::Combination(_)
-        | Payload::TunerWarning(_)
-        | Payload::SessionWarning(_) => Style::Yellow,
         Payload::BackendRetry(_) => Style::Dim,
         Payload::CcdEdge(edge) => match edge.edge {
             Edge::Observed { .. } => Style::Red,
@@ -149,6 +108,13 @@ pub fn style_for(payload: &Payload) -> Style {
         | Payload::TrialCarried(_)
         | Payload::FailureCarried(_)
         | Payload::Mce(_)
+        | Payload::TunerDecision(_)
+        | Payload::CorePhase(_)
+        | Payload::CheckingCycle(_)
+        | Payload::DeepeningRound(_)
+        | Payload::HuntStart(_)
+        | Payload::HuntEnd(_)
+        | Payload::Combination(_)
         | Payload::CheckingStep(_)
         | Payload::CheckingChain(_)
         | Payload::HostRanking(_)
