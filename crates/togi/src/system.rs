@@ -40,22 +40,17 @@ pub trait System {
     /// Whether the process runs as root.
     fn privileged(&self) -> bool;
 
-    /// Installs the command's signal listener; fake hosts can retain the token without host effects.
+    /// Installs the command's signal listener and returns the guard that keeps it installed.
     fn listen(
         &self,
         token: &CancellationToken,
-    ) -> Result<Box<dyn std::any::Any>, crate::signals::Error> {
-        listen_for_signals(token)
-    }
+    ) -> Result<Box<dyn std::any::Any>, crate::signals::Error>;
 
     /// The host lock file and the ownership it must have.
     fn host_lock(&self) -> (&Path, Policy);
 
-    /// Acquires the host-wide command lock. Test hosts may provide descriptor-free exclusion.
-    fn acquire_host_lock(&self) -> Result<HostLock, togi_hostlock::Error> {
-        let (path, policy) = self.host_lock();
-        HostLock::acquire(path, policy)
-    }
+    /// Acquires the host-wide command lock.
+    fn acquire_host_lock(&self) -> Result<HostLock, togi_hostlock::Error>;
 
     /// The journal filesystem, when injected; `None` uses the durable production filesystem.
     fn journal_fs(&self) -> Option<Arc<dyn Fs>> {
@@ -146,30 +141,17 @@ pub trait System {
     fn reboot(&self) -> Result<(), RebootError>;
 
     /// Stops the tuning service and waits until its run has ended.
-    fn stop_tuning(&self) -> Result<(), StopError> {
-        togi_hardware::stop_tuning()
-    }
+    fn stop_tuning(&self) -> Result<(), StopError>;
 
     /// Reads what the operator types after the question just written, dropping what was typed
     /// ahead of it; `None` when the input ended with nothing typed.
-    fn answer(&self) -> io::Result<Option<String>> {
-        crate::dashboard::discard_typed_ahead();
-        let mut line = String::new();
-        let read = io::stdin().read_line(&mut line)?;
-        Ok((read > 0).then_some(line))
-    }
+    fn answer(&self) -> io::Result<Option<String>>;
 
     /// What decides whether stderr is coloured.
     fn stderr_facts(&self) -> OutputFacts;
 
     /// What decides whether stdout is coloured or connected to the system journal.
-    fn stdout_facts(&self) -> OutputFacts {
-        OutputFacts::detect(
-            &io::stdout(),
-            std::env::var_os("NO_COLOR").as_deref(),
-            std::env::var_os("JOURNAL_STREAM").as_deref(),
-        )
-    }
+    fn stdout_facts(&self) -> OutputFacts;
 
     /// The machine `run` tunes, borrowing the host lock until every hardware seam is dropped.
     fn open_machine<'lock>(
@@ -183,9 +165,7 @@ pub trait System {
     fn day_observer<'lock>(
         &self,
         lock: &'lock HostLock,
-    ) -> Result<Box<dyn togi_hardware::day::Observer + 'lock>, Error> {
-        togi_hardware::day::observe(lock)
-    }
+    ) -> Result<Box<dyn togi_hardware::day::Observer + 'lock>, Error>;
 
     /// Opens the day question listener; in-memory command hosts have no external socket.
     fn day_socket(&self) -> Result<Option<crate::day::socket::Server>, crate::day::socket::Error> {
@@ -196,39 +176,22 @@ pub trait System {
     fn day_request(
         &self,
         request: &crate::day::socket::Request,
-    ) -> Result<crate::day::socket::Reply, crate::day::socket::Error> {
-        crate::day::socket::request(request)
-    }
+    ) -> Result<crate::day::socket::Reply, crate::day::socket::Error>;
 
     /// Plasma is the supported actions desktop; others get a plain notification.
-    fn day_notification_actions(&self) -> bool {
-        std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktop| {
-            desktop
-                .split(':')
-                .any(|name| name.eq_ignore_ascii_case("KDE"))
-        })
-    }
+    fn day_notification_actions(&self) -> bool;
 
     /// Runs the installed notification CLI with bounded output and runtime.
     fn day_notification(
         &self,
         invocation: &togi_command::Invocation,
-    ) -> Result<togi_command::Output, togi_command::Error> {
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "the graphical-session adapter invokes the installed libnotify CLI"
-        )]
-        togi_command::run_blocking(invocation, Duration::from_secs(130))
-    }
+    ) -> Result<togi_command::Output, togi_command::Error>;
 
     /// Whether stdin and stderr are both terminals.
     fn interactive(&self) -> bool;
 
     /// The next line typed on standard input with its newline, or `None` when the input ended.
-    fn prompt_line(&self) -> io::Result<Option<String>> {
-        let mut line = String::new();
-        Ok((io::stdin().read_line(&mut line)? > 0).then_some(line))
-    }
+    fn prompt_line(&self) -> io::Result<Option<String>>;
 
     /// A handle on standard error that outlives the command's borrowed streams: the event lines of
     /// a run and the report of its emergency.
@@ -256,6 +219,13 @@ impl System for Real {
         rustix::process::geteuid().is_root()
     }
 
+    fn listen(
+        &self,
+        token: &CancellationToken,
+    ) -> Result<Box<dyn std::any::Any>, crate::signals::Error> {
+        listen_for_signals(token)
+    }
+
     fn day_socket(&self) -> Result<Option<crate::day::socket::Server>, crate::day::socket::Error> {
         crate::day::socket::Server::bind().map(Some)
     }
@@ -267,6 +237,11 @@ impl System for Real {
             Policy::Private
         };
         (Path::new(togi_hostlock::DEFAULT_PATH), policy)
+    }
+
+    fn acquire_host_lock(&self) -> Result<HostLock, togi_hostlock::Error> {
+        let (path, policy) = self.host_lock();
+        HostLock::acquire(path, policy)
     }
 
     fn config_path(&self) -> &Path {
@@ -349,9 +324,28 @@ impl System for Real {
         togi_hardware::reboot()
     }
 
+    fn stop_tuning(&self) -> Result<(), StopError> {
+        togi_hardware::stop_tuning()
+    }
+
+    fn answer(&self) -> io::Result<Option<String>> {
+        crate::dashboard::discard_typed_ahead();
+        let mut line = String::new();
+        let read = io::stdin().read_line(&mut line)?;
+        Ok((read > 0).then_some(line))
+    }
+
     fn stderr_facts(&self) -> OutputFacts {
         OutputFacts::detect(
             &io::stderr(),
+            std::env::var_os("NO_COLOR").as_deref(),
+            std::env::var_os("JOURNAL_STREAM").as_deref(),
+        )
+    }
+
+    fn stdout_facts(&self) -> OutputFacts {
+        OutputFacts::detect(
+            &io::stdout(),
             std::env::var_os("NO_COLOR").as_deref(),
             std::env::var_os("JOURNAL_STREAM").as_deref(),
         )
@@ -366,8 +360,46 @@ impl System for Real {
         togi_hardware::open(config, state_dir, lock)
     }
 
+    fn day_observer<'lock>(
+        &self,
+        lock: &'lock HostLock,
+    ) -> Result<Box<dyn togi_hardware::day::Observer + 'lock>, Error> {
+        togi_hardware::day::observe(lock)
+    }
+
+    fn day_request(
+        &self,
+        request: &crate::day::socket::Request,
+    ) -> Result<crate::day::socket::Reply, crate::day::socket::Error> {
+        crate::day::socket::request(request)
+    }
+
+    fn day_notification_actions(&self) -> bool {
+        std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktop| {
+            desktop
+                .split(':')
+                .any(|name| name.eq_ignore_ascii_case("KDE"))
+        })
+    }
+
+    fn day_notification(
+        &self,
+        invocation: &togi_command::Invocation,
+    ) -> Result<togi_command::Output, togi_command::Error> {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the graphical-session adapter invokes the installed libnotify CLI"
+        )]
+        togi_command::run_blocking(invocation, Duration::from_secs(130))
+    }
+
     fn interactive(&self) -> bool {
         both_terminals(&io::stdin(), &io::stderr())
+    }
+
+    fn prompt_line(&self) -> io::Result<Option<String>> {
+        let mut line = String::new();
+        Ok((io::stdin().read_line(&mut line)? > 0).then_some(line))
     }
 
     fn stderr(&self) -> Box<dyn Write> {

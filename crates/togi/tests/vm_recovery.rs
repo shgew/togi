@@ -519,8 +519,19 @@ mod vm_recovery {
             self.0.privileged()
         }
 
+        fn listen(
+            &self,
+            token: &CancellationToken,
+        ) -> Result<Box<dyn std::any::Any>, togi_cli::signals::Error> {
+            self.0.listen(token)
+        }
+
         fn host_lock(&self) -> (&Path, Policy) {
             self.0.host_lock()
+        }
+
+        fn acquire_host_lock(&self) -> Result<HostLock, togi_hostlock::Error> {
+            self.0.acquire_host_lock()
         }
 
         fn config_path(&self) -> &Path {
@@ -568,8 +579,24 @@ mod vm_recovery {
             self.0.reboot()
         }
 
+        fn stop_tuning(&self) -> Result<(), togi_hardware::StopError> {
+            self.0.stop_tuning()
+        }
+
+        fn answer(&self) -> io::Result<Option<String>> {
+            self.0.answer()
+        }
+
+        fn prompt_line(&self) -> io::Result<Option<String>> {
+            self.0.prompt_line()
+        }
+
         fn stderr_facts(&self) -> OutputFacts {
             self.0.stderr_facts()
+        }
+
+        fn stdout_facts(&self) -> OutputFacts {
+            self.0.stdout_facts()
         }
 
         fn open_machine<'lock>(
@@ -608,6 +635,24 @@ mod vm_recovery {
             &self,
         ) -> Result<Option<togi_cli::day::socket::Server>, togi_cli::day::socket::Error> {
             self.0.day_socket()
+        }
+
+        fn day_request(
+            &self,
+            request: &togi_cli::day::socket::Request,
+        ) -> Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error> {
+            self.0.day_request(request)
+        }
+
+        fn day_notification_actions(&self) -> bool {
+            self.0.day_notification_actions()
+        }
+
+        fn day_notification(
+            &self,
+            invocation: &togi_command::Invocation,
+        ) -> Result<togi_command::Output, togi_command::Error> {
+            self.0.day_notification(invocation)
         }
 
         fn interactive(&self) -> bool {
