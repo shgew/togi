@@ -648,7 +648,7 @@ impl Model {
             trial: derived.trial.as_ref(),
             last: facts.last.as_ref(),
             recover: derived.recover.as_ref(),
-            stopped: facts.stop.as_ref().filter(|_| facts.stopped),
+            stopped: facts.stop.as_ref().filter(|_| facts.is_stopped()),
             dead_end: facts
                 .dead_end
                 .as_ref()

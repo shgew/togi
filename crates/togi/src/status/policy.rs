@@ -1,6 +1,6 @@
 //! The Ruleset 13 sections of `togi status`: the header activity, the per-CCD table and the day and night
-//! policy parts. Everything shown is what the tuner's projection says; nothing here computes a cap, a
-//! distance or an eligibility.
+//! policy parts. Policy facts come from the tuner's projection, runtime stops from the shared journal
+//! fold; nothing here computes a cap, a distance or an eligibility.
 
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -17,6 +17,7 @@ use togi_tuner::policy::{
     CcdProjection, DayProjection, FirmwareValidity, NightProjection, Projection, QualificationStage,
 };
 
+use togi_watch::model::StopView;
 use togi_watch::words::age;
 
 use super::esc;
@@ -53,8 +54,8 @@ fn task_activity(task: TaskId, activity: Option<Activity>) -> String {
 }
 
 /// The header's activity: the open night with its current task, the day, a stop.
-pub(super) fn activity(policy: &Projection, at: Where<'_>) -> String {
-    if policy.stopped {
+pub(super) fn activity(policy: &Projection, stopped: Option<&StopView>, at: Where<'_>) -> String {
+    if stopped.is_some() {
         return "stopped".to_owned();
     }
     match policy

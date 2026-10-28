@@ -2,7 +2,7 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-day
+stopped
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz

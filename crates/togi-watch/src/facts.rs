@@ -31,6 +31,15 @@ pub(crate) struct RecoverFacts {
     pub(crate) end: Option<TrialEndView>,
 }
 
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+enum RuntimeLifecycle {
+    #[default]
+    Running,
+    Stopped {
+        boot: BootId,
+    },
+}
+
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 pub(crate) struct Facts {
     pub(crate) session: Option<SessionView>,
@@ -38,7 +47,7 @@ pub(crate) struct Facts {
     pub(crate) starts: HashMap<TrialId, Timestamp>,
     pub(crate) applied: PerCore<Option<ObservedOffset>>,
     pub(crate) current: Option<Current>,
-    pub(crate) stopped: bool,
+    lifecycle: RuntimeLifecycle,
     pub(crate) restored: bool,
     pub(crate) configs: u32,
     pub(crate) failures: u32,
@@ -103,7 +112,14 @@ impl Facts {
             }
             Payload::ConfigLoaded(_) => {
                 self.configs += 1;
-                self.stopped = false;
+                self.lifecycle = RuntimeLifecycle::Running;
+            }
+            Payload::DayBootStart(_) => {
+                if let RuntimeLifecycle::Stopped { boot } = &self.lifecycle
+                    && *boot != event.boot
+                {
+                    self.lifecycle = RuntimeLifecycle::Running;
+                }
             }
             Payload::SmuIntent(_) => self.restored = false,
             Payload::SmuReadback(readback) => {
@@ -160,7 +176,9 @@ impl Facts {
                 });
             }
             Payload::Shutdown(shutdown) => {
-                self.stopped = true;
+                self.lifecycle = RuntimeLifecycle::Stopped {
+                    boot: event.boot.clone(),
+                };
                 self.stop = Some(StopView {
                     at: event.time,
                     reason: shutdown.reason,
@@ -195,7 +213,6 @@ impl Facts {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
-            | Payload::DayBootStart(_)
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
@@ -246,6 +263,13 @@ impl Facts {
             if self.log.len() >= 2 * LOG_LIMIT {
                 self.log.drain(..self.log.len() - LOG_LIMIT);
             }
+        }
+    }
+
+    pub(crate) const fn is_stopped(&self) -> bool {
+        match self.lifecycle {
+            RuntimeLifecycle::Running => false,
+            RuntimeLifecycle::Stopped { .. } => true,
         }
     }
 

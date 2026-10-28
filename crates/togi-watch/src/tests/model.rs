@@ -862,7 +862,7 @@ fn a_reset_command_is_told_in_the_history() {
 }
 
 #[test]
-fn only_a_new_config_loaded_reopens_a_stopped_session() {
+fn configuration_reopens_a_stop_but_reset_and_warning_do_not() {
     let mut script = Script::three();
     script.append(restored(), &[]);
     script.append(shutdown(ShutdownReason::Signal), &[]);
@@ -884,6 +884,35 @@ fn only_a_new_config_loaded_reopens_a_stopped_session() {
     let model = script.model();
     let snap = model.snapshot();
     assert!(snap.stopped.is_none(), "config.loaded reopens the session");
+}
+
+#[test_case("boot", true; "same boot remains stopped")]
+#[test_case("day", false; "later boot resumes day observation")]
+fn day_observation_reopens_a_stop_only_on_a_later_boot(boot: &str, stopped: bool) {
+    let mut script = Script::three();
+    script.append(restored(), &[]);
+    script.append(shutdown(ShutdownReason::Signal), &[]);
+    let mut model = script.model();
+    let after_stop = script.events.len();
+    script.boot = "intervening".to_owned();
+    script.append(warning("stopped run"), &[]);
+    script.boot = boot.to_owned();
+    script.append(
+        togi_journal::DayBootStart {
+            build: build(),
+            bios: togi_machine::BiosContext::default(),
+            offsets: [0, 1, 2]
+                .into_iter()
+                .map(|id| (core(id), ObservedOffset(0)))
+                .collect(),
+            watchdog: None,
+        }
+        .into(),
+        &[],
+    );
+    model.fold_batch(&script.events[after_stop..]).unwrap();
+    assert_eq!(model.snapshot().stopped.is_some(), stopped);
+    assert_eq!(model.snapshot(), script.model().snapshot());
 }
 
 #[test]

@@ -232,13 +232,15 @@ fn render_model(
         return Err(Problem::NoSession);
     }
     let scan = Scan::of(events);
-    let projection = model.snapshot().policy;
+    let snapshot = model.snapshot();
+    let projection = snapshot.policy;
     let closed = night_closed_at(events, projection);
     let mut out = String::new();
     Status {
         out: &mut out,
         journal,
         policy: projection,
+        stopped: snapshot.stopped,
         scan: &scan,
         at: policy::Where { zone, closed },
     }
@@ -274,13 +276,15 @@ pub(crate) fn plan(
     if journal.session.is_none() {
         return Ok(None);
     }
-    let projection = model.snapshot().policy;
+    let snapshot = model.snapshot();
+    let projection = snapshot.policy;
     let scan = Scan::of(events);
     let mut out = String::new();
     let line = Status {
         out: &mut out,
         journal,
         policy: projection,
+        stopped: snapshot.stopped,
         scan: &scan,
         at: policy::Where {
             zone,
@@ -412,6 +416,7 @@ struct Status<'a> {
     out: &'a mut String,
     journal: &'a JournalState,
     policy: &'a Projection,
+    stopped: Option<&'a togi_watch::model::StopView>,
     scan: &'a Scan<'a>,
     at: policy::Where<'a>,
 }
@@ -502,7 +507,7 @@ impl Status<'_> {
     fn header(&self) -> String {
         match self.journal.dead_end {
             Some(_) => "dead end".to_owned(),
-            None => policy::activity(self.policy, self.at),
+            None => policy::activity(self.policy, self.stopped, self.at),
         }
     }
 

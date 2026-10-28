@@ -422,14 +422,14 @@ fn a_closed_night_is_the_last_night_and_its_end_is_the_boot_that_closed_it() {
         shown(&policy, ended)
     );
     assert!(shown(&policy, UTC).contains("\nLast night 00:00\n"));
-    assert_eq!(activity(&policy, ended), "day");
+    assert_eq!(activity(&policy, None, ended), "day");
 }
 
 #[test]
 fn an_open_night_leads_the_header_with_its_start_elapsed_time_and_task() {
     let mut open = night();
     assert_eq!(
-        activity(&projection(Some(open.clone())), UTC),
+        activity(&projection(Some(open.clone())), None, UTC),
         "night since 00:00, 2h30m elapsed: between tasks"
     );
     open.current = Some((
@@ -440,7 +440,7 @@ fn an_open_night_leads_the_header_with_its_start_elapsed_time_and_task() {
         Some(Activity::Qualification),
     ));
     assert_eq!(
-        activity(&projection(Some(open.clone())), UTC),
+        activity(&projection(Some(open.clone())), None, UTC),
         "night since 00:00, 2h30m elapsed: qualification (task qualification #2)"
     );
     open.current = Some((
@@ -451,16 +451,9 @@ fn an_open_night_leads_the_header_with_its_start_elapsed_time_and_task() {
         None,
     ));
     assert_eq!(
-        activity(&projection(Some(open)), UTC),
+        activity(&projection(Some(open)), None, UTC),
         "night since 00:00, 2h30m elapsed: filler (task filler #1)"
     );
-}
-
-#[test]
-fn a_stopped_session_leads_with_stopped_before_any_night() {
-    let mut policy = projection(Some(night()));
-    policy.stopped = true;
-    assert_eq!(activity(&policy, UTC), "stopped");
 }
 
 fn ccd_vector(offsets: &[(i64, i64)]) -> togi_journal::CcdVector {

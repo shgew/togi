@@ -599,9 +599,70 @@ fn an_open_night_names_its_start_elapsed_time_shares_and_current_task() {
     }
 }
 
+fn shutdown() -> Payload {
+    togi_journal::Shutdown {
+        reason: togi_journal::ShutdownReason::Signal,
+        kernel_cursor: None,
+        kernel_error: None,
+        cycles: None,
+    }
+    .into()
+}
+
+#[test_case::test_case(None; "before any night")]
+#[test_case::test_case(Some(night_plan()); "after a night")]
+fn a_shutdown_names_the_runtime_stop(night: Option<Payload>) {
+    let events = append(&base(), night.into_iter().chain([shutdown()]).collect());
+    let shown = status_of(&installed(&events));
+    assert_eq!(shown.lines().next(), Some("stopped"), "{shown}");
+}
+
 #[test]
-fn a_normal_boot_after_the_night_closes_it_and_status_shows_the_day_and_the_last_night() {
-    let mut events = append(&base(), vec![night_plan()]);
+fn loading_configuration_reopens_a_runtime_stop() {
+    let base = base();
+    let events = append(&base, vec![shutdown(), base[1].payload.clone()]);
+    let shown = status_of(&installed(&events));
+    assert_eq!(shown.lines().next(), Some("day"), "{shown}");
+}
+
+#[test]
+fn a_stock_policy_stop_is_not_a_runtime_stop_after_configuration_reloads() {
+    let base = base();
+    let events = append(
+        &base,
+        vec![
+            DeadEnd {
+                condition: DeadEndCondition::FailureAtZero,
+                core: None,
+                detail: "platform unstable at stock".to_owned(),
+                action: None,
+            }
+            .into(),
+            shutdown(),
+            base[1].payload.clone(),
+        ],
+    );
+    let model = togi_watch::model::project(&events);
+    assert_eq!(
+        (
+            model.snapshot().policy.stopped,
+            model.snapshot().stopped,
+            model.journal_state().dead_end,
+        ),
+        (true, None, None)
+    );
+    let shown = status_of(&installed(&events));
+    assert_eq!(shown.lines().next(), Some("day"), "{shown}");
+}
+
+#[test_case::test_case(None, "07:00"; "open night")]
+#[test_case::test_case(Some(shutdown()), "00:00"; "stopped night")]
+fn a_normal_boot_after_the_night_closes_it_and_status_shows_the_day_and_the_last_night(
+    stop: Option<Payload>,
+    closed: &str,
+) {
+    let events = append(&base(), vec![night_plan()]);
+    let mut events = append(&events, stop.into_iter().collect());
     let last = events.last().unwrap();
     let time = last
         .time
@@ -624,7 +685,9 @@ fn a_normal_boot_after_the_night_closes_it_and_status_shows_the_day_and_the_last
     let shown = status_of(&installed(&events));
     assert_eq!(shown.lines().next(), Some("day"), "{shown}");
     assert!(
-        shown.contains("\nLast night 00:00\u{2013}07:00\nelapsed: 4h00m\n"),
+        shown.contains(&format!(
+            "\nLast night 00:00\u{2013}{closed}\nelapsed: 4h00m\n"
+        )),
         "{shown}"
     );
 }
@@ -641,6 +704,7 @@ fn a_dead_end_leads_the_header() {
                 action: None,
             }
             .into(),
+            shutdown(),
         ],
     );
     let shown = status_of(&installed(&events));
