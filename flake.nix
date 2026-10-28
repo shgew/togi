@@ -68,69 +68,48 @@
             };
           # nextest's profiles, and the fixtures the named crates' tests read.
           testFixtures = crates: [ ./.config ] ++ lib.concatMap (crate: crateFixtures.${crate} or [ ]) crates;
-          # Each group is one `nextest-<group>` check, so a change reruns only the groups whose tests build it.
-          # Every workspace member is in exactly one group.
-          nextestGroups = {
-            core = [
-              "togi-machine"
-              "togi-journal"
-              "togi-config"
-              "togi-requests"
-              "togi-tuner"
-              "togi-defect"
-              "togi-facts"
-              "togi-render"
-              "togi-tuningboot"
-              "togi-trialfiles"
-              "togi-version"
-              "togi-sim"
-              "togi-statecopy"
-            ];
-            platform = [
-              "togi-command"
-              "togi-hostlock"
-              "togi-backend"
-              "togi-mprime"
-              "togi-ycruncher"
-              "togi-smu"
-              "togi-detect"
-              "togi-trial"
-              "togi-hardware"
-            ];
-            session = [
-              "togi-session"
-              "togi-simrun"
-              "togi-watch"
-              "togi-watchtest"
-              "togi"
-            ];
-            tools = [
-              "togi-tool-audit"
-              "togi-tool-bench"
-              "togi-tool-modelcheck"
-              "togi-tool-trialfacts"
-              "togi-tool-copy-state"
-              "togi-tool-facts"
-              "togi-tool-fit"
-              "togi-tool-replay"
-              "togi-tool-sim"
-              "togi-tool-stats"
-            ];
-            repo = [
-              "togi-tool-reviews"
-              "togi-tool-release"
-              "togi-tool-cover"
-            ];
+          # Product tests include the shipped closure and the simulator/dashboard support they use.
+          productCrates = cargoSources.closureWithDev [
+            "togi"
+            "togi-simrun"
+            "togi-watchtest"
+          ];
+          # Unshipped libraries and programs register here; product dependencies are discovered above.
+          toolCrates = [
+            "togi-facts"
+            "togi-statecopy"
+            "togi-tool-audit"
+            "togi-tool-bench"
+            "togi-tool-modelcheck"
+            "togi-tool-trialfacts"
+            "togi-tool-copy-state"
+            "togi-tool-facts"
+            "togi-tool-fit"
+            "togi-tool-replay"
+            "togi-tool-sim"
+            "togi-tool-stats"
+            "togi-tool-reviews"
+            "togi-tool-release"
+            "togi-tool-cover"
+          ];
+          nextestConcerns = {
+            nextest = {
+              crates = productCrates;
+              tier = "local";
+            };
+            nextest-tools = {
+              crates = toolCrates;
+              tier = "ci";
+            };
           };
-          grouped = lib.concatLists (lib.attrValues nextestGroups);
-          ungrouped = lib.subtractLists grouped allCrates;
-          misgrouped = lib.filter (
-            crate: lib.count (c: c == crate) grouped > 1 || !lib.elem crate allCrates
-          ) (lib.unique grouped);
-          emptyGroups = lib.attrNames (lib.filterAttrs (_: crates: crates == [ ]) nextestGroups);
-          validGroups =
-            lib.assertMsg (ungrouped == [ ] && misgrouped == [ ] && emptyGroups == [ ])
-              "nextestGroups must name every workspace member exactly once and no group may be empty; in no group: ${toString ungrouped}; repeated or not a member: ${toString misgrouped}; empty: ${toString emptyGroups}";
+          registered = productCrates ++ toolCrates;
+          unregistered = lib.subtractLists registered allCrates;
+          misregistered = lib.filter (
+            crate: lib.count (c: c == crate) registered > 1 || !lib.elem crate allCrates
+          ) (lib.unique registered);
+          validConcerns =
+            lib.assertMsg (unregistered == [ ] && misregistered == [ ])
+              "nextest concerns must name every workspace member exactly once; unregistered: ${toString unregistered}; repeated or not a member: ${toString misregistered}";
           cliSource = cargoSources.source { code = cargoSources.closure [ "togi" ]; };
           # The trial tests compile only the `hardware` and `cached_errors` targets of `togi-trial` against the
           # library; every other test file of the crate is a stub.
@@ -155,30 +134,35 @@
             files = testFixtures allCrates ++ [ ./clippy.toml ];
           };
           nextestChecks =
-            assert validGroups;
-            lib.mapAttrs' (
-              group: crates:
-              lib.nameValuePair "nextest-${group}" (
-                craneLib.cargoNextest (
-                  cargoCheck
-                    (cargoSources.source {
-                      code = cargoSources.closureWithDev crates;
-                      full = crates;
-                      files = testFixtures crates;
-                    })
-                    {
-                      pname = "togi-${group}";
-                      cargoExtraArgs = "--locked ${lib.concatMapStringsSep " " (crate: "-p ${crate}") crates}";
-                      cargoNextestExtraArgs = "--profile ci";
-                      nativeCheckInputs = [
-                        pkgs.gitMinimal
-                        pkgs.bashInteractive
-                        pkgs.nushell
-                      ];
-                    }
-                )
+            assert validConcerns;
+            lib.mapAttrs (
+              name: concern:
+              let
+                inherit (concern) crates;
+              in
+              craneLib.cargoNextest (
+                cargoCheck
+                  (cargoSources.source {
+                    code = cargoSources.closureWithDev crates;
+                    full = crates;
+                    files = testFixtures crates;
+                  })
+                  {
+                    pname = "togi-${name}";
+                    cargoExtraArgs = "--locked ${lib.concatMapStringsSep " " (crate: "-p ${crate}") crates}";
+                    cargoNextestExtraArgs = "--profile ci";
+                    passthru = {
+                      inherit crates;
+                      inherit (concern) tier;
+                    };
+                    nativeCheckInputs = [
+                      pkgs.gitMinimal
+                      pkgs.bashInteractive
+                      pkgs.nushell
+                    ];
+                  }
               )
-            ) nextestGroups;
+            ) nextestConcerns;
           recoveryCrates = [
             "togi-session"
             "togi-simrun"

@@ -10,10 +10,18 @@ _default:
 _dev-shell:
     @[[ "${TOGI_DEV_SHELL:-}" == 1 ]] || { echo 'this recipe needs the dev shell: run `nix develop`, or `direnv allow` once per checkout' >&2; exit 1; }
 
-# Run the test suite with optional nextest flags (`just test -p togi-journal`)
+# Run product tests with optional nextest flags (`just test -E 'test(readback)'`); use `focus` for one crate
 [group('test')]
 test *args: _dev-shell
-    cargo nextest run "$@"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    args=$(just _product-test-args)
+    read -r -a packages <<< "$args"
+    cargo nextest run "${packages[@]}" "$@"
+
+# Use the same product crate selection as the local nextest flake check
+_product-test-args:
+    @nix eval --raw '.#checks.{{ system }}.nextest.crates' --apply 'crates: builtins.concatStringsSep " " (map (crate: "-p " + crate) crates)'
 
 # Test the Nushell coordination board against fixed GitHub fixtures, without network access
 [group('test')]
@@ -54,7 +62,9 @@ cover base: _dev-shell
     trace=$(mktemp)
     trap 'rm -f "$trace"' EXIT
     target=${CARGO_LLVM_COV_TARGET_DIR:-$(cargo metadata --format-version 1 --no-deps | nu --stdin -c '$in | from json | get build_directory')/llvm-cov-target}
-    CARGO_LLVM_COV_TARGET_DIR="$target" CARGO_BUILD_BUILD_DIR="$target" cargo llvm-cov nextest --locked --lcov --output-path "$trace" >&2
+    args=$(just _product-test-args)
+    read -r -a packages <<< "$args"
+    CARGO_LLVM_COV_TARGET_DIR="$target" CARGO_BUILD_BUILD_DIR="$target" cargo llvm-cov nextest --locked "${packages[@]}" --lcov --output-path "$trace" >&2
     cargo run --quiet --locked -p togi-tool-cover -- --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
 # Check the Nushell board's syntax and run workspace clippy for the host with default and all features and, with all features, for whichever of x86_64 Linux and aarch64 macOS is not the host
@@ -87,7 +97,7 @@ gate: _dev-shell
 
 # Print the local nextest flake checks, space-separated
 _nextest-checks:
-    @nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: builtins.match "nextest-.*" name != null && (checks.${name}.tier or null) != "ci") (builtins.attrNames checks))'
+    @nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: builtins.match "nextest(-.*)?" name != null && (checks.${name}.tier or null) != "ci") (builtins.attrNames checks))'
 
 # Print every local-tier flake check; CI and release discover all checks independently
 _local-checks:
@@ -144,7 +154,7 @@ check: _dev-shell
     read -r -a checks <<< "$names"
     just check-one "${checks[@]}"
 
-# Build named flake checks, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, vm-grub, vm-runtime, vm-display and vm-efi (`just check-one module`)
+# Build named flake checks, streaming their build logs (`just check-one nextest`); `nextest-tools`, recovery and VM checks opt into CI-tier evidence
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
