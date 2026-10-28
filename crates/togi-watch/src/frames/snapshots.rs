@@ -226,7 +226,7 @@ fn main_views(staged: Staged, sizes: &[(u16, u16)]) {
 }
 
 // A frame keeps a snapshot at every main size only when it draws a size-dependent panel no other frame draws; the
-// rest keep the wide one, and `every_staged_frame_fits_the_frame_at_every_main_size` still draws them all.
+// rest keep the wide one, and the bounds matrix in `frame_tests/bounds.rs` still draws them all at every size.
 // mapping: the CCD tables beside each other and stacked, the night's rows. day: the day's rows with no night.
 // idle: the planned end. recovering: the band after a crash. qualifying and reproducing: the night's other rows.
 // The wide-only frames draw panels a kept frame already draws: crashed, between, deadend and stopped a band.
