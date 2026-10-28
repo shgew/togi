@@ -4,7 +4,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    reason = "the fake host serves several test crates, each using part of it, and panics on a broken fixture"
+    reason = "the fake host serves several command modules, each using part of it, and panics on a broken fixture"
 )]
 
 use std::cell::{Cell, RefCell};
