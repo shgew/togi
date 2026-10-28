@@ -232,6 +232,10 @@ impl togi_machine::Running for DurationRunning {
 }
 
 impl togi_machine::Trials for DurationTrials {
+    fn controller_pid(&self) -> u32 {
+        togi_sim::CONTROLLER_PID
+    }
+
     fn content(
         &mut self,
         workload: togi_machine::WorkloadId,
@@ -502,6 +506,10 @@ fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
 struct SetupFailure(Box<dyn togi_machine::Trials>);
 
 impl togi_machine::Trials for SetupFailure {
+    fn controller_pid(&self) -> u32 {
+        togi_sim::CONTROLLER_PID
+    }
+
     fn content(
         &mut self,
         workload: togi_machine::WorkloadId,
@@ -624,6 +632,10 @@ struct BackendGate {
 }
 
 impl togi_machine::Trials for BackendGate {
+    fn controller_pid(&self) -> u32 {
+        togi_sim::CONTROLLER_PID
+    }
+
     fn content(
         &mut self,
         workload: togi_machine::WorkloadId,

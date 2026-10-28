@@ -454,6 +454,10 @@ struct EdgeTrials {
     edges: PerCore<u8>,
 }
 impl Trials for EdgeTrials {
+    fn controller_pid(&self) -> u32 {
+        togi_sim::CONTROLLER_PID
+    }
+
     fn content(
         &mut self,
         workload: togi_machine::WorkloadId,

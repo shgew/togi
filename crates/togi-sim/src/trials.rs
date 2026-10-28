@@ -42,6 +42,10 @@ fn load_of(spec: &TrialSpec) -> Load<'_> {
     }
 }
 
+/// The controller pid a simulated trial reports: fixed, so the same seed journals the same
+/// `trial.start`, and below the 1000 every simulated workload pid starts from.
+pub const CONTROLLER_PID: u32 = 100;
+
 pub(crate) struct SimTrials(pub(crate) Shared);
 
 impl Trials for SimTrials {
@@ -180,6 +184,10 @@ impl Trials for SimTrials {
             }
             None => Box::new(std::iter::empty()),
         }
+    }
+
+    fn controller_pid(&self) -> u32 {
+        CONTROLLER_PID
     }
 }
 

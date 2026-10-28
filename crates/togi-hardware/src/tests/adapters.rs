@@ -36,6 +36,10 @@ fn the_runners_slot_clone_sees_no_table_until_the_reader_is_published() {
 struct Samples(&'static str);
 
 impl Trials for Samples {
+    fn controller_pid(&self) -> u32 {
+        panic!("sample reads must not ask for the controller")
+    }
+
     fn content(&mut self, _: togi_machine::WorkloadId) -> Result<togi_machine::ContentId, Error> {
         panic!("sample reads must not ask for workload content")
     }

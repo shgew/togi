@@ -406,6 +406,11 @@ impl Trials for Runner {
         })
     }
 
+    /// The managed controller is this process: placement confines its own threads.
+    fn controller_pid(&self) -> u32 {
+        std::process::id()
+    }
+
     fn samples<'a>(
         &'a self,
         id: &'a str,

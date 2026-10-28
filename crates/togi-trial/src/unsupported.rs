@@ -59,6 +59,10 @@ impl Trials for Runner {
     ) -> Box<dyn Iterator<Item = Result<TrialConditions, togi_machine::SampleError>> + 'a> {
         match self.0 {}
     }
+
+    fn controller_pid(&self) -> u32 {
+        match self.0 {}
+    }
 }
 
 /// A started trial; none exists where trials cannot run.

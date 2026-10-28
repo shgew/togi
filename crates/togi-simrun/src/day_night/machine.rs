@@ -353,6 +353,10 @@ impl Clock for CycleClock {
 
 struct CycleTrials(Shared);
 impl Trials for CycleTrials {
+    fn controller_pid(&self) -> u32 {
+        togi_sim::CONTROLLER_PID
+    }
+
     fn content(
         &mut self,
         workload: togi_machine::WorkloadId,

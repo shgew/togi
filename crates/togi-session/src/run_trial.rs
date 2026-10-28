@@ -274,7 +274,7 @@ impl Session<'_> {
             },
         };
         let controller = Some(togi_journal::ControllerEvidence {
-            pid: std::process::id(),
+            pid: self.trials.controller_pid(),
             threads: Vec::new(),
             workers: std::collections::BTreeMap::default(),
             tested_cpus: self
