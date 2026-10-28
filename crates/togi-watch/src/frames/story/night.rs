@@ -2,6 +2,7 @@
 //! night is planned. It says what the journal and the policy projection hold and decides nothing: no thresholds,
 //! no estimate of when anything finishes.
 
+use std::borrow::Cow;
 use std::fmt::Write as _;
 
 use togi_journal::{Activity, HoldReason, Queue, Resolution, StepKind, TaskId, TaskStatus, Tested};
@@ -15,7 +16,7 @@ use crate::model::{Snapshot, TrialView};
 use crate::words::plural;
 
 /// The trial's activity, from its intent, else from the night's current task.
-pub(super) fn activity_of(scene: &Scene<'_>, trial: &TrialView) -> Option<Activity> {
+pub(crate) fn activity_of(scene: &Scene<'_>, trial: &TrialView) -> Option<Activity> {
     trial.activity.or_else(|| {
         scene
             .s
@@ -28,10 +29,33 @@ pub(super) fn activity_of(scene: &Scene<'_>, trial: &TrialView) -> Option<Activi
 }
 
 /// The trial's night task, from its intent, else the night's current task.
-pub(super) fn task_of(scene: &Scene<'_>, trial: &TrialView) -> Option<TaskId> {
+pub(crate) fn task_of(scene: &Scene<'_>, trial: &TrialView) -> Option<TaskId> {
     trial
         .task
         .or_else(|| scene.s.policy.night.as_ref()?.current.map(|(task, _)| task))
+}
+
+/// The queue a trial serves: its task's queue, else the queue its activity belongs to; `None` for a historical
+/// per-core activity. With no trial only the night's committed current task counts: the previous trial's activity
+/// is history.
+pub(crate) fn queue_of(scene: &Scene<'_>, trial: Option<&TrialView>) -> Option<Queue> {
+    let task = match trial {
+        Some(trial) => task_of(scene, trial),
+        None => scene.s.policy.night.as_ref()?.current.map(|(task, _)| task),
+    };
+    task.map(|task| task.queue)
+        .or_else(|| activity_queue(activity_of(scene, trial?)?))
+}
+
+/// The queue an activity belongs to; `None` for a historical per-core activity.
+const fn activity_queue(activity: Activity) -> Option<Queue> {
+    match activity {
+        Activity::Mapping => Some(Queue::Mapping),
+        Activity::Qualification => Some(Queue::Qualification),
+        Activity::Reproduction => Some(Queue::Reproduction),
+        Activity::Control => Some(Queue::Control),
+        Activity::Search | Activity::Checking | Activity::Hunt | Activity::Deepening => None,
+    }
 }
 
 /// A queue as the narration names it.
@@ -115,8 +139,8 @@ pub(super) fn running(scene: &Scene<'_>, trial: &TrialView) -> Story {
             Paint::Running,
         );
     };
-    let actual = trial_profile(scene, trial);
-    let (what, brief) = purpose(policy, activity, task, trial.tested, actual.as_ref());
+    let profile = exact_profile(scene, trial, task);
+    let (what, brief) = purpose(activity, task, trial.tested, profile.as_deref());
     let mut second = detail(policy, activity, task);
     if trial.retry {
         second.push_str(" This is a retry of a trial that could not run.");
@@ -141,13 +165,33 @@ pub(super) fn trial_profile(scene: &Scene<'_>, trial: &TrialView) -> Option<CcdP
     CcdProfile::try_from(ccds).ok()
 }
 
-/// A filler trial's purpose and brief: a cap probe on one CCD, or a repeat of the day profile's exact cells at the
-/// profile the trial actually runs. `None` when the trial is neither, so the activity's own words stand.
+/// The profile an exact trial is named by: a filler repeat by the profile the trial actually runs, any other trial
+/// by the night's profile under qualification.
+pub(super) fn exact_profile<'s>(
+    scene: &'s Scene<'_>,
+    trial: &TrialView,
+    task: Option<TaskId>,
+) -> Option<Cow<'s, CcdProfile>> {
+    if is_filler(task) {
+        trial_profile(scene, trial).map(Cow::Owned)
+    } else {
+        scene
+            .s
+            .policy
+            .night
+            .as_ref()
+            .and_then(|night| night.qualification.as_ref())
+            .map(|progress| Cow::Borrowed(&progress.profile))
+    }
+}
+
+/// A filler trial's purpose and brief: a cap probe on one CCD, or a repeat of the day profile's exact cells at
+/// `profile`, the profile the trial actually runs. `None` when the trial is neither, so the activity's own words stand.
 fn filler_purpose(
     activity: Activity,
     task: Option<TaskId>,
     tested: Option<Tested>,
-    actual: Option<&CcdProfile>,
+    profile: Option<&CcdProfile>,
     task_part: &str,
 ) -> Option<(String, String)> {
     if !is_filler(task) {
@@ -167,7 +211,7 @@ fn filler_purpose(
             ),
         )),
         (Activity::Qualification, Some(Tested::Exact {}) | None) => {
-            let named = actual.map_or_else(
+            let named = profile.map_or_else(
                 || "the day profile".to_owned(),
                 |profile| format!("the day profile, {}", profile_words(profile)),
             );
@@ -215,16 +259,15 @@ fn filler_detail(activity: Activity, task: Option<TaskId>) -> Option<String> {
     }
 }
 
-/// The sentence for a trial's purpose and the brief line.
+/// The sentence for a trial's purpose and the brief line; `profile` is the one [`exact_profile`] names.
 fn purpose(
-    policy: &Projection,
     activity: Activity,
     task: Option<TaskId>,
     tested: Option<Tested>,
-    actual: Option<&CcdProfile>,
+    profile: Option<&CcdProfile>,
 ) -> (String, String) {
     let task_part = task.map_or_else(String::new, |task| format!(" ({})", task_words(task)));
-    if let Some(said) = filler_purpose(activity, task, tested, actual, &task_part) {
+    if let Some(said) = filler_purpose(activity, task, tested, profile, &task_part) {
         return said;
     }
     match (activity, tested) {
@@ -258,11 +301,6 @@ fn purpose(
             format!("Mapping{task_part}."),
         ),
         (Activity::Qualification, Some(Tested::Exact {}) | None) => {
-            let profile = policy
-                .night
-                .as_ref()
-                .and_then(|night| night.qualification.as_ref())
-                .map(|progress| &progress.profile);
             let named = profile.map_or_else(
                 || "the exact profile".to_owned(),
                 |profile| format!("the exact profile, {}", profile_words(profile)),

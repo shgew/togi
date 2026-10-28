@@ -21,6 +21,7 @@ use crate::model::TrialView;
 use crate::screen::Colours;
 use crate::words::{core_ids, workload_display};
 
+pub(crate) use night::queue_of;
 pub(crate) use resting::{last_lines, resting_band};
 
 /// What the narrator says: why the screen looks the way it does, never what the trial band already says.
@@ -377,10 +378,11 @@ pub(crate) fn operation(scene: &Scene<'_>, trial: &TrialView) -> Line<'static> {
                 Some(Tested::Isolated { ccd, offset }) => {
                     format!("FILLER CCD {} AT {}", ccd.get(), offset.get())
                 }
-                Some(Tested::Exact {}) | None => night::trial_profile(scene, trial).map_or_else(
-                    || "FILLER".to_owned(),
-                    |profile| format!("FILLER {}", night::profile_offsets(&profile)),
-                ),
+                Some(Tested::Exact {}) | None => night::exact_profile(scene, trial, task)
+                    .map_or_else(
+                        || "FILLER".to_owned(),
+                        |profile| format!("FILLER {}", night::profile_offsets(&profile)),
+                    ),
             }
         }
         Some(Activity::Mapping) => match trial.tested {
@@ -395,16 +397,12 @@ pub(crate) fn operation(scene: &Scene<'_>, trial: &TrialView) -> Line<'static> {
                 Some(Tested::Isolated { ccd, offset }) => {
                     format!("{label} CCD {} AT {}", ccd.get(), offset.get())
                 }
-                Some(Tested::Exact {}) | None if activity == Activity::Qualification => scene
-                    .s
-                    .policy
-                    .night
-                    .as_ref()
-                    .and_then(|night| night.qualification.as_ref())
-                    .map_or_else(
+                Some(Tested::Exact {}) | None if activity == Activity::Qualification => {
+                    night::exact_profile(scene, trial, task).map_or_else(
                         || label.to_owned(),
-                        |progress| format!("{label} {}", night::profile_offsets(&progress.profile)),
-                    ),
+                        |profile| format!("{label} {}", night::profile_offsets(&profile)),
+                    )
+                }
                 Some(Tested::Exact {}) | None => format!("{label} EXACT PROFILE"),
             }
         }
