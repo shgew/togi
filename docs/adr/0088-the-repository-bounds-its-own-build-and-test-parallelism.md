@@ -12,9 +12,9 @@ A contributor's 16 GiB laptop must retain room for the editor and operating syst
 
 `tools/check-budget.sh` computes one positive integer: the smaller of the host CPU count and physical memory divided by 2 GiB, rounded down, with a minimum of one. Linux uses `nproc` and `MemTotal` from `/proc/meminfo`; macOS uses `sysctl hw.ncpu` and `hw.memsize`. `TOGI_JOBS` is the single override and must be a positive decimal integer.
 
-The justfile exports that budget as `TOGI_JOBS`, `CARGO_BUILD_JOBS` and `NEXTEST_TEST_THREADS`. Nested recipes reuse it. This includes `test`, `focus`, `lint`, `cover`, `gate`, `check`, `check-one`, `ship`, `push-fix` and `land`; coverage's `cargo llvm-cov nextest` reads the same test-thread environment setting as a direct nextest run.
+The justfile exports that budget as `TOGI_JOBS`, `CARGO_BUILD_JOBS`, `NEXTEST_TEST_THREADS` and `RUST_TEST_THREADS` (libtest/doctest workers). Nested recipes reuse it. This includes `test`, `focus`, `lint`, `cover`, `gate`, `check`, `check-one`, `ship` and `push-fix`; coverage's `cargo llvm-cov nextest` reads the same test-thread environment setting as a direct nextest run. `land` only polls GitHub and builds nothing. `hardware` keeps its explicit single-worker override for shared hardware.
 
-Repository Nix check invocations set `--max-jobs 1 --cores BUDGET`. Only one derivation builds at a time, and its advertised build cores do not exceed the budget. Nix nextest checks explicitly use `NIX_BUILD_CORES` as their test-thread count; the sandbox does not inherit the justfile's environment. Host Nix configuration is unchanged, and CI retains its runner's Nix core policy.
+Repository Nix check invocations set `--max-jobs 1 --cores BUDGET`. Only one derivation builds at a time, and its advertised build cores do not exceed the budget. Nix nextest and doctest checks explicitly use `NIX_BUILD_CORES` as their test-thread count; the sandbox does not inherit the justfile's environment. Host Nix configuration is unchanged, and CI retains its runner's Nix core policy.
 
 This is worker admission, not a memory limit. A test may need more than 2 GiB, child processes can allocate independently, and a test's own internal pool is not bounded by nextest's worker count. This decision neither removes a test nor changes assertions or the safety-evidence tier.
 

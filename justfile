@@ -8,6 +8,7 @@ jobs := `bash tools/check-budget.sh`
 export TOGI_JOBS := jobs
 export CARGO_BUILD_JOBS := jobs
 export NEXTEST_TEST_THREADS := jobs
+export RUST_TEST_THREADS := jobs
 
 # List recipes by group in file order
 _default:
