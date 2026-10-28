@@ -1,3 +1,5 @@
+Status: superseded by [0080](0080-per-ccd-first.md) and [0081](0081-margin-from-measured-slope.md); Ruleset 13 keeps no per-core self-sufficiency ledger.
+
 # Count self-sufficiency per core and workload
 
 Amends [ADR 0038](0038-self-sufficient-cores.md): its self-sufficiency ledger. [Issue #576](https://github.com/shgew/togi/issues/576) records the decision; [#506](https://github.com/shgew/togi/issues/506) reported the count as a defect and was closed as not planned.

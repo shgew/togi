@@ -2,7 +2,7 @@
 
 Date: 2026-10-17
 
-Status: Accepted; amends ADR 0038's named-core voltage-target selection. The clock tolerance remains a candidate for the integrating agent's bench before merge.
+Status: superseded by [0080](0080-per-ccd-first.md); Ruleset 13 has no named-core voltage targets.
 
 ## Context
 
