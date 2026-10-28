@@ -112,6 +112,15 @@ fn assembles_release_section() {
     ; "absolute links"
 )]
 #[test_case("Use `../togi` from [a](#usage).", "Use `../togi` from [a](#usage) ([#7])." ; "not a link destination")]
+#[test_case("Read [docs](<../docs/howto.md>).", "Read [docs](<docs/howto.md>) ([#7])." ; "angle destination")]
+#[test_case("Read [docs]( ../docs/howto.md).", "Read [docs]( docs/howto.md) ([#7])." ; "spaced destination")]
+#[test_case(
+    "Keep `[docs](../docs/howto.md)` and ``a ` [b](../c)`` as written, then [docs](../docs/howto.md).",
+    "Keep `[docs](../docs/howto.md)` and ``a ` [b](../c)`` as written, then [docs](docs/howto.md) ([#7])."
+    ; "code spans"
+)]
+#[test_case("A stray ` then [docs](../docs/howto.md).", "A stray ` then [docs](docs/howto.md) ([#7])." ; "unmatched backtick")]
+#[test_case(r"Not a link: [x\](../y) or \[x\](../y).", r"Not a link: [x\](../y) or \[x\](../y) ([#7])." ; "escaped bracket")]
 fn assembles_links_relative_to_changelog(text: &str, want: &str) {
     let files = BTreeMap::from([("7.md".to_owned(), format!("### Fixed\n\n- {text}\n"))]);
     let (body, _) = assemble(&parse_fragments(&files).unwrap());

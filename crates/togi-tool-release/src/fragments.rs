@@ -306,17 +306,65 @@ pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
     (body, prs)
 }
 
-/// An inline link or image destination that leaves [`FRAGMENT_DIR`] for the repository root.
-const PARENT_LINK: &str = "](../";
-
 /// `text` with its links relative to `CHANGELOG.md` at the repository root instead of to [`FRAGMENT_DIR`], where
-/// the fragment was written: each destination starting with `../` loses that step. Other links stay as written.
+/// the fragment was written: each inline link or image destination starting with `../`, after optional spaces
+/// and an optional `<`, loses that step. Code spans and backslash-escaped characters are text, not links, and
+/// stay as written, as do other links.
 fn relocate_links(text: &str) -> Cow<'_, str> {
-    if text.contains(PARENT_LINK) {
-        Cow::Owned(text.replace(PARENT_LINK, "]("))
-    } else {
-        Cow::Borrowed(text)
+    let bytes = text.as_bytes();
+    let mut out: Option<String> = None;
+    // `text[..copied]` is in `out`, rewritten.
+    let mut copied = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'`' => i = code_span_end(bytes, i),
+            b']' if bytes.get(i + 1) == Some(&b'(') => {
+                let mut start = i + 2;
+                while matches!(bytes.get(start), Some(b' ' | b'\t')) {
+                    start += 1;
+                }
+                if bytes.get(start) == Some(&b'<') {
+                    start += 1;
+                }
+                if bytes[start..].starts_with(b"../") {
+                    let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
+                    out.push_str(&text[copied..start]);
+                    copied = start + 3;
+                }
+                i = start;
+            }
+            _ => i += 1,
+        }
     }
+    match out {
+        Some(mut out) => {
+            out.push_str(&text[copied..]);
+            Cow::Owned(out)
+        }
+        None => Cow::Borrowed(text),
+    }
+}
+
+/// Where the backtick run at `start` stops counting as text: after the code span it opens, closed by a run of
+/// exactly as many backticks, or, when nothing closes it, after the run itself, which is then literal.
+fn code_span_end(bytes: &[u8], start: usize) -> usize {
+    let run_at = |at: usize| bytes[at..].iter().take_while(|&&b| b == b'`').count();
+    let open = run_at(start);
+    let mut at = start + open;
+    while at < bytes.len() {
+        if bytes[at] == b'`' {
+            let close = run_at(at);
+            if close == open {
+                return at + close;
+            }
+            at += close;
+        } else {
+            at += 1;
+        }
+    }
+    start + open
 }
 
 #[cfg(test)]
