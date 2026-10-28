@@ -478,12 +478,19 @@ fn independent_snapshot_verification_reports_resealed_mismatches(
     bench
         .mem
         .put("/state/state.json", serde_json::to_vec(&state).unwrap());
+    let (dir, events) = (
+        session.appender.journal().dir(),
+        session.appender.journal().events(),
+    );
     assert_eq!(
-        crate::verify_snapshot(
-            session.appender.journal().dir(),
-            session.appender.journal().events()
-        )
-        .unwrap(),
+        crate::verify_snapshot(dir, events).unwrap(),
+        crate::SnapshotStatus::Different
+    );
+    assert_eq!(
+        crate::ReadState::replay(events)
+            .unwrap()
+            .verify_document(dir, state, events)
+            .unwrap(),
         crate::SnapshotStatus::Different
     );
 }

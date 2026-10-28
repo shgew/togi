@@ -201,9 +201,19 @@ pub fn read_in<T: DeserializeOwned + Serialize>(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),
     };
-    let (prefix, state) = checked_document(serde_json::from_slice(&bytes)?)?;
+    verified(fs, directory, serde_json::from_slice(&bytes)?).map(Some)
+}
+
+/// Checks a document read from `directory`'s `state.json`: build and content, then the journal prefix, then the
+/// reducer shape.
+fn verified<T: DeserializeOwned + Serialize>(
+    fs: &dyn Fs,
+    directory: &Path,
+    document: Value,
+) -> Result<(Prefix, T), Rejected> {
+    let (prefix, state) = checked_document(document)?;
     verify_prefix(fs, &directory.join("events.jsonl"), &prefix)?;
-    Ok(Some((prefix, decode_state(&state)?)))
+    Ok((prefix, decode_state(&state)?))
 }
 
 /// The disk counterpart of [`read_in`], with the same read-only contract.
@@ -227,6 +237,19 @@ impl crate::StateDir {
         &self,
     ) -> Result<Option<(Prefix, T)>, Rejected> {
         read_in(self.fs(), self.path())
+    }
+
+    /// The checks of [`Self::read_snapshot`] for a `state.json` document the caller already read from this
+    /// directory, so a reader that needs the raw document parses it once.
+    ///
+    /// # Errors
+    ///
+    /// Returns the cache rejection.
+    pub fn verify_snapshot_document<T: DeserializeOwned + Serialize>(
+        &self,
+        document: Value,
+    ) -> Result<(Prefix, T), Rejected> {
+        verified(self.fs(), self.path(), document)
     }
 }
 

@@ -125,3 +125,37 @@ fn partial_reader_checks_the_shape_of_every_field_it_restores() {
     let (_, restored) = unseal::<Reducers>(saved).unwrap();
     assert_eq!(restored.nested.count, 1);
 }
+
+#[test_case(None, None, None, None; "intact")]
+#[test_case(Some(("/nested/count", json!(2))), None, None, Some("snapshot content checksum differs"); "changed content")]
+#[test_case(Some(("/snapshot/build", json!("another-build"))), None, None, Some("snapshot belongs to another build"); "another build")]
+#[test_case(None, Some(&b" {\"seq\":9}\n"[..]), None, Some("snapshot journal prefix differs"); "changed prefix")]
+#[test_case(None, None, Some(json!({"nested": [1]})), Some("snapshot reducer representation differs from this build's shape"); "resealed reducer shape")]
+fn an_already_read_document_gets_every_check_of_a_snapshot_read(
+    edit: Option<(&str, Value)>,
+    journal: Option<&[u8]>,
+    resealed: Option<Value>,
+    rejected: Option<&str>,
+) {
+    let fs = MemFs::new();
+    let mut saved = seal(
+        stamp(),
+        &resealed.unwrap_or_else(|| json!({"nested": {"count": 1}})),
+    )
+    .unwrap();
+    if let Some((pointer, change)) = edit {
+        *saved.pointer_mut(pointer).unwrap() = change;
+    }
+    fs.put(STATE, serde_json::to_vec(&saved).unwrap());
+    fs.put(JOURNAL, journal.unwrap_or(PREFIX));
+    let dir = crate::testing::simulated(&fs);
+    let before = fs.mutations();
+    let read = dir.read_snapshot::<Reducers>().map(Option::unwrap);
+    let checked = dir.verify_snapshot_document::<Reducers>(saved);
+    assert_eq!(format!("{checked:?}"), format!("{read:?}"));
+    assert_eq!(
+        checked.err().map(|error| error.to_string()).as_deref(),
+        rejected
+    );
+    assert_eq!(fs.mutations(), before);
+}
