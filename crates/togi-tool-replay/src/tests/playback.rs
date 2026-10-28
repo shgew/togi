@@ -2,9 +2,8 @@ use std::time::Duration;
 
 use jiff::{SignedDuration, Timestamp};
 use test_case::test_case;
-use togi_journal::Event;
+use togi_journal::{Build, Event, FixStamp, Payload, SCHEMA, Seq, SessionStart, SessionWarning};
 use togi_machine::BootId;
-use togi_watchtest::Scenario;
 
 use crate::{Playback, Speed, offset, prefix};
 
@@ -18,16 +17,44 @@ fn secs(seconds: i64) -> SignedDuration {
     SignedDuration::from_secs(seconds)
 }
 
+/// A recording with one event per stamp: `session.start`, then the same warning.
 fn recorded(stamps: &[Stamp]) -> Vec<Event> {
-    let mut events = Scenario::Controls.events().unwrap();
-    events.truncate(stamps.len());
-    assert_eq!(events.len(), stamps.len());
-    for (event, &(wall, boot, mono)) in events.iter_mut().zip(stamps) {
-        event.time = START + wall;
-        event.boot = BootId::from(boot.to_owned());
-        event.mono = mono.map(Duration::from_millis);
-    }
-    events
+    stamps
+        .iter()
+        .enumerate()
+        .map(|(index, &(wall, boot, mono))| {
+            let payload = if index == 0 {
+                Payload::SessionStart(SessionStart {
+                    build: Build {
+                        version: "0.1.0".into(),
+                        rev: None,
+                        ruleset: 1,
+                        schema: SCHEMA,
+                        fixes: FixStamp::none(),
+                        evidence: 1,
+                    },
+                    session: "20231114T221320Z".parse().unwrap(),
+                    cores: Vec::new(),
+                })
+            } else {
+                Payload::SessionWarning(SessionWarning {
+                    operation: "replay".into(),
+                    trial: None,
+                    error: String::new(),
+                })
+            };
+            Event::new(
+                Seq::new(u64::try_from(index + 1).unwrap()).unwrap(),
+                togi_journal::Stamp {
+                    time: START + wall,
+                    mono: mono.map(Duration::from_millis),
+                },
+                BootId::from(boot.to_owned()),
+                Vec::new(),
+                payload,
+            )
+        })
+        .collect()
 }
 
 fn at(seconds: u64) -> Duration {
