@@ -176,7 +176,7 @@ fn shapes_without_colour(staged: Staged, buf: &Buffer) {
             .unwrap_or_else(|| panic!("no bar row starts with {glyph:?}"))
     };
     match staged {
-        Staged::Mapping | Staged::Qualifying | Staged::Reproducing | Staged::Day => {
+        Staged::Mapping | Staged::Qualifying | Staged::Reproducing => {
             let elapsed = bar('█');
             assert!(elapsed.trim_start_matches('█').starts_with('░'));
             let core = first_row_with(&rows, "LOAD");
@@ -192,7 +192,7 @@ fn shapes_without_colour(staged: Staged, buf: &Buffer) {
             assert!(quiet.trim_start_matches('░').starts_with(' '));
             assert!(!rows.iter().any(|row| row.trim_start().starts_with('█')));
         }
-        Staged::Crashed | Staged::Recovering | Staged::Between | Staged::Stopped => {
+        Staged::Day | Staged::Crashed | Staged::Recovering | Staged::Between | Staged::Stopped => {
             for row in rows.iter().skip(3) {
                 assert!(
                     !row.contains('►'),

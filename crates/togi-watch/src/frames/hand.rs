@@ -542,13 +542,12 @@ impl Staged {
                 });
             }
             Self::Day => {
+                // An observing day: the night is closed, no core is loaded and no trial runs.
                 let mut night = night(None);
                 night.started = FIXED_NOW - SignedDuration::from_hours(8);
                 night.closed_by = Some(seq(2));
                 policy.night = Some(night);
-                load(&mut cores, 0..16);
                 policy.day.last_step = Some((seq(5), step(StepKind::Promote { changed: ccd(0) })));
-                trial = Some(running_trial(Regime::R1, &ids(0..16)));
             }
             Self::Idle => {
                 policy.night = Some(night(None));
@@ -592,6 +591,7 @@ impl Staged {
                 });
             }
             Self::Day => {
+                hand.last = Some(ended_trial(Regime::R1));
                 if let Some((_, step)) = &hand.policy.day.last_step {
                     hand.applied_steps.insert(step.decision);
                 }
