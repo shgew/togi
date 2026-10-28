@@ -92,7 +92,7 @@ A night queue that runs the whole coverage matrix at all-zero, on the first nigh
 _Avoid_: baseline run
 
 **Qualification**:
-A night queue that runs the whole coverage matrix on one exact day profile; only a complete, current one lets that profile become the day offset ([Coverage matrix](docs/spec/workloads.md#coverage-matrix)).
+A night queue that builds a composite certificate for one exact day profile, reusing cells of an unchanged CCD where the coverage matrix allows; only a complete, current one lets that profile become the day offset ([Coverage matrix](docs/spec/workloads.md#coverage-matrix)).
 
 **Requalification**:
 The qualification of the current day offset when its certificate is due for renewal or invalidated ([Night order and reserved budgets](docs/spec/tuner.md#night-order-and-reserved-budgets)).
@@ -101,7 +101,7 @@ The qualification of the current day offset when its certificate is due for rene
 A night queue that re-runs a CPU-suspect daily event's failed profile, then each CCD alone, for one night. It never qualifies; it ends reproduced, unreproduced or untestable.
 
 **Filler**:
-The work a night does when no queue has due work: a cap probe one count deeper than S, otherwise exact repeats of the day offset's qualification cells.
+The work a night does when no queue has due work: further cap or qualification evidence ([Filler](docs/spec/tuner.md#filler)).
 
 **Share**:
 A queue's soft percentage of the night's elapsed observed time. A queue at or over its share yields only while another with due work is under its own; it is neither a cap nor a guarantee.
@@ -140,7 +140,7 @@ The shallowest offset that failed in isolated mapping or reproduction of a CCD: 
 _Avoid_: failure offset
 
 **Slope**:
-How fast a class's failure rate grows with depth. *Fallback* until some class fails at two offsets, then *measured*: the conservative end of a fitted interval ([Measured slope](docs/spec/tuner.md#measured-slope)).
+How fast a class's failure rate grows with depth: a *fallback* until enough failures are observed, then *measured* from them ([Measured slope](docs/spec/tuner.md#measured-slope)).
 
 **Coverage**:
 A class is *covered* for the cap when mapping adequately exposed it at the CCD; any other class is *uncovered* for the cap, which never means safe ([Adequate exposure](docs/spec/tuner.md#adequate-exposure)).
