@@ -3,7 +3,7 @@ use std::io;
 use jiff::tz::{self, TimeZone};
 use serde_json::{Value, json};
 use test_case::test_case;
-use togi_journal::{Event, HuntOutcome, Payload};
+use togi_journal::{Event, Payload};
 
 use crate::{OutputFacts, Renderer, Style, escape_text, style_for};
 
@@ -143,35 +143,35 @@ fn hunt_start() -> Event {
                 "deadend",
                 &json!({"condition": "failure_at_zero", "detail": "d"}),
             ), Style::RedBold; "dead end")]
-#[test_case(&decision("step_deeper"), Style::Green; "step deeper")]
-#[test_case(&decision("deepen"), Style::Green; "deepen")]
-#[test_case(&decision("backoff"), Style::Yellow; "backoff")]
-#[test_case(&decision("yield"), Style::Yellow; "yield")]
+#[test_case(&decision("step_deeper"), Style::Plain; "step deeper")]
+#[test_case(&decision("deepen"), Style::Plain; "deepen")]
+#[test_case(&decision("backoff"), Style::Plain; "backoff")]
+#[test_case(&decision("yield"), Style::Plain; "yield")]
 #[test_case(&decision("check_solo_limit"), Style::Plain; "check solo limit")]
 #[test_case(&decision("hold"), Style::Plain; "hold")]
-#[test_case(&transition(Some("search"), "has_room"), Style::GreenBold; "search to room")]
-#[test_case(&transition(Some("search"), "at_limit"), Style::GreenBold; "search to limit")]
-#[test_case(&transition(Some("has_room"), "at_limit"), Style::GreenBold; "room to limit")]
-#[test_case(&transition(None, "at_limit"), Style::GreenBold; "initial limit")]
+#[test_case(&transition(Some("search"), "has_room"), Style::Plain; "search to room")]
+#[test_case(&transition(Some("search"), "at_limit"), Style::Plain; "search to limit")]
+#[test_case(&transition(Some("has_room"), "at_limit"), Style::Plain; "room to limit")]
+#[test_case(&transition(None, "at_limit"), Style::Plain; "initial limit")]
 #[test_case(&transition(None, "has_room"), Style::Plain; "initial room")]
 #[test_case(&transition(Some("has_room"), "has_room"), Style::Plain; "room to room")]
 #[test_case(&transition(Some("at_limit"), "search"), Style::Plain; "limit back to search")]
 #[test_case(&transition(Some("at_limit"), "has_room"), Style::Plain; "limit to room")]
 #[test_case(&transition(None, "search"), Style::Plain; "initial search")]
-#[test_case(&cycle("end", true, true), Style::GreenBold; "full passed cycle end")]
+#[test_case(&cycle("end", true, true), Style::Plain; "full passed cycle end")]
 #[test_case(&cycle("end", true, false), Style::Plain; "non-full passed cycle end")]
 #[test_case(&cycle("end", false, true), Style::Plain; "failed full cycle end")]
 #[test_case(&cycle("start", true, true), Style::Plain; "full passed cycle start")]
-#[test_case(&round("end", true), Style::GreenBold; "passed round end")]
+#[test_case(&round("end", true), Style::Plain; "passed round end")]
 #[test_case(&round("end", false), Style::Plain; "failed round end")]
 #[test_case(&round("start", true), Style::Plain; "passed round start")]
 #[test_case(&hunt_end("cancelled"), Style::Plain; "hunt cancelled")]
-#[test_case(&hunt_end("direct"), Style::Green; "hunt direct")]
-#[test_case(&hunt_end("culprit"), Style::Green; "hunt culprit")]
-#[test_case(&hunt_end("combination"), Style::Yellow; "hunt combination")]
-#[test_case(&hunt_end("fallback"), Style::Yellow; "hunt fallback")]
-#[test_case(&hunt_end("loaded"), Style::Yellow; "hunt loaded")]
-#[test_case(&hunt_start(), Style::Yellow; "hunt start")]
+#[test_case(&hunt_end("direct"), Style::Plain; "hunt direct")]
+#[test_case(&hunt_end("culprit"), Style::Plain; "hunt culprit")]
+#[test_case(&hunt_end("combination"), Style::Plain; "hunt combination")]
+#[test_case(&hunt_end("fallback"), Style::Plain; "hunt fallback")]
+#[test_case(&hunt_end("loaded"), Style::Plain; "hunt loaded")]
+#[test_case(&hunt_start(), Style::Plain; "hunt start")]
 #[test_case(&hunt_group(None), Style::Plain; "hunt group without inference")]
 #[test_case(&hunt_group(Some("pass")), Style::Plain; "hunt group inferred pass")]
 #[test_case(&hunt_group(Some("failure")), Style::Plain; "hunt group inferred failure")]
@@ -196,7 +196,7 @@ fn hunt_start() -> Event {
 #[test_case(&event(
                 "combination",
                 &json!({"combination": 1, "members": [], "hunt": 1, "reason": "r"}),
-            ), Style::Yellow; "combination")]
+            ), Style::Plain; "combination")]
 #[test_case(&event(
                 "tuner.warning",
                 &json!({"warning": "monotonicity", "passes": [], "detail": "d"}),
@@ -246,7 +246,6 @@ fn style_is_decided_by_payload_not_message() {
 #[test_case(Style::Red, "\x1b[31m"; "red")]
 #[test_case(Style::RedBold, "\x1b[1;31m"; "red bold")]
 #[test_case(Style::Green, "\x1b[32m"; "green")]
-#[test_case(Style::GreenBold, "\x1b[1;32m"; "green bold")]
 #[test_case(Style::Yellow, "\x1b[33m"; "yellow")]
 #[test_case(Style::Dim, "\x1b[2m"; "dim")]
 fn every_nonplain_style_wraps_the_whole_line_in_owned_sgr(style: Style, open: &str) {
@@ -256,39 +255,31 @@ fn every_nonplain_style_wraps_the_whole_line_in_owned_sgr(style: Style, open: &s
     );
 }
 
-#[test]
-fn hunt_end_lines_colour_only_the_wrapper() {
-    for &result in HuntOutcome::ALL {
-        let open = match result {
-            HuntOutcome::Culprit | HuntOutcome::Direct => Some("\x1b[32m"),
-            HuntOutcome::Combination | HuntOutcome::Fallback | HuntOutcome::Loaded => {
-                Some("\x1b[33m")
-            }
-            HuntOutcome::Cancelled => None,
-        };
-        let event = hunt_end(result.as_str());
-        let no_color = Renderer::new(OutputFacts {
-            is_terminal: true,
-            no_color: true,
-            journald: false,
-        });
-        let plain_line = no_color.line(&event, &utc()).to_string();
-        assert_eq!(
-            plain().line(&event, &utc()).to_string(),
-            plain_line,
-            "{result}"
-        );
-        assert!(!plain_line.contains('\x1b'), "{result}");
-        let expected = open.map_or_else(
-            || plain_line.clone(),
-            |open| format!("{open}{plain_line}\x1b[0m"),
-        );
-        assert_eq!(
-            colored().line(&event, &utc()).to_string(),
-            expected,
-            "{result}"
-        );
-    }
+#[test_case("cancelled"; "cancelled")]
+#[test_case("direct"; "direct")]
+#[test_case("culprit"; "culprit")]
+#[test_case("combination"; "combination")]
+#[test_case("fallback"; "fallback")]
+#[test_case("loaded"; "loaded")]
+fn hunt_end_lines_are_never_coloured(result: &str) {
+    let event = hunt_end(result);
+    let no_color = Renderer::new(OutputFacts {
+        is_terminal: true,
+        no_color: true,
+        journald: false,
+    });
+    let plain_line = no_color.line(&event, &utc()).to_string();
+    assert_eq!(
+        plain().line(&event, &utc()).to_string(),
+        plain_line,
+        "{result}"
+    );
+    assert!(!plain_line.contains('\x1b'), "{result}");
+    assert_eq!(
+        colored().line(&event, &utc()).to_string(),
+        plain_line,
+        "{result}"
+    );
 }
 
 #[test]
