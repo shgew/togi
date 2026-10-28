@@ -162,12 +162,12 @@ fn r9_cpus_follow_the_topology_by_core_then_listed_cpu() {
 fn the_role_regime_constants_pin_the_documented_durations() {
     assert_eq!(Regime::R8.role_duration(), Some(Duration::from_secs(120)));
     assert_eq!(Regime::R9.role_duration(), Some(Duration::from_secs(120)));
-    assert_eq!(Regime::R8.warm_up(), Some(Duration::from_secs(30)));
-    assert_eq!(Regime::R9.warm_up(), Some(Duration::from_secs(30)));
+    assert_eq!(Regime::R8.warm_up(), Duration::from_secs(30));
+    assert_eq!(Regime::R9.warm_up(), Duration::from_secs(30));
     assert_eq!(R9_PHASE, Duration::from_secs(u64::from(R9_PHASE_S)));
     for regime in LEGACY_REGIMES {
         assert_eq!(regime.role_duration(), None, "{regime}");
-        assert_eq!(regime.warm_up(), None, "{regime}");
+        assert_eq!(regime.warm_up(), Duration::from_secs(5), "{regime}");
         assert!(!regime.has_roles(), "{regime}");
     }
     for regime in [Regime::R8, Regime::R9] {

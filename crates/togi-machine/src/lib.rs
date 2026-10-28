@@ -50,7 +50,7 @@ pub use seams::{
 pub use topology::{BiosContext, ContextField, ContextMismatch, CoreInfo, order};
 pub use vocab::{
     ALL_REGIMES, Backend, BankType, Condition, LEGACY_REGIMES, R8_DURATION, R9_DURATION, R9_PHASE,
-    R9_PHASE_S, ROLE_WARM_UP, Regime, ResetKind, Signal,
+    R9_PHASE_S, Regime, ResetKind, Signal,
 };
 pub use workloads::{
     MPRIME_AVX512_ID, UnknownWorkload, Workload, WorkloadId, pick_workload, workload_by_id,

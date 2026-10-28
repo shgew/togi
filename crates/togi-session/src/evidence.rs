@@ -677,15 +677,7 @@ pub(crate) fn summarize_samples(
         .map(|core| ccd_of(core).map(|ccd| (core, Some(ccd))))
         .collect();
     let telemetry = if let Some(placed) = placed.filter(|placed| !placed.is_empty()) {
-        togi_requests::summarize(
-            observed.filter(|sample| {
-                regime.warm_up().is_none_or(|warm_up| {
-                    sample.elapsed_ms >= 0
-                        && Duration::from_millis(sample.elapsed_ms.unsigned_abs()) >= warm_up
-                })
-            }),
-            &placed,
-        )
+        togi_requests::summarize(observed, &placed, regime.warm_up())
     } else {
         observed.for_each(drop);
         None

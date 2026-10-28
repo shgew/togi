@@ -24,7 +24,7 @@ use crate::Topology;
 use crate::cap;
 use crate::night::{
     Cell, Conclusion, Credit, Launch, PackageLoad, PlacementValidity, Purpose, Roles,
-    SUSTAINED_DURATION, Workloads, adequately_exposed, warm_up_secs,
+    SUSTAINED_DURATION, Workloads, adequately_exposed,
 };
 
 /// The evidence context a monotonicity cache was built under.
@@ -263,7 +263,7 @@ pub(super) fn is_adequate(observed: &ExposureObserved, cores: &[togi_machine::Co
             .iter()
             .any(|exclusion| matches!(exclusion, CreditExclusion::HostCore { core } if *core == position))
     });
-    let ran = saturating_u32(observed.eligible_s).saturating_add(warm_up_secs(regime));
+    let ran = saturating_u32(observed.eligible_s).saturating_add(regime.warm_up_s());
     adequately_exposed([&Launch {
         regime,
         intended,
@@ -316,7 +316,7 @@ impl State {
         let placement = intent.placement?;
         let ccd = CcdProfile::of_cores(&intent.profile, &self.machine.cores)?;
         let regime = intent.regime;
-        let warm = warm_up_secs(regime);
+        let warm = regime.warm_up_s();
         let ran = ended.end.duration_s;
         let eligible = ran.min(intent.duration_s).saturating_sub(warm);
         let cores: CoreSet = if intent.cores.is_empty() {
