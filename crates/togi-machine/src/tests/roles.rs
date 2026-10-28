@@ -29,7 +29,10 @@ fn spec_of(regime: Regime, workload: WorkloadId, seed: u64, roles: Vec<TrialRole
         index: 0,
         seed,
         offsets: PerCore::default(),
-        controller: crate::ControllerMode::Legacy,
+        controller: crate::ControllerMode::Managed {
+            rotation: 0,
+            purpose: crate::Purpose::Isolated,
+        },
     }
 }
 

@@ -84,6 +84,14 @@ fn r6_stops_every_core_before_timing_then_bursts_one_core_at_a_time() {
             let progress = run.progress();
             assert_eq!(
                 progress.first().copied(),
+                Some("togi controller CPUs 3,35 while the trial loads 2,0,1; idle CO-0 host core 3 at CO 0, uncapped; 0 threads")
+            );
+            assert_eq!(
+                progress.get(progress.len() - 2).copied(),
+                Some("togi's own threads run on their own CPUs again: 0 threads")
+            );
+            assert_eq!(
+                progress.get(1).copied(),
                 Some("first half idle, then 100ms bursts every 2s, one core at a time")
             );
             assert_eq!(

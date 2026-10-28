@@ -88,7 +88,8 @@ fn runner_on(
         roots,
         unscoped: false,
         user_manager: false,
-        controller: Arc::new(crate::controller::Idle),
+        controller: Arc::new(crate::controller::Recording::default()),
+        frequency: super::harness::frequency(&topology()),
         fs: Some(fs.clone()),
         inputs: crate::procfs::Inputs::memory(fs.clone()),
         memory: Some(memory.clone()),
@@ -234,7 +235,15 @@ fn a_whole_trial_runs_waits_and_stops_through_the_public_seams() {
         .wait(&CancellationToken::new(), &mut report)
         .map_err(|partial| partial.error)
         .unwrap();
-    assert_eq!(report.progress, ["ok one", "ok two"]);
+    assert_eq!(
+        report.progress,
+        [
+            "togi controller CPUs 0,32 while the trial loads 2; idle CO-0 host core 0 at CO 0, uncapped; 0 threads",
+            "ok one",
+            "ok two",
+            "togi's own threads run on their own CPUs again: 0 threads",
+        ]
+    );
     assert_eq!(result.failure, None);
     assert_eq!(result.ran, Duration::from_millis(300));
     let _stopped: Stopped = trial.stop().unwrap();
@@ -322,8 +331,17 @@ fn readers_keep_draining_between_start_and_wait() {
     ));
     assert_eq!(
         report.progress.len(),
-        200 * 100,
+        200 * 100 + 2,
         "every queued progress line reaches the waiter"
+    );
+    assert_eq!(
+        report
+            .progress
+            .iter()
+            .filter(|line| line.as_str() == "ok line of output")
+            .count(),
+        200 * 100,
+        "controller diagnostics do not replace any queued backend progress"
     );
     assert!(trial.stop().is_ok());
 }
@@ -1266,7 +1284,8 @@ fn real_fs_runner_samples_are_read_only_from_regular_files_below_the_validated_r
         roots: Roots::default(),
         unscoped: false,
         user_manager: false,
-        controller: Arc::new(crate::controller::Idle),
+        controller: Arc::new(crate::controller::Recording::default()),
+        frequency: super::harness::frequency(&topology()),
         fs: None,
         inputs: crate::procfs::Inputs::default(),
         memory: None,

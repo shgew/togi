@@ -1,8 +1,6 @@
-/// Whether a trial uses the current scheduler's placement or the explicitly managed controller
-/// placement contract. Managed trials are opt-in until the scheduler adopts that evidence contract.
+/// The managed controller placement request for a trial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControllerMode {
-    Legacy,
     Managed {
         /// The caller's persistent trial ordinal, independent of workload rotation and pass quotas.
         rotation: u64,
@@ -20,23 +18,4 @@ pub enum Purpose {
     Isolated,
     /// The exact profile, qualified at its own placement.
     Exact,
-}
-
-/// The controller evidence contract chosen by a session caller. Existing schedules retain
-/// `Legacy` until they adopt managed placement and process-fault evidence together.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ControllerContract {
-    Legacy,
-    Managed,
-}
-
-impl ControllerContract {
-    /// Derives trial placement from the durable global trial ordinal, not a workload quota, and
-    /// the purpose of the cell the trial runs.
-    pub const fn for_trial(self, rotation: u64, purpose: Purpose) -> ControllerMode {
-        match self {
-            Self::Legacy => ControllerMode::Legacy,
-            Self::Managed => ControllerMode::Managed { rotation, purpose },
-        }
-    }
 }

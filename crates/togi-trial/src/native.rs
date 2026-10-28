@@ -32,6 +32,7 @@ pub(crate) struct Settings {
     pub(crate) unscoped: bool,
     pub(crate) user_manager: bool,
     pub(crate) controller: Arc<dyn Controller>,
+    pub(crate) frequency: Arc<dyn togi_machine::CpuFrequency>,
     pub(crate) durability: crate::samples::Durability,
     pub(crate) fs: Option<Arc<dyn togi_journal::fs::Fs>>,
     pub(crate) inputs: crate::procfs::Inputs,
@@ -150,6 +151,7 @@ impl Runner {
                 unscoped: false,
                 user_manager,
                 controller: Arc::new(crate::controller::Threads::over(crate::controller::Proc)),
+                frequency: Arc::new(crate::frequency::Sysfs::default()),
                 durability,
                 fs: None,
                 inputs: crate::procfs::Inputs::default(),
@@ -200,7 +202,7 @@ impl Runner {
         let mut preparer = crate::prepare::Preparer::default();
         preparer.fs = settings.fs;
         let frequency = Arc::new(crate::frequency::Limits::new(
-            Arc::new(crate::frequency::Sysfs::default()),
+            settings.frequency,
             dir.clone(),
             fs.clone(),
             durability,

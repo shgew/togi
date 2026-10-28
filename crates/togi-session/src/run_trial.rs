@@ -9,8 +9,8 @@ use togi_journal::{
     TrialSignal, TrialStart, WorkloadContent,
 };
 use togi_machine::{
-    Backend, CancellationToken, Condition, ControllerContract, CoreId, CoreSet, CpuId, Error,
-    Partial, PerCore, Running, TargetOffset, TrialResult, TrialRole, TrialSpec,
+    Backend, CancellationToken, Condition, ControllerMode, CoreId, CoreSet, CpuId, Error, Partial,
+    PerCore, Running, TargetOffset, TrialResult, TrialRole, TrialSpec,
 };
 use togi_tuner::policy::TrialPlan;
 
@@ -268,10 +268,10 @@ impl Session<'_> {
             index: 0,
             seed: intent.get(),
             offsets: self.hardware.confirmed(),
-            controller: ControllerContract::Managed.for_trial(
-                self.appender.recovery().controller_rotation(),
-                plan.cell.purpose,
-            ),
+            controller: ControllerMode::Managed {
+                rotation: self.appender.recovery().controller_rotation(),
+                purpose: plan.cell.purpose,
+            },
         };
         let controller = Some(togi_journal::ControllerEvidence {
             pid: std::process::id(),

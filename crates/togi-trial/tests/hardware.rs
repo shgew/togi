@@ -267,7 +267,7 @@ mod hardware {
     /// until the directory is removed.
     struct Staged {
         tree: Arc<Tree>,
-        _dir: tempfile::TempDir,
+        dir: tempfile::TempDir,
         _lock: HostLock,
         _serial: MutexGuard<'static, ()>,
     }
@@ -327,9 +327,51 @@ mod hardware {
             rustix::fs::fchmod(&tree.fd, Mode::from_raw_mode(0o755)).unwrap();
             Self {
                 tree: Arc::new(tree),
-                _dir: dir,
+                dir,
                 _lock: lock,
                 _serial: serial,
+            }
+        }
+    }
+
+    /// A staging directory whose test kills a trial owner that may hold a CPU frequency cap.
+    /// Until the test's own sweep succeeds, dropping it sweeps through a fresh runner, which
+    /// restores the cap within the sweep's own bound; if that fails, the directory and the
+    /// frequency recovery record in it are kept and named on stderr.
+    struct SweptOnUnwind {
+        staged: Staged,
+        swept: bool,
+    }
+
+    impl Drop for SweptOnUnwind {
+        fn drop(&mut self) {
+            if self.swept {
+                return;
+            }
+            let tree = &self.staged.tree;
+            // Building the runner looks up the backend account and can panic; a second panic
+            // during this unwind would abort the binary before the record is preserved.
+            let outcome = isolated(
+                "the unwind sweep",
+                |_| {
+                    let mut runner = try_runner(tree, Helper::new(tree, "owner"))
+                        .map_err(|error| togi_machine::error_chain(&error))?;
+                    let swept = runner
+                        .sweep(&CancellationToken::new())
+                        .map_err(|error| togi_machine::error_chain(&error))?;
+                    eprintln!("unwind sweep: {}", swept.detail);
+                    Ok(())
+                },
+                Instant::now(),
+            );
+            if let Err(error) = outcome {
+                self.staged.dir.disable_cleanup(true);
+                // A closed stderr must not panic here; the directory is kept either way.
+                let _ = writeln!(
+                    io::stderr(),
+                    "the unwind sweep failed, so {} keeps its frequency recovery record: {error}",
+                    tree.root.display()
+                );
             }
         }
     }
@@ -582,6 +624,10 @@ mod hardware {
     }
 
     fn runner(tree: &Tree, backend: Arc<Helper>) -> Runner {
+        try_runner(tree, backend).unwrap()
+    }
+
+    fn try_runner(tree: &Tree, backend: Arc<Helper>) -> Result<Runner, togi_trial::Error> {
         #[expect(
             clippy::disallowed_methods,
             reason = "gated hardware containment tests retain safety without syncing disposable output"
@@ -593,7 +639,6 @@ mod hardware {
             identity: Some(account()),
             pm_table: None,
         })
-        .unwrap()
     }
 
     fn spec(regime: Regime, cores: &[i64], duration: Duration) -> TrialSpec {
@@ -623,7 +668,10 @@ mod hardware {
             seed: 1,
             offsets: togi_machine::PerCore::default(),
             roles,
-            controller: togi_machine::ControllerMode::Legacy,
+            controller: togi_machine::ControllerMode::Managed {
+                rotation: 0,
+                purpose: togi_machine::Purpose::Exact,
+            },
         }
     }
 
@@ -1346,8 +1394,11 @@ mod hardware {
 
     #[test]
     fn the_sweep_removes_orphaned_trial_scopes_and_keeps_every_other_scope() {
-        let staged = Staged::new();
-        let tree = &staged.tree;
+        let mut staged = SweptOnUnwind {
+            staged: Staged::new(),
+            swept: false,
+        };
+        let tree = &staged.staged.tree;
         let waiter = StrayWaiter::start().unwrap();
         #[expect(
             clippy::disallowed_methods,
@@ -1377,6 +1428,7 @@ mod hardware {
         let mut runner = runner(tree, Helper::new(tree, "owner"));
         let begun = Instant::now();
         let swept = runner.sweep(&CancellationToken::new()).unwrap();
+        staged.swept = true;
         assert!(begun.elapsed() <= TEARDOWN, "the sweep overran");
         assert!(
             swept.detail.starts_with("removed ") && !swept.detail.starts_with("removed 0 "),
@@ -1487,7 +1539,10 @@ mod hardware {
                         seed: 0,
                         offsets: togi_machine::PerCore::default(),
                         roles,
-                        controller: togi_machine::ControllerMode::Legacy,
+                        controller: togi_machine::ControllerMode::Managed {
+                            rotation: 0,
+                            purpose: togi_machine::Purpose::Exact,
+                        },
                     };
                     let mut trial = start(&mut runner, spec);
                     let result = trial
@@ -1686,7 +1741,10 @@ mod hardware {
                 .map(|info| (info.core, togi_machine::TargetOffset::ZERO))
                 .collect(),
             roles: roles.to_vec(),
-            controller: togi_machine::ControllerMode::Legacy,
+            controller: togi_machine::ControllerMode::Managed {
+                rotation: 0,
+                purpose: togi_machine::Purpose::Exact,
+            },
         };
         let mut trial = start(&mut runner, spec);
         let record = journal_start(&id, &trial.started(), roles);

@@ -160,7 +160,7 @@ pub struct TrialSpec {
     /// The offset a readback confirmed on each core as the trial starts; a core whose offset is
     /// not known is absent. The runner keeps togi's own threads off the loaded cores by it.
     pub offsets: PerCore<TargetOffset>,
-    /// Explicit placement contract; existing schedules remain on the legacy evidence contract.
+    /// Managed placement with the caller's persistent trial ordinal and cell purpose.
     pub controller: crate::ControllerMode,
 }
 
