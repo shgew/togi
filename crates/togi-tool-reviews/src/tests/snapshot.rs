@@ -357,8 +357,9 @@ fn path_unescape(s: &str) -> String {
 
 pub(crate) const TOO_LARGE: &str = "gh pr: could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000) (https://api.github.com/repos/shgew/togi/pulls/700)\nPullRequest.diff too_large";
 
-/// Answers `pr view` with `view(n)` for the n-th call, `pr diff` with `diff`, and a file read at the frozen
-/// head from `contents`; a file the head lacks is a 404, as gh reports it.
+/// Answers `pr view` with `view(n)` for the n-th call, `pr diff` with `diff`, and file reads at the frozen
+/// head from `contents`, batched or one by one; a file the head lacks is a null object in a batch and a 404
+/// on its own, as GitHub reports it.
 pub(crate) fn pull_fake(
     diff: &str,
     contents: HashMap<String, String>,
@@ -386,6 +387,9 @@ pub(crate) fn pull_fake(
                 _ => Ok(diff.as_bytes().to_vec()),
             };
         }
+        if args[0] == "api" && args[1] == "graphql" {
+            return batch_answer(args, &contents);
+        }
         if args.len() == 4
             && args[0] == "api"
             && args[1] == "-H"
@@ -405,6 +409,116 @@ pub(crate) fn pull_fake(
         }
         Err(fail(&format!("unexpected gh {args:?}")))
     }
+}
+
+/// The files a batch read asks for, in order, each as `<commit>:<path>`. It panics on a request whose
+/// query does not read each variable into the alias of the same name.
+pub(crate) fn batch_reads(args: &[String]) -> Vec<String> {
+    let (mut query, mut head) = ("", "");
+    let mut paths = Vec::new();
+    for pair in args[2..].chunks(2) {
+        assert_eq!("-f", pair[0], "batch read {args:?}");
+        let (key, value) = pair[1].split_once('=').expect("field");
+        match key {
+            "query" => query = value,
+            "owner" => assert_eq!("shgew", value),
+            "name" => assert_eq!("togi", value),
+            "head" => head = value,
+            _ => {
+                assert_eq!(format!("p{}", paths.len()), key, "variables out of order");
+                paths.push(value);
+            }
+        }
+    }
+    assert!(
+        query.contains("$head: String!")
+            && query.contains("object(expression: $head) { ... on Commit {"),
+        "query does not read the head commit: {query}"
+    );
+    for i in 0..paths.len() {
+        assert!(
+            query.contains(&format!(", $p{i}: String!"))
+                && query.contains(&format!(" p{i}: file(path: $p{i}) {{ mode object {{ __typename ... on Blob {{ byteSize isBinary isTruncated text }} }} }}")),
+            "query does not read p{i}: {query}"
+        );
+    }
+    paths.iter().map(|path| format!("{head}:{path}")).collect()
+}
+
+/// GitHub's answer for a text blob.
+pub(crate) fn blob(text: &str) -> serde_json::Value {
+    json!({"__typename": "Blob", "byteSize": text.len(), "isBinary": false, "isTruncated": false, "text": text})
+}
+
+/// GitHub's tree entry for a regular file holding `text`.
+pub(crate) fn file_entry(text: &str) -> serde_json::Value {
+    json!({"mode": 0o100_644, "object": blob(text)})
+}
+
+/// A batch read answered from `contents` at the frozen head. As GitHub does, it fails the whole request when
+/// one of the paths is missing.
+pub(crate) fn batch_answer(args: &[String], contents: &HashMap<String, String>) -> Output {
+    let mut entries = serde_json::Map::new();
+    for (i, read) in batch_reads(args).iter().enumerate() {
+        let Some(path) = read.strip_prefix(&format!("{HEAD_SHA}:")) else {
+            return Err(fail(&format!("file read at {read}, not the frozen head")));
+        };
+        let Some(body) = contents.get(path) else {
+            return Err(fail(&format!(
+                "gh: Could not resolve file for path '{path}'."
+            )));
+        };
+        entries.insert(format!("p{i}"), file_entry(body));
+    }
+    Ok(json!({"data": {"repository": {"object": entries}}})
+        .to_string()
+        .into_bytes())
+}
+
+/// Each gh call as `gh <args>`, with a batch read shortened to `gh graphql <path>…` at the frozen head.
+pub(crate) fn gh_calls(h: &Harness) -> Vec<String> {
+    h.fake
+        .gh_calls
+        .iter()
+        .map(|args| {
+            if args[1] != "graphql" {
+                return format!("gh {}", args.join(" "));
+            }
+            let paths: Vec<String> = batch_reads(args)
+                .iter()
+                .map(|read| {
+                    read.strip_prefix(&format!("{HEAD_SHA}:"))
+                        .unwrap_or(read)
+                        .to_owned()
+                })
+                .collect();
+            format!("gh graphql {}", paths.join(" "))
+        })
+        .collect()
+}
+
+/// `git cat-file --batch` in the temporary repository, answering each `<commit>:<path>` line of `input`
+/// from `contents` at the frozen head; a path it lacks is missing.
+pub(crate) fn cat_file_answer(input: &[u8], contents: &HashMap<String, String>) -> Output {
+    let mut out = Vec::new();
+    for line in String::from_utf8_lossy(input).lines() {
+        let Some(path) = line.strip_prefix(&format!("{HEAD_SHA}:")) else {
+            return Err(fail(&format!(
+                "cat-file read {line}, not at the frozen head"
+            )));
+        };
+        match contents.get(path) {
+            Some(body) => {
+                out.extend_from_slice(
+                    format!("100644 {} blob {}\n", "e".repeat(40), body.len()).as_bytes(),
+                );
+                out.extend_from_slice(body.as_bytes());
+                out.push(b'\n');
+            }
+            None => out.extend_from_slice(format!("{line} missing\n").as_bytes()),
+        }
+    }
+    Ok(out)
 }
 
 /// Answers `pr view` with `heads` in turn and `pr diff` with `diff`.
@@ -448,12 +562,6 @@ pub(crate) fn assert_no_snapshot(h: &Harness) {
 
 fn view_call() -> String {
     "gh pr view 700 --json headRefOid,baseRefOid,url".to_owned()
-}
-
-fn read_call(name: &str) -> String {
-    format!(
-        "gh api -H Accept: application/vnd.github.raw+json repos/shgew/togi/contents/{name}?ref={HEAD_SHA}"
-    )
 }
 
 fn sorted_entries(dir: &Path) -> Vec<String> {
@@ -517,11 +625,10 @@ fn snapshot_first_review() {
         view_call(),
         "gh pr diff 700 --color=never --allow-escape-sequences".to_owned(),
         view_call(),
-        read_call("cmd/togi/main.go"),
-        read_call("docs/two.md"),
+        "gh graphql cmd/togi/main.go docs/two.md".to_owned(),
         view_call(),
     ];
-    assert_eq!(want_calls, h.fake.gh_joined());
+    assert_eq!(want_calls, gh_calls(&h));
 }
 
 #[test]
@@ -565,15 +672,18 @@ fn local_diff_harness(gh: Handler, mut isolated: Option<IsolatedAnswer>) -> Harn
         Err(fail(&format!("unexpected git {args:?}")))
     });
     let mut h = Harness::new(Some(gh), Some(git));
-    h.fake.isolated = Some(Box::new(move |_dir: &Path, args: &[String]| {
-        if let Some(answer) = isolated.as_mut().and_then(|isolated| isolated(args)) {
-            return answer;
-        }
-        if args[0] == "diff" {
-            return Ok(SAMPLE_PR.as_bytes().to_vec());
-        }
-        Ok(Vec::new())
-    }));
+    h.fake.isolated = Some(Box::new(
+        move |_dir: &Path, args: &[String], input: &[u8]| {
+            if let Some(answer) = isolated.as_mut().and_then(|isolated| isolated(args)) {
+                return answer;
+            }
+            match args[0].as_str() {
+                "diff" => Ok(SAMPLE_PR.as_bytes().to_vec()),
+                "cat-file" => cat_file_answer(input, &sample_contents()),
+                _ => Ok(Vec::new()),
+            }
+        },
+    ));
     h
 }
 
@@ -614,6 +724,10 @@ fn snapshot_too_large_diff_built_locally() {
             "--dst-prefix=b/",
             &triple_dot,
         ],
+        vec![
+            "cat-file",
+            "--batch=%(objectmode) %(objectname) %(objecttype) %(objectsize)",
+        ],
     ];
     let calls = &h.fake.isolated_calls;
     assert_eq!(
@@ -632,8 +746,19 @@ fn snapshot_too_large_diff_built_locally() {
         );
     }
     assert_eq!(
-        "gh pr diff 700 --color=never --allow-escape-sequences",
-        h.fake.gh_joined()[1]
+        vec![
+            view_call(),
+            "gh pr diff 700 --color=never --allow-escape-sequences".to_owned(),
+            view_call(),
+            view_call(),
+        ],
+        gh_calls(&h),
+        "the files at the head are read from the temporary repository, not through GitHub"
+    );
+    assert_eq!(
+        format!("{HEAD_SHA}:cmd/togi/main.go\n{HEAD_SHA}:docs/two.md\n"),
+        lossy(&h.fake.isolated_inputs[3]),
+        "one cat-file reads every file at the frozen head"
     );
     assert!(
         leftovers(&h).is_empty(),
@@ -782,7 +907,10 @@ fn snapshot_file_limit_diff_built_locally() {
         None,
     );
     snapshot(&mut h, &["700"]).expect("snapshot");
-    assert_eq!(vec!["init", "fetch", "diff"], h.fake.isolated_subcommands());
+    assert_eq!(
+        vec!["init", "fetch", "diff", "cat-file"],
+        h.fake.isolated_subcommands()
+    );
 }
 
 #[test_case("gh pr: could not find pull request diff: HTTP 406: Not Acceptable"; "406 for another reason")]

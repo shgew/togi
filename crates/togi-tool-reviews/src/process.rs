@@ -2,7 +2,7 @@
 
 use std::ffi::OsString;
 use std::fmt;
-use std::io;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
@@ -52,6 +52,8 @@ pub trait Programs {
     /// Runs `git` with `args` in `dir`, with no configuration, attributes or Git environment from the caller,
     /// so the same arguments give the same result on any host.
     fn isolated_git(&mut self, dir: &Path, args: &[&str]) -> Output;
+    /// Runs the isolated `git` as `isolated_git` does, with `input` as its standard input.
+    fn isolated_git_input(&mut self, dir: &Path, args: &[&str], input: &[u8]) -> Output;
 }
 
 /// The real programs, run with `env` as their whole environment and in `dir` when set.
@@ -98,17 +100,23 @@ impl System {
 
 impl Programs for System {
     fn gh(&mut self, args: &[&str]) -> Output {
-        run(self.command("gh", args, false), "gh", args)
+        run(self.command("gh", args, false), "gh", args, None)
     }
 
     fn git(&mut self, args: &[&str]) -> Output {
-        run(self.command("git", args, false), "git", args)
+        run(self.command("git", args, false), "git", args, None)
     }
 
     fn isolated_git(&mut self, dir: &Path, args: &[&str]) -> Output {
         let mut command = self.command("git", args, true);
         command.current_dir(dir);
-        run(command, "git", args)
+        run(command, "git", args, None)
+    }
+
+    fn isolated_git_input(&mut self, dir: &Path, args: &[&str], input: &[u8]) -> Output {
+        let mut command = self.command("git", args, true);
+        command.current_dir(dir);
+        run(command, "git", args, Some(input))
     }
 }
 
@@ -116,19 +124,49 @@ impl Programs for System {
     clippy::disallowed_methods,
     reason = "the review tool's whole job is running gh and git and reading their output"
 )]
-fn run(mut command: Command, program: &str, args: &[&str]) -> Output {
+fn run(mut command: Command, program: &str, args: &[&str], input: Option<&[u8]>) -> Output {
     let sub = args.first().copied().unwrap_or_default();
-    let output = command.output().map_err(|error| {
+    let failed = |error: &io::Error| {
         let reason = if error.kind() == io::ErrorKind::NotFound {
             format!(
                 "exec: {}: executable file not found in $PATH",
                 crate::text::quote(program)
             )
         } else {
-            crate::error::io_reason(&error)
+            crate::error::io_reason(error)
         };
         CommandError::new(format!("{program} {sub}: {reason}: "))
-    })?;
+    };
+    let output = match input {
+        None => command.output().map_err(|error| failed(&error))?,
+        Some(input) => {
+            let mut child = command
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|error| failed(&error))?;
+            let stdin = child.stdin.take();
+            // The input is written while the output is read, so neither side waits on a full pipe. Dropping
+            // the handle at the end of the write closes the program's standard input.
+            let (output, written) = std::thread::scope(|scope| {
+                let writer =
+                    scope.spawn(move || stdin.map_or(Ok(()), |mut stdin| stdin.write_all(input)));
+                let output = child.wait_with_output();
+                let written = writer
+                    .join()
+                    .unwrap_or_else(|_| Err(io::Error::other("the input writer panicked")));
+                (output, written)
+            });
+            let output = output.map_err(|error| failed(&error))?;
+            // A program that fails may stop reading early; its own status and message then explain more
+            // than the broken pipe does, so the write error counts only when the program succeeded.
+            if output.status.success() {
+                written.map_err(|error| failed(&error))?;
+            }
+            output
+        }
+    };
     if output.status.success() {
         return Ok(output.stdout);
     }
