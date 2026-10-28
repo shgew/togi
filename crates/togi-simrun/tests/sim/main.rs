@@ -16,4 +16,5 @@ mod reboot;
 mod samples;
 mod split;
 mod stop;
+mod trial_start;
 mod warm_cold;
