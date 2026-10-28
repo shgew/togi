@@ -1,7 +1,9 @@
 //! `snapshot`: freezes a pull request's head, base and diff into a directory of hunk files and a manifest.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -216,7 +218,7 @@ pub fn create_snapshot(
 ) -> Result<(String, Manifest), Error> {
     let before = view_pull(t.programs, pr)?;
     let repo = before.repository()?;
-    let raw = pull_diff(t, pr, &before)?;
+    let (raw, head_files) = pull_diff(t, pr, &before)?;
     let after = view_pull(t.programs, pr)?;
     moved_since(pr, &before, &after)?;
     let pr_files = parse_diff(&raw)
@@ -247,10 +249,15 @@ pub fn create_snapshot(
     }
     // Everything that reaches out for the frozen head comes before the last look at the pull request.
     let complete = m.previous.is_none() || !m.fallback.is_empty();
-    let mut exclusions = Vec::with_capacity(scope.len());
-    for f in &scope {
-        exclusions.push(exclusion_of(t.programs, &repo, &m.head_sha, f, complete)?);
-    }
+    let exclusions = exclusions_of(
+        t.programs,
+        &repo,
+        &m.head_sha,
+        &scope,
+        complete,
+        &head_files,
+    )?;
+    drop(head_files);
     let last = view_pull(t.programs, pr)?;
     moved_since(pr, &before, &last)?;
     let dir = join(&t.tmp, &format!("togi-review/{pr}-{}", short(&before.head)));
@@ -299,9 +306,19 @@ fn moved_since(pr: i64, before: &PullInfo, after: &PullInfo) -> Result<(), Error
     Ok(())
 }
 
-/// The diff of pull request `pr`. When GitHub refuses it as too large, git builds it from the frozen base
-/// and head instead, as the merge-base diff GitHub would show.
-fn pull_diff(t: &mut Tools<'_>, pr: i64, frozen: &PullInfo) -> Result<Vec<u8>, Error> {
+/// Where the snapshot reads files at the frozen head.
+enum HeadFiles {
+    /// Through the GitHub API, so the reviewing host needs no checkout.
+    Remote,
+    /// From the temporary repository a too-large diff was built in, which already holds the frozen head. The
+    /// repository is removed when this is dropped.
+    Local(tempfile::TempDir),
+}
+
+/// The diff of pull request `pr`, and where its files at the frozen head are read. When GitHub refuses the
+/// diff as too large, git builds it from the frozen base and head instead, as the merge-base diff GitHub
+/// would show.
+fn pull_diff(t: &mut Tools<'_>, pr: i64, frozen: &PullInfo) -> Result<(Vec<u8>, HeadFiles), Error> {
     // The diff goes to files, never to a terminal, so gh's guard against escape sequences, which a diff of
     // terminal test data trips, does not apply.
     match t.programs.gh(&[
@@ -311,8 +328,11 @@ fn pull_diff(t: &mut Tools<'_>, pr: i64, frozen: &PullInfo) -> Result<Vec<u8>, E
         "--color=never",
         "--allow-escape-sequences",
     ]) {
-        Ok(raw) => Ok(raw),
-        Err(error) if diff_too_large(&error.to_string()) => local_pull_diff(t, pr, frozen),
+        Ok(raw) => Ok((raw, HeadFiles::Remote)),
+        Err(error) if diff_too_large(&error.to_string()) => {
+            let (raw, dir) = local_pull_diff(t, pr, frozen)?;
+            Ok((raw, HeadFiles::Local(dir)))
+        }
         Err(error) => Err(Error::wrap(
             format!("fetch the diff of pull request #{pr}"),
             error,
@@ -322,8 +342,13 @@ fn pull_diff(t: &mut Tools<'_>, pr: i64, frozen: &PullInfo) -> Result<Vec<u8>, E
 
 /// The merge-base diff of the frozen base and head, built in a temporary bare repository holding their
 /// complete history, so neither the caller's checkout (shallow, or with its own configuration and
-/// attributes) nor its Git environment shapes the bytes.
-fn local_pull_diff(t: &mut Tools<'_>, pr: i64, frozen: &PullInfo) -> Result<Vec<u8>, Error> {
+/// attributes) nor its Git environment shapes the bytes. The repository is returned with the diff, for
+/// reading files at the frozen head.
+fn local_pull_diff(
+    t: &mut Tools<'_>,
+    pr: i64,
+    frozen: &PullInfo,
+) -> Result<(Vec<u8>, tempfile::TempDir), Error> {
     let out = t.programs.git(&["remote", "get-url", "origin"]).map_err(|error| {
         Error::wrap(
             format!("read the origin URL to build the diff of pull request #{pr}, which GitHub refuses as too large"),
@@ -359,7 +384,8 @@ fn local_pull_diff(t: &mut Tools<'_>, pr: i64, frozen: &PullInfo) -> Result<Vec<
                 error,
             )
         })?;
-    t.programs
+    let diff = t
+        .programs
         .isolated_git(
             dir.path(),
             &[
@@ -378,7 +404,8 @@ fn local_pull_diff(t: &mut Tools<'_>, pr: i64, frozen: &PullInfo) -> Result<Vec<
                 format!("build the diff of pull request #{pr}, which GitHub refuses as too large"),
                 error,
             )
-        })
+        })?;
+    Ok((diff, dir))
 }
 
 /// Whether gh failed because GitHub refuses a diff over its line or file limit.
@@ -388,39 +415,283 @@ pub fn diff_too_large(message: &str) -> bool {
             || message.contains("the diff exceeded the maximum number of files"))
 }
 
-/// Why the review skips the file, or `""` when it is included. Paths and kinds exclude by themselves.
-/// Whether a file is generated is decided on its contents, never on marker lines a patch shows: a marker in
-/// context or outside the hunks counts, one after the package clause or inside a string does not, and one
-/// an earlier patch of a delta added and a later one dropped does not either. `complete` says the sections
-/// hold each file's whole change, as the pull request's diff does: an added or deleted file's section then
-/// is its whole content and needs no read. Any other file is read at the frozen head; one the head lacks
-/// has no contents to judge and stays in the review.
-fn exclusion_of(
-    gh: &mut dyn Programs,
+/// Why the review skips each file of `scope`, or `""` when it is included. Paths and kinds exclude by
+/// themselves. Whether a file is generated is decided on its contents, never on marker lines a patch shows: a
+/// marker in context or outside the hunks counts, one after the package clause or inside a string does not,
+/// and one an earlier patch of a delta added and a later one dropped does not either. `complete` says the
+/// sections hold each file's whole change, as the pull request's diff does: an added or deleted file's
+/// section then is its whole content and needs no read. Every other file is read at the frozen head, all of
+/// them together ([`read_at_head`]); one the head lacks has no contents to judge and stays in the review.
+fn exclusions_of(
+    programs: &mut dyn Programs,
     repo: &str,
     head: &str,
-    f: &FileDiff,
+    scope: &[FileDiff],
     complete: bool,
-) -> Result<String, Error> {
-    let reason = fixed_exclusion(f);
-    if !reason.is_empty() {
-        return Ok(reason.to_owned());
-    }
-    let content = if complete && (f.status == "added" || f.status == "deleted") {
-        whole_content(f)
-    } else {
-        file_at(gh, repo, head, &f.path)?.unwrap_or_default()
-    };
-    Ok(if generated_content(&content) {
-        "generated"
-    } else {
-        ""
-    }
-    .to_owned())
+    head_files: &HeadFiles,
+) -> Result<Vec<String>, Error> {
+    let shows_whole = |f: &FileDiff| complete && (f.status == "added" || f.status == "deleted");
+    let names: Vec<&str> = scope
+        .iter()
+        .filter(|f| fixed_exclusion(f).is_empty() && !shows_whole(f))
+        .map(|f| f.path.as_str())
+        .collect();
+    let mut at_head = read_at_head(programs, repo, head, &names, head_files)?.into_iter();
+    Ok(scope
+        .iter()
+        .map(|f| {
+            let reason = fixed_exclusion(f);
+            if !reason.is_empty() {
+                return reason.to_owned();
+            }
+            let content = if shows_whole(f) {
+                whole_content(f)
+            } else {
+                at_head.next().flatten().unwrap_or_default()
+            };
+            if generated_content(&content) {
+                "generated"
+            } else {
+                ""
+            }
+            .to_owned()
+        })
+        .collect())
 }
 
-/// A file at a commit, read through the GitHub API so the reviewing host needs no checkout of it; `None`
-/// when the commit lacks it.
+/// How many files one GraphQL request reads at the frozen head.
+const HEAD_BATCH: usize = 100;
+
+/// The files `names` at the frozen `head`, in order; `None` for one the head lacks.
+///
+/// Through GitHub, the files go [`HEAD_BATCH`] to a GraphQL request, so `n` files take `ceil(n / 100)`
+/// requests. A file whose answer is not certainly its bytes (see [`HeadRead::Uncertain`]) is read again on
+/// its own, byte for byte, one more request each. From the temporary repository, one `git cat-file --batch`
+/// reads them all, and no request goes to GitHub except for a path that is not a file at the head or that
+/// the batch cannot name ([`local_at`]).
+fn read_at_head(
+    programs: &mut dyn Programs,
+    repo: &str,
+    head: &str,
+    names: &[&str],
+    head_files: &HeadFiles,
+) -> Result<Vec<Option<Vec<u8>>>, Error> {
+    let HeadFiles::Local(dir) = head_files else {
+        let mut out = Vec::with_capacity(names.len());
+        for batch in names.chunks(HEAD_BATCH) {
+            for (name, read) in batch.iter().zip(batch_at(programs, repo, head, batch)) {
+                out.push(match read {
+                    HeadRead::Bytes(bytes) => Some(bytes),
+                    HeadRead::Missing => None,
+                    HeadRead::Uncertain => file_at(programs, repo, head, name)?,
+                });
+            }
+        }
+        return Ok(out);
+    };
+    local_at(programs, dir.path(), repo, head, names)
+}
+
+/// What one GraphQL request answered for a file at the frozen head.
+enum HeadRead {
+    /// The file's exact bytes.
+    Bytes(Vec<u8>),
+    /// The head has no object at the path, in an answer without errors.
+    Missing,
+    /// An answer that is not certainly the file's bytes: binary or truncated, text that may have been
+    /// re-encoded, an object that is not a file, a missing object in an answer that reports errors, or no
+    /// usable answer at all.
+    Uncertain,
+}
+
+#[derive(Deserialize)]
+struct BatchResponse {
+    data: Option<BatchData>,
+    #[serde(default)]
+    errors: Vec<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct BatchData {
+    repository: Option<HashMap<String, Option<HeadObject>>>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "__typename")]
+enum HeadObject {
+    Blob(BlobAnswer),
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BlobAnswer {
+    byte_size: u64,
+    is_binary: Option<bool>,
+    is_truncated: bool,
+    text: Option<String>,
+}
+
+impl BlobAnswer {
+    /// The blob's bytes, when the answer certainly holds them: text GitHub calls neither binary nor truncated,
+    /// with no replacement character standing in for bytes that were not UTF-8, as long as the blob.
+    fn exact(self) -> Option<Vec<u8>> {
+        let text = self.text?;
+        (self.is_binary == Some(false)
+            && !self.is_truncated
+            && !text.contains('\u{FFFD}')
+            && u64::try_from(text.len()).ok() == Some(self.byte_size))
+        .then(|| text.into_bytes())
+    }
+}
+
+/// One GraphQL request for the files `names` at `head`, one answer per name in order. The paths travel as
+/// variables, never inside the query text.
+fn batch_at(gh: &mut dyn Programs, repo: &str, head: &str, names: &[&str]) -> Vec<HeadRead> {
+    let uncertain = || names.iter().map(|_| HeadRead::Uncertain).collect();
+    let Some((owner, name)) = repo.split_once('/') else {
+        return uncertain();
+    };
+    let declarations: Vec<String> = (0..names.len())
+        .map(|i| format!(", $p{i}: String!"))
+        .collect();
+    let objects: Vec<String> = (0..names.len())
+        .map(|i| {
+            format!(
+                " p{i}: object(expression: $p{i}) {{ __typename ... on Blob {{ byteSize isBinary isTruncated text }} }}"
+            )
+        })
+        .collect();
+    let query = format!(
+        "query($owner: String!, $name: String!{}) {{ repository(owner: $owner, name: $name) {{{} }} }}",
+        declarations.concat(),
+        objects.concat()
+    );
+    let mut fields = vec![
+        format!("query={query}"),
+        format!("owner={owner}"),
+        format!("name={name}"),
+    ];
+    fields.extend(
+        names
+            .iter()
+            .enumerate()
+            .map(|(i, path)| format!("p{i}={head}:{path}")),
+    );
+    let mut args = vec!["api", "graphql"];
+    for field in &fields {
+        args.extend(["-f", field.as_str()]);
+    }
+    // A failed request is not the end of the snapshot: each of its files is read again on its own, and a
+    // failure that lasts surfaces there, naming the file.
+    let Ok(out) = gh.gh(&args) else {
+        return uncertain();
+    };
+    let Ok(response) = serde_json::from_slice::<BatchResponse>(&out) else {
+        return uncertain();
+    };
+    let clean = response.errors.is_empty();
+    let Some(mut objects) = response.data.and_then(|data| data.repository) else {
+        return uncertain();
+    };
+    (0..names.len())
+        .map(|i| match objects.remove(&format!("p{i}")) {
+            Some(Some(HeadObject::Blob(blob))) => {
+                blob.exact().map_or(HeadRead::Uncertain, HeadRead::Bytes)
+            }
+            Some(None) if clean => HeadRead::Missing,
+            Some(Some(HeadObject::Other) | None) | None => HeadRead::Uncertain,
+        })
+        .collect()
+}
+
+/// One object `git cat-file --batch` printed.
+enum LocalObject<'a> {
+    Blob(&'a [u8]),
+    /// The commit has no object at the path.
+    Missing,
+    /// A tree or other object that is not a file.
+    Other,
+}
+
+/// The files `names` at `head` from the temporary repository at `dir`, all read by one
+/// `git cat-file --batch`. The batch takes one name per line, so a path with a line break or carriage return
+/// is read through GitHub instead, as is a path that is not a file at the head.
+fn local_at(
+    programs: &mut dyn Programs,
+    dir: &Path,
+    repo: &str,
+    head: &str,
+    names: &[&str],
+) -> Result<Vec<Option<Vec<u8>>>, Error> {
+    let batchable = |name: &str| !name.contains(['\n', '\r']);
+    let mut input = Vec::new();
+    for name in names.iter().filter(|name| batchable(name)) {
+        input.extend_from_slice(format!("{head}:{name}\n").as_bytes());
+    }
+    let out = if input.is_empty() {
+        Vec::new()
+    } else {
+        programs
+            .isolated_git_input(dir, &["cat-file", "--batch"], &input)
+            .map_err(|error| {
+                Error::wrap(
+                    format!(
+                        "read the changed files at {} from the temporary repository",
+                        short(head)
+                    ),
+                    error,
+                )
+            })?
+    };
+    let mut rest = out.as_slice();
+    let mut files = Vec::with_capacity(names.len());
+    for name in names {
+        if !batchable(name) {
+            files.push(file_at(programs, repo, head, name)?);
+            continue;
+        }
+        let Some((object, after)) = next_object(rest) else {
+            return Err(Error::new(format!(
+                "read {name} at {} from the temporary repository: git cat-file printed no object for it",
+                short(head)
+            )));
+        };
+        rest = after;
+        files.push(match object {
+            LocalObject::Blob(bytes) => Some(bytes.to_vec()),
+            LocalObject::Missing => None,
+            LocalObject::Other => file_at(programs, repo, head, name)?,
+        });
+    }
+    Ok(files)
+}
+
+/// The first object of `git cat-file --batch` output and the output after it: `<oid> <type> <size>`, the
+/// contents and a line feed, or `<name> missing`.
+fn next_object(out: &[u8]) -> Option<(LocalObject<'_>, &[u8])> {
+    let end = out.iter().position(|b| *b == b'\n')?;
+    let (header, rest) = (&out[..end], &out[end + 1..]);
+    if header.ends_with(b" missing") {
+        return Some((LocalObject::Missing, rest));
+    }
+    let mut fields = std::str::from_utf8(header).ok()?.rsplitn(3, ' ');
+    let size: usize = fields.next()?.parse().ok()?;
+    let kind = fields.next()?;
+    fields.next()?;
+    let contents = rest.get(..size)?;
+    let rest = rest.get(size..)?.strip_prefix(b"\n")?;
+    let object = if kind == "blob" {
+        LocalObject::Blob(contents)
+    } else {
+        LocalObject::Other
+    };
+    Some((object, rest))
+}
+
+/// A file at a commit, read byte for byte through the GitHub API so the reviewing host needs no checkout of
+/// it; `None` when the commit lacks it.
 fn file_at(
     gh: &mut dyn Programs,
     repo: &str,
@@ -671,3 +942,7 @@ mod removed_tests;
 #[cfg(test)]
 #[path = "tests/snapshot_process.rs"]
 mod process_tests;
+
+#[cfg(test)]
+#[path = "tests/snapshot_reads.rs"]
+mod reads_tests;

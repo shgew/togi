@@ -9,9 +9,9 @@ use crate::fakes::{
 };
 use crate::rangediff::lost_effects;
 use crate::snapshot::tests::{
-    Hook, ReReview, View, contents, flag, frozen, lossy, manifest, one_patch, parse, patch_status,
-    paths, previous_body, previous_body_verdict, pull_fake, pull_handler, re_review,
-    sample_contents, snapshot, snapshot_file,
+    Hook, ReReview, View, batch_reads, contents, flag, frozen, gh_calls, lossy, manifest,
+    one_patch, parse, patch_status, paths, previous_body, previous_body_verdict, pull_fake,
+    pull_handler, re_review, sample_contents, snapshot, snapshot_file,
 };
 use crate::text::short;
 
@@ -284,23 +284,12 @@ fn snapshot_excludes_generated_files_from_their_contents() {
         (m.included_files, m.included_lines, m.reviewers),
         "only the hand-written file counts toward F and L"
     );
-    let reads: Vec<String> = h
-        .fake
-        .gh_joined()
+    let reads: Vec<String> = gh_calls(&h)
         .into_iter()
-        .filter(|c| c.starts_with("gh api "))
+        .filter(|c| c.starts_with("gh graphql "))
         .collect();
-    let read = |name: &str| {
-        format!(
-            "gh api -H Accept: application/vnd.github.raw+json repos/shgew/togi/contents/{name}?ref={HEAD_SHA}"
-        )
-    };
     assert_eq!(
-        vec![
-            read("gen/a.go"),
-            read("gen/hand.go"),
-            read("gen/ren_new.go")
-        ],
+        vec!["gh graphql gen/a.go gen/hand.go gen/ren_new.go"],
         reads,
         "a deleted file's section shows its whole content, so it is not read"
     );
@@ -405,7 +394,7 @@ fn snapshot_refuses_move_after_remote_work(step: &'static str, side: &'static st
     let at = move |args: &[String]| match step {
         "previous record" => args[0] == "api" && args[1].contains("/issues/comments/"),
         "delta" => args[0] == "range-diff",
-        _ => args[0] == "api" && args.last().is_some_and(|a| a.contains("/contents/")),
+        _ => args[0] == "api" && args[1] == "graphql",
     };
     let trip = |moved: Rc<RefCell<bool>>| -> Hook {
         Box::new(move |args: &[String]| {
@@ -939,8 +928,8 @@ fn deleted_file(name: &str, lines: &[&str]) -> String {
 fn record_reads(reads: &Rc<RefCell<Vec<String>>>) -> Hook {
     let reads = Rc::clone(reads);
     Box::new(move |args: &[String]| {
-        if let Some(last) = args.last().filter(|last| last.contains("/contents/")) {
-            reads.borrow_mut().push(last.clone());
+        if args[0] == "api" && args[1] == "graphql" {
+            reads.borrow_mut().extend(batch_reads(args));
         }
     })
 }
@@ -1021,7 +1010,7 @@ fn snapshot_generated_needs_a_valid_header() {
     let mut pr = pull_fake(&diff, contents(&[("x/mod.go", &module)]), frozen());
     let gh: Handler = Box::new(move |args: &[String]| {
         if args[0] == "api" {
-            recorded.borrow_mut().push(args[args.len() - 1].clone());
+            recorded.borrow_mut().extend(batch_reads(args));
         }
         pr(args)
     });
@@ -1040,7 +1029,7 @@ fn snapshot_generated_needs_a_valid_header() {
     );
     let reads = reads.borrow();
     assert!(
-        reads.len() == 1 && reads[0].contains(&format!("x/mod.go?ref={HEAD_SHA}")),
+        reads.len() == 1 && reads[0] == format!("{HEAD_SHA}:x/mod.go"),
         "file reads = {reads:?}, want only x/mod.go at the frozen head: added and deleted sections show their whole file"
     );
 }

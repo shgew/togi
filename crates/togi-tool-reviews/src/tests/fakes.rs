@@ -30,6 +30,8 @@ pub(crate) struct Fake {
     pub gh_calls: Vec<Vec<String>>,
     pub git_calls: Vec<Vec<String>>,
     pub isolated_calls: Vec<(PathBuf, Vec<String>)>,
+    /// The standard input of each isolated git call, empty for one without.
+    pub isolated_inputs: Vec<Vec<u8>>,
 }
 
 fn owned(args: &[&str]) -> Vec<String> {
@@ -62,6 +64,7 @@ impl Programs for Fake {
     fn isolated_git_input(&mut self, dir: &Path, args: &[&str], input: &[u8]) -> Output {
         let args = owned(args);
         self.isolated_calls.push((dir.to_owned(), args.clone()));
+        self.isolated_inputs.push(input.to_vec());
         let Some(handle) = self.isolated.as_mut() else {
             panic!("unexpected isolated git {args:?} in {}", dir.display());
         };
@@ -76,14 +79,6 @@ impl Fake {
             git,
             ..Self::default()
         }
-    }
-
-    /// Each gh call as `gh <args>`.
-    pub(crate) fn gh_joined(&self) -> Vec<String> {
-        self.gh_calls
-            .iter()
-            .map(|args| format!("gh {}", args.join(" ")))
-            .collect()
     }
 
     /// Each git call as `git <args>`.
