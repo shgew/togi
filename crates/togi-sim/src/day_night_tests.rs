@@ -3,7 +3,10 @@ use std::time::Duration;
 use test_case::test_case;
 use togi_machine::{CcdId, PerCore, Regime, TargetOffset, WorkloadId};
 
-use super::{FailureCause, FailureCurve, SCENARIO_IDS, Scenario, TrialClass, TruthState};
+use super::{
+    FailureCause, FailureCurve, NonCpuAnswer, NonCpuCause, SCENARIO_IDS, Scenario, TrialClass,
+    TruthState,
+};
 
 const HOUR: Duration = Duration::from_hours(1);
 const FIVE_MINUTES: Duration = Duration::from_mins(5);
@@ -639,4 +642,37 @@ fn configurable_safe_reference_refuses_invalid_calendar_values() {
             .safe_profile_for(0, LAMBDA, HOUR, &[0.5; 2])
             .is_err()
     );
+}
+
+#[test_case("non-cpu-correct", NonCpuAnswer::NotCpu)]
+#[test_case("non-cpu-wrong", NonCpuAnswer::Cpu)]
+#[test_case("non-cpu-missing", NonCpuAnswer::Missing)]
+fn a_non_cpu_scenario_interrupts_on_the_registered_days_with_its_answer(
+    name: &str,
+    answer: NonCpuAnswer,
+) {
+    let schedule = Scenario::builtin(name, 1).unwrap().non_cpu().unwrap();
+    assert_eq!(schedule.answer(), answer);
+    let days: Vec<(u32, NonCpuCause)> = (0..730)
+        .filter_map(|day| schedule.on(day).map(|cause| (day, cause)))
+        .collect();
+    assert_eq!(
+        days,
+        [
+            (30, NonCpuCause::Graphics),
+            (120, NonCpuCause::Power),
+            (240, NonCpuCause::Graphics),
+            (400, NonCpuCause::Power),
+            (600, NonCpuCause::Graphics),
+        ]
+    );
+}
+
+#[test]
+fn only_the_three_non_cpu_scenarios_have_non_cpu_interruptions() {
+    let scheduled = SCENARIO_IDS
+        .into_iter()
+        .filter(|name| Scenario::builtin(name, 1).unwrap().non_cpu().is_some())
+        .count();
+    assert_eq!(scheduled, 3);
 }

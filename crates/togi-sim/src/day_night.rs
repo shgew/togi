@@ -325,6 +325,53 @@ pub struct Failure {
     pub cause: FailureCause,
 }
 
+/// The hidden subsystem behind a non-CPU interruption.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NonCpuCause {
+    Graphics,
+    Power,
+}
+
+/// How the operator answers every non-CPU interruption of a scenario.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NonCpuAnswer {
+    /// Correctly, as not the CPU.
+    NotCpu,
+    /// Wrongly, as the CPU.
+    Cpu,
+    /// Not at all.
+    Missing,
+}
+
+/// The calendar days of a scenario's non-CPU interruptions, at most one a day, with their
+/// subsystems.
+const NON_CPU_DAYS: [(u32, NonCpuCause); 5] = [
+    (30, NonCpuCause::Graphics),
+    (120, NonCpuCause::Power),
+    (240, NonCpuCause::Graphics),
+    (400, NonCpuCause::Power),
+    (600, NonCpuCause::Graphics),
+];
+
+/// A scenario's hidden non-CPU interruptions: graphics or power ends on fixed calendar days,
+/// which the operator answers the same way each time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NonCpuSchedule {
+    answer: NonCpuAnswer,
+}
+
+impl NonCpuSchedule {
+    /// The subsystem that interrupts calendar `day`, if any.
+    pub fn on(&self, day: u32) -> Option<NonCpuCause> {
+        NON_CPU_DAYS
+            .iter()
+            .find_map(|&(scheduled, cause)| (scheduled == day).then_some(cause))
+    }
+    pub const fn answer(&self) -> NonCpuAnswer {
+        self.answer
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Family {
     Ordinary,
@@ -355,6 +402,7 @@ pub struct Scenario {
     background: f64,
     daily: [DailyBlock; 4],
     nights: Vec<TrialClass>,
+    non_cpu: Option<NonCpuSchedule>,
 }
 
 #[derive(Clone, Copy)]
@@ -395,6 +443,10 @@ impl Scenario {
     }
     pub const fn has_moving_cap(&self) -> bool {
         matches!(self.family, Family::Moving | Family::Firmware)
+    }
+    /// The hidden non-CPU interruptions, for the scenarios that have them.
+    pub const fn non_cpu(&self) -> Option<NonCpuSchedule> {
+        self.non_cpu
     }
     /// Truth epoch for memoizing metric-only safe profiles without duplicating the cap schedule.
     pub const fn cap_epoch(&self, day: u32) -> u32 {

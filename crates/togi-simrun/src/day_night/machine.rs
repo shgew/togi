@@ -8,7 +8,9 @@ use togi_machine::{
     Partial, PerCore, Reporter, Running, SampleError, Signal, SmuValidated, Started, Stopped,
     Swept, TargetOffset, TrialConditions, TrialFailure, TrialResult, TrialSpec, Trials,
 };
-use togi_sim::day_night::{FailureCause, Scenario, TrialClass, TruthState};
+use togi_sim::day_night::{
+    FailureCause, NonCpuAnswer, NonCpuCause, Scenario, TrialClass, TruthState,
+};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 
 use super::{EndAnswer, RunError, depth};
@@ -188,34 +190,28 @@ impl Runtime {
         let failure = state.draw(class, duration)?;
         // The registered non-CPU cases contain both graphics and power interruptions. Neither
         // their true subsystem nor the scenario identifier crosses the policy interface.
-        let non_cpu = !state.non_cpu_today
-            && matches!(state.day, 30 | 120 | 240 | 400 | 600)
-            && matches!(
-                state.scenario.id(),
-                "non-cpu-correct" | "non-cpu-wrong" | "non-cpu-missing"
-            );
+        let non_cpu = state.scenario.non_cpu().and_then(|schedule| {
+            let cause = schedule.on(state.day).filter(|_| !state.non_cpu_today)?;
+            Some((cause, schedule.answer()))
+        });
         let non_cpu_at = duration / 2;
-        let event = if non_cpu
+        let event = if let Some((cause, answer)) = non_cpu
             && failure
                 .as_ref()
                 .is_none_or(|failure| non_cpu_at < failure.elapsed)
         {
             state.non_cpu_today = true;
-            let answer = match state.scenario.id() {
-                "non-cpu-correct" => Some(EndAnswer::Other),
-                "non-cpu-wrong" => Some(EndAnswer::Cpu),
-                "non-cpu-missing" => None,
-                _ => return Err(RunError::Calendar("non-CPU event scenario")),
-            };
-            let cause = if matches!(state.day, 30 | 240 | 600) {
-                Cause::Graphics
-            } else {
-                Cause::Power
-            };
             ActiveEvent {
                 elapsed: non_cpu_at,
-                cause: Some(cause),
-                answer,
+                cause: Some(match cause {
+                    NonCpuCause::Graphics => Cause::Graphics,
+                    NonCpuCause::Power => Cause::Power,
+                }),
+                answer: match answer {
+                    NonCpuAnswer::NotCpu => Some(EndAnswer::Other),
+                    NonCpuAnswer::Cpu => Some(EndAnswer::Cpu),
+                    NonCpuAnswer::Missing => None,
+                },
             }
         } else if let Some(failure) = failure {
             ActiveEvent {
