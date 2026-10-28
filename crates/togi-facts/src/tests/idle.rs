@@ -1,6 +1,6 @@
 use test_case::test_case;
 
-use togi_journal::{Attribution, Payload, TrialId};
+use togi_journal::{Attribution, TrialId};
 use togi_machine::{BootId, Condition, Regime, Signal};
 
 use super::{Script, build, config_loaded, first, idle, profile, refreshed, set};
@@ -77,13 +77,6 @@ fn idle_class_wildcard_independent_of_diagnostic_regime(regime: Regime) {
         unreachable!()
     };
     assert_eq!(*diagnostic, Some(regime));
-    let Payload::FailureCarried(carried) = fact.to_payload() else {
-        unreachable!()
-    };
-    assert_eq!(carried.class.regime, Regime::R6);
-    assert_eq!(carried.class.workload, None);
-    assert_eq!(carried.class.cores, set(&[0, 1]));
-    assert_eq!(carried.class.duration_s, 0);
 }
 
 #[test_case(Condition::Together; "together")]

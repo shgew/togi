@@ -1,5 +1,6 @@
 //! Trial evidence extracted from a session journal: [`extract`] produces [`SessionFacts`] containing
-//! trial classes, observations and reset cutoffs for consumers of recorded evidence.
+//! the session's trial and idle-failure observations and its open trials for consumers of recorded
+//! evidence.
 
 mod error;
 mod extract;
@@ -14,4 +15,4 @@ pub use extract::extract;
 pub use fact::{
     BackendIdentity, Decisive, Fact, FactId, FactSource, Observation, Telemetry, TrialClass,
 };
-pub use session::{Effect, Reset, ResetCutoffs, SessionFacts, TrialActivity};
+pub use session::{SessionFacts, TrialActivity};
