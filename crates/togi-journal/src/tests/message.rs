@@ -2,7 +2,7 @@ use test_case::test_case;
 use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal, SleepMode};
 
 use super::fixtures::{
-    core, failure, member, ord, profile, sample, samples, seq, set, target, trial,
+    ccd_vector, core, failure, member, ord, profile, sample, samples, seq, set, target, trial,
 };
 use crate::*;
 
@@ -1425,24 +1425,14 @@ fn a_failed_requalification_names_its_night() {
 
 /// The sample `day.step` with `step` as its kind, the profile from CCD0 -10, CCD1 -10 to `proposed`
 /// and no reason, so the text is the decision's own.
-fn day_step_message(step: StepKind, proposed: &[(i64, i64)]) -> String {
+fn day_step_message(step: StepKind, proposed: &[i64]) -> String {
     let Payload::DayStep(mut sample) = sample(EventKind::DayStep) else {
         unreachable!()
     };
     sample.step = step;
-    sample.proposed.ccd = ccd_profile(proposed);
+    sample.proposed = ccd_vector(proposed);
     sample.reason = String::new();
     Payload::from(sample).message()
-}
-
-fn ccd_profile(offsets: &[(i64, i64)]) -> togi_machine::CcdProfile {
-    togi_machine::CcdProfile::try_from(
-        offsets
-            .iter()
-            .map(|&(ccd, at)| (togi_machine::CcdId::new(ccd).unwrap(), target(at)))
-            .collect::<std::collections::BTreeMap<_, _>>(),
-    )
-    .unwrap()
 }
 
 fn requalification(night: u64) -> DayEventId {
@@ -1480,7 +1470,7 @@ fn a_retreat_message_names_the_ccds_the_profiles_and_the_cause(cause: RetreatCau
             cause,
             wanted: None,
         },
-        &[(0, -5), (1, -10)],
+        &[-5, -10],
     );
     assert_eq!(
         text,
@@ -1493,13 +1483,7 @@ fn a_retreat_message_names_the_ccds_the_profiles_and_the_cause(cause: RetreatCau
 
 #[test]
 fn a_retreat_that_fell_back_to_co_0_names_the_profile_it_waits_for() {
-    let Payload::DayStep(sample) = sample(EventKind::DayStep) else {
-        unreachable!()
-    };
-    let wanted = CcdVector {
-        ccd: ccd_profile(&[(0, -15), (1, -10)]),
-        cores: sample.old.cores,
-    };
+    let wanted = ccd_vector(&[-15, -10]);
     let text = day_step_message(
         StepKind::Retreat {
             changed: [0, 1]
@@ -1508,7 +1492,7 @@ fn a_retreat_that_fell_back_to_co_0_names_the_profile_it_waits_for() {
             cause: RetreatCause::ShallowerCap {},
             wanted: Some(wanted),
         },
-        &[(0, 0), (1, 0)],
+        &[0, 0],
     );
     assert_eq!(
         text,
@@ -1525,7 +1509,7 @@ fn a_firmware_zero_message_names_the_reset_ccds_and_profiles() {
                 .map(|ccd| togi_machine::CcdId::new(ccd).unwrap())
                 .to_vec(),
         },
-        &[(0, 0), (1, 0)],
+        &[0, 0],
     );
     assert_eq!(
         text,
@@ -1536,13 +1520,7 @@ fn a_firmware_zero_message_names_the_reset_ccds_and_profiles() {
 
 #[test]
 fn a_hold_on_a_failed_qualification_names_the_blocked_profile_and_its_witnesses() {
-    let Payload::DayStep(sample) = sample(EventKind::DayStep) else {
-        unreachable!()
-    };
-    let profile = CcdVector {
-        ccd: ccd_profile(&[(0, -15), (1, -10)]),
-        cores: sample.old.cores,
-    };
+    let profile = ccd_vector(&[-15, -10]);
     let text = day_step_message(
         StepKind::Hold {
             blocked_by: vec![HoldReason::QualificationFailed {
@@ -1550,7 +1528,7 @@ fn a_hold_on_a_failed_qualification_names_the_blocked_profile_and_its_witnesses(
                 witnesses: [12, 15].map(|seq| Seq::new(seq).unwrap()).to_vec(),
             }],
         },
-        &[(0, -10), (1, -10)],
+        &[-10, -10],
     );
     assert_eq!(
         text,

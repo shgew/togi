@@ -188,16 +188,18 @@ fn profile(offsets: &[(i64, i64)]) -> CcdProfile {
 }
 
 pub(super) fn vector(offsets: &[(i64, i64)]) -> CcdVector {
-    CcdVector {
-        ccd: profile(offsets),
-        cores: PerCore::default(),
-    }
+    expanded(profile(offsets))
 }
 
 fn observed(offsets: &[(i64, i64)]) -> ObservedProfile {
+    let vector = vector(offsets);
     ObservedProfile::Ccd {
-        ccd: profile(offsets),
-        cores: PerCore::default(),
+        ccd: vector.ccd().clone(),
+        cores: vector
+            .cores()
+            .iter()
+            .map(|(core, offset)| (core, offset.observed()))
+            .collect(),
     }
 }
 

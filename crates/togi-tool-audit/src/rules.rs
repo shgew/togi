@@ -43,7 +43,7 @@ impl Rules {
     fn qualify(&mut self, qualification: &NightQualification) {
         if matches!(qualification.state, QualificationState::Complete { .. }) {
             self.qualified.push((
-                qualification.profile.ccd.clone(),
+                qualification.profile.ccd().clone(),
                 qualification.firmware.clone(),
             ));
         }
@@ -52,11 +52,11 @@ impl Rules {
     /// Every nonzero target of `day.applied` is the exact profile of an earlier complete `night.qualification`
     /// made under the firmware context the session last recorded. CO 0 needs no qualification.
     fn applied(&self, seq: Seq, applied: &DayApplied, findings: &mut Findings) {
-        if applied.target.ccd.is_zero() {
+        if applied.target.ccd().is_zero() {
             return;
         }
         let qualified = self.qualified.iter().any(|(profile, firmware)| {
-            *profile == applied.target.ccd
+            profile == applied.target.ccd()
                 && self
                     .firmware
                     .as_ref()
@@ -99,12 +99,12 @@ impl Rules {
 /// at or deeper than the vetoed one.
 fn forbids(veto: &ObservedProfile, proposed: &CcdVector) -> bool {
     match veto {
-        ObservedProfile::Ccd { ccd, .. } => proposed.ccd.at_or_deeper_than(ccd),
+        ObservedProfile::Ccd { ccd, .. } => proposed.ccd().at_or_deeper_than(ccd),
         ObservedProfile::PerCore { cores } => {
             !cores.is_empty()
                 && cores.iter().all(|(core, observed)| {
                     proposed
-                        .cores
+                        .cores()
                         .get(core)
                         .is_some_and(|own| own.get() <= observed.0)
                 })
@@ -114,7 +114,7 @@ fn forbids(veto: &ObservedProfile, proposed: &CcdVector) -> bool {
 
 fn describe(vector: &CcdVector) -> String {
     vector
-        .ccd
+        .ccd()
         .iter()
         .map(|(ccd, offset)| format!("CCD{ccd}={}", offset.get()))
         .collect::<Vec<_>>()

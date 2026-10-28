@@ -4,7 +4,7 @@ use std::time::Duration;
 use jiff::Timestamp;
 use test_case::test_case;
 use togi_journal::{
-    Activity, ApplicationId, ApplyCause, CcdVector, DayApplied, DeadEndCondition, Outcome, Payload,
+    Activity, ApplicationId, ApplyCause, DayApplied, DeadEndCondition, Outcome, Payload,
     ProfileRestored, SessionBaseline, Shutdown, ShutdownReason, TrialId,
 };
 use togi_machine::{BootId, CcdId, CcdProfile, Condition, ObservedOffset, PerCore, Regime};
@@ -51,10 +51,7 @@ fn day_applied(application: u64, offsets: &[(i64, i64)]) -> Payload {
     DayApplied {
         application: ApplicationId(application),
         cause: ApplyCause::Reapplication {},
-        target: CcdVector {
-            ccd: CcdProfile::try_from(ccd).unwrap(),
-            cores: PerCore::default(),
-        },
+        target: expanded(CcdProfile::try_from(ccd).unwrap()),
         readbacks: PerCore::default(),
         transactions: Vec::new(),
         boot: BootId::from("boot".to_owned()),

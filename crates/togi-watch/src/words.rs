@@ -367,7 +367,7 @@ fn offset_text(offset: togi_machine::TargetOffset) -> String {
 /// A CCD vector as "CCD0 -10, CCD1 -5".
 pub fn ccd_vector(profile: &CcdVector) -> String {
     profile
-        .ccd
+        .ccd()
         .iter()
         .map(|(ccd, at)| format!("CCD{ccd} {}", offset_text(at)))
         .collect::<Vec<_>>()

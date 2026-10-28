@@ -356,13 +356,7 @@ fn base() -> Vec<Event> {
         SessionStart {
             build: build(),
             session: "20260101T000000Z".parse().unwrap(),
-            cores: (0..16)
-                .map(|core| CoreInfo {
-                    core: CoreId::new(core).unwrap(),
-                    ccd: ccd(core / 8),
-                    cpus: Vec::new(),
-                })
-                .collect(),
+            cores: topology(),
         }
         .into(),
     );
@@ -433,15 +427,24 @@ fn offset(value: i64) -> TargetOffset {
     TargetOffset::new(value).unwrap()
 }
 
+/// The 16 cores of the two CCDs, 8 each.
+fn topology() -> Vec<CoreInfo> {
+    (0..16)
+        .map(|core| CoreInfo {
+            core: CoreId::new(core).unwrap(),
+            ccd: ccd(core / 8),
+            cpus: Vec::new(),
+        })
+        .collect()
+}
+
 /// A day profile with the CCDs at the offsets given and CCD 1 at 0.
 fn profile(first: i64, second: i64) -> CcdVector {
-    CcdVector {
-        ccd: CcdProfile::zero([ccd(0), ccd(1)])
-            .unwrap()
-            .with(ccd(0), offset(first))
-            .with(ccd(1), offset(second)),
-        cores: PerCore::default(),
-    }
+    let day = CcdProfile::zero([ccd(0), ccd(1)])
+        .unwrap()
+        .with(ccd(0), offset(first))
+        .with(ccd(1), offset(second));
+    CcdVector::expand(day, &topology()).unwrap()
 }
 
 /// A mapping class with no workload named, so the journal needs no workload content.
@@ -458,8 +461,12 @@ fn class(regime: Regime, duration_s: u32) -> ExposureClass {
 
 fn observed(vector: &CcdVector) -> ObservedProfile {
     ObservedProfile::Ccd {
-        ccd: vector.ccd.clone(),
-        cores: PerCore::<ObservedOffset>::default(),
+        ccd: vector.ccd().clone(),
+        cores: vector
+            .cores()
+            .iter()
+            .map(|(core, offset)| (core, offset.observed()))
+            .collect::<PerCore<ObservedOffset>>(),
     }
 }
 

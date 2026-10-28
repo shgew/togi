@@ -234,7 +234,7 @@ impl State {
                     && applied
                         .payload
                         .target
-                        .cores
+                        .cores()
                         .iter()
                         .all(|(core, offset)| offsets.get(core) == Some(offset.observed()))
             })
@@ -401,7 +401,7 @@ impl State {
                 Blocker::NotQualified { .. } => {
                     let expired = proposal_profile.is_some_and(|profile| {
                         self.qualification_records().iter().any(|record| {
-                            &record.start.payload.profile.ccd == profile
+                            record.start.payload.profile.ccd() == profile
                                 && self.is_current_record(record)
                                 && matches!(
                                     record.latest.payload.state,
@@ -460,7 +460,7 @@ impl State {
         self.qualification_records()
             .iter()
             .filter(|record| {
-                &record.start.payload.profile.ccd == profile
+                record.start.payload.profile.ccd() == profile
                     && self.is_current_record(record)
                     && matches!(
                         record.latest.payload.state,

@@ -78,7 +78,7 @@ fn an_unobserved_crash_record_commits_a_cpu_suspect_event_an_active_veto_and_a_r
         panic!("the retreat is not caused by the event: {retreat:?}");
     };
     assert_eq!(*cited, id);
-    assert!(retreat.proposed.ccd.is_zero());
+    assert!(retreat.proposed.ccd().is_zero());
 }
 
 #[test]

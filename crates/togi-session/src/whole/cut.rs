@@ -315,13 +315,10 @@ fn day(
             } else {
                 let applied = day.state.project().applied.unwrap();
                 let cores = machine.host.topology().unwrap();
-                let target = CcdVector {
-                    cores: applied.expand(&cores).unwrap(),
-                    ccd: applied,
-                };
+                let target = CcdVector::expand(applied, &cores).unwrap();
                 (ApplyCause::Reapplication {}, target)
             };
-            for (core, offset) in target.cores.iter() {
+            for (core, offset) in target.cores().iter() {
                 access(machine.smu.set_offset(core, offset), &mut machine_crashed)?;
             }
             let readbacks = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;

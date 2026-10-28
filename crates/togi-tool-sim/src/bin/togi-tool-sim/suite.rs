@@ -399,8 +399,8 @@ fn stock_failure(persistence: &Persistence, condition: DeadEndCondition, causes:
                         if !exposure.failures.is_empty()
                             && exposure
                                 .profile
-                                .cores
-                                .into_iter_values()
+                                .cores()
+                                .iter()
                                 .all(|(_, offset)| offset == TargetOffset::ZERO))
                 })
         })

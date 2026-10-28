@@ -26,7 +26,7 @@ fn offset(offset: TargetOffset) -> String {
 
 fn ccd_vector(profile: &CcdVector) -> String {
     let parts: Vec<_> = profile
-        .ccd
+        .ccd()
         .iter()
         .map(|(ccd, at)| format!("CCD{ccd} {}", offset(at)))
         .collect();

@@ -293,10 +293,7 @@ impl Ruleset13 {
                 .applied
                 .ok_or(RunError::Calendar("no committed day profile to reapply"))?;
             let cores = self.cores()?;
-            let target = CcdVector {
-                cores: applied.expand(&cores)?,
-                ccd: applied,
-            };
+            let target = CcdVector::expand(applied, &cores)?;
             (ApplyCause::Reapplication {}, target)
         };
         self.apply(machine, cause, target)
@@ -313,12 +310,12 @@ impl Ruleset13 {
         target: CcdVector,
     ) -> Result<(), RunError> {
         let cores = self.cores()?;
-        for (core, offset) in target.cores.iter() {
+        for (core, offset) in target.cores().iter() {
             machine.smu.set_offset(core, offset)?;
         }
         let readbacks = read_offsets(machine, &cores)?;
         if target
-            .cores
+            .cores()
             .iter()
             .any(|(core, offset)| readbacks.get(core) != Some(offset.observed()))
         {

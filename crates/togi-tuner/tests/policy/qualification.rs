@@ -67,7 +67,7 @@ fn failed_commitments(journal: &Journal, profile: &CcdProfile) -> usize {
         .iter()
         .filter(|event| {
             matches!(&event.payload, Payload::NightQualification(record)
-                if &record.profile.ccd == profile
+                if record.profile.ccd() == profile
                     && matches!(record.state, QualificationState::Failed { .. }))
         })
         .count()
@@ -173,10 +173,10 @@ fn a_failed_certificate_lends_no_witness_to_a_later_qualification() {
         })
     };
     let (started, _) = committed(|state| matches!(state, QualificationState::Start { .. }))
-        .find(|(_, record)| record.profile.ccd == failed)
+        .find(|(_, record)| *record.profile.ccd() == failed)
         .unwrap();
     let (concluded, _) = committed(|state| matches!(state, QualificationState::Failed { .. }))
-        .find(|(_, record)| record.profile.ccd == failed)
+        .find(|(_, record)| *record.profile.ccd() == failed)
         .unwrap();
     let mut completed = 0;
     for (_, record) in committed(|state| matches!(state, QualificationState::Complete { .. })) {
@@ -189,7 +189,7 @@ fn a_failed_certificate_lends_no_witness_to_a_later_qualification() {
                 assert!(
                     !(started..=concluded).contains(&exposure),
                     "{:?} reused {exposure:?} from the failed {failed:?}",
-                    record.profile.ccd
+                    record.profile.ccd()
                 );
             }
         }
