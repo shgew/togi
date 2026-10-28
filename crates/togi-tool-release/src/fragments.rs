@@ -6,6 +6,8 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs, io};
 
+use pulldown_cmark::{Event, LinkType, Parser, Tag, TagEnd};
+
 use crate::{Pattern, PatternError, compiled, pattern};
 
 /// The directory of pending fragments, relative to the repository root.
@@ -307,124 +309,66 @@ pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
 }
 
 /// `text` with its links relative to `CHANGELOG.md` at the repository root instead of to [`FRAGMENT_DIR`], where
-/// the fragment was written: each inline link or image destination starting with `../`, after optional spaces
-/// and an optional `<`, loses that step. A link needs an unescaped `[` before its `](`; code spans and
-/// backslash-escaped characters are text, not links, and stay as written, as do other links.
+/// the fragment was written: the destination of each inline link or image that starts with `../`, as the
+/// Markdown parser reads the entry, loses that step. Everything else stays as written.
 fn relocate_links(text: &str) -> Cow<'_, str> {
-    let bytes = text.as_bytes();
-    let mut out: Option<String> = None;
-    // `text[..copied]` is in `out`, rewritten.
+    // Per open link or image: whether its destination leaves `changes/`, and where its text ends so far.
+    let mut open: Vec<(bool, usize)> = Vec::new();
+    let mut cuts = Vec::new();
+    for (event, range) in Parser::new(text).into_offset_iter() {
+        if let Event::Start(
+            Tag::Link {
+                link_type,
+                dest_url,
+                ..
+            }
+            | Tag::Image {
+                link_type,
+                dest_url,
+                ..
+            },
+        ) = event
+        {
+            open.push((
+                link_type == LinkType::Inline && dest_url.starts_with("../"),
+                range.start + 1,
+            ));
+            continue;
+        }
+        if let Event::End(TagEnd::Link | TagEnd::Image) = event
+            && let Some((leaves, text_end)) = open.pop()
+            && leaves
+            && let Some(at) = destination(text, text_end, range.end)
+        {
+            cuts.push(at);
+        }
+        // Everything inside a link's text, nested links and images included, extends that text.
+        if let Some((_, end)) = open.last_mut() {
+            *end = (*end).max(range.end);
+        }
+    }
+    if cuts.is_empty() {
+        return Cow::Borrowed(text);
+    }
+    cuts.sort_unstable();
+    let mut out = String::with_capacity(text.len());
     let mut copied = 0;
-    // Unescaped `[` not yet closed by a `]`.
-    let mut openers = 0usize;
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\\' => i += 2,
-            b'`' => i = code_span_end(bytes, i),
-            b'[' => {
-                openers += 1;
-                i += 1;
-            }
-            b']' if openers == 0 => i += 1,
-            b']' if bytes.get(i + 1) != Some(&b'(') => {
-                openers -= 1;
-                i += 1;
-            }
-            b']' => {
-                openers -= 1;
-                let mut start = i + 2;
-                while matches!(bytes.get(start), Some(b' ' | b'\t')) {
-                    start += 1;
-                }
-                let path = start + usize::from(bytes.get(start) == Some(&b'<'));
-                if bytes[path..].starts_with(b"../") {
-                    let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
-                    out.push_str(&text[copied..path]);
-                    copied = path + 3;
-                }
-                // The destination and title are not text: nothing in them opens a link.
-                i = inline_link_end(bytes, start);
-            }
-            _ => i += 1,
-        }
+    for at in cuts {
+        out.push_str(&text[copied..at]);
+        copied = at + "../".len();
     }
-    match out {
-        Some(mut out) => {
-            out.push_str(&text[copied..]);
-            Cow::Owned(out)
-        }
-        None => Cow::Borrowed(text),
-    }
+    out.push_str(&text[copied..]);
+    Cow::Owned(out)
 }
 
-/// Where the inline link whose destination starts at `start`, past `](` and spaces, ends: after its destination,
-/// in `<…>` or with balanced parentheses, its optional title, in `"…"`, `'…'` or `(…)`, and the closing `)`.
-fn inline_link_end(bytes: &[u8], start: usize) -> usize {
-    // Past the first unescaped `close` from `at`, or the end.
-    let past = |mut at: usize, close: u8| {
-        while at < bytes.len() {
-            match bytes[at] {
-                b'\\' => at += 2,
-                b if b == close => return at + 1,
-                _ => at += 1,
-            }
-        }
-        bytes.len()
-    };
-    let spaces = |mut at: usize| {
-        while matches!(bytes.get(at), Some(b' ' | b'\t')) {
-            at += 1;
-        }
-        at
-    };
-    let mut at = start;
-    if bytes.get(at) == Some(&b'<') {
-        at = past(at + 1, b'>');
-    } else {
-        let mut depth = 0usize;
-        while let Some(&b) = bytes.get(at) {
-            match b {
-                b'\\' => at += 1,
-                b' ' | b'\t' => break,
-                b'(' => depth += 1,
-                b')' if depth == 0 => break,
-                b')' => depth -= 1,
-                _ => {}
-            }
-            at += 1;
-        }
-    }
-    at = spaces(at);
-    match bytes.get(at) {
-        Some(&quote @ (b'"' | b'\'')) => at = spaces(past(at + 1, quote)),
-        Some(b'(') => at = spaces(past(at + 1, b')')),
-        _ => {}
-    }
-    if bytes.get(at) == Some(&b')') {
-        at += 1;
-    }
-    at.min(bytes.len())
-}
-
-/// Where the backtick run at `start` stops counting as text: after the code span it opens, closed by a run of
-/// exactly as many backticks, or, when nothing closes it, after the run itself, which is then literal.
-fn code_span_end(bytes: &[u8], start: usize) -> usize {
-    let run_at = |at: usize| bytes[at..].iter().take_while(|&&b| b == b'`').count();
-    let open = run_at(start);
-    let mut at = start + open;
-    while at < bytes.len() {
-        if bytes[at] == b'`' {
-            let close = run_at(at);
-            if close == open {
-                return at + close;
-            }
-            at += close;
-        } else {
-            at += 1;
-        }
-    }
-    start + open
+/// Where the `../` destination of the inline link spanning up to `end`, whose text ends at `text_end`, starts:
+/// past the `](` that closes the text, spaces and an opening `<`.
+fn destination(text: &str, text_end: usize, end: usize) -> Option<usize> {
+    let after = text_end + text.get(text_end..end)?.find("](")? + "](".len();
+    let rest = text[after..end].trim_start_matches([' ', '\t', '\n']);
+    let rest = rest.strip_prefix('<').unwrap_or(rest);
+    // `rest` is a suffix of `text[..end]`.
+    rest.starts_with("../").then_some(end - rest.len())
 }
 
 #[cfg(test)]

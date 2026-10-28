@@ -8,6 +8,7 @@ description = "The release command: checks changelog fragments, previews the nex
 
 [dependencies]
 jiff.workspace = true
+pulldown-cmark.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true

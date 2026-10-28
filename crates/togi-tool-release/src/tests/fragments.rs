@@ -134,6 +134,32 @@ fn assembles_release_section() {
     "See [a](docs/a_(b).md (Its [x])) then [c](docs/c.md) ([#7])."
     ; "parentheses in destination and title"
 )]
+#[test_case("Not a link: [x](../docs/a b).", "Not a link: [x](../docs/a b) ([#7])." ; "space in bare destination")]
+#[test_case(
+    "Not a link: [x](<bad) then [docs](../docs/howto.md).",
+    "Not a link: [x](<bad) then [docs](docs/howto.md) ([#7])."
+    ; "unclosed angle destination"
+)]
+#[test_case(
+    "Not a link: [outer [inner](https://example.com)](../docs/howto.md).",
+    "Not a link: [outer [inner](https://example.com)](../docs/howto.md) ([#7])."
+    ; "link inside link text"
+)]
+#[test_case(
+    "A [![chart](../docs/cores.svg)](../docs/howto.md) image link.",
+    "A [![chart](docs/cores.svg)](docs/howto.md) image link ([#7])."
+    ; "image inside link text"
+)]
+#[test_case(
+    r#"Keep <span title="[x](../y)">text</span> then [docs](../docs/howto.md)."#,
+    r#"Keep <span title="[x](../y)">text</span> then [docs](docs/howto.md) ([#7])."#
+    ; "raw HTML"
+)]
+#[test_case(
+    r#"Not a link: [docs]( "Example [x](../y)")."#,
+    r#"Not a link: [docs]( "Example [x](y)") ([#7])."#
+    ; "quote opens a bare destination"
+)]
 fn assembles_links_relative_to_changelog(text: &str, want: &str) {
     let files = BTreeMap::from([("7.md".to_owned(), format!("### Fixed\n\n- {text}\n"))]);
     let (body, _) = assemble(&parse_fragments(&files).unwrap());
