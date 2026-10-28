@@ -41,6 +41,7 @@ pub const RULESET: u32 = 3;
 
 /// The evidence epoch this build records trial outcomes under (`docs/spec/tuner.md`, Ruleset): workload
 /// content, generated backend configuration, intended durations and pass/failure detection. Bump it when a
-/// change makes recorded passes incomparable with current trials; a transition then drops passes from other
-/// epochs and keeps eligible failures. It starts at 1 for the same reason as [`RULESET`].
+/// change makes recorded passes incomparable with current trials; a session recorded under another epoch is
+/// then archived and the new session starts fresh (`docs/spec/journal.md`, Transitions). It starts at 1 for
+/// the same reason as [`RULESET`].
 pub const EVIDENCE_EPOCH: u32 = 1;

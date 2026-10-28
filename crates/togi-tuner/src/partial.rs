@@ -27,10 +27,8 @@ pub enum UncoveredReason {
 /// cores and each a strict subset of the one before, or an explicit uncovered result. An uncovered
 /// set is never partial coverage: no partial ran for it, and it says why.
 ///
-/// This is the seam for checking roles (#1217). The current checking scheduler does not call it:
-/// it still derives one link at a time from the request order, which lets offsets
-/// stand in for missing requests and records an empty link as the end of the chain
-/// (`docs/spec/workloads.md`).
+/// The night layout derives each CCD's chain from the measured requests of the latest full-CCD R7
+/// load (`policy/night_query.rs`).
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "coverage", rename_all = "snake_case")]
 pub enum HonestChain {

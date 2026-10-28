@@ -5,9 +5,10 @@
 //! policy's own commitments (exposure, edge, cap, night plan, qualification, reproduction, day event,
 //! veto, interval, hold, step and application). Its queries are pure: [`State::next`] decides what the
 //! night does next, [`State::day`] what a day invocation must commit, and [`State::project`] what
-//! status shows. A query reads nothing but the state and its arguments, and the state holds no interior
-//! mutability, so cloning it, folding synthesized outcomes into the clone and querying again previews a
-//! night without touching the journal.
+//! status shows. A query reads nothing but the state and its arguments. The state's only interior
+//! mutability is its memoized query caches (`cache.rs`), which are never state, so cloning it, folding
+//! synthesized outcomes into the clone and querying again still previews a night without touching the
+//! journal.
 //!
 //! Every derived commitment is owed once per identity: a query returns it until the journal carries it,
 //! so appending the returned decision and folding it makes the next query move on, and replaying the
