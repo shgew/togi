@@ -274,17 +274,19 @@ fn score_reference(
     seen: &HashSet<ProfileClassKey>,
     constant: f64,
 ) -> Result<(ForwardScore, Breakdown), Error> {
-    let mut eligible: HashSet<String> = HashSet::new();
-    let mut flagged: HashSet<String> = HashSet::new();
+    let mut eligible = HashSet::new();
+    let mut flagged = HashSet::new();
+    let mut groups = Vec::new();
     for model in models {
         let checker = Checker::new(model, held_out.iter().copied())?;
-        for group in checker.groups(model)? {
-            let key = group.to_string();
-            if group.flagged {
-                flagged.insert(key.clone());
-            }
-            eligible.insert(key);
+        groups.extend(checker.groups(model)?);
+    }
+    for group in &groups {
+        let key = group.key();
+        if group.flagged {
+            flagged.insert(key);
         }
+        eligible.insert(key);
     }
     let members = saturating_count(models.len());
     let (mut score, breakdown) = score_trials(held_out, seen, constant, |fact, class| {

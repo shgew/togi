@@ -498,3 +498,29 @@ fn a_reference_group_counts_once_when_any_member_flags_it_in_any_member_order(
         "the row and the pool: {text}"
     );
 }
+
+#[test]
+fn reference_groups_with_equal_text_in_two_bios_contexts_are_counted_apart() {
+    // Core 0 failed 10 of 10 in both contexts, so each context holds one flagged group that prints
+    // identically: the printed group leaves the BIOS context out.
+    let mut cfg = blank_machine(16);
+    cfg.model.past_limit_rate = 0.0;
+    cfg.core[0].flat = -(1.0 - 0.4_f64).ln();
+    let mut trials = vec![trial(S1, 1, 1, false)];
+    trials.extend(eligible_group(0, 10, 1));
+    let mut other = eligible_group(0, 10, 11);
+    for fact in &mut other {
+        fact.context.as_mut().unwrap().bios_version = "B".into();
+    }
+    trials.extend(other);
+    let check = reference_check(&trials, 0, &[cfg]).unwrap();
+    assert_eq!(check.rows.len(), 1);
+    let row = &check.rows[0].score;
+    assert_eq!(shape(&row.counts), (20, 20));
+    assert_eq!((row.flagged, row.eligible), (2, 2));
+    assert_eq!(
+        (check.pooled.flagged, check.pooled.eligible),
+        (2, 2),
+        "the pool counts both contexts"
+    );
+}
