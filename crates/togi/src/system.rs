@@ -77,6 +77,29 @@ pub trait System {
         }
     }
 
+    /// Reads typed archive markers without taking the writer lock.
+    fn journal_markers(
+        &self,
+        path: &Path,
+    ) -> Result<Vec<(togi_journal::Marker, togi_journal::SessionId)>, DirError> {
+        match self.journal_fs() {
+            Some(fs) => togi_journal::markers_in(&*fs, path),
+            None => togi_journal::markers(path),
+        }
+    }
+
+    /// Whether the journal path exists, using the same filesystem as its readers.
+    fn journal_exists(&self, path: &Path) -> io::Result<bool> {
+        match self.journal_fs() {
+            Some(fs) => fs.kind(path).map(|kind| kind.is_some()),
+            None => match std::fs::metadata(path) {
+                Ok(_) => Ok(true),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+                Err(error) => Err(error),
+            },
+        }
+    }
+
     /// Reads a journal with strict event decoding.
     fn recording(&self, path: &Path) -> Result<Recording, FileError> {
         match self.journal_fs() {

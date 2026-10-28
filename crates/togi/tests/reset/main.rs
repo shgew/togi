@@ -703,8 +703,8 @@ fn interrupted_archive() -> (Host, support::MemoryDir) {
     (host, state)
 }
 
-#[test_case(0, "remove", false; "remove failure")]
-#[test_case(1, "sync", true; "sync failure")]
+#[test_case(0, "remove marker", false; "remove failure")]
+#[test_case(1, "sync directory", true; "sync failure")]
 fn interrupted_archive_removes_before_sync_and_reports_each_failed_step(
     delta: usize,
     step: &str,
@@ -715,13 +715,21 @@ fn interrupted_archive_removes_before_sync_and_reports_each_failed_step(
     let ran = reset(&host, state.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     let journal = state.path().join("events.jsonl");
+    let marker = archive(state.path(), &format!("{SESSION}-compat-pending"));
+    let archived = archive(state.path(), &format!("{SESSION}.jsonl"));
+    let archive_dir = state.path().join("archive");
     let log = host.fs.log();
     let removed = log
         .iter()
-        .position(|(op, path)| *op == Op::Remove && path == &journal)
+        .position(|(op, path)| *op == Op::Remove && path == &marker)
         .unwrap();
-    assert_eq!(log[removed + 1], (Op::SyncDir, state.path().to_path_buf()));
+    assert_eq!(log[removed + 1], (Op::SyncDir, archive_dir));
     assert!(!host.exists(&journal));
+    assert!(
+        !log.iter()
+            .any(|(op, path)| *op == Op::Remove && path == &journal)
+    );
+    assert_eq!(host.read_to_string(&archived).unwrap(), "moved\n");
 
     let index = removed + delta;
     let (op, path) = &log[index];
@@ -732,6 +740,7 @@ fn interrupted_archive_removes_before_sync_and_reports_each_failed_step(
         })
         .count() as u64;
     let (host, state) = interrupted_archive();
+    let journal = state.path().join("events.jsonl");
     host.fs
         .inject(Fault::before(*op, nth).named(path.file_name().unwrap()));
     let ran = reset(&host, state.path(), &["--all"]);
@@ -741,6 +750,13 @@ fn interrupted_archive_removes_before_sync_and_reports_each_failed_step(
         "{}",
         ran.err
     );
-    assert_eq!(!host.exists(&journal), removed_after_fault, "{step}");
+    let marker = archive(state.path(), &format!("{SESSION}-compat-pending"));
+    assert_eq!(!host.exists(&marker), removed_after_fault, "{step}");
+    assert!(!host.exists(&journal));
+    assert_eq!(
+        host.read_to_string(archive(state.path(), &format!("{SESSION}.jsonl")))
+            .unwrap(),
+        "moved\n"
+    );
     assert!(host.exists(archive(state.path(), &format!("{SESSION}-reset-all"))));
 }

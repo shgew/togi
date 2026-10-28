@@ -1,3 +1,7 @@
+use std::error::Error as _;
+use std::io;
+use std::path::Path;
+
 use test_case::test_case;
 
 use super::sample;
@@ -725,4 +729,150 @@ fn recovering_an_already_moved_archive_fails_closed_at_every_step_and_retries_on
             assert_eq!(fs.contents(ARCHIVED).unwrap(), data, "{context}");
         }
     }
+}
+
+const LIVE: &str = "/state/events.jsonl";
+
+fn pending_completion(fs: &MemFs) -> crate::StateDir {
+    fs.put(ARCHIVED, "moved\n");
+    fs.put(COMPAT, "");
+    simulated(fs)
+}
+
+fn completion_step_and_cause(error: &DirError, step: &str) -> String {
+    assert_eq!(error.to_string(), step);
+    assert!(
+        error
+            .source()
+            .is_some_and(|source| source.downcast_ref::<io::Error>().is_some()),
+        "{error:?}"
+    );
+    togi_machine::error_chain(error)
+}
+
+#[test]
+fn archive_completion_removes_an_empty_live_journal_before_syncing_its_directory() {
+    let fs = MemFs::new();
+    let mut dir = pending_completion(&fs);
+    fs.put(LIVE, Vec::new());
+    fs.record_history();
+    assert_eq!(
+        dir.complete_pending_archive().unwrap(),
+        Some(default_session())
+    );
+    assert_eq!(fs.contents(LIVE), None);
+    assert_eq!(
+        &fs.log()[..2],
+        [
+            (Op::Remove, Path::new(LIVE).to_path_buf()),
+            (Op::SyncDir, Path::new("/state").to_path_buf()),
+        ]
+    );
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), b"moved\n");
+    assert_eq!(fs.contents(COMPAT), None);
+    assert_eq!(position(&fs.log(), Op::Open, LIVE), None);
+}
+
+#[test]
+fn archive_completion_reports_a_failed_removal_without_syncing() {
+    let fs = MemFs::new();
+    let mut dir = pending_completion(&fs);
+    fs.put(LIVE, Vec::new());
+    fs.record_history();
+    fs.inject(Fault::before(Op::Remove, 1));
+    let error = dir.complete_pending_archive().unwrap_err();
+    let chain = completion_step_and_cause(&error, &format!("remove {LIVE}"));
+    assert!(chain.starts_with(&format!("remove {LIVE}: ")), "{chain}");
+    assert!(fs.contents(LIVE).is_some());
+    assert_eq!(fs.log(), [(Op::Remove, Path::new(LIVE).to_path_buf())]);
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), b"moved\n");
+    assert!(fs.contents(COMPAT).is_some());
+}
+
+#[test]
+fn archive_completion_reports_a_failed_directory_sync_after_removing_the_file() {
+    let fs = MemFs::new();
+    let mut dir = pending_completion(&fs);
+    fs.put(LIVE, Vec::new());
+    fs.record_history();
+    fs.inject(Fault::before(Op::SyncDir, 1));
+    let error = dir.complete_pending_archive().unwrap_err();
+    let chain = completion_step_and_cause(&error, "sync /state");
+    assert!(chain.starts_with("sync /state: "), "{chain}");
+    assert_eq!(fs.contents(LIVE), None);
+    assert_eq!(
+        fs.log(),
+        [
+            (Op::Remove, Path::new(LIVE).to_path_buf()),
+            (Op::SyncDir, Path::new("/state").to_path_buf()),
+        ]
+    );
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), b"moved\n");
+    assert!(fs.contents(COMPAT).is_some());
+}
+
+#[test]
+fn archive_completion_without_a_live_journal_never_opens_a_writer() {
+    let fs = MemFs::new();
+    let mut dir = pending_completion(&fs);
+    fs.record_history();
+    assert_eq!(
+        dir.complete_pending_archive().unwrap(),
+        Some(default_session())
+    );
+    assert_eq!(fs.contents(LIVE), None);
+    assert_eq!(fs.contents(COMPAT), None);
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), b"moved\n");
+    assert_eq!(position(&fs.log(), Op::Open, LIVE), None);
+    let mutations = fs.mutations();
+    assert_eq!(dir.complete_pending_archive().unwrap(), None);
+    assert_eq!(fs.mutations(), mutations);
+}
+
+#[test]
+fn archive_completion_keeps_an_unrelated_nonempty_live_journal() {
+    let fs = MemFs::new();
+    sample(&fs);
+    let original = live(&fs);
+    let mut dir = simulated(&fs);
+    fs.put("/state/archive/20991231T000000Z-compat-pending", "");
+    assert!(matches!(
+        dir.complete_pending_archive(),
+        Err(DirError::NotAJournal { .. })
+    ));
+    assert_eq!(live(&fs), original);
+    assert!(
+        fs.contents("/state/archive/20991231T000000Z-compat-pending")
+            .is_some()
+    );
+}
+
+#[test]
+fn archive_completion_recovers_the_matching_live_session_without_a_replacement_writer() {
+    let fs = MemFs::new();
+    let original = unreadable_fixture(&fs);
+    fs.put(COMPAT, "");
+    let mut dir = simulated(&fs);
+    fs.record_history();
+    assert_eq!(
+        dir.complete_pending_archive().unwrap(),
+        Some(default_session())
+    );
+    assert_archived_intact(&fs, &original, "completed without a writer");
+    assert_eq!(fs.contents(LIVE), None);
+    assert_eq!(position(&fs.log(), Op::Open, LIVE), None);
+}
+
+#[test_case("invalid-compat-pending"; "invalid session")]
+#[test_case("20231114T221320Z-other-pending"; "unknown marker")]
+#[test_case("20231114T221320Z-import-pending"; "import marker")]
+fn archive_completion_ignores_entries_that_are_not_compatibility_markers(name: &str) {
+    let fs = MemFs::new();
+    fs.put(format!("/state/archive/{name}"), "");
+    let mut dir = simulated(&fs);
+    fs.record_history();
+    assert_eq!(dir.complete_pending_archive().unwrap(), None);
+    assert_eq!(fs.log(), []);
+    assert_eq!(fs.contents(LIVE), None);
+    assert!(fs.contents(format!("/state/archive/{name}")).is_some());
 }

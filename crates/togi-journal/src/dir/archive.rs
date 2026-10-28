@@ -135,25 +135,7 @@ impl StateDir {
 
     /// The markers present, ordered by session then by kind. A marker that is not a regular file is an error.
     pub fn markers(&self) -> Result<Vec<(Marker, SessionId)>, DirError> {
-        let mut markers = Vec::new();
-        for entry in self.archive_entries()? {
-            let Some(name) = entry.name.to_str() else {
-                continue;
-            };
-            let found = Marker::ALL.into_iter().find_map(|marker| {
-                let session = name.strip_suffix(marker.suffix())?.parse().ok()?;
-                Some((marker, session))
-            });
-            let Some(found) = found else { continue };
-            if entry.kind != FileKind::File {
-                return Err(DirError::NotRegular {
-                    path: self.archive_dir().join(&entry.name),
-                });
-            }
-            markers.push(found);
-        }
-        markers.sort_by_key(|(marker, session)| (*session, *marker));
-        Ok(markers)
+        markers_in(self.fs(), self.path())
     }
 
     fn marked(&self, marker: Marker) -> Result<Vec<SessionId>, DirError> {
@@ -415,6 +397,25 @@ impl StateDir {
         self.sync_dirs()
     }
 
+    /// Completes compatibility archives under the writer lock without opening a replacement journal. Returns the
+    /// first pending session, or `None` when no compatibility archive is pending.
+    pub fn complete_pending_archive(&mut self) -> Result<Option<SessionId>, DirError> {
+        let Some(session) = self.marked(Marker::CompatPending)?.into_iter().next() else {
+            return Ok(None);
+        };
+        let events = self.join(EVENTS_FILE);
+        if self.kind_of(&events)?.is_some() && first_line(self.fs(), &events)?.is_none() {
+            self.fs()
+                .remove_file(&events)
+                .map_err(io_at("remove", &events))?;
+            self.fs()
+                .sync_dir(self.path())
+                .map_err(io_at("sync", self.path()))?;
+        }
+        self.recover_compat()?;
+        Ok(Some(session))
+    }
+
     /// Finishes every archive a compat marker left pending, then removes the marker.
     pub(crate) fn recover_compat(&self) -> Result<(), DirError> {
         for session in self.marked(Marker::CompatPending)? {
@@ -540,6 +541,36 @@ fn list_archive(fs: &dyn Fs, dir: &Path) -> Result<Vec<crate::fs::DirEntry>, Dir
         Err(error) if not_found(&error) => Ok(Vec::new()),
         Err(error) => Err(io_at("list archive", dir)(error)),
     }
+}
+
+/// The typed markers in `dir`'s archive, read without taking the writer lock.
+pub fn markers(dir: &Path) -> Result<Vec<(Marker, SessionId)>, DirError> {
+    markers_in(&DiskFs::default(), dir)
+}
+
+/// The typed markers in `dir`'s archive, ordered by session then kind, without taking the writer lock.
+/// A marker that is not a regular file is an error.
+pub fn markers_in(fs: &dyn Fs, dir: &Path) -> Result<Vec<(Marker, SessionId)>, DirError> {
+    let archive = dir.join(ARCHIVE_DIR);
+    let mut markers = Vec::new();
+    for entry in list_archive(fs, &archive)? {
+        let Some(name) = entry.name.to_str() else {
+            continue;
+        };
+        let found = Marker::ALL.into_iter().find_map(|marker| {
+            let session = name.strip_suffix(marker.suffix())?.parse().ok()?;
+            Some((marker, session))
+        });
+        let Some(found) = found else { continue };
+        if entry.kind != FileKind::File {
+            return Err(DirError::NotRegular {
+                path: archive.join(&entry.name),
+            });
+        }
+        markers.push(found);
+    }
+    markers.sort_by_key(|(marker, session)| (*session, *marker));
+    Ok(markers)
 }
 
 /// The names of the entries in the state directory `dir`'s `archive/` that belong to a session, sorted: archived

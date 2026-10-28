@@ -1,14 +1,11 @@
 //! `togi reset`: archive the whole session.
 
-use std::fs;
-use std::io::{ErrorKind, Read as _};
-use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
 use togi_hostlock::Error as HostLockError;
 use togi_journal::{
-    ArchiveKind, Build, DirError, Journal, LockError, Marker, OpenError, Operation, SessionId,
+    ArchiveKind, Build, DirError, Journal, Lifetime, LockError, OpenError, Operation, SessionId,
     StateDir, Verdict,
 };
 use togi_machine::BootId;
@@ -19,7 +16,7 @@ use crate::exit::Exit;
 use crate::report::{
     current_build, emit, exit_with, fail, log_events, refusal_message, unknown_event_message,
 };
-use crate::system::{System, SystemClock};
+use crate::system::SystemClock;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[(
@@ -71,9 +68,13 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     let journal = ctx.state_dir.join(JOURNAL);
-    if matches!(journal_nonempty(system, &journal), Err(error) if error.kind() == ErrorKind::NotFound)
-        && !pending_marker(system, ctx.state_dir)
-    {
+    let missing = matches!(system.journal_exists(&journal), Ok(false));
+    let pending = system.journal_markers(ctx.state_dir).is_ok_and(|markers| {
+        markers
+            .iter()
+            .any(|(marker, _)| marker.lifetime() == Lifetime::Pending)
+    });
+    if missing && !pending {
         return fail(ctx, COMMAND, format!("no journal at {}", journal.display()));
     }
     // Read alone, before the journal lock: another build's journal, or a header torn by a crash, is refused without
@@ -82,7 +83,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     if let Err(error @ DirError::ForeignJournal { .. }) = &recorded {
         return fail(ctx, COMMAND, togi_render::error_chain(error));
     }
-    if matches!(recorded, Ok(None)) && !pending_marker(system, ctx.state_dir) {
+    if matches!(recorded, Ok(None)) && !pending {
         return no_session(ctx);
     }
     let boot = match system.boot_id() {
@@ -105,29 +106,6 @@ fn no_session(ctx: &mut Context<'_>) -> Exit {
     fail(ctx, COMMAND, message)
 }
 
-fn pending_marker(system: &dyn System, state_dir: &Path) -> bool {
-    let archive = state_dir.join("archive");
-    match system.journal_fs() {
-        Some(fs) => fs.read_dir(&archive).is_ok_and(|entries| {
-            entries
-                .iter()
-                .any(|entry| entry.name.to_string_lossy().ends_with("-pending"))
-        }),
-        None => fs::read_dir(archive).is_ok_and(|entries| {
-            entries
-                .flatten()
-                .any(|entry| entry.file_name().to_string_lossy().ends_with("-pending"))
-        }),
-    }
-}
-
-fn journal_nonempty(system: &dyn System, path: &Path) -> std::io::Result<bool> {
-    match system.journal_fs() {
-        Some(fs) => fs.open_read(path)?.read(&mut [0]).map(|len| len != 0),
-        None => fs::metadata(path).map(|metadata| metadata.len() != 0),
-    }
-}
-
 fn open_failure(
     ctx: &mut Context<'_>,
     error: &OpenError,
@@ -145,7 +123,7 @@ fn open_failure(
 fn log_recorded(ctx: &mut Context<'_>, session: Option<&SessionId>, opened: usize) {
     let Some(session) = session else { return };
     let live = ctx.state_dir.join(JOURNAL);
-    let path = if journal_nonempty(ctx.system, &live).is_ok() {
+    let path = if ctx.system.journal_exists(&live).is_ok_and(|exists| exists) {
         live
     } else {
         ctx.state_dir
@@ -201,7 +179,7 @@ fn reset_everything(ctx: &mut Context<'_>, mut dir: StateDir, boot: BootId) -> E
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     let Some(recorded) = recorded else {
-        return finish_without_journal(ctx, dir, boot, dropped);
+        return finish_without_journal(ctx, dir, dropped);
     };
     let session = match build.verdict(&recorded, Operation::ResetAll) {
         Verdict::Archive => {
@@ -256,30 +234,16 @@ fn reset_everything(ctx: &mut Context<'_>, mut dir: StateDir, boot: BootId) -> E
 fn finish_without_journal(
     ctx: &mut Context<'_>,
     mut dir: StateDir,
-    boot: BootId,
     dropped: Option<SessionId>,
 ) -> Exit {
-    let system = ctx.system;
-    let interrupted = match dir.mark_reset_all().and_then(|_| dir.markers()) {
-        Ok(markers) => markers
-            .into_iter()
-            .find_map(|(marker, session)| (marker == Marker::CompatPending).then_some(session)),
+    let interrupted = match dir
+        .mark_reset_all()
+        .and_then(|_| dir.complete_pending_archive())
+    {
+        Ok(session) => session,
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     if let Some(session) = interrupted {
-        let journal = match dir.open_at(boot, system.now()) {
-            Ok(journal) => journal,
-            Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
-        };
-        if let Err(error) = journal.close() {
-            return fail(ctx, COMMAND, togi_render::error_chain(&error));
-        }
-        let journal = ctx.state_dir.join(JOURNAL);
-        if journal_nonempty(system, &journal).is_ok_and(|nonempty| !nonempty)
-            && let Err(error) = remove_durably(system.journal_fs().as_deref(), &journal)
-        {
-            return fail(ctx, COMMAND, togi_render::error_chain(&error));
-        }
         return emit(
             ctx,
             format!(
@@ -300,55 +264,3 @@ fn finish_without_journal(
         None => no_session(ctx),
     }
 }
-
-/// Why a removal did not survive a crash: the step that failed.
-#[derive(Debug, thiserror::Error)]
-enum RemoveError {
-    #[error("remove {}", path.display())]
-    Remove {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("sync {}", path.display())]
-    Sync {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-}
-
-/// Removes `path` and syncs its directory, so the removal survives a crash.
-fn remove_durably(
-    filesystem: Option<&dyn togi_journal::fs::Fs>,
-    path: &Path,
-) -> Result<(), RemoveError> {
-    let dir = path.parent().unwrap_or(Path::new("."));
-    let removed = match filesystem {
-        Some(fs) => fs.remove_file(path),
-        None => fs::remove_file(path),
-    };
-    removed.map_err(|source| RemoveError::Remove {
-        path: path.to_owned(),
-        source,
-    })?;
-    let synced = match filesystem {
-        Some(fs) => fs.sync_dir(dir),
-        None => sync_directory(dir),
-    };
-    synced.map_err(|source| RemoveError::Sync {
-        path: dir.to_owned(),
-        source,
-    })
-}
-
-#[expect(
-    clippy::disallowed_methods,
-    reason = "production reset removal must survive a crash"
-)]
-fn sync_directory(path: &Path) -> std::io::Result<()> {
-    fs::File::open(path)?.sync_all()
-}
-
-#[cfg(test)]
-mod tests;
