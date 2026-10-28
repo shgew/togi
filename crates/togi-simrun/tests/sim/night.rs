@@ -1,5 +1,5 @@
-//! Whole Ruleset 13 nights through the simulation: the real session over the simulated seams, ended by the simulated
-//! operator at `stop_at` or by a dead end.
+//! Ruleset 13 nights through the simulation: the real session over the simulated seams. Whole-night assertions
+//! retain the operator's `stop_at`; transition assertions stop from the event observer.
 
 use jiff::SignedDuration;
 use test_case::test_case;
@@ -204,9 +204,16 @@ fn an_exhausted_backend_is_left_and_the_night_continues_on_the_other() {
     let sim = bench.sim.clone();
     let mut mapping = false;
     let mut failed = false;
+    let mut excluded = false;
     let mut input = bench.input();
     // The first night's stock controls need both backends, so the backend fails after the first mapping trial.
     input.observer = Some(Box::new(move |event| {
+        if let Payload::NightPlan(plan) = &event.payload {
+            excluded = plan
+                .unavailable
+                .iter()
+                .any(|unavailable| unavailable.backend == Backend::Mprime);
+        }
         if let Payload::TrialIntent(intent) = &event.payload
             && intent.task.is_some_and(|task| task.queue == Queue::Mapping)
         {
@@ -214,6 +221,8 @@ fn an_exhausted_backend_is_left_and_the_night_continues_on_the_other() {
         } else if matches!(event.payload, Payload::TrialEnd(_)) && mapping && !failed {
             failed = true;
             sim.fail_backend_setup(Backend::Mprime);
+        } else if event.kind() == EventKind::TrialEnd && excluded {
+            return Observe::Stop;
         }
         Observe::Continue
     }));

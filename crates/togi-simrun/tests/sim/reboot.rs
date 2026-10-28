@@ -8,7 +8,7 @@ use togi_journal::{EventKind, MemFs, Payload};
 use togi_sim::MachineDefinition;
 use togi_simrun::{Persistence, Replay, SimOutcome, events, simulate};
 
-use crate::common::{crash_first, hunt_machine, input, machine_file, nz, simulator};
+use crate::common::{crash_first, hunt_machine, input, machine_file, nz, simulator, until_kind};
 
 /// Crashes at every trial end, so every boot of a capped simulation crashes.
 const EVERY: usize = usize::MAX;
@@ -120,7 +120,7 @@ fn an_ordinary_simulation_counts_operations_but_keeps_no_history() {
         simulator(&hunt_machine(2), 1),
         Persistence::Memory(fs.clone()),
     );
-    sim.max_boots = nz(3);
+    sim.observer = Some(until_kind(EventKind::SessionStart));
     simulate(sim).unwrap();
     assert!(fs.mutations() > 0);
     assert!(

@@ -8,8 +8,8 @@ use togi_tuner::policy::{Params, State};
 
 use super::Ruleset13;
 use crate::day_night::{
-    CalendarConfig, DayClassification, DayObservation, EndAnswer, Night, Policy, PolicyKind,
-    RunError, run_with_policy,
+    CalendarConfig, DayClassification, DayObservation, DayStart, EndAnswer, Night, Policy,
+    PolicyKind, RunError, run_controlled, run_with_policy,
 };
 
 const SCENARIO: &str = "edge-deep";
@@ -23,6 +23,34 @@ fn calendar(days: u32) -> CalendarConfig {
 
 /// Days enough for the policy's first promotion on [`SCENARIO`] (the first lands in the fourth week).
 const PROMOTION_DAYS: u32 = 30;
+
+/// The longest a controlled run may take; each stops at its transition well before.
+const DAYS_BOUND: u32 = 365;
+
+/// Runs `policy` on [`SCENARIO`]'s seed 1, asking `start` before each day, and fails unless
+/// `start` ends the run within [`DAYS_BOUND`] days.
+fn run_until<P: Policy>(policy: &mut P, mut start: impl FnMut(&P) -> DayStart) {
+    let mut stopped = false;
+    run_controlled(SCENARIO, 1, calendar(DAYS_BOUND), policy, |_, policy| {
+        let next = start(policy);
+        stopped |= next == DayStart::Stop;
+        next
+    })
+    .unwrap();
+    assert!(
+        stopped,
+        "the asserted transition did not complete within {DAYS_BOUND} days"
+    );
+}
+
+/// Whether `policy` applies a nonzero day profile.
+fn holds_promotion(policy: &Ruleset13) -> bool {
+    policy
+        .state()
+        .project()
+        .applied
+        .is_some_and(|profile| !profile.is_zero())
+}
 
 #[test]
 fn the_gate_policy_builds_from_its_slope_and_refuses_a_non_multiplier() {
@@ -80,7 +108,13 @@ fn an_adapter_not_recording_keeps_no_journal_and_decides_alike() {
 #[test]
 fn a_first_promotion_follows_a_completed_night_qualification() {
     let mut policy = Ruleset13::new(1.5).unwrap().recording();
-    run_with_policy(SCENARIO, 1, calendar(PROMOTION_DAYS), &mut policy).unwrap();
+    run_until(&mut policy, |policy| {
+        if holds_promotion(policy) {
+            DayStart::Stop
+        } else {
+            DayStart::Run
+        }
+    });
     let events = policy.events().unwrap();
     let promoted_by = |decision| {
         events.iter().any(|step| {
@@ -110,41 +144,79 @@ fn a_first_promotion_follows_a_completed_night_qualification() {
     );
 }
 
-/// The day the calendar changes firmware in [`a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified`],
-/// while [`SCENARIO`]'s seed 1 holds its second promotion.
-const FIRMWARE_CHANGE_DAY: u32 = 35;
+fn is_new_firmware(version: &str) -> bool {
+    version.ends_with("-transition")
+}
 
-#[test]
-fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
-    let mut policy = Ruleset13::new(1.5).unwrap().recording();
-    let calendar = CalendarConfig {
-        days: FIRMWARE_CHANGE_DAY * 2,
-        firmware_change_day: Some(FIRMWARE_CHANGE_DAY),
-        ..CalendarConfig::default()
-    };
-    run_with_policy(SCENARIO, 1, calendar, &mut policy).unwrap();
-    let events = policy.events().unwrap();
-    let new_firmware = |version: &str| version.ends_with("-transition");
-    let applied = |event: &Event| {
-        if let Payload::DayApplied(applied) = &event.payload {
-            Some(applied.target.ccd.clone())
-        } else {
-            None
-        }
-    };
-    let changed = events
-        .iter()
-        .position(|event| {
-            matches!(&event.payload, Payload::SessionContext(context) if new_firmware(&context.bios_version))
-        })
-        .expect("the calendar recorded no firmware change");
-    let (before, after) = events.split_at(changed);
-    let previous = before
+fn applied(event: &Event) -> Option<CcdProfile> {
+    if let Payload::DayApplied(applied) = &event.payload {
+        Some(applied.target.ccd.clone())
+    } else {
+        None
+    }
+}
+
+/// Splits `events` at the first session context on the new firmware.
+fn at_firmware_change(events: &[Event]) -> Option<(&[Event], &[Event])> {
+    let changed = events.iter().position(|event| {
+        matches!(&event.payload, Payload::SessionContext(context) if is_new_firmware(&context.bios_version))
+    })?;
+    Some(events.split_at(changed))
+}
+
+/// Whether `events` completed a qualification of `profile` under the new firmware.
+fn requalified(profile: &CcdProfile, events: &[Event]) -> bool {
+    events.iter().any(|event| {
+        matches!(&event.payload, Payload::NightQualification(q)
+            if is_new_firmware(&q.firmware.bios_version)
+                && q.profile.ccd == *profile
+                && matches!(q.state, QualificationState::Complete { .. }))
+    })
+}
+
+/// The last nonzero profile applied before the firmware changed.
+fn previous_profile(before: &[Event]) -> Option<CcdProfile> {
+    before
         .iter()
         .rev()
         .find_map(applied)
         .filter(|profile| !profile.is_zero())
-        .expect("no nonzero profile was applied when the firmware changed");
+}
+
+#[test]
+fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
+    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    // The firmware changes once a promotion holds, and the run ends once the promoted profile is
+    // qualified afresh under the new firmware and a nonzero profile is applied again.
+    let mut changed = false;
+    run_until(&mut policy, |policy| {
+        if !changed {
+            changed = holds_promotion(policy);
+            return if changed {
+                DayStart::ChangeFirmware
+            } else {
+                DayStart::Run
+            };
+        }
+        let events = policy.events().unwrap();
+        let returned = at_firmware_change(events).is_some_and(|(before, after)| {
+            previous_profile(before).is_some_and(|previous| requalified(&previous, after))
+                && after
+                    .iter()
+                    .filter_map(applied)
+                    .any(|profile| !profile.is_zero())
+        });
+        if returned {
+            DayStart::Stop
+        } else {
+            DayStart::Run
+        }
+    });
+    let events = policy.events().unwrap();
+    let (before, after) =
+        at_firmware_change(events).expect("the calendar recorded no firmware change");
+    let previous =
+        previous_profile(before).expect("no nonzero profile was applied when the firmware changed");
     // The next cold boot proposes the firmware zero and applies stock.
     let step = after
         .iter()
@@ -164,22 +236,14 @@ fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
     assert!(after.iter().find_map(applied).unwrap().is_zero());
     // The old qualification no longer counts: the previous profile is qualified afresh under the
     // new firmware, and no nonzero profile returns without such a qualification of its own.
-    let qualified = |profile: &CcdProfile, events: &[Event]| {
-        events.iter().any(|event| {
-            matches!(&event.payload, Payload::NightQualification(q)
-                if new_firmware(&q.firmware.bios_version)
-                    && q.profile.ccd == *profile
-                    && matches!(q.state, QualificationState::Complete { .. }))
-        })
-    };
     assert!(
-        qualified(&previous, after),
+        requalified(&previous, after),
         "{previous:?} was never qualified under the new firmware"
     );
     for (index, event) in after.iter().enumerate() {
         if let Some(profile) = applied(event).filter(|profile| !profile.is_zero()) {
             assert!(
-                qualified(&profile, &after[..index]),
+                requalified(&profile, &after[..index]),
                 "{profile:?} returned at event {} without a qualification under the new firmware",
                 event.seq
             );
@@ -207,12 +271,7 @@ impl Policy for FreezeAfterPromotion {
         evidence: &DayObservation,
         machine: &mut Machine<'_>,
     ) -> Result<DayClassification, RunError> {
-        let promoted = self
-            .inner
-            .state()
-            .project()
-            .applied
-            .is_some_and(|profile| !profile.is_zero());
+        let promoted = holds_promotion(&self.inner);
         if promoted && self.frozen.is_none() {
             let freeze = DayObservation::Ended {
                 active: Duration::from_hours(1),
@@ -235,13 +294,19 @@ fn a_cpu_suspect_answer_leads_to_a_retreat() {
         inner: Ruleset13::new(1.5).unwrap().recording(),
         frozen: None,
     };
-    run_with_policy(SCENARIO, 1, calendar(PROMOTION_DAYS + 10), &mut policy).unwrap();
-    assert_eq!(policy.frozen, Some(DayClassification::CpuSuspect));
-    let retreated = policy.inner.events().unwrap().iter().any(|event| {
-        matches!(&event.payload, Payload::DayStep(step)
-            if matches!(step.step, StepKind::Retreat { .. }))
+    // The run ends once a retreat step follows the CPU-suspect event.
+    run_until(&mut policy, |policy| {
+        let retreated = policy.inner.events().unwrap().iter().any(|event| {
+            matches!(&event.payload, Payload::DayStep(step)
+                if matches!(step.step, StepKind::Retreat { .. }))
+        });
+        if policy.frozen.is_some() && retreated {
+            DayStart::Stop
+        } else {
+            DayStart::Run
+        }
     });
-    assert!(retreated, "no retreat step followed the CPU-suspect event");
+    assert_eq!(policy.frozen, Some(DayClassification::CpuSuspect));
 }
 
 #[test]
