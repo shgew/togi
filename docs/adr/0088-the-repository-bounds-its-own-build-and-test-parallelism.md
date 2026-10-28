@@ -2,7 +2,7 @@
 
 Status: see [the index](README.md).
 
-Relates to ADR 0086 (host job queue); admission across unrelated commands and the parallelism within one command are separate concerns. Amends the invocation mechanics of [ADR 0085](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md), not its check inventory or publication policy. Implements [#1324](https://github.com/shgew/togi/issues/1324).
+Relates to [ADR 0086](0086-heavy-runs-wait-for-memory.md); admission across unrelated commands and the parallelism within one command are separate concerns. Amends the invocation mechanics of [ADR 0085](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md), not its check inventory or publication policy. Implements [#1324](https://github.com/shgew/togi/issues/1324).
 
 ## Context
 
