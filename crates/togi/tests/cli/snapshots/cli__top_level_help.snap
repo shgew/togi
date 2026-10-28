@@ -1,5 +1,5 @@
 ---
-source: crates/togi/tests/cli/main.rs
+source: crates/togi/tests/cli/mod.rs
 expression: stdout(&ran)
 ---
 Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs

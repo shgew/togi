@@ -24,7 +24,7 @@ use togi_machine::{
 use togi_watchtest::{Base, Scenario};
 use unicode_width::UnicodeWidthStr as _;
 
-use crate::support::{Session, append_between_trial_mce, append_event, text, togi};
+use super::support::{Session, append_between_trial_mce, append_event, text, togi};
 
 const _: () = assert!(Base::ALL.len() == 5, "every base needs a status sweep case");
 
@@ -43,14 +43,14 @@ fn snapshot_plus_tail_renders_the_same_status_without_writes(base: Base) {
         let events = scenario
             .events()
             .unwrap_or_else(|error| panic!("{}: {error}", scenario.name()));
-        let dir = crate::support::installed(&events);
+        let dir = super::support::installed(&events);
         let mutations = dir.fs.mutations();
         let ran = togi(&dir, &["status"]);
         assert_eq!(dir.fs.mutations(), mutations, "{}", scenario.name());
         assert_eq!(ran.status.code(), Some(0), "{}", scenario.name());
         assert_eq!(text(&ran.stderr), "", "{}", scenario.name());
         let shown = text(&ran.stdout);
-        crate::support::snapshot(&format!("status__status_{}", scenario.name()), shown);
+        super::support::snapshot(&format!("status__status_{}", scenario.name()), shown);
         for line in shown.lines() {
             assert!(
                 line.width() <= 80,
@@ -119,8 +119,8 @@ fn snapshot_plus_tail_renders_the_same_status_without_writes(base: Base) {
 
 #[test]
 fn a_journal_without_a_session_is_an_error() {
-    let dir = crate::support::Session::empty();
-    crate::support::write_journal(&dir, "");
+    let dir = super::support::Session::empty();
+    super::support::write_journal(&dir, "");
     let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(1));
     assert_eq!(text(&ran.stdout), "");
@@ -133,7 +133,7 @@ fn a_journal_without_a_session_is_an_error() {
 
 #[test]
 fn a_missing_journal_is_an_error_naming_the_file() {
-    let dir = crate::support::Session::empty();
+    let dir = super::support::Session::empty();
     let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(1));
     assert!(
@@ -146,8 +146,8 @@ fn a_missing_journal_is_an_error_naming_the_file() {
 #[test]
 fn a_malformed_journal_line_prints_its_path_line_and_parser_cause() {
     let dir = hand();
-    let header = crate::support::lines(&dir).remove(0);
-    crate::support::write_journal(&dir, format!("{header}\nnot an event\n"));
+    let header = super::support::lines(&dir).remove(0);
+    super::support::write_journal(&dir, format!("{header}\nnot an event\n"));
     let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(1));
     assert_eq!(text(&ran.stdout), "");
@@ -170,10 +170,10 @@ fn status_takes_no_arguments() {
 
 #[test]
 fn status_help() {
-    let ran = togi(&crate::support::Session::empty(), &["status", "--help"]);
+    let ran = togi(&super::support::Session::empty(), &["status", "--help"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
-    crate::support::snapshot("status__status_help", text(&ran.stdout));
+    super::support::snapshot("status__status_help", text(&ran.stdout));
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn wide_bios_fields_wrap_by_terminal_cells_and_stay_whole() {
 #[test]
 fn a_journal_the_fold_rejects_is_an_error_with_nothing_on_stdout() {
     let dir = hand();
-    let mut lines = crate::support::lines(&dir);
+    let mut lines = super::support::lines(&dir);
     let mut start: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
     assert_eq!(start["kind"], "session.start");
     start["data"]["cores"].as_array_mut().unwrap().pop();
@@ -223,7 +223,7 @@ fn a_journal_the_fold_rejects_is_an_error_with_nothing_on_stdout() {
     let mut baseline: serde_json::Value = serde_json::from_str(line).unwrap();
     baseline["data"]["offsets"] = serde_json::json!({"15": 0});
     *line = baseline.to_string();
-    crate::support::write_journal(&dir, lines.join("\n") + "\n");
+    super::support::write_journal(&dir, lines.join("\n") + "\n");
     let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(1), "{}", text(&ran.stdout));
     assert_eq!(text(&ran.stdout), "");
@@ -237,7 +237,7 @@ fn a_journal_the_fold_rejects_is_an_error_with_nothing_on_stdout() {
 #[test]
 fn a_failed_write_to_stdout_is_an_error() {
     let dir = hand();
-    let ran = crate::support::output(dir.host().run_to_closed_stdout(dir.path(), &["status"]));
+    let ran = super::support::output(dir.host().run_to_closed_stdout(dir.path(), &["status"]));
     assert_eq!(ran.status.code(), Some(1), "{}", text(&ran.stderr));
     assert!(
         text(&ran.stderr).starts_with("togi status: write output: "),
@@ -247,7 +247,7 @@ fn a_failed_write_to_stdout_is_an_error() {
 }
 
 pub(super) fn installed(events: &[Event]) -> Session {
-    crate::support::installed(events)
+    super::support::installed(events)
 }
 
 fn status_of(dir: &Session) -> String {

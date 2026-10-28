@@ -6,8 +6,7 @@
 //! `togi emergency-stop` against a simulated machine: nothing writes the SMU before the validation and the sweep
 //! succeed, every core is written 0 and read back, and any failure is a nonzero status.
 
-#[path = "../support/mod.rs"]
-mod support;
+use crate::support;
 
 use std::cell::RefCell;
 use std::fmt::Write as _;

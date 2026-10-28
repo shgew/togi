@@ -1,5 +1,5 @@
 ---
-source: crates/togi/tests/cli/main.rs
+source: crates/togi/tests/cli/mod.rs
 expression: "help(\"emergency-stop\")"
 ---
 Internal emergency recovery that stops leftover trials and sets every core to offset 0

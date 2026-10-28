@@ -7,7 +7,7 @@ use togi_journal::Event;
 use togi_journal::fs::{Fs, MemFs};
 use togi_watchtest::Scenario;
 
-use crate::host::Host;
+use super::host::Host;
 
 /// An isolated in-memory state directory and the filesystem the command reads.
 pub(crate) struct Session {
@@ -32,7 +32,7 @@ impl Session {
     }
 }
 
-pub(crate) fn output(ran: crate::host::Ran) -> Output {
+pub(crate) fn output(ran: super::host::Ran) -> Output {
     Output {
         status: ExitStatus::from_raw(i32::from(ran.exit.code()) << 8),
         stdout: ran.out.into_bytes(),

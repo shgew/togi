@@ -8,7 +8,7 @@ use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
 use togi_render::open_pty;
 use togi_watchtest::Scenario;
 
-use crate::support::{
+use super::support::{
     append_between_trial_mce, append_event, lines, rewrite_first_line, session, text, togi,
 };
 
@@ -18,7 +18,7 @@ const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
 
 #[test]
 fn a_missing_journal_prints_no_session_yet_and_exits_zero() {
-    let dir = crate::support::Session::empty();
+    let dir = super::support::Session::empty();
     let ran = togi(&dir, &["watch", "--width", "80", "--height", "20"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
@@ -57,7 +57,7 @@ fn an_unreadable_journal_prints_the_problem_frame_and_exits_one() {
     // A header of this build, then a line that is not an event: unreadable, not another build's journal.
     let dir = session(Scenario::Between);
     let header = lines(&dir).swap_remove(0);
-    crate::support::write_journal(&dir, format!("{header}\nnot json\n"));
+    super::support::write_journal(&dir, format!("{header}\nnot json\n"));
     let ran = togi(&dir, &["watch", "--width", "100", "--height", "30"]);
     assert_eq!(ran.status.code(), Some(1));
     assert!(!text(&ran.stdout).trim().is_empty(), "the frame is printed");
@@ -149,7 +149,7 @@ fn a_between_trial_mce_shows_in_the_frame() {
 #[test_case::test_case(["watch", "--width", "1001"]; "excess width")]
 #[test_case::test_case(["watch", "--height", "1001"]; "excess height")]
 fn the_frame_size_must_be_at_least_one(args: [&str; 3]) {
-    let dir = crate::support::Session::empty();
+    let dir = super::support::Session::empty();
     let ran = togi(&dir, &args);
     assert_eq!(ran.status.code(), Some(2), "{args:?}");
     assert_eq!(text(&ran.stdout), "");
@@ -157,10 +157,10 @@ fn the_frame_size_must_be_at_least_one(args: [&str; 3]) {
 
 #[test]
 fn watch_help() {
-    let ran = togi(&crate::support::Session::empty(), &["watch", "--help"]);
+    let ran = togi(&super::support::Session::empty(), &["watch", "--help"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
-    crate::support::snapshot("watch__watch_help", text(&ran.stdout));
+    super::support::snapshot("watch__watch_help", text(&ran.stdout));
 }
 
 pub(crate) struct Helper(pub(crate) Child);

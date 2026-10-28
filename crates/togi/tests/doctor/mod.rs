@@ -3,8 +3,7 @@
     reason = "the helpers panic on a broken fixture, as the tests do"
 )]
 
-#[path = "../support/mod.rs"]
-mod support;
+use crate::support;
 
 use std::sync::Arc;
 use support::{Host, Ran, Session, files};

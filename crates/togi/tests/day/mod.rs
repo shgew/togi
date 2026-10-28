@@ -2,7 +2,7 @@
 
 #![cfg(test)]
 
-mod support;
+use crate::support;
 
 use jiff::Timestamp;
 use std::path::Path;

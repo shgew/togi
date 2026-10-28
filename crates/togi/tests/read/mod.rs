@@ -8,8 +8,7 @@ mod events;
 #[path = "../support/foreign.rs"]
 mod fixture;
 mod foreign;
-#[path = "../support/mod.rs"]
-mod host;
+use crate::support as host;
 mod status;
 mod support;
 mod watch;

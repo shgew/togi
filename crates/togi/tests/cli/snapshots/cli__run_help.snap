@@ -1,5 +1,5 @@
 ---
-source: crates/togi/tests/cli/main.rs
+source: crates/togi/tests/cli/mod.rs
 expression: stdout(&ran)
 ---
 Start or resume the night's tuning session in the foreground
