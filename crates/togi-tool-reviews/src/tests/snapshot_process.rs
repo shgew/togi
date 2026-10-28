@@ -635,17 +635,23 @@ fn real_process_rereview_cover_follows_later_insertions_and_rename() {
     git(&["commit", "-q", "-am", "add uncovered line"]);
     let delta_commit = git(&["rev-parse", "HEAD"]).trim().to_owned();
     git(&["mv", "f.go", "g.go"]);
+    // Edits two lines on either side of the uncovered line, close enough for a nonzero
+    // diff.interHunkContext to join them into one hunk spanning it.
+    let later = changed
+        .replace("// Five\n", "// Five edited\n")
+        .replace("// Eight\n", "// Eight edited\n");
     write(
         &work,
         "g.go",
-        &format!("// Inserted one\n// Inserted two\n{changed}"),
+        &format!("// Inserted one\n// Inserted two\n{later}"),
         0o644,
     );
-    git(&["commit", "-q", "-am", "move file and insert above"]);
+    git(&["commit", "-q", "-am", "move file, insert above and edit nearby"]);
     let head = git(&["rev-parse", "HEAD"]).trim().to_owned();
     git(&["remote", "add", "origin", &work.to_string_lossy()]);
     let raw = git(&["diff", "-M", &base, &head]);
     let patch = git(&["diff", &format!("{delta_commit}^"), &delta_commit]);
+    git(&["config", "diff.interHunkContext", "10"]);
     let view = serde_json::json!({
         "headRefOid": head, "baseRefOid": base, "url": PR_URL,
     })

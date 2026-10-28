@@ -215,6 +215,7 @@ pub fn translate(
                     "--no-ext-diff",
                     "--no-textconv",
                     "-U0",
+                    "--inter-hunk-context=0",
                     "-M",
                     "--src-prefix=a/",
                     "--dst-prefix=b/",
