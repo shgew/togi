@@ -14,8 +14,8 @@ use crate::fs::{DiskFs, FileKind, Fs, FsLock, MemFs};
 use crate::session_id::SessionId;
 
 pub use archive::{
-    ArchiveKind, ImportMarker, Lifetime, Marker, markers_in, recorded_build, recorded_build_in,
-    session_entries_in,
+    ArchiveKind, ImportMarker, Lifetime, Marker, markers, markers_in, recorded_build,
+    recorded_build_in, session_entries_in,
 };
 
 pub(crate) const LOCK_FILE: &str = "lock";

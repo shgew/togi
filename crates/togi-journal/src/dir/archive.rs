@@ -543,6 +543,11 @@ fn list_archive(fs: &dyn Fs, dir: &Path) -> Result<Vec<crate::fs::DirEntry>, Dir
     }
 }
 
+/// The typed markers in `dir`'s archive, read without taking the writer lock.
+pub fn markers(dir: &Path) -> Result<Vec<(Marker, SessionId)>, DirError> {
+    markers_in(&DiskFs::default(), dir)
+}
+
 /// The typed markers in `dir`'s archive, ordered by session then kind, without taking the writer lock.
 /// A marker that is not a regular file is an error.
 pub fn markers_in(fs: &dyn Fs, dir: &Path) -> Result<Vec<(Marker, SessionId)>, DirError> {
