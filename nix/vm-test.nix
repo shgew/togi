@@ -43,10 +43,10 @@ let
       environment.systemPackages = [ pkgs.grub2 ];
     };
   scenarios = {
-    # Runs the shipped package under real systemd with a GRUB tuning boot and the retained trial scope tests
-    # (trial-scope-tests) as root and as the delegated hardware user, without stress backends or SMU
-    # access. Only the tuning specialisation's watchdog is overridden, to 10s (the module check pins the
-    # shipped 30s); the test still freezes PID 1 and observes the real hardware watchdog reset.
+    # Runs the shipped package under real systemd with a GRUB tuning boot, without stress backends or SMU
+    # access. The runtime guest owns the trial scope suite. Only the tuning specialisation's watchdog
+    # is overridden, to 10s (the module check pins the shipped 30s); the test still freezes PID 1
+    # and observes the real hardware watchdog reset.
     tuning-boot = {
       name = "togi-tuning-boot";
 
@@ -65,50 +65,16 @@ let
           group = "togi-hardware";
         };
         systemd.services."user@".serviceConfig.Delegate = "cpu cpuset io memory pids";
-        environment.systemPackages = [ trialTests ];
       };
 
       testScript = ''
         import json
         import time
 
-        # Completion trials need a real SMU; controller clock trials need real cpufreq policies.
-        hardware = (
-            "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes "
-            "--skip an_r8_trial --skip an_r9_trial "
-            "--skip managed_mapping_caps_idle_ccd_policies --skip managed_all_core_trial_rotates_controller_host"
-        )
-        pin = "hardware::a_helper_cannot_pin_outside_its_scope"
-        flags = "--test-threads 1 --nocapture"
-        scopes = "systemctl {manager} list-units --all 'togi-*.scope' --plain --no-legend"
-
-
-        def run_scope_tests(prefix, selection, manager):
-            log = "/tmp/scope-tests.log"
-            status, _ = machine.execute(f"{prefix} togi-trial-tests {selection} {flags} > {log} 2>&1")
-            output = machine.succeed(f"cat {log}")
-            machine.log(output)
-            assert status == 0, output
-            left = machine.succeed(f"{prefix} {scopes.format(manager=manager)}").strip()
-            assert left == "", left
-
-
         machine.start(allow_reboot=True)
         machine.wait_for_unit("multi-user.target")
         assert json.loads(machine.succeed("cat /etc/togi/config.json"))["backend_user"] == "togi-trial"
         machine.log(machine.wait_until_succeeds("systemd-analyze critical-chain multi-user.target"))
-        run_scope_tests("", hardware, "")
-        lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
-        assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
-        machine.succeed("loginctl enable-linger togi-hardware")
-        delegated_uid = machine.succeed("id -u togi-hardware").strip()
-        machine.wait_for_unit(f"user@{delegated_uid}.service")
-        delegated_prefix = (
-            f"runuser -u togi-hardware -- env XDG_RUNTIME_DIR=/run/user/{delegated_uid} "
-            f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{delegated_uid}/bus"
-        )
-        run_scope_tests(delegated_prefix, pin, "--user")
-        assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == lock_identity
         assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
         normal_system = machine.succeed("readlink -f /run/current-system").strip()
         tuning_system = machine.succeed("readlink -f /run/current-system/specialisation/togi").strip()
@@ -984,8 +950,8 @@ let
     # the SMU is a persistent file, so the offsets stay applied after SIGKILL. The module's ExecStopPost hook must run
     # the package's `togi emergency-stop` (the production sweep, validation, zero-only write and readback; only the
     # machine behind the System seam is the VM's) and leave no trial scope and every core at 0 before the 60 s restart.
-    # Only a successful exit skips the hook; every other exit status, a dead end included, runs it. Faults in the
-    # validation, the sweep and the readback show the command's gates and exit status.
+    # Only a successful exit skips the hook; every other exit status, a dead end included, runs it.
+    # CLI emergency-stop tests own the direct validation, sweep and readback fault matrix.
     emergency-stop = {
       name = "togi-emergency-stop";
 
@@ -1035,10 +1001,6 @@ let
         def emergency_lines():
             journal = machine.succeed("journalctl -b -u togi.service -o cat --no-pager")
             return [line for line in journal.splitlines() if "emergency-stop:" in line]
-
-
-        def plant(fault):
-            machine.succeed(f"printf '%s' '-9 -9 -9 -9' > {state}/offsets; printf '%s' '{fault}' > {state}/fault")
 
 
         def run_unit(mode):
@@ -1141,30 +1103,6 @@ let
         assert prop("Result") == "success", prop("Result")
         assert offsets() == baseline, offsets()
         assert len(zeroings()) == 3 and len(emergency_lines()) == emergency_total
-
-        # The command's gates: nothing is zeroed when the validation or the sweep fails, and a readback that is not
-        # 0 fails the command after the zeroing.
-        for fault in ["validation", "sweep"]:
-            plant(fault)
-            mark = len(smu_log())
-            status, output = machine.execute("togi emergency-stop 2>&1")
-            machine.log(output)
-            assert status == 1, (fault, status, output)
-            assert "by the test" in output, (fault, output)
-            assert offsets() == [-9] * cores, (fault, offsets())
-            assert not any("emergency-zero" in line for line in smu_log()[mark:]), fault
-        plant("readback")
-        status, output = machine.execute("togi emergency-stop 2>&1")
-        machine.log(output)
-        assert status == 1, (status, output)
-        assert "core 01 reads -7" in output, output
-        assert offsets() == [0] * cores, offsets()
-        plant("")
-        output = machine.succeed("togi emergency-stop 2>&1")
-        machine.log(output)
-        assert f"every core read back 0 ({cores} cores)" in output, output
-        assert offsets() == [0] * cores, offsets()
-        assert scopes() == "", scopes()
       '';
     };
 
