@@ -142,6 +142,10 @@ impl TrialClass {
             .iter()
             .any(|core| usize::from(core.get()) / 8 == ccd)
     }
+
+    fn loads_both_ccds(&self) -> bool {
+        self.loads_ccd(0) && self.loads_ccd(1)
+    }
 }
 
 /// A continuous exponential curve with an optional shallower asymptotic tail slope.
@@ -420,6 +424,15 @@ impl Scenario {
         matches!(self.family, Family::Hidden)
     }
 
+    /// The joint curve of the interaction family's two CCDs; no other scenario has one.
+    fn interaction_curve(&self) -> Result<Option<FailureCurve>, TruthError> {
+        if self.family == Family::Interaction && self.ccd_count == 2 {
+            FailureCurve::new(self.edge - 7.0, self.growth, self.tail, REFERENCE_LAMBDA).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
     fn curve(&self, class: &TrialClass, ccd: usize, day: u32) -> Result<FailureCurve, TruthError> {
         let mut edge = self.edge;
         let mut growth = self.growth;
@@ -565,14 +578,10 @@ impl Scenario {
                 after_s,
             });
         }
-        if self.family == Family::Interaction
-            && self.ccd_count == 2
-            && class.loads_ccd(0)
-            && class.loads_ccd(1)
+        if class.loads_both_ccds()
+            && let Some(joint) = self.interaction_curve()?
         {
             // Product of the two CCD voltage deficits: either stock CCD removes the interaction.
-            let joint =
-                FailureCurve::new(self.edge - 7.0, self.growth, self.tail, REFERENCE_LAMBDA)?;
             sources[2] = Some(Source {
                 cause: FailureCause::Interaction,
                 rate_per_hour: joint.excess_per_hour(offsets[0]).sqrt()
@@ -766,16 +775,14 @@ impl Scenario {
             state.advance(Some(&block.class), duration)?;
         }
         let mut joint_roots = [0.0; 51];
-        let joint_fraction = if self.family == Family::Interaction {
-            let joint =
-                FailureCurve::new(self.edge - 7.0, self.growth, self.tail, REFERENCE_LAMBDA)?;
+        let joint_fraction = if let Some(joint) = self.interaction_curve()? {
             for (depth, root) in joint_roots.iter_mut().enumerate() {
                 *root = joint.excess_per_hour(offset_for_depth(depth)?).sqrt();
             }
             self.daily
                 .iter()
                 .zip(&durations)
-                .filter(|(block, _)| block.class.loads_ccd(0) && block.class.loads_ccd(1))
+                .filter(|(block, _)| block.class.loads_both_ccds())
                 .map(|(_, duration)| duration.as_secs_f64() / active.as_secs_f64())
                 .sum()
         } else {
