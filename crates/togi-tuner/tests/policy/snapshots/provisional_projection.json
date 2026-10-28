@@ -17,22 +17,7 @@
         "kind": "censored",
         "limit": -50,
         "witnesses": [
-          1752,
-          1758,
-          1763,
-          1768,
-          1773,
-          1778,
-          1783,
-          1788,
-          1793,
-          1798,
-          1803,
-          1808,
-          1813,
-          1818,
-          1823,
-          1828
+          7
         ]
       },
       "remaining": 0
@@ -50,22 +35,7 @@
         "kind": "censored",
         "limit": -50,
         "witnesses": [
-          2106,
-          2112,
-          2117,
-          2122,
-          2127,
-          2132,
-          2137,
-          2142,
-          2147,
-          2152,
-          2157,
-          2162,
-          2167,
-          2172,
-          2177,
-          2182
+          13
         ]
       },
       "remaining": 1
@@ -83,21 +53,21 @@
         "1": 0
       },
       "required_s": 180000,
-      "witness": 9843
+      "witness": 31
     },
     "last_step": [
-      9844,
+      32,
       {
         "causes": {
           "caps": [
-            5174,
-            5407
+            10,
+            16
           ],
           "events": [
-            9841
+            29
           ],
           "vetoes": [
-            9842
+            30
           ]
         },
         "cold_boot": "day2",
@@ -175,17 +145,17 @@
         "share_pct": 25
       },
       {
-        "consumed_s": 694,
+        "consumed_s": 2,
         "queue": "qualification",
         "share_pct": 75
       },
       {
-        "consumed_s": 3840,
+        "consumed_s": 4,
         "queue": "mapping",
         "share_pct": 10
       },
       {
-        "consumed_s": 134,
+        "consumed_s": 0,
         "queue": "control",
         "share_pct": 5
       },
@@ -200,7 +170,7 @@
         "share_pct": 0
       }
     ],
-    "closed_by": 9835,
+    "closed_by": 23,
     "filler": 0,
     "night": 4,
     "unavailable": []

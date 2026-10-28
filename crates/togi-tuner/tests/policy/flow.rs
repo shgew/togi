@@ -393,10 +393,11 @@ fn a_monthly_requalification_of_d_runs_every_cell_afresh() {
 }
 
 /// The projection after an unexplained end's provisional retreat, pinned except for the cap's class lists
-/// and the night's task detail: the CCDs, the day, its event and veto, and the night that closed.
+/// and the night's task detail: the CCDs, the day, its event and veto, and the night that closed. It starts
+/// from the compact promoted day, so every sequence it pins is one of that scenario's own events.
 #[test]
 fn the_projection_after_a_provisional_retreat_matches_its_snapshot() {
-    let (mut journal, d) = promoted();
+    let (mut journal, d) = Journal::promoted_compact();
     unexplained_end(&mut journal, &d);
     journal.settle_day(&cold_boot("day2", 61_000));
     let projection = serde_json::to_value(journal.state.project()).unwrap();

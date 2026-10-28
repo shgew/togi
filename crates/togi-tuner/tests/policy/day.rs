@@ -11,7 +11,7 @@ use togi_tuner::day::Invocation;
 use togi_tuner::policy::DayQuery;
 
 use crate::fixture::{Ending, Journal, at, firmware, offsets_of};
-use crate::flow::{cold_boot, promoted, qualifications, steps};
+use crate::flow::{cold_boot, qualifications, steps};
 
 fn same_boot(boot: &str, second: i64) -> DayQuery {
     DayQuery {
@@ -23,7 +23,7 @@ fn same_boot(boot: &str, second: i64) -> DayQuery {
 
 #[test]
 fn a_firmware_change_later_in_the_boot_still_zeroes_d_on_a_same_boot_query() {
-    let (mut journal, _) = promoted();
+    let (mut journal, _) = Journal::promoted_compact();
     // The boot `day1` already has its promotion; the firmware context changes before a service restart.
     journal.append(firmware("2").into(), &[]);
     let committed = journal.settle_day(&same_boot("day1", 60_100));
@@ -92,7 +92,7 @@ fn a_live_machine_check_is_cpu_evidence_by_its_bank(
     core: bool,
     cpu: bool,
 ) {
-    let (mut journal, d) = promoted();
+    let (mut journal, d) = Journal::promoted_compact();
     journal.append(
         DayFault {
             fault: machine_check(bank_type, corrected, core),
