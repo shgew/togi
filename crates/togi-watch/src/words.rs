@@ -677,11 +677,6 @@ fn import_line(d: &SessionImported) -> Line {
     )
 }
 
-/// The line of a kind of an earlier ruleset: the message the journal recorded, and nothing else.
-fn recorded(payload: &Payload) -> Line {
-    line(Tag::Note, Tone::Plain, payload.message())
-}
-
 /// How a kind of event reads in the history.
 #[derive(Clone, Copy, Debug)]
 pub enum History {
@@ -689,6 +684,8 @@ pub enum History {
     Silent,
     /// The line one event of this kind words by itself; `None` when this event has none.
     Line(fn(&Payload) -> Option<Line>),
+    /// The message the journal recorded for the event, as the log shows it, under one tag and tone.
+    Recorded(Tag, Tone),
     /// The line depends on earlier events, or changes the lines they began; the history builds it.
     Contextual(Context),
 }
@@ -753,7 +750,7 @@ impl Words {
 
     /// A kind of an earlier ruleset: its recorded message is its history line, and the log names its kind.
     const HISTORICAL: Self = Self {
-        history: History::Line(|payload| Some(recorded(payload))),
+        history: History::Recorded(Tag::Note, Tone::Plain),
         ..Self::SILENT
     };
 }

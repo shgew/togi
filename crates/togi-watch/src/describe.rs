@@ -37,6 +37,7 @@ impl Facts {
                 let line = line(&event.payload)?;
                 Some(entry(at, line.tag, line.text, line.tone))
             }
+            History::Recorded(tag, tone) => Some(entry(at, tag, event.msg.clone(), tone)),
             History::Contextual(context) => self.contextual(event, context),
         }
     }

@@ -749,9 +749,14 @@ fn historical_payloads() -> Vec<Payload> {
 fn a_kind_of_an_earlier_ruleset_says_its_recorded_message_and_nothing_else() {
     for payload in historical_payloads() {
         assert!(HISTORICAL.contains(&payload.kind()), "{}", payload.kind());
-        let (tag, tone, text) = said(&payload);
-        assert_eq!((tag, tone), (Tag::Note, Tone::Plain), "{}", payload.kind());
-        assert_eq!(text, payload.message(), "{}", payload.kind());
+        let mut h = Hist::new(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
+        h.push(payload.clone());
+        assert_eq!(
+            h.sentences()[1..],
+            [format!("note: {}", payload.message())],
+            "{}",
+            payload.kind()
+        );
         assert_eq!(
             tag_word(&payload),
             payload.kind().as_str().replace('.', " "),
@@ -759,10 +764,45 @@ fn a_kind_of_an_earlier_ruleset_says_its_recorded_message_and_nothing_else() {
         );
     }
     for &kind in HISTORICAL {
-        assert!(matches!(words(kind).history, History::Line(_)), "{kind}");
+        assert!(
+            matches!(
+                words(kind).history,
+                History::Recorded(Tag::Note, Tone::Plain)
+            ),
+            "{kind}"
+        );
         assert!(matches!(words(kind).tag, Tagging::Kind), "{kind}");
         assert!(words(kind).listed, "{kind}");
     }
+}
+
+#[test]
+fn a_kind_of_an_earlier_ruleset_says_the_message_its_event_recorded() {
+    let mut h = Hist::three();
+    let hunt: Payload = hunt_start(1, &[0, 2]).into();
+    let recorded = "recorded wording\x1b[2J";
+    assert_ne!(recorded, hunt.message());
+    h.count += 1;
+    let mut event = togi_journal::Event::new(
+        seq(h.count),
+        togi_journal::Stamp {
+            time: Timestamp::from_second(1000 + i64::try_from(h.count).unwrap()).unwrap(),
+            mono: None,
+        },
+        BootId::from(h.boot.clone()),
+        Vec::new(),
+        hunt,
+    );
+    event.msg = recorded.to_owned();
+    h.journal.apply(&event).unwrap();
+    h.facts.fold(&event, &h.journal);
+    let (entries, _) = h.facts.history.recent();
+    let line = &entries[0];
+    assert_eq!((line.tag, line.tone), (Tag::Note, Tone::Plain));
+    assert_eq!(line.text(), recorded);
+    let drawn = crate::frames::cut_words(&line.text(), 80, crate::screen::Colours::None);
+    assert_eq!(drawn, togi_render::escape_text(recorded).to_string());
+    assert_eq!(drawn, r"recorded wording\x1b[2J");
 }
 
 #[test]
