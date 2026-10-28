@@ -349,22 +349,29 @@ mod hardware {
                 return;
             }
             let tree = &self.staged.tree;
-            let outcome = try_runner(tree, Helper::new(tree, "owner"))
-                .map_err(|error| togi_machine::error_chain(&error))
-                .and_then(|mut runner| {
-                    runner
+            // Building the runner looks up the backend account and can panic; a second panic
+            // during this unwind would abort the binary before the record is preserved.
+            let outcome = isolated(
+                "the unwind sweep",
+                |_| {
+                    let mut runner = try_runner(tree, Helper::new(tree, "owner"))
+                        .map_err(|error| togi_machine::error_chain(&error))?;
+                    let swept = runner
                         .sweep(&CancellationToken::new())
-                        .map_err(|error| togi_machine::error_chain(&error))
-                });
-            match outcome {
-                Ok(swept) => eprintln!("unwind sweep: {}", swept.detail),
-                Err(error) => {
-                    self.staged.dir.disable_cleanup(true);
-                    eprintln!(
-                        "the unwind sweep failed, so {} keeps its frequency recovery record: {error}",
-                        tree.root.display()
-                    );
-                }
+                        .map_err(|error| togi_machine::error_chain(&error))?;
+                    eprintln!("unwind sweep: {}", swept.detail);
+                    Ok(())
+                },
+                Instant::now(),
+            );
+            if let Err(error) = outcome {
+                self.staged.dir.disable_cleanup(true);
+                // A closed stderr must not panic here; the directory is kept either way.
+                let _ = writeln!(
+                    io::stderr(),
+                    "the unwind sweep failed, so {} keeps its frequency recovery record: {error}",
+                    tree.root.display()
+                );
             }
         }
     }
