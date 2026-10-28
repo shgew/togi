@@ -71,6 +71,16 @@ fn a_capsule_verifies_the_state_it_folded() {
     assert!(matches!(ended.stop, Some(Stop::Signal)), "{:?}", ended.stop);
     let capsule = ended.capsule.as_ref().unwrap();
     capsule.verify(ended.journal.events()).unwrap();
+    let replayed = crate::ReadState::replay(ended.journal.events()).unwrap();
+    assert_eq!(
+        replayed
+            .verify_snapshot(ended.journal.dir(), ended.journal.events())
+            .unwrap(),
+        crate::SnapshotStatus::Matches
+    );
+    let published = crate::ReadState::in_dir(ended.journal.dir(), ended.journal.events()).unwrap();
+    assert_eq!(replayed.facts(), published.facts());
+    assert_eq!(replayed.tuner(), published.tuner());
 }
 
 #[test]
