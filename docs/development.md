@@ -8,8 +8,6 @@ Enter the dev shell with `nix develop`, or `direnv allow` once per checkout. Rec
 
 Run heavy commands through the host job queue where your host has one; otherwise run them bare ([ADR 0086](adr/0086-heavy-runs-wait-for-memory.md)).
 
-Local recipes share one parallelism budget: the smaller of available CPUs and one job per 2 GiB of physical memory, with a minimum of one ([ADR 0088](adr/0088-the-repository-bounds-its-own-build-and-test-parallelism.md)). `tools/check-budget.sh` reads Linux's `nproc` and `/proc/meminfo`, or macOS's `hw.ncpu` and `hw.memsize`. Set `TOGI_JOBS` to a positive integer to override it, for example `TOGI_JOBS=4 just test`. Recipes export the result as Cargo build jobs, nextest test threads and `RUST_TEST_THREADS` for libtest/doctest workers, including coverage's nextest run; nested recipes inherit the same budget. Nix commands admit one build at a time with that many cores, and Nix nextest and doctest checks use those cores as their worker count. This changes no host Nix settings. The budget bounds admitted workers, not peak memory: a single test can use more than 2 GiB, and tests with their own internal pools are not constrained by nextest's worker count.
-
 Choose checks by the action:
 
 - While editing: `just test`, `just focus <crate>` or `just typecheck <crate>`.

@@ -1,6 +1,6 @@
 # The repository bounds its own build and test parallelism
 
-Status: see [the index](README.md).
+Status: **withdrawn**: the host decides build and test parallelism; memory is managed at the machine level, not by the repository. See [the index](README.md). The decision below is historical.
 
 Relates to [ADR 0086](0086-heavy-runs-wait-for-memory.md); admission across unrelated commands and the parallelism within one command are separate concerns. Amends the invocation mechanics of [ADR 0085](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md), not its check inventory or publication policy. Implements [#1324](https://github.com/shgew/togi/issues/1324).
 

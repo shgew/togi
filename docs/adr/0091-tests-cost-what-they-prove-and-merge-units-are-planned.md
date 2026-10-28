@@ -2,7 +2,7 @@
 
 Status: see [the index](README.md).
 
-Records the test rules the owner decided on 2026-10-26 ([#1265](https://github.com/shgew/togi/issues/1265)) and the planning and retired-invariant rules decided on 2026-10-28 from [#1277](https://github.com/shgew/togi/issues/1277)'s investigation ([#1268](https://github.com/shgew/togi/issues/1268)). #1265's rule that every pull request runs all simulator sessions is not recorded: [ADR 0087](0087-simulations-are-research-tools-not-checks.md) made simulations research tools before this ADR landed. Which checks run where (the local tier, the CI tier, and what runs on demand) is owned by ADR 0087, ADR 0088 ([#1324](https://github.com/shgew/togi/issues/1324)) and ADR 0089 ([#1328](https://github.com/shgew/togi/issues/1328)); this ADR does not restate it.
+Records the test rules the owner decided on 2026-10-26 ([#1265](https://github.com/shgew/togi/issues/1265)) and the planning and retired-invariant rules decided on 2026-10-28 from [#1277](https://github.com/shgew/togi/issues/1277)'s investigation ([#1268](https://github.com/shgew/togi/issues/1268)). #1265's rule that every pull request runs all simulator sessions is not recorded: [ADR 0087](0087-simulations-are-research-tools-not-checks.md) made simulations research tools before this ADR landed. Which checks run where (the local tier, the CI tier, and what runs on demand) is owned by ADR 0087 and ADR 0089 ([#1328](https://github.com/shgew/togi/issues/1328)); this ADR does not restate it.
 
 ## Context
 

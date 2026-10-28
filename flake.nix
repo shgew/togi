@@ -169,7 +169,7 @@
                     {
                       pname = "togi-${group}";
                       cargoExtraArgs = "--locked ${lib.concatMapStringsSep " " (crate: "-p ${crate}") crates}";
-                      cargoNextestExtraArgs = ''--profile ci --test-threads "$NIX_BUILD_CORES"'';
+                      cargoNextestExtraArgs = "--profile ci";
                       nativeCheckInputs = [
                         pkgs.gitMinimal
                         pkgs.bashInteractive
@@ -372,11 +372,7 @@
               }
               // crossCc
             );
-            doc = craneLib.cargoDocTest (
-              cargoCheck cratesSource {
-                cargoTestExtraArgs = ''-- --test-threads "$NIX_BUILD_CORES"'';
-              }
-            );
+            doc = craneLib.cargoDocTest (cargoCheck cratesSource { });
             # No other check's output references the shared dependency artifacts; as checks, CI pushes them to Cachix.
             cargo-deps = cargoDeps;
             release-deps = releaseDeps;
