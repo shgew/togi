@@ -4,11 +4,11 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::Error;
 use crate::diff::number;
 use crate::headlines::HeadLines;
 use crate::manifest::{CoverRange, Coverage, Manifest, NotBuilt, read_manifest, write_manifest};
 use crate::text::quote;
-use crate::Error;
 
 static COVER_RANGE_LINE: LazyLock<Result<Regex, regex::Error>> =
     LazyLock::new(|| Regex::new(r"^(.+):([0-9]+)(?:-([0-9]+))?$"));
@@ -68,11 +68,7 @@ pub fn parse_cover(text: &str) -> Result<(Vec<CoverRange>, Vec<NotBuilt>), Error
 
 /// Reported ranges inside this review's changed lines at the frozen head, and its not-built files.
 /// Overlapping parts of a file are merged so one uncovered interval counts once. Adjacent parts stay separate.
-pub fn intersect_cover(
-    ranges: &[CoverRange],
-    unbuilt: &[NotBuilt],
-    hunks: &HeadLines,
-) -> Coverage {
+pub fn intersect_cover(ranges: &[CoverRange], unbuilt: &[NotBuilt], hunks: &HeadLines) -> Coverage {
     let mut parts = Vec::new();
     for r in ranges {
         for h in hunks.get(&r.path).into_iter().flatten() {

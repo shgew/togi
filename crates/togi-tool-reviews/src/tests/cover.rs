@@ -125,6 +125,8 @@ fn refuses_snapshot_before_head_coordinates() {
     let path = dir_text(dir.path());
     assert_eq!(
         format!("manifest in {path} has version 1; this tool reads version 2"),
-        add_cover(&path, "a.go:1\n").expect_err("old snapshot accepted").to_string(),
+        add_cover(&path, "a.go:1\n")
+            .expect_err("old snapshot accepted")
+            .to_string(),
     );
 }

@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use regex::bytes::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::diff::{FileDiff, Span, line_number, lines, number, pattern};
+use crate::diff::{FileDiff, Span, line_number, lines, number, parse_diff, pattern};
 use crate::{Error, Programs};
 
 /// An inclusive range in the frozen head's version of a file.
@@ -126,9 +126,13 @@ fn destinations(raw: &[u8]) -> Result<HashMap<&str, Option<&str>>, Error> {
             .next()
             .ok_or_else(|| Error::new("parse head-coordinate path changes: missing path"))?;
         let destination = if status.starts_with('R') || status.starts_with('C') {
-            Some(fields.next().ok_or_else(|| {
+            let new = fields.next().ok_or_else(|| {
                 Error::new("parse head-coordinate path changes: missing destination")
-            })?)
+            })?;
+            if status.starts_with('C') {
+                continue;
+            }
+            Some(new)
         } else if status == "D" {
             None
         } else {
@@ -137,6 +141,28 @@ fn destinations(raw: &[u8]) -> Result<HashMap<&str, Option<&str>>, Error> {
         paths.insert(old, destination);
     }
     Ok(paths)
+}
+
+fn source_shifts(diff: &[u8], source: &str) -> Result<Vec<Shift>, Error> {
+    let sections = parse_diff(diff)?;
+    let section = sections
+        .iter()
+        .find(|section| {
+            let old = if section.old_path.is_empty() {
+                &section.path
+            } else {
+                &section.old_path
+            };
+            old == source
+        })
+        .ok_or_else(|| {
+            Error::new(format!(
+                "find source section for {source} in head-coordinate diff"
+            ))
+        })?;
+    // A mode-only change or pure rename has a section but no hunks, so maps identically.
+    // A missing section contradicts name-status; refusing it avoids silently losing later edits.
+    shifts(&section.text)
 }
 
 /// Maps delta lines from their own commits to the frozen head, following renames and dropping later edits.
@@ -149,7 +175,11 @@ pub fn translate(
     let mut out = HeadLines::new();
     for entry in entries {
         let commit = &entry.commit;
-        if !entry.files.iter().any(|f| included.contains(f.path.as_str())) {
+        if !entry
+            .files
+            .iter()
+            .any(|f| included.contains(f.path.as_str()))
+        {
             continue;
         }
         let operation = format!("map delta lines from {commit} to frozen head {head}");
@@ -194,11 +224,16 @@ pub fn translate(
                     &old,
                     new.as_deref().unwrap_or(&old),
                 ];
-                let count = if new.is_some() { args.len() } else { args.len() - 1 };
+                let count = if new.is_some() {
+                    args.len()
+                } else {
+                    args.len() - 1
+                };
                 let diff = git
                     .git(&args[..count])
                     .map_err(|error| Error::wrap(&operation, error))?;
-                let shifts = shifts(&diff).map_err(|error| Error::wrap(&operation, error))?;
+                let shifts = source_shifts(&diff, &file.path)
+                    .map_err(|error| Error::wrap(&operation, error))?;
                 shifted(&file.spans, &shifts).map_err(|error| Error::wrap(&operation, error))?
             } else {
                 file.spans

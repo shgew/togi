@@ -255,10 +255,10 @@ pub fn create_snapshot(
                                 commit,
                                 files: patch
                                     .files
-                                    .iter_mut()
+                                    .iter()
                                     .map(|file| headlines::FileLines {
                                         path: file.path.clone(),
-                                        spans: std::mem::take(&mut file.changed),
+                                        spans: file.changed.clone(),
                                     })
                                     .collect(),
                             });

@@ -525,12 +525,22 @@ fn real_process_merge_resolving_a_conflict_is_a_changed_patch() {
     );
     let merge = merge_status(&p.new_head, "Merge main", "changed");
     assert_eq!(Some(&merge), d.patches.last(), "patches {:?}", d.patches);
-    assert_eq!(vec![remerge.as_bytes()], d.entries.iter().map(|p| p.text.as_slice()).collect::<Vec<_>>());
+    assert_eq!(
+        vec![remerge.as_bytes()],
+        d.entries
+            .iter()
+            .map(|p| p.text.as_slice())
+            .collect::<Vec<_>>()
+    );
     assert_eq!(
         vec![vec!["f.txt".to_owned()]],
         d.entries
             .iter()
-            .map(|patch| patch.files.iter().map(|f| f.path.clone()).collect::<Vec<_>>())
+            .map(|patch| patch
+                .files
+                .iter()
+                .map(|f| f.path.clone())
+                .collect::<Vec<_>>())
             .collect::<Vec<_>>()
     );
 }
@@ -551,10 +561,7 @@ fn real_process_clean_merge_carries_the_record_forward() {
     );
     let merge = merge_status(&p.new_head, "Merge main", "unchanged");
     assert_eq!(Some(&merge), d.patches.last(), "patches {:?}", d.patches);
-    assert!(
-        d.entries.is_empty(),
-        "a clean merge reached the delta"
-    );
+    assert!(d.entries.is_empty(), "a clean merge reached the delta");
 }
 
 #[test]
@@ -628,7 +635,12 @@ fn real_process_rereview_cover_follows_later_insertions_and_rename() {
     git(&["commit", "-q", "-am", "add uncovered line"]);
     let delta_commit = git(&["rev-parse", "HEAD"]).trim().to_owned();
     git(&["mv", "f.go", "g.go"]);
-    write(&work, "g.go", &format!("// Inserted one\n// Inserted two\n{changed}"), 0o644);
+    write(
+        &work,
+        "g.go",
+        &format!("// Inserted one\n// Inserted two\n{changed}"),
+        0o644,
+    );
     git(&["commit", "-q", "-am", "move file and insert above"]);
     let head = git(&["rev-parse", "HEAD"]).trim().to_owned();
     git(&["remote", "add", "origin", &work.to_string_lossy()]);
@@ -636,11 +648,15 @@ fn real_process_rereview_cover_follows_later_insertions_and_rename() {
     let patch = git(&["diff", &format!("{delta_commit}^"), &delta_commit]);
     let view = serde_json::json!({
         "headRefOid": head, "baseRefOid": base, "url": PR_URL,
-    }).to_string();
-    let previous = format!("<!-- togi-review {} -->", serde_json::json!({
-        "version": 3, "head_sha": old_head, "base_sha": base,
-        "findings": [], "verdict": "success",
-    }));
+    })
+    .to_string();
+    let previous = format!(
+        "<!-- togi-review {} -->",
+        serde_json::json!({
+            "version": 3, "head_sha": old_head, "base_sha": base,
+            "findings": [], "verdict": "success",
+        })
+    );
     let mut contents = clean_git(home.path(), &work);
     let gh: Handler = Box::new(move |args: &[String]| {
         if args[0] == "pr" && args[1] == "view" {
@@ -652,31 +668,51 @@ fn real_process_rereview_cover_follows_later_insertions_and_rename() {
         if args[0] == "api" && args[1] == "repos/shgew/togi/issues/comments/4242" {
             return Ok(serde_json::json!({
                 "body": previous, "user": {"login": "robotogi[bot]"},
-            }).to_string().into_bytes());
+            })
+            .to_string()
+            .into_bytes());
         }
-        if args.last().is_some_and(|a| a == "repos/shgew/togi/issues/700/comments") {
+        if args
+            .last()
+            .is_some_and(|a| a == "repos/shgew/togi/issues/700/comments")
+        {
             return Ok(b"[[]]".to_vec());
         }
-        if let Some(path) = args.last().and_then(|a| a.strip_prefix("repos/shgew/togi/contents/")) {
+        if let Some(path) = args
+            .last()
+            .and_then(|a| a.strip_prefix("repos/shgew/togi/contents/"))
+        {
             let (path, reference) = path.split_once("?ref=").expect("reference");
-            return contents.git(&["show", &format!("{reference}:{path}")])
+            return contents
+                .git(&["show", &format!("{reference}:{path}")])
                 .map_err(|_| fail("HTTP 404"));
         }
         Err(fail(&format!("unexpected gh {args:?}")))
     });
-    let mut programs = Real { gh, system: clean_git(home.path(), &work) };
+    let mut programs = Real {
+        gh,
+        system: clean_git(home.path(), &work),
+    };
     let mut harness = Harness::new(None, None);
     let mut tools = harness.tools();
     tools.programs = &mut programs;
-    run_snapshot(&mut tools, &[
-        "--previous".to_owned(),
-        "https://github.com/shgew/togi/pull/700#issuecomment-4242".to_owned(),
-        "700".to_owned(),
-    ]).expect("re-review snapshot");
+    run_snapshot(
+        &mut tools,
+        &[
+            "--previous".to_owned(),
+            "https://github.com/shgew/togi/pull/700#issuecomment-4242".to_owned(),
+            "700".to_owned(),
+        ],
+    )
+    .expect("re-review snapshot");
     let dir = format!("{}/togi-review/700-{}", tools.tmp, &head[..8]);
     let coverage = crate::cover::add_cover(&dir, "g.go:11\nf.go:9\n").expect("cover");
     assert_eq!(
-        vec![crate::manifest::CoverRange { path: "g.go".to_owned(), first: 11, last: 11 }],
+        vec![crate::manifest::CoverRange {
+            path: "g.go".to_owned(),
+            first: 11,
+            last: 11
+        }],
         coverage.coverage.as_ref().expect("coverage").ranges,
     );
     let stored = read_manifest(&dir).expect("stored manifest");
@@ -684,8 +720,14 @@ fn real_process_rereview_cover_follows_later_insertions_and_rename() {
     assert!(read_file(Path::new(&dir).join("files/001.diff")).contains(&patch));
     assert!(!stored.head_lines.contains_key("f.go"));
     assert_eq!(
-        vec![crate::manifest::NotBuilt { path: "g.go".to_owned(), target: "test".to_owned() }],
+        vec![crate::manifest::NotBuilt {
+            path: "g.go".to_owned(),
+            target: "test".to_owned()
+        }],
         crate::cover::add_cover(&dir, "g.go: not built for test\nf.go: not built for test\n")
-            .expect("not built").coverage.expect("coverage").not_built,
+            .expect("not built")
+            .coverage
+            .expect("coverage")
+            .not_built,
     );
 }
