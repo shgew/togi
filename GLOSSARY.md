@@ -85,29 +85,29 @@ Normal-boot use under the day offset, observed without workloads ([Day steps](do
 One of the kinds of work a night runs: mapping, control, qualification, requalification and reproduction, with the filler when none is due ([Scheduling](docs/spec/tuner.md#scheduling)).
 
 **Mapping**:
-A night queue that descends one CCD alone from 0 by five counts, brackets its first failure in single counts and sweeps from the edge U towards the cap S ([Night order](docs/spec/tuner.md#night-order-and-reserved-budgets)).
+A night queue that explores each CCD alone, brackets its first failure and sweeps from the edge U towards the cap S ([Night order](docs/spec/tuner.md#night-order-and-reserved-budgets)).
 
 **Control**:
 A night queue that runs the whole coverage matrix at all-zero, on the first night and after a firmware change ([CO-0 controls](docs/spec/tuner.md#co-0-controls)).
 _Avoid_: baseline run
 
 **Qualification**:
-A night queue that runs the whole coverage matrix on one exact day profile; only a complete, current one lets that profile become the day offset ([Coverage matrix](docs/spec/workloads.md#coverage-matrix)).
+A night queue that builds a composite certificate for one exact day profile, reusing cells of an unchanged CCD where the coverage matrix allows; only a complete, current one lets that profile become the day offset ([Coverage matrix](docs/spec/workloads.md#coverage-matrix)).
 
 **Requalification**:
-The qualification of the current day offset, due 30 days after its last complete one or at once when invalidated.
+The qualification of the current day offset when its certificate is due for renewal or invalidated ([Night order and reserved budgets](docs/spec/tuner.md#night-order-and-reserved-budgets)).
 
 **Reproduction**:
 A night queue that re-runs a CPU-suspect daily event's failed profile, then each CCD alone, for one night. It never qualifies; it ends reproduced, unreproduced or untestable.
 
 **Filler**:
-The work a night does when no queue has due work: a cap probe one count deeper than S, otherwise exact repeats of the day offset's qualification cells.
+The work a night does when no queue has due work: further cap or qualification evidence ([Filler](docs/spec/tuner.md#filler)).
 
 **Share**:
 A queue's soft percentage of the night's elapsed observed time. A queue at or over its share yields only while another with due work is under its own; it is neither a cap nor a guarantee.
 
 **Elapsed observed time**:
-What a night's tasks consumed, filler included. Intended time, sleep and unobserved downtime are not part of it.
+What a night's tasks consumed, filler included, each counted from its `task.start`: startup, warm-up, execution, teardown and downtime after a crash until recovery closes the trial. Operator-stopped idle time is excluded. It is not exposure, which counts eligible measured execution only ([Scheduling](docs/spec/tuner.md#scheduling)).
 
 **Unavailable backend**:
 A backend excluded for the rest of a night after its trials stayed inconclusive through their retries; no cell that needs it runs, and the night's plan names it.
@@ -132,7 +132,7 @@ A CCD's applied offset on normal boots; 0 before its first step. Every core of t
 _Avoid_: resident offset
 
 **Cap (S)**:
-The deepest offset a CCD's night evidence supports: the shallower of the rate-limited offset and the edge plus five counts. 0 with no adequately exposed mapping class or an unknown edge ([Cap S](docs/spec/tuner.md#cap-s-margin-from-measured-slope)).
+The deepest offset a CCD's night evidence supports, limited by its failure-rate evidence and a margin from its edge ([Cap S](docs/spec/tuner.md#cap-s-margin-from-measured-slope)).
 _Avoid_: limit
 
 **Edge (U)**:
@@ -140,13 +140,13 @@ The shallowest offset that failed in isolated mapping or reproduction of a CCD: 
 _Avoid_: failure offset
 
 **Slope**:
-How fast a class's failure rate grows with depth. *Fallback* until some class fails at two offsets, then *measured*: the conservative end of a fitted interval ([Measured slope](docs/spec/tuner.md#measured-slope)).
+How fast a class's failure rate grows with depth: a *fallback* until enough failures are observed, then *measured* from them ([Measured slope](docs/spec/tuner.md#measured-slope)).
 
 **Coverage**:
 A class is *covered* for the cap when mapping adequately exposed it at the CCD; any other class is *uncovered* for the cap, which never means safe ([Adequate exposure](docs/spec/tuner.md#adequate-exposure)).
 
 **Hold**:
-The 50 applied daily hours at the current exact day offset that every later promotion needs ([Hold and next proposal](docs/spec/tuner.md#hold-and-next-proposal)).
+The applied daily observation at the current exact day offset that later promotions need ([Hold and next proposal](docs/spec/tuner.md#hold-and-next-proposal)).
 
 **Day step**:
 The cold-boot decision of the day policy: hold, promote, retreat or firmware-zero. A proposal commits only after a verified readback.
