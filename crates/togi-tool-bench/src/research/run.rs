@@ -3,13 +3,13 @@ use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, Write as _};
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
-use rustix::process::{Pid, Signal, kill_process_group};
+use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
@@ -327,8 +327,10 @@ fn lock_host(path: &Path, waiting: &dyn Fn(&Path)) -> Result<File, ResearchError
     Ok(file)
 }
 
+/// What the evaluator's watcher threads report.
 enum Event {
-    Exited(io::Result<ExitStatus>),
+    /// The leader has exited and is still unreaped, or watching it failed.
+    Exited(io::Result<()>),
     Signal,
 }
 
@@ -367,13 +369,19 @@ fn evaluate(
         .spawn()
         .map_err(io_error("run just in", root))?;
     let group = Pid::from_child(&child);
+    // The leader is only observed here, never reaped: an exited, unreaped leader stays a zombie that holds
+    // the group id, so no signal below can reach a recycled id. `evaluate` reaps it after it has decided the
+    // end and sent its last signal.
     thread::spawn(move || {
-        let _ = send.send(Event::Exited(child.wait()));
+        let observed = waitid(
+            WaitId::Pid(group),
+            WaitIdOptions::EXITED | WaitIdOptions::NOWAIT,
+        );
+        let _ = send.send(Event::Exited(observed.map(drop).map_err(io::Error::from)));
     });
     // The wall limit bounds the evaluator, so stopping it must not wait on the evaluator's goodwill: an
     // evaluator that ignores TERM gets this long to exit, then its group is killed. The campaign may therefore
-    // run this much past its wall limit, never longer. The waiter reports an exit only after reaping the
-    // leader, so a group signalled before that report still has its leader and cannot name a reused id.
+    // run this much past its wall limit, never longer.
     let terminate = |end: End| -> Result<End, ResearchError> {
         let _ = kill_process_group(group, Signal::TERM);
         let deadline = Instant::now() + TERM_GRACE;
@@ -394,16 +402,32 @@ fn evaluate(
         }
     };
     let end = match receive.recv_timeout(budget) {
-        Ok(Event::Exited(Ok(status))) => Ok(status
-            .code()
-            .map_or(End::Signalled, |code| End::Exited { code })),
-        Ok(Event::Exited(Err(source))) => Err(ResearchError::Io {
-            what: "wait for just in",
-            path: root.to_owned(),
-            source,
-        }),
-        Ok(Event::Signal) => terminate(End::Interrupted),
-        Err(mpsc::RecvTimeoutError::Timeout) => terminate(End::TimedOut),
+        Ok(Event::Exited(Ok(()))) => child
+            .wait()
+            .map(|status| {
+                status
+                    .code()
+                    .map_or(End::Signalled, |code| End::Exited { code })
+            })
+            .map_err(io_error("wait for just in", root)),
+        Ok(Event::Exited(Err(source))) => {
+            let _ = child.wait();
+            Err(ResearchError::Io {
+                what: "wait for just in",
+                path: root.to_owned(),
+                source,
+            })
+        }
+        Ok(Event::Signal) => {
+            let end = terminate(End::Interrupted);
+            let _ = child.wait();
+            end
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            let end = terminate(End::TimedOut);
+            let _ = child.wait();
+            end
+        }
         Err(mpsc::RecvTimeoutError::Disconnected) => Ok(End::Unrunnable),
     };
     handle.close();
