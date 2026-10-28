@@ -399,6 +399,8 @@ If the current wall time precedes the campaign's recorded start, the dispatcher 
 
 `exec` allows only its mode's evaluators. Model development's `forward` evaluator invokes `just fit --forward-only` (`--facts`, `--seal`, `--jobs`, `--records`); `fit` finalizes a confirmed candidate (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`), alongside the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the committed extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation runs only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`), and `--jobs` defaults to the worker limit and may not exceed it. Each run waits for the host-shared lock, then makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
 
+An evaluator that ignores that termination gets 5 seconds to exit before the dispatcher kills its process group, so a campaign can run at most that long past its wall limit.
+
 An observation campaign analyses what its `bench` run kept with tools that simulate nothing. They are not evaluators and run outside `exec`: they read the run directory and the frozen fixtures, write only under the run directory, and the report names each command.
 
 The roles enforce the comparison's order:

@@ -57,7 +57,8 @@ fn git(fixture_base: &Path, repo: &Path, args: &[&str]) -> String {
 }
 
 /// A repository holding a campaign's pinned files at one commit, a fake `just` that prints its arguments and
-/// sleeps for `$SLEEP` seconds, and a valid #427 manifest outside the repository.
+/// sleeps for `$SLEEP` seconds, ignoring TERM when `$IGNORE_TERM` is set, and a valid #427 manifest outside
+/// the repository.
 fn fixture() -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let base = fs::canonicalize(dir.path()).unwrap();
@@ -102,7 +103,7 @@ fn fixture() -> Fixture {
     let just = bin.join("just");
     fs::write(
         &just,
-        "#!/bin/sh\necho \"just $*\"\nexec sleep \"${SLEEP:-0}\"\n",
+        "#!/bin/sh\n[ -n \"$IGNORE_TERM\" ] && trap '' TERM\necho \"just $*\"\nexec sleep \"${SLEEP:-0}\"\n",
     )
     .unwrap();
     fs::set_permissions(&just, fs::Permissions::from_mode(0o755)).unwrap();
@@ -463,4 +464,51 @@ fn real_process_a_termination_interrupts_the_run_while_the_lock_refuses_a_second
         fixture.ledger().last().unwrap()["event"],
         "campaign_resumed"
     );
+}
+
+#[test]
+fn real_process_an_evaluator_that_ignores_termination_is_killed_after_the_grace_period() {
+    let fixture = fixture();
+    let mut manifest: Value =
+        serde_json::from_slice(&fs::read(&fixture.manifest).unwrap()).unwrap();
+    manifest["limits"] = json!({"wall_minutes": 1, "candidates": 12, "jobs": 4});
+    fs::write(
+        &fixture.manifest,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    let start = fixture.run(&["start", "--manifest", fixture.manifest.to_str().unwrap()]);
+    assert!(start.status.success(), "{}", text(&start.stderr));
+    let mut ledger = fixture.ledger();
+    assert_eq!(ledger.len(), 1);
+    // Backdating the campaign's start leaves the run about two seconds of its one-minute wall limit.
+    let at = jiff::Timestamp::now() - jiff::SignedDuration::from_secs(58);
+    ledger[0]["at"] = json!(at.to_string());
+    fs::write(
+        fixture.run_dir().join("experiments.jsonl"),
+        format!("{}\n", ledger[0]),
+    )
+    .unwrap();
+
+    let started = Instant::now();
+    let output = fixture
+        .exec("reference", &FORWARD)
+        .env("SLEEP", "30")
+        .env("IGNORE_TERM", "1")
+        .output()
+        .unwrap();
+    let elapsed = started.elapsed();
+    assert!(elapsed < Duration::from_secs(20), "{elapsed:?}");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        text(&output.stderr).contains("run stopped at the wall-time limit"),
+        "{}",
+        text(&output.stderr)
+    );
+    let ended = fixture
+        .ledger()
+        .into_iter()
+        .find(|record| record["event"] == "experiment_ended")
+        .unwrap();
+    assert_eq!(ended["end"]["kind"], "timed-out");
 }
