@@ -19,9 +19,10 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Restore the day's boot selection
 ///
 /// Selects again exactly the boot entry `togi night` replaced, or none when the day had none or
-/// the tuning boot was picked from the boot menu, and ends the night. It never selects a generation of its own. It does not reboot: the tuning
-/// boot's shutdown hook runs it when the power button or a reboot ends the night. Repeating it
-/// changes nothing.
+/// the tuning boot was picked from the boot menu. It never selects a generation of its own. It
+/// does not end the night either: the night closes when a tuning run stops or the next day's boot
+/// starts. It does not reboot: the tuning boot's shutdown hook runs it at a power-button shutdown
+/// or a reboot. Repeating it changes nothing.
 #[derive(clap::Args, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {}
