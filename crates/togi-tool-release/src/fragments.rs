@@ -337,15 +337,14 @@ fn relocate_links(text: &str) -> Cow<'_, str> {
                 while matches!(bytes.get(start), Some(b' ' | b'\t')) {
                     start += 1;
                 }
-                if bytes.get(start) == Some(&b'<') {
-                    start += 1;
-                }
-                if bytes[start..].starts_with(b"../") {
+                let path = start + usize::from(bytes.get(start) == Some(&b'<'));
+                if bytes[path..].starts_with(b"../") {
                     let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
-                    out.push_str(&text[copied..start]);
-                    copied = start + 3;
+                    out.push_str(&text[copied..path]);
+                    copied = path + 3;
                 }
-                i = start;
+                // The destination and title are not text: nothing in them opens a link.
+                i = inline_link_end(bytes, start);
             }
             _ => i += 1,
         }
@@ -357,6 +356,55 @@ fn relocate_links(text: &str) -> Cow<'_, str> {
         }
         None => Cow::Borrowed(text),
     }
+}
+
+/// Where the inline link whose destination starts at `start`, past `](` and spaces, ends: after its destination,
+/// in `<…>` or with balanced parentheses, its optional title, in `"…"`, `'…'` or `(…)`, and the closing `)`.
+fn inline_link_end(bytes: &[u8], start: usize) -> usize {
+    // Past the first unescaped `close` from `at`, or the end.
+    let past = |mut at: usize, close: u8| {
+        while at < bytes.len() {
+            match bytes[at] {
+                b'\\' => at += 2,
+                b if b == close => return at + 1,
+                _ => at += 1,
+            }
+        }
+        bytes.len()
+    };
+    let spaces = |mut at: usize| {
+        while matches!(bytes.get(at), Some(b' ' | b'\t')) {
+            at += 1;
+        }
+        at
+    };
+    let mut at = start;
+    if bytes.get(at) == Some(&b'<') {
+        at = past(at + 1, b'>');
+    } else {
+        let mut depth = 0usize;
+        while let Some(&b) = bytes.get(at) {
+            match b {
+                b'\\' => at += 1,
+                b' ' | b'\t' => break,
+                b'(' => depth += 1,
+                b')' if depth == 0 => break,
+                b')' => depth -= 1,
+                _ => {}
+            }
+            at += 1;
+        }
+    }
+    at = spaces(at);
+    match bytes.get(at) {
+        Some(&quote @ (b'"' | b'\'')) => at = spaces(past(at + 1, quote)),
+        Some(b'(') => at = spaces(past(at + 1, b')')),
+        _ => {}
+    }
+    if bytes.get(at) == Some(&b')') {
+        at += 1;
+    }
+    at.min(bytes.len())
 }
 
 /// Where the backtick run at `start` stops counting as text: after the code span it opens, closed by a run of

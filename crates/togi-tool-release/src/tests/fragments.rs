@@ -124,6 +124,16 @@ fn assembles_release_section() {
 #[test_case(r"Not a link: \[docs](../docs/howto.md).", r"Not a link: \[docs](../docs/howto.md) ([#7])." ; "escaped opener")]
 #[test_case("Not a link: docs](../docs/howto.md).", "Not a link: docs](../docs/howto.md) ([#7])." ; "no opener")]
 #[test_case("See [a [nested] link](../docs/howto.md).", "See [a [nested] link](docs/howto.md) ([#7])." ; "nested brackets")]
+#[test_case(
+    r#"See [docs](https://example.com "Example [x](../y)") and [howto](../docs/howto.md 'Its [x](../y)')."#,
+    r#"See [docs](https://example.com "Example [x](../y)") and [howto](docs/howto.md 'Its [x](../y)') ([#7])."#
+    ; "link titles"
+)]
+#[test_case(
+    "See [a](../docs/a_(b).md (Its [x])) then [c](../docs/c.md).",
+    "See [a](docs/a_(b).md (Its [x])) then [c](docs/c.md) ([#7])."
+    ; "parentheses in destination and title"
+)]
 fn assembles_links_relative_to_changelog(text: &str, want: &str) {
     let files = BTreeMap::from([("7.md".to_owned(), format!("### Fixed\n\n- {text}\n"))]);
     let (body, _) = assemble(&parse_fragments(&files).unwrap());
