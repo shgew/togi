@@ -1,3 +1,5 @@
+Status: superseded by [0079](0079-day-observer-night-tester.md); Ruleset 13 has no R7 checking chains or checking cycles.
+
 # Re-derive R7 chains after a backoff
 
 Supersedes the clause of [ADR 0038](0038-self-sufficient-cores.md) that freezes a partial's loaded set once it starts and re-derives only unstarted parts after a profile change. Everything else in 0038 stands. The rule is in [Together trial sequence](../spec/tuner.md#together-trial-sequence) and [Checking](../spec/tuner.md#checking). [Issue #489](https://github.com/shgew/togi/issues/489) records the change and [#493](https://github.com/shgew/togi/issues/493) the decision (Q23, option a); it builds on [ADR 0054](0054-two-phases-replace-the-deepening-loop.md).

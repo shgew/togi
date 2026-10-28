@@ -1,3 +1,5 @@
+Status: superseded by [0079](0079-day-observer-night-tester.md); Ruleset 13 has no phases or rounds.
+
 # Yield without finishing phase-two movers
 
 Supersedes [ADR 0054](0054-two-phases-replace-the-deepening-loop.md)'s rollback-A finish and its rule that every offset is tried at most once. Its one-way phase 1, one-count phase-2 moves, constraint checks, blame order and mandatory confirmation cycle remain. The normative rule is [Phase 2](../spec/tuner.md#phase-2).

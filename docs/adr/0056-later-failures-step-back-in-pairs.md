@@ -1,3 +1,5 @@
+Status: superseded by [0079](0079-day-observer-night-tester.md); Ruleset 13 has no phase 2 or later-failure holds.
+
 # Later failures step a core back in pairs
 
 Amends [ADR 0054](0054-two-phases-replace-the-deepening-loop.md)'s rule that after phase 2 concludes "failures only step cores back": they still only step back, now a core steps back on its second failure within a window. The rules are in [Later failures](../spec/tuner.md#later-failures) and [BIOS profile](../spec/tuner.md#bios-profile). [Issue #528](https://github.com/shgew/togi/issues/528) records the change and [#493](https://github.com/shgew/togi/issues/493) the decisions (Q22, Q30); it builds on [ADR 0054](0054-two-phases-replace-the-deepening-loop.md) and [ADR 0055](0055-rederive-r7-chains-after-a-backoff.md).

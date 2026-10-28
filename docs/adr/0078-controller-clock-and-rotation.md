@@ -1,3 +1,5 @@
+Status: in force; managed placement is mandatory for every trial under Ruleset 13.
+
 # Cap isolated controller clocks and rotate loaded hosts
 
 ## Decision
