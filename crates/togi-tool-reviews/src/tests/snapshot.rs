@@ -414,8 +414,8 @@ pub(crate) fn pull_fake(
 /// The files a batch read asks for, in order, each as `<commit>:<path>`. It panics on a request whose
 /// query does not read each variable into the alias of the same name.
 pub(crate) fn batch_reads(args: &[String]) -> Vec<String> {
-    let mut query = "";
-    let mut reads = Vec::new();
+    let (mut query, mut head) = ("", "");
+    let mut paths = Vec::new();
     for pair in args[2..].chunks(2) {
         assert_eq!("-f", pair[0], "batch read {args:?}");
         let (key, value) = pair[1].split_once('=').expect("field");
@@ -423,20 +423,26 @@ pub(crate) fn batch_reads(args: &[String]) -> Vec<String> {
             "query" => query = value,
             "owner" => assert_eq!("shgew", value),
             "name" => assert_eq!("togi", value),
+            "head" => head = value,
             _ => {
-                assert_eq!(format!("p{}", reads.len()), key, "variables out of order");
-                reads.push(value.to_owned());
+                assert_eq!(format!("p{}", paths.len()), key, "variables out of order");
+                paths.push(value);
             }
         }
     }
-    for i in 0..reads.len() {
+    assert!(
+        query.contains("$head: String!")
+            && query.contains("object(expression: $head) { ... on Commit {"),
+        "query does not read the head commit: {query}"
+    );
+    for i in 0..paths.len() {
         assert!(
             query.contains(&format!(", $p{i}: String!"))
-                && query.contains(&format!(" p{i}: object(expression: $p{i}) {{ __typename ... on Blob {{ byteSize isBinary isTruncated text }} }}")),
+                && query.contains(&format!(" p{i}: file(path: $p{i}) {{ mode object {{ __typename ... on Blob {{ byteSize isBinary isTruncated text }} }} }}")),
             "query does not read p{i}: {query}"
         );
     }
-    reads
+    paths.iter().map(|path| format!("{head}:{path}")).collect()
 }
 
 /// GitHub's answer for a text blob.
@@ -444,19 +450,27 @@ pub(crate) fn blob(text: &str) -> serde_json::Value {
     json!({"__typename": "Blob", "byteSize": text.len(), "isBinary": false, "isTruncated": false, "text": text})
 }
 
-/// A batch read answered from `contents` at the frozen head.
+/// GitHub's tree entry for a regular file holding `text`.
+pub(crate) fn file_entry(text: &str) -> serde_json::Value {
+    json!({"mode": 0o100_644, "object": blob(text)})
+}
+
+/// A batch read answered from `contents` at the frozen head. As GitHub does, it fails the whole request when
+/// one of the paths is missing.
 pub(crate) fn batch_answer(args: &[String], contents: &HashMap<String, String>) -> Output {
-    let mut objects = serde_json::Map::new();
+    let mut entries = serde_json::Map::new();
     for (i, read) in batch_reads(args).iter().enumerate() {
         let Some(path) = read.strip_prefix(&format!("{HEAD_SHA}:")) else {
             return Err(fail(&format!("file read at {read}, not the frozen head")));
         };
-        let object = contents
-            .get(path)
-            .map_or(serde_json::Value::Null, |body| blob(body));
-        objects.insert(format!("p{i}"), object);
+        let Some(body) = contents.get(path) else {
+            return Err(fail(&format!(
+                "gh: Could not resolve file for path '{path}'."
+            )));
+        };
+        entries.insert(format!("p{i}"), file_entry(body));
     }
-    Ok(json!({"data": {"repository": objects}})
+    Ok(json!({"data": {"repository": {"object": entries}}})
         .to_string()
         .into_bytes())
 }
@@ -496,7 +510,7 @@ pub(crate) fn cat_file_answer(input: &[u8], contents: &HashMap<String, String>) 
         match contents.get(path) {
             Some(body) => {
                 out.extend_from_slice(
-                    format!("{} blob {}\n", "e".repeat(40), body.len()).as_bytes(),
+                    format!("100644 {} blob {}\n", "e".repeat(40), body.len()).as_bytes(),
                 );
                 out.extend_from_slice(body.as_bytes());
                 out.push(b'\n');
@@ -710,7 +724,10 @@ fn snapshot_too_large_diff_built_locally() {
             "--dst-prefix=b/",
             &triple_dot,
         ],
-        vec!["cat-file", "--batch"],
+        vec![
+            "cat-file",
+            "--batch=%(objectmode) %(objectname) %(objecttype) %(objectsize)",
+        ],
     ];
     let calls = &h.fake.isolated_calls;
     assert_eq!(

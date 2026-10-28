@@ -431,12 +431,11 @@ fn exclusions_of(
     head_files: &HeadFiles,
 ) -> Result<Vec<String>, Error> {
     let shows_whole = |f: &FileDiff| complete && (f.status == "added" || f.status == "deleted");
-    let names: Vec<&str> = scope
+    let read: Vec<&FileDiff> = scope
         .iter()
         .filter(|f| fixed_exclusion(f).is_empty() && !shows_whole(f))
-        .map(|f| f.path.as_str())
         .collect();
-    let mut at_head = read_at_head(programs, repo, head, &names, head_files)?.into_iter();
+    let mut at_head = read_at_head(programs, repo, head, &read, head_files)?.into_iter();
     Ok(scope
         .iter()
         .map(|f| {
@@ -462,58 +461,84 @@ fn exclusions_of(
 /// How many files one GraphQL request reads at the frozen head.
 const HEAD_BATCH: usize = 100;
 
-/// The files `names` at the frozen `head`, in order; `None` for one the head lacks.
+/// The files `files` at the frozen `head`, in order; `None` for one the head lacks.
 ///
 /// Through GitHub, the files go [`HEAD_BATCH`] to a GraphQL request, so `n` files take `ceil(n / 100)`
 /// requests. A file whose answer is not certainly its bytes (see [`HeadRead::Uncertain`]) is read again on
-/// its own, byte for byte, one more request each. From the temporary repository, one `git cat-file --batch`
-/// reads them all, and no request goes to GitHub except for a path that is not a file at the head or that
+/// its own, byte for byte, one more request each, as is a file the diff deletes, which a batch cannot ask for
+/// without failing when the head lacks it. From the temporary repository, one `git cat-file --batch` reads
+/// them all, and no request goes to GitHub except for a path that is not a regular file at the head or that
 /// the batch cannot name ([`local_at`]).
 fn read_at_head(
     programs: &mut dyn Programs,
     repo: &str,
     head: &str,
-    names: &[&str],
+    files: &[&FileDiff],
     head_files: &HeadFiles,
 ) -> Result<Vec<Option<Vec<u8>>>, Error> {
     let HeadFiles::Local(dir) = head_files else {
-        let mut out = Vec::with_capacity(names.len());
-        for batch in names.chunks(HEAD_BATCH) {
-            for (name, read) in batch.iter().zip(batch_at(programs, repo, head, batch)) {
-                out.push(match read {
-                    HeadRead::Bytes(bytes) => Some(bytes),
-                    HeadRead::Missing => None,
-                    HeadRead::Uncertain => file_at(programs, repo, head, name)?,
-                });
-            }
+        let at_head = |f: &FileDiff| f.status != "deleted";
+        let batched: Vec<&str> = files
+            .iter()
+            .filter(|f| at_head(f))
+            .map(|f| f.path.as_str())
+            .collect();
+        let mut answers = Vec::with_capacity(batched.len());
+        for batch in batched.chunks(HEAD_BATCH) {
+            answers.extend(batch_at(programs, repo, head, batch));
+        }
+        let mut answers = answers.into_iter();
+        let mut out = Vec::with_capacity(files.len());
+        for f in files {
+            let read = if at_head(f) {
+                answers.next().unwrap_or(HeadRead::Uncertain)
+            } else {
+                HeadRead::Uncertain
+            };
+            out.push(match read {
+                HeadRead::Bytes(bytes) => Some(bytes),
+                HeadRead::Uncertain => file_at(programs, repo, head, &f.path)?,
+            });
         }
         return Ok(out);
     };
-    local_at(programs, dir.path(), repo, head, names)
+    let names: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    local_at(programs, dir.path(), repo, head, &names)
 }
+
+/// The modes of a regular file, plain or executable. Any other entry, a symlink above all, is read byte for
+/// byte instead: GitHub's contents request answers a symlink to a file with the file it points to.
+const REGULAR_MODES: [i64; 2] = [0o100_644, 0o100_755];
 
 /// What one GraphQL request answered for a file at the frozen head.
 enum HeadRead {
     /// The file's exact bytes.
     Bytes(Vec<u8>),
-    /// The head has no object at the path, in an answer without errors.
-    Missing,
     /// An answer that is not certainly the file's bytes: binary or truncated, text that may have been
-    /// re-encoded, an object that is not a file, a missing object in an answer that reports errors, or no
-    /// usable answer at all.
+    /// re-encoded, an entry that is not a regular file, or no usable answer at all.
     Uncertain,
 }
 
 #[derive(Deserialize)]
 struct BatchResponse {
     data: Option<BatchData>,
-    #[serde(default)]
-    errors: Vec<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
 struct BatchData {
-    repository: Option<HashMap<String, Option<HeadObject>>>,
+    repository: Option<BatchRepository>,
+}
+
+#[derive(Deserialize)]
+struct BatchRepository {
+    /// The frozen head commit, its fields the aliased file entries.
+    object: Option<HashMap<String, Option<HeadEntry>>>,
+}
+
+#[derive(Deserialize)]
+struct HeadEntry {
+    mode: i64,
+    object: Option<HeadObject>,
 }
 
 #[derive(Deserialize)]
@@ -546,8 +571,10 @@ impl BlobAnswer {
     }
 }
 
-/// One GraphQL request for the files `names` at `head`, one answer per name in order. The paths travel as
-/// variables, never inside the query text.
+/// One GraphQL request for the files `names` at `head`, one answer per name in order. Each is the head
+/// commit's tree entry at the path, so its mode tells a regular file from a symlink. GitHub fails the whole
+/// request when one of the paths is missing at the head, so only paths the frozen diff keeps there are asked
+/// for. The head and the paths travel as variables, never inside the query text.
 fn batch_at(gh: &mut dyn Programs, repo: &str, head: &str, names: &[&str]) -> Vec<HeadRead> {
     let uncertain = || names.iter().map(|_| HeadRead::Uncertain).collect();
     let Some((owner, name)) = repo.split_once('/') else {
@@ -556,28 +583,29 @@ fn batch_at(gh: &mut dyn Programs, repo: &str, head: &str, names: &[&str]) -> Ve
     let declarations: Vec<String> = (0..names.len())
         .map(|i| format!(", $p{i}: String!"))
         .collect();
-    let objects: Vec<String> = (0..names.len())
+    let entries: Vec<String> = (0..names.len())
         .map(|i| {
             format!(
-                " p{i}: object(expression: $p{i}) {{ __typename ... on Blob {{ byteSize isBinary isTruncated text }} }}"
+                " p{i}: file(path: $p{i}) {{ mode object {{ __typename ... on Blob {{ byteSize isBinary isTruncated text }} }} }}"
             )
         })
         .collect();
     let query = format!(
-        "query($owner: String!, $name: String!{}) {{ repository(owner: $owner, name: $name) {{{} }} }}",
+        "query($owner: String!, $name: String!, $head: String!{}) {{ repository(owner: $owner, name: $name) {{ object(expression: $head) {{ ... on Commit {{{} }} }} }} }}",
         declarations.concat(),
-        objects.concat()
+        entries.concat()
     );
     let mut fields = vec![
         format!("query={query}"),
         format!("owner={owner}"),
         format!("name={name}"),
+        format!("head={head}"),
     ];
     fields.extend(
         names
             .iter()
             .enumerate()
-            .map(|(i, path)| format!("p{i}={head}:{path}")),
+            .map(|(i, path)| format!("p{i}={path}")),
     );
     let mut args = vec!["api", "graphql"];
     for field in &fields {
@@ -591,33 +619,43 @@ fn batch_at(gh: &mut dyn Programs, repo: &str, head: &str, names: &[&str]) -> Ve
     let Ok(response) = serde_json::from_slice::<BatchResponse>(&out) else {
         return uncertain();
     };
-    let clean = response.errors.is_empty();
-    let Some(mut objects) = response.data.and_then(|data| data.repository) else {
+    let Some(mut entries) = response
+        .data
+        .and_then(|data| data.repository)
+        .and_then(|repository| repository.object)
+    else {
         return uncertain();
     };
     (0..names.len())
-        .map(|i| match objects.remove(&format!("p{i}")) {
-            Some(Some(HeadObject::Blob(blob))) => {
+        .map(|i| match entries.remove(&format!("p{i}")) {
+            Some(Some(HeadEntry {
+                mode,
+                object: Some(HeadObject::Blob(blob)),
+            })) if REGULAR_MODES.contains(&mode) => {
                 blob.exact().map_or(HeadRead::Uncertain, HeadRead::Bytes)
             }
-            Some(None) if clean => HeadRead::Missing,
-            Some(Some(HeadObject::Other) | None) | None => HeadRead::Uncertain,
+            _ => HeadRead::Uncertain,
         })
         .collect()
 }
 
+/// The format `git cat-file --batch` prints each object's header in.
+const LOCAL_HEADER: &str = "--batch=%(objectmode) %(objectname) %(objecttype) %(objectsize)";
+
 /// One object `git cat-file --batch` printed.
 enum LocalObject<'a> {
-    Blob(&'a [u8]),
+    /// A regular file's bytes.
+    File(&'a [u8]),
     /// The commit has no object at the path.
     Missing,
-    /// A tree or other object that is not a file.
+    /// A symlink, tree or other entry that is not a regular file.
     Other,
 }
 
 /// The files `names` at `head` from the temporary repository at `dir`, all read by one
 /// `git cat-file --batch`. The batch takes one name per line, so a path with a line break or carriage return
-/// is read through GitHub instead, as is a path that is not a file at the head.
+/// is read through GitHub instead, as is a path that is not a regular file at the head, as for
+/// [`REGULAR_MODES`].
 fn local_at(
     programs: &mut dyn Programs,
     dir: &Path,
@@ -634,7 +672,7 @@ fn local_at(
         Vec::new()
     } else {
         programs
-            .isolated_git_input(dir, &["cat-file", "--batch"], &input)
+            .isolated_git_input(dir, &["cat-file", LOCAL_HEADER], &input)
             .map_err(|error| {
                 Error::wrap(
                     format!(
@@ -660,7 +698,7 @@ fn local_at(
         };
         rest = after;
         files.push(match object {
-            LocalObject::Blob(bytes) => Some(bytes.to_vec()),
+            LocalObject::File(bytes) => Some(bytes.to_vec()),
             LocalObject::Missing => None,
             LocalObject::Other => file_at(programs, repo, head, name)?,
         });
@@ -668,22 +706,26 @@ fn local_at(
     Ok(files)
 }
 
-/// The first object of `git cat-file --batch` output and the output after it: `<oid> <type> <size>`, the
-/// contents and a line feed, or `<name> missing`.
+/// The first object of `git cat-file --batch` output in [`LOCAL_HEADER`]'s format and the output after it:
+/// `<mode> <oid> <type> <size>`, the contents and a line feed, or `<name> missing`.
 fn next_object(out: &[u8]) -> Option<(LocalObject<'_>, &[u8])> {
     let end = out.iter().position(|b| *b == b'\n')?;
     let (header, rest) = (&out[..end], &out[end + 1..]);
     if header.ends_with(b" missing") {
         return Some((LocalObject::Missing, rest));
     }
-    let mut fields = std::str::from_utf8(header).ok()?.rsplitn(3, ' ');
-    let size: usize = fields.next()?.parse().ok()?;
-    let kind = fields.next()?;
+    let mut fields = std::str::from_utf8(header).ok()?.splitn(4, ' ');
+    let mode = fields.next()?;
     fields.next()?;
+    let kind = fields.next()?;
+    let size: usize = fields.next()?.parse().ok()?;
     let contents = rest.get(..size)?;
     let rest = rest.get(size..)?.strip_prefix(b"\n")?;
-    let object = if kind == "blob" {
-        LocalObject::Blob(contents)
+    let regular = REGULAR_MODES
+        .iter()
+        .any(|regular| format!("{regular:o}") == mode);
+    let object = if kind == "blob" && regular {
+        LocalObject::File(contents)
     } else {
         LocalObject::Other
     };
