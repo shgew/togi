@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use test_case::test_case;
 use togi_machine::{Regime, WorkloadId};
 
 use super::forward::three_sessions;
@@ -7,7 +8,7 @@ use crate::artifact::Extract;
 use crate::compare::{Comparison, compare, interval, metrics, report};
 use crate::error::Error;
 use crate::forward::{ForwardCheck, forward_check};
-use crate::records::{Record, Sums, decode, encode};
+use crate::records::{Defect, Record, Sums, Totals, decode, encode, require_complete};
 
 fn extract() -> Extract {
     Extract {
@@ -265,6 +266,68 @@ fn records_of_different_inputs_seals_or_trials_do_not_pair() {
         unpaired(&reference[1..]),
         "a records file has no input line"
     );
+}
+
+#[test]
+fn a_complete_file_is_required_complete() {
+    assert_eq!(require_complete(&records(&check(), 0)), Ok(()));
+}
+
+fn totals(trials: usize, failures: usize) -> Totals {
+    Totals { trials, failures }
+}
+
+/// The sums of a session or pooled record.
+fn sums_of(record: &mut Record) -> &mut Sums {
+    match record {
+        Record::Session { sums, .. } | Record::Pooled { sums } => sums,
+        Record::Input { .. } | Record::Trial { .. } => panic!("{record:?} has no sums"),
+    }
+}
+
+// `records(&check(), 0)` is the input (line 1), three trials and the summary of the first held-out session
+// (lines 2-5), three trials and the summary of the second (lines 6-9), then the pooled summary (line 10).
+#[test_case(|r| r.truncate(9), Defect::NoPooled; "cut after its last session")]
+#[test_case(|r| r.truncate(8), Defect::NoPooled; "cut after its last trial")]
+#[test_case(|r| r.truncate(1), Defect::NoPooled; "cut after the input")]
+#[test_case(Vec::clear, Defect::NoInput; "empty")]
+#[test_case(|r| { r.remove(0); }, Defect::NoInput; "without the input")]
+#[test_case(|r| r.insert(2, r[0].clone()), Defect::SecondInput { line: 3 }; "second input")]
+#[test_case(|r| r.push(r[9].clone()), Defect::SecondPooled { line: 11 }; "duplicate pooled")]
+#[test_case(|r| r.push(r[1].clone()), Defect::AfterPooled { line: 11 }; "trial after pooled")]
+#[test_case(|r| r.push(r[4].clone()), Defect::AfterPooled { line: 11 }; "session after pooled")]
+#[test_case(|r| r.push(r[0].clone()), Defect::AfterPooled { line: 11 }; "input after pooled")]
+#[test_case(|r| { r.remove(8); }, Defect::UnsummarizedTrials { trials: 3 }; "last session summary missing")]
+#[test_case(|r| r[2] = r[6].clone(), Defect::WrongSession { line: 3 }; "trial of another session")]
+#[test_case(
+    |r| sums_of(&mut r[4]).trials += 1,
+    Defect::SessionTotals { line: 5, recorded: totals(4, 1), counted: totals(3, 1) };
+    "session trials disagree"
+)]
+#[test_case(
+    |r| sums_of(&mut r[4]).failures += 1,
+    Defect::SessionTotals { line: 5, recorded: totals(3, 2), counted: totals(3, 1) };
+    "session failures disagree"
+)]
+#[test_case(
+    |r| { r.remove(5); },
+    Defect::SessionTotals { line: 8, recorded: totals(3, 1), counted: totals(2, 0) };
+    "a trial line is missing"
+)]
+#[test_case(
+    |r| sums_of(&mut r[9]).trials += 1,
+    Defect::PooledTotals { line: 10, recorded: totals(7, 2), counted: totals(6, 2) };
+    "pooled trials disagree"
+)]
+#[test_case(
+    |r| sums_of(&mut r[9]).failures -= 1,
+    Defect::PooledTotals { line: 10, recorded: totals(6, 1), counted: totals(6, 2) };
+    "pooled failures disagree"
+)]
+fn records_that_are_not_the_whole_output_are_refused(change: fn(&mut Vec<Record>), want: Defect) {
+    let mut records = records(&check(), 0);
+    change(&mut records);
+    assert_eq!(require_complete(&records), Err(want));
 }
 
 #[test]

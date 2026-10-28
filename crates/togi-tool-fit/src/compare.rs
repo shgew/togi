@@ -3,10 +3,10 @@
 //! single-core, non-R7 and R7 subsets, the program's primary and F1–F3 checks, and a paired trial bootstrap
 //! of each session's and the pool's loss ratio over all its trials.
 //!
-//! Both runs must be [`crate::records`] of the forward-chained check on the same rows with the same seal:
-//! the reference is the unchanged fitter's prefix fits, never a fixed ensemble. Sums run per session in
-//! trial order and pool the sessions in order, as the check itself does, so a pooled sum here equals the
-//! check's own.
+//! Both runs must be complete [`crate::records`] of the forward-chained check on the same rows with the
+//! same seal: the reference is the unchanged fitter's prefix fits, never a fixed ensemble. Sums run per
+//! session in trial order and pool the sessions in order, as the check itself does, so a pooled sum here
+//! equals the check's own.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -512,17 +512,26 @@ pub fn metrics(comparison: &Comparison) -> BTreeMap<String, f64> {
     metrics
 }
 
-/// Compares the records files `candidate` and `reference`, printing the report to `out` and, with
-/// `metrics_out`, writing [`metrics`] as JSON to that new file.
+/// Compares the records files `candidate` and `reference`, each required to be
+/// [`crate::records::require_complete`], printing the report to `out` and, with `metrics_out`, writing
+/// [`metrics`] as JSON to that new file.
 pub fn compare_files(
     candidate: &Path,
     reference: &Path,
     metrics_out: Option<&Path>,
     out: &mut impl Write,
 ) -> Result<(), Error> {
+    let complete = |path: &Path| {
+        let records = crate::records::read(path)?;
+        crate::records::require_complete(&records).map_err(|source| Error::Incomplete {
+            path: path.to_owned(),
+            source,
+        })?;
+        Ok::<_, Error>(records)
+    };
     let comparison = compare(
-        &crate::records::read(candidate)?,
-        &crate::records::read(reference)?,
+        &complete(candidate)?,
+        &complete(reference)?,
         RESAMPLES,
         BOOTSTRAP_SEED,
     )?;
