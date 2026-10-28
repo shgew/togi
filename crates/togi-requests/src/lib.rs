@@ -3,8 +3,8 @@
 //! it.
 //!
 //! [`summarize`] skips a sample whose loaded-core voltage lanes are not all finite, so the
-//! requests it returns are finite. [`groups`], [`top`] and [`counts`] take finite inputs, which
-//! come from `summarize` or arithmetic on them.
+//! requests it returns are finite. [`groups`] and [`top`] take finite inputs, which come from
+//! `summarize` or arithmetic on them.
 
 use std::collections::BTreeMap;
 
@@ -15,10 +15,6 @@ pub const WARMUP_MS: i64 = 5000;
 pub const MIN_SAMPLES: usize = 20;
 /// The spread within which cores count as one top.
 pub const TIE_V: f64 = 0.001;
-pub const VOLTS_PER_COUNT: f64 = 0.0036;
-/// Keeps a request that sits exactly a whole number of counts above `v` from rounding up one count
-/// further on floating-point error.
-const COUNT_ROUNDING_TOLERANCE: f64 = 1e-9;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Telemetry {
@@ -114,18 +110,6 @@ pub fn groups(requests: &PerCore<f64>) -> Vec<CoreSet> {
         rest = tail;
     }
     groups
-}
-
-/// The counts shallower that raise a request from `v` to at least `target`, and at least one.
-/// Both must be finite. Computed counts deliberately saturate at `i64::MAX`.
-pub fn counts(v: f64, target: f64) -> i64 {
-    debug_assert!(v.is_finite() && target.is_finite());
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "voltage counts deliberately saturate at i64::MAX and floor at one"
-    )]
-    let count = ((target - v) / VOLTS_PER_COUNT - COUNT_ROUNDING_TOLERANCE).ceil() as i64;
-    count.max(1)
 }
 
 /// The highest request. Every request must be finite.
