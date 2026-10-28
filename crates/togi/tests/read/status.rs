@@ -20,16 +20,23 @@ use togi_machine::{
     BiosContext, BootId, CcdId, CcdProfile, CoreId, CoreInfo, CoreSet, ObservedOffset, PerCore,
     Regime, TargetOffset,
 };
-use togi_watchtest::Scenario;
+use togi_watchtest::{Base, Scenario};
 use unicode_width::UnicodeWidthStr as _;
 
 use crate::support::{Session, append_between_trial_mce, append_event, text, togi};
 
-/// Every scenario's golden and snapshot restore boundaries share the same process-local base simulations.
-/// This exhaustive sweep retains all three prefix comparisons for every scenario.
-#[test]
-fn snapshot_plus_tail_renders_the_same_status_without_writes() {
-    for scenario in Scenario::ALL {
+/// Every scenario's golden and snapshot restore boundaries share its base simulation.
+/// Separate exhaustive sweeps keep the five bases parallel without rebuilding any base.
+#[test_case::test_case(Base::Night; "night")]
+#[test_case::test_case(Base::Mapped; "mapped")]
+#[test_case::test_case(Base::Filler; "filler")]
+#[test_case::test_case(Base::Calendar; "calendar")]
+#[test_case::test_case(Base::DeadEnd; "dead end")]
+fn snapshot_plus_tail_renders_the_same_status_without_writes(base: Base) {
+    for scenario in Scenario::ALL
+        .into_iter()
+        .filter(|scenario| scenario.base() == base)
+    {
         let events = scenario
             .events()
             .unwrap_or_else(|error| panic!("{}: {error}", scenario.name()));
