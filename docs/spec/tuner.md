@@ -1,12 +1,12 @@
 # Tuner
 
-Normative rules for Ruleset 13's decisions. [Workloads](workloads.md) owns trial content, placement and coverage; [journal](journal.md) owns event payloads and durable transitions; [runtime](runtime.md#ruleset-13-policy-boundary) owns when the pure policy is called. The decisions are [#1214](https://github.com/shgew/togi/issues/1214) and the owner's answers in [#1215](https://github.com/shgew/togi/issues/1215). Specifications and implementation layers land together; this specification is not a claim that the predecessor binary implements these rules.
+Normative rules for Ruleset 13's decisions. [Workloads](workloads.md) owns trial content, placement and coverage; [journal](journal.md) owns event payloads and durable transitions; [runtime](runtime.md#ruleset-13-policy-boundary) owns when the pure policy is called. The decisions are [#1214](https://github.com/shgew/togi/issues/1214) and the owner's answers in [#1215](https://github.com/shgew/togi/issues/1215).
 
 ## Ruleset
 
-The Ruleset 13 cutover bumps `togi_tuner::RULESET` from its predecessor value; the design number does not require the Rust constant to equal 13. The evidence epoch separately versions workload content, effective configuration, durations and outcome detection. The [fresh transition](journal.md#transitions) archives the current session without tuning carry. Later rulesets must specify their own transition; the raw ledger permits recomputing caps but promises no restoration of D.
+Ruleset 13 is implemented by `togi_tuner::RULESET = 3`; the design number is distinct from the Rust compatibility constant. The evidence epoch separately versions workload content, effective configuration, durations and outcome detection. The [fresh transition](journal.md#transitions) archives the predecessor session without tuning carry. Later rulesets must specify their own transition; the raw ledger permits recomputing caps but promises no restoration of D.
 
-The replaced per-core policy is removed, not left selectable: constraints, cores, decide, failures, hunt, later, optimum, phase plans, phases, R7 attribution/backoff, rounds, skip and checking chains/ordinary/reruns. Keep partial-load generation, machine seams, SMU transactions, containment and recovery. Retire the stats tools' chain, counterfactual, R7-attribution and hunt analyses with their callers. Seam-only commits precede the cutover, rather than running two policies.
+The replaced per-core policy is removed, not left selectable: constraints, cores, decide, failures, hunt, later, optimum, phase plans, phases, R7 attribution/backoff, rounds, skip and checking chains/ordinary/reruns. Partial-load generation, machine seams, SMU transactions, containment and recovery remain. The stats tools' chain, counterfactual, R7-attribution and hunt analyses are retired with their callers.
 
 ## Invariants
 
