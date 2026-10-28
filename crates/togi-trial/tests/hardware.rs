@@ -267,7 +267,7 @@ mod hardware {
     /// until the directory is removed.
     struct Staged {
         tree: Arc<Tree>,
-        _dir: tempfile::TempDir,
+        dir: tempfile::TempDir,
         _lock: HostLock,
         _serial: MutexGuard<'static, ()>,
     }
@@ -327,9 +327,44 @@ mod hardware {
             rustix::fs::fchmod(&tree.fd, Mode::from_raw_mode(0o755)).unwrap();
             Self {
                 tree: Arc::new(tree),
-                _dir: dir,
+                dir,
                 _lock: lock,
                 _serial: serial,
+            }
+        }
+    }
+
+    /// A staging directory whose test kills a trial owner that may hold a CPU frequency cap.
+    /// Until the test's own sweep succeeds, dropping it sweeps through a fresh runner, which
+    /// restores the cap within the sweep's own bound; if that fails, the directory and the
+    /// frequency recovery record in it are kept and named on stderr.
+    struct SweptOnUnwind {
+        staged: Staged,
+        swept: bool,
+    }
+
+    impl Drop for SweptOnUnwind {
+        fn drop(&mut self) {
+            if self.swept {
+                return;
+            }
+            let tree = &self.staged.tree;
+            let outcome = try_runner(tree, Helper::new(tree, "owner"))
+                .map_err(|error| togi_machine::error_chain(&error))
+                .and_then(|mut runner| {
+                    runner
+                        .sweep(&CancellationToken::new())
+                        .map_err(|error| togi_machine::error_chain(&error))
+                });
+            match outcome {
+                Ok(swept) => eprintln!("unwind sweep: {}", swept.detail),
+                Err(error) => {
+                    self.staged.dir.disable_cleanup(true);
+                    eprintln!(
+                        "the unwind sweep failed, so {} keeps its frequency recovery record: {error}",
+                        tree.root.display()
+                    );
+                }
             }
         }
     }
@@ -582,6 +617,10 @@ mod hardware {
     }
 
     fn runner(tree: &Tree, backend: Arc<Helper>) -> Runner {
+        try_runner(tree, backend).unwrap()
+    }
+
+    fn try_runner(tree: &Tree, backend: Arc<Helper>) -> Result<Runner, togi_trial::Error> {
         #[expect(
             clippy::disallowed_methods,
             reason = "gated hardware containment tests retain safety without syncing disposable output"
@@ -593,7 +632,6 @@ mod hardware {
             identity: Some(account()),
             pm_table: None,
         })
-        .unwrap()
     }
 
     fn spec(regime: Regime, cores: &[i64], duration: Duration) -> TrialSpec {
@@ -1349,8 +1387,11 @@ mod hardware {
 
     #[test]
     fn the_sweep_removes_orphaned_trial_scopes_and_keeps_every_other_scope() {
-        let staged = Staged::new();
-        let tree = &staged.tree;
+        let mut staged = SweptOnUnwind {
+            staged: Staged::new(),
+            swept: false,
+        };
+        let tree = &staged.staged.tree;
         let waiter = StrayWaiter::start().unwrap();
         #[expect(
             clippy::disallowed_methods,
@@ -1380,6 +1421,7 @@ mod hardware {
         let mut runner = runner(tree, Helper::new(tree, "owner"));
         let begun = Instant::now();
         let swept = runner.sweep(&CancellationToken::new()).unwrap();
+        staged.swept = true;
         assert!(begun.elapsed() <= TEARDOWN, "the sweep overran");
         assert!(
             swept.detail.starts_with("removed ") && !swept.detail.starts_with("removed 0 "),
