@@ -13,7 +13,13 @@
         1
       ],
       "day": -1,
-      "edge": null,
+      "edge": {
+        "kind": "censored",
+        "limit": -50,
+        "witnesses": [
+          7
+        ]
+      },
       "remaining": 0
     },
     {
@@ -25,7 +31,13 @@
         3
       ],
       "day": 0,
-      "edge": null,
+      "edge": {
+        "kind": "censored",
+        "limit": -50,
+        "witnesses": [
+          13
+        ]
+      },
       "remaining": 1
     }
   ],
@@ -41,21 +53,21 @@
         "1": 0
       },
       "required_s": 180000,
-      "witness": 21
+      "witness": 31
     },
     "last_step": [
-      22,
+      32,
       {
         "causes": {
           "caps": [
-            5,
-            6
+            10,
+            16
           ],
           "events": [
-            19
+            29
           ],
           "vetoes": [
-            20
+            30
           ]
         },
         "cold_boot": "day2",
@@ -138,7 +150,7 @@
         "share_pct": 75
       },
       {
-        "consumed_s": 0,
+        "consumed_s": 4,
         "queue": "mapping",
         "share_pct": 10
       },
@@ -158,7 +170,7 @@
         "share_pct": 0
       }
     ],
-    "closed_by": 13,
+    "closed_by": 23,
     "filler": 0,
     "night": 4,
     "unavailable": []

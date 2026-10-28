@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Activity, Binding, Build, Candidate, CcdCap, CcdVector, CellEvidence, CellWitness,
+    Activity, Binding, Build, Candidate, CcdCap, CcdEdge, CcdVector, CellEvidence, CellWitness,
     DayBootStart, Edge, Event, ExposureClass, ExposureObserved, ExposureOrigin, Finite, FixStamp,
     NightQualification, OriginalSource, Outcome, Payload, Placement, QualificationPurpose,
     QualificationState, Rate, SCHEMA, Seq, SessionBaseline, SessionContext, SessionStart, Slope,
@@ -12,7 +12,7 @@ use togi_machine::{
     Backend, BootId, CcdId, CcdProfile, ContentId, CoreId, CoreInfo, CpuId, Digest, ObservedOffset,
     PerCore, Purpose, Regime, TargetOffset, WorkloadId,
 };
-use togi_tuner::night::{Cell, Roles, SEARCH_DURATION, Workloads};
+use togi_tuner::night::{Cell, Roles, SEARCH_DURATION, Workloads, write_limit};
 use togi_tuner::policy::{
     Action, Contents, DayQuery, Decision, EndReason, NightQuery, NotReady, Params, State, TrialPlan,
 };
@@ -522,9 +522,9 @@ fn r1_workload() -> WorkloadId {
     togi_machine::workloads(Regime::R1)[0].id()
 }
 
-/// `ccd`'s cap S at `offset` under its half of the machine budget, bound by the rate of its first core's
-/// isolated R1 class.
-fn cap(ccd_id: u8, offset: i64) -> CcdCap {
+/// `ccd`'s cap S at `offset` under its half of the machine budget and its committed `edge`, bound by the
+/// rate of its first core's isolated R1 class.
+fn cap(ccd_id: u8, offset: i64, edge: Edge) -> CcdCap {
     let class = r1_class(2 * ccd_id, Placement::Isolated);
     let offset = TargetOffset::new(offset).unwrap();
     CcdCap {
@@ -532,7 +532,7 @@ fn cap(ccd_id: u8, offset: i64) -> CcdCap {
         old: TargetOffset::new(0).unwrap(),
         new: offset,
         budget: Rate::new(Params::SPEC.machine_budget.get() / 2.0).unwrap(),
-        edge: Edge::Unknown {},
+        edge,
         adequate: vec![class.clone()],
         uncovered: Vec::new(),
         cells: Vec::new(),
@@ -547,11 +547,87 @@ fn cap(ccd_id: u8, offset: i64) -> CcdCap {
     }
 }
 
+/// The night's one R1 trial on `core` under `profile`, as `task` runs it.
+fn r1_trial(
+    night: togi_journal::NightId,
+    task: TaskId,
+    core: u8,
+    profile: CcdProfile,
+    tested: Tested,
+    causes: Vec<Seq>,
+) -> TrialPlan {
+    let core = CoreId::new(i64::from(core)).unwrap();
+    let (activity, purpose) = match tested {
+        Tested::Isolated { .. } => (Activity::Mapping, Purpose::Isolated),
+        Tested::Exact {} => (Activity::Qualification, Purpose::Exact),
+    };
+    TrialPlan {
+        night,
+        task,
+        activity,
+        cell: Cell {
+            workloads: Workloads::One {
+                workload: r1_workload(),
+            },
+            loaded: [core].into_iter().collect(),
+            roles: Roles::SingleCore { core },
+            duration: SEARCH_DURATION,
+            purpose,
+            sustained: false,
+        },
+        profile,
+        tested,
+        retry: false,
+        causes,
+    }
+}
+
+fn vector(profile: &CcdProfile) -> CcdVector {
+    CcdVector {
+        ccd: profile.clone(),
+        cores: profile.expand(&cores()).unwrap(),
+    }
+}
+
 impl Journal {
-    /// A promoted day built from public events alone, without running the night policy: the first night
-    /// opens with the plan its first query commits, commits a cap S of -1 on each CCD and qualifies the
-    /// proposal P = (CCD 0: -1, CCD 1: 0) on one exact cell, witnessed by one passing trial and its exposure.
-    /// The cold boot `day1` then promotes P and its application commits it as D.
+    /// Runs `plan` to a pass and observes its exposure of `class`; returns the trial's end and the exposure.
+    fn witnessed_pass(&mut self, plan: &TrialPlan, class: &ExposureClass) -> (Seq, Seq) {
+        let ended = self.run(plan, Ending::Pass);
+        let Payload::TrialEnd(end) = &self.events.last().unwrap().payload else {
+            unreachable!("a trial's last event is its end");
+        };
+        let trial = end.trial.clone();
+        let observed = self.append(
+            ExposureObserved {
+                source: OriginalSource {
+                    session: SESSION.parse().unwrap(),
+                    seq: ended,
+                    boot: BootId::from("tuning1".to_owned()),
+                    trial: Some(trial),
+                },
+                origin: ExposureOrigin::Live {},
+                firmware: context().bios_context(),
+                epoch: togi_tuner::EVIDENCE_EPOCH,
+                class: class.clone(),
+                profile: vector(&plan.profile),
+                tested: plan.tested,
+                activity: plan.activity,
+                outcome: Outcome::Pass,
+                failures: Vec::new(),
+                eligible_s: u64::from(SEARCH_DURATION.get()),
+                uninterrupted_s: u64::from(SEARCH_DURATION.get()),
+                exclusions: Vec::new(),
+            }
+            .into(),
+            &[ended],
+        );
+        (ended, observed)
+    }
+
+    /// A promoted day built from public events alone, without running the night policy. The first night
+    /// opens with the plan its first query commits. On each CCD, one isolated pass at the write limit
+    /// censors its edge and a cap S of -1 follows. One exact pass then qualifies the proposal
+    /// P = (CCD 0: -1, CCD 1: 0). The cold boot `day1` promotes P and its application commits it as D.
     ///
     /// For focused day tests; `crate::flow::promoted` reaches D through the whole first night instead.
     pub(crate) fn promoted_compact() -> (Self, CcdProfile) {
@@ -559,16 +635,46 @@ impl Journal {
         journal.reboot("tuning1");
         let opening = journal.next(at(100)).unwrap();
         let night = togi_journal::NightId(journal.commit(opening));
+        let limit = write_limit();
         for ccd_id in [0, 1] {
-            journal.append(cap(ccd_id, -1).into(), &[]);
+            let task = TaskId {
+                queue: togi_journal::Queue::Mapping,
+                ordinal: u32::from(ccd_id),
+            };
+            let tested = Tested::Isolated {
+                ccd: ccd(ccd_id),
+                offset: limit,
+            };
+            let plan = r1_trial(
+                night,
+                task,
+                2 * ccd_id,
+                zero().with(ccd(ccd_id), limit),
+                tested,
+                Vec::new(),
+            );
+            let (ended, _) =
+                journal.witnessed_pass(&plan, &r1_class(2 * ccd_id, Placement::Isolated));
+            let edge = Edge::Censored {
+                limit,
+                witnesses: vec![ended],
+            };
+            let censored = journal.append(
+                CcdEdge {
+                    ccd: ccd(ccd_id),
+                    edge: edge.clone(),
+                    old: Edge::Unknown {},
+                    reason: format!("no failure down to the write limit {}", limit.get()),
+                }
+                .into(),
+                &[ended],
+            );
+            journal.append(cap(ccd_id, -1, edge).into(), &[censored]);
         }
         let proposal = zero().with(ccd(0), TargetOffset::new(-1).unwrap());
         let cell = r1_class(0, Placement::Exact);
         let qualification = |state| NightQualification {
-            profile: CcdVector {
-                ccd: proposal.clone(),
-                cores: proposal.expand(&cores()).unwrap(),
-            },
+            profile: vector(&proposal),
             firmware: context().bios_context(),
             epoch: togi_tuner::EVIDENCE_EPOCH,
             contents: cell.workloads.clone(),
@@ -583,61 +689,19 @@ impl Journal {
             .into(),
             &[],
         );
-        let core = CoreId::new(0).unwrap();
-        let plan = TrialPlan {
+        let task = TaskId {
+            queue: togi_journal::Queue::Qualification,
+            ordinal: 0,
+        };
+        let plan = r1_trial(
             night,
-            task: TaskId {
-                queue: togi_journal::Queue::Qualification,
-                ordinal: 0,
-            },
-            activity: Activity::Qualification,
-            cell: Cell {
-                workloads: Workloads::One {
-                    workload: r1_workload(),
-                },
-                loaded: [core].into_iter().collect(),
-                roles: Roles::SingleCore { core },
-                duration: SEARCH_DURATION,
-                purpose: Purpose::Exact,
-                sustained: false,
-            },
-            profile: proposal.clone(),
-            tested: Tested::Exact {},
-            retry: false,
-            causes: vec![started],
-        };
-        let ended = journal.run(&plan, Ending::Pass);
-        let Payload::TrialEnd(end) = &journal.events.last().unwrap().payload else {
-            unreachable!("a trial's last event is its end");
-        };
-        let trial = end.trial.clone();
-        let observed = journal.append(
-            ExposureObserved {
-                source: OriginalSource {
-                    session: SESSION.parse().unwrap(),
-                    seq: ended,
-                    boot: BootId::from("tuning1".to_owned()),
-                    trial: Some(trial),
-                },
-                origin: ExposureOrigin::Live {},
-                firmware: context().bios_context(),
-                epoch: togi_tuner::EVIDENCE_EPOCH,
-                class: cell.clone(),
-                profile: CcdVector {
-                    ccd: proposal.clone(),
-                    cores: proposal.expand(&cores()).unwrap(),
-                },
-                tested: Tested::Exact {},
-                activity: Activity::Qualification,
-                outcome: Outcome::Pass,
-                failures: Vec::new(),
-                eligible_s: u64::from(SEARCH_DURATION.get()),
-                uninterrupted_s: u64::from(SEARCH_DURATION.get()),
-                exclusions: Vec::new(),
-            }
-            .into(),
-            &[ended],
+            task,
+            0,
+            proposal.clone(),
+            Tested::Exact {},
+            vec![started],
         );
+        let (_, observed) = journal.witnessed_pass(&plan, &cell);
         journal.append(
             qualification(QualificationState::Complete {
                 witnesses: vec![CellWitness {
