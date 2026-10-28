@@ -16,7 +16,7 @@ Export once to a scratch directory, every command reading the journal or state d
 Then fan out in ONE parallel task call. Give every agent the export paths; an agent that must run a command needs a shell.
 
 - **Boots:** each boot's entry (tuning or normal), how it ended, the reset reason the next boot reports (for the last, the boot after the run), startup times, devices that dropped out or came back late, and filesystem, machine-check and thermal messages. Recovery compared with the previous retro.
-- **Decisions:** the `tuner.decision`, `failure`, `checking.*` and `hunt.*` events checked against `docs/spec/tuner.md`, each conformant, a spec gap, or a defect with its code location, citing the event seqs and the spec text that decide it; reruns and repeated work counted in trials and hours.
+- **Decisions:** route evidence by the run's ruleset. For Ruleset 13 runs, check `ccd.edge`, `ccd.cap`, `night.plan`, `night.qualification`, `night.reproduction`, `day.step`, `day.applied`, `day.event`, `day.veto`, `day.hold`, `exposure.observed` and `failure` against `docs/spec/tuner.md` and `docs/spec/workloads.md`; for earlier rulesets, keep `tuner.decision`, `failure`, `checking.*` and `hunt.*`. Classify each as conformant, a spec gap, or a defect with its code location, citing the event seqs and the spec text that decide it; count reruns and repeated work in trials and hours.
 
 Done when every agent reported and you have checked each figure you will publish against the exports.
 
