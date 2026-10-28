@@ -19,9 +19,12 @@ fn object(cursor: &str, message: &str) -> Value {
     })
 }
 
-/// The fields of an entry in the order `Entry` declares them, sized exactly like the object.
+/// Every field of `Entry` in the order it declares them: the values of `object`, then the four
+/// `COREDUMP` fields as null.
 fn positional_entry(cursor: &str, message: &str) -> Value {
-    json!([message, "2000000", "1000000", cursor, OLD])
+    json!([
+        message, "2000000", "1000000", cursor, OLD, null, null, null, null
+    ])
 }
 
 #[test]
