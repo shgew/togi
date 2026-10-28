@@ -31,6 +31,8 @@ The VM tests are the first CI-tier checks: `vm-grub`, `vm-runtime`, `vm-display`
 
 The default recovery witnesses in `togi-session` cover interrupted failure attribution, between-trial downtime and day-profile register settlement; the short-night integration checks independent `ReadState` replay. `togi-simrun` also keeps a two-boot warm/cold comparison of exact journal and state bytes. These bounded checks pin selected recovery boundaries, not every position in a full recovery sweep.
 
+The two exhaustive session cut sweeps and the long runner warm/cold matrix are excluded by nextest's default filter in both local and CI profiles. The `nextest-recovery` flake check selects those excluded tests from `togi-session` and `togi-simrun`, one test at a time, with two inner cut workers. It is CI tier: PR CI and release run it, while the local gate, check and review-fix paths skip it. Run `just recovery` to build it explicitly. The full-window sweep assertions remain unchanged; this changes the frequency of exhaustive evidence, not its scope.
+
 ## Crates and toolchain
 
 A new crate needs a `Cargo.toml` with `[lints] workspace = true` and registration in `nextestGroups` in `flake.nix`; evaluation rejects missing registrations. Register fixtures read outside `crates/` in `crateFixtures` there. The exact toolchain in `rust-toolchain.toml` changes only in its own pull request.
