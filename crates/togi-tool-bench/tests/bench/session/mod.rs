@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use togi_config::Config;
-use togi_journal::{Build, Event, FixStamp, MemFs, SCHEMA};
+use togi_journal::{Build, Event, FixStamp, MemFs, Payload, SCHEMA, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
 use togi_session::ConfigSource;
@@ -23,6 +23,16 @@ pub(crate) fn session(
     replay: Option<Replay>,
     max_boots: u32,
 ) -> Session {
+    session_for(definition, seed, replay, max_boots, SignedDuration::from_hours(8))
+}
+
+fn session_for(
+    definition: &MachineDefinition,
+    seed: u64,
+    replay: Option<Replay>,
+    max_boots: u32,
+    duration: SignedDuration,
+) -> Session {
     let simulator = Simulator::new(
         Model::new(definition, seed).unwrap(),
         RunSettings {
@@ -32,7 +42,7 @@ pub(crate) fn session(
         },
     )
     .unwrap();
-    let night_end = simulator.now() + SignedDuration::from_hours(8);
+    let night_end = simulator.now() + duration;
     let persistence = Persistence::Memory(MemFs::new());
     let outcome = simulate(SimInput {
         config: Config::default(),
@@ -65,6 +75,29 @@ pub(crate) fn session(
         events: events(&persistence).unwrap(),
         outcome,
     }
+}
+
+/// A short real trial history for fake commands that finish successfully.
+/// Command completion, unlike an early signal, is a deterministic, cacheable outcome.
+pub(crate) fn concluded() -> Vec<Event> {
+    let mut events = brief(&MachineDefinition::default(), 1).events;
+    let Payload::Shutdown(shutdown) = &mut events.last_mut().unwrap().payload else {
+        panic!("the short night must shut down");
+    };
+    assert_eq!(shutdown.reason, ShutdownReason::Signal);
+    shutdown.reason = ShutdownReason::Command;
+    events
+}
+
+/// The same valid recording without its terminal shutdown, for censored/termination checks.
+pub(crate) fn unfinished() -> Vec<Event> {
+    let mut events = concluded();
+    events.pop().unwrap();
+    events
+}
+
+pub(crate) fn brief(definition: &MachineDefinition, seed: u64) -> Session {
+    session_for(definition, seed, None, 1000, SignedDuration::from_mins(5))
 }
 
 /// Four cores that crash once a trial pushes them past their limits at -10: a Ruleset 13 night needs a neighbour on

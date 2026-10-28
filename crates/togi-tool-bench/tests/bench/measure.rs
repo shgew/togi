@@ -46,7 +46,7 @@ fn a_boot_capped_session_is_censored_with_its_crashes_and_time_so_far() {
 #[test]
 fn a_concluded_session_counts_its_trials_and_hazards() {
     let definition = MachineDefinition::default();
-    let done = session(&definition, 1, None, 1000);
+    let done = crate::session::brief(&definition, 1);
     assert!(matches!(done.outcome, SimOutcome::Stopped(_)));
     let m = measured(&done, &definition, 1);
     assert!(m.trials > 0 && m.trial_hours > 0.0);
@@ -69,7 +69,7 @@ fn a_journal_with_no_events_measures_nothing() {
 #[test]
 fn measuring_twice_gives_the_same_numbers() {
     let definition = MachineDefinition::default();
-    let capped = session(&definition, 3, None, 2);
+    let capped = crate::session::brief(&definition, 3);
     assert_eq!(
         measured(&capped, &definition, 3),
         measured(&capped, &definition, 3)
@@ -104,7 +104,7 @@ fn trials_a_real_fact_answers_are_counted_against_the_trials_that_ended() {
 #[test]
 fn the_other_regimes_hazards_are_in_the_record() {
     let definition = MachineDefinition::default();
-    let capped = session(&definition, 2, None, 2);
+    let capped = crate::session::brief(&definition, 2);
     let m = measured(&capped, &definition, 2);
     for regime in LEGACY_REGIMES {
         assert!(m.hazard_per_h.contains_key(&regime));

@@ -13,7 +13,7 @@ struct Trees {
 }
 
 fn recorded(replace: Option<(&str, &str)>) -> String {
-    let events = session::session(&session::hunting(), 1, None, 2).events;
+    let events = session::unfinished();
     let text: Vec<String> = events
         .iter()
         .map(|event| serde_json::to_string(event).unwrap())
