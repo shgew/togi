@@ -9,8 +9,8 @@ use togi_journal::{
 use togi_machine::{BootId, CcdId, Condition, Regime, Signal};
 
 use super::{
-    Script, alone, build, config_loaded, config_with_backends, core, end, fail, first, intent,
-    pass, profile, refreshed, set, trial, workload,
+    Script, alone, build, config_loaded, config_with_backends, core, end, fail, first, idle,
+    intent, pass, profile, refreshed, set, trial, workload,
 };
 use crate::{Decisive, FactsError, Observation, Telemetry, TrialClass};
 
@@ -87,7 +87,12 @@ fn decisive_facts() {
     let facts = s.extract();
     assert_eq!(facts.facts.len(), 4);
     assert_eq!(facts.epoch(), 1);
-    assert_eq!(facts.context.as_ref().unwrap().bios_version, "1.2");
+    assert!(
+        facts
+            .facts
+            .iter()
+            .all(|fact| fact.source.context.as_ref().unwrap().bios_version == "1.2")
+    );
     assert_eq!(facts.open_trials.len(), 1);
 
     let [alone_fact, together_fact, parked_fact, single_fact] = &facts.facts[..] else {
@@ -460,4 +465,45 @@ fn a_ycruncher_pass_takes_the_ycruncher_identity() {
     let backend = facts.facts[0].source.backend.as_ref().unwrap();
     assert_eq!(backend.backend, togi_machine::Backend::Ycruncher);
     assert_eq!(backend.path, "/store/y");
+}
+
+fn context(bios_version: &str) -> SessionContext {
+    SessionContext {
+        bios_version: bios_version.into(),
+        board: "board".into(),
+        cpu_model: "cpu".into(),
+        microcode: "0".into(),
+        boost_limit_mhz: 5000,
+    }
+}
+
+#[test]
+fn each_fact_keeps_the_context_in_force_when_its_trial_opened() {
+    let mut s = Script::begin(&[0]);
+    s.add(alone("unknown", 0, -5, &[0]));
+    s.add(pass("unknown", 5));
+    s.add(context("1.2"));
+    s.add(alone("before", 0, -10, &[0]));
+    s.add(pass("before", 5));
+    s.add(alone("spans", 0, -15, &[0]));
+    s.add(context("1.3"));
+    s.add(pass("spans", 5));
+    s.add(alone("after", 0, -20, &[0]));
+    s.add(fail("after", Signal::Crash, 5));
+    s.add(idle(Some(Condition::Together), Some(profile(&[(0, -20)]))));
+    let facts = s.extract();
+    let contexts: Vec<_> = facts
+        .facts
+        .iter()
+        .map(|fact| {
+            fact.source
+                .context
+                .as_ref()
+                .map(|context| context.bios_version.as_str())
+        })
+        .collect();
+    assert_eq!(
+        contexts,
+        [None, Some("1.2"), Some("1.2"), Some("1.3"), Some("1.3")]
+    );
 }

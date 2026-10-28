@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 use std::path::Path;
 
-use togi_facts::{Decisive, Fact, FactsError, Observation, SessionFacts};
+use togi_facts::{Decisive, Fact, FactsError, Observation};
 use togi_journal::{
     Build, LookupError, Operation, Payload, Recording, Refusal, SCHEMA, Seq, SessionId, Skipped,
     StateDir, Verdict,
@@ -96,7 +96,7 @@ pub fn from_recordings(
     let mut records = Vec::new();
     for session in &sessions {
         for fact in &session.facts {
-            records.push(record(session, fact)?);
+            records.push(record(fact)?);
         }
     }
     if records.is_empty() {
@@ -108,7 +108,7 @@ pub fn from_recordings(
     })
 }
 
-fn record(session: &SessionFacts, fact: &Fact) -> Result<TrialFact, ExtractError> {
+fn record(fact: &Fact) -> Result<TrialFact, ExtractError> {
     let profile =
         Profile::from_per_core(fact.profile()).map_err(|source| ExtractError::Profile {
             session: fact.source.session,
@@ -154,7 +154,7 @@ fn record(session: &SessionFacts, fact: &Fact) -> Result<TrialFact, ExtractError
     Ok(TrialFact {
         session: fact.source.session,
         build: BuildStamp::from(&fact.source.build),
-        context: session.context.clone(),
+        context: fact.source.context.clone(),
         seq: fact.source.seq,
         trial: fact.source.trial.clone(),
         class,

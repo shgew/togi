@@ -1,6 +1,6 @@
 use jiff::Timestamp;
 use togi_journal::{Build, Seq, SessionId, TrialIntent};
-use togi_machine::{BiosContext, BootId, CoreInfo, CoreSet};
+use togi_machine::{BootId, CoreInfo, CoreSet};
 
 use crate::fact::Fact;
 
@@ -19,7 +19,6 @@ pub struct TrialActivity {
 pub struct SessionFacts {
     pub id: SessionId,
     pub build: Build,
-    pub context: Option<BiosContext>,
     pub topology: Vec<CoreInfo>,
     pub cores: CoreSet,
     pub facts: Vec<Fact>,
