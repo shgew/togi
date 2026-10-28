@@ -4,15 +4,15 @@ use std::io::Read;
 use flate2::read::GzDecoder;
 use test_case::test_case;
 use togi_facts::{Decisive, TrialClass};
-use togi_journal::{Activity, Dimension, Failure, MemFs, Outcome, Payload, SCHEMA};
+use togi_journal::{Activity, Dimension, Failure, MemFs, Outcome, Payload, SCHEMA, SessionContext};
 use togi_machine::{CcdId, Condition, PerCore, Regime, Signal};
 use togi_tool_trialfacts::{
     Class, ExtractError, InvalidProfile, Phase, TrialFact, decode, encode, extract, from_recordings,
 };
 
 use crate::builders::{
-    BOOT, Writer, alone, core, crash, end, fact, failed, lock, per_core, set, stamp_of, together,
-    workload,
+    BOOT, Writer, alone, bios, core, crash, end, fact, failed, lock, per_core, set, stamp_of,
+    together, workload,
 };
 
 const OLD: &str = "20260101T000000Z";
@@ -109,6 +109,19 @@ fn facts_follow_session_order_not_archive_order() {
     let facts = extract(&w.close()).unwrap().facts;
     let sessions: Vec<_> = facts.iter().map(|fact| fact.session.to_string()).collect();
     assert_eq!(sessions, [OLD, NEW]);
+}
+
+#[test]
+fn each_record_keeps_the_bios_context_its_trial_opened_under() {
+    let fs = MemFs::new();
+    let mut w = Writer::open(&fs);
+    w.begin(OLD, 1, &[0, 1]);
+    w.trial(alone("1", 0, -10, &[-10, 0]), end("1", Outcome::Pass, 90));
+    w.add(SessionContext::from(bios("updated")));
+    w.trial(alone("2", 0, -15, &[-15, 0]), end("2", Outcome::Pass, 90));
+    let facts = extract(&w.close()).unwrap().facts;
+    let contexts: Vec<_> = facts.iter().map(|fact| fact.context.clone()).collect();
+    assert_eq!(contexts, [Some(bios("fixture")), Some(bios("updated"))]);
 }
 
 #[test]

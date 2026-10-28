@@ -62,6 +62,7 @@ struct Open {
     activity: TrialActivity,
     build: Build,
     backend: Option<BackendIdentity>,
+    context: Option<BiosContext>,
 }
 
 pub(crate) struct Extractor {
@@ -270,6 +271,7 @@ impl Extractor {
                 },
                 build: self.build.clone(),
                 backend: self.backends.get(intent.workload.backend()).cloned(),
+                context: self.context.clone(),
             },
         );
         Ok(())
@@ -295,6 +297,7 @@ impl Extractor {
             activity: TrialActivity { boot, intent, .. },
             build,
             backend,
+            context,
         } = open;
         let outcome = match end.evidence_outcome() {
             Outcome::Inconclusive => return Ok(()),
@@ -322,6 +325,7 @@ impl Extractor {
                 boot,
                 trial: Some(end.trial.clone()),
                 backend,
+                context,
             },
             local: event.seq,
             observation: Observation::Trial {
@@ -370,6 +374,7 @@ impl Extractor {
                 boot: event.boot.clone(),
                 trial: None,
                 backend: None,
+                context: self.context.clone(),
             },
             local: event.seq,
             observation: Observation::IdleFailure {
@@ -390,7 +395,6 @@ impl Extractor {
         SessionFacts {
             id: self.id,
             build: self.start,
-            context: self.context,
             topology: self.topology,
             cores: self.cores,
             facts: self.facts,
@@ -434,6 +438,7 @@ fn copied_source(source: &togi_journal::FactSource) -> FactSource {
         boot: source.boot.clone(),
         trial: source.trial.clone(),
         backend: source.backend.clone(),
+        context: None,
     }
 }
 

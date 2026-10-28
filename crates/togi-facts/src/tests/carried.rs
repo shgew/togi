@@ -3,7 +3,8 @@ use test_case::test_case;
 use std::collections::BTreeMap;
 
 use togi_journal::{
-    Attribution, BackendIdentity, FactSource, FailureCarried, Outcome, Seq, TrialCarried,
+    Attribution, BackendIdentity, FactSource, FailureCarried, Outcome, Seq, SessionContext,
+    TrialCarried,
 };
 use togi_machine::{Backend, BootId, Condition, Regime, Signal};
 
@@ -98,6 +99,28 @@ fn well_formed_copies_are_carried_not_own_facts() {
         }
     ));
     assert_eq!(idle_fact.loaded(), set(&[1, 3, 7]));
+}
+
+#[test]
+fn copies_keep_no_context_their_archive_never_recorded() {
+    let mut s = Script::begin(&[7, 1, 3]);
+    s.add(SessionContext {
+        bios_version: "1.2".into(),
+        board: "board".into(),
+        cpu_model: "cpu".into(),
+        microcode: "0".into(),
+        boost_limit_mhz: 5000,
+    });
+    s.add(trial_copy());
+    s.add(idle_copy());
+    let facts = s.extract();
+    assert_eq!(facts.carried.len(), 2);
+    assert!(
+        facts
+            .carried
+            .iter()
+            .all(|fact| fact.source.context.is_none())
+    );
 }
 
 #[test_case(|copy| copy.outcome = Outcome::Inconclusive, |error| matches!(error, FactsError::NotDecisive { .. }); "inconclusive")]

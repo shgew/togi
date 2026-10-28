@@ -4,7 +4,8 @@ use std::num::NonZeroU32;
 use jiff::Timestamp;
 use togi_journal::{Activity, Build, Seq, SessionId, TrialId};
 use togi_machine::{
-    BootId, CcdId, Condition, CoreId, CoreSet, PerCore, Regime, Signal, TargetOffset, WorkloadId,
+    BiosContext, BootId, CcdId, Condition, CoreId, CoreSet, PerCore, Regime, Signal, TargetOffset,
+    WorkloadId,
 };
 
 pub use togi_journal::BackendIdentity;
@@ -25,6 +26,10 @@ pub struct FactSource {
     pub boot: BootId,
     pub trial: Option<TrialId>,
     pub backend: Option<BackendIdentity>,
+    /// The BIOS context in force when the trial opened or the idle failure was recorded. `None`
+    /// when no `session.context` preceded it, and for copies carried from another session, whose
+    /// archive never recorded one.
+    pub context: Option<BiosContext>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
