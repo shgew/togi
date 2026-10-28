@@ -1,15 +1,14 @@
-//! `just cover` output, kept where it meets the snapshot's hunks.
+//! `just cover` output, kept where it meets the snapshot's changed lines at the frozen head.
 
-use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::diff::{number, parse_diff};
-use crate::headlines::HeadSpan;
+use crate::diff::number;
+use crate::headlines::HeadLines;
 use crate::manifest::{CoverRange, Coverage, Manifest, NotBuilt, read_manifest, write_manifest};
-use crate::text::{join, quote};
-use crate::{Error, files};
+use crate::text::quote;
+use crate::Error;
 
 static COVER_RANGE_LINE: LazyLock<Result<Regex, regex::Error>> =
     LazyLock::new(|| Regex::new(r"^(.+):([0-9]+)(?:-([0-9]+))?$"));
@@ -67,14 +66,12 @@ pub fn parse_cover(text: &str) -> Result<(Vec<CoverRange>, Vec<NotBuilt>), Error
     Ok((ranges, unbuilt))
 }
 
-/// The parts of the reported ranges that lie inside the hunks of their file, and the not-built files the
-/// review covers. A range outside every hunk belongs to a patch the record does not cover and is dropped. A
-/// delta's hunk file concatenates the patches of several commits, so their hunks can overlap; overlapping
-/// parts of a file are merged so one uncovered interval counts once. Adjacent parts stay separate.
+/// Reported ranges inside this review's changed lines at the frozen head, and its not-built files.
+/// Overlapping parts of a file are merged so one uncovered interval counts once. Adjacent parts stay separate.
 pub fn intersect_cover(
     ranges: &[CoverRange],
     unbuilt: &[NotBuilt],
-    hunks: &HashMap<String, Vec<HeadSpan>>,
+    hunks: &HeadLines,
 ) -> Coverage {
     let mut parts = Vec::new();
     for r in ranges {
@@ -112,32 +109,11 @@ pub fn intersect_cover(
     }
 }
 
-/// The changed new-side lines of every included file, from the snapshot's hunk files.
-pub fn hunk_spans(dir: &str, m: &Manifest) -> Result<HashMap<String, Vec<HeadSpan>>, Error> {
-    let mut hunks = HashMap::new();
-    for f in m.included() {
-        let bytes = files::read(&join(dir, &f.hunk_file))
-            .map_err(|error| Error::wrap(format!("read hunk file for {}", f.path), error))?;
-        let sections = parse_diff(&bytes)
-            .map_err(|error| Error::wrap(format!("parse hunk file for {}", f.path), error))?;
-        hunks.insert(
-            f.path.clone(),
-            sections
-                .into_iter()
-                .flat_map(|s| s.changed)
-                .map(HeadSpan::from_new_side)
-                .collect(),
-        );
-    }
-    Ok(hunks)
-}
-
-/// Records the uncovered ranges inside the snapshot's hunks in its manifest, replacing earlier coverage.
+/// Records uncovered changed lines at the frozen head, replacing earlier coverage.
 pub fn add_cover(dir: &str, text: &str) -> Result<Manifest, Error> {
     let mut m = read_manifest(dir)?;
     let (ranges, unbuilt) = parse_cover(text)?;
-    let hunks = hunk_spans(dir, &m)?;
-    m.coverage = Some(intersect_cover(&ranges, &unbuilt, &hunks));
+    m.coverage = Some(intersect_cover(&ranges, &unbuilt, &m.head_lines));
     write_manifest(dir, &m)?;
     Ok(m)
 }

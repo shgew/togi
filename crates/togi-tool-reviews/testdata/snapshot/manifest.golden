@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "repository": "shgew/togi",
   "pull_request": 700,
   "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -66,6 +66,26 @@
       "hunk_file": "files/008.diff"
     }
   ],
+  "head_lines": {
+    "cmd/togi/main.go": [
+      {
+        "first": 11,
+        "last": 12
+      },
+      {
+        "first": 42,
+        "last": 42
+      }
+    ],
+    "docs/two.md": [
+      {
+        "first": 2,
+        "last": 2
+      }
+    ],
+    "internal/old.go": [],
+    "pkg/empty": []
+  },
   "included_files": 4,
   "included_lines": 8,
   "reviewers": 1,

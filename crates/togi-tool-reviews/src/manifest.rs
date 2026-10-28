@@ -5,10 +5,11 @@ use serde::Serialize;
 use togi_machine::object_only;
 
 use crate::diff::FileDiff;
+use crate::headlines::HeadLines;
 use crate::text::{join, json_indented, nullable};
 use crate::{Error, files};
 
-pub const MANIFEST_VERSION: i64 = 1;
+pub const MANIFEST_VERSION: i64 = 2;
 
 object_only! {
     #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -39,6 +40,9 @@ object_only! {
         /// The files of this record's diff: the pull request's, or the delta's on a re-review.
         #[serde(default, deserialize_with = "nullable")]
         pub files: Vec<ManifestFile>,
+        /// Included changed lines as the frozen head numbers them, keyed by its paths.
+        #[serde(default, deserialize_with = "nullable")]
+        pub head_lines: HeadLines,
         /// F of the sizing rule, over the included files.
         #[serde(default, deserialize_with = "nullable")]
         pub included_files: i64,

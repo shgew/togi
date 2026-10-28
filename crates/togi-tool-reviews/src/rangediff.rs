@@ -70,11 +70,17 @@ pub fn parse_range_diff(out: &str) -> Result<Vec<RangeDiffEntry>, Error> {
 #[derive(Clone, Debug, Default)]
 pub struct DeltaResult {
     pub patches: Vec<PatchStatus>,
-    /// The delta's patches in range-diff order: the new version of each changed patch, each added patch,
-    /// and the reverse of each removed one; then the remerge diff of each new merge that changed something.
-    pub texts: Vec<Vec<u8>>,
-    /// The sections of those patches; the reversed ones carry no changed new-side lines.
-    pub files: Vec<Vec<FileDiff>>,
+    /// Commit-local patches, in range-diff order, followed by changed remerge diffs.
+    pub entries: Vec<DeltaPatch>,
+}
+
+/// A verbatim delta patch and the revision numbering its changed new-side lines.
+#[derive(Clone, Debug)]
+pub struct DeltaPatch {
+    /// Removed reversals have no changed new-side lines and no destination revision.
+    pub commit: Option<String>,
+    pub text: Vec<u8>,
+    pub files: Vec<FileDiff>,
 }
 
 impl DeltaResult {
@@ -137,16 +143,21 @@ pub fn classify_range(
                 // nor the new head keeps.
                 "removed".clone_into(&mut s.status);
                 if let Some(kept) = removed_effects(git, &e.old, new_base, new_head)? {
-                    d.texts
-                        .push(kept.iter().flat_map(|f| f.text.iter().copied()).collect());
-                    d.files.push(kept);
+                    d.entries.push(DeltaPatch {
+                        commit: None,
+                        text: kept.iter().flat_map(|f| f.text.iter().copied()).collect(),
+                        files: kept,
+                    });
                 }
             }
             '>' => {
                 "added".clone_into(&mut s.status);
                 let (text, files) = patch(git, &format!("{}^", e.new), &e.new)?;
-                d.texts.push(text);
-                d.files.push(files);
+                d.entries.push(DeltaPatch {
+                    commit: Some(e.new.clone()),
+                    text,
+                    files,
+                });
             }
             '!' => {
                 let (_, old_files) = patch(git, &format!("{}^", e.old), &e.old)?;
@@ -156,8 +167,11 @@ pub fn classify_range(
                     s.context_only = true;
                 } else {
                     "changed".clone_into(&mut s.status);
-                    d.texts.push(text);
-                    d.files.push(new_files);
+                    d.entries.push(DeltaPatch {
+                        commit: Some(e.new.clone()),
+                        text,
+                        files: new_files,
+                    });
                 }
             }
             _ => {}
@@ -180,8 +194,11 @@ pub fn classify_range(
         let status = if files.is_empty() {
             "unchanged"
         } else {
-            d.texts.push(text);
-            d.files.push(files);
+            d.entries.push(DeltaPatch {
+                commit: Some(commit.clone()),
+                text,
+                files,
+            });
             "changed"
         };
         d.patches.push(PatchStatus {

@@ -13,6 +13,7 @@ use crate::cover::add_cover;
 use crate::diff::{
     FileDiff, fixed_exclusion, generated_content, merge_by_path, parse_diff, whole_content,
 };
+use crate::headlines;
 use crate::manifest::{
     MANIFEST_VERSION, Manifest, ManifestFile, PreviousRecord, hunk_file_name, is_small,
     reviewer_count, total_lines, write_manifest,
@@ -236,6 +237,7 @@ pub fn create_snapshot(
     };
     let mut scope = pr_files;
     let mut delta = Vec::new();
+    let mut entries = Vec::new();
     if !previous_url.is_empty() {
         previous_record_of(t, &repo, pr, previous_url, previous_base, &mut m)?;
         if m.fallback.is_empty() {
@@ -243,8 +245,28 @@ pub fn create_snapshot(
             m.carry_forward =
                 d.carry_forward() && m.previous.as_ref().is_some_and(|p| p.verdict == "success");
             m.patches = d.patches;
-            scope = merge_by_path(d.files);
-            delta = d.texts.concat();
+            scope = merge_by_path(
+                d.entries
+                    .into_iter()
+                    .map(|mut patch| {
+                        delta.append(&mut patch.text);
+                        if let Some(commit) = patch.commit {
+                            entries.push(headlines::CommitLines {
+                                commit,
+                                files: patch
+                                    .files
+                                    .iter_mut()
+                                    .map(|file| headlines::FileLines {
+                                        path: file.path.clone(),
+                                        spans: std::mem::take(&mut file.changed),
+                                    })
+                                    .collect(),
+                            });
+                        }
+                        patch.files
+                    })
+                    .collect(),
+            );
         }
     }
     // Everything that reaches out for the frozen head comes before the last look at the pull request.
@@ -258,6 +280,17 @@ pub fn create_snapshot(
         &head_files,
     )?;
     drop(head_files);
+    let included: std::collections::HashSet<&str> = scope
+        .iter()
+        .zip(&exclusions)
+        .filter(|(_, exclusion)| exclusion.is_empty())
+        .map(|(f, _)| f.path.as_str())
+        .collect();
+    m.head_lines = if complete {
+        headlines::from_head_diff(scope.iter().filter(|f| included.contains(f.path.as_str())))
+    } else {
+        headlines::translate(t.programs, &entries, &m.head_sha, &included)?
+    };
     let last = view_pull(t.programs, pr)?;
     moved_since(pr, &before, &last)?;
     let dir = join(&t.tmp, &format!("togi-review/{pr}-{}", short(&before.head)));
