@@ -379,7 +379,8 @@ pub struct UnknownKind(pub String);
 
 impl EventKind {
     /// Whether this is a day kind: a `togi day` observer event, or a Ruleset 13 day decision, event or import.
-    /// Observer events record what the machine did outside tuning and never feed a tuning decision.
+    /// Day kinds come from normal boots and the day policy, not from a tuning boot, so tuning-boot tracking such as
+    /// crash detection and boot continuity skips them. The observer's raw records are inputs to the day policy.
     pub const fn is_day(self) -> bool {
         matches!(
             self,
