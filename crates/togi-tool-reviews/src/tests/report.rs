@@ -6,10 +6,10 @@ use serde_json::{Value, json};
 use test_case::test_case;
 
 use super::{
-    Comment, Counts, PULLS_QUERY, Place, Pull, Row, Totals, format_duration, median, place, render,
-    run, summarize, total,
+    COMMENTS_QUERY, Comment, Counts, PULLS_QUERY, Place, Pull, Row, Totals, format_duration,
+    median, place, render, run, summarize, total,
 };
-use crate::fakes::{Fake, answer};
+use crate::fakes::{Fake, fail};
 use crate::parts::split_record;
 use crate::record::tests::read_fixture;
 use crate::record::{Finding, parse_record};
@@ -533,21 +533,143 @@ tools/sim         1
     assert_eq!(want, String::from_utf8_lossy(&w));
 }
 
-#[test]
-fn run_refuses_truncated_comments() {
-    let mut fake = Fake::new(
-        Some(answer(
-            r#"[{"data":{"repository":{"pullRequests":{"nodes":[{"number":5,"comments":{"pageInfo":{"hasNextPage":true},"nodes":[]}}]}}}}]"#,
-        )),
+/// `pull` as fetched with a first page of comments that has more after `cursor`.
+fn with_more_comments(mut pull: Value, cursor: Option<&str>) -> Value {
+    pull["comments"]["pageInfo"] = json!({"hasNextPage": true, "endCursor": cursor});
+    pull
+}
+
+fn comments_page(comments: &[Value], next: Option<&str>) -> Value {
+    json!({"data": {"repository": {"pullRequest": {"comments": {
+        "pageInfo": {"hasNextPage": next.is_some(), "endCursor": next},
+        "nodes": comments,
+    }}}}})
+}
+
+/// gh answering the merged pull requests with `pulls` and the later comments of pull request #5 with
+/// `comments`.
+fn gh_with_comments(pulls: &Value, comments: Result<Vec<u8>, &'static str>) -> Fake {
+    let pulls = pulls.to_string().into_bytes();
+    Fake::new(
+        Some(Box::new(move |args: &[String]| {
+            if args.iter().any(|arg| arg == "number=5") {
+                comments.clone().map_err(fail)
+            } else {
+                Ok(pulls.clone())
+            }
+        })),
         None,
+    )
+}
+
+#[test]
+fn run_counts_a_record_split_across_comment_pages() {
+    let fixed = json!({"status": "fixed", "sha": "abc"});
+    let long = "x".repeat(300);
+    let findings: Vec<Value> = (0..5)
+        .map(|i| finding("A", "P2", &format!("{long} {i}"), &fixed))
+        .collect();
+    let mut parts: Vec<Value> = split_record(&record_body(&findings), "abc", 800)
+        .expect("split")
+        .into_iter()
+        .enumerate()
+        .map(|(i, body)| {
+            let minutes = 10 * (i64::try_from(i).expect("index") + 1);
+            comment_node(
+                Some("robotogi"),
+                &after(minutes).to_string(),
+                &format!("part {i}"),
+                &body,
+            )
+        })
+        .collect();
+    let last = i64::try_from(parts.len()).expect("count");
+    assert!(
+        last >= 3,
+        "the record splits into {last} parts, too few for three pages"
     );
+    let rest = parts.split_off(2);
+    let first = vec![
+        comment_node(Some("shgew"), "2026-10-01T09:01:00Z", "owner", "LGTM"),
+        parts.remove(0),
+    ];
+    let pulls = json!([page(&[with_more_comments(
+        pull_json(5, "Long discussion", &[], &first),
+        Some("c1"),
+    )])]);
+    let comments = json!([
+        comments_page(&parts, Some("c2")),
+        comments_page(&rest, None)
+    ]);
+    let mut fake = gh_with_comments(&pulls, Ok(comments.to_string().into_bytes()));
+    let mut w = Vec::new();
+    run(&mut fake, &mut w).expect("run");
+    let query = format!("query={COMMENTS_QUERY}");
+    let want_args = [
+        "api",
+        "graphql",
+        "--paginate",
+        "--slurp",
+        "-F",
+        "owner={owner}",
+        "-F",
+        "name={repo}",
+        "-F",
+        "number=5",
+        "-f",
+        "endCursor=c1",
+        "-f",
+        &query,
+    ];
+    assert_eq!(want_args.map(str::to_owned).to_vec(), fake.gh_calls[1]);
+    assert_eq!(2, fake.gh_calls.len());
+    let first_record = format_duration(10 * last * MINUTE);
+    let want = format!(
+        "#5     none   1        0   0   5   0   5      0         0         {first_record:<14}Long discussion"
+    );
+    let out = String::from_utf8_lossy(&w);
+    assert_eq!(
+        Some(want.as_str()),
+        out.lines().nth(1),
+        "track record:\n{out}"
+    );
+}
+
+#[test_case(Err("HTTP 502"), "fetch the comments of pull request #5: HTTP 502" ; "request fails")]
+#[test_case(Ok("not json"), "decode the comments of pull request #5" ; "undecodable")]
+#[test_case(Ok(r#"[{"data":{"repository":{"pullRequest":null}}}]"#), "decode the comments of pull request #5" ; "no pull request")]
+fn run_fails_when_a_comment_page_fails(reply: Result<&'static str, &'static str>, want: &str) {
+    let pulls = json!([page(&[
+        pull_json(4, "Short", &[], &[]),
+        with_more_comments(pull_json(5, "Long", &[], &[]), Some("c1")),
+    ])]);
+    let mut fake = gh_with_comments(&pulls, reply.map(|out| out.as_bytes().to_vec()));
+    let mut w = Vec::new();
+    let error = run(&mut fake, &mut w).expect_err("run accepted");
+    assert!(
+        error.render().contains(want),
+        "run error = {}",
+        error.render()
+    );
+    assert!(w.is_empty(), "a failed run printed a partial track record");
+}
+
+#[test]
+fn run_refuses_more_comments_without_a_cursor() {
+    let pulls = json!([page(&[with_more_comments(
+        pull_json(5, "Long", &[], &[]),
+        None
+    )])]);
+    let mut fake = gh_with_comments(&pulls, Err("no comments call expected"));
     let error = run(&mut fake, &mut Vec::new()).expect_err("run accepted");
     assert!(
         error
             .render()
-            .contains("pull request #5 has more than 100 comments"),
-        "run error = {error}"
+            .contains("pull request #5 has more comments but no cursor to fetch them"),
+        "run error = {}",
+        error.render()
     );
+    assert_eq!(1, fake.gh_calls.len());
 }
 
 #[test_case(&[20 * MINUTE], 20 * MINUTE; "one")]

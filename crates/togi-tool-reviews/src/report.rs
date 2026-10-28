@@ -16,7 +16,9 @@ use crate::{Error, Programs, ROBOTOGI_LOGIN};
 const NANOS_PER_MINUTE: i64 = 60_000_000_000;
 const NANOS_PER_HOUR: i64 = 60 * NANOS_PER_MINUTE;
 
-/// The merged pull requests, with check suites filtered by robotogi's App ID.
+/// The merged pull requests, with check suites filtered by robotogi's App ID, and each one's first page of
+/// comments. `gh --paginate` follows the first `pageInfo` in a response, the merged pull requests', which the
+/// query asks for before the nested comments'.
 pub const PULLS_QUERY: &str = r#"query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: MERGED, first: 50, after: $endCursor) {
@@ -29,13 +31,25 @@ pub const PULLS_QUERY: &str = r#"query($owner: String!, $name: String!, $endCurs
           } }
         } } }
         comments(first: 100) {
-          pageInfo { hasNextPage }
+          pageInfo { hasNextPage endCursor }
           nodes { author { login } createdAt url body }
         }
       }
     }
   }
 }"#;
+
+/// The comments of one pull request after the cursor of a page already fetched.
+pub const COMMENTS_QUERY: &str = r"query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      comments(first: 100, after: $endCursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { author { login } createdAt url body }
+      }
+    }
+  }
+}";
 
 /// A merged pull request as fetched: its head's review check and robotogi's comments.
 #[derive(Clone, Debug)]
@@ -182,6 +196,31 @@ struct Comments {
 struct PageInfo {
     #[serde(default, deserialize_with = "nullable", rename = "hasNextPage")]
     has_next_page: bool,
+    #[serde(default, rename = "endCursor")]
+    end_cursor: Option<String>,
+}
+
+/// A page of [`COMMENTS_QUERY`]; unlike the merged pull requests, a missing pull request or connection here
+/// fails the decode rather than reading as no comments.
+#[derive(Deserialize)]
+struct CommentsPage {
+    data: CommentsData,
+}
+
+#[derive(Deserialize)]
+struct CommentsData {
+    repository: CommentsRepository,
+}
+
+#[derive(Deserialize)]
+struct CommentsRepository {
+    #[serde(rename = "pullRequest")]
+    pull_request: CommentsPull,
+}
+
+#[derive(Deserialize)]
+struct CommentsPull {
+    comments: Comments,
 }
 
 #[derive(Deserialize)]
@@ -223,21 +262,21 @@ fn fetch_pulls(programs: &mut dyn Programs) -> Result<Vec<Pull>, Error> {
     let mut pulls = Vec::new();
     for page in pages {
         for node in page.data.repository.pull_requests.nodes {
-            if node.comments.page_info.has_next_page {
-                return Err(Error::new(format!(
-                    "pull request #{} has more than 100 comments",
-                    node.number
-                )));
-            }
             let check = head_check(&node);
+            let mut comments = node.comments.nodes;
+            if node.comments.page_info.has_next_page {
+                comments.extend(fetch_more_comments(
+                    programs,
+                    node.number,
+                    node.comments.page_info.end_cursor,
+                )?);
+            }
             pulls.push(Pull {
                 number: node.number,
                 title: node.title,
                 opened: node.created_at.unwrap_or(ZERO_TIME),
                 check,
-                comments: node
-                    .comments
-                    .nodes
+                comments: comments
                     .into_iter()
                     .filter(|c| c.author.as_ref().is_some_and(|a| a.login == ROBOTOGI_LOGIN))
                     .map(|c| Comment {
@@ -250,6 +289,57 @@ fn fetch_pulls(programs: &mut dyn Programs) -> Result<Vec<Pull>, Error> {
         }
     }
     Ok(pulls)
+}
+
+/// The comments of pull request `number` after `cursor`, the end of its first page, in the connection's
+/// chronological order.
+fn fetch_more_comments(
+    programs: &mut dyn Programs,
+    number: i64,
+    cursor: Option<String>,
+) -> Result<Vec<CommentNode>, Error> {
+    let Some(cursor) = cursor else {
+        return Err(Error::new(format!(
+            "pull request #{number} has more comments but no cursor to fetch them"
+        )));
+    };
+    let query = format!("query={COMMENTS_QUERY}");
+    let number_field = format!("number={number}");
+    // `-f` keeps the cursor a string whatever its characters.
+    let cursor_field = format!("endCursor={cursor}");
+    let out = programs
+        .gh(&[
+            "api",
+            "graphql",
+            "--paginate",
+            "--slurp",
+            "-F",
+            "owner={owner}",
+            "-F",
+            "name={repo}",
+            "-F",
+            &number_field,
+            "-f",
+            &cursor_field,
+            "-f",
+            &query,
+        ])
+        .map_err(|error| {
+            Error::wrap(
+                format!("fetch the comments of pull request #{number}"),
+                error,
+            )
+        })?;
+    let pages: Vec<CommentsPage> = serde_json::from_slice(&out).map_err(|error| {
+        Error::wrap(
+            format!("decode the comments of pull request #{number}"),
+            error,
+        )
+    })?;
+    Ok(pages
+        .into_iter()
+        .flat_map(|page| page.data.repository.pull_request.comments.nodes)
+        .collect())
 }
 
 /// `success` when any robotogi review check on the head succeeded, else the first one's conclusion,
