@@ -22,7 +22,7 @@ This partly supersedes ADR 0072's statement that "agents do not queue checks or 
 
 - **Keep ADR 0072 unchanged:** rejected. Concurrent runs exhausted RAM and swap and caused unrelated processes to be killed.
 - **Restore a lock or a numeric heavy-job cap:** rejected. Runs queue behind each other regardless of whether they fit, which is the cost #603 reported.
-- **Bound parallelism inside a run in the repository:** the repository, not the host job queue, owns this bound ([#1324](https://github.com/shgew/togi/issues/1324)); the queue decides only when a run starts.
+- **Bound parallelism inside a run in the repository:** rejected. The host decides build and test parallelism; the queue decides when a run starts.
 - **Ship a host job queue in the repository:** rejected. Host policy differs per machine; recipes stay portable.
 
 ## Consequences
