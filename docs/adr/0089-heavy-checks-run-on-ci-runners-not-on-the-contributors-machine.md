@@ -14,7 +14,7 @@ A flake check is **CI tier** exactly when its derivation carries `passthru.tier 
 
 `just gate`, `just push-fix` and `just check` do not request CI-tier checks on any host. The local nextest discovery also filters the tier, so additional CI-tier nextest checks require no justfile edit. Local checks must not depend on CI-tier checks. The KVM-dependent heavy-gate stage is removed, not retained as another selection policy.
 
-`just vm [names]` explicitly builds all or selected VM checks on Linux with writable KVM. It discovers them by `driver` and routes builds through the shared budget from [ADR 0088](0088-the-repository-bounds-its-own-build-and-test-parallelism.md). Other heavy check families may add their own opt-in recipe and use the same tier attribute.
+`just vm [names]` explicitly builds all or selected VM checks on Linux with writable KVM. It discovers them by `driver` and builds the selected checks. Other heavy check families may add their own opt-in recipe and use the same tier attribute.
 
 `just check` remains: it builds the full local flake inventory, including the package and cargo-deny's advisory audit, which the gate does not cover. It selects local checks instead of using unfiltered `nix flake check`.
 
@@ -38,7 +38,7 @@ This table records the evidence that leaves the default local tier and the named
 
 A successful local gate is not a claim that every PR check has run locally. CI still refuses landing on a failed uncached VM check. Module and VM work can opt into VM builds before pushing. Publishing already-built CI-tier outputs remains useful and does not build them implicitly.
 
-The shared worker budget remains in force; moving tests between tiers does not bound allocations inside the remaining tests.
+Moving tests between tiers does not bound allocations inside the remaining tests.
 
 ## Rejected
 
