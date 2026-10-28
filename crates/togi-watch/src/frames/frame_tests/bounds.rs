@@ -5,7 +5,7 @@ use togi_machine::Regime;
 
 use super::{ALL_SIZES, PROFILES, VIEWS, assert_glyphs_safe};
 use crate::frames::hand::{Hand, Staged};
-use crate::frames::testing::screen;
+use crate::frames::testing::{render_checked, screen};
 use crate::screen::{Colours, Hold, Screen, View};
 
 fn every_screen(fx: &Hand, scenario: Staged) {
@@ -24,7 +24,7 @@ fn every_screen(fx: &Hand, scenario: Staged) {
             for colours in PROFILES {
                 for keys in [true, false] {
                     let sc = screen(view, width, height, colours, keys);
-                    let (buf, drawn) = fx.draw(&sc, fx.now);
+                    let (buf, drawn) = render_checked(&fx.journal(), &sc, fx.now);
                     assert_glyphs_safe(
                         &buf,
                         colours,

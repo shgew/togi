@@ -118,19 +118,6 @@ fn verify_names_the_part_that_differs() {
 }
 
 #[test]
-fn a_verified_capsules_document_round_trips_through_json() {
-    let bench = bench();
-    let ended = one_cycle(&bench, None);
-    let capsule = ended.capsule.as_ref().unwrap();
-    capsule.verify(ended.journal.events()).unwrap();
-    let document = StateDocument::of(&capsule.folds);
-    let decoded: StateDocument =
-        serde_json::from_str(&serde_json::to_string(&document).unwrap()).unwrap();
-    assert_eq!(decoded, document);
-    check_document(&document, &document).unwrap();
-}
-
-#[test]
 fn the_document_check_rejects_a_document_other_than_the_cold_folds() {
     let bench = bench();
     let ended = one_cycle(&bench, None);

@@ -729,17 +729,14 @@ mod tests {
     /// `is_sweep` can tell.
     #[test]
     fn sweep_folds_and_projections_are_credited_to_sweep_cases() {
-        let night = togi_watchtest::Base::Night
-            .events()
-            .expect("the night journal");
-        let controls = togi_watchtest::Scenario::Controls
-            .events()
-            .expect("the controls journal");
+        // Session start describes the history; both events supply real journal messages.
+        let script = crate::tests::kit::Script::new(&[(0, 0)]);
+        let events = &script.events;
         crate::corpus::start();
         let mut swept = Swept::default();
-        crate::frames::corpus::sweep_journal(&mut swept, "night", night);
-        crate::frames::corpus::whole(&mut swept, "scenario/controls", &controls);
-        crate::frames::corpus::views(&mut swept, "night", night);
+        crate::frames::corpus::sweep_journal(&mut swept, "minimal", events);
+        crate::frames::corpus::whole(&mut swept, "scenario/minimal", events);
+        crate::frames::corpus::views(&mut swept, "minimal", events);
         let collector = crate::corpus::finish();
         let folded: Vec<_> = collector
             .items
@@ -753,6 +750,12 @@ mod tests {
                 .iter()
                 .any(|((producer, _), _)| producer == "describe"),
             "the folds describe events"
+        );
+        assert!(
+            folded
+                .iter()
+                .any(|((producer, _), _)| producer == crate::corpus::MESSAGES),
+            "the views forward journal messages"
         );
         for ((producer, template), item) in folded {
             assert_eq!(

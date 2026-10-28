@@ -226,7 +226,7 @@ fn main_views(staged: Staged, sizes: &[(u16, u16)]) {
 }
 
 // A frame keeps a snapshot at every main size only when it draws a size-dependent panel no other frame draws; the
-// rest keep the wide one, and `every_staged_frame_fits_the_frame_at_every_main_size` still draws them all.
+// rest keep the wide one, and the bounds matrix in `frame_tests/bounds.rs` still draws them all at every size.
 // mapping: the CCD tables beside each other and stacked, the night's rows. day: the day's rows with no night.
 // idle: the planned end. recovering: the band after a crash. qualifying and reproducing: the night's other rows.
 // The wide-only frames draw panels a kept frame already draws: crashed, between, deadend and stopped a band.
@@ -281,31 +281,6 @@ fn every_staged_frame_has_a_main_view_snapshot() {
             "{} has no snapshot",
             staged.name()
         );
-    }
-}
-
-#[test_case::test_case(Colours::Console; "console")]
-#[test_case::test_case(Colours::None; "plain")]
-#[test_case::test_case(Colours::Rich; "rich")]
-fn every_staged_frame_fits_the_frame_at_every_main_size(colours: Colours) {
-    for staged in Staged::ALL {
-        let hand = staged.hand();
-        let journal = hand.journal();
-        for size in MAIN_SIZES {
-            let sc = screen_of(View::Main, size, colours, 0, false);
-            let (buf, _) = render_checked(&journal, &sc, hand.now);
-            let name = format!("main-{}-{}x{}-{colours:?}", staged.name(), size.0, size.1);
-            if colours == Colours::Rich {
-                assert!(
-                    !text_snapshot(&buf)
-                        .chars()
-                        .any(|c| c.is_control() && c != '\n'),
-                    "{name}"
-                );
-            } else {
-                assert_glyphs_drawable(&buf, &name);
-            }
-        }
     }
 }
 

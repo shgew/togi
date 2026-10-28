@@ -20,19 +20,32 @@ use togi_machine::{
     BiosContext, BootId, CcdId, CcdProfile, CoreId, CoreInfo, CoreSet, ObservedOffset, PerCore,
     Regime, TargetOffset,
 };
-use togi_watchtest::Scenario;
+use togi_watchtest::{Base, Scenario};
 use unicode_width::UnicodeWidthStr as _;
 
-use crate::support::{Session, append_between_trial_mce, append_event, session, text, togi};
+use crate::support::{Session, append_between_trial_mce, append_event, text, togi};
 
-/// Every scenario's status, rendered once: its golden, every line within 80 cells, and no word of a removed
-/// per-core concept or of a night deadline. One pass, since the calendar scenarios' base simulation is the slow
-/// part of every test that reads them.
-#[test]
-fn scenarios_render_the_status() {
-    for scenario in Scenario::ALL {
-        let dir = session(scenario);
+const _: () = assert!(Base::ALL.len() == 5, "every base needs a status sweep case");
+
+/// Every scenario's golden and snapshot restore boundaries share its base simulation.
+/// Separate exhaustive sweeps keep the five bases parallel without rebuilding any base.
+#[test_case::test_case(Base::Night; "night")]
+#[test_case::test_case(Base::Mapped; "mapped")]
+#[test_case::test_case(Base::Filler; "filler")]
+#[test_case::test_case(Base::Calendar; "calendar")]
+#[test_case::test_case(Base::DeadEnd; "dead end")]
+fn snapshot_plus_tail_renders_the_same_status_without_writes(base: Base) {
+    for scenario in Scenario::ALL
+        .into_iter()
+        .filter(|scenario| scenario.base() == base)
+    {
+        let events = scenario
+            .events()
+            .unwrap_or_else(|error| panic!("{}: {error}", scenario.name()));
+        let dir = crate::support::installed(&events);
+        let mutations = dir.fs.mutations();
         let ran = togi(&dir, &["status"]);
+        assert_eq!(dir.fs.mutations(), mutations, "{}", scenario.name());
         assert_eq!(ran.status.code(), Some(0), "{}", scenario.name());
         assert_eq!(text(&ran.stderr), "", "{}", scenario.name());
         let shown = text(&ran.stdout);
@@ -66,62 +79,35 @@ fn scenarios_render_the_status() {
                 scenario.name()
             );
         }
-    }
-}
-
-#[test_case::test_case(Scenario::Controls; "controls")]
-#[test_case::test_case(Scenario::Idle; "idle")]
-#[test_case::test_case(Scenario::Crashed; "crashed")]
-#[test_case::test_case(Scenario::Recovering; "recovering")]
-#[test_case::test_case(Scenario::Between; "between")]
-#[test_case::test_case(Scenario::Mapping; "mapping")]
-#[test_case::test_case(Scenario::Filler; "filler")]
-#[test_case::test_case(Scenario::Qualification; "qualification")]
-#[test_case::test_case(Scenario::DayStep; "day step")]
-#[test_case::test_case(Scenario::Reproduction; "reproduction")]
-#[test_case::test_case(Scenario::Deadend; "dead end")]
-#[test_case::test_case(Scenario::Stopped; "stopped")]
-fn snapshot_plus_tail_renders_the_same_status_without_writes(scenario: Scenario) {
-    let events = scenario.events().unwrap();
-    let dir = crate::support::installed(&events);
-    let expected = togi(&dir, &["status"]);
-    for cut in [1, events.len() / 2, events.len()] {
-        let state = togi_session::ReadState::replay(&events[..cut]).unwrap();
-        let bytes: Vec<u8> = events[..cut]
-            .iter()
-            .flat_map(|event| {
-                let mut bytes = event.encode().unwrap().into_bytes();
-                bytes.push(b'\n');
-                bytes
-            })
-            .collect();
-        let prefix = togi_journal::snapshot::Prefix::of(&bytes, Some(events[cut - 1].seq));
-        let saved = togi_journal::snapshot::seal(prefix, &state.document()).unwrap();
-        dir.fs.put(
-            dir.path().join("state.json"),
-            serde_json::to_vec(&saved).unwrap(),
-        );
-        let mutations = dir.fs.mutations();
-        let actual = togi(&dir, &["status"]);
-        assert_eq!(
-            actual.status,
-            expected.status,
-            "{} at {cut}",
-            scenario.name()
-        );
-        assert_eq!(
-            actual.stdout,
-            expected.stdout,
-            "{} at {cut}",
-            scenario.name()
-        );
-        assert_eq!(
-            actual.stderr,
-            expected.stderr,
-            "{} at {cut}",
-            scenario.name()
-        );
-        assert_eq!(dir.fs.mutations(), mutations);
+        for cut in [1, events.len() / 2, events.len()] {
+            let state = togi_session::ReadState::replay(&events[..cut])
+                .unwrap_or_else(|error| panic!("{} at {cut}: {error}", scenario.name()));
+            let bytes: Vec<u8> = events[..cut]
+                .iter()
+                .flat_map(|event| {
+                    let mut bytes = event.encode().unwrap().into_bytes();
+                    bytes.push(b'\n');
+                    bytes
+                })
+                .collect();
+            let prefix = togi_journal::snapshot::Prefix::of(&bytes, Some(events[cut - 1].seq));
+            let saved = togi_journal::snapshot::seal(prefix, &state.document()).unwrap();
+            dir.fs.put(
+                dir.path().join("state.json"),
+                serde_json::to_vec(&saved).unwrap(),
+            );
+            let mutations = dir.fs.mutations();
+            let actual = togi(&dir, &["status"]);
+            assert_eq!(actual.status, ran.status, "{} at {cut}", scenario.name());
+            assert_eq!(actual.stdout, ran.stdout, "{} at {cut}", scenario.name());
+            assert_eq!(actual.stderr, ran.stderr, "{} at {cut}", scenario.name());
+            assert_eq!(
+                dir.fs.mutations(),
+                mutations,
+                "{} at {cut}",
+                scenario.name()
+            );
+        }
     }
 }
 
