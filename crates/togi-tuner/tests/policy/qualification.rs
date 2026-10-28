@@ -1,7 +1,10 @@
 //! A failed next-step qualification: the exact proposal stays blocked for the session and firmware
 //! (`docs/spec/tuner.md`, Failed next-step qualification).
 
-use togi_journal::{Activity, CellEvidence, DayStep, Payload, QualificationState, Queue, StepKind};
+use togi_journal::{
+    Activity, CellEvidence, DayStep, Payload, QualificationPurpose, QualificationState, Queue,
+    StepKind,
+};
 use togi_machine::{BootId, CcdProfile, ContentId};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, TrialPlan};
@@ -27,17 +30,35 @@ fn fail_first_proposal(journal: &mut Journal, built: &ContentId) -> CcdProfile {
     panic!("no proposal was qualified");
 }
 
-/// The proposals qualified in the next `trials` trials.
-fn qualified_next(journal: &mut Journal, trials: usize) -> Vec<CcdProfile> {
+/// Drives passing trials through the next proposal cycle, until a proposal's next-step qualification
+/// completes or the night asks for its filler, and returns the proposals qualified on the way.
+fn next_proposal_cycle(journal: &mut Journal) -> Vec<CcdProfile> {
+    let completed = completed_proposals(journal);
     let mut qualified = Vec::new();
-    for _ in 0..trials {
+    for _ in 0..3_500 {
         let plan = journal.until_trial(journal.now());
+        if completed_proposals(journal) > completed || plan.task.queue == Queue::Filler {
+            return qualified;
+        }
         if qualifies_proposal(&plan) {
             qualified.push(plan.profile.clone());
         }
         journal.run(&plan, Ending::Pass);
     }
-    qualified
+    panic!("the proposal cycle never ended");
+}
+
+/// How many next-step qualifications have completed.
+fn completed_proposals(journal: &Journal) -> usize {
+    journal
+        .events
+        .iter()
+        .filter(|event| {
+            matches!(&event.payload, Payload::NightQualification(record)
+                if record.purpose == QualificationPurpose::NextStep
+                    && matches!(record.state, QualificationState::Complete { .. }))
+        })
+        .count()
 }
 
 fn failed_commitments(journal: &Journal, profile: &CcdProfile) -> usize {
@@ -57,7 +78,7 @@ fn a_failed_proposal_stays_blocked_across_a_new_night_and_a_rebuilt_backend() {
     let mut journal = Journal::ready();
     let failed = fail_first_proposal(&mut journal, &content());
     assert!(
-        qualified_next(&mut journal, 200)
+        next_proposal_cycle(&mut journal)
             .iter()
             .all(|q| q != &failed)
     );
@@ -87,7 +108,7 @@ fn a_failed_proposal_stays_blocked_across_a_new_night_and_a_rebuilt_backend() {
     // The next night, on a rebuilt backend, still never qualifies it again.
     journal.reboot("tuning1");
     journal.rebuild(rebuilt());
-    let qualified = qualified_next(&mut journal, 1_500);
+    let qualified = next_proposal_cycle(&mut journal);
     assert!(!qualified.is_empty());
     assert!(qualified.iter().all(|q| q != &failed), "{qualified:?}");
 }
@@ -98,7 +119,7 @@ fn a_proposal_whose_failed_commitment_never_landed_stays_blocked() {
     // The failing trial ran a rebuilt backend: its record went stale before its failure was committed.
     let failed = fail_first_proposal(&mut journal, &rebuilt());
     journal.rebuild(rebuilt());
-    let qualified = qualified_next(&mut journal, 1_500);
+    let qualified = next_proposal_cycle(&mut journal);
     assert!(!qualified.is_empty());
     assert_eq!(failed_commitments(&journal, &failed), 0);
     assert!(qualified.iter().all(|q| q != &failed), "{qualified:?}");
@@ -108,11 +129,12 @@ fn a_proposal_whose_failed_commitment_never_landed_stays_blocked() {
 fn a_fresh_session_may_qualify_a_proposal_an_earlier_session_failed() {
     let mut journal = Journal::ready();
     let failed = fail_first_proposal(&mut journal, &content());
-    qualified_next(&mut journal, 1);
+    // The next query commits the failure before it asks for a trial.
+    journal.until_trial(journal.now());
     assert_eq!(failed_commitments(&journal, &failed), 1);
     journal.reboot("fresh");
     journal.start_session("20240101T000000Z");
-    let qualified = qualified_next(&mut journal, 600);
+    let qualified = next_proposal_cycle(&mut journal);
     assert_eq!(qualified.first(), Some(&failed), "{qualified:?}");
 }
 
@@ -138,7 +160,7 @@ fn a_failed_certificate_lends_no_witness_to_a_later_qualification() {
         lent |= qualifies_proposal(&plan) && ccd1_only(&plan);
         journal.run(&plan, Ending::Pass);
     };
-    qualified_next(&mut journal, 1_500);
+    next_proposal_cycle(&mut journal);
     let committed = |pick: fn(&QualificationState) -> bool| {
         journal.events.iter().filter_map(move |event| {
             if let Payload::NightQualification(record) = &event.payload
