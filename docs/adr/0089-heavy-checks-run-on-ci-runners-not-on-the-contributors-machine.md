@@ -53,3 +53,7 @@ Moving tests between tiers does not bound allocations inside the remaining tests
 - Removing VMs from PR CI or running them only at release: that loses the exact-PR boot evidence.
 - A hand-maintained CI-check skip list: the derivation owns its tier, so new heavy families use the same selection rule.
 - Removing `just check`: the gate does not build its full local inventory.
+
+## Amendment: packed repository quality (#1429)
+
+The six cheap repository checks are private members of the public local-tier `quality` check ([ADR 0085's packing amendment](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md#amendment-packed-repository-quality-1429)). `gate`, `push-fix` and local `check` build it; CI and release discover it as one public check. None of its members depends on a CI-tier check. Tier selection and every safety witness above are unchanged.

@@ -99,7 +99,7 @@ Enter the dev shell with `nix develop`, or run `direnv allow` once if you use di
 
 Simulations are on-demand research tools, not checks: use `just sim-suite`, `just same`, `just smoke` or the benches ([ADR 0087](docs/adr/0087-simulations-are-research-tools-not-checks.md)).
 
-The coordination board (`just board`) is Nushell. `just board-test` runs its fixed-fixture assertions without GitHub access, in `just gate` and the `board-test` flake check as well as on board changes in `just push-fix`.
+The coordination board (`just board`) is Nushell. `just board-test` runs its fixed-fixture assertions without GitHub access; the `quality` flake check runs them in both `just gate` and `just push-fix`.
 
 CI pushes each check's output to the public Cachix cache `togi`, and local `just check` can download those instead of building them. Nix uses the cache only when the machine's own configuration trusts it, so opting in is a choice per machine: either add the cache to the system Nix configuration (`/etc/nix/nix.conf`, `/etc/nix/nix.custom.conf` under Determinate Nix, or the same two settings under `nix.settings` on NixOS or nix-darwin),
 

@@ -290,6 +290,95 @@
                 }
               )
             );
+          # Private members retain narrow inputs, named failure logs and independently cached outputs.
+          qualityMembers = {
+            board-test =
+              pkgs.runCommand "togi-board-test"
+                {
+                  nativeBuildInputs = [ pkgs.nushell ];
+                  src = ./tools/board;
+                }
+                ''
+                  cd "$src"
+                  HOME=$TMPDIR nu --no-config-file tests.nu
+                  touch "$out"
+                '';
+            sql-test =
+              pkgs.runCommand "togi-sql-test"
+                {
+                  nativeBuildInputs = [ pkgs.duckdb ];
+                  src = ./tools/sql;
+                }
+                ''
+                  cp -R "$src" sql
+                  chmod -R u+w sql
+                  patchShebangs sql
+                  HOME=$TMPDIR sql/test.sh
+                  touch "$out"
+                '';
+            # Relative links and heading anchors in every Markdown file, offline: a link may name any file.
+            # This source has the whole tree, unlike nextest concerns, so also validate every test-only path here.
+            doc-links =
+              pkgs.runCommand "togi-doc-links"
+                {
+                  nativeBuildInputs = [ pkgs.lychee ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = ./.;
+                  };
+                  # lychee builds its HTTP client even offline, and the client needs a certificate store.
+                  SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+                }
+                ''
+                  cd "$src"
+                  while read -r path || [[ -n "$path" ]]; do
+                    case "$path" in ""|\#*) continue ;; esac
+                    if [[ ! -e "crates/$path" ]]; then
+                      echo "Missing test-only path: crates/$path" >&2
+                      exit 1
+                    fi
+                  done < crates/test-only.txt
+                  HOME=$TMPDIR lychee --offline --hidden --include-fragments --no-progress --format compact './**/*.md'
+                  touch "$out"
+                '';
+            fmt =
+              pkgs.runCommand "togi-fmt"
+                {
+                  nativeBuildInputs = [ config.formatter ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = lib.fileset.unions [
+                      ./flake.nix
+                      ./justfile
+                      (lib.fileset.fileFilter (f: f.hasExt "nix" || f.hasExt "rs") ./.)
+                    ];
+                  };
+                }
+                ''
+                  cp -r "$src" src
+                  chmod -R +w src
+                  cd src
+                  HOME=$TMPDIR treefmt --ci --walk filesystem
+                  touch "$out"
+                '';
+            changes = craneLib.mkCargoDerivation (
+              cargoCheck
+                (cargoSources.source {
+                  code = cargoSources.closure [ "togi-tool-release" ];
+                  files = [ ./changes ];
+                })
+                {
+                  pnameSuffix = "-changes";
+                  buildPhaseCargoCommand = "cargoWithProfile run --locked -p togi-tool-release -- -check changes";
+                  installPhaseCommand = "touch $out";
+                }
+            );
+            module = import ./nix/module-test.nix {
+              pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
+              hostPkgs = pkgs;
+              package = inputs.self.checks.x86_64-linux.package.package;
+            };
+          };
         in
         {
           packages.default = togiPackage rev;
@@ -321,55 +410,9 @@
 
           checks = {
             nextest-recovery = recoveryCheck;
-            board-test =
-              pkgs.runCommand "togi-board-test"
-                {
-                  nativeBuildInputs = [ pkgs.nushell ];
-                  src = ./tools/board;
-                }
-                ''
-                  cd "$src"
-                  HOME=$TMPDIR nu --no-config-file tests.nu
-                  touch "$out"
-                '';
-            sql-test =
-              pkgs.runCommand "togi-sql-test"
-                {
-                  nativeBuildInputs = [ pkgs.duckdb ];
-                  src = ./tools/sql;
-                }
-                ''
-                  cp -R "$src" sql
-                  chmod -R u+w sql
-                  patchShebangs sql
-                  HOME=$TMPDIR sql/test.sh
-                  touch "$out"
-                '';
-            # Relative links and heading anchors in every Markdown file, offline: a link may name any file.
-            # This source has the whole tree, unlike nextest groups, so also validate every test-only path here.
-            doc-links =
-              pkgs.runCommand "togi-doc-links"
-                {
-                  nativeBuildInputs = [ pkgs.lychee ];
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = ./.;
-                  };
-                  # lychee builds its HTTP client even offline, and the client needs a certificate store.
-                  SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
-                }
-                ''
-                  cd "$src"
-                  while read -r path || [[ -n "$path" ]]; do
-                    case "$path" in ""|\#*) continue ;; esac
-                    if [[ ! -e "crates/$path" ]]; then
-                      echo "Missing test-only path: crates/$path" >&2
-                      exit 1
-                    fi
-                  done < crates/test-only.txt
-                  HOME=$TMPDIR lychee --offline --hidden --include-fragments --no-progress --format compact './**/*.md'
-                  touch "$out"
-                '';
+            quality = pkgs.linkFarm "togi-quality" (
+              lib.mapAttrsToList (name: path: { inherit name path; }) qualityMembers
+            );
             clippy = craneLib.mkCargoDerivation (
               cargoCheck testSource {
                 pnameSuffix = "-clippy";
@@ -421,43 +464,6 @@
                 done
                 touch "$out"
               '';
-            fmt =
-              pkgs.runCommand "togi-fmt"
-                {
-                  nativeBuildInputs = [ config.formatter ];
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = lib.fileset.unions [
-                      ./flake.nix
-                      ./justfile
-                      (lib.fileset.fileFilter (f: f.hasExt "nix" || f.hasExt "rs") ./.)
-                    ];
-                  };
-                }
-                ''
-                  cp -r "$src" src
-                  chmod -R +w src
-                  cd src
-                  HOME=$TMPDIR treefmt --ci --walk filesystem
-                  touch "$out"
-                '';
-            changes = craneLib.mkCargoDerivation (
-              cargoCheck
-                (cargoSources.source {
-                  code = cargoSources.closure [ "togi-tool-release" ];
-                  files = [ ./changes ];
-                })
-                {
-                  pnameSuffix = "-changes";
-                  buildPhaseCargoCommand = "cargoWithProfile run --locked -p togi-tool-release -- -check changes";
-                  installPhaseCommand = "touch $out";
-                }
-            );
-            module = import ./nix/module-test.nix {
-              pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
-              hostPkgs = pkgs;
-              package = inputs.self.checks.x86_64-linux.package.package;
-            };
           }
           // nextestChecks
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (

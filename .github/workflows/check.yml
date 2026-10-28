@@ -59,7 +59,7 @@ jobs:
               continue
             fi
             printf '%-24s %s\n' "$name" no
-            if [[ "$EVENT_NAME" == pull_request && " fmt changes deny shear module board-test sql-test doc-links package " == *" $name "* ]]; then
+            if [[ "$EVENT_NAME" == pull_request && " quality deny shear package " == *" $name "* ]]; then
               light_checks+=("$name")
             else
               matrix_checks+=("$name")
