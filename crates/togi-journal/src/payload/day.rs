@@ -590,6 +590,106 @@ pub struct RecordableEnd {
     pub recorded: Option<Seq>,
 }
 
+/// The latest raw observation of one day boot.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DayIntervalBoot {
+    pub boot: BootId,
+    pub offsets: PerCore<ObservedOffset>,
+    /// Cumulative active seconds, including intervals excluded after an offset change.
+    pub seconds: u64,
+    changed: bool,
+}
+
+/// The raw interval closed by a checkpoint, not the tuner's hold eligibility.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DayIntervalCredit<'a> {
+    Credited {
+        boot: &'a BootId,
+        offsets: &'a PerCore<ObservedOffset>,
+        seconds: u64,
+    },
+    /// A change occurred at an unknown time, so neither profile receives this interval.
+    Excluded { boot: &'a BootId, seconds: u64 },
+}
+
+/// Raw day intervals folded per boot, independently of how their consumers report them.
+///
+/// Boots are kept in order of their latest `day.boot_start`. A same-boot restart preserves the
+/// cumulative checkpoint seconds, replaces the offsets and starts an unchanged interval.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct DayIntervals {
+    boots: Vec<DayIntervalBoot>,
+}
+
+impl DayIntervals {
+    /// Reconstructs the state from which later events can continue the fold.
+    pub fn of(events: &[Event]) -> Self {
+        let mut intervals = Self::default();
+        for event in events {
+            intervals.apply(event);
+        }
+        intervals
+    }
+
+    /// Folds one event in journal order. Only a checkpoint for a known boot closes an interval:
+    /// `Some` distinguishes credited time from excluded changed time; `None` closes no interval.
+    /// Imported raw records must be unwrapped by the consumer before applying them.
+    pub fn apply(&mut self, event: &Event) -> Option<DayIntervalCredit<'_>> {
+        if let Payload::DayBootStart(start) = &event.payload {
+            let previous = self.boots.iter().rposition(|boot| boot.boot == event.boot);
+            let seconds = previous.map_or(0, |at| self.boots.remove(at).seconds);
+            self.boots.push(DayIntervalBoot {
+                boot: event.boot.clone(),
+                offsets: start.offsets,
+                seconds,
+                changed: false,
+            });
+        }
+        if let Payload::DayOffsetsChanged(change) = &event.payload
+            && let Some(boot) = self.boot_mut(&event.boot)
+        {
+            boot.offsets = change.offsets;
+            boot.changed = true;
+        }
+        if let Payload::DayCheckpoint(checkpoint) = &event.payload
+            && let Some(boot) = self.boot_mut(&event.boot)
+        {
+            let seconds = checkpoint.applied_secs.saturating_sub(boot.seconds);
+            boot.seconds = checkpoint.applied_secs;
+            let changed = std::mem::replace(&mut boot.changed, false);
+            return Some(if changed {
+                DayIntervalCredit::Excluded {
+                    boot: &boot.boot,
+                    seconds,
+                }
+            } else {
+                DayIntervalCredit::Credited {
+                    boot: &boot.boot,
+                    offsets: &boot.offsets,
+                    seconds,
+                }
+            });
+        }
+        None
+    }
+
+    pub fn get(&self, boot: &BootId) -> Option<&DayIntervalBoot> {
+        self.boots.iter().rev().find(|known| known.boot == *boot)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.boots.is_empty()
+    }
+
+    fn boot_mut(&mut self, boot: &BootId) -> Option<&mut DayIntervalBoot> {
+        self.boots
+            .iter_mut()
+            .rev()
+            .find(|known| known.boot == *boot)
+    }
+}
+
 /// The unclean ends a crash record can name, folded from the journal.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DayCrashes {

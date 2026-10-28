@@ -548,3 +548,217 @@ fn the_parts_of_a_record_decode_only_from_objects() {
     });
     assert!(serde_json::from_value::<DayRecord>(nested).is_err());
 }
+
+fn checkpointed(index: u64, boot: &str, seconds: u64) -> Event {
+    at(
+        index,
+        boot,
+        0,
+        &[],
+        DayCheckpoint {
+            applied_secs: seconds,
+            load_mix: LoadMix::default(),
+            watchdog: None,
+        }
+        .into(),
+    )
+}
+
+fn changed(index: u64, boot: &str, offset: i64) -> Event {
+    at(
+        index,
+        boot,
+        0,
+        &[],
+        DayOffsetsChanged {
+            offsets: offsets(offset),
+        }
+        .into(),
+    )
+}
+
+#[test]
+fn day_intervals_exclude_the_changed_interval_but_credit_the_next_profile() {
+    let mut intervals = DayIntervals::default();
+    assert_eq!(intervals.apply(&started(1, A, 0)), None);
+    assert_eq!(
+        intervals.apply(&checkpointed(2, A, 3600)),
+        Some(DayIntervalCredit::Credited {
+            boot: &id(A),
+            offsets: &offsets(0),
+            seconds: 3600,
+        })
+    );
+    assert_eq!(intervals.apply(&changed(3, A, -20)), None);
+    assert_eq!(
+        intervals.apply(&checkpointed(4, A, 7200)),
+        Some(DayIntervalCredit::Excluded {
+            boot: &id(A),
+            seconds: 3600,
+        })
+    );
+    assert_eq!(
+        intervals.apply(&checkpointed(5, A, 9000)),
+        Some(DayIntervalCredit::Credited {
+            boot: &id(A),
+            offsets: &offsets(-20),
+            seconds: 1800,
+        })
+    );
+    let boot = intervals.get(&id(A)).unwrap();
+    assert_eq!(boot.seconds, 9000);
+    assert_eq!(boot.offsets, offsets(-20));
+}
+
+#[test]
+fn an_excluded_day_interval_still_advances_the_boots_cumulative_seconds() {
+    let mut intervals = DayIntervals::of(&[started(1, A, 0), changed(2, A, -5)]);
+    assert_eq!(
+        intervals.apply(&checkpointed(3, A, 120)),
+        Some(DayIntervalCredit::Excluded {
+            boot: &id(A),
+            seconds: 120,
+        })
+    );
+    assert_eq!(intervals.get(&id(A)).unwrap().seconds, 120);
+}
+
+#[test]
+fn day_intervals_resume_same_boot_cumulative_seconds_without_downtime() {
+    let mut intervals = DayIntervals::of(&[
+        started(1, A, 0),
+        checkpointed(2, A, 120),
+        at(3, A, 120, &[], DayCleanStop {}.into()),
+        started(4, A, 9000),
+    ]);
+    assert_eq!(intervals.get(&id(A)).unwrap().seconds, 120);
+    assert_eq!(
+        intervals.apply(&checkpointed(5, A, 240)),
+        Some(DayIntervalCredit::Credited {
+            boot: &id(A),
+            offsets: &offsets(0),
+            seconds: 120,
+        })
+    );
+    assert_eq!(intervals.get(&id(A)).unwrap().seconds, 240);
+    assert_eq!(
+        serde_json::to_value(&intervals)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn a_day_interval_restart_replaces_offsets_and_clears_an_uncheckpointed_change() {
+    let mut intervals = DayIntervals::of(&[
+        started(1, A, 0),
+        checkpointed(2, A, 600),
+        changed(3, A, -20),
+        started(4, A, 9000),
+    ]);
+    assert_eq!(
+        intervals.apply(&checkpointed(5, A, 1200)),
+        Some(DayIntervalCredit::Credited {
+            boot: &id(A),
+            offsets: &offsets(0),
+            seconds: 600,
+        })
+    );
+}
+
+#[test_case(600, 300, 0; "a reversed checkpoint saturates at zero")]
+#[test_case(600, 600, 0; "a repeated checkpoint adds nothing")]
+#[test_case(600, 900, 300; "only the new seconds count")]
+fn day_interval_checkpoint_deltas_saturate(previous: u64, current: u64, added: u64) {
+    let mut intervals = DayIntervals::of(&[started(1, A, 0), checkpointed(2, A, previous)]);
+    assert_eq!(
+        intervals.apply(&checkpointed(3, A, current)),
+        Some(DayIntervalCredit::Credited {
+            boot: &id(A),
+            offsets: &offsets(0),
+            seconds: added,
+        })
+    );
+    assert_eq!(intervals.get(&id(A)).unwrap().seconds, current);
+    assert_eq!(
+        intervals.apply(&checkpointed(4, A, current + 100)),
+        Some(DayIntervalCredit::Credited {
+            boot: &id(A),
+            offsets: &offsets(0),
+            seconds: 100,
+        })
+    );
+}
+
+#[test]
+fn unknown_day_boot_checkpoints_and_changes_are_ignored() {
+    let mut intervals = DayIntervals::default();
+    assert_eq!(intervals.apply(&checkpointed(1, A, 600)), None);
+    assert_eq!(intervals.apply(&changed(2, A, -20)), None);
+    assert!(intervals.is_empty());
+    assert_eq!(intervals.get(&id(A)), None);
+    intervals.apply(&started(3, A, 0));
+    assert_eq!(
+        intervals.apply(&checkpointed(4, A, 900)),
+        Some(DayIntervalCredit::Credited {
+            boot: &id(A),
+            offsets: &offsets(0),
+            seconds: 900,
+        })
+    );
+}
+
+#[test]
+fn day_intervals_keep_each_boot_independent_and_order_by_latest_start() {
+    let mut intervals = DayIntervals::of(&[
+        started(1, A, 0),
+        checkpointed(2, A, 600),
+        started(3, B, 0),
+        checkpointed(4, B, 100),
+        changed(5, A, -20),
+    ]);
+    assert_eq!(
+        intervals.apply(&checkpointed(6, B, 300)),
+        Some(DayIntervalCredit::Credited {
+            boot: &id(B),
+            offsets: &offsets(0),
+            seconds: 200,
+        })
+    );
+    assert_eq!(
+        intervals.apply(&checkpointed(7, A, 1200)),
+        Some(DayIntervalCredit::Excluded {
+            boot: &id(A),
+            seconds: 600,
+        })
+    );
+    intervals.apply(&started(8, A, 9000));
+    let boots = serde_json::to_value(&intervals).unwrap();
+    assert_eq!(boots[0]["boot"], B);
+    assert_eq!(boots[1]["boot"], A);
+    assert_eq!(boots.as_array().unwrap().len(), 2);
+    assert_eq!(intervals.get(&id(A)).unwrap().seconds, 1200);
+    assert_eq!(intervals.get(&id(B)).unwrap().seconds, 300);
+}
+
+#[test]
+fn day_interval_state_round_trips_with_a_pending_change() {
+    let intervals = DayIntervals::of(&[
+        started(1, A, 0),
+        checkpointed(2, A, 600),
+        changed(3, A, -20),
+    ]);
+    let mut restored: DayIntervals =
+        serde_json::from_value(serde_json::to_value(&intervals).unwrap()).unwrap();
+    assert_eq!(restored, intervals);
+    assert_eq!(
+        restored.apply(&checkpointed(4, A, 1200)),
+        Some(DayIntervalCredit::Excluded {
+            boot: &id(A),
+            seconds: 600,
+        })
+    );
+}
