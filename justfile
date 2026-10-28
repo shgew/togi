@@ -3,6 +3,13 @@ set positional-arguments
 
 system := arch() + "-" + replace(os(), "macos", "darwin")
 
+# One inherited budget for compilation, test workers and Nix's per-build cores.
+jobs := `bash tools/check-budget.sh`
+export TOGI_JOBS := jobs
+export CARGO_BUILD_JOBS := jobs
+export NEXTEST_TEST_THREADS := jobs
+export RUST_TEST_THREADS := jobs
+
 # List recipes by group in file order
 _default:
     @{{ just_executable() }} --justfile '{{ justfile() }}' --list --unsorted
@@ -139,12 +146,12 @@ _publish name:
 # Run every flake check this host builds, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package and, on Linux, trial-scope-tests and the VM tests
 [group('nix')]
 check *args:
-    nix flake check --print-build-logs "$@"
+    nix flake check --print-build-logs "$@" --max-jobs 1 --cores {{ jobs }}
 
 # Build named flake checks, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, release-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, vm-grub, vm-runtime, vm-display and vm-efi (`just check-one module`)
 [group('nix')]
 check-one +names:
-    nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
+    nix build --no-link --print-build-logs --max-jobs 1 --cores {{ jobs }} $(printf '.#checks.{{ system }}.%s ' "$@")
 
 # Run a simulated session, flags as `togi-tool-sim` takes them (`just sim --seed 7 --max-boots 20`)
 [group('run')]
