@@ -2,25 +2,61 @@
 //! fingerprint, so it accepts the snapshot; a production change has another one, so the build rejects the snapshot
 //! and replays the journal.
 
-use std::fs;
+use std::collections::BTreeMap;
+use std::io;
 use std::path::{Path, PathBuf};
 
-use tempfile::TempDir;
 use test_case::test_case;
 
 #[path = "../../build/fingerprint.rs"]
 mod inputs;
 
-fn write(root: &Path, name: &str, contents: &str) {
-    let path = root.join(name);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, contents).unwrap();
+const ROOT: &str = "/workspace";
+
+/// A source tree in memory: file paths and contents, with the directories they imply.
+#[derive(Clone, Default)]
+struct Tree(BTreeMap<PathBuf, String>);
+
+impl Tree {
+    fn write(&mut self, name: &str, contents: &str) {
+        self.0
+            .insert(Path::new(ROOT).join(name), contents.to_owned());
+    }
+
+    fn remove(&mut self, name: &str) {
+        self.0.remove(&Path::new(ROOT).join(name));
+    }
+}
+
+impl inputs::Tree for Tree {
+    fn entries(&self, directory: &Path) -> io::Result<Vec<(PathBuf, bool)>> {
+        let mut entries = BTreeMap::new();
+        for path in self.0.keys() {
+            let Ok(inside) = path.strip_prefix(directory) else {
+                continue;
+            };
+            let Some(first) = inside.components().next() else {
+                continue;
+            };
+            entries.insert(directory.join(first), inside.components().nth(1).is_some());
+        }
+        if entries.is_empty() {
+            return Err(io::ErrorKind::NotFound.into());
+        }
+        Ok(entries.into_iter().collect())
+    }
+
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        self.0
+            .get(path)
+            .map(|contents| contents.clone().into_bytes())
+            .ok_or_else(|| io::ErrorKind::NotFound.into())
+    }
 }
 
 /// Two crates and the files around them, with test-only files of every kind the rule names.
-fn workspace() -> TempDir {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
+fn workspace() -> Tree {
+    let mut tree = Tree::default();
     for (name, contents) in [
         ("Cargo.toml", "[workspace]\n"),
         ("Cargo.lock", "version = 4\n"),
@@ -49,13 +85,15 @@ fn workspace() -> TempDir {
         ),
         ("crates/a/tests/cli.rs", "#[test] fn five() {}\n"),
     ] {
-        write(root, name, contents);
+        tree.write(name, contents);
     }
-    dir
+    tree
 }
 
-fn fingerprint(root: &Path, revision: &str) -> String {
+fn fingerprint(tree: &Tree, revision: &str) -> String {
+    let root = Path::new(ROOT);
     let files = inputs::files(
+        tree,
         root,
         &["a", "b"],
         &[
@@ -66,7 +104,7 @@ fn fingerprint(root: &Path, revision: &str) -> String {
         ],
     )
     .unwrap();
-    inputs::digest(root, &files, revision).unwrap()
+    inputs::digest(tree, root, &files, revision).unwrap()
 }
 
 #[test_case("crates/a/src/tests.rs"; "tests.rs")]
@@ -77,11 +115,11 @@ fn fingerprint(root: &Path, revision: &str) -> String {
 #[test_case("crates/a/src/support.rs"; "a listed file")]
 #[test_case("crates/a/src/fakes/clock.rs"; "a file in a listed directory")]
 #[test_case("crates/a/tests/cli.rs"; "an integration test")]
-fn real_fs_test_only_edits_keep_the_fingerprint(edited: &str) {
-    let dir = workspace();
-    let before = fingerprint(dir.path(), "dev");
-    write(dir.path(), edited, "// edited\n");
-    assert_eq!(fingerprint(dir.path(), "dev"), before);
+fn test_only_edits_keep_the_fingerprint(edited: &str) {
+    let mut tree = workspace();
+    let before = fingerprint(&tree, "dev");
+    tree.write(edited, "// edited\n");
+    assert_eq!(fingerprint(&tree, "dev"), before);
 }
 
 #[test_case("crates/a/src/lib.rs"; "a production file")]
@@ -92,27 +130,24 @@ fn real_fs_test_only_edits_keep_the_fingerprint(edited: &str) {
 #[test_case("crates/test-only.txt"; "the test-only list")]
 #[test_case("Cargo.lock"; "the lock file")]
 #[test_case("version.txt"; "the version")]
-fn real_fs_production_edits_change_the_fingerprint(edited: &str) {
-    let dir = workspace();
-    let before = fingerprint(dir.path(), "dev");
-    write(dir.path(), edited, "// edited\n");
-    assert_ne!(fingerprint(dir.path(), "dev"), before);
+fn production_edits_change_the_fingerprint(edited: &str) {
+    let mut tree = workspace();
+    let before = fingerprint(&tree, "dev");
+    tree.write(edited, "// edited\n");
+    assert_ne!(fingerprint(&tree, "dev"), before);
 }
 
 #[test]
-fn real_fs_the_revision_changes_the_fingerprint() {
-    let dir = workspace();
-    assert_ne!(
-        fingerprint(dir.path(), "dev"),
-        fingerprint(dir.path(), "abc1234")
-    );
+fn the_revision_changes_the_fingerprint() {
+    let tree = workspace();
+    assert_ne!(fingerprint(&tree, "dev"), fingerprint(&tree, "abc1234"));
 }
 
 #[test]
-fn real_fs_a_missing_test_only_list_is_an_error() {
-    let dir = workspace();
-    fs::remove_file(dir.path().join(inputs::TEST_ONLY_LIST)).unwrap();
-    assert!(inputs::files(dir.path(), &["a"], &[]).is_err());
+fn a_missing_test_only_list_is_an_error() {
+    let mut tree = workspace();
+    tree.remove(inputs::TEST_ONLY_LIST);
+    assert!(inputs::files(&tree, Path::new(ROOT), &["a"], &[]).is_err());
 }
 
 fn repository() -> PathBuf {
@@ -123,9 +158,15 @@ fn repository() -> PathBuf {
 fn real_fs_the_build_fingerprint_is_this_modules_digest_of_the_build_source() {
     let root = repository();
     // The sandbox includes every reducer's production source for build.rs, but not every crate's tests.
-    let files = inputs::reducer_files(&root).unwrap();
+    let files = inputs::reducer_files(&inputs::Disk, &root).unwrap();
     assert_eq!(
-        inputs::digest(&root, &files, option_env!("TOGI_REV").unwrap_or("dev")).unwrap(),
+        inputs::digest(
+            &inputs::Disk,
+            &root,
+            &files,
+            option_env!("TOGI_REV").unwrap_or("dev")
+        )
+        .unwrap(),
         env!("TOGI_SNAPSHOT_BUILD")
     );
 }
@@ -141,6 +182,6 @@ fn real_fs_the_build_source_fingerprint_covers_production_source_only(file: &str
         root.join(file).exists(),
         "{file} must be present to test its coverage"
     );
-    let files = inputs::reducer_files(&root).unwrap();
+    let files = inputs::reducer_files(&inputs::Disk, &root).unwrap();
     assert_eq!(files.contains(&root.join(file)), covered);
 }

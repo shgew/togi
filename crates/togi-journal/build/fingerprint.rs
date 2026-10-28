@@ -9,9 +9,38 @@
 use std::error::Error;
 use std::fmt::Write as _;
 use std::fs;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
+
+/// The source tree the fingerprint reads: the disk for the build, memory for the tests of its rules.
+pub(crate) trait Tree {
+    /// The entries of `directory`, each with whether it is a directory, in any order.
+    fn entries(&self, directory: &Path) -> io::Result<Vec<(PathBuf, bool)>>;
+
+    /// The contents of the file at `path`.
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
+}
+
+/// The source tree on disk.
+pub(crate) struct Disk;
+
+impl Tree for Disk {
+    fn entries(&self, directory: &Path) -> io::Result<Vec<(PathBuf, bool)>> {
+        fs::read_dir(directory)?
+            .map(|entry| {
+                let path = entry?.path();
+                let is_directory = path.is_dir();
+                Ok((path, is_directory))
+            })
+            .collect()
+    }
+
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        fs::read(path)
+    }
+}
 
 /// The crates whose source the reducers and their dependencies span.
 const REDUCER_CRATES: [&str; 9] = [
@@ -37,8 +66,8 @@ const BUILD_FILES: [&str; 6] = [
 ];
 
 /// The files this build's fingerprint hashes.
-pub(crate) fn reducer_files(root: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-    files(root, &REDUCER_CRATES, &BUILD_FILES)
+pub(crate) fn reducer_files(tree: &dyn Tree, root: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+    files(tree, root, &REDUCER_CRATES, &BUILD_FILES)
 }
 
 /// The list of test-only modules no name marks, relative to the repository root.
@@ -63,8 +92,11 @@ fn test_only(listed: &[PathBuf], relative: &Path, is_directory: bool) -> bool {
     }
 }
 
-fn listed(root: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
-    Ok(fs::read_to_string(root.join(TEST_ONLY_LIST))?
+fn listed(tree: &dyn Tree, root: &Path) -> Result<Vec<PathBuf>, io::Error> {
+    let bytes = tree.read(&root.join(TEST_ONLY_LIST))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    Ok(text
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
@@ -73,14 +105,13 @@ fn listed(root: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
 }
 
 fn production_sources(
+    tree: &dyn Tree,
     crates: &Path,
     directory: &Path,
     listed: &[PathBuf],
     files: &mut Vec<PathBuf>,
-) -> Result<(), std::io::Error> {
-    for entry in fs::read_dir(directory)? {
-        let path = entry?.path();
-        let is_directory = path.is_dir();
+) -> Result<(), io::Error> {
+    for (path, is_directory) in tree.entries(directory)? {
         if path
             .strip_prefix(crates)
             .is_ok_and(|relative| test_only(listed, relative, is_directory))
@@ -88,7 +119,7 @@ fn production_sources(
             continue;
         }
         if is_directory {
-            production_sources(crates, &path, listed, files)?;
+            production_sources(tree, crates, &path, listed, files)?;
         } else if path.extension().is_some_and(|extension| extension == "rs") {
             files.push(path);
         }
@@ -99,16 +130,23 @@ fn production_sources(
 /// The files the fingerprint hashes, in hash order: the `src` tree of every crate in `crates` without its
 /// test-only files, their manifests, the test-only list and `extra`, paths relative to `root`.
 pub(crate) fn files(
+    tree: &dyn Tree,
     root: &Path,
     crates: &[&str],
     extra: &[&str],
 ) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-    let listed = listed(root)?;
+    let listed = listed(tree, root)?;
     let crates_dir = root.join("crates");
     let mut files = Vec::new();
     for name in crates {
         let directory = crates_dir.join(name);
-        production_sources(&crates_dir, &directory.join("src"), &listed, &mut files)?;
+        production_sources(
+            tree,
+            &crates_dir,
+            &directory.join("src"),
+            &listed,
+            &mut files,
+        )?;
         files.push(directory.join("Cargo.toml"));
     }
     files.push(root.join(TEST_ONLY_LIST));
@@ -118,11 +156,16 @@ pub(crate) fn files(
 }
 
 /// The hex SHA-256 of `files` and `rev`, each file under its name relative to `root`.
-pub(crate) fn digest(root: &Path, files: &[PathBuf], rev: &str) -> Result<String, Box<dyn Error>> {
+pub(crate) fn digest(
+    tree: &dyn Tree,
+    root: &Path,
+    files: &[PathBuf],
+    rev: &str,
+) -> Result<String, Box<dyn Error>> {
     let mut digest = Sha256::new();
     for path in files {
         let name = path.strip_prefix(root)?.to_string_lossy();
-        let bytes = fs::read(path)?;
+        let bytes = tree.read(path)?;
         digest.update((name.len() as u64).to_le_bytes());
         digest.update(name.as_bytes());
         digest.update((bytes.len() as u64).to_le_bytes());
