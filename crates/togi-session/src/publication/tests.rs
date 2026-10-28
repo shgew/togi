@@ -357,7 +357,7 @@ fn reseal(state: &mut serde_json::Value) {
 #[test_case("/recovery/trials", serde_json::json!(999), "recovery"; "run recovery")]
 #[test_case("/incremental/stop", serde_json::json!({}), "incremental"; "incremental tuner")]
 #[test_case("/defects/excluded", serde_json::json!([1]), "defects"; "defect index")]
-#[test_case("/presentation/facts/stopped", serde_json::json!(true), "presentation"; "watch end view")]
+#[test_case("/presentation/facts/lifecycle", serde_json::json!({"Stopped": {"boot": "tampered"}}), "presentation"; "watch end view")]
 fn boot_replays_independently_even_when_a_wrong_full_fold_has_a_valid_checksum(
     pointer: &str,
     value: serde_json::Value,
