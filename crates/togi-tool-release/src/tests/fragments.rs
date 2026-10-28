@@ -100,6 +100,24 @@ fn assembles_release_section() {
     assert_eq!(bump("0.8.0", &body).unwrap().0, "0.9.0");
 }
 
+#[test_case(
+    "See [crashes](../docs/howto.md#recording-a-crash-togi-did-not-observe) and [tuning](../docs/how-togi-tunes.md).",
+    "See [crashes](docs/howto.md#recording-a-crash-togi-did-not-observe) and [tuning](docs/how-togi-tunes.md) ([#7])."
+    ; "fragment-relative links"
+)]
+#[test_case("A chart ![cores](../docs/cores.svg).", "A chart ![cores](docs/cores.svg) ([#7])." ; "image")]
+#[test_case(
+    "See [docs](https://github.com/shgew/togi/blob/main/README.md) and [issue 42](https://github.com/shgew/togi/issues/42).",
+    "See [docs](https://github.com/shgew/togi/blob/main/README.md) and [issue 42](https://github.com/shgew/togi/issues/42) ([#7])."
+    ; "absolute links"
+)]
+#[test_case("Use `../togi` from [a](#usage).", "Use `../togi` from [a](#usage) ([#7])." ; "not a link destination")]
+fn assembles_links_relative_to_changelog(text: &str, want: &str) {
+    let files = BTreeMap::from([("7.md".to_owned(), format!("### Fixed\n\n- {text}\n"))]);
+    let (body, _) = assemble(&parse_fragments(&files).unwrap());
+    assert_eq!(body, format!("### Fixed\n\n- {want}"));
+}
+
 #[test]
 fn real_fs_check_fragments_accepts_valid_directory() {
     let dir = tempfile::tempdir().unwrap();

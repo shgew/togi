@@ -1,5 +1,6 @@
 //! Changelog fragments: one file per pull request under `changes/` (ADR 0033).
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -278,7 +279,7 @@ fn read_fragment_dir(dir: &Path) -> Result<BTreeMap<String, String>, CheckError>
 
 /// The release section the entries make, without its heading, and the pull requests it links, ascending and
 /// distinct. Sections follow [`Section::ALL`]; in each, breaking entries come first, then by pull request number,
-/// each linked as ` ([#N])` before its final period.
+/// each linked as ` ([#N])` before its final period, with its `../` links rewritten for `CHANGELOG.md`.
 pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
     let mut body = String::new();
     for section in Section::ALL {
@@ -293,7 +294,7 @@ pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
         let _ = write!(body, "### {section}\n\n");
         for e in lines {
             let text = e.text.strip_suffix('.').unwrap_or(&e.text);
-            let _ = writeln!(body, "- {text} ([#{}]).", e.pr);
+            let _ = writeln!(body, "- {} ([#{}]).", relocate_links(text), e.pr);
         }
     }
     if body.ends_with('\n') {
@@ -303,6 +304,19 @@ pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
     prs.sort_unstable();
     prs.dedup();
     (body, prs)
+}
+
+/// An inline link or image destination that leaves [`FRAGMENT_DIR`] for the repository root.
+const PARENT_LINK: &str = "](../";
+
+/// `text` with its links relative to `CHANGELOG.md` at the repository root instead of to [`FRAGMENT_DIR`], where
+/// the fragment was written: each destination starting with `../` loses that step. Other links stay as written.
+fn relocate_links(text: &str) -> Cow<'_, str> {
+    if text.contains(PARENT_LINK) {
+        Cow::Owned(text.replace(PARENT_LINK, "]("))
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 #[cfg(test)]
