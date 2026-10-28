@@ -258,7 +258,7 @@ fn core_defs(cores: i64) -> impl Strategy<Value = Vec<CoreDef>> {
             proptest::option::of(-50..=1i64),
             proptest::collection::btree_map(
                 proptest::sample::select(
-                    togi_machine::REGIMES
+                    togi_machine::LEGACY_REGIMES
                         .into_iter()
                         .flat_map(togi_machine::workloads)
                         .map(togi_machine::Workload::id)
@@ -290,7 +290,10 @@ fn joints(cores: i64) -> impl Strategy<Value = Vec<JointDef>> {
     proptest::collection::vec(
         (
             proptest::collection::btree_map(0..cores, -50..=0i64, 1..4),
-            proptest::collection::vec(proptest::sample::select(&togi_machine::REGIMES[..]), 0..3),
+            proptest::collection::vec(
+                proptest::sample::select(&togi_machine::LEGACY_REGIMES[..]),
+                0..3,
+            ),
             proptest::option::of(0.0..1.0f64),
             0.0..300.0f64,
             proptest::option::of(proptest::sample::select(&WEIGHTED_SIGNALS[..])),
@@ -327,7 +330,7 @@ fn models() -> impl Strategy<Value = ModelDef> {
         (0.0..500.0f64, 0.0..10.0f64),
         weights(&WEIGHTED_SIGNALS),
         proptest::collection::btree_map(
-            proptest::sample::select(&togi_machine::REGIMES[..]),
+            proptest::sample::select(&togi_machine::LEGACY_REGIMES[..]),
             weights(&WEIGHTED_SIGNALS),
             0..3,
         ),

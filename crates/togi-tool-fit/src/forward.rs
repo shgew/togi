@@ -9,7 +9,7 @@ use std::io;
 
 use rayon::prelude::*;
 use togi_journal::{Seq, SessionId};
-use togi_machine::{REGIMES, Regime, WorkloadId};
+use togi_machine::{LEGACY_REGIMES, Regime, WorkloadId};
 use togi_sim::{MachineDefinition, Model, saturating_count};
 use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::{ProfileClassKey, TrialFact};
@@ -415,7 +415,7 @@ fn report_rows(
             row.session, row.ruleset, row.training_sessions
         )?;
         report_score(out, &row.score, &format!("{:.3}", row.constant), flagged)?;
-        for regime in REGIMES {
+        for regime in LEGACY_REGIMES {
             if let Some(c) = row.regimes.get(&regime) {
                 report_counts(out, &regime.to_string(), c)?;
             }

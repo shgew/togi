@@ -362,7 +362,7 @@ fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
         [-40, -40, -40, -40],
         [0, 0, -17, -30],
     ];
-    let regimes = togi_machine::REGIMES;
+    let regimes = togi_machine::LEGACY_REGIMES;
     for profile in profiles {
         let profile = offsets(&profile);
         for regime in regimes {

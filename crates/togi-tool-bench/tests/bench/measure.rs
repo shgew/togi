@@ -6,7 +6,7 @@ use std::time::Duration;
 use jiff::Timestamp;
 use serde_json::{Value, json};
 use togi_journal::{Event, SCHEMA};
-use togi_machine::{REGIMES, Regime, TargetOffset, workloads};
+use togi_machine::{LEGACY_REGIMES, Regime, TargetOffset, workloads};
 use togi_sim::definition::CoreDef;
 use togi_sim::replay::{Replay, ReplayFact, ReplayOutcome};
 use togi_sim::{MachineDefinition, Model, file};
@@ -52,7 +52,7 @@ fn a_concluded_session_counts_its_trials_and_hazards() {
     assert!(m.trials > 0 && m.trial_hours > 0.0);
     assert_eq!(m.real_answers, 0);
     assert!((m.real_answer_share).abs() < f64::EPSILON);
-    assert_eq!(m.hazard_per_h.len(), REGIMES.len());
+    assert_eq!(m.hazard_per_h.len(), LEGACY_REGIMES.len());
     assert!(m.hazard_per_h.values().all(|rate| *rate >= 0.0));
     assert!(
         (m.hazard_max_per_h - m.hazard_per_h.values().copied().fold(0.0, f64::max)).abs() < 1e-12
@@ -106,7 +106,7 @@ fn the_other_regimes_hazards_are_in_the_record() {
     let definition = MachineDefinition::default();
     let capped = session(&definition, 2, None, 2);
     let m = measured(&capped, &definition, 2);
-    for regime in REGIMES {
+    for regime in LEGACY_REGIMES {
         assert!(m.hazard_per_h.contains_key(&regime));
     }
 }
@@ -224,7 +224,7 @@ fn a_hand_built_journal_measures_every_field_exactly() {
     assert_eq!((m.crashes, m.trials), (1, 2));
     close(m.trial_hours, 120.0 / 3600.0);
     assert_eq!((m.real_answers, m.real_answer_share), (0, 0.0));
-    assert_eq!(m.hazard_per_h.len(), REGIMES.len());
+    assert_eq!(m.hazard_per_h.len(), LEGACY_REGIMES.len());
     for rate in m.hazard_per_h.values() {
         close(*rate, 0.108);
     }

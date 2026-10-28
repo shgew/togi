@@ -432,7 +432,7 @@ fn own_pass_takes_the_backend_recorded_before_its_intent() {
 }
 
 fn ycruncher_workload() -> togi_machine::WorkloadId {
-    togi_machine::REGIMES
+    togi_machine::LEGACY_REGIMES
         .into_iter()
         .find_map(|regime| {
             togi_machine::workloads(regime)

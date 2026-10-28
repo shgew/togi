@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use std::io;
 
 use togi_facts::Decisive;
-use togi_machine::{REGIMES, Regime, Signal};
+use togi_machine::{LEGACY_REGIMES, Regime, Signal};
 use togi_sim::MachineDefinition;
 use togi_sim::definition::{ModelDef, Weights};
 use togi_tool_trialfacts::TrialFact;
@@ -76,7 +76,7 @@ pub(crate) fn report_signals(out: &mut impl io::Write, model: &ModelDef) -> io::
         failure_count(&model.signals),
         signal_counts(&model.signals)
     )?;
-    for regime in REGIMES {
+    for regime in LEGACY_REGIMES {
         match model.regime_signals.get(&regime) {
             Some(counts) => writeln!(
                 out,
