@@ -83,11 +83,25 @@ impl fmt::Display for Group {
     }
 }
 
+/// The identity of a [`Group`]: its BIOS context, trial class and depth. Two groups with the same key
+/// describe the same trials; their printed text may coincide without it, since it leaves out the context.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct Key<'a> {
+pub struct GroupKey<'a> {
     context: Option<&'a BiosContext>,
     class: TrialClass,
     depth: TargetOffset,
+}
+
+impl Group {
+    /// The group's identity, which [`Display`](fmt::Display) does not print in full.
+    #[must_use]
+    pub fn key(&self) -> GroupKey<'_> {
+        GroupKey {
+            context: self.context.as_ref(),
+            class: self.class,
+            depth: self.depth,
+        }
+    }
 }
 
 struct Point {
@@ -189,7 +203,7 @@ impl Checker {
                 .max()
                 .unwrap_or(TargetOffset::ZERO);
             let at = *index
-                .entry(Key {
+                .entry(GroupKey {
                     context: fact.context.as_ref(),
                     class,
                     depth,

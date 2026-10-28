@@ -40,7 +40,7 @@ use std::path::Path;
 use togi_sim::{MachineDefinition, Model};
 use togi_tool_trialfacts::{Extracts, TrialFact};
 
-pub use checker::{Checker, Group, MIN_GROUP_TRIALS};
+pub use checker::{Checker, Group, GroupKey, MIN_GROUP_TRIALS};
 pub use error::{Error, FactProblem};
 pub use interval::Interval;
 pub use report::{Check, Status, report};
