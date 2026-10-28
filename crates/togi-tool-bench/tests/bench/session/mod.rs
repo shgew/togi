@@ -9,7 +9,7 @@ use togi_render::Renderer;
 use togi_session::ConfigSource;
 use togi_sim::replay::Replay;
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
-use togi_simrun::{Persistence, SimInput, SimOutcome, events, simulate};
+use togi_simrun::{Observe, Observer, Persistence, SimInput, SimOutcome, events, simulate};
 
 /// A whole simulated session and the journal it left, kept in memory.
 pub(crate) struct Session {
@@ -23,15 +23,15 @@ pub(crate) fn session(
     replay: Option<Replay>,
     max_boots: u32,
 ) -> Session {
-    session_for(definition, seed, replay, max_boots, SignedDuration::from_hours(8))
+    session_with(definition, seed, replay, max_boots, None)
 }
 
-fn session_for(
+fn session_with(
     definition: &MachineDefinition,
     seed: u64,
     replay: Option<Replay>,
     max_boots: u32,
-    duration: SignedDuration,
+    observer: Option<Observer>,
 ) -> Session {
     let simulator = Simulator::new(
         Model::new(definition, seed).unwrap(),
@@ -42,7 +42,7 @@ fn session_for(
         },
     )
     .unwrap();
-    let night_end = simulator.now() + duration;
+    let night_end = simulator.now() + SignedDuration::from_hours(8);
     let persistence = Persistence::Memory(MemFs::new());
     let outcome = simulate(SimInput {
         config: Config::default(),
@@ -67,7 +67,7 @@ fn session_for(
         renderer: Renderer::default(),
         zone: TimeZone::UTC,
         cancel: CancellationToken::new(),
-        observer: None,
+        observer,
         dump_to: None,
     })
     .unwrap();
@@ -96,8 +96,21 @@ pub(crate) fn unfinished() -> Vec<Event> {
     events
 }
 
+/// Stop after one ended trial: the measurement and process contracts do not need a whole night.
 pub(crate) fn brief(definition: &MachineDefinition, seed: u64) -> Session {
-    session_for(definition, seed, None, 1000, SignedDuration::from_mins(5))
+    session_with(
+        definition,
+        seed,
+        None,
+        1000,
+        Some(Box::new(|event| {
+            if matches!(event.payload, Payload::TrialEnd(_)) {
+                Observe::Stop
+            } else {
+                Observe::Continue
+            }
+        })),
+    )
 }
 
 /// Four cores that crash once a trial pushes them past their limits at -10: a Ruleset 13 night needs a neighbour on
