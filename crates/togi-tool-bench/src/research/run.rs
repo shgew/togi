@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 use rustix::process::{Pid, Signal, kill_process_group};
@@ -26,6 +26,9 @@ const LEDGER: &str = "experiments.jsonl";
 const LOCK: &str = "lock";
 const REPORT: &str = "report.md";
 const RAW: &str = "raw";
+
+/// How long an evaluator that was told to stop may take to exit before its process group is killed.
+const TERM_GRACE: Duration = Duration::from_secs(5);
 
 /// The run directory's own record, which no evaluator output may name.
 pub(super) const RECORD: [&str; 5] = [MANIFEST, LEDGER, LOCK, REPORT, RAW];
@@ -367,8 +370,22 @@ fn evaluate(
     thread::spawn(move || {
         let _ = send.send(Event::Exited(child.wait()));
     });
+    // The wall limit bounds the evaluator, so stopping it must not wait on the evaluator's goodwill: an
+    // evaluator that ignores TERM gets this long to exit, then its group is killed. The campaign may therefore
+    // run this much past its wall limit, never longer. The waiter reports an exit only after reaping the
+    // leader, so a group signalled before that report still has its leader and cannot name a reused id.
     let terminate = |end: End| -> Result<End, ResearchError> {
         let _ = kill_process_group(group, Signal::TERM);
+        let deadline = Instant::now() + TERM_GRACE;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match receive.recv_timeout(left) {
+                Ok(Event::Exited(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(end),
+                Ok(Event::Signal) => {}
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+            }
+        }
+        let _ = kill_process_group(group, Signal::KILL);
         loop {
             match receive.recv() {
                 Ok(Event::Exited(_)) | Err(_) => return Ok(end),
