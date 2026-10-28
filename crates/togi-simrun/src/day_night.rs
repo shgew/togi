@@ -320,6 +320,17 @@ pub fn run(
     run_with_policy(scenario, seed, calendar, policy.as_mut())
 }
 
+/// What the calendar does before a day starts, as decided by a caller observing the policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DayStart {
+    /// Run the day as the calendar plans it.
+    Run,
+    /// Change the firmware, as the calendar's own transition does, then run the day.
+    ChangeFirmware,
+    /// End the run without starting the day.
+    Stop,
+}
+
 /// Runs any policy using exactly the same calendar and truth-backed machine seams.
 ///
 /// # Errors
@@ -329,6 +340,18 @@ pub fn run_with_policy(
     seed: u64,
     calendar: CalendarConfig,
     policy: &mut dyn Policy,
+) -> Result<Metrics, RunError> {
+    run_controlled(scenario, seed, calendar, policy, |_, _| DayStart::Run)
+}
+
+/// Runs `policy` like [`run_with_policy`], asking `start` before each day whether to change the
+/// firmware beyond the calendar's own transition, or to end the run early.
+pub(crate) fn run_controlled<P: Policy + ?Sized>(
+    scenario: &str,
+    seed: u64,
+    calendar: CalendarConfig,
+    policy: &mut P,
+    mut start: impl FnMut(u32, &P) -> DayStart,
 ) -> Result<Metrics, RunError> {
     let scenario = Scenario::builtin(scenario, seed)?;
     validate(&calendar, &scenario)?;
@@ -368,14 +391,21 @@ pub fn run_with_policy(
     let mut cap_epoch = runtime.cap_epoch();
     let mut caps = runtime.safe_depths(active, &fractions)?;
     for day in 0..calendar.days {
+        let start = start(day, &*policy);
+        if start == DayStart::Stop {
+            break;
+        }
         runtime.set_day(day);
+        if start == DayStart::ChangeFirmware {
+            runtime.change_firmware_on(day);
+        }
         let day_start = runtime.now();
         let epoch = runtime.cap_epoch();
         if epoch != cap_epoch {
             caps = runtime.safe_depths(active, &fractions)?;
             cap_epoch = epoch;
         }
-        if transition == Some(day) {
+        if transition == Some(day) || start == DayStart::ChangeFirmware {
             runtime.firmware_changed()?;
             policy.firmware_changed(&mut machine)?;
         }

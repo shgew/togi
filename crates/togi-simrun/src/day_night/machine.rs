@@ -99,6 +99,11 @@ impl Runtime {
         state.day = day;
         state.non_cpu_today = false;
     }
+    /// Places the firmware transition on `day` when the calendar planned none, so the truth
+    /// follows the new firmware from then on.
+    pub(super) fn change_firmware_on(&mut self, day: u32) {
+        self.0.borrow_mut().transition.get_or_insert(day);
+    }
     pub(super) fn cap_epoch(&self) -> u32 {
         let state = self.0.borrow();
         state.scenario.cap_epoch(state.truth_day())
