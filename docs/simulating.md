@@ -30,7 +30,7 @@ Without `shared_voltage`, the simulator reports no SMU `pm_table` lanes: samples
 
 These synthetic samples retain loaded-core clocks only: the model has no idle-clock or core/SoC power split. Hardware samples cover every core's clock and package RAPL power; all-core power is available from the PM-table lanes ([Conditions sampling](spec/workloads.md#conditions-sampling)). This does not change simulated telemetry or seeded decisions.
 
-A fresh state directory uses the default configuration, never `/etc/togi/config.json`. A state directory with a journal resumes under the configuration its latest `config.loaded` recorded: the backend store paths and dead-end settings, so passes recorded under a real machine's backend store paths keep counting. That snapshot stands in for the configuration file the real machine would load: `togi run` loads its configuration file on every start and records it in a new `config.loaded`, never reading it back from the journal, so a simulated resume matches the next real run only while that file is unchanged since the recorded `config.loaded`. The simulator names no backend packages of its own, so a fresh session records none. The session runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the simulated operator ends the night, 1 at a dead end or on an error, 2 on a flag error and 3 at the boot cap. A journal written under an older ruleset or schema is archived and seeds a new session, as `togi run` does; the resumed machine reports the BIOS context the journals recorded, so their failure points carry. A live journal of an older schema keeps only its recorded backend store paths, on top of the default configuration, because the reader for older schemas keeps nothing else of a `config.loaded`. A journal written under a newer ruleset or schema is refused before another event is appended.
+A fresh state directory uses the default configuration, never `/etc/togi/config.json`. A state directory with a journal resumes under the configuration its latest `config.loaded` recorded: the backend store paths and dead-end settings, so passes recorded under a real machine's backend store paths keep counting. That snapshot stands in for the configuration file the real machine would load: `togi run` loads its configuration file on every start and records it in a new `config.loaded`, never reading it back from the journal, so a simulated resume matches the next real run only while that file is unchanged since the recorded `config.loaded`. The simulator names no backend packages of its own, so a fresh session records none. The session runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the simulated operator ends the night, 1 at a dead end or on an error, 2 on a flag error and 3 at the boot cap. A journal written under an older ruleset or schema is archived and seeds a fresh session that imports only raw day records, as `togi run` does; nothing tuning-related carries ([Transitions](spec/journal.md#transitions)). A live journal of an older schema keeps only its recorded backend store paths, on top of the default configuration, because the reader for older schemas keeps nothing else of a `config.loaded`. A journal written under a newer ruleset or schema is refused before another event is appended.
 
 The read-only commands work on the result:
 
@@ -222,8 +222,8 @@ A trial's failure is the earliest strictly before the intended end of the source
 `crates/togi-simrun` is the loop that runs whole sessions on the simulator. `simulate(SimInput)` boots the `Simulator` it is given and, on each boot:
 
 1. Reads the boot id and BIOS context.
-2. Locks the state directory and runs `togi_session::prepare`, which archives a build or BIOS transition and selects the carry.
-3. Hands the journal and the carry to `togi_session::run`.
+2. Locks the state directory and runs `togi_session::prepare`, which archives an older build transition's journal for a fresh session and prepares its raw day import. A BIOS-context change stays within the live session ([Transitions](spec/journal.md#transitions)).
+3. Hands the journal and any pending raw day import to `togi_session::run`; no tuning carry is selected.
 4. After a crash, reboots the machine and repeats.
 
 The loop ends when a run stops without a crash, which gives `SimOutcome::Stopped` with the run's stop, errors, emergency outcome and resume capsule, or after `max_boots` boots, which gives `SimOutcome::Capped`. A boot whose journal starts empty begins a new session, so the simulator forgets the last trial's samples (`Simulator::forget_last_trial`), and a new trial that reuses an earlier session's trial id reads none.
@@ -253,7 +253,7 @@ A divergence is `SimError::Diverged`, and a state that cannot be published is `S
 - `resume_simulator` returns the simulator a later process continues with. A capped simulation leaves its machine as `machine.json` in the state directory, and the later process restores it. Without `machine.json`, it builds a fresh machine from `history`. A later `simulate` removes the file after its first boot that appends to the journal, so a continuation refused before it starts, by a configuration naming a missing core for example, leaves the machine for the next try. A test pins that a simulation capped and continued by a second process leaves the same `events.jsonl` and `state.json` as an uninterrupted one. A machine rebuilt from the journals alone does not.
 - `recorded_config` and `recorded_config_in` return the configuration of the latest `config.loaded`, standing in for the file `togi run` would load.
 
-The tuner's simulation tests (`tests/sim/memo.rs`) live in this crate, because they need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency: that would build a second `togi-tuner` whose types do not unify with the first.
+The tuner's simulation tests live under [`crates/togi-simrun/tests/sim/`](../crates/togi-simrun/tests/sim/), because they need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency: that would build a second `togi-tuner` whose types do not unify with the first.
 
 ### Calendar day/night experiments
 
@@ -283,6 +283,9 @@ session records a trial an operator's signal stopped: an inconclusive `trial.end
 "trial ended before its full duration; stopped by signal". The night then closes with `shutdown{reason: signal}`
 before the next day boot; a policy `EndNight` closes it with `shutdown{reason: dead_end}` instead. The adapter does not
 apply day steps for a paused boot, because the calendar has no pause.
+The calendar idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat.
+Its gate scores omit that overhead; actual overhead must be measured on hardware under the
+[production workload rules](spec/workloads.md#durations-and-checking-schedule).
 The registered benchmark and its gate reporting are described in [benchmarking](benchmarking.md).
 
 The default calendar contains 730 days, with day zero on Monday, eight active daily hours,
