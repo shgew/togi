@@ -60,7 +60,7 @@ cover base: _dev-shell
     set -euo pipefail
     trace=$(mktemp)
     trap 'rm -f "$trace"' EXIT
-    target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
+    target=${CARGO_LLVM_COV_TARGET_DIR:-$(cargo metadata --format-version 1 --no-deps | nu --stdin -c '$in | from json | get build_directory')/llvm-cov-target}
     CARGO_LLVM_COV_TARGET_DIR="$target" CARGO_BUILD_BUILD_DIR="$target" cargo llvm-cov nextest --locked --lcov --output-path "$trace" >&2
     cargo run --quiet --locked -p togi-tool-cover -- --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
