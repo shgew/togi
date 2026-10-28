@@ -7,8 +7,8 @@ use std::time::Duration;
 use clap::Args as ClapArgs;
 use togi_hardware::day::Observer;
 use togi_journal::{
-    Build, DayBootStart, DayCheckpoint, DayCleanStop, DayOffsetsChanged, DayUncleanEnd, Event,
-    Journal, LoadMix, Payload, Seq, Stamp,
+    Build, DayBootStart, DayCheckpoint, DayCleanStop, DayIntervalCredit, DayIntervals,
+    DayOffsetsChanged, DayUncleanEnd, Event, Journal, LoadMix, Payload, Seq, Stamp,
 };
 use togi_machine::{
     BootId, CancellationToken, Clock, CoreId, CoreInfo, ObservedOffset, PerCore, ResetReason,
@@ -382,7 +382,6 @@ pub(crate) struct Boot {
     pub load_mix: LoadMix,
     pub clean: bool,
     pub unclean: bool,
-    changed: bool,
 }
 
 pub(crate) type Profile = Vec<(CoreId, i64)>;
@@ -399,52 +398,54 @@ pub(crate) struct Ledger {
 impl Ledger {
     pub(crate) fn of(events: &[Event]) -> Self {
         let mut ledger = Self::default();
+        let mut intervals = DayIntervals::default();
         for event in events {
-            if let Payload::DayBootStart(start) = &event.payload {
+            if let Some(DayIntervalCredit::Credited {
+                offsets, seconds, ..
+            }) = intervals.apply(event)
+            {
+                let profile = offsets
+                    .iter()
+                    .map(|(core, offset)| (core, offset.0))
+                    .collect();
+                let total = ledger.profiles.entry(profile).or_default();
+                *total = checkpointed_seconds(*total, seconds);
+            }
+            if let Payload::DayBootStart(start) = &event.payload
+                && let Some(observed) = intervals.get(&event.boot)
+            {
                 ledger.watchdog.clone_from(&start.watchdog);
                 let previous = ledger.boots.remove(&event.boot);
                 ledger.boots.insert(
                     event.boot.clone(),
                     Boot {
-                        offsets: start.offsets,
+                        offsets: observed.offsets,
                         checkpoint: previous.as_ref().and_then(|boot| boot.checkpoint),
-                        seconds: previous.as_ref().map_or(0, |boot| boot.seconds),
+                        seconds: observed.seconds,
                         load_mix: previous
                             .as_ref()
                             .map_or_else(LoadMix::default, |boot| boot.load_mix),
                         clean: false,
                         unclean: false,
-                        changed: false,
                     },
                 );
             }
-            if let Payload::DayOffsetsChanged(change) = &event.payload {
-                if let Some(boot) = ledger.boots.get_mut(&event.boot) {
-                    boot.offsets = change.offsets;
-                    boot.changed = true;
-                }
+            if let Payload::DayOffsetsChanged(_) = &event.payload
+                && let Some(observed) = intervals.get(&event.boot)
+                && let Some(boot) = ledger.boots.get_mut(&event.boot)
+            {
+                boot.offsets = observed.offsets;
             }
             if let Payload::DayCheckpoint(checkpoint) = &event.payload {
                 if let Some(state) = &checkpoint.watchdog {
                     ledger.watchdog = Some(state.clone());
                 }
-                if let Some(boot) = ledger.boots.get_mut(&event.boot) {
-                    if !boot.changed {
-                        let profile = boot
-                            .offsets
-                            .iter()
-                            .map(|(core, offset)| (core, offset.0))
-                            .collect();
-                        let total = ledger.profiles.entry(profile).or_default();
-                        *total = checkpointed_seconds(
-                            *total,
-                            checkpoint.applied_secs.saturating_sub(boot.seconds),
-                        );
-                    }
-                    boot.seconds = checkpoint.applied_secs;
+                if let Some(observed) = intervals.get(&event.boot)
+                    && let Some(boot) = ledger.boots.get_mut(&event.boot)
+                {
+                    boot.seconds = observed.seconds;
                     boot.load_mix = checkpoint.load_mix;
                     boot.checkpoint = Some(event.seq);
-                    boot.changed = false;
                 }
             }
             if let Payload::DayCleanStop(_) = &event.payload {

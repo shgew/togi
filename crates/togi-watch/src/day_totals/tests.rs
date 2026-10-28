@@ -248,23 +248,6 @@ fn only_unobserved_and_ambiguous_intervals_are_unknown(state: IntervalState, unk
 }
 
 #[test]
-fn hours_across_an_offset_change_are_excluded_like_the_ledger_excludes_them() {
-    let changed = togi_journal::DayOffsetsChanged {
-        offsets: offsets(-20),
-    };
-    let events = [
-        event(1, "day-a", start(0)),
-        event(2, "day-a", checkpoint(3600)),
-        event(3, "day-a", changed),
-        event(4, "day-a", checkpoint(7200)),
-        event(5, "day-a", checkpoint(9000)),
-    ];
-    let totals = DayTotals::of(&events);
-    assert_eq!(totals.all().secs, 3600 + 1800);
-    assert_eq!(totals.stock().secs, 3600);
-}
-
-#[test]
 fn imported_records_are_a_separate_provenance_and_deduplicate_by_original_identity() {
     let mut events = mixed();
     events.push(imported(
@@ -328,4 +311,83 @@ fn an_import_that_does_not_decode_adds_nothing() {
 #[test_case(2, "2 unknown intervals")]
 fn unknown_intervals_pluralize(count: u32, text: &str) {
     assert_eq!(unknown_intervals(count), text);
+}
+
+#[test]
+fn live_and_imported_intervals_share_boot_state_but_keep_their_own_provenance() {
+    let events = [
+        event(1, "day-a", start(0)),
+        event(2, "day-a", checkpoint(3600)),
+        imported(
+            3,
+            EventKind::DayOffsetsChanged,
+            ImportClass::ProfileChange,
+            json(&togi_journal::DayOffsetsChanged {
+                offsets: offsets(-20),
+            }),
+            "day-a",
+        ),
+        imported(
+            4,
+            EventKind::DayCheckpoint,
+            ImportClass::Checkpoint,
+            json(&checkpoint(7200)),
+            "day-a",
+        ),
+        event(5, "day-a", checkpoint(9000)),
+        imported(
+            6,
+            EventKind::DayCheckpoint,
+            ImportClass::Checkpoint,
+            json(&checkpoint(10800)),
+            "day-a",
+        ),
+    ];
+    let totals = DayTotals::of(&events);
+    assert_eq!(
+        totals.all(),
+        Tally {
+            secs: 7200,
+            imported_secs: 1800,
+            ..Tally::default()
+        }
+    );
+    assert_eq!(
+        totals.stock(),
+        Tally {
+            secs: 3600,
+            ..Tally::default()
+        }
+    );
+}
+
+#[test]
+fn serialized_day_totals_keep_the_boot_shape_and_resume_pending_intervals() {
+    let totals = DayTotals::of(&[
+        event(1, "day-a", start(0)),
+        event(2, "day-a", checkpoint(3600)),
+        event(
+            3,
+            "day-a",
+            togi_journal::DayOffsetsChanged {
+                offsets: offsets(-20),
+            },
+        ),
+    ]);
+    let encoded = serde_json::to_value(&totals).unwrap();
+    assert_eq!(
+        encoded["boots"],
+        serde_json::json!([{
+            "boot": "day-a",
+            "offsets": {"0": -20},
+            "seconds": 3600,
+            "changed": true,
+        }])
+    );
+    let mut restored: DayTotals = serde_json::from_value(encoded).unwrap();
+    assert_eq!(restored, totals);
+    restored.apply(&event(4, "day-a", checkpoint(7200)));
+    restored.apply(&event(5, "day-a", checkpoint(9000)));
+    assert_eq!(restored.all().secs, 5400);
+    assert_eq!(restored.stock().secs, 3600);
 }

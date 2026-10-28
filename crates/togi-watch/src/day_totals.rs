@@ -1,29 +1,20 @@
 //! Observed day totals beside the CO 0 totals, for `togi status` and the dashboard (`docs/spec/tuner.md`,
 //! Evidence). Plain counts and hours from the raw day records, never a rate: neither total is a bound.
 //!
-//! The hours follow `togi day`'s own ledger (an active interval counts toward the profile read back at its
-//! boot's start or last offset change, and the interval that straddles a change counts toward none), and the
-//! unclean ends and answers fold through the journal's [`DayQuestions`], so the totals agree with the
-//! per-profile hours and the question lines the status already prints. A crash is an unclean end, a
-//! manually recorded crash, or an imported one; an end the operator answered `power-off` is not a crash
-//! unless a manual record also names it.
+//! Hours fold through the journal's [`DayIntervals`], and unclean ends and answers through its
+//! [`DayQuestions`], so the totals agree with the per-profile hours and question lines status prints.
+//! A crash is an unclean end, a manually recorded crash, or an imported one; an end the operator
+//! answered `power-off` is not a crash unless a manual record also names it.
 
 use std::fmt::Write as _;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use togi_journal::{
-    CrashedBoot, DayAnswerKind, DayQuestions, Event, EventKind, IntervalState, Payload, Provenance,
+    CrashedBoot, DayAnswerKind, DayIntervalCredit, DayIntervals, DayQuestions, Event, EventKind,
+    IntervalState, Payload, Provenance,
 };
 use togi_machine::{BootId, ObservedOffset, PerCore};
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-struct BootHours {
-    boot: BootId,
-    offsets: PerCore<ObservedOffset>,
-    seconds: u64,
-    changed: bool,
-}
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 enum CrashId {
@@ -88,7 +79,7 @@ pub fn unknown_intervals(count: u32) -> String {
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct DayTotals {
     questions: DayQuestions,
-    boots: Vec<BootHours>,
+    boots: DayIntervals,
     crashes: Vec<Crash>,
     all: [u64; 2],
     stock: [u64; 2],
@@ -134,32 +125,12 @@ impl DayTotals {
 
     fn fold(&mut self, event: &Event, imported: bool) {
         self.questions.apply(event);
-        if let Payload::DayBootStart(start) = &event.payload {
-            let seconds = self.take(&event.boot).map_or(0, |boot| boot.seconds);
-            self.boots.push(BootHours {
-                boot: event.boot.clone(),
-                offsets: start.offsets,
-                seconds,
-                changed: false,
-            });
-        }
-        if let Payload::DayOffsetsChanged(change) = &event.payload {
-            if let Some(boot) = self.boot_mut(&event.boot) {
-                boot.offsets = change.offsets;
-                boot.changed = true;
-            }
-        }
-        if let Payload::DayCheckpoint(checkpoint) = &event.payload {
-            if let Some(boot) = self.boot_mut(&event.boot) {
-                let added =
-                    (!boot.changed).then(|| checkpoint.applied_secs.saturating_sub(boot.seconds));
-                let stock = is_stock(&boot.offsets);
-                boot.seconds = checkpoint.applied_secs;
-                boot.changed = false;
-                if let Some(added) = added {
-                    self.credit(stock, imported, added);
-                }
-            }
+        if let Some(DayIntervalCredit::Credited {
+            offsets, seconds, ..
+        }) = self.boots.apply(event)
+        {
+            let stock = is_stock(offsets);
+            self.credit(stock, imported, seconds);
         }
         if let Payload::DayUncleanEnd(end) = &event.payload {
             let id = CrashId::Boot(end.boot.clone());
@@ -180,18 +151,6 @@ impl DayTotals {
                 self.unknown = self.unknown.saturating_add(1);
             }
         }
-    }
-
-    fn take(&mut self, boot: &BootId) -> Option<BootHours> {
-        let at = self.boots.iter().rposition(|known| known.boot == *boot)?;
-        Some(self.boots.remove(at))
-    }
-
-    fn boot_mut(&mut self, boot: &BootId) -> Option<&mut BootHours> {
-        self.boots
-            .iter_mut()
-            .rev()
-            .find(|known| known.boot == *boot)
     }
 
     fn credit(&mut self, stock: bool, imported: bool, secs: u64) {

@@ -611,6 +611,19 @@ fn day_intervals_exclude_the_changed_interval_but_credit_the_next_profile() {
 }
 
 #[test]
+fn an_excluded_day_interval_still_advances_the_boots_cumulative_seconds() {
+    let mut intervals = DayIntervals::of(&[started(1, A, 0), changed(2, A, -5)]);
+    assert_eq!(
+        intervals.apply(&checkpointed(3, A, 120)),
+        Some(DayIntervalCredit::Excluded {
+            boot: &id(A),
+            seconds: 120,
+        })
+    );
+    assert_eq!(intervals.get(&id(A)).unwrap().seconds, 120);
+}
+
+#[test]
 fn day_intervals_resume_same_boot_cumulative_seconds_without_downtime() {
     let mut intervals = DayIntervals::of(&[
         started(1, A, 0),
@@ -685,7 +698,7 @@ fn unknown_day_boot_checkpoints_and_changes_are_ignored() {
     let mut intervals = DayIntervals::default();
     assert_eq!(intervals.apply(&checkpointed(1, A, 600)), None);
     assert_eq!(intervals.apply(&changed(2, A, -20)), None);
-    assert_eq!(intervals.is_empty(), true);
+    assert!(intervals.is_empty());
     assert_eq!(intervals.get(&id(A)), None);
     intervals.apply(&started(3, A, 0));
     assert_eq!(
