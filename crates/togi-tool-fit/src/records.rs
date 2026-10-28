@@ -254,6 +254,8 @@ pub enum Defect {
     SecondInput { line: usize },
     #[error("line {line} names another session than the trial lines of its section")]
     WrongSession { line: usize },
+    #[error("line {line} names a session whose summary already closed it")]
+    RepeatedSession { line: usize },
     #[error("the session at line {line} records {recorded} where its trial lines hold {counted}")]
     SessionTotals {
         line: usize,
@@ -290,6 +292,7 @@ pub fn require_complete(records: &[Record]) -> Result<(), Defect> {
     let mut section_session = None;
     let mut pool = Totals::default();
     let mut pooled = false;
+    let mut closed = std::collections::BTreeSet::new();
     for (index, record) in records.iter().enumerate().skip(1) {
         let line = index.saturating_add(1);
         if pooled {
@@ -305,6 +308,9 @@ pub fn require_complete(records: &[Record]) -> Result<(), Defect> {
             Record::Trial {
                 session, failure, ..
             } => {
+                if closed.contains(session) {
+                    return Err(Defect::RepeatedSession { line });
+                }
                 if section_session.is_some_and(|open| open != *session) {
                     return Err(Defect::WrongSession { line });
                 }
@@ -315,6 +321,9 @@ pub fn require_complete(records: &[Record]) -> Result<(), Defect> {
                 });
             }
             Record::Session { session, sums, .. } => {
+                if closed.contains(session) {
+                    return Err(Defect::RepeatedSession { line });
+                }
                 if section_session.is_some_and(|open| open != *session) {
                     return Err(Defect::WrongSession { line });
                 }
@@ -329,6 +338,7 @@ pub fn require_complete(records: &[Record]) -> Result<(), Defect> {
                 pool.add(section);
                 section = Totals::default();
                 section_session = None;
+                closed.insert(*session);
             }
             Record::Pooled { sums } => {
                 if section.trials > 0 {

@@ -300,6 +300,18 @@ fn sums_of(record: &mut Record) -> &mut Sums {
 #[test_case(|r| { r.remove(8); }, Defect::UnsummarizedTrials { trials: 3 }; "last session summary missing")]
 #[test_case(|r| r[2] = r[6].clone(), Defect::WrongSession { line: 3 }; "trial of another session")]
 #[test_case(
+    |r| {
+        let mut empty = r[4].clone();
+        let sums = sums_of(&mut empty);
+        sums.trials = 0;
+        sums.failures = 0;
+        r.insert(5, empty);
+    },
+    Defect::RepeatedSession { line: 6 };
+    "an empty second summary of a closed session"
+)]
+#[test_case(|r| r.insert(5, r[1].clone()), Defect::RepeatedSession { line: 6 }; "trial of a closed session")]
+#[test_case(
     |r| sums_of(&mut r[4]).trials += 1,
     Defect::SessionTotals { line: 5, recorded: totals(4, 1), counted: totals(3, 1) };
     "session trials disagree"
