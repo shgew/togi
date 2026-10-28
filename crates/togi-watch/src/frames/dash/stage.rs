@@ -3,13 +3,14 @@
 use std::time::Duration;
 
 use ratatui::text::{Line, Span};
-use togi_journal::{Activity, DayEventId, Queue, ReproductionState, Tested};
+use togi_journal::{DayEventId, Queue, ReproductionState, Tested};
 use togi_machine::CcdProfile;
 use togi_tuner::policy::{NightProjection, Projection};
 
 use crate::frames::colours::Paint;
 use crate::frames::layout::SizeClass;
 use crate::frames::scene::{Scene, between, clock, hm};
+use crate::frames::story::queue_of;
 
 fn ended(scene: &Scene<'_>) -> bool {
     scene.s.stopped.is_some() || scene.s.dead_end.is_some() || scene.s.recover.is_some()
@@ -55,22 +56,11 @@ fn event_name(event: &DayEventId) -> String {
     }
 }
 
-/// What the night's current trial does, in words: the queue of the trial's task, else the night's committed current
-/// task, else the trial's own activity; `None` when nothing runs under a Ruleset 13 activity. Between trials only
-/// the committed task counts: the previous trial's activity is history.
+/// What the night's current trial does, in words: the queue [`queue_of`] names, `None` when nothing runs under a
+/// Ruleset 13 activity.
 fn activity_words(scene: &Scene<'_>, night: &NightProjection, short: bool) -> Option<String> {
     let trial = scene.s.trial;
-    let queue = trial
-        .and_then(|trial| trial.task)
-        .or_else(|| night.current.map(|(task, _)| task))
-        .map(|task| task.queue)
-        .or_else(|| match trial?.activity? {
-            Activity::Mapping => Some(Queue::Mapping),
-            Activity::Qualification => Some(Queue::Qualification),
-            Activity::Reproduction => Some(Queue::Reproduction),
-            Activity::Control => Some(Queue::Control),
-            Activity::Search | Activity::Checking | Activity::Hunt | Activity::Deepening => None,
-        })?;
+    let queue = queue_of(scene, trial)?;
     let words = match queue {
         Queue::Mapping => match trial.and_then(|trial| trial.tested) {
             Some(Tested::Isolated { ccd, offset }) if short => {

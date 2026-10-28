@@ -400,6 +400,49 @@ fn between_trials_the_stage_line_names_the_committed_task_not_the_last_trials_ac
     assert!(!wide.contains("mapping"), "no task is current: {wide}");
 }
 
+#[test_case(Activity::Mapping, "mapping"; "mapping")]
+#[test_case(Activity::Qualification, "qualifying"; "qualification")]
+#[test_case(Activity::Reproduction, "reproducing"; "reproduction")]
+#[test_case(Activity::Control, "controls at CO 0"; "control")]
+fn a_taskless_trial_is_named_by_its_activity_on_the_stage_line(activity: Activity, words: &str) {
+    let mut hand = night_hand();
+    if let Some(night) = hand.policy.night.as_mut() {
+        night.current = None;
+    }
+    if let Some(trial) = hand.trial.as_mut() {
+        trial.task = None;
+        trial.tested = None;
+        trial.activity = Some(activity);
+    }
+    let now = FIXED_NOW + SignedDuration::from_secs(40);
+    let wide = stage_of(&hand.snapshot(), now, SizeClass::Wide);
+    assert!(wide.ends_with(words), "{wide}");
+}
+
+#[test_case(Activity::Search; "search")]
+#[test_case(Activity::Checking; "checking")]
+#[test_case(Activity::Hunt; "hunt")]
+#[test_case(Activity::Deepening; "deepening")]
+fn a_taskless_historical_activity_adds_no_words_to_the_stage_line(activity: Activity) {
+    let mut hand = night_hand();
+    if let Some(night) = hand.policy.night.as_mut() {
+        night.current = None;
+    }
+    if let Some(trial) = hand.trial.as_mut() {
+        trial.task = None;
+        trial.tested = None;
+        trial.activity = None;
+    }
+    let now = FIXED_NOW + SignedDuration::from_secs(40);
+    let silent = stage_of(&hand.snapshot(), now, SizeClass::Wide);
+    if let Some(trial) = hand.trial.as_mut() {
+        trial.activity = Some(activity);
+    }
+    let wide = stage_of(&hand.snapshot(), now, SizeClass::Wide);
+    assert_eq!(wide, silent);
+    assert!(wide.ends_with("0h30m"), "{wide}");
+}
+
 #[test]
 fn the_stage_line_names_the_day_once_a_later_boot_closes_the_night() {
     let mut hand = night_hand();
