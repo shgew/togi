@@ -37,6 +37,7 @@ fn rig(machine: &Fake) -> super::harness::Rig {
             Arc::new(machine.clone()),
             env.dir.clone(),
             env.preparer.fs.clone(),
+            env.durability,
         ));
     })
 }
@@ -168,6 +169,7 @@ fn incomplete_managed_affinity_withholds_pass() {
                 Arc::new(machine.clone()),
                 env.dir.clone(),
                 env.preparer.fs.clone(),
+                env.durability,
             ));
         });
         let handle = rig.start(managed()).await.unwrap();
@@ -194,6 +196,7 @@ fn single_ccd_excludes_only_host_and_keeps_other_workers_uncapped() {
                 Arc::new(machine.clone()),
                 env.dir.clone(),
                 env.preparer.fs.clone(),
+                env.durability,
             ));
         });
         let mut trial = spec(
@@ -238,6 +241,7 @@ fn single_ccd_shared_policy_with_another_worker_is_refused() {
                 Arc::new(machine.clone()),
                 env.dir.clone(),
                 env.preparer.fs.clone(),
+                env.durability,
             ));
         });
         let mut trial = spec(

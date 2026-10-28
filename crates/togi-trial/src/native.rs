@@ -131,7 +131,8 @@ impl Runner {
     /// Constructs a runner for disposable output without filesystem durability syscalls.
     ///
     /// This retains descriptor-relative safety and process containment, but a crash may lose
-    /// completed samples and compressed files. Live tuning must use [`Self::new`].
+    /// completed samples, compressed files and the frequency recovery intent. Live tuning must use
+    /// [`Self::new`].
     pub fn new_unsynced(options: Options) -> Result<Self, Error> {
         Self::new_with_durability(options, crate::samples::Durability::Unsynced)
     }
@@ -202,6 +203,7 @@ impl Runner {
             Arc::new(crate::frequency::Sysfs::default()),
             dir.clone(),
             fs.clone(),
+            durability,
         ));
         let make_env = move || Env {
             os: std::rc::Rc::new(make_os()),

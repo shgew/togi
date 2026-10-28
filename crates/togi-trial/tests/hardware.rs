@@ -1794,7 +1794,11 @@ mod hardware {
                 info.core,
             );
         }
-        Runner::new(Options {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "managed placement fixtures restore every cap without syncing disposable output"
+        )]
+        Runner::new_unsynced(Options {
             dir: staged.tree.root.join("trials"),
             backends: Backends::new().with(Helper::new(&staged.tree, "owner")),
             topology: topology.to_vec(),

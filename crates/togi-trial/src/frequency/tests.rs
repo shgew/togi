@@ -12,6 +12,7 @@ use togi_machine::{
 
 use super::fake::{Apply, Fake};
 use super::{Error, Limits, PENDING, READBACK_DEADLINE, READBACK_POLL, STAGING};
+use crate::samples::Durability;
 
 fn policy(cpus: &[u16]) -> FrequencyPolicy {
     policy_of(0, cpus)
@@ -34,7 +35,12 @@ struct Blocking(Limits);
 impl Blocking {
     fn new(machine: Fake, dir: std::path::PathBuf, fs: Option<Arc<MemFs>>) -> Self {
         let fs = fs.map(|fs| -> Arc<dyn togi_journal::fs::Fs> { fs });
-        Self(Limits::new(Arc::new(machine), dir, fs))
+        Self(Limits::new(
+            Arc::new(machine),
+            dir,
+            fs,
+            Durability::Unsynced,
+        ))
     }
 
     fn cap(

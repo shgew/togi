@@ -219,6 +219,7 @@ pub(super) fn rig_edit(
             Arc::new(crate::frequency::Sysfs::default()),
             dir.path().join("trials"),
             Some(fs.clone()),
+            crate::samples::Durability::Unsynced,
         )),
     };
     edit(&mut env);
