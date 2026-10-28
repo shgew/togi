@@ -5,6 +5,7 @@ use test_case::test_case;
 
 use super::{add_cover, intersect_cover};
 use crate::diff::Span;
+use crate::headlines::HeadSpan;
 use crate::manifest::{CoverRange, NotBuilt, read_manifest, write_manifest};
 use crate::render::tests::{dir_text, first_manifest, included, range, reviewer};
 use crate::render::{FindingsInput, build_record};
@@ -75,14 +76,14 @@ fn cover_merges_overlapping_delta_hunks() {
     );
 }
 
-fn hunks(spans: &[(&str, &[(i64, i64)])]) -> HashMap<String, Vec<Span>> {
+fn hunks(spans: &[(&str, &[(i64, i64)])]) -> HashMap<String, Vec<HeadSpan>> {
     spans
         .iter()
         .map(|&(path, s)| {
             (
                 path.to_owned(),
                 s.iter()
-                    .map(|&(first, last)| Span { first, last })
+                    .map(|&(first, last)| HeadSpan::from_new_side(Span { first, last }))
                     .collect(),
             )
         })

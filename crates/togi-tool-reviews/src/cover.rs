@@ -5,7 +5,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::diff::{Span, number, parse_diff};
+use crate::diff::{number, parse_diff};
+use crate::headlines::HeadSpan;
 use crate::manifest::{CoverRange, Coverage, Manifest, NotBuilt, read_manifest, write_manifest};
 use crate::text::{join, quote};
 use crate::{Error, files};
@@ -73,12 +74,12 @@ pub fn parse_cover(text: &str) -> Result<(Vec<CoverRange>, Vec<NotBuilt>), Error
 pub fn intersect_cover(
     ranges: &[CoverRange],
     unbuilt: &[NotBuilt],
-    hunks: &HashMap<String, Vec<Span>>,
+    hunks: &HashMap<String, Vec<HeadSpan>>,
 ) -> Coverage {
     let mut parts = Vec::new();
     for r in ranges {
         for h in hunks.get(&r.path).into_iter().flatten() {
-            let (first, last) = (r.first.max(h.first), r.last.min(h.last));
+            let (first, last) = (r.first.max(h.first()), r.last.min(h.last()));
             if first <= last {
                 parts.push(CoverRange {
                     path: r.path.clone(),
@@ -112,7 +113,7 @@ pub fn intersect_cover(
 }
 
 /// The changed new-side lines of every included file, from the snapshot's hunk files.
-pub fn hunk_spans(dir: &str, m: &Manifest) -> Result<HashMap<String, Vec<Span>>, Error> {
+pub fn hunk_spans(dir: &str, m: &Manifest) -> Result<HashMap<String, Vec<HeadSpan>>, Error> {
     let mut hunks = HashMap::new();
     for f in m.included() {
         let bytes = files::read(&join(dir, &f.hunk_file))
@@ -121,7 +122,11 @@ pub fn hunk_spans(dir: &str, m: &Manifest) -> Result<HashMap<String, Vec<Span>>,
             .map_err(|error| Error::wrap(format!("parse hunk file for {}", f.path), error))?;
         hunks.insert(
             f.path.clone(),
-            sections.into_iter().flat_map(|s| s.changed).collect(),
+            sections
+                .into_iter()
+                .flat_map(|s| s.changed)
+                .map(HeadSpan::from_new_side)
+                .collect(),
         );
     }
     Ok(hunks)

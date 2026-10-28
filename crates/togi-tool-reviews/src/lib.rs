@@ -10,6 +10,7 @@ pub mod cover;
 pub mod diff;
 pub mod error;
 pub mod files;
+pub mod headlines;
 pub mod manifest;
 pub mod parts;
 pub mod process;
