@@ -1,0 +1,24 @@
+# Test-only sources: modules that compile only under `cfg(test)`. Production builds leave them out, so a test edit
+# does not rebuild the package or the VM checks, and the journal's snapshot fingerprint does not
+# hash them (`togi-journal/build/fingerprint.rs`, `nix/sources.nix`).
+#
+# Under a crate's `src`, files named `tests.rs` or `*_tests.rs` and directories named `tests` or `*_tests` are
+# test-only by name. List here, one path per line relative to `crates/`, every other `cfg(test)` module file and its
+# module directory. A listed path that does not exist fails evaluation; a production file listed here, or under a
+# test-only name, fails the production build.
+togi-journal/src/testing.rs
+togi-session/src/testing.rs
+togi-session/src/whole.rs
+togi-session/src/whole
+togi-trial/src/frequency/fake.rs
+togi-trial/src/os/fake.rs
+togi-trial/src/testing.rs
+togi-watch/src/corpus
+togi-watch/src/frames/corpus.rs
+togi-watch/src/frames/hand.rs
+togi-watch/src/frames/panels/fixtures.rs
+togi-watch/src/frames/snapshots.rs
+togi-watch/src/frames/story/corpus.rs
+togi-watch/src/frames/testing.rs
+togi-watch/src/terminal/real_process.rs
+togi-watch/src/terminal/testing.rs

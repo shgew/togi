@@ -132,21 +132,27 @@
             lib.assertMsg (ungrouped == [ ] && misgrouped == [ ] && emptyGroups == [ ])
               "nextestGroups must name every workspace member exactly once and no group may be empty; in no group: ${toString ungrouped}; repeated or not a member: ${toString misgrouped}; empty: ${toString emptyGroups}";
           cliSource = cargoSources.source { code = cargoSources.closure [ "togi" ]; };
+          # The trial tests compile only the `hardware` and `cached_errors` targets of `togi-trial` against the
+          # library; every other test file of the crate is a stub.
           trialSource = cargoSources.source {
             code = cargoSources.closureWithDev [ "togi-trial" ];
-            full = [ "togi-trial" ];
+            files = [
+              ./crates/togi-trial/tests/hardware.rs
+              ./crates/togi-trial/tests/cached_errors.rs
+            ];
           };
-          # The recovery tests compile `togi` whole (its tests and their data) with the dev closure as code.
+          # The recovery tests compile only the `vm_recovery` target of `togi`; its other test files are stubs.
           recoverySource = cargoSources.source {
             code = cargoSources.closureWithDev [ "togi" ];
-            full = [ "togi" ];
+            files = [ ./crates/togi/tests/vm_recovery.rs ];
           };
           # Documentation tests need crate-local fixtures, not external benchmark inputs.
           cratesSource = cargoSources.source { full = allCrates; };
-          # clippy compiles every crate's tests, which include some fixtures at compile time.
+          # clippy compiles every crate's tests, which include some fixtures at compile time, and reads the lint
+          # configuration; no other derivation does.
           testSource = cargoSources.source {
             full = allCrates;
-            files = testFixtures allCrates;
+            files = testFixtures allCrates ++ [ ./clippy.toml ];
           };
           nextestChecks =
             assert validGroups;
@@ -331,6 +337,7 @@
                   touch "$out"
                 '';
             # Relative links and heading anchors in every Markdown file, offline: a link may name any file.
+            # This source has the whole tree, unlike nextest groups, so also validate every test-only path here.
             doc-links =
               pkgs.runCommand "togi-doc-links"
                 {
@@ -344,6 +351,13 @@
                 }
                 ''
                   cd "$src"
+                  while read -r path || [[ -n "$path" ]]; do
+                    case "$path" in ""|\#*) continue ;; esac
+                    if [[ ! -e "crates/$path" ]]; then
+                      echo "Missing test-only path: crates/$path" >&2
+                      exit 1
+                    fi
+                  done < crates/test-only.txt
                   HOME=$TMPDIR lychee --offline --hidden --include-fragments --no-progress --format compact './**/*.md'
                   touch "$out"
                 '';
