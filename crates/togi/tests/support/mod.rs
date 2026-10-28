@@ -350,6 +350,40 @@ impl System for Host {
         self.stdout_facts.unwrap_or(self.facts)
     }
 
+    fn stop_tuning(&self) -> Result<(), togi_hardware::StopError> {
+        Err(togi_hardware::StopError::Exit {
+            status: ExitStatus::from_raw(1 << 8),
+            stderr: "test host has no tuning service".into(),
+        })
+    }
+
+    fn answer(&self) -> io::Result<Option<String>> {
+        Err(io::Error::other("test host has no terminal answer"))
+    }
+
+    fn day_observer<'lock>(
+        &self,
+        _: &'lock HostLock,
+    ) -> Result<Box<dyn togi_hardware::day::Observer + 'lock>, togi_machine::Error> {
+        Err(togi_machine::Error::Other(
+            "test host has no day observer".into(),
+        ))
+    }
+
+    fn day_notification_actions(&self) -> bool {
+        false
+    }
+
+    fn day_notification(
+        &self,
+        _: &togi_command::Invocation,
+    ) -> Result<togi_command::Output, togi_command::Error> {
+        Err(togi_command::Error::Spawn {
+            program: "notify-send".into(),
+            source: io::Error::other("test host has no notification daemon"),
+        })
+    }
+
     fn config_path(&self) -> &Path {
         &self.config
     }

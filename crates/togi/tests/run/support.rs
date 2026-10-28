@@ -551,6 +551,51 @@ impl System for Fake {
         self.facts
     }
 
+    fn stop_tuning(&self) -> Result<(), togi_hardware::StopError> {
+        Err(togi_hardware::StopError::Exit {
+            status: std::os::unix::process::ExitStatusExt::from_raw(1 << 8),
+            stderr: "test host has no tuning service".into(),
+        })
+    }
+
+    fn answer(&self) -> io::Result<Option<String>> {
+        Err(io::Error::other("test host has no terminal answer"))
+    }
+
+    fn prompt_line(&self) -> io::Result<Option<String>> {
+        Err(io::Error::other("test host has no terminal input"))
+    }
+
+    fn day_observer<'lock>(
+        &self,
+        _: &'lock HostLock,
+    ) -> Result<Box<dyn togi_hardware::day::Observer + 'lock>, MachineError> {
+        Err(MachineError::Other("test host has no day observer".into()))
+    }
+
+    fn day_request(
+        &self,
+        _: &togi_cli::day::socket::Request,
+    ) -> Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error> {
+        Err(togi_cli::day::socket::Error::Io(io::Error::other(
+            "test host has no day socket",
+        )))
+    }
+
+    fn day_notification_actions(&self) -> bool {
+        false
+    }
+
+    fn day_notification(
+        &self,
+        _: &togi_command::Invocation,
+    ) -> Result<togi_command::Output, togi_command::Error> {
+        Err(togi_command::Error::Spawn {
+            program: "notify-send".into(),
+            source: io::Error::other("test host has no notification daemon"),
+        })
+    }
+
     fn privileged(&self) -> bool {
         true
     }

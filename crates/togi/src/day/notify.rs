@@ -258,6 +258,14 @@ mod tests {
             Ok(Box::new(()))
         }
 
+        fn acquire_host_lock(&self) -> Result<HostLock, togi_hostlock::Error> {
+            Err(togi_hostlock::Error::Io {
+                path: Path::new("/lock").to_owned(),
+                operation: togi_hostlock::Operation::Lock,
+                source: std::io::Error::other("test host has no host lock"),
+            })
+        }
+
         fn host_lock(&self) -> (&Path, Policy) {
             (Path::new("/lock"), Policy::Private)
         }
@@ -307,12 +315,40 @@ mod tests {
             panic!("notify does not remove the retry marker")
         }
 
+        fn stop_tuning(&self) -> Result<(), togi_hardware::StopError> {
+            Err(togi_hardware::StopError::Exit {
+                status: ExitStatus::from_raw(1 << 8),
+                stderr: "test host has no tuning service".into(),
+            })
+        }
+
+        fn answer(&self) -> std::io::Result<Option<String>> {
+            Err(std::io::Error::other("test host has no terminal answer"))
+        }
+
+        fn prompt_line(&self) -> std::io::Result<Option<String>> {
+            Err(std::io::Error::other("test host has no terminal input"))
+        }
+
         fn reboot(&self) -> Result<(), togi_hardware::RebootError> {
             panic!("notify does not reboot")
         }
 
         fn stderr_facts(&self) -> OutputFacts {
             OutputFacts::default()
+        }
+
+        fn stdout_facts(&self) -> OutputFacts {
+            OutputFacts::default()
+        }
+
+        fn day_observer<'lock>(
+            &self,
+            _: &'lock HostLock,
+        ) -> Result<Box<dyn togi_hardware::day::Observer + 'lock>, togi_machine::Error> {
+            Err(togi_machine::Error::Other(
+                "test host has no day observer".into(),
+            ))
         }
 
         fn open_machine<'lock>(

@@ -190,6 +190,17 @@ impl System for Night {
         self.host.host_lock()
     }
 
+    fn listen(
+        &self,
+        token: &togi_machine::CancellationToken,
+    ) -> Result<Box<dyn std::any::Any>, togi_cli::signals::Error> {
+        self.host.listen(token)
+    }
+
+    fn acquire_host_lock(&self) -> Result<HostLock, togi_hostlock::Error> {
+        self.host.acquire_host_lock()
+    }
+
     fn journal_fs(&self) -> Option<Arc<dyn Fs>> {
         self.host.journal_fs()
     }
@@ -262,6 +273,35 @@ impl System for Night {
     fn answer(&self) -> io::Result<Option<String>> {
         self.host.step("ask").unwrap();
         Ok(self.answers.borrow_mut().pop_front().flatten())
+    }
+
+    fn prompt_line(&self) -> io::Result<Option<String>> {
+        self.host.prompt_line()
+    }
+
+    fn day_observer<'lock>(
+        &self,
+        lock: &'lock HostLock,
+    ) -> Result<Box<dyn togi_hardware::day::Observer + 'lock>, togi_machine::Error> {
+        self.host.day_observer(lock)
+    }
+
+    fn day_request(
+        &self,
+        request: &togi_cli::day::socket::Request,
+    ) -> Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error> {
+        self.host.day_request(request)
+    }
+
+    fn day_notification_actions(&self) -> bool {
+        self.host.day_notification_actions()
+    }
+
+    fn day_notification(
+        &self,
+        invocation: &togi_command::Invocation,
+    ) -> Result<togi_command::Output, togi_command::Error> {
+        self.host.day_notification(invocation)
     }
 
     fn stderr_facts(&self) -> OutputFacts {
