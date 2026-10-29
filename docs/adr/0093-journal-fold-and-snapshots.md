@@ -26,13 +26,13 @@ Decision functions take only the folded state, never an event list, and cannot m
 
 **Work is bounded by distinct evidence, not repeated events.** Grouping evidence by the dimensions a rule distinguishes avoids revisiting every repeated pass for a count or decision. Retained sequence histories may grow, but a query does not scan all trials; the [tuner specification](../spec/tuner.md#evidence) owns the current evidence keys and provenance. No obsolete per-core phases, hunts or combinations are implied by this architecture.
 
-Validation belongs in the fold. A contradictory event makes the fold fail and poisons the state, because a partially applied event cannot be trusted to represent the journal; later folds and decisions cannot continue from it. Replay follows recorded decisions rather than treating a difference from today's proposed decision as corruption. The [journal specification](../spec/journal.md#state-file) owns invalid-journal handling, and [tuner invariants](../spec/tuner.md#invariants) own decision reproducibility.
+Validation belongs in the fold because a partially applied event cannot be trusted to represent the journal. Replay preserves recorded decisions rather than judging history by today's proposed decision. The [journal specification](../spec/journal.md#state-file) owns invalid-journal handling, and [tuner invariants](../spec/tuner.md#invariants) own decision reproducibility.
 
 ### Verified read cache
 
-**`state.json` caches the complete folded state, never authority.** It includes the recovery fold, shared journal facts, tuner incremental state, defect index and the presentation needed by readers, not merely a dashboard projection. Verification binds it to the producing build, the last event sequence and exact journal prefix, and checks its contents for corruption. A read-only reader restores verified folds and processes the tail; a missing or rejected snapshot falls back to replay without changing files.
+**`state.json` caches the complete folded state, never authority.** It is not merely a dashboard projection: reusing the fold avoids repeating its reduction for readers. Reuse requires verification against the journal and the producing build; otherwise readers replay. The [state-file specification](../spec/journal.md#state-file) owns the saved components, verification, read-only tail replay and non-mutating fallback.
 
-**Hardware runs replay the full journal on every boot and compare saved folds with the fresh result.** A rejected or differing cache is rebuilt rather than allowed to authorize a hardware decision. A different build rebuilds from the journal rather than migrating the snapshot. The [state-file specification](../spec/journal.md#state-file) owns verification metadata, rejection, publication, retained presentation and warning behavior; those details are not a second format contract here.
+**Hardware runs always replay independently rather than trust the cache.** A cache must not authorize hardware decisions without that independent evidence. A different build rebuilds from the journal rather than migrating the snapshot, avoiding another versioned format. The [journal rules](../spec/journal.md#rules) own boot replay and cache rewriting.
 
 ## Considered Options
 
