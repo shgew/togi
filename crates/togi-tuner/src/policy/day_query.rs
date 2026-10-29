@@ -162,17 +162,31 @@ impl State {
                         at_ns = now_ns;
                         applied_before = 0;
                     }
-                    (Observed::Checkpoint { applied_secs }, Some(held)) => {
+                    (
+                        Observed::Checkpoint {
+                            applied_secs,
+                            paused,
+                        },
+                        Some(held),
+                    ) => {
                         let span = now_ns.saturating_sub(at_ns) / NS_PER_SEC;
                         let applied = applied_secs.saturating_sub(applied_before).min(span);
                         let split = at_ns.saturating_add(applied.saturating_mul(NS_PER_SEC));
                         emit(
                             at_ns,
                             split,
-                            IntervalState::Applied,
+                            if *paused {
+                                IntervalState::Paused
+                            } else {
+                                IntervalState::Applied
+                            },
                             held,
                             record.seq,
-                            "applied seconds the checkpoint accounted for",
+                            if *paused {
+                                "operator pause excludes applied exposure"
+                            } else {
+                                "applied seconds the checkpoint accounted for"
+                            },
                         );
                         emit(
                             split,

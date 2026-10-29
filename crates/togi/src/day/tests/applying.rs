@@ -665,3 +665,5 @@ fn stock_applied_hours_exclude_suspended_wall_time() {
         "stock has no nonzero hold; its raw exposure above is still only the 720 active seconds"
     );
 }
+
+mod pause_tests;

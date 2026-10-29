@@ -19,6 +19,7 @@ pub(super) struct Options<N> {
     pub(super) palette: bool,
     /// Whether the reader can press keys.
     pub(super) keys: bool,
+    pub(super) day_controls: bool,
     /// What the quit keys do.
     pub(super) quit: Quit,
     /// The night switch to offer.
@@ -104,6 +105,7 @@ where
     };
     let mut clock = Clock::paced(options.tick, (options.now)());
     let mut screen = Screen {
+        day_controls: options.day_controls,
         view: View::Main,
         keys: options.keys,
         scroll: 0,
@@ -138,7 +140,12 @@ where
                         let (next, quit) = match switch(screen, key) {
                             Step::Confirmed(direction) => return Ok(Outcome::Switch(direction)),
                             Step::Screen(next) => (next, false),
-                            Step::Pass => press(screen, key, drawn.scroll),
+                            Step::Pass => {
+                                if let Some(control) = super::keys::day_control(screen, key) {
+                                    return Ok(Outcome::Control(control));
+                                }
+                                press(screen, key, drawn.scroll)
+                            }
                         };
                         if quit {
                             return Ok(Outcome::Ended);
@@ -219,6 +226,7 @@ mod tests {
     struct Setup {
         palette: bool,
         keys: bool,
+        day_controls: bool,
         colours: Colours,
         quit: Quit,
         switch: Option<Direction>,
@@ -229,6 +237,7 @@ mod tests {
             Self {
                 palette: false,
                 keys: true,
+                day_controls: true,
                 colours: Colours::None,
                 quit: Quit::Keys,
                 switch: None,
@@ -274,6 +283,7 @@ mod tests {
             let options = Options {
                 palette: setup.palette,
                 keys: setup.keys,
+                day_controls: setup.day_controls,
                 quit: setup.quit,
                 switch: setup.switch,
                 colours: setup.colours,
@@ -802,6 +812,49 @@ mod tests {
         });
     }
 
+    #[test_case('p', super::super::DayControl::Pause; "pause")]
+    #[test_case('f', super::super::DayControl::Freeze; "freeze")]
+    fn day_control_keys_restore_the_terminal_before_delegating(
+        key: char,
+        control: super::super::DayControl,
+    ) {
+        crate::terminal::testing::paused(async move {
+            local(async move {
+                let recorder = Recorder::new(80, 24);
+                let h = Harness::start(&recorder, &Setup::default());
+                settle().await;
+                h.key(Key::Char(key)).await;
+                assert_eq!(h.finish().await.unwrap(), Outcome::Control(control));
+                assert!(recorder.restored());
+            })
+            .await;
+        });
+    }
+
+    #[test_case('p'; "pause")]
+    #[test_case('f'; "freeze")]
+    fn read_only_feeds_keep_day_control_keys_in_the_dashboard(key: char) {
+        crate::terminal::testing::paused(async move {
+            local(async move {
+                let recorder = Recorder::new(80, 24);
+                let h = Harness::start(
+                    &recorder,
+                    &Setup {
+                        day_controls: false,
+                        ..Setup::default()
+                    },
+                );
+                settle().await;
+                h.key(Key::Char(key)).await;
+                assert!(!h.task.is_finished());
+                h.send(Event::Cancel).await;
+                assert_eq!(h.finish().await.unwrap(), Outcome::Ended);
+                assert!(recorder.restored());
+            })
+            .await;
+        });
+    }
+
     #[test_case(Direction::Day, Quit::Ignored, Key::F10; "f10 in the night")]
     #[test_case(Direction::Night, Quit::Keys, Key::Char('n'); "n in the day")]
     #[test_case(Direction::Night, Quit::Keys, Key::F10; "f10 in the day")]
@@ -835,6 +888,8 @@ mod tests {
     }
 
     #[test_case(Key::Char('n'); "n")]
+    #[test_case(Key::Char('p'); "pause key withdraws night question")]
+    #[test_case(Key::Char('f'); "freeze key withdraws night question")]
     #[test_case(Key::Esc; "esc")]
     #[test_case(Key::Char('q'); "q")]
     #[test_case(Key::Char('\r'); "enter")]
@@ -1093,6 +1148,7 @@ mod tests {
                 Options {
                     palette: true,
                     keys: false,
+                    day_controls: false,
                     colours: Colours::Console,
                     quit: Quit::Keys,
                     switch: None,
@@ -1164,6 +1220,7 @@ mod tests {
                 let options = Options {
                     palette: false,
                     keys: false,
+                    day_controls: false,
                     colours: Colours::None,
                     quit: Quit::Keys,
                     switch: None,

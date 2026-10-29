@@ -65,7 +65,7 @@ in
       type = lib.types.listOf lib.types.str;
       default = [ ];
       example = [ "alice" ];
-      description = "Users who may answer the day observer's questions about an unclean end without root, over /run/togi/day.sock. Each joins the togi group, which the module creates; /run/togi is root:togi 0750 and the socket 0660. Each also runs a graphical-session user service that raises the question as a desktop notification. Membership starts at the user's next login. The accounts are declared elsewhere in users.users, which validates them. The default asks nobody and leaves answering to root; the answer never changes tuning or applies offsets. Only meaningful with day.enable.";
+      description = "Users who may answer questions about an unclean end and control day pause/resume and freeze/unfreeze without root, over /run/togi/day.sock. Each joins the togi group, which the module creates; /run/togi is root:togi 0750 and the socket 0660. Each also runs a graphical-session user service for questions, pause-expiry warnings and verified stock-reapplication notifications. Membership starts at the user's next login. The accounts are declared elsewhere in users.users, which validates them. The default delegates to nobody and leaves control to root. Nonzero day application remains disabled. Only meaningful with day.enable.";
     };
     tuning.leaveOnShutdown = lib.mkOption {
       type = lib.types.bool;
@@ -141,7 +141,7 @@ in
         # its default dependencies, so it is already ordered after every unit it wants; ordering the notifier after it
         # too would be a cycle, and the notifier orders after graphical-session-pre.target instead.
         systemd.user.services.togi-day-notify = lib.mkIf (cfg.day.users != [ ]) {
-          description = "togi day question notifier";
+          description = "togi day question and pause notifier";
           wantedBy = [ "graphical-session.target" ];
           partOf = [ "graphical-session.target" ];
           bindsTo = [ "graphical-session.target" ];

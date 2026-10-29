@@ -1,4 +1,4 @@
-//! `togi watch`: the read-only dashboard of the journal.
+//! `togi watch`: the journal dashboard, with rootless day controls on its normal main view.
 
 use std::io::{stdin, stdout};
 use std::os::fd::AsFd as _;
@@ -29,7 +29,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     ])
 });
 
-/// Show the session as a read-only dashboard
+/// Show the session dashboard with rootless stock-only day controls
 ///
 /// It redraws when the journal changes and on whole-second boundaries for the clock. During an idle trial it
 /// holds still, clock included, until the journal changes, a key is pressed or the terminal is
@@ -42,6 +42,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Up/Down and PageUp/PageDown scroll both, Esc returns, and `q` exits the dashboard. A journal scrolled back holds its list still
 /// and counts new events until End. It is rendered from the journal, which it reloads only when
 /// it changes.
+/// On the normal main view, `p` toggles a stock-only pause until cold boot and `f` toggles freeze.
+/// These controls use the installed `togi day` command without root; `f` still scrolls help and log.
 ///
 /// The screen's words are explained by `?` on the screen itself; the rules behind them are in
 /// docs/spec/tuner.md.
@@ -90,40 +92,105 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     if let Err(error @ DirError::ForeignJournal { .. }) = ctx.system.recorded_build(ctx.state_dir) {
         return fail(ctx, "watch", togi_render::error_chain(&error));
     }
-    let result = if ctx.system.stdout_facts().is_terminal {
-        let out = stdout();
-        let keys = stdin();
-        terminal::run(
-            ctx.state_dir,
-            out.as_fd(),
-            Some(keys.as_fd()),
-            args.quit(),
-            offer(args, ctx),
-        )
-    } else if let Some(fs) = ctx.system.journal_fs() {
-        terminal::one_frame_in(
-            fs.as_ref(),
-            ctx.state_dir,
-            args.width,
-            args.height,
-            &mut ctx.out,
-            ctx.system.now(),
-            &ctx.system.zone(),
-        )
-        .map(|()| Outcome::Ended)
-    } else {
-        terminal::one_frame(ctx.state_dir, args.width, args.height, &mut ctx.out)
+    loop {
+        let result = if ctx.system.stdout_facts().is_terminal {
+            let out = stdout();
+            let keys = stdin();
+            terminal::run(
+                ctx.state_dir,
+                out.as_fd(),
+                Some(keys.as_fd()),
+                args.quit(),
+                offer(args, ctx),
+            )
+        } else if let Some(fs) = ctx.system.journal_fs() {
+            terminal::one_frame_in(
+                fs.as_ref(),
+                ctx.state_dir,
+                args.width,
+                args.height,
+                &mut ctx.out,
+                ctx.system.now(),
+                &ctx.system.zone(),
+            )
             .map(|()| Outcome::Ended)
-    };
-    match result {
-        Ok(Outcome::Ended) => Exit::Ok,
-        Ok(Outcome::Switch(Direction::Night)) => night::begin(ctx, Confirmation::Given),
-        Ok(Outcome::Switch(Direction::Day)) => night_end::leave(ctx),
-        Err(terminal::Error::Journal(SourceError::Read(error))) => {
-            let message = unknown_kind(&error).unwrap_or_else(|| togi_render::error_chain(&error));
-            fail(ctx, "watch", message)
+        } else {
+            terminal::one_frame(ctx.state_dir, args.width, args.height, &mut ctx.out)
+                .map(|()| Outcome::Ended)
+        };
+        return match result {
+            Ok(Outcome::Ended) => Exit::Ok,
+            Ok(Outcome::Control(action)) => {
+                if let Err(exit) = day_control(action, ctx, |invocation| {
+                    togi_command::run_blocking(invocation, std::time::Duration::from_secs(10))
+                }) {
+                    return exit;
+                }
+                continue;
+            }
+            Ok(Outcome::Switch(Direction::Night)) => night::begin(ctx, Confirmation::Given),
+            Ok(Outcome::Switch(Direction::Day)) => night_end::leave(ctx),
+            Err(terminal::Error::Journal(SourceError::Read(error))) => {
+                let message =
+                    unknown_kind(&error).unwrap_or_else(|| togi_render::error_chain(&error));
+                fail(ctx, "watch", message)
+            }
+            Err(error) => fail(ctx, "watch", togi_render::error_chain(&error)),
+        };
+    }
+}
+
+fn day_invocation(
+    action: terminal::DayControl,
+    status: &crate::day::socket::ControlStatus,
+) -> togi_command::Invocation {
+    let command = match action {
+        terminal::DayControl::Pause => match status.pause {
+            togi_journal::PauseState::Running {} => "pause",
+            togi_journal::PauseState::UntilBoot {} | togi_journal::PauseState::Until { .. } => {
+                "resume"
+            }
+        },
+        terminal::DayControl::Freeze => {
+            if status.frozen {
+                "unfreeze"
+            } else {
+                "freeze"
+            }
         }
-        Err(error) => fail(ctx, "watch", togi_render::error_chain(&error)),
+    };
+    togi_command::Invocation::new("togi").args(["day", command])
+}
+
+fn day_control(
+    action: terminal::DayControl,
+    ctx: &mut Context<'_>,
+    run: impl FnOnce(&togi_command::Invocation) -> Result<togi_command::Output, togi_command::Error>,
+) -> Result<(), Exit> {
+    use crate::day::socket::{Reply, Request};
+    let status = match ctx.system.day_request(&Request::State) {
+        Ok(Reply::State { status }) => status,
+        Ok(
+            Reply::Questions { .. }
+            | Reply::Controlled { .. }
+            | Reply::Answered
+            | Reply::Recorded { .. }
+            | Reply::Reapplied
+            | Reply::Refused { .. },
+        ) => return Err(fail(ctx, "watch", "unexpected day service reply")),
+        Err(error) => return Err(fail(ctx, "watch", togi_render::error_chain(&error))),
+    };
+    match run(&day_invocation(action, &status)) {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => Err(fail(
+            ctx,
+            "watch",
+            format!(
+                "day control failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        )),
+        Err(error) => Err(fail(ctx, "watch", togi_render::error_chain(&error))),
     }
 }
 
@@ -187,5 +254,27 @@ mod tests {
     #[test_case::test_case(&["--tuning_boot"]; "underscore")]
     fn the_tuning_boot_flag_takes_no_value(args: &[&str]) {
         assert!(parse(args).is_err(), "{args:?}");
+    }
+
+    #[test_case::test_case(togi_watch::terminal::DayControl::Pause, togi_journal::PauseState::Running {}, false, "pause"; "start untimed pause")]
+    #[test_case::test_case(togi_watch::terminal::DayControl::Pause, togi_journal::PauseState::UntilBoot {}, false, "resume"; "end untimed pause")]
+    #[test_case::test_case(togi_watch::terminal::DayControl::Pause, togi_journal::PauseState::Until { deadline: jiff::Timestamp::UNIX_EPOCH }, false, "resume"; "end timed pause")]
+    #[test_case::test_case(togi_watch::terminal::DayControl::Freeze, togi_journal::PauseState::UntilBoot {}, false, "freeze"; "freeze keeps pause")]
+    #[test_case::test_case(togi_watch::terminal::DayControl::Freeze, togi_journal::PauseState::UntilBoot {}, true, "unfreeze"; "unfreeze keeps pause")]
+    fn day_keys_delegate_to_the_installed_command(
+        action: togi_watch::terminal::DayControl,
+        pause: togi_journal::PauseState,
+        frozen: bool,
+        command: &str,
+    ) {
+        let status = crate::day::socket::ControlStatus {
+            pause,
+            frozen,
+            revision: None,
+        };
+        assert_eq!(
+            super::day_invocation(action, &status),
+            togi_command::Invocation::new("togi").args(["day", command])
+        );
     }
 }

@@ -199,6 +199,36 @@ pub fn footer(screen: &Screen, after: &[Clause], buf: &mut Buffer) {
         }
         Switch::Off | Switch::Offered(_) | Switch::Asking(_) => after,
     };
+    let controls;
+    let after = if screen.day_controls
+        && screen.keys
+        && screen.view == View::Main
+        && screen.quit == Quit::Keys
+    {
+        controls = [("p", "pause/resume"), ("f", "freeze/unfreeze")]
+            .into_iter()
+            .map(|(key, label)| {
+                Clause::new(
+                    "   ",
+                    vec![
+                        Form::new(
+                            Line::from(vec![
+                                Paint::Chip.span(screen.colours, format!(" {key} ")),
+                                Span::raw(" "),
+                                Paint::Grey.span(screen.colours, label),
+                            ]),
+                            5,
+                        ),
+                        Form::empty(),
+                    ],
+                )
+            })
+            .chain(after.iter().cloned())
+            .collect::<Vec<_>>();
+        &controls[..]
+    } else {
+        after
+    };
     let line = if let Switch::Asking(direction) = screen.switch {
         asking_line(direction, width, screen.colours)
     } else if screen.keys {
@@ -701,5 +731,33 @@ mod tests {
             let text = footer_text(&buf, Layout::new(&sc).footer);
             assert_eq!(text, " ?  help    l  log    esc  back", "{view:?}");
         }
+    }
+
+    #[test_case::test_case(View::Main, Quit::Keys, true, true; "normal main view")]
+    #[test_case::test_case(View::Help, Quit::Keys, true, false; "help retains scroll bindings")]
+    #[test_case::test_case(View::Log, Quit::Keys, true, false; "log retains scroll bindings")]
+    #[test_case::test_case(View::Main, Quit::Ignored, true, false; "tuning boot")]
+    #[test_case::test_case(View::Main, Quit::Keys, false, false; "read-only replay")]
+    fn day_control_hints_match_the_available_keys(
+        view: View,
+        quit: Quit,
+        controls: bool,
+        shown: bool,
+    ) {
+        let sc = Screen {
+            quit,
+            day_controls: controls,
+            ..screen(view, 240, 24, Colours::None, true)
+        };
+        let (buf, _) = draw_checked(&sc, |sc, buf| {
+            footer(sc, &[], buf);
+            Drawn {
+                scroll: 0,
+                hold: Hold::Never,
+            }
+        });
+        let text = footer_text(&buf, Layout::new(&sc).footer);
+        assert_eq!(text.contains("pause/resume"), shown, "{text}");
+        assert_eq!(text.contains("freeze/unfreeze"), shown, "{text}");
     }
 }

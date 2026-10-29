@@ -125,6 +125,24 @@ After a session exists, leave firmware Curve Optimizer at CO 0 and arm PID 1's h
 
 `togi status` shows the Day summary; `togi events --kind day` shows the raw records. Hours are checkpointed lower bounds, not a stability guarantee. An interval whose two readbacks differ cannot identify when offsets changed, so it remains in boot hours but earns no hours for either profile.
 
+### Pausing for important work
+
+Keep the day service running and name your user in `services.togi.day.users`. These commands use its credential-checked socket without root:
+
+```sh
+togi day pause                 # until the next cold boot
+togi day pause 3h              # until three hours from now, including across reboot
+togi day pause --until 18:30   # until the next local 18:30
+togi day resume                # end any pause early
+togi day freeze                # retain D, block promotions only
+togi day unfreeze              # lift that promotion freeze
+```
+
+Every pause zeroes every core and verifies readback, keeping the learned observations. An untimed pause survives a service restart and sleep, but ends at the next cold boot. A timed pause keeps its journaled deadline across all three. Five minutes before expiry, the desktop notifier offers to extend the current deadline by one hour; dismissing it changes nothing. Ending a pause, early or at its deadline, uses the full transaction and announces verified success. **The current applier still forces stock (CO 0)**: no command here restores a historical nonzero profile.
+
+On the main `togi watch` view, press `p` for pause/resume or `f` for freeze/unfreeze; help (`?`) describes the keys. Freeze is not pause: it retains D and prevents climbing, never safety retreats or a firmware reset. Paused hours do not earn a hold, and a cold boot that starts paused cannot promote later in that boot. [Day transitions](spec/runtime.md#day-pause-and-freeze) own the exact lifecycle and stock-only restriction.
+
+
 ### Answering what happened
 
 An unclean end alone does not say whether the CPU caused it: graphics undervolts and power cuts crash a machine too. So each unclean end becomes a question, and `togi status` and `togi watch` show it, with what togi saw, until you answer. The four answers:
@@ -178,7 +196,7 @@ To run it automatically in normal boots, enable the NixOS module option after cr
 services.togi = {
   enable = true;
   day.enable = true;
-  day.users = [ "alice" ]; # may answer day questions without root; replace with your user
+  day.users = [ "alice" ]; # may answer and control pause/freeze without root; replace with your user
 };
 ```
 

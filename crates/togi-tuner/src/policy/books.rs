@@ -217,9 +217,17 @@ pub(super) struct PlanBook {
 /// What a boot's observer records say, in journal order.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) enum Observed {
-    Start { offsets: PerCore<ObservedOffset> },
-    Checkpoint { applied_secs: u64 },
-    Change { offsets: PerCore<ObservedOffset> },
+    Start {
+        offsets: PerCore<ObservedOffset>,
+    },
+    Checkpoint {
+        applied_secs: u64,
+        #[serde(default)]
+        paused: bool,
+    },
+    Change {
+        offsets: PerCore<ObservedOffset>,
+    },
     CleanStop,
 }
 
@@ -304,6 +312,8 @@ pub(super) struct Days {
     pub(super) intervals: Vec<Committed<DayInterval>>,
     pub(super) holds: Vec<Committed<DayHold>>,
     pub(super) freeze: Freeze,
+    #[serde(default)]
+    pub(super) raw_intervals: togi_journal::DayIntervals,
     #[serde(with = "super::wire::pairs")]
     pub(super) boots: BTreeMap<BootId, BootRecords>,
     pub(super) unclean: Vec<Unclean>,
@@ -332,6 +342,7 @@ impl Default for Days {
             intervals: Vec::new(),
             holds: Vec::new(),
             freeze: Freeze::Off,
+            raw_intervals: togi_journal::DayIntervals::default(),
             boots: BTreeMap::new(),
             unclean: Vec::new(),
             answers: Vec::new(),
