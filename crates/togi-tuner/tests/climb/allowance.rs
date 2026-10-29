@@ -291,3 +291,58 @@ fn reclassification_restoration_preserves_another_units_later_progress() {
     assert!(matches!(decision.action, ClimbAction::Restore(_)));
     assert_eq!(decision.target(), Some(&target));
 }
+
+#[test]
+fn of_several_owed_restorations_the_newest_retreat_is_restored_first() {
+    let mut f = Fixture::new(coarse());
+    f.advance();
+    f.advance();
+    f.event("older", cpu());
+    f.apply_retreat(&[-5, 0]);
+    let older = climb::ApplicationId::new(f.application).unwrap();
+    f.advance();
+    let before_newer = f.history.current().clone();
+    f.event("newer", cpu());
+    f.apply_retreat(&[-5, 0]);
+    let newer = climb::ApplicationId::new(f.application).unwrap();
+    f.events[0].class = Classification::NonCpu;
+    // Only the older retreat's events are non-CPU: it is the only restoration owed.
+    let owed = climb::restoration_candidate(&f.history, &f.events)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        owed.kind,
+        climb::RestorationKind::Reclassified { retreat: older }
+    );
+    f.events[1].class = Classification::NonCpu;
+    // Both are owed: the newest retreat comes first, restoring its own pre-retreat depth.
+    let owed = climb::restoration_candidate(&f.history, &f.events)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        owed.kind,
+        climb::RestorationKind::Reclassified { retreat: newer }
+    );
+    assert_eq!(owed.profile, before_newer);
+}
+
+#[test]
+fn one_retreat_across_several_units_restores_them_together_in_one_proposal() {
+    // Ruleset 14 promotes one unit per step; a single retreat may still undo several units'
+    // steps, and its restoration returns them together instead of one unit per proposal.
+    let mut f = Fixture::new(coarse());
+    f.advance();
+    f.advance();
+    let original = f.history.current().clone();
+    f.event("both", cpu());
+    f.apply_retreat(&[-5, 0]);
+    f.events[0].class = Classification::NonCpu;
+    let owed = climb::restoration_candidate(&f.history, &f.events)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        owed.kind,
+        climb::RestorationKind::Reclassified { .. }
+    ));
+    assert_eq!(owed.profile, original);
+}
