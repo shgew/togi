@@ -2506,8 +2506,9 @@
         "name": "successor",
         "identity": "two-ends-D-1458-settled-2026-10-29",
         "role": "candidate",
-        "source_revision": "PENDING_MERGED_SUCCESSOR_REVISION",
-        "source_sha256": "PENDING_SOURCE_SHA256",
+        "source": {
+          "kind": "pending"
+        },
         "parameters_sha256": "1b2cbd78fb245a93a00256c314b0e15efb92bd6c67685f61f635e19c58e42808",
         "parameters": [
           {
@@ -2584,8 +2585,11 @@
         "name": "co-zero",
         "identity": "stock-forever-CO-zero",
         "role": "comparator",
-        "source_revision": "PENDING_MERGED_CO_ZERO_REVISION",
-        "source_sha256": "PENDING_SOURCE_SHA256",
+        "source": {
+          "kind": "pinned",
+          "revision": "PENDING_MERGED_CO_ZERO_REVISION",
+          "sha256": "PENDING_SOURCE_SHA256"
+        },
         "parameters_sha256": "e361128109651893b30c5d0b523affcf9ef26c2c35300a305eb15b56de4bf597",
         "parameters": [
           {
@@ -2598,8 +2602,11 @@
         "name": "ruleset13",
         "identity": "shipped-A-ruleset-13",
         "role": "comparator",
-        "source_revision": "PENDING_MERGED_RULESET13_REVISION",
-        "source_sha256": "PENDING_SOURCE_SHA256",
+        "source": {
+          "kind": "pinned",
+          "revision": "PENDING_MERGED_RULESET13_REVISION",
+          "sha256": "PENDING_SOURCE_SHA256"
+        },
         "parameters_sha256": "ae63b9b173c38bce20e5e9c6ce446866a4b6a222310b1e3851384a5cfdf09a23",
         "parameters": [
           {
@@ -2649,7 +2656,7 @@
   },
   "notes": [
     "LOCAL DRAFT ONLY — NOT FROZEN AND NOT AUTHORIZATION TO SCORE. Merged source revisions, source hashes and implemented commands must be finalized before publication or scoring. No policy result is recorded.",
-    "Pending fields: sources.simulator_revision, sources.runner_revision, sources.report_revision, every policies[].source_revision and source_sha256; resolved policy identities must bind the merged sources. Candidate source must use the schema explicit pending form once available, not a fabricated revision. Optional binary/input hashes remain unset until an actual artifact is produced. commands.reduced_dev, commands.registered and holdout.command are draft command lists pending the runner and candidate selectors.",
+    "Pending fields: sources.simulator_revision, sources.runner_revision, sources.report_revision, comparator policies[].source.revision and source.sha256; resolved policy identities must bind the merged sources. Candidate source uses the schema's explicit pending form and cannot be scored until pinned. Optional binary/input hashes remain unset until an actual artifact is produced. commands.reduced_dev, commands.registered and holdout.command are draft command lists pending the runner and candidate selectors.",
     "Each catalog-daily-i refers to the exact ith TrialClass returned by the pinned successor Scenario::daily_mix(), preserving order, workload/roles/placement/intended duration and seed-permuted weak-core identity. Four blocks each last 7200 seconds. Definitions and numeric family transformations are the pinned togi-sim catalog, original scenarios/curve and successor exposure implementation, never a generic workload alias.",
     "All criteria are per scenario and slope with no cross-scenario or cross-mode rescue. Missing, duplicate, mismatched, harness-error or truncated cells are INCOMPLETE, never PASS. Complete-unconverged trajectories remain in descriptive safety denominators and fail applicable utility/convergence/retention.",
     "Final admissibility is required on every complete seed. At least 95% must hold every post-first-finish profile in A for its epoch, including retreats, stock transitions and restorations. Each complete seed requires post-finish T>0 and H/T<=lambda. Report exact K/T and one-sided 95% Poisson upper rate only as a model-based diagnostic, not adaptive-policy assurance.",
