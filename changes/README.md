@@ -1,6 +1,6 @@
 # Pending changelog entries
 
-Each pull request with a change a user of togi would notice adds one file here, named by its pull request number: `changes/123.md`. Open the pull request first, then add the file. The release assembles every file into a dated section of [`CHANGELOG.md`](../CHANGELOG.md) and deletes them in the release commit ([ADR 0033](../docs/adr/0033-changelog-fragments.md)).
+Each pull request with a change an operator of the shipped `togi` binary would notice adds one file here, named by its pull request number: `changes/123.md`. Tool, simulator, bench, research, review and release tooling changes get no fragment; neither do behavior-preserving refactors, tests or docs. Open the pull request first, then add the file. The release assembles every file into a dated section of [`CHANGELOG.md`](../CHANGELOG.md) and deletes them in the release commit ([ADR 0033](../docs/adr/0033-changelog-fragments.md)).
 
 ```markdown
 ### Fixed
