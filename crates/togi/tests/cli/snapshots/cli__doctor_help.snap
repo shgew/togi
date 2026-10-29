@@ -1,5 +1,5 @@
 ---
-source: crates/togi/tests/cli/main.rs
+source: crates/togi/tests/cli/mod.rs
 expression: "help(\"doctor\")"
 ---
 Check whether this machine is ready for a run

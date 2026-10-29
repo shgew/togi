@@ -3,8 +3,7 @@
     reason = "the helpers panic on a broken fixture, as the tests do"
 )]
 
-#[path = "../support/mod.rs"]
-mod support;
+use crate::support;
 
 use std::path::Path;
 use test_case::test_case;

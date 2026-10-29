@@ -11,8 +11,7 @@ use std::process::{Command, ExitStatus, Output};
 use test_case::test_case;
 use togi_journal::fs::Fs;
 
-#[path = "../support/mod.rs"]
-mod support;
+use crate::support;
 
 macro_rules! snapshot {
     ($name:ident, $actual:expr) => {{

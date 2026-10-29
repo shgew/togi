@@ -3,7 +3,7 @@
 
 use togi_watchtest::Scenario;
 
-use crate::support::{
+use super::support::{
     Journald, UNKNOWN_KIND, append_unknown_field, append_unknown_kind,
     insert_unknown_kind_before_last, session, text, togi, togi_in_journal,
 };
@@ -75,7 +75,7 @@ fn skipped_report(kind: &str, kind_line: usize, field_line: usize) -> String {
 #[test]
 fn the_read_only_commands_skip_an_unknown_kind_and_ignore_an_unknown_field_and_say_so() {
     let dir = session(Scenario::Controls);
-    let known = crate::support::lines(&dir).len();
+    let known = super::support::lines(&dir).len();
     let kind_line = insert_unknown_kind_before_last(&dir, UNKNOWN_KIND);
     let field_line = append_unknown_field(&dir, "extra");
     let before = state_files(&dir);
@@ -150,10 +150,10 @@ fn an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say
 #[test_case::test_case("watch"; "watch")]
 fn an_unknown_kind_as_the_first_event_is_never_skipped(command: &str) {
     let dir = session(Scenario::Controls);
-    crate::support::rewrite_first_line(&dir, |event| {
+    super::support::rewrite_first_line(&dir, |event| {
         event["kind"] = UNKNOWN_KIND.into();
     });
-    let before = crate::fixture::snapshot(dir.fs.as_ref(), dir.path());
+    let before = super::fixture::snapshot(dir.fs.as_ref(), dir.path());
     let args = if command == "watch" {
         one_frame_watch(&[])
     } else {
@@ -163,9 +163,9 @@ fn an_unknown_kind_as_the_first_event_is_never_skipped(command: &str) {
     assert_eq!(ran.status.code(), Some(1), "{command}");
     assert_eq!(text(&ran.stdout), "", "{command}");
     // The first line is not a header of this build, whatever its kind: the refusal does not say which build.
-    crate::fixture::assert_refusal(command, text(&ran.stderr), dir.path());
+    super::fixture::assert_refusal(command, text(&ran.stderr), dir.path());
     assert_eq!(
-        crate::fixture::snapshot(dir.fs.as_ref(), dir.path()),
+        super::fixture::snapshot(dir.fs.as_ref(), dir.path()),
         before,
         "{command}"
     );
@@ -175,7 +175,7 @@ fn an_unknown_kind_as_the_first_event_is_never_skipped(command: &str) {
 #[test_case::test_case("events"; "events")]
 fn a_schema_refusal_is_red_bold_priority_3_when_stderr_is_the_system_journal(command: &str) {
     let dir = session(Scenario::Controls);
-    crate::support::rewrite_first_line(&dir, |event| {
+    super::support::rewrite_first_line(&dir, |event| {
         event["data"]["build"]["schema"] = 99.into();
     });
     let ran = togi_in_journal(&dir, &[command], Journald::Stderr);
@@ -223,8 +223,8 @@ fn the_read_only_commands_succeed_while_the_host_lock_is_held_and_never_take_it(
     assert_eq!(state_files(&session), before, "{command} without lock");
 }
 
-fn state_files(dir: &crate::support::Session) -> crate::fixture::Snapshot {
-    crate::fixture::snapshot(dir.fs.as_ref(), dir.path())
+fn state_files(dir: &super::support::Session) -> super::fixture::Snapshot {
+    super::fixture::snapshot(dir.fs.as_ref(), dir.path())
 }
 
 #[test_case::test_case("frozen", togi_journal::DayAnswerKind::Frozen)]
@@ -235,7 +235,7 @@ fn answering_uses_the_service_without_root_hardware_or_a_local_journal(
     argument: &str,
     expected: togi_journal::DayAnswerKind,
 ) {
-    let mut host = crate::host::Host::new();
+    let mut host = super::host::Host::new();
     host.root = false;
     host.linux = false;
     host.boot_fails = true;

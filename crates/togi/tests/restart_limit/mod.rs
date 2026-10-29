@@ -1,5 +1,4 @@
-#[path = "../support/mod.rs"]
-mod support;
+use crate::support;
 
 use support::{Host, files};
 use togi_cli::Exit;

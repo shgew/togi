@@ -1,5 +1,5 @@
 ---
-source: crates/togi/tests/doctor/main.rs
+source: crates/togi/tests/doctor/mod.rs
 expression: ran.out
 ---
 CHECK         RESULT   DETAIL

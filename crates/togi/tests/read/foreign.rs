@@ -9,13 +9,13 @@ use std::time::{Duration, Instant};
 use rustix::termios::{Winsize, tcsetwinsize};
 use togi_render::open_pty;
 
-use crate::fixture::{self, Snapshot};
-use crate::support::{Session, text, togi};
-use crate::watch::{BOUND, HIDE_CURSOR, Helper, contains, read_more};
+use super::fixture::{self, Snapshot};
+use super::support::{Session, text, togi};
+use super::watch::{BOUND, HIDE_CURSOR, Helper, contains, read_more};
 
 /// A state directory holding the Go build's files, and what it held.
 fn go_state() -> (Session, Snapshot) {
-    let dir = crate::support::Session::empty();
+    let dir = super::support::Session::empty();
     fixture::install(dir.fs.as_ref(), dir.path());
     let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
     (dir, before)
@@ -59,7 +59,7 @@ fn each_read_command_refuses_the_go_journal_and_changes_no_file(command: &str, a
 #[test_case::test_case("events", &["events", "--kind", "session.start"]; "filtered events")]
 #[test_case::test_case("watch", &["watch", "--width", "100", "--height", "30"]; "watch")]
 fn the_refusal_comes_from_the_first_line_alone_whatever_follows_it(command: &str, args: &[&str]) {
-    let dir = crate::support::Session::empty();
+    let dir = super::support::Session::empty();
     fixture::install(dir.fs.as_ref(), dir.path());
     fixture::append_unreadable_line(dir.fs.as_ref(), dir.path());
     let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
@@ -77,7 +77,7 @@ fn the_refusal_comes_from_the_first_line_alone_whatever_follows_it(command: &str
 #[test_case::test_case("events", &["events", "--kind", "session.start"]; "filtered events")]
 #[test_case::test_case("watch", &["watch", "--width", "100", "--height", "30"]; "watch")]
 fn a_first_line_without_its_newline_is_refused_all_the_same(command: &str, args: &[&str]) {
-    let dir = crate::support::Session::empty();
+    let dir = super::support::Session::empty();
     fixture::install(dir.fs.as_ref(), dir.path());
     fixture::keep_only_the_unterminated_first_line(dir.fs.as_ref(), dir.path());
     let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
@@ -108,7 +108,7 @@ fn a_truncated_header_of_this_build_is_refused_in_the_same_words(
     args: &[&str],
     newline: bool,
 ) {
-    let dir = crate::support::Session::empty();
+    let dir = super::support::Session::empty();
     fixture::keep_only_a_truncated_journal_header(dir.fs.as_ref(), dir.path(), newline);
     let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
     let ran = togi(&dir, args);

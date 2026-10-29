@@ -1,7 +1,7 @@
 use jiff::Timestamp;
 use togi_watchtest::Scenario;
 
-use crate::support::{
+use super::support::{
     BETWEEN_TRIAL_MCE, Journald, append_between_trial_mce, append_event, first_trial, lines,
     rewrite_first_line, session, text, togi, togi_in_journal,
 };
@@ -32,7 +32,7 @@ fn filters_narrow_the_readable_lines(extra: &[&str], select_trial: bool, golden:
     let ran = togi(&dir, &args);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
-    crate::support::snapshot(&format!("events__events_{golden}"), text(&ran.stdout));
+    super::support::snapshot(&format!("events__events_{golden}"), text(&ran.stdout));
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn kind_filters_select_the_carried_facts_they_name() {
     use togi_journal::{Attribution, Failure, FailureCarried, Payload, TrialClass};
     use togi_machine::{Condition, Regime, Signal};
 
-    use crate::status::{carried_pass, fact_source, installed, last_intent, then};
+    use super::status::{carried_pass, fact_source, installed, last_intent, then};
 
     let base = Scenario::Between.events().unwrap();
     let intent = last_intent(&base);
@@ -143,7 +143,7 @@ fn a_valid_filter_with_no_match_prints_nothing_and_exits_zero(args: &[&str]) {
 #[test_case::test_case(" "; "whitespace")]
 #[test_case::test_case(""; "empty")]
 fn kind_errors_are_usage_errors_before_the_journal_is_read(kind: &str) {
-    let empty = crate::support::Session::empty();
+    let empty = super::support::Session::empty();
     let ran = togi(&empty, &["events", "--kind", kind]);
     assert_eq!(ran.status.code(), Some(2), "{kind:?}");
     assert_eq!(text(&ran.stdout), "", "{kind:?}");
@@ -163,7 +163,7 @@ fn kind_errors_are_usage_errors_before_the_journal_is_read(kind: &str) {
 #[test_case::test_case(&["events", "--core", "999"]; "core range")]
 #[test_case::test_case(&["events", "extra"]; "positional")]
 fn flag_value_errors_are_usage_errors(args: &[&str]) {
-    let empty = crate::support::Session::empty();
+    let empty = super::support::Session::empty();
     let ran = togi(&empty, args);
     assert_eq!(ran.status.code(), Some(2), "{args:?}");
     assert_eq!(text(&ran.stdout), "");
@@ -171,7 +171,7 @@ fn flag_value_errors_are_usage_errors(args: &[&str]) {
 
 #[test]
 fn a_missing_journal_is_an_error_naming_the_file() {
-    let empty = crate::support::Session::empty();
+    let empty = super::support::Session::empty();
     let ran = togi(&empty, &["events"]);
     assert_eq!(ran.status.code(), Some(1));
     assert_eq!(text(&ran.stdout), "");
@@ -185,8 +185,8 @@ fn a_missing_journal_is_an_error_naming_the_file() {
 
 #[test]
 fn a_file_that_is_not_a_journal_is_an_error() {
-    let dir = crate::support::Session::empty();
-    crate::support::write_journal(&dir, "not json\n");
+    let dir = super::support::Session::empty();
+    super::support::write_journal(&dir, "not json\n");
     let ran = togi(&dir, &["events"]);
     assert_eq!(ran.status.code(), Some(1));
     assert_eq!(text(&ran.stdout), "");
@@ -254,7 +254,7 @@ fn a_different_ruleset_warns_and_still_renders(args: &[&str]) {
 fn a_torn_tail_is_reported_after_the_events(command: &str) {
     let dir = session(Scenario::Controls);
     let whole = lines(&dir).len();
-    crate::support::append_bytes(&dir, b"{\"seq\":");
+    super::support::append_bytes(&dir, b"{\"seq\":");
     let ran = togi(&dir, &[command]);
     assert_eq!(ran.status.code(), Some(0), "{command}");
     assert!(
@@ -275,7 +275,7 @@ fn a_torn_tail_is_reported_after_the_events(command: &str) {
 #[test]
 fn a_single_torn_byte_is_reported_in_the_singular() {
     let dir = session(Scenario::Controls);
-    crate::support::append_bytes(&dir, b"{");
+    super::support::append_bytes(&dir, b"{");
     let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(0));
     let stderr = text(&ran.stderr);
@@ -305,10 +305,10 @@ fn state_dir_works_before_and_after_the_command() {
 
 #[test]
 fn events_help() {
-    let ran = togi(&crate::support::Session::empty(), &["events", "--help"]);
+    let ran = togi(&super::support::Session::empty(), &["events", "--help"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
-    crate::support::snapshot("events__events_help", text(&ran.stdout));
+    super::support::snapshot("events__events_help", text(&ran.stdout));
 }
 
 #[test]
