@@ -9,7 +9,6 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 ## Current
 
 - [0002](0002-clean-room-rewrite.md) Clean-room rewrite, not a port of linux-corecycler — in force.
-- [0003](0003-journal-is-source-of-truth.md) The journal is the source of truth; no database — amended by [0077](0077-verified-folded-state-snapshots.md).
 - [0005](0005-grub-tuning-boot.md) Unattended tuning is a GRUB boot entry — in force.
 - [0008](0008-self-checking-workloads.md) Every workload checks its own results — in force.
 - [0009](0009-compatibility-across-updates.md) Compatibility across updates — partly superseded by [0019](0019-a-ruleset-change-starts-a-seeded-session.md) (refusal of older journals).
@@ -23,13 +22,8 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0034](0034-one-vocabulary-from-screen-to-journal.md) One vocabulary from screen to journal — in force; [0037](0037-cycles-and-trials.md) renames the checking schedule and pass-evidence unit.
 - [0035](0035-gpl-3.0-or-later.md) License togi under GPL-3.0-or-later — in force.
 - [0037](0037-cycles-and-trials.md) Cycles and trials — in force.
-- [0048](0048-rust.md) Rust as the implementation language — partly superseded by [0058](0058-native-rust-rewrite.md) (compatibility contract) and [0071](0071-no-go-in-the-repository.md) (tool languages).
 - [0050](0050-json-for-first-party-data-files.md) JSON for every first-party data file — in force.
-- [0058](0058-native-rust-rewrite.md) A native Rust rewrite, not a byte-compatible port — in force; [0061](0061-no-macos-ci.md) supersedes its macOS choice.
-- [0059](0059-the-tuner-folds-and-never-queries-history.md) The tuner folds the journal and never queries its history — in force.
-- [0071](0071-no-go-in-the-repository.md) No Go in the repository — in force.
 - [0076](0076-kmscon-tuning-display.md) kmscon is the optional tuning-boot display — in force.
-- [0077](0077-verified-folded-state-snapshots.md) Verified folded-state snapshots are a cache, never authority — in force.
 - [0078](0078-controller-clock-and-rotation.md) Cap isolated controller clocks and rotate loaded hosts — in force.
 - [0079](0079-day-observer-night-tester.md) Days observe; nights test — in force.
 - [0080](0080-per-ccd-first.md) Tune one offset per CCD first — in force.
@@ -37,10 +31,13 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0082](0082-bios-stays-at-zero.md) Keep BIOS Curve Optimizer at zero — in force.
 - [0083](0083-ask-after-unclean-ends.md) Ask after unclean daily ends — in force.
 - [0084](0084-a-fresh-ruleset-transition.md) Start Ruleset 13 fresh, retaining raw daily observations — in force.
+- [0092](0092-rust-native-implementation.md) togi is a native Rust program; tools follow the same language rule — in force; supersedes 0001, 0048, 0058 and 0071.
+- [0093](0093-journal-fold-and-snapshots.md) The journal is authoritative; folds drive decisions and snapshots cache reads — in force; supersedes 0003, 0059 and 0077.
 
 ## Historical
 
-- [0001](0001-go.md) Go as the implementation language — superseded by [0048](0048-rust.md) and [0071](0071-no-go-in-the-repository.md).
+- [0001](0001-go.md) Go as the implementation language — superseded by [0092](0092-rust-native-implementation.md).
+- [0003](0003-journal-is-source-of-truth.md) The journal is the source of truth; no database — superseded by [0093](0093-journal-fold-and-snapshots.md).
 - [0004](0004-find-only.md) togi finds offsets; BIOS applies them — superseded by [0082](0082-bios-stays-at-zero.md) (Ruleset 13).
 - [0006](0006-start-from-bios-values.md) Search starts from the BIOS values — superseded by [0082](0082-bios-stays-at-zero.md) (Ruleset 13).
 - [0007](0007-suspect-backoffs.md) Unattributed failures back off as suspects; depth is regained only on request — superseded by [0011](0011-blame-by-load-and-automatic-regain.md).
@@ -72,6 +69,7 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0045](0045-the-tight-loop-reuses-cached-test-results.md) The tight loop reuses cached test results — historical: [Development, Rust test execution](../development.md#rust-test-execution).
 - [0046](0046-macos-checks-the-package-on-main.md) macOS checks only the package, on `main` — historical: [Development, CI and release gates](../development.md#ci-and-release-gates).
 - [0047](0047-gate-before-every-push.md) Gate before every push — historical: [Development, Shell and checks](../development.md#shell-and-checks).
+- [0048](0048-rust.md) Rust as the implementation language — superseded by [0092](0092-rust-native-implementation.md).
 - [0049](0049-count-self-sufficiency-per-core-and-workload.md) Count self-sufficiency per core and workload — superseded by [0080](0080-per-ccd-first.md) and [0081](0081-margin-from-measured-slope.md) (Ruleset 13).
 - [0051](0051-light-checks-for-review-fixes.md) Light checks for review fixes — historical: [Development, Shell and checks](../development.md#shell-and-checks) and [Review command, Coordinator findings](../../.omp/commands/review-pr.md#coordinator-findings).
 - [0052](0052-crashes-are-a-cost.md) Crashes are a cost — historical: [Benchmarking, Crash cost and stray-crash exclusion](../benchmarking.md#crash-cost-and-stray-crash-exclusion).
@@ -80,6 +78,8 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0055](0055-rederive-r7-chains-after-a-backoff.md) Re-derive R7 chains after a backoff — superseded by [0079](0079-day-observer-night-tester.md) (Ruleset 13).
 - [0056](0056-later-failures-step-back-in-pairs.md) Later failures step a core back in pairs — superseded by [0079](0079-day-observer-night-tester.md) (Ruleset 13).
 - [0057](0057-running-the-rust-migration-unattended.md) Running the Rust migration unattended — historical: [Rust migration, How it ran](../rust-migration.md#how-it-ran).
+- [0058](0058-native-rust-rewrite.md) A native Rust rewrite, not a byte-compatible port — superseded by [0092](0092-rust-native-implementation.md).
+- [0059](0059-the-tuner-folds-and-never-queries-history.md) The tuner folds the journal and never queries its history — superseded by [0093](0093-journal-fold-and-snapshots.md).
 - [0060](0060-bench-children-keep-temporary-journals.md) Bench children keep temporary journals — historical: [Development, Temporary journals for research children](../development.md#temporary-journals-for-research-children).
 - [0061](0061-no-macos-ci.md) No CI job runs on macOS — historical: [Development, CI and release gates](../development.md#ci-and-release-gates).
 - [0062](0062-checks-need-no-race-detector-or-test-result-cache.md) Checks need no race detector or test-result cache — historical: [Development, Rust test execution](../development.md#rust-test-execution).
@@ -91,10 +91,12 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0068](0068-cap-named-non-crash-r7-backoffs.md) Cap named non-crash R7 backoffs — superseded by [0080](0080-per-ccd-first.md) (Ruleset 13).
 - [0069](0069-yield-without-finishing-phase-two-movers.md) Yield without finishing phase-two movers — superseded by [0079](0079-day-observer-night-tester.md) (Ruleset 13).
 - [0070](0070-probe-reproduced-singleton-failures.md) Probe reproduced singleton failures — superseded by [0080](0080-per-ccd-first.md) (Ruleset 13).
+- [0071](0071-no-go-in-the-repository.md) No Go in the repository — superseded by [0092](0092-rust-native-implementation.md).
 - [0072](0072-agents-share-a-host-without-locks.md) Agents share a host without locks — historical: host scheduling is outside the repository.
 - [0073](0073-tests-and-simulations-run-in-memory.md) Tests and simulations run in memory — historical: [Development, Tests and simulations in memory](../development.md#tests-and-simulations-in-memory).
 - [0074](0074-pull-request-ci-gates-landing-on-main.md) Pull request CI gates landing on main — historical: [Development, CI and release gates](../development.md#ci-and-release-gates).
 - [0075](0075-nextest-runs-in-dependency-layer-groups.md) Nextest runs in dependency-layer groups — historical: [Development, Nextest by concern](../development.md#nextest-by-concern).
+- [0077](0077-verified-folded-state-snapshots.md) Verified folded-state snapshots are a cache, never authority — superseded by [0093](0093-journal-fold-and-snapshots.md).
 - [0085](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md) The gate publishes and pull request CI runs every check — historical: [Development, Check cache](../development.md#check-cache).
 - [0086](0086-heavy-runs-wait-for-memory.md) Heavy runs wait for memory, not for each other — historical: host scheduling is outside the repository.
 - [0087](0087-simulations-are-research-tools-not-checks.md) Simulations are research tools, not checks — historical: [Development, Simulations and research](../development.md#simulations-and-research).
