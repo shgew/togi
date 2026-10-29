@@ -866,6 +866,35 @@ pub fn words(kind: EventKind) -> Words {
             }),
             ..Words::SILENT
         },
+        EventKind::UnitMapping | EventKind::CampaignStart | EventKind::SuccessorImported => Words {
+            history: History::Recorded(Tag::Note, Tone::Plain),
+            ..Words::SILENT
+        },
+        EventKind::UnitEdge => Words {
+            history: History::Recorded(Tag::Edge, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Edge),
+            ..Words::SILENT
+        },
+        EventKind::ClimbDecision => Words {
+            history: History::Recorded(Tag::Step, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Step),
+            ..Words::SILENT
+        },
+        EventKind::UnitStop => Words {
+            history: History::Recorded(Tag::Stop, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Stop),
+            ..Words::SILENT
+        },
+        EventKind::CampaignCharge | EventKind::CampaignReclassified => Words {
+            history: History::Recorded(Tag::Day, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Day),
+            ..Words::SILENT
+        },
+        EventKind::FirmwareRestoration => Words {
+            history: History::Recorded(Tag::Step, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Step),
+            ..Words::SILENT
+        },
         EventKind::CcdEdge => Words::said(Tag::Edge, of!(CcdEdge, |d| Some(edge_line(d)))),
         EventKind::CcdCap => Words::said(Tag::Cap, of!(CcdCap, |d| Some(cap_line(d)))),
         EventKind::NightPlan => Words::said(Tag::Night, of!(NightPlan, |d| Some(plan_line(d)))),
