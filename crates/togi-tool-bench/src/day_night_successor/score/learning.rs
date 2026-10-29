@@ -25,6 +25,12 @@ mod contract_guard_tests;
 #[path = "learning_review_tests.rs"]
 mod review_tests;
 
+#[path = "reclassified.rs"]
+mod reclassified;
+#[cfg(test)]
+#[path = "reclassified_tests.rs"]
+mod reclassified_tests;
+
 /// One broken learning-contract rule on one record.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Violation {
@@ -71,6 +77,26 @@ pub struct PromotionView {
     pub charged_before: u64,
 }
 
+/// A guarded restoration of depth contradicted by a later non-CPU answer.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ReclassifiedRestorationView {
+    pub id: String,
+    /// Day the guarded restoration was applied.
+    pub day: f64,
+    /// Day of the non-CPU answer that reclassified the source event.
+    pub reclassified_day: f64,
+    pub retreat: String,
+    pub event: String,
+    pub units: Vec<UnitId>,
+    pub before_depths: Vec<u8>,
+    pub after_depths: Vec<u8>,
+    pub hold_hours: Option<f64>,
+    pub qualification: Option<String>,
+    pub consumed_before: u64,
+    pub consumed_after: u64,
+    pub violations: usize,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct LearningAudit {
     /// The contract could be judged from a ledger or proved inapplicable by a fixed-stock trajectory.
@@ -79,6 +105,8 @@ pub struct LearningAudit {
     pub violations: Vec<Violation>,
     pub promotions: Vec<PromotionView>,
     pub restorations: Vec<RestorationView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reclassified_restorations: Vec<ReclassifiedRestorationView>,
 }
 
 /// Audits the learning contract. Without a ledger, only a fully witnessed fixed-stock/no-climb
@@ -105,6 +133,7 @@ pub fn audit(record: &Record, rules: &Rules) -> LearningAudit {
     audit.promotions();
     audit.event_stops();
     audit.restorations();
+    audit.reclassified_restorations();
     audit.tags();
     audit.result
 }
@@ -205,7 +234,8 @@ impl Audit<'_> {
                 .record
                 .steps
                 .iter()
-                .position(|step| matches!(&step.kind, StepKind::Restoration { restoration: id } if id == restoration)),
+                .position(|step| matches!(&step.kind, StepKind::Restoration { restoration: id } if id == restoration)
+                    || (matches!(&step.kind, StepKind::ReclassifiedRestoration { .. }) && &step.id == restoration)),
         }
     }
 
@@ -351,6 +381,7 @@ impl Audit<'_> {
                     ),
                     StepKind::Climb { .. }
                     | StepKind::Restoration { .. }
+                    | StepKind::ReclassifiedRestoration { .. }
                     | StepKind::Retreat { .. }
                     | StepKind::StockReset { .. } => {}
                 }

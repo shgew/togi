@@ -7,16 +7,17 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
 use togi_journal::{
-    Activity, ApplyCause, CcdVector, CellEvidence, ClimbAction, ClimbDecision, ClimbRetreatCause,
-    DayApplied, DayEventId, DecisionId, Event, Outcome, Payload, QualificationState,
-    RestorationKind, Seq, SessionContext, UnitId as JournalUnit,
+    Activity, ApplicationId, ApplyCause, CcdVector, CellEvidence, ClimbAction, ClimbDecision,
+    ClimbRetreatCause, DayApplied, DayEventId, DecisionId, Event, ObservedProfile, Outcome,
+    Payload, QualificationState, RestorationKind, Seq, SessionContext, UnitId as JournalUnit,
+    VetoState,
 };
 use togi_machine::{PerCore, TargetOffset};
 
 use super::super::successor::{
     Classification, FirmwareRestoration, LearningEvent, Phase, PolicyApplications, PolicyUnit,
-    ProfileStep, Qualification, RestorationOutcome, RestorationResult, StepKind as ReportStep,
-    UnitId, UnitPhase,
+    ProfileStep, ProfileVeto, Qualification, RestorationHold, RestorationOutcome,
+    RestorationResult, StepKind as ReportStep, UnitId, UnitPhase,
 };
 
 #[derive(Default)]
@@ -28,13 +29,23 @@ pub(super) struct Witnesses {
     context: Option<SessionContext>,
     firmware_changes: u64,
     transition_day: Option<f64>,
-    steps: BTreeMap<DecisionId, ClimbDecision>,
+    steps: BTreeMap<DecisionId, RecordedStep>,
+    application_days: BTreeMap<ApplicationId, f64>,
+    retreats: BTreeMap<Seq, usize>,
+    reclassified: HashMap<String, f64>,
+    consumed: u64,
     ceilings: BTreeMap<Seq, (JournalUnit, u8)>,
     exposures: BTreeMap<Seq, String>,
     failures: BTreeMap<Seq, String>,
     requalifications: HashMap<DayEventId, String>,
     controls: Vec<String>,
     qualifications: BTreeMap<Seq, Qualification>,
+}
+
+struct RecordedStep {
+    decision: ClimbDecision,
+    causes: Vec<Seq>,
+    consumed: u64,
 }
 
 impl Witnesses {
@@ -87,8 +98,32 @@ impl Witnesses {
             }
             self.context = Some(context.clone());
         }
+        if let Payload::CampaignCharge(charge) = &event.payload {
+            self.consumed = u64::from(charge.consumed);
+        }
+        if let Payload::CampaignReclassified(change) = &event.payload {
+            let id = self
+                .requalifications
+                .get(&change.event)
+                .cloned()
+                .unwrap_or_else(|| event_id(&change.event));
+            if matches!(change.to, togi_journal::Classification::NonCpu {}) {
+                if matches!(change.from, togi_journal::Classification::CpuSuspect { .. }) {
+                    self.reclassified.insert(id, day);
+                }
+            } else {
+                self.reclassified.remove(&id);
+            }
+        }
         if let Payload::ClimbDecision(step) = &event.payload {
-            self.steps.insert(DecisionId(event.seq.get()), step.clone());
+            self.steps.insert(
+                DecisionId(event.seq.get()),
+                RecordedStep {
+                    decision: step.clone(),
+                    causes: event.cause.clone(),
+                    consumed: self.consumed,
+                },
+            );
         }
         if let Payload::UnitEdge(edge) = &event.payload
             && let Some(ceiling) = edge.ceiling.and_then(depth)
@@ -164,7 +199,40 @@ impl Witnesses {
                 .insert(daily.event.clone(), id.clone());
         }
         if let Payload::DayApplied(applied) = &event.payload {
-            self.applied(applied, day);
+            self.application_days.insert(applied.application, day);
+            self.applied(applied, event.seq, day);
+        }
+        if let Payload::DayVeto(veto) = &event.payload
+            && veto.state == VetoState::Active
+        {
+            let cores = match &veto.profile {
+                ObservedProfile::Ccd { cores, .. } | ObservedProfile::PerCore { cores } => cores,
+            };
+            if let Some(profile) = cores
+                .iter()
+                .map(|(core, offset)| u8::try_from(-offset.0).ok().map(|depth| (core, depth)))
+                .collect::<Option<PerCore<_>>>()
+            {
+                for step in self
+                    .applications
+                    .steps
+                    .iter_mut()
+                    .rev()
+                    .take_while(|step| step.after == profile)
+                {
+                    if let ReportStep::ReclassifiedRestoration { crash_vetoes, .. } = &mut step.kind
+                    {
+                        let event = self
+                            .requalifications
+                            .get(&veto.event)
+                            .cloned()
+                            .unwrap_or_else(|| event_id(&veto.event));
+                        if !crash_vetoes.iter().any(|veto| veto.event == event) {
+                            crash_vetoes.push(ProfileVeto { event, profile });
+                        }
+                    }
+                }
+            }
         }
         if let Payload::TrialEnd(end) = &event.payload
             && end.outcome == Outcome::Failure
@@ -186,13 +254,14 @@ impl Witnesses {
         }
     }
 
-    fn applied(&mut self, applied: &DayApplied, day: f64) {
+    fn applied(&mut self, applied: &DayApplied, receipt: Seq, day: f64) {
         let ApplyCause::Step { decision } = applied.cause else {
             return;
         };
-        let Some(step) = self.steps.remove(&decision) else {
+        let Some(recorded) = self.steps.remove(&decision) else {
             return;
         };
+        let step = recorded.decision;
         // Only the verified application commits a decision. Holds and unchanged reapplications
         // are not steps, and an uncommitted proposal never appears in the report.
         if applied.target.cores() != &step.proposed.cores {
@@ -233,12 +302,21 @@ impl Witnesses {
                     qualification,
                 }
             }
-            ClimbAction::Retreat {
-                units: changed,
-                cause,
-                ..
-            } => {
-                if changed.is_empty() {
+            ClimbAction::Retreat { cause, .. } => {
+                let units: Vec<_> = self
+                    .membership
+                    .iter()
+                    .filter(|member| {
+                        member.cores.iter().any(|core| {
+                            before
+                                .get(*core)
+                                .zip(after.get(*core))
+                                .is_some_and(|(old, new)| new < old)
+                        })
+                    })
+                    .map(|member| member.unit)
+                    .collect();
+                if units.is_empty() {
                     return;
                 }
                 let event = match cause {
@@ -267,13 +345,7 @@ impl Witnesses {
                         witnesses: vec![format!("ruleset13-step-{}", decision.0)],
                     };
                 }
-                ReportStep::Retreat {
-                    event,
-                    units: changed
-                        .iter()
-                        .filter_map(|ccd| self.units.get(ccd).copied())
-                        .collect(),
-                }
+                ReportStep::Retreat { event, units }
             }
             ClimbAction::FirmwareZero {} => {
                 let epoch = self.epoch();
@@ -329,13 +401,69 @@ impl Witnesses {
                     restoration: restoration.id.clone(),
                 }
             }
-            // The report schema only represents firmware restoration. Do not mislabel a
-            // reclassified-event restoration as firmware restoration or an ordinary promotion.
             ClimbAction::Restore {
                 restoration: RestorationKind::Reclassified,
                 ..
-            } => return,
+            } => {
+                // The decision cites the actual retreat receipt; matching only a profile would
+                // silently attach a different event's restoration after repeated resets.
+                let Some(retreat) = recorded
+                    .causes
+                    .iter()
+                    .rev()
+                    .filter_map(|seq| self.retreats.get(seq))
+                    .filter_map(|&index| self.applications.steps.get(index))
+                    .find_map(|retreat| {
+                        let ReportStep::Retreat {
+                            event: Some(event),
+                            units,
+                        } = &retreat.kind
+                        else {
+                            return None;
+                        };
+                        self.reclassified
+                            .get(event)
+                            .map(|&day| (retreat, event, units, day))
+                    })
+                else {
+                    return;
+                };
+                let (retreat, event, units, reclassified_day) = retreat;
+                ReportStep::ReclassifiedRestoration {
+                    retreat: retreat.id.clone(),
+                    event: event.clone(),
+                    reclassified_day,
+                    units: units.clone(),
+                    hold: self
+                        .application_days
+                        .get(&step.hold.application)
+                        .filter(|_| !step.hold.credited.is_empty())
+                        .map(|&start_day| RestorationHold {
+                            start_day,
+                            profile: before,
+                            clean_hours: Duration::from_secs(step.hold.eligible_s).as_secs_f64()
+                                / 3600.0,
+                            witnesses: step
+                                .hold
+                                .credited
+                                .iter()
+                                .map(|seq| format!("ruleset13-event-{seq}"))
+                                .collect(),
+                        }),
+                    qualification: step
+                        .certificate
+                        .and_then(|seq| self.qualifications.get(&seq))
+                        .filter(|qualification| qualification.profile == after)
+                        .cloned(),
+                    consumed_before: recorded.consumed,
+                    consumed_after: self.consumed,
+                    crash_vetoes: Vec::new(),
+                }
+            }
         };
+        if matches!(kind, ReportStep::Retreat { .. }) {
+            self.retreats.insert(receipt, self.applications.steps.len());
+        }
         self.applications.steps.push(ProfileStep {
             id: format!("ruleset13-step-{}", decision.0),
             day,

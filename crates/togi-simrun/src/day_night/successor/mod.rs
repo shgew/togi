@@ -293,7 +293,38 @@ object_only! {
         Climb { unit: UnitId, ceiling_depth: u8, clean_hold_hours: f64, qualification: Qualification },
         Restoration { restoration: String },
         Retreat { event: Option<String>, units: Vec<UnitId> },
+        // The answer time is distinct from the original event time. Missing hold/certificate
+        // evidence remains representable for the audit; crash vetoes name whole-profile evidence.
+        ReclassifiedRestoration {
+            retreat: String,
+            event: String,
+            reclassified_day: f64,
+            units: Vec<UnitId>,
+            hold: Option<RestorationHold>,
+            qualification: Option<Qualification>,
+            consumed_before: u64,
+            consumed_after: u64,
+            crash_vetoes: Vec<ProfileVeto>
+        },
         StockReset { epoch: String },
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct RestorationHold {
+        pub start_day: f64,
+        #[serde(deserialize_with = "profile::deserialize")]
+        pub profile: PerCore<u8>,
+        pub clean_hours: f64,
+        pub witnesses: Vec<String>,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ProfileVeto {
+        pub event: String,
+        #[serde(deserialize_with = "profile::deserialize")]
+        pub profile: PerCore<u8>,
     }
 
     #[derive(Clone, Debug, PartialEq, Serialize)]

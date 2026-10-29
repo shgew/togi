@@ -578,7 +578,10 @@ fn a_daily_event_carries_the_tag_exactly_inside_the_restoration_span(
 fn first_climb_qualification(record: &mut Record) -> &mut Qualification {
     match &mut record.steps[0].kind {
         StepKind::Climb { qualification, .. } => qualification,
-        StepKind::Restoration { .. } | StepKind::Retreat { .. } | StepKind::StockReset { .. } => {
+        StepKind::Restoration { .. }
+        | StepKind::ReclassifiedRestoration { .. }
+        | StepKind::Retreat { .. }
+        | StepKind::StockReset { .. } => {
             unreachable!("the first application is a promotion")
         }
     }

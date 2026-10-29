@@ -285,6 +285,11 @@ before the next day boot; a policy `EndNight` closes it with `shutdown{reason: d
 apply day steps for a paused boot, because the calendar has no pause.
 Successor diagnostics retain applied promotion, retreat and stock-reset step witnesses from the adapter's journal,
 including the completed exact-profile qualification's fresh, reused and stock-control trial identifiers.
+Reclassified-event restorations are separate from promotions and firmware restorations: their report links the
+decision's cited retreat receipt and the typed campaign reclassification, retaining the consumed allowance,
+credited normal-hold observations, exact-profile qualification and later whole-profile crash vetoes. Reverted
+units follow the retreat's physical before/after depths, not merely its declared unit list. Missing hold or
+qualification evidence stays absent so the successor auditor can reject the claim rather than infer permission.
 The successor unit summaries count the observed launches named by those applied qualification witnesses;
 failed or unfinished qualifications are not counted as completed application evidence. Conclusive night
 failures carry the adapter's CPU-suspect classification; interrupted or inconclusive trials do not invent a failure.

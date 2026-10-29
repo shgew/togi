@@ -549,6 +549,71 @@ fn an_answer_reclassifies_a_provisional_event_under_its_original_identity() {
 }
 
 #[test]
+fn a_reclassified_restoration_reports_its_actual_retreat_and_fresh_guards() {
+    use crate::day_night::successor::StepKind;
+
+    let mut policy = UnansweredEnd::new(true, Some(DayAnswerKind::Graphics));
+    run_until(&mut policy, |policy| {
+        if policy
+            .inner
+            .applications()
+            .steps
+            .iter()
+            .any(|step| matches!(step.kind, StepKind::ReclassifiedRestoration { .. }))
+        {
+            DayStart::Stop
+        } else {
+            DayStart::Run
+        }
+    });
+    let applications = policy.inner.applications();
+    let restored = applications
+        .steps
+        .iter()
+        .find(|step| matches!(step.kind, StepKind::ReclassifiedRestoration { .. }))
+        .unwrap();
+    let StepKind::ReclassifiedRestoration {
+        retreat,
+        event,
+        reclassified_day,
+        units,
+        hold,
+        qualification,
+        consumed_before,
+        consumed_after,
+        crash_vetoes,
+    } = &restored.kind
+    else {
+        unreachable!();
+    };
+    let source = applications
+        .steps
+        .iter()
+        .find(|step| &step.id == retreat)
+        .unwrap();
+    assert_eq!(event, &policy.ended.unwrap().id);
+    assert!(source.day <= *reclassified_day && *reclassified_day <= restored.day);
+    assert_eq!(restored.after, source.before);
+    let StepKind::Retreat {
+        units: physically_reverted,
+        ..
+    } = &source.kind
+    else {
+        panic!("restoration must cite a retreat");
+    };
+    assert_eq!(units, physically_reverted);
+    let hold = hold
+        .as_ref()
+        .expect("the decision cites fresh normal hold evidence");
+    assert_eq!(hold.profile, restored.before);
+    assert!(hold.clean_hours >= 50.0);
+    assert!(!hold.witnesses.is_empty());
+    assert_eq!(qualification.as_ref().unwrap().profile, restored.after);
+    assert_eq!((*consumed_before, *consumed_after), (1, 1));
+    assert!(crash_vetoes.is_empty());
+}
+
+#[test]
 fn an_unanswered_end_at_stock_reports_a_non_cpu_event_without_an_allowance() {
     let mut policy = UnansweredEnd::new(false, None);
     run_until(&mut policy, |policy| {

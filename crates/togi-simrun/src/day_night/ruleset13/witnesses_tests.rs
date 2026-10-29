@@ -5,13 +5,14 @@ use std::time::Duration;
 use jiff::Timestamp;
 use test_case::test_case;
 use togi_journal::{
-    Activity, ApplicationId, ApplyCause, Build, CcdVector, CellEvidence, CellWitness, Certainty,
-    Classification, ClimbAction, ClimbDecision, ClimbHold, ClimbRetreatCause, DayApplied, DayEvent,
-    DayEventId, DecisionId, Event, ExposureClass, ExposureObserved, ExposureOrigin, FixStamp,
-    NightId, NightQualification, ObservedProfile, OriginalSource, Outcome, Payload, Placement,
-    QualificationPurpose, QualificationState, ReproductionState, Resolution, RestorationKind, Seq,
-    SessionContext, SessionStart, Stamp, Tested, TrialEnd, TrialId, UnitId as JournalUnit,
-    UnitMapping, UnitMembership, UnitPhase, UnitVector,
+    Activity, ApplicationId, ApplyCause, Build, CampaignCharge, CampaignEventPhase, CampaignId,
+    CampaignReclassified, CcdVector, CellEvidence, CellWitness, Certainty, Classification,
+    ClimbAction, ClimbDecision, ClimbHold, ClimbRetreatCause, DayApplied, DayCheckpoint, DayEvent,
+    DayEventId, DayVeto, DecisionId, Event, ExposureClass, ExposureObserved, ExposureOrigin,
+    FixStamp, NightId, NightQualification, ObservedProfile, OriginalSource, Outcome, Payload,
+    Placement, Provenance, QualificationPurpose, QualificationState, ReproductionState, Resolution,
+    RestorationKind, Seq, SessionContext, SessionStart, Stamp, Tested, TrialEnd, TrialId,
+    UnitId as JournalUnit, UnitMapping, UnitMembership, UnitPhase, UnitVector, VetoState,
 };
 use togi_machine::{
     BiosContext, BootId, CcdId, CcdProfile, CoreId, CoreInfo, CoreSet, CpuId, Digest,
@@ -20,7 +21,7 @@ use togi_machine::{
 
 use super::Witnesses;
 use crate::day_night::successor::{
-    FirmwareRestoration, Qualification, RestorationOutcome, RestorationResult,
+    FirmwareRestoration, ProfileVeto, Qualification, RestorationOutcome, RestorationResult,
     StepKind as ReportStep, UnitId,
 };
 
@@ -178,6 +179,10 @@ impl Script {
     }
 
     fn push(&mut self, payload: impl Into<Payload>) -> Seq {
+        self.push_caused(payload, Vec::new())
+    }
+
+    fn push_caused(&mut self, payload: impl Into<Payload>, causes: Vec<Seq>) -> Seq {
         self.seq += 1;
         self.second += 3_600;
         let seq = Seq::new(self.seq).unwrap();
@@ -188,7 +193,7 @@ impl Script {
                 mono: Some(Duration::from_secs(u64::from(self.second))),
             },
             BootId::from("boot".to_owned()),
-            Vec::new(),
+            causes,
             payload.into(),
         );
         self.witnesses.observe(&event);
@@ -209,7 +214,7 @@ impl Script {
         step: ClimbAction,
         certificate: Option<Seq>,
         hold_s: u64,
-    ) {
+    ) -> Seq {
         let proposal = self.push(ClimbDecision {
             cold_boot: BootId::from("boot".to_owned()),
             before: unit_vector(old),
@@ -234,7 +239,7 @@ impl Script {
             transactions: Vec::new(),
             boot: BootId::from("boot".to_owned()),
             mono_ns: 0,
-        });
+        })
     }
 
     fn restorations(&self) -> Vec<FirmwareRestoration> {
@@ -505,4 +510,196 @@ fn a_non_event_retreat_to_stock_keeps_the_restoration_retained(cause: ClimbRetre
             units: vec![UnitId::new(0).unwrap()],
         })
     );
+}
+
+#[test_case(false, false; "complete hold and certificate")]
+#[test_case(true, false; "missing hold remains visible")]
+#[test_case(false, true; "missing certificate remains visible")]
+fn reclassified_restoration_reports_physical_units_and_guard_witnesses(
+    missing_hold: bool,
+    missing_certificate: bool,
+) {
+    let mut script = Script::new();
+    let deployed = CcdVector::expand(
+        CcdProfile::uniform([ccd(0), ccd(1)], TargetOffset::new(-5).unwrap()).unwrap(),
+        &cores(),
+    )
+    .unwrap();
+    let campaign = CampaignId(Provenance {
+        session: "20231114T221320Z".parse().unwrap(),
+        seq: Seq::new(1).unwrap(),
+    });
+    script.push(CampaignCharge {
+        campaign,
+        event: boot_event(),
+        aliases: Vec::new(),
+        profile: unit_vector(&deployed),
+        phase: CampaignEventPhase::Learning,
+        unit_phase: UnitPhase::Coarse,
+        provisional: true,
+        consumed: 1,
+        remaining: 1,
+        exhausted: false,
+    });
+    let retreat = script.apply(
+        1,
+        &deployed,
+        &vector(0),
+        ClimbAction::Retreat {
+            // The physical reset reverted both CCDs, irrespective of an incomplete unit list.
+            units: vec![JournalUnit::Ccd(ccd(0))],
+            cause: ClimbRetreatCause::Event {
+                event: boot_event(),
+            },
+            wanted: None,
+        },
+        None,
+        0,
+    );
+    let retreat_day = script.day();
+    script.push(CampaignReclassified {
+        campaign,
+        event: boot_event(),
+        from: Classification::CpuSuspect {
+            certainty: Certainty::Provisional,
+        },
+        to: Classification::NonCpu {},
+    });
+    let answer_day = script.day();
+    script.second += 50 * 3_600;
+    let checkpoint = script.push(DayCheckpoint {
+        applied_secs: 50 * 3_600,
+        load_mix: togi_journal::LoadMix::default(),
+        watchdog: None,
+    });
+    let qualified = script.push(qualification(
+        deployed.clone(),
+        QualificationState::Complete {
+            witnesses: Vec::new(),
+        },
+    ));
+    let decision = script.push_caused(
+        ClimbDecision {
+            cold_boot: BootId::from("boot".to_owned()),
+            before: unit_vector(&vector(0)),
+            proposed: unit_vector(&deployed),
+            decision: ClimbAction::Restore {
+                restoration: RestorationKind::Reclassified,
+                units: vec![JournalUnit::Ccd(ccd(0)), JournalUnit::Ccd(ccd(1))],
+            },
+            hold: ClimbHold {
+                application: ApplicationId(1),
+                credited: if missing_hold {
+                    Vec::new()
+                } else {
+                    vec![checkpoint]
+                },
+                eligible_s: 50 * 3_600,
+            },
+            certificate: (!missing_certificate).then_some(qualified),
+            ceilings: Vec::new(),
+            events: Vec::new(),
+        },
+        vec![retreat],
+    );
+    script.push(DayApplied {
+        application: ApplicationId(2),
+        cause: ApplyCause::Step {
+            decision: DecisionId(decision.get()),
+        },
+        target: deployed.clone(),
+        readbacks: readbacks(&deployed),
+        transactions: Vec::new(),
+        boot: BootId::from("boot".to_owned()),
+        mono_ns: 0,
+    });
+    let applications = script.witnesses.applications();
+    let [reverted, restored] = applications.steps.as_slice() else {
+        panic!(
+            "retreat and restoration must both be reported: {:?}",
+            applications.steps
+        );
+    };
+    let units = vec![UnitId::new(0).unwrap(), UnitId::new(1).unwrap()];
+    assert_eq!(
+        reverted.kind,
+        ReportStep::Retreat {
+            event: Some("ruleset13-event-boot-crash-boot".to_owned()),
+            units: units.clone(),
+        }
+    );
+    let ReportStep::ReclassifiedRestoration {
+        retreat: source,
+        event,
+        reclassified_day,
+        units: restored_units,
+        hold,
+        qualification: certificate,
+        consumed_before,
+        consumed_after,
+        crash_vetoes,
+    } = &restored.kind
+    else {
+        panic!(
+            "restoration must not be omitted or reported as a promotion: {:?}",
+            restored.kind
+        );
+    };
+    assert_eq!(source, &reverted.id);
+    assert_eq!(event, "ruleset13-event-boot-crash-boot");
+    assert_eq!(*reclassified_day, answer_day);
+    assert_eq!(restored_units, &units);
+    assert_eq!(restored.before, depths(0));
+    assert_eq!(
+        restored.after,
+        readbacks(&deployed)
+            .iter()
+            .map(|(core, value)| (core, u8::try_from(-value.0).unwrap()))
+            .collect()
+    );
+    assert_eq!(hold.is_none(), missing_hold);
+    if let Some(hold) = hold {
+        assert_eq!(hold.start_day, retreat_day);
+        assert_eq!(hold.profile, restored.before);
+        assert_eq!(hold.clean_hours, 50.0);
+        assert_eq!(hold.witnesses, [format!("ruleset13-event-{checkpoint}")]);
+    }
+    assert_eq!(
+        certificate.as_ref().map(|item| item.id.as_str()),
+        (!missing_certificate)
+            .then(|| format!("ruleset13-qualification-{qualified}"))
+            .as_deref()
+    );
+    assert_eq!((*consumed_before, *consumed_after), (1, 1));
+    assert!(crash_vetoes.is_empty());
+    let crashed = DayEventId::Boot {
+        boot: BootId::from("restored-crash".to_owned()),
+    };
+    script.push(DayVeto {
+        event: crashed,
+        profile: ObservedProfile::PerCore {
+            cores: readbacks(&deployed),
+        },
+        state: VetoState::Active,
+        evidence: Vec::new(),
+        reason: "CPU-suspect crash at the restored profile".to_owned(),
+    });
+    let applications = script.witnesses.applications();
+    let ReportStep::ReclassifiedRestoration {
+        crash_vetoes,
+        consumed_before,
+        consumed_after,
+        ..
+    } = &applications.steps.last().unwrap().kind
+    else {
+        unreachable!();
+    };
+    assert_eq!(
+        crash_vetoes,
+        &[ProfileVeto {
+            event: "ruleset13-event-boot-restored-crash".to_owned(),
+            profile: restored.after,
+        }]
+    );
+    assert_eq!((*consumed_before, *consumed_after), (1, 1));
 }
