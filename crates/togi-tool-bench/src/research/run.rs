@@ -249,9 +249,8 @@ pub fn resume(issue: u32, run: &Path) -> Result<Vec<u32>, ResearchError> {
     Ok(campaign.ledger.dangling())
 }
 
-/// Checks and records one evaluator run, runs it under the host-shared lock within the wall time left, keeps
-/// its raw output and records how it ended. `waiting` is told once, with the lock's path, when another gate or
-/// benchmark holds the host-shared lock; the checks and the time left are read after the wait.
+/// Checks and records one evaluator run within the wall time left, keeps its raw output
+/// and records how it ended.
 pub fn exec(
     issue: u32,
     run: &Path,
@@ -259,12 +258,9 @@ pub fn exec(
     role: Role,
     recipe: &str,
     args: &[String],
-    waiting: &dyn Fn(&Path),
 ) -> Result<End, ResearchError> {
     let workspace = GitWorkspace::current()?;
     let dir = RunDir::open(run)?;
-    let host_lock = workspace.host_lock()?;
-    let _host = lock_host(&host_lock, waiting)?;
     let campaign = dir.campaign(issue)?;
     let now = Timestamp::now();
     let planned = campaign
@@ -302,29 +298,6 @@ pub fn exec(
     );
     dir.append(&records)?;
     Ok(end)
-}
-
-/// Takes the lock every gate and benchmark on this host shares, waiting for it; dropping the file releases it.
-fn lock_host(path: &Path, waiting: &dyn Fn(&Path)) -> Result<File, ResearchError> {
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(path)
-        .map_err(io_error("open", path))?;
-    match file.try_lock() {
-        Ok(()) => return Ok(file),
-        Err(TryLockError::WouldBlock) => waiting(path),
-        Err(TryLockError::Error(source)) => {
-            return Err(ResearchError::Io {
-                what: "lock",
-                path: path.to_owned(),
-                source,
-            });
-        }
-    }
-    file.lock().map_err(io_error("lock", path))?;
-    Ok(file)
 }
 
 /// What the evaluator's watcher threads report.

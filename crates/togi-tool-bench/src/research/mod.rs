@@ -78,15 +78,6 @@ impl GitWorkspace {
             root: PathBuf::from(root),
         })
     }
-
-    /// The file every agent on this host shares for gates and benchmarks.
-    pub fn host_lock(&self) -> Result<PathBuf, WorkspaceError> {
-        let common = git_text(
-            &self.root,
-            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        )?;
-        Ok(PathBuf::from(common).join("togi-gate.lock"))
-    }
 }
 
 impl Workspace for GitWorkspace {
