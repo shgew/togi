@@ -99,6 +99,37 @@ fn physical_profile_refuses_missing_and_extra_readbacks() {
     );
 }
 
+#[test_case(44, true; "below operational envelope")]
+#[test_case(45, true; "at operational envelope")]
+#[test_case(46, false; "above operational envelope")]
+fn uniform_profile_envelope_has_an_inclusive_depth_limit(depth: u8, expected: bool) {
+    let scenario = Scenario::builtin("successor-within-ccd-heterogeneous", 20001).unwrap();
+    let profile = Profile::uniform(scenario.topology(), Depth::new(depth).unwrap());
+    assert_eq!(profile.in_envelope(), expected);
+}
+
+#[test]
+fn one_core_above_the_envelope_rejects_a_nonuniform_profile() {
+    let scenario = Scenario::builtin("successor-within-ccd-heterogeneous", 20001).unwrap();
+    let profile = Profile::uniform(scenario.topology(), Depth::new(45).unwrap());
+    let mut depths = *profile.depths();
+    depths.set(scenario.topology()[0].core, Depth::new(46).unwrap());
+    let profile = Profile::new(depths, scenario.topology()).unwrap();
+    assert!(!profile.in_envelope());
+}
+
+#[test]
+fn only_the_refinement_family_publishes_an_inherited_profile() {
+    for id in SCENARIO_IDS {
+        let scenario = Scenario::builtin(id, 20001).unwrap();
+        assert_eq!(
+            scenario.refinement().unwrap().is_some(),
+            id == "successor-core-refinement",
+            "{id}"
+        );
+    }
+}
+
 #[test]
 fn hidden_class_is_missing_without_hiding_covered_daily_classes() {
     let scenario = Scenario::builtin("successor-weak-core-hidden", 20001).unwrap();

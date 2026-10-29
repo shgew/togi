@@ -201,6 +201,44 @@ fn separable_tables_have_analytic_optimum_and_cap_gap() {
 }
 
 #[test]
+fn independent_components_share_the_joint_budget() {
+    let (_, grouping) = two_ccd();
+    let reference = assembled(
+        &grouping,
+        &[[0.0; LEVELS]; 2],
+        vec![
+            Pair {
+                a: core(0),
+                b: core(1),
+                fraction: 1.0,
+            },
+            Pair {
+                a: core(8),
+                b: core(9),
+                fraction: 1.0,
+            },
+        ],
+        step(31, (0.75 * LAMBDA).sqrt()),
+    );
+    for depths in [[50, 0], [0, 50]] {
+        let profile = reference.profile_for(&depths).unwrap();
+        assert!(reference.admissibility(&profile).unwrap().member);
+    }
+    let both = reference.profile_for(&[50, 50]).unwrap();
+    assert!(!reference.admissibility(&both).unwrap().member);
+
+    let result = reference.depth_reference().unwrap();
+    assert_eq!(result.physical.value, 80);
+    assert_eq!(result.physical.upper_bound, 80);
+    assert_eq!(result.operational.value, 75);
+    assert_eq!(result.operational.upper_bound, 75);
+    assert_eq!(result.physical_gap, 5);
+    assert_eq!(result.physical.components, 2);
+    assert_eq!(result.operational.components, 2);
+    assert_eq!(result.unit_maxima, vec![45, 45]);
+}
+
+#[test]
 fn rate_exactly_at_the_unit_limit_is_admitted() {
     let (_, grouping) = two_ccd();
     let reference = assembled(
