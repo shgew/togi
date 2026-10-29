@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use jiff::SignedDuration;
+use togi_journal::fs::Fs as _;
 use togi_journal::{
     ApplicationId, ApplyCause, Binding, Budget, CcdCap, CcdEdge, CcdVector, Classification,
     DayApplied, DayBootStart, DayEvent, DayEventId, DayFreeze, DayHold, DayStep, DayVeto,
@@ -79,18 +80,23 @@ fn snapshot_plus_tail_renders_the_same_status_without_writes(base: Base) {
                 scenario.name()
             );
         }
+        // Installation encoded the journal once. Walk its line boundaries once too,
+        // rather than encoding the overlapping snapshot prefixes again.
+        let bytes = dir.fs.read(&crate::support::journal(&dir)).unwrap();
+        let mut lines = bytes.split_inclusive(|byte| *byte == b'\n');
+        let mut previous_cut = 0;
+        let mut byte_end = 0;
         for cut in [1, events.len() / 2, events.len()] {
             let state = togi_session::ReadState::replay(&events[..cut])
                 .unwrap_or_else(|error| panic!("{} at {cut}: {error}", scenario.name()));
-            let bytes: Vec<u8> = events[..cut]
-                .iter()
-                .flat_map(|event| {
-                    let mut bytes = event.encode().unwrap().into_bytes();
-                    bytes.push(b'\n');
-                    bytes
-                })
-                .collect();
-            let prefix = togi_journal::snapshot::Prefix::of(&bytes, Some(events[cut - 1].seq));
+            byte_end += lines
+                .by_ref()
+                .take(cut - previous_cut)
+                .map(<[u8]>::len)
+                .sum::<usize>();
+            previous_cut = cut;
+            let prefix =
+                togi_journal::snapshot::Prefix::of(&bytes[..byte_end], Some(events[cut - 1].seq));
             let saved = togi_journal::snapshot::seal(prefix, &state.document()).unwrap();
             dir.fs.put(
                 dir.path().join("state.json"),
