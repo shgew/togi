@@ -329,3 +329,7 @@ fn profile(vector: &CcdVector) -> Option<PerCore<u8>> {
         .map(|(core, offset)| depth(offset).map(|depth| (core, depth)))
         .collect()
 }
+
+#[cfg(test)]
+#[path = "witnesses_tests.rs"]
+mod tests;
