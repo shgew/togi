@@ -136,7 +136,7 @@ impl State {
             }
             let Some(observed) = view.events.iter().find(|event| event.id == charge.event) else { continue; };
             let history = self.climb.history.as_ref().ok_or(NotReady::NoBaseline)?;
-            let profile = self.profile_of_observed(&observed.profile, history.units())?;
+            let profile = Self::profile_of_observed(&observed.profile, history.units())?;
             let consumed = u32::try_from(index + 1).map_err(|_| NotReady::SeqExhausted)?;
             let aliases = charge.aliases.iter().filter_map(|id| self.journal_event_id(id)).collect();
             let causes = self.days.events.get(&event).map(|book| book.latest.seq).into_iter().collect();
@@ -151,7 +151,7 @@ impl State {
         Ok(None)
     }
 
-    pub(super) fn profile_of_observed(&self, observed: &crate::day::CoreProfile, units: &crate::Units) -> Result<UnitProfile, NotReady> {
+    pub(super) fn profile_of_observed(observed: &crate::day::CoreProfile, units: &crate::Units) -> Result<UnitProfile, NotReady> {
         let mut values = Vec::new();
         for unit in units.iter() {
             let mut offsets = unit.cores.iter().filter_map(|core| observed.offsets().get(core));
@@ -212,11 +212,13 @@ impl State {
         let issued = self.climb.decisions.values().rev().find(|commit| commit.payload.cold_boot == query.boot);
         if matches!(plan.action, climb::ClimbAction::Hold { .. }) && matches!(query.invocation, Invocation::SameBoot) { return Ok(None); }
         if issued.is_some() && matches!(plan.action, climb::ClimbAction::Hold { .. } | climb::ClimbAction::Promote(_) | climb::ClimbAction::Restore(_)) { return Ok(None); }
+        let before = vector(&plan.before, history.units())?;
         let proposed = vector(plan.target().unwrap_or(history.current()), history.units())?;
-        if issued.is_some_and(|commit| commit.payload.proposed == proposed && commit.payload.before == vector(&plan.before, history.units()).unwrap_or_else(|_| proposed.clone())) { return Ok(None); }
-        let changed = proposed.mapping.units.iter().filter(|unit| unit.cores.iter().any(|core| proposed.cores.get(core) != history.current().expand(history.units()).ok().and_then(|cores| cores.get(core)))).map(|unit| unit.unit).collect::<Vec<_>>();
-        let edges = self.nights.unit_edges.values().filter(|commit| self.ceilings().contains_key(&commit.payload.unit)).map(|commit| commit.seq).collect::<Vec<_>>();
-        let events = self.days.events.values().map(|book| book.latest.seq).collect::<Vec<_>>();
+        if issued.is_some_and(|commit| commit.payload.proposed == proposed && commit.payload.before == before) { return Ok(None); }
+        let changed = proposed.mapping.units.iter().filter(|unit| unit.cores.iter().any(|core| proposed.cores.get(core) != before.cores.get(core))).map(|unit| unit.unit).collect::<Vec<_>>();
+        let edges = self.nights.unit_edges.values().filter(|commit| plan.ceilings.contains_key(&commit.payload.unit)).map(|commit| commit.seq).collect::<Vec<_>>();
+        let mut events = self.days.events.values().map(|book| book.latest.seq).collect::<Vec<_>>();
+        events.sort_unstable();
         let action = match &plan.action {
             climb::ClimbAction::Hold { blocked_by } => journal::ClimbAction::Hold { blocked_by: self.climb_blockers(blocked_by, view)? },
             climb::ClimbAction::Promote(proposal) => journal::ClimbAction::Promote { unit: proposal.unit, from: proposal.from, to: proposal.to, step: u32::try_from(proposal.step).map_err(|_| NotReady::SeqExhausted)? },
@@ -233,9 +235,22 @@ impl State {
         let certificate = self.qualification_seq_for_vector(&proposed);
         let hold = self.climb_hold()?;
         let mut causes = edges.clone(); causes.extend(events.iter().copied()); causes.extend(certificate); causes.extend(hold.credited.iter().copied());
+        if let climb::ClimbAction::Restore(climb::RestorationProposal {
+            kind: climb::RestorationKind::Reclassified { retreat }, ..
+        }) = &plan.action
+            && let Some(record) = history.retreats().iter().find(|record| record.application == *retreat)
+        {
+            causes.extend(Seq::new(retreat.get()));
+            causes.extend(record.cursors.iter().filter_map(|cursor| Seq::new(cursor.transition.application.get())));
+            for event in &record.events {
+                if let EventId::Boot(boot) = event {
+                    causes.extend(self.days.answers.iter().rev().find(|answer| &answer.boot == boot).map(|answer| answer.seq));
+                }
+            }
+        }
         causes.sort_unstable(); causes.dedup();
         Ok(Some(Decision::new(PolicyPayload::ClimbDecision(journal::ClimbDecision {
-            decision: action, cold_boot: query.boot.clone(), before: vector(&plan.before, history.units())?, proposed, hold, certificate, ceilings: edges, events,
+            decision: action, cold_boot: query.boot.clone(), before, proposed, hold, certificate, ceilings: edges, events,
         }), causes)))
     }
 }

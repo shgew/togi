@@ -37,6 +37,7 @@ mod projection;
 mod qualify;
 mod reproduce;
 mod statistical;
+pub mod successor;
 pub(crate) mod wire;
 
 use togi_machine::CcdId;

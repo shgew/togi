@@ -371,7 +371,9 @@ impl Default for Climb {
     fn default() -> Self {
         Self {
             history: None,
-            campaign: crate::climb::Campaign::Unreconstructible,
+            // Accumulate observations before enrollment without granting permission.
+            // The decision input remains unreconstructible until campaign.start is durable.
+            campaign: crate::climb::Campaign::approved_fresh(),
             start: None,
             mapping: None,
             decisions: BTreeMap::new(),

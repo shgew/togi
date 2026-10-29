@@ -95,7 +95,7 @@ impl State {
         let (_, seconds) = self.credited();
         Ok(climb::decide(&climb::ClimbInputs {
             history: permission.history,
-            campaign: &self.climb.campaign,
+            campaign: if self.climb.start.is_some() { &self.climb.campaign } else { &climb::Campaign::Unreconstructible },
             ceilings: &permission.ceilings,
             events: &view.events,
             vetoes: &vetoes,

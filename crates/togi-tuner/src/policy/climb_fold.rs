@@ -95,14 +95,30 @@ impl State {
     pub(super) fn fold_campaign_start(&mut self, event: &Event, start: &journal::CampaignStart) {
         // An existing campaign is never replaced by another session's fresh allowance.
         if self.climb.start.is_some() { return; }
-        self.climb.campaign = if start.allowance == 2 && matches!(start.history, journal::CampaignHistory::Complete {}) {
-            climb::Campaign::approved_fresh()
-        } else { climb::Campaign::Unreconstructible };
+        if start.allowance != 2 || !matches!(start.history, journal::CampaignHistory::Complete {}) {
+            self.climb.campaign = climb::Campaign::Unreconstructible;
+        }
         self.climb.start = Some(committed(event, start.clone()));
         let mut events = self.days.event_commits.iter().map(|(&seq, payload)| (seq, payload.clone())).collect::<Vec<_>>();
         events.sort_by_key(|(seq, _)| *seq);
         for (_, payload) in events { self.observe_campaign_event(&payload); }
         self.observe_finishes(event.time);
+    }
+
+    /// Capture classifications at raw prefixes, including provisional events whose derived
+    /// receipt is interrupted or whose answer arrives before the next policy query.
+    pub(super) fn observe_raw_campaign(&mut self, at: jiff::Timestamp) -> Result<(), FoldError> {
+        let Some(history) = self.climb.history.as_ref() else { return Ok(()); };
+        let phase = if history.current().units().all(|unit| history.finishes().is_finished(unit)) {
+            climb::EventPhase::PostFinish
+        } else { climb::EventPhase::Learning };
+        let unit_phase = history.units().phase();
+        let view = self.day_view().map_err(|_| FoldError::ClimbRecord("invalid raw campaign history"))?;
+        for event in &view.events {
+            self.climb.campaign.observe(event, &[], phase, unit_phase);
+        }
+        self.observe_finishes(at);
+        Ok(())
     }
 
     pub(super) fn observe_campaign_event(&mut self, recorded: &journal::DayEvent) {
