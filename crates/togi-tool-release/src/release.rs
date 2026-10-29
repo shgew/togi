@@ -1,5 +1,5 @@
 //! The release: a preview of what `origin/main` would release, the release commit the workflow pushes and the
-//! GitHub Release it publishes ([`docs/releasing.md`](../../../docs/releasing.md), ADRs 0014, 0033 and 0043).
+//! GitHub Release it publishes ([`docs/releasing.md`](../../../docs/releasing.md), [fragment policy](../../../changes/README.md), ADR 0043).
 
 use std::collections::BTreeMap;
 use std::io::{self, Write};

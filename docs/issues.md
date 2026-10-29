@@ -21,7 +21,7 @@ Planning and coordination live in issues, filed from the templates in `.github/I
 A pull request whose Acceptance needs a run on the target machine (`just hardware`, the SMU and PM-table paths, the CPU and driver checks, the real mprime and y-cruncher workloads: what the VM tests cannot reach) merges once everything else is green. It says `Refs #N` instead of `Closes #N`, so the merge leaves the issue open, and the issue keeps `needs-hardware` with the steps in a comment until the run passes (ADR 0043). `just board` lists such an issue only under "Waiting on the target machine", never as ready or in progress. Unassign it when its pull request merges and only the run remains.
 
 - The `needs-hardware` queue must be empty before the owner updates the target machine's togi input or cuts a release; the release workflow refuses while any issue, open or closed, carries the label, naming each.
-- The target machine's togi input is a release tag, never a bare `main` commit; the release dispatches and waits for the full check before publishing it ([ADR 0074](adr/0074-pull-request-ci-gates-landing-on-main.md)).
+- The target machine's togi input is a release tag, never a bare `main` commit; the release dispatches and waits for the full check before publishing it ([CI and release gates](development.md#ci-and-release-gates)).
 - At the target machine, an agent may work the queue without asking: run each issue's steps, post the output as a comment, and remove the label once they pass; then close the issue when nothing else in its Acceptance remains. On a failure it files a `bugfix` issue with a priority, links it from the original, and leaves the original with its label.
 
 ## The tech debt register

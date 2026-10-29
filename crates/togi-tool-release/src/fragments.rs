@@ -1,4 +1,4 @@
-//! Changelog fragments: one file per pull request under `changes/` (ADR 0033).
+//! Changelog fragments: one file per pull request under `changes/` ([fragment policy](../../../changes/README.md)).
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;

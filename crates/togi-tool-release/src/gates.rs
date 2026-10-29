@@ -1,5 +1,5 @@
 //! What a new release commit waits for: an empty target-machine queue (ADR 0043) and a passing `check` run on
-//! the commit it builds on (ADR 0074).
+//! the commit it builds on ([CI and release gates](../../../docs/development.md#ci-and-release-gates)).
 
 use std::fmt;
 use std::io::{self, Write};
