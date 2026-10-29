@@ -1,5 +1,11 @@
 # togi tuner research: improve the registered day/night metrics
 
+**Ruleset 13: implemented and shipped in v0.12.0; registered gate not met; superseded by the successor design.**
+
+This program is a versioned historical record of the original Ruleset 13 experiment, not authorization for a new campaign; see [the day/night gate](../../docs/benchmarking.md#daynight-gate) for the read's scope, provenance and reproduction.
+
+## Original Ruleset 13 program
+
 Rules for the **production policy experiment** mode of a [research campaign](../../docs/benchmarking.md#research-campaigns). The objective is the Ruleset 13 [day/night gate's registered metrics](../../docs/benchmarking.md#daynight-gate) on development seeds, not a session's time to conclusion. [`day-night.json`](day-night.json) owns the scenarios, seeds, calendar, hazard budget, thresholds and tail treatment. The campaign's limits, prohibitions, record and end state are in [Research campaigns](../../docs/benchmarking.md#research-campaigns).
 
 Observation campaigns change no tuner code: they measure the unchanged tuner, adding only the analysis tools and research-only fixtures their brief names and leaving the frozen environment below as it is. Their brief:

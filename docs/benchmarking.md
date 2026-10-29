@@ -84,6 +84,25 @@ The legacy session suite registers no gate and `just bench` judges none: a sessi
 
 ### Day/night gate
 
+**Ruleset 13: implemented and shipped in v0.12.0; registered gate not met; superseded by the successor design.**
+
+This section and [`tools/bench/program.md`](../tools/bench/program.md) preserve the original registration as a versioned historical record, not an active acceptance target. The registration's SHA-256 is `c3a5c447cb245d973951c03f34d97f25aa19dff7970e1b8e31d3a7de883f6918`, pinned in the bench's archive tests; its bytes and the registered rules below remain unchanged.
+
+The [2026-10-25 read](https://github.com/shgew/togi/issues/1217#issuecomment-6403197212) was a reduced development read: seeds 1–10, 22 scenarios, 730 days and fallback slopes 1.5 and 2.0. Policy A, the Ruleset 13 policy as drafted in [#1261](https://github.com/shgew/togi/pull/1261) at an unrecorded revision, passed 0/22 scenarios at each slope; this is not a measurement of the v0.12.0 release. It was **not the registered 200-seed score**; no full registered pass was obtained, and holdout was never run. Independently, the −50/−45 contradiction ([#1457, defect 1](https://github.com/shgew/togi/issues/1457)) rejects the old acceptance: the no-write-limit truth reference demands depth 50, while the policy's censored-edge margin limits depth to 45. The [B′ research note](research/bprime-research-note.md) preserves the exploratory comparator's evidence and provenance limitations; it is not product behavior.
+
+Reproduce the historical evaluator at release tag **`v0.12.0`**, commit `db742596a05511713eb503324fad826fb1124f34`. The bench evaluator sources (`crates/togi-tool-bench/src/day_night*.rs`) are identical at that release and commit `361e1bf1618259e21ba761a477cac2f66c3e4994`; the calendar runner/adapter sources in `togi-simrun` have changed, so use the release checkout for historical reproduction. The old scoring commands, recorded here without executing them, are:
+
+```sh
+just bench-day-night --split dev --policy ruleset13 --slope 1.5
+just bench-day-night --split dev --policy ruleset13 --slope 2.0
+```
+
+Outstanding hardware acceptance remains in [#1459](https://github.com/shgew/togi/issues/1459).
+
+Successor registration is tracked in [#1457](https://github.com/shgew/togi/issues/1457).
+
+#### Original Ruleset 13 registration
+
 [`tools/bench/day-night.json`](../tools/bench/day-night.json) is the Ruleset 13 registration for [#1216](https://github.com/shgew/togi/issues/1216). It is committed before any scoring. It freezes 200 development seeds and 200 disjoint holdout seeds, 730 calendar days, eight active daily hours, three eight-hour nights a week, the scenario set, incremental hazard budget, thresholds and tail treatment. Iterate on development seeds; reserve holdout for the real policy's once-only confirmation, separately at the fallback slopes 1.5× and 2×. Neither comparator is the real policy, and comparator results cannot pass this gate. The real policy is `--policy ruleset13 --slope <1.5|2.0>` (the slope is the per-count hazard multiplier; the policy's `beta` is its natural log) and is the only policy whose verdict fails the gate.
 
 ```sh

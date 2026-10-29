@@ -18,6 +18,15 @@ fn sha256(bytes: &[u8]) -> String {
 }
 
 #[test]
+fn the_historical_ruleset_13_registration_is_kept_unchanged() {
+    assert_eq!(
+        sha256(include_bytes!("../../../../tools/bench/day-night.json")),
+        "c3a5c447cb245d973951c03f34d97f25aa19dff7970e1b8e31d3a7de883f6918",
+        "the registration records what was registered and never changes"
+    );
+}
+
+#[test]
 fn the_archived_ruleset_11_gate_is_kept_unchanged() {
     for (name, bytes, want) in [
         (
