@@ -1,17 +1,22 @@
-//! Read-only hardware access for daily observation, with no offset-writing capability.
+//! Hardware and kernel evidence for the stock-only day service.
 
 use std::marker::PhantomData;
 use std::path::Path;
 
 use togi_hostlock::HostLock;
 use togi_machine::{
-    BiosContext, BootId, CoreInfo, CpuTime, EndEvidence, Error, Kernel as _, KernelCursor,
-    KernelRead, ObservedOffset, Partial, PerCore, ResetReason, Smu as _, WatchdogState,
+    BiosContext, BootId, CancellationToken, CoreInfo, CpuTime, EndEvidence, Error, Kernel as _,
+    KernelCursor, KernelRead, ObservedOffset, Partial, PerCore, ResetReason, Smu, SmuValidated,
+    Stopped, TargetOffset, Trials as _, WatchdogState,
 };
 use togi_smu::Driver;
 
-/// The observations a day boot needs. Implementations never apply offsets or start workloads.
-pub trait Observer {
+/// The hardware and observations a day boot needs; it never starts workloads.
+pub trait Observer: Smu {
+    /// Recheck the driver's write authority before constrained emergency cleanup.
+    fn validated(&mut self) -> Result<SmuValidated, Error>;
+    /// Remove stale togi workloads and confirm none remain before a day write.
+    fn stop_workloads(&mut self) -> Result<Stopped, Error>;
     /// Firmware context, read after validating the SMU identity.
     fn bios_context(&mut self) -> Result<BiosContext, Error>;
     /// Reads every online physical core through the normal SMU read path.
@@ -35,14 +40,14 @@ pub trait Observer {
     fn cpu_times(&mut self) -> Result<Vec<CpuTime>, Error>;
 }
 
-struct ReadOnly<'lock> {
+struct DayHardware<'lock> {
     driver: Driver,
     cores: Vec<CoreInfo>,
     kernel: togi_detect::Kernel,
     lock: PhantomData<&'lock HostLock>,
 }
 
-/// Opens only the SMU reader and kernel evidence reader, borrowing hardware exclusion throughout.
+/// Opens day hardware and kernel evidence, borrowing hardware exclusion throughout.
 ///
 /// # Errors
 /// Returns a platform, identity, topology or kernel-reader setup error before observation starts.
@@ -53,7 +58,7 @@ pub fn observe(_lock: &HostLock) -> Result<Box<dyn Observer + '_>, Error> {
     let cores = driver.topology().map_err(Error::from)?;
     let kernel = togi_detect::Kernel::new(&cores)
         .map_err(|source| Error::from(crate::Error::KernelLog(source)))?;
-    Ok(Box::new(ReadOnly {
+    Ok(Box::new(DayHardware {
         driver,
         cores,
         kernel,
@@ -61,7 +66,23 @@ pub fn observe(_lock: &HostLock) -> Result<Box<dyn Observer + '_>, Error> {
     }))
 }
 
-impl Observer for ReadOnly<'_> {
+impl Observer for DayHardware<'_> {
+    fn validated(&mut self) -> Result<SmuValidated, Error> {
+        self.driver.validate().map_err(Error::from)
+    }
+    fn stop_workloads(&mut self) -> Result<Stopped, Error> {
+        // With no backend identity or backends this runner cannot launch anything. Its only
+        // purpose is the same stale-scope sweep that supplies the night session's stop proof.
+        let mut runner = togi_trial::Runner::new(togi_trial::Options {
+            dir: "/var/lib/togi".into(),
+            backends: togi_trial::Backends::new(),
+            topology: self.cores.clone(),
+            identity: None,
+            pm_table: None,
+        })
+        .map_err(|source| Error::from(crate::Error::TrialRunner(source)))?;
+        Ok(runner.sweep(&CancellationToken::new())?.stopped)
+    }
     fn bios_context(&mut self) -> Result<BiosContext, Error> {
         self.driver.bios_context().map_err(Error::from)
     }
@@ -96,5 +117,39 @@ impl Observer for ReadOnly<'_> {
 
     fn cpu_times(&mut self) -> Result<Vec<CpuTime>, Error> {
         Ok(self.kernel.read_cpu_times()?)
+    }
+}
+
+impl Smu for DayHardware<'_> {
+    fn offset(&mut self, core: togi_machine::CoreId) -> Result<ObservedOffset, Error> {
+        self.driver.offset(core)
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "delegates the session receipt-authorized transaction to the driver"
+    )]
+    fn set_offset(
+        &mut self,
+        core: togi_machine::CoreId,
+        offset: TargetOffset,
+    ) -> Result<(), Error> {
+        self.driver.set_offset(core, offset)
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "delegates the session receipt-authorized transaction to the driver"
+    )]
+    fn set_all_offsets(&mut self, offset: TargetOffset) -> Result<(), Error> {
+        self.driver.set_all_offsets(offset)
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "delegates the zero-only cleanup with its validated and stopped proofs"
+    )]
+    fn emergency_zero(&mut self, validated: SmuValidated, stopped: &Stopped) -> Result<(), Error> {
+        self.driver.emergency_zero(validated, stopped)
     }
 }

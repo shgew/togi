@@ -191,7 +191,7 @@ pub trait System {
         lock: &'lock HostLock,
     ) -> Result<Machine<'lock>, togi_hardware::Error>;
 
-    /// Opens read-only daily observation under the held host lock.
+    /// Opens daily hardware and observation under the held host lock.
     fn day_observer<'lock>(
         &self,
         lock: &'lock HostLock,

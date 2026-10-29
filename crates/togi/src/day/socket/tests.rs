@@ -2,7 +2,9 @@ use super::*;
 use jiff::Timestamp;
 use std::io::Cursor;
 use test_case::test_case;
+use togi_journal::{CrashedBoot, OffsetSource, Running};
 use togi_machine::{CancellationToken, CoreId, EndEvidence, ObservedOffset, PerCore, ResetReason};
+use togi_session::{Crash, Draft, Entered, OffsetSpec, draft_record};
 
 struct FixedClock;
 impl Clock for FixedClock {
@@ -42,6 +44,39 @@ fn pending(journal: &mut Journal) -> BootId {
     )
     .unwrap();
     boot
+}
+
+fn serve(journal: &mut Journal, uid: u32, request: Request) -> Result<Reply, super::super::Error> {
+    respond(journal, &FixedClock, uid, request, &mut |_, _| {
+        panic!("this request must not reapply")
+    })
+}
+
+fn recordable(journal: &mut Journal) -> DayRecord {
+    let boot = pending(journal);
+    draft_record(
+        journal.events(),
+        &Draft {
+            crash: Crash::Observed {
+                boot,
+                entered: Some(Entered {
+                    at: Timestamp::from_second(500).unwrap(),
+                    specs: vec![OffsetSpec::All(-20)],
+                }),
+            },
+            running: Running::Build,
+            note: Some("nix build".into()),
+        },
+    )
+    .unwrap()
+}
+
+fn records(journal: &Journal) -> usize {
+    journal
+        .events()
+        .iter()
+        .filter(|event| event.kind() == togi_journal::EventKind::DayRecord)
+        .count()
 }
 
 #[test_case(0, 100, true; "root")]
@@ -155,7 +190,7 @@ fn a_client_decodes_the_pending_ends_the_service_lists() {
         .pending()
         .cloned()
         .collect();
-    let reply = respond(&mut journal, &FixedClock, 1000, Request::Questions).unwrap();
+    let reply = serve(&mut journal, 1000, Request::Questions).unwrap();
     let mut wire = Vec::new();
     write_reply(&mut wire, &reply).unwrap();
     let Reply::Questions { pending, .. } = read_reply(&mut Cursor::new(wire)).unwrap() else {
@@ -216,9 +251,8 @@ fn answers_are_durable_associated_with_profile_and_can_be_changed() {
     let mut journal = crate::day::tests::journal();
     let boot = pending(&mut journal);
     assert_eq!(DayQuestions::of(journal.events()).pending().count(), 1);
-    let reply = respond(
+    let reply = serve(
         &mut journal,
-        &FixedClock,
         1000,
         Request::Answer {
             boot: boot.clone(),
@@ -233,9 +267,8 @@ fn answers_are_durable_associated_with_profile_and_can_be_changed() {
     assert_eq!(answer.answer, DayAnswerKind::Frozen);
     assert_eq!(answer.uid, 1000);
     assert_eq!(answer.offsets, questions.get(&boot).unwrap().offsets);
-    respond(
+    serve(
         &mut journal,
-        &FixedClock,
         1001,
         Request::Answer {
             boot: boot.clone(),
@@ -263,9 +296,8 @@ fn answers_are_durable_associated_with_profile_and_can_be_changed() {
 fn a_well_formed_answer_for_an_unknown_boot_is_refused_without_appending() {
     let mut journal = crate::day::tests::journal();
     let before = journal.events().len();
-    let reply = respond(
+    let reply = serve(
         &mut journal,
-        &FixedClock,
         1000,
         Request::Answer {
             boot: "unknown".to_owned().into(),
@@ -290,4 +322,139 @@ fn real_fs_socket_credentials_come_from_the_kernel() {
         )
     );
     drop(client);
+}
+
+#[test]
+fn a_record_from_root_is_appended_to_the_live_journal() {
+    let mut journal = crate::day::tests::journal();
+    let record = recordable(&mut journal);
+    let reply = serve(
+        &mut journal,
+        0,
+        Request::Record {
+            record: record.clone(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(reply, Reply::Recorded { .. }));
+    assert_eq!(records(&journal), 1);
+    let Some(togi_journal::Payload::DayRecord(appended)) =
+        journal.events().last().map(|event| event.payload.clone())
+    else {
+        panic!("the record must be the last event")
+    };
+    assert_eq!(appended, record);
+}
+
+#[test]
+fn a_second_record_of_the_same_boot_is_refused_by_the_service() {
+    let mut journal = crate::day::tests::journal();
+    let record = recordable(&mut journal);
+    serve(
+        &mut journal,
+        0,
+        Request::Record {
+            record: record.clone(),
+        },
+    )
+    .unwrap();
+    let reply = serve(&mut journal, 0, Request::Record { record }).unwrap();
+    let Reply::Refused { reason } = reply else {
+        panic!("a duplicate record must be refused")
+    };
+    assert!(reason.contains("already has a crash record"), "{reason}");
+    assert_eq!(records(&journal), 1);
+}
+
+#[test]
+fn a_record_for_a_boot_without_an_unclean_end_is_refused() {
+    let mut journal = crate::day::tests::journal();
+    let record = DayRecord {
+        boot: CrashedBoot::UncleanEnd {
+            boot: "elsewhere".to_owned().into(),
+        },
+        ..recordable(&mut journal)
+    };
+    let reply = serve(&mut journal, 0, Request::Record { record }).unwrap();
+    let Reply::Refused { reason } = reply else {
+        panic!("an unknown boot must be refused")
+    };
+    assert!(reason.contains("no recorded unclean end"), "{reason}");
+    assert_eq!(records(&journal), 0);
+}
+
+#[test]
+fn a_record_claiming_a_read_back_the_journal_lacks_is_refused() {
+    let mut journal = crate::day::tests::journal();
+    let record = DayRecord {
+        source: OffsetSource::ReadBack {
+            at: Timestamp::from_second(700).unwrap(),
+        },
+        ..recordable(&mut journal)
+    };
+    let reply = serve(&mut journal, 0, Request::Record { record }).unwrap();
+    assert!(matches!(reply, Reply::Refused { .. }));
+    assert_eq!(records(&journal), 0);
+}
+
+#[test]
+fn a_record_from_the_answer_group_is_refused_without_appending() {
+    let mut journal = crate::day::tests::journal();
+    let record = recordable(&mut journal);
+    let reply = serve(&mut journal, 1000, Request::Record { record }).unwrap();
+    let Reply::Refused { reason } = reply else {
+        panic!("recording needs root")
+    };
+    assert!(reason.contains("needs root"), "{reason}");
+    assert_eq!(records(&journal), 0);
+}
+
+#[test]
+fn a_record_with_a_long_note_fits_one_request() {
+    let mut journal = crate::day::tests::journal();
+    let record = DayRecord {
+        note: Some("n".repeat(8 * 1024)),
+        ..recordable(&mut journal)
+    };
+    let line = serde_json::to_vec(&Request::Record { record }).unwrap();
+    assert!((line.len() as u64) < LIMIT, "{}", line.len());
+}
+
+#[test]
+fn root_reapply_is_acknowledged_only_after_the_transaction_succeeds() {
+    let mut journal = crate::day::tests::journal();
+    let mut calls = 0;
+    let reply = respond(
+        &mut journal,
+        &FixedClock,
+        0,
+        Request::Reapply,
+        &mut |_, _| {
+            calls += 1;
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert!(matches!(reply, Reply::Reapplied));
+    assert_eq!(calls, 1);
+}
+
+#[test]
+fn a_failed_reapply_is_never_acknowledged() {
+    let mut journal = crate::day::tests::journal();
+    let result = respond(
+        &mut journal,
+        &FixedClock,
+        0,
+        Request::Reapply,
+        &mut |_, _| Err(super::super::Error::ClockReversed),
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn reapply_from_the_answer_group_is_refused_without_running_it() {
+    let mut journal = crate::day::tests::journal();
+    let reply = serve(&mut journal, 1000, Request::Reapply).unwrap();
+    assert!(matches!(reply, Reply::Refused { .. }));
 }

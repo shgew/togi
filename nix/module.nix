@@ -161,7 +161,7 @@ in
           };
         };
         systemd.services.togi-day = {
-          description = "togi day observer";
+          description = "togi stock-only day application and observer";
           wantedBy = [ "multi-user.target" ];
           after = [
             "systemd-modules-load.service"
@@ -172,6 +172,32 @@ in
             Restart = "on-failure";
             RestartSec = 60;
             StateDirectory = "togi";
+          };
+          # A killed process cannot run its journaled stop transaction. This hook has only zero
+          # authority and does not need the journal; lock/identity/topology refusals still stand.
+          postStop = ''
+            [ "''${SERVICE_RESULT:-}" != success ] || exit 0
+            exec ${lib.getExe cfg.package} emergency-stop
+          '';
+        };
+        # Start before watchdog sleep so reverse stop ordering restores its counting timer before
+        # the day process verifies and reapplies stock. The hook never starts an inactive day service.
+        systemd.services.togi-day-resume = {
+          description = "Reapply togi stock profile after sleep";
+          wantedBy = [ "sleep.target" ];
+          before = [
+            "sleep.target"
+            "togi-day-watchdog-sleep.service"
+          ];
+          unitConfig.StopWhenUnneeded = true;
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = "${pkgs.coreutils}/bin/true";
+            ExecStopPost = pkgs.writeShellScript "togi-day-resume" ''
+              ${config.systemd.package}/bin/systemctl --quiet is-active togi-day.service || exit 0
+              exec ${lib.getExe cfg.package} day reapply
+            '';
           };
         };
       })

@@ -1,4 +1,5 @@
-//! Local, credential-checked question transport. Only the observer owns the journal writer.
+//! Local, credential-checked transport for day questions and crash records. Only the observer owns the journal
+//! writer.
 
 use std::io::{self, BufRead as _, Read as _, Write as _};
 use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, PermissionsExt as _};
@@ -7,11 +8,19 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use togi_journal::{DayAnswer, DayAnswerKind, DayQuestions, DayUncleanEnd, Journal};
+use togi_journal::{
+    DayAnswer, DayAnswerKind, DayQuestions, DayRecord, DayUncleanEnd, Journal, Seq,
+};
 use togi_machine::{BootId, Clock};
+use togi_session::{AppendRecordError, append_record};
+
+/// What the observer does for a root `Reapply` request. `Ok` means the whole transaction succeeded and is the
+/// only thing that is acknowledged.
+pub type Reapply<'a> = &'a mut dyn FnMut(&mut Journal, &dyn Clock) -> Result<(), super::Error>;
 
 pub const PATH: &str = "/run/togi/day.sock";
-const LIMIT: u64 = 4096;
+/// Room for a crash record of every core with a long note; the deadline, not this, bounds a slow peer.
+const LIMIT: u64 = 16 * 1024;
 /// Total time one client may hold the observer loop, matching its one-second tick.
 const EXCHANGE: Duration = Duration::from_secs(1);
 
@@ -19,7 +28,16 @@ const EXCHANGE: Duration = Duration::from_secs(1);
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
     Questions,
-    Answer { boot: BootId, answer: DayAnswerKind },
+    Answer {
+        boot: BootId,
+        answer: DayAnswerKind,
+    },
+    /// A crash record the user confirmed; the service checks it against the live journal before appending.
+    Record {
+        record: DayRecord,
+    },
+    /// Root only: reapply the day profile after resume; answered only once the transaction succeeded.
+    Reapply,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -30,15 +48,20 @@ pub enum Reply {
         morning: Option<crate::morning::Report>,
     },
     Answered,
-    Refused {
-        reason: String,
-    },
+    Recorded { seq: Seq },
+    Reapplied,
+    Refused { reason: String },
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("access day question socket")]
     Io(#[from] io::Error),
+    /// Nothing listens at the socket: no day service runs.
+    #[error("reach the day service")]
+    Absent(#[source] io::Error),
+    #[error("the request is larger than the day service accepts, {limit} bytes")]
+    TooLarge { limit: u64 },
     #[error("decode day question protocol")]
     Protocol(#[from] serde_json::Error),
     #[error("day service refused the request: {0}")]
@@ -105,7 +128,12 @@ impl Server {
     }
 
     /// Serve at most one client per tick, bounding an untrusted peer's effect on observation.
-    pub fn poll(&self, journal: &mut Journal, clock: &dyn Clock) -> Result<(), super::Error> {
+    pub fn poll(
+        &self,
+        journal: &mut Journal,
+        clock: &dyn Clock,
+        reapply: Reapply<'_>,
+    ) -> Result<(), super::Error> {
         let (stream, _) = match self.listener.accept() {
             Ok(connection) => connection,
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(()),
@@ -128,7 +156,7 @@ impl Server {
         });
         let reply = match peer {
             Ok((uid, true)) => match read_request(&mut exchange) {
-                Ok(request) => respond(journal, clock, uid, request)?,
+                Ok(request) => respond(journal, clock, uid, request, reapply)?,
                 Err(error) => Reply::Refused {
                     reason: error.to_string(),
                 },
@@ -274,6 +302,7 @@ fn respond(
     clock: &dyn Clock,
     uid: u32,
     request: Request,
+    reapply: Reapply<'_>,
 ) -> Result<Reply, super::Error> {
     let questions = DayQuestions::of(journal.events());
     match request {
@@ -300,11 +329,52 @@ fn respond(
             )?;
             Ok(Reply::Answered)
         }
+        Request::Reapply => {
+            // Even a member of the answer group may not move hardware.
+            if uid != 0 {
+                return Ok(Reply::Refused {
+                    reason: "reapplying offsets needs root".into(),
+                });
+            }
+            reapply(journal, clock)?;
+            Ok(Reply::Reapplied)
+        }
+        Request::Record { record } => {
+            // Answering is open to the day group; recording a crash needs root, as the command does.
+            if uid != 0 {
+                return Ok(Reply::Refused {
+                    reason: "recording a crash needs root".into(),
+                });
+            }
+            if let Err(refusal) = super::record::check(journal.events(), &record) {
+                return Ok(Reply::Refused {
+                    reason: togi_render::error_chain(&refusal),
+                });
+            }
+            let seq = append_record(journal, clock, record).map_err(|error| match error {
+                AppendRecordError::Append(source) => super::Error::Append(source),
+                AppendRecordError::Clock(source) => super::Error::Observe(source),
+            })?;
+            Ok(Reply::Recorded { seq })
+        }
     }
 }
 
+/// Sends one request to the running day service. A missing or unlistened socket is [`Error::Absent`]; every
+/// other failure, refusals included, is the service's answer and never means no service runs.
 pub fn request(request: &Request) -> Result<Reply, Error> {
-    let mut stream = UnixStream::connect(PATH)?;
+    let mut line = serde_json::to_vec(request)?;
+    line.push(b'\n');
+    let mut stream = UnixStream::connect(PATH).map_err(|error| {
+        if matches!(
+            error.kind(),
+            io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+        ) {
+            Error::Absent(error)
+        } else {
+            Error::Io(error)
+        }
+    })?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     // Clients must not send answers to an endpoint impersonated by another user.
@@ -315,12 +385,16 @@ pub fn request(request: &Request) -> Result<Reply, Error> {
         )
         .into());
     }
-    serde_json::to_writer(&mut stream, request)?;
-    stream.write_all(b"\n")?;
+    if line.len() as u64 > LIMIT {
+        return Err(Error::TooLarge { limit: LIMIT });
+    }
+    stream.write_all(&line)?;
     let reply = read_reply(&mut stream)?;
     match reply {
         Reply::Refused { reason } => Err(Error::Refused(reason)),
-        Reply::Questions { .. } | Reply::Answered => Ok(reply),
+        Reply::Questions { .. } | Reply::Answered | Reply::Recorded { .. } | Reply::Reapplied => {
+            Ok(reply)
+        }
     }
 }
 

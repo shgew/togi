@@ -16,6 +16,7 @@ use togi_machine::{
 };
 
 use super::*;
+mod applying;
 
 fn offsets(value: i64) -> PerCore<ObservedOffset> {
     [(CoreId::new(0).unwrap(), ObservedOffset(value))]
@@ -112,7 +113,32 @@ impl Reading {
     }
 }
 
+impl togi_machine::Smu for Reading {
+    fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, MachineError> {
+        self.offsets()?.get(core).ok_or(MachineError::BootMissing)
+    }
+    fn set_offset(&mut self, _: CoreId, _: togi_machine::TargetOffset) -> Result<(), MachineError> {
+        Err(MachineError::BootMissing)
+    }
+    fn set_all_offsets(&mut self, _: togi_machine::TargetOffset) -> Result<(), MachineError> {
+        Err(MachineError::BootMissing)
+    }
+    fn emergency_zero(
+        &mut self,
+        _: togi_machine::SmuValidated,
+        _: &togi_machine::Stopped,
+    ) -> Result<(), MachineError> {
+        Err(MachineError::BootMissing)
+    }
+}
+
 impl Observer for Reading {
+    fn validated(&mut self) -> Result<togi_machine::SmuValidated, MachineError> {
+        Err(MachineError::BootMissing)
+    }
+    fn stop_workloads(&mut self) -> Result<togi_machine::Stopped, MachineError> {
+        Err(MachineError::BootMissing)
+    }
     fn bios_context(&mut self) -> Result<BiosContext, MachineError> {
         Ok(bios())
     }
@@ -164,7 +190,32 @@ struct FailingAfter {
     reads: usize,
 }
 
+impl togi_machine::Smu for FailingAfter {
+    fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, MachineError> {
+        togi_machine::Smu::offset(&mut self.reading, core)
+    }
+    fn set_offset(&mut self, _: CoreId, _: togi_machine::TargetOffset) -> Result<(), MachineError> {
+        Err(MachineError::BootMissing)
+    }
+    fn set_all_offsets(&mut self, _: togi_machine::TargetOffset) -> Result<(), MachineError> {
+        Err(MachineError::BootMissing)
+    }
+    fn emergency_zero(
+        &mut self,
+        _: togi_machine::SmuValidated,
+        _: &togi_machine::Stopped,
+    ) -> Result<(), MachineError> {
+        Err(MachineError::BootMissing)
+    }
+}
+
 impl Observer for FailingAfter {
+    fn validated(&mut self) -> Result<togi_machine::SmuValidated, MachineError> {
+        self.reading.validated()
+    }
+    fn stop_workloads(&mut self) -> Result<togi_machine::Stopped, MachineError> {
+        self.reading.stop_workloads()
+    }
     fn bios_context(&mut self) -> Result<BiosContext, MachineError> {
         self.reading.bios_context()
     }

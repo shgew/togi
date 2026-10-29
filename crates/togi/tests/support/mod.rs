@@ -120,6 +120,11 @@ pub struct Host {
     pub diagnoses: RefCell<Vec<(Option<BiosContext>, bool)>>,
     pub calls: Cell<usize>,
     pub day_answers: RefCell<Vec<(togi_machine::BootId, togi_journal::DayAnswerKind)>>,
+    /// What a running day service answers a crash record with, once; `None` means no service runs.
+    pub day_service:
+        RefCell<Option<Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error>>>,
+    /// The crash records handed to the day service.
+    pub day_records: RefCell<Vec<togi_journal::DayRecord>>,
     /// Whether stdin and stderr are terminals, and the lines typed at them.
     pub terminal: Cell<bool>,
     pub typed: RefCell<std::collections::VecDeque<String>>,
@@ -165,6 +170,8 @@ impl Host {
             diagnoses: RefCell::default(),
             calls: Cell::new(0),
             day_answers: RefCell::default(),
+            day_service: RefCell::new(None),
+            day_records: RefCell::default(),
             terminal: Cell::new(false),
             typed: RefCell::default(),
             lock_busy_in_diagnose: Cell::new(None),
@@ -311,6 +318,17 @@ impl System for Host {
                 self.day_answers.borrow_mut().push((boot.clone(), *answer));
                 Ok(Reply::Answered)
             }
+            Request::Record { record } => {
+                self.day_records.borrow_mut().push(record.clone());
+                self.day_service.borrow_mut().take().unwrap_or_else(|| {
+                    Err(togi_cli::day::socket::Error::Absent(io::Error::from(
+                        io::ErrorKind::NotFound,
+                    )))
+                })
+            }
+            Request::Reapply => Err(togi_cli::day::socket::Error::Absent(io::Error::from(
+                io::ErrorKind::NotFound,
+            ))),
         }
     }
 

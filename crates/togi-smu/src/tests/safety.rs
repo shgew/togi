@@ -113,7 +113,7 @@ fn emergency_zero_writes_exactly_one_all_core_zero() {
 }
 
 #[test]
-fn emergency_zero_still_writes_when_slot_mapping_was_refused() {
+fn emergency_zero_refuses_when_slot_mapping_was_refused() {
     let tree = Tree::new(8, true);
     let fake = Fake::new();
     fake.set_value(0x304a_03dc, 0x01);
@@ -121,8 +121,15 @@ fn emergency_zero_still_writes_when_slot_mapping_was_refused() {
     assert!(!driver.check_slot_mapping().ok);
     assert!(read(&mut driver, 0).is_err());
     let proof = driver.validate().unwrap();
-    zero_all(&mut driver, proof).unwrap();
-    assert_eq!(fake.commands(), [(Command::SetAllOffsets, 0)]);
+    let error = zero_all(&mut driver, proof).unwrap_err();
+    assert!(matches!(
+        smu_error(&error),
+        Error::SlotMapping {
+            operation: Operation::EmergencyZero,
+            ..
+        }
+    ));
+    assert_eq!(fake.commands(), []);
 }
 
 #[test]
@@ -223,9 +230,11 @@ fn real_fs_the_file_observer_sees_a_validated_driver_reach_the_hardware_files() 
     let watch = Watch::hardware_files(&tree);
     let mut driver = Driver::open(tree.root()).unwrap();
     assert_eq!(watch.touched(), Vec::<&str>::new(), "opening");
-    let proof = driver.validate().unwrap();
+    let _ = driver.validate().unwrap();
     assert_eq!(watch.touched(), ["smn"], "validation reads SMN registers");
-    let _ = zero_all(&mut driver, proof);
+    // This ordinary-file SMN fixture cannot map slots, so emergency zero must refuse it.
+    // A normal broadcast still positively controls that the observer sees mailbox opens.
+    let _ = write_all(&mut driver, TargetOffset::ZERO);
     let reader = driver.pm_reader().unwrap();
     assert!(reader.wait_idle(GENEROUS), "the PM read never finished");
     assert_eq!(

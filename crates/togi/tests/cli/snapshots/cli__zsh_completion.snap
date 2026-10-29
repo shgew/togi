@@ -74,6 +74,13 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help]' \
 && ret=0
 ;;
+(reapply)
+_arguments "${_arguments_options[@]}" : \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (record)
 _arguments "${_arguments_options[@]}" : \
 '(--unobserved-at)--boot=[The crashed boot\: the ID of a boot with a recorded unclean end]:BOOT:_default' \
@@ -105,6 +112,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (notify)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(reapply)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -245,6 +256,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(reapply)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (record)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -310,7 +325,7 @@ esac
 _togi_commands() {
     local commands; commands=(
 'run:Start or resume the night'\''s tuning session in the foreground' \
-'day:Observe daily use, answer what happened after an unclean end, or record a crash togi missed' \
+'day:Apply stock, observe daily use, answer an unclean end, or record a crash togi missed' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -335,6 +350,7 @@ _togi__subcmd__day_commands() {
     local commands; commands=(
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions and the morning evidence report to this graphical session' \
+'reapply:Reapply stock after system resume; used by the system sleep hook' \
 'record:Record a crash togi did not observe' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -350,6 +366,7 @@ _togi__subcmd__day__subcmd__help_commands() {
     local commands; commands=(
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions and the morning evidence report to this graphical session' \
+'reapply:Reapply stock after system resume; used by the system sleep hook' \
 'record:Record a crash togi did not observe' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -370,6 +387,11 @@ _togi__subcmd__day__subcmd__help__subcmd__notify_commands() {
     local commands; commands=()
     _describe -t commands 'togi day help notify commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__reapply_commands] )) ||
+_togi__subcmd__day__subcmd__help__subcmd__reapply_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day help reapply commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__day__subcmd__help__subcmd__record_commands] )) ||
 _togi__subcmd__day__subcmd__help__subcmd__record_commands() {
     local commands; commands=()
@@ -379,6 +401,11 @@ _togi__subcmd__day__subcmd__help__subcmd__record_commands() {
 _togi__subcmd__day__subcmd__notify_commands() {
     local commands; commands=()
     _describe -t commands 'togi day notify commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__reapply_commands] )) ||
+_togi__subcmd__day__subcmd__reapply_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day reapply commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__day__subcmd__record_commands] )) ||
 _togi__subcmd__day__subcmd__record_commands() {
@@ -404,7 +431,7 @@ _togi__subcmd__events_commands() {
 _togi__subcmd__help_commands() {
     local commands; commands=(
 'run:Start or resume the night'\''s tuning session in the foreground' \
-'day:Observe daily use, answer what happened after an unclean end, or record a crash togi missed' \
+'day:Apply stock, observe daily use, answer an unclean end, or record a crash togi missed' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -429,6 +456,7 @@ _togi__subcmd__help__subcmd__day_commands() {
     local commands; commands=(
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions and the morning evidence report to this graphical session' \
+'reapply:Reapply stock after system resume; used by the system sleep hook' \
 'record:Record a crash togi did not observe' \
     )
     _describe -t commands 'togi help day commands' commands "$@"
@@ -442,6 +470,11 @@ _togi__subcmd__help__subcmd__day__subcmd__answer_commands() {
 _togi__subcmd__help__subcmd__day__subcmd__notify_commands() {
     local commands; commands=()
     _describe -t commands 'togi help day notify commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__day__subcmd__reapply_commands] )) ||
+_togi__subcmd__help__subcmd__day__subcmd__reapply_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help day reapply commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__help__subcmd__day__subcmd__record_commands] )) ||
 _togi__subcmd__help__subcmd__day__subcmd__record_commands() {

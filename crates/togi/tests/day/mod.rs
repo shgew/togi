@@ -475,6 +475,54 @@ mod record {
     }
 
     #[test]
+    fn a_running_service_receives_the_record_and_the_command_writes_nothing() {
+        let host = host();
+        *host.day_service.borrow_mut() = Some(Ok(togi_cli::day::socket::Reply::Recorded {
+            seq: togi_journal::Seq::FIRST,
+        }));
+        // The service owns the writer, so drafting must read the journal without locking it.
+        let _writer = host.lock_state_dir(Path::new(STATE)).unwrap();
+        let ran = record(&host, &["--boot", "seed", "--running", "build"]);
+        assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+        assert!(ran.out.contains("crash recorded as event"), "{}", ran.out);
+        let [sent] = host.day_records.borrow().clone().try_into().unwrap();
+        assert_eq!(
+            sent.boot,
+            CrashedBoot::UncleanEnd {
+                boot: "seed".to_owned().into()
+            }
+        );
+        assert_eq!(sent.running, Running::Build);
+        assert!(records(&host).is_empty());
+    }
+
+    #[test]
+    fn without_a_service_the_command_writes_the_record_itself() {
+        let host = host();
+        let ran = record(&host, &["--boot", "seed"]);
+        assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+        assert_eq!(host.day_records.borrow().len(), 1);
+        assert_eq!(records(&host).len(), 1);
+    }
+
+    #[test_case::test_case(Err(togi_cli::day::socket::Error::Refused("boot seed already has a crash record".into())), "already has a crash record"; "refused by the service")]
+    #[test_case::test_case(Err(togi_cli::day::socket::Error::Io(std::io::Error::from(std::io::ErrorKind::PermissionDenied))), "access day question socket"; "unauthorized service")]
+    #[test_case::test_case(Err(togi_cli::day::socket::Error::TooLarge { limit: 16 }), "larger than the day service accepts"; "too large")]
+    #[test_case::test_case(Ok(togi_cli::day::socket::Reply::Answered), "unexpected day service reply"; "wrong reply")]
+    fn a_service_that_does_not_record_is_never_replaced_by_a_local_write(
+        reply: Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error>,
+        message: &str,
+    ) {
+        let host = host();
+        *host.day_service.borrow_mut() = Some(reply);
+        let ran = record(&host, &["--boot", "seed"]);
+        assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+        assert!(ran.err.contains(message), "{}", ran.err);
+        assert_eq!(host.day_records.borrow().len(), 1);
+        assert!(records(&host).is_empty());
+    }
+
+    #[test]
     fn the_terminal_and_the_flags_journal_the_same_record() {
         let by_flags = host();
         assert_eq!(

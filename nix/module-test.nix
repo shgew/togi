@@ -273,6 +273,24 @@ assert builtins.elem "systemd-modules-load.service" day.systemd.services.togi-da
 assert day.systemd.units ? "togi-day.service";
 assert !(dayTuning.systemd.services ? togi-day);
 assert !(dayTuning.systemd.units ? "togi-day.service");
+assert lib.hasInfix "ExecStopPost=" day.systemd.units."togi-day.service".text;
+assert lib.hasInfix ''[ "''${SERVICE_RESULT:-}" != success ] || exit 0''
+  day.systemd.services.togi-day.postStop;
+assert lib.hasInfix
+  (builtins.unsafeDiscardStringContext "exec ${lib.getExe package} emergency-stop")
+  day.systemd.services.togi-day.postStop;
+assert day.systemd.services.togi-day-resume.wantedBy == [ "sleep.target" ];
+assert
+  day.systemd.services.togi-day-resume.before == [
+    "sleep.target"
+    "togi-day-watchdog-sleep.service"
+  ];
+assert day.systemd.services.togi-day-resume.unitConfig.StopWhenUnneeded;
+assert day.systemd.services.togi-day-resume.serviceConfig.Type == "oneshot";
+assert day.systemd.services.togi-day-resume.serviceConfig.RemainAfterExit;
+assert lib.hasInfix "ExecStopPost=" day.systemd.units."togi-day-resume.service".text;
+assert !(one.systemd.services ? togi-day-resume);
+assert !(dayTuning.systemd.services ? togi-day-resume);
 assert dayTuning.systemd.services ? togi;
 assert day.services.journald.settings.Journal.Storage == "persistent";
 assert day.services.journald.settings.Journal.SyncIntervalSec == "5s";
@@ -491,5 +509,9 @@ hostPkgs.runCommand "togi-module-check" { nativeBuildInputs = [ hostPkgs.jq ]; }
     '. == $expected[0]' ${systemd.environment.etc."togi/night.json".source}
   jq --exit-status --slurpfile expected ${expectedXbootldrNight} \
     '. == $expected[0]' ${xbootldr.environment.etc."togi/night.json".source}
+  jq --exit-status --raw-input --slurp \
+    --arg executable ${lib.escapeShellArg "${lib.getExe package} day reapply"} \
+    'contains("is-active togi-day.service || exit 0") and contains("exec " + $executable)' \
+    ${day.systemd.services.togi-day-resume.serviceConfig.ExecStopPost}
   touch "$out"
 ''

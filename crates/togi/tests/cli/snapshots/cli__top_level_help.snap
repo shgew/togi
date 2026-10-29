@@ -8,7 +8,7 @@ Usage: togi [OPTIONS] <COMMAND>
 
 Commands:
   run             Start or resume the night's tuning session in the foreground
-  day             Observe daily use, answer what happened after an unclean end, or record a crash togi missed
+  day             Apply stock, observe daily use, answer an unclean end, or record a crash togi missed
   completion      Print a shell completion script
   doctor          Check whether this machine is ready for a run
   events          Print the journal, one readable line per event
