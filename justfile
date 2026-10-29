@@ -220,7 +220,7 @@ bench-day-night *args: _dev-shell
     done
     # Read JSON with the development shell's parser, not filename or flag heuristics.
     identity=$(TOGI_BENCH_REGISTRATION="$registration" nu --no-config-file -c 'open --raw $env.TOGI_BENCH_REGISTRATION | from json | get id') || identity=
-    if [[ "$identity" == day-night-successor ]]; then
+    if [[ -n "$identity" && "$identity" != ruleset-13-day-night ]]; then
         SECONDS=0
         cargo build --release --locked -p togi-tool-bench
         compilation_seconds=$SECONDS

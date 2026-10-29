@@ -871,9 +871,12 @@ fn firmware_restoration_records_real_full_vector_crash_and_recomputes_without_gr
         metrics.risk.tagged.hours <= metrics.risk.t,
         "restoration exposure overlaps rather than adds"
     );
-    assert_eq!(metrics.ledger.charged_post_finish, 1);
-    assert_eq!(metrics.ledger.charged_learning, 0);
-    assert_eq!(metrics.ledger.charged_restoration_tagged, 1);
-    assert_eq!(metrics.ledger.consumed, 1);
-    assert_eq!(metrics.ledger.stopped_units, *stopped_units);
+    let ledger = metrics
+        .ledger
+        .expect("scripted policy reports its machine allowance");
+    assert_eq!(ledger.charged_post_finish, 1);
+    assert_eq!(ledger.charged_learning, 0);
+    assert_eq!(ledger.charged_restoration_tagged, 1);
+    assert_eq!(ledger.consumed, 1);
+    assert_eq!(metrics.policy_evidence.stopped_units, *stopped_units);
 }

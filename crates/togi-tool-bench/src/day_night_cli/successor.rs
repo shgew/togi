@@ -284,9 +284,7 @@ fn score_selection(
     args: &DayNightArgs,
     registration: &Registration,
 ) -> Result<ScoreSelection, Error> {
-    if registration.id != registration::REGISTRATION_ID
-        || registration.version != registration::VERSION
-    {
+    if registration.id.trim().is_empty() || registration.version != registration::VERSION {
         return Err(Error::Invalid(
             "unsupported successor registration id/version",
         ));
