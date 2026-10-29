@@ -46,6 +46,7 @@ use togi_sim::faults::SmuOperation;
 use togi_sim::{MachineDefinition, Model, Persisted, Simulator};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, Params, Projection, State};
+use togi_tuner::{Topology, unit::Units};
 
 use super::compare::Names;
 use crate::Stop;
@@ -130,9 +131,9 @@ fn read_offsets(
 ) -> Result<PerCore<ObservedOffset>, Error> {
     state
         .project()
-        .ccds
+        .units
         .iter()
-        .flat_map(|ccd| ccd.cores.iter())
+        .flat_map(|unit| unit.cores.iter())
         .map(|core| machine.smu.offset(core).map(|offset| (core, offset)))
         .collect()
 }
@@ -313,7 +314,7 @@ fn day(
             let (cause, target) = if let Some((decision, proposed)) = step {
                 (ApplyCause::Step { decision }, proposed)
             } else {
-                let applied = day.state.project().applied.unwrap();
+                let applied = day.state.project().applied.unwrap().to_ccd().unwrap();
                 let cores = machine.host.topology().unwrap();
                 let target = CcdVector::expand(applied, &cores).unwrap();
                 (ApplyCause::Reapplication {}, target)
@@ -781,12 +782,11 @@ fn assert_settled(bench: &Bench, phase: Phase, events: &[Event]) {
     let state = folded(events);
     let offsets = read_offsets(&mut machine, &state).unwrap();
     let target = if matches!(phase, Phase::Day { .. }) {
+        let applied = state.project().applied.unwrap();
+        let topology = Topology::new(&machine.host.topology().unwrap()).unwrap();
         Some(
-            state
-                .project()
-                .applied
-                .unwrap()
-                .expand(&machine.host.topology().unwrap())
+            applied
+                .expand(&Units::for_profile(&topology, &applied))
                 .unwrap(),
         )
     } else {
@@ -1364,9 +1364,9 @@ fn caps_citing_one_event_instead_of_two_change_the_projection() {
     let events = scenario_events();
     let projection = folded(&events).project();
     let witnesses: Vec<_> = projection
-        .ccds
+        .units
         .iter()
-        .filter_map(|ccd| ccd.cap.as_ref().map(|cap| cap.witness))
+        .filter_map(|unit| unit.cap.as_ref().map(|cap| cap.witness))
         .collect();
     assert!(
         witnesses.len() >= 2 && witnesses[0] != witnesses[1],
@@ -1374,7 +1374,7 @@ fn caps_citing_one_event_instead_of_two_change_the_projection() {
     );
     let mut changed = projection.clone();
     let first = witnesses[0];
-    for cap in changed.ccds.iter_mut().filter_map(|ccd| ccd.cap.as_mut()) {
+    for cap in changed.units.iter_mut().filter_map(|unit| unit.cap.as_mut()) {
         cap.witness = first;
     }
     assert_ne!(
@@ -1446,7 +1446,7 @@ fn a_cap_citing_a_different_event_changes_the_projection() {
         .iter()
         .find(|event| matches!(event.payload, Payload::TrialIntent(_)))
         .expect("the scenario runs a trial");
-    let cap = changed.ccds[0]
+    let cap = changed.units[0]
         .cap
         .as_mut()
         .expect("the scenario has a cap");

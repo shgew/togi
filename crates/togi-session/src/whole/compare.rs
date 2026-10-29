@@ -24,8 +24,9 @@ use togi_journal::{
     StepCauses, StepKind, TrialId, UnavailableBackend,
 };
 use togi_tuner::policy::{
-    CapProjection, CcdProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
-    NightProjection, Projection, QualificationProjection, ReproductionProjection, VetoProjection,
+    CapProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
+    NightProjection, Projection, QualificationProjection, ReproductionProjection, UnitProjection,
+    VetoProjection,
 };
 
 /// How identities are named.
@@ -630,15 +631,15 @@ impl<'events> Names<'events> {
         })
     }
 
-    fn ccd_projection(&mut self, ccd: &CcdProjection) -> String {
-        let CcdProjection {
-            ccd,
+    fn unit_projection(&mut self, unit: &UnitProjection) -> String {
+        let UnitProjection {
+            unit,
             cores,
             edge,
             cap,
             day,
             remaining,
-        } = ccd;
+        } = unit;
         let edge = match edge {
             Some(edge) => format!("Some({})", self.edge(edge)),
             None => "None".to_owned(),
@@ -661,7 +662,7 @@ impl<'events> Names<'events> {
             None => "None".to_owned(),
         };
         format!(
-            "ccd {ccd:?} cores={cores:?} edge={edge} cap={cap} day={day:?} remaining={remaining:?}"
+            "unit {unit:?} cores={cores:?} edge={edge} cap={cap} day={day:?} remaining={remaining:?}"
         )
     }
 
@@ -748,7 +749,7 @@ impl<'events> Names<'events> {
     pub(super) fn projection(&mut self, projection: &Projection) -> Vec<String> {
         let Projection {
             applied,
-            ccds,
+            units,
             day,
             events,
             vetoes,
@@ -757,7 +758,7 @@ impl<'events> Names<'events> {
             stopped,
         } = projection;
         let mut lines = vec![format!("applied {applied:?}")];
-        lines.extend(ccds.iter().map(|ccd| self.ccd_projection(ccd)));
+        lines.extend(units.iter().map(|unit| self.unit_projection(unit)));
         lines.push(self.day_projection(day));
         for entry in events {
             let EventProjection {

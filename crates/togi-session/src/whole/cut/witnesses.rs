@@ -204,7 +204,7 @@ fn a_day_smu_power_cut_resumes_with_the_nonzero_applied_profile() {
         .unwrap()
         + 1;
     let events = resume_at_smu(phase, &bench.sim.model(), at);
-    let applied = folded(&events).project().applied.unwrap();
+    let applied = folded(&events).project().applied.unwrap().to_ccd().unwrap();
     let cores = bench.sim.seams().host.topology().unwrap();
     assert!(
         applied
