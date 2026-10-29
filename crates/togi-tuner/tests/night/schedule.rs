@@ -63,7 +63,7 @@ fn qualification(secs: u32) -> Work {
 
 fn mapping(secs: u32) -> Work {
     let target = togi_tuner::night::MappingTarget {
-        ccd: crate::fixture::ccd(0),
+        unit: crate::fixture::unit(0),
         offset: crate::fixture::offset(0),
         kind: togi_tuner::night::MappingKind::Coarse,
     };
