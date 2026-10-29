@@ -73,7 +73,7 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified                                           22:13  start    session started on 16 cores
 ~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                           ggggg  tttttttt ttttttttttttttttttttttttttt
 │  experimental: 50.000 clean hours; at most 1 crash per 17 h (95%, fixed-rate model) · 0 crashes / 50.000 observed h
-~  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+~  tttttttttttttttttttttttttttttttt  tttttttttttttttttttttttttttttttttttttttttttttttt   ttttttttttttttttttttttttttttt
 │  core 0: climbing; hold 50.000 / 50.000 h at exact D
 ~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  core 1: climbing; hold 50.000 / 50.000 h at exact D

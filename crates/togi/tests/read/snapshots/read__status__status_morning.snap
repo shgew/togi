@@ -8,8 +8,8 @@ BIOS F1 on board, CPU, microcode 0x1, boost limit 5000 MHz
 in flight: none
 
 UNIT   CORES                  D  C        D-C  HOLD h  STATE
-CCD 0  0,1,2,3,4,5,6,7        0  unknown  -    0/50    climbing
-CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    climbing
+CCD 0  0,1,2,3,4,5,6,7        0  unknown  -    0/50    held
+CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    held
 
 Day policy
 permission: experimental hold + exact night qualification
@@ -23,10 +23,12 @@ paused-saved profile: none
 allowance: unavailable; campaign history must be reconstructed
 unit: CCD 0, phase coarse, parent none, inherited start 0
   U: unknown
-  state: climbing
+  state: held: unknown edge for CCD 0; unknown edge for CCD 1; campaign history
+  unavailable
 unit: CCD 1, phase coarse, parent none, inherited start 0
   U: unknown
-  state: climbing
+  state: held: unknown edge for CCD 0; unknown edge for CCD 1; campaign history
+  unavailable
 current exact profile daily evidence: 0 h; 0 crashes []
 experimental: rate bound unavailable (95%, fixed-rate model)
 firmware restoration: none

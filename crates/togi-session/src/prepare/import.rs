@@ -45,6 +45,8 @@ const HISTORY_KINDS: &[&str] = &[
     "campaign.start",
     "campaign.charge",
     "campaign.reclassified",
+    // Never permission: only evidence that a failed requalification owes a campaign event.
+    "night.qualification",
     "successor.imported",
 ];
 

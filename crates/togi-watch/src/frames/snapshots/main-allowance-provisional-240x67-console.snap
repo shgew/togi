@@ -60,7 +60,7 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │  learning event boot boot-provisional: CPU-suspect (provisional) · provisional
 ~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  experimental: 50.000 clean hours; at most 1 crash per 17 h (95%, fixed-rate model) · 0 crashes / 50.000 observed h
-~  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+~  tttttttttttttttttttttttttttttttt  tttttttttttttttttttttttttttttttttttttttttttttttt   ttttttttttttttttttttttttttttt
 │  CCD 0: climbing; hold 50.000 / 50.000 h at exact D
 ~  tttttttttttttttttttttttttttttttttttttttttttttttttt
 │  CCD 0: applied step -5 → -10 (5 counts); application ApplicationId(2); witnesses [Seq(5)]

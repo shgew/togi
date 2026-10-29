@@ -49,8 +49,8 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~ ttttttttttttttttttttttttttttttttttttttttttttttttttt         ggggg  tttttttt ttttttttttttttttttttttttttt
 │ learning event boot boot-provisional: CPU-suspect...
 ~ tttttttttttttttttttttttttttttttttttttttttttttttttttt
-│ experimental: 50.000 clean hours; at most 1 crash per...
-~ tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ experimental: 50.000 clean hours
+~ tttttttttttttttttttttttttttttttt
 │ CCD 0: climbing; hold 50.000 / 50.000 h at exact D
 ~ tttttttttttttttttttttttttttttttttttttttttttttttttt
 │ CCD 0: applied step -5 → -10 (5 counts); application...

@@ -3,7 +3,7 @@
 use super::{State, day_events::DayView, night_query::NotReady};
 use crate::{
     UnitProfile, climb,
-    day::{DailyEvent, Invocation, QuestionState, vetoes},
+    day::{DailyEvent, Invocation, QuestionState},
 };
 use togi_journal::{Edge, UnitMapping, UnitMembership, UnitPhase, UnitVector};
 
@@ -139,7 +139,7 @@ impl State {
             .into_iter()
             .filter(|profile| self.qualification_blocked(profile).is_some())
             .collect();
-        let vetoes = vetoes(&view.events);
+        let vetoes = self.active_vetoes(view);
         let statuses = self.statuses(view)?.unwrap_or_default();
         let (_, seconds) = self.credited();
         Ok(climb::decide(&climb::ClimbInputs {

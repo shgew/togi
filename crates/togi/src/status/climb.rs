@@ -12,7 +12,7 @@ use togi_tuner::{
 };
 
 use super::esc;
-use super::policy::{Where, class_word, hours};
+use super::policy::{Where, evidence_class_word, hours};
 use crate::table::{Row, table, wrap};
 
 fn witnesses(seqs: &[togi_journal::Seq]) -> String {
@@ -393,7 +393,7 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
                 ),
             );
             for class in &proposal.qualification.outstanding {
-                line(out, "    outstanding: ", &class_word(class));
+                line(out, "    outstanding: ", &evidence_class_word(class));
             }
         }
         if let Some(step) = &unit.latest_step {

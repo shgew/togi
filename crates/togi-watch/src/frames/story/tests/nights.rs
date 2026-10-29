@@ -525,7 +525,11 @@ fn d_applied_history_names_the_action_without_reopening_exploration(
         .as_mut()
         .unwrap()
         .action = action;
-    let words = super::super::night::climb_lines(&hand.policy).join("\n");
+    let words = super::super::night::climb_lines(&hand.policy)
+        .iter()
+        .map(super::super::night::ClimbLine::words)
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(words.contains(expected), "{words}");
     assert!(words.contains("application ApplicationId(2)"), "{words}");
 }
@@ -535,7 +539,11 @@ fn missing_campaign_and_daily_evidence_never_look_like_unused_allowance_or_a_zer
     let mut hand = crate::frames::hand::Staged::Day.hand();
     hand.policy.climb.campaign = None;
     hand.policy.climb.daily = None;
-    let words = super::super::night::climb_lines(&hand.policy).join("\n");
+    let words = super::super::night::climb_lines(&hand.policy)
+        .iter()
+        .map(super::super::night::ClimbLine::words)
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
         words.contains("history unavailable; new exploration blocked"),
         "{words}"

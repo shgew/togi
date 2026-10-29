@@ -8,8 +8,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use jiff::Timestamp;
 use togi_journal::{
     ApplyCause, CampaignHistory, Classification, DayApplied, DayEventId, DayImported, Event,
-    EventKind, ImportedRecordRef, ObservedProfile, Payload, Provenance, Seq, SessionId, StepKind,
-    UnitId, VetoState,
+    EventKind, ImportedRecordRef, ObservedProfile, Payload, Provenance, QualificationPurpose,
+    QualificationState, Seq, SessionId, StepKind, UnitId, VetoState,
 };
 use togi_machine::{BootId, TargetOffset};
 
@@ -243,6 +243,30 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
             );
         }
     }
+    // A failed re-qualification of a nonzero current profile is a CPU-suspect event even when the
+    // session ended before its derived `day.event` was written. The raw qualification and
+    // exposure records are not enough to recharge it faithfully here, so it fails closed.
+    for (original, event) in &decoded {
+        if let Payload::NightQualification(qualification) = &event.payload
+            && qualification.purpose == QualificationPurpose::Requalification
+            && matches!(qualification.state, QualificationState::Failed { .. })
+            && qualification
+                .profile
+                .cores()
+                .iter()
+                .any(|(_, offset)| offset.get() != 0)
+            && !decoded.iter().any(|(other, derived)| {
+                other.session == original.session
+                    && matches!(&derived.payload, Payload::DayEvent(classified)
+                        if matches!(classified.event, DayEventId::Requalification { .. })
+                            && classified.witnesses.contains(&original.seq))
+            })
+        {
+            return Err(
+                "a failed current-profile requalification has no derived campaign event".into(),
+            );
+        }
+    }
     let mut history = History::default();
     let mut latest = HashMap::new();
     let mut raw = State::new(Params::SPEC);
@@ -288,7 +312,16 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                             return Err("successful application disagrees with its decision".into());
                         }
                     } else if let Some(step) = climbs.get(&(original.session, decision)) {
-                        if &step.proposed.cores != applied.target.cores() {
+                        // A stock-only receipt for a nonzero proposal is a verified reset, not the
+                        // step; the live fold observes it without a transition. Any other
+                        // disagreement is a nonzero application with no decision behind it.
+                        if &step.proposed.cores != applied.target.cores()
+                            && applied
+                                .target
+                                .cores()
+                                .iter()
+                                .any(|(_, offset)| offset.get() != 0)
+                        {
                             return Err(
                                 "successful application disagrees with its climb decision".into()
                             );
@@ -707,6 +740,10 @@ fn applied_history(
         } else {
             None
         };
+        let step = step.filter(|payload| {
+            !matches!(payload, Payload::ClimbDecision(decision)
+                if &decision.proposed.cores != applied.target.cores())
+        });
         if let Some(Payload::ClimbDecision(step)) = step {
             let units = match step.proposed.mapping.phase {
                 togi_journal::UnitPhase::Coarse => Units::coarse(&topology),

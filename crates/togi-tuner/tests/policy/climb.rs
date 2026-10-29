@@ -1,5 +1,6 @@
 //! D acceptance at the durable journal boundary, including interrupted and snapshot replay.
 
+use test_case::test_case;
 use togi_journal::{
     CampaignHistory, ClimbAction, ClimbBlocker, DayAnswer, DayAnswerKind, DayUncleanEnd, Event,
     Payload, Seq, Stamp,
@@ -12,7 +13,7 @@ use crate::{
     flow::{apply, cold_boot, promoted, steps},
 };
 
-fn replay(events: &[Event]) -> State {
+pub(crate) fn replay(events: &[Event]) -> State {
     let mut state = State::new(Params::SPEC);
     for event in events {
         let decoded = Event::decode(&event.encode().unwrap()).unwrap();
@@ -21,11 +22,11 @@ fn replay(events: &[Event]) -> State {
     state
 }
 
-fn snapshot(state: &State) -> State {
+pub(crate) fn snapshot(state: &State) -> State {
     serde_json::from_slice(&serde_json::to_vec(state).unwrap()).unwrap()
 }
 
-fn drain(state: &mut State, query: &DayQuery, mut sequence: u64) -> Vec<Payload> {
+pub(crate) fn drain(state: &mut State, query: &DayQuery, mut sequence: u64) -> Vec<Payload> {
     let mut commitments = Vec::new();
     for _ in 0..100 {
         let owed = state.day(query).unwrap();
@@ -53,7 +54,7 @@ fn drain(state: &mut State, query: &DayQuery, mut sequence: u64) -> Vec<Payload>
     panic!("day commitments did not settle");
 }
 
-fn adverse() -> Journal {
+pub(crate) fn adverse() -> Journal {
     let (mut journal, profile) = Journal::promoted_compact();
     journal.boot_start("day2");
     journal.append(
@@ -74,7 +75,7 @@ fn adverse() -> Journal {
     journal
 }
 
-fn retreated() -> Journal {
+pub(crate) fn retreated() -> Journal {
     let mut journal = adverse();
     let mut query = cold_boot("day2", 60_000);
     query.now = journal.now();
@@ -339,7 +340,371 @@ fn a_stock_receipt_for_a_nonzero_proposal_never_invents_an_applied_step() {
     assert_eq!(state.project().climb.campaign.unwrap().consumed, 0);
 }
 
-fn imported(event: &Event) -> togi_journal::DayImported {
+/// D, its monthly night and a conclusive failure of D's re-qualification, with the derived
+/// `day.event` and `campaign.charge` the night then wrote.
+fn requalification_failed() -> Journal {
+    let (mut journal, _) = promoted();
+    journal.advance(31 * 24 * 3_600);
+    journal.reboot("tuning2");
+    for _ in 0..3_500 {
+        let plan = journal.until_trial(journal.now());
+        if plan.task.queue == togi_journal::Queue::Requalification {
+            journal.run(&plan, crate::fixture::Ending::Fail(None));
+            let _ = journal.until_end(journal.now(), &std::collections::BTreeMap::new());
+            return journal;
+        }
+        journal.run(&plan, crate::fixture::Ending::Pass);
+    }
+    panic!("D was never re-qualified");
+}
+
+#[test]
+fn a_requalification_failure_cut_before_its_derived_event_blocks_the_successor() {
+    let source = requalification_failed();
+    let failed = source.events.iter().position(|event| matches!(&event.payload, Payload::NightQualification(record) if record.purpose == togi_journal::QualificationPurpose::Requalification && matches!(record.state, togi_journal::QualificationState::Failed { .. }))).unwrap();
+    let derived = source.events.iter().position(|event| matches!(&event.payload, Payload::DayEvent(_))).unwrap();
+    assert!(failed < derived);
+    // The session was reset after the failure and before anything derived from it landed.
+    let successor = successor_of(&source.events[..derived]);
+    let history = successor
+        .state
+        .project()
+        .climb
+        .campaign
+        .unwrap()
+        .history;
+    assert!(
+        matches!(history, CampaignHistory::Unreconstructible { .. }),
+        "{history:?}"
+    );
+}
+
+#[test]
+fn a_requalification_failure_with_its_derived_event_charges_the_successor() {
+    let source = requalification_failed();
+    assert!(source.events.iter().any(|event| matches!(&event.payload, Payload::DayEvent(_))));
+    let successor = successor_of(&source.events);
+    let campaign = successor.state.project().climb.campaign.unwrap();
+    assert!(
+        matches!(campaign.history, CampaignHistory::Complete {}),
+        "{:?}",
+        campaign.history
+    );
+    assert_eq!(campaign.consumed, 1);
+}
+
+#[test]
+fn an_imported_night_qualification_never_qualifies_a_profile_in_the_successor() {
+    let (source, _) = Journal::promoted_compact();
+    assert!(source.events.iter().any(|event| matches!(&event.payload, Payload::NightQualification(record) if matches!(record.state, togi_journal::QualificationState::Complete { .. }))));
+    let mut successor = successor_of(&source.events);
+    successor.hold_stock();
+    successor.boot_start("successor-day");
+    let mut query = cold_boot("successor-day", 60_000);
+    query.now = successor.now();
+    let committed = successor.settle_day(&query);
+    assert!(!committed.iter().any(|payload| matches!(payload, Payload::ClimbDecision(record) if matches!(record.decision, ClimbAction::Promote { .. }))));
+    let projection = successor.state.project();
+    assert!(projection.qualifications.is_empty());
+    assert_eq!(
+        projection.applied,
+        Some(togi_tuner::UnitProfile::of_ccd(&zero()))
+    );
+}
+
+#[test]
+fn a_predecessor_stop_without_a_unit_stop_record_is_rederived_and_never_repromoted() {
+    let source = retreated();
+    let events: Vec<_> = source
+        .events
+        .iter()
+        .filter(|event| !matches!(event.payload, Payload::UnitStop(_)))
+        .cloned()
+        .collect();
+    assert!(events.len() < source.events.len());
+    let mut successor = successor_of(&events);
+    let mut query = cold_boot("successor", 60_000);
+    query.now = successor.now();
+    successor.settle_day(&query);
+    successor.hold_stock();
+    successor.boot_start("successor-day");
+    let mut query = cold_boot("successor-day", 60_000);
+    query.now = successor.now();
+    let committed = successor.settle_day(&query);
+    assert!(!committed.iter().any(|payload| matches!(payload, Payload::ClimbDecision(record) if matches!(record.decision, ClimbAction::Promote { .. }))));
+    let projection = successor.state.project();
+    let stopped: Vec<_> = projection
+        .climb
+        .units
+        .iter()
+        .filter_map(|unit| match &unit.state {
+            togi_tuner::ClimbUnitState::Finished {
+                reason, last_clean, ..
+            } => Some((reason, *last_clean)),
+            togi_tuner::ClimbUnitState::Climbing
+            | togi_tuner::ClimbUnitState::Held { .. } => None,
+        })
+        .collect();
+    assert_eq!(stopped.len(), 1, "{stopped:?}");
+    assert!(matches!(
+        stopped[0].0,
+        togi_journal::UnitStopReason::Predecessor { .. }
+    ));
+    assert_eq!(stopped[0].1, togi_machine::TargetOffset::ZERO);
+    assert_eq!(replay(&successor.events).project(), projection);
+    for cut in 0..=successor.events.len() {
+        let mut rebuilt = snapshot(&replay(&successor.events[..cut]));
+        for event in &successor.events[cut..] {
+            rebuilt.fold(event).unwrap();
+        }
+        assert_eq!(rebuilt.project(), projection, "snapshot cut {cut}");
+    }
+}
+
+/// A predecessor whose one event was charged under three identities in separate records and
+/// bridged later, the second bridge reaching an identity only the first one connected.
+#[test]
+fn bridged_charge_aliases_consume_one_event_and_keep_their_metadata_across_replay() {
+    let (mut source, _) = Journal::promoted_compact();
+    let proposed = source
+        .events
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::ClimbDecision(record)
+                if matches!(record.decision, ClimbAction::Promote { .. }) =>
+            {
+                Some(record.proposed.clone())
+            }
+            _ => None,
+        })
+        .unwrap();
+    let campaign = source
+        .events
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::CampaignStart(start) => Some(start.campaign),
+            _ => None,
+        })
+        .unwrap();
+    let id = |boot: &str| togi_journal::DayEventId::Boot {
+        boot: BootId::from(boot.to_owned()),
+    };
+    let charge = |event: &str, aliases: &[&str], provisional: bool| {
+        togi_journal::CampaignCharge {
+            campaign,
+            event: id(event),
+            aliases: aliases.iter().map(|alias| id(alias)).collect(),
+            profile: proposed.clone(),
+            phase: togi_journal::CampaignEventPhase::Learning,
+            unit_phase: togi_journal::UnitPhase::Coarse,
+            provisional,
+            consumed: 1,
+            remaining: 1,
+            exhausted: false,
+        }
+        .into()
+    };
+    let time = source.now();
+    let mut extra = Vec::new();
+    for (offset, payload) in [
+        charge("first", &[], true),
+        charge("second", &[], false),
+        charge("third", &[], false),
+        // The first bridge joins the second and third; the next joins the first to the second.
+        charge("second", &["third"], false),
+        charge("first", &["second"], false),
+        togi_journal::CampaignReclassified {
+            campaign,
+            event: id("third"),
+            from: togi_journal::Classification::CpuSuspect {
+                certainty: togi_journal::Certainty::Provisional,
+            },
+            to: togi_journal::Classification::NonCpu {},
+        }
+        .into(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        extra.push(Event::new(
+            Seq::new(1_000 + u64::try_from(offset).unwrap()).unwrap(),
+            Stamp { time, mono: None },
+            BootId::from("boot".to_owned()),
+            Vec::new(),
+            payload,
+        ));
+    }
+    source.events.extend(extra);
+    let mut successor = successor_of(&source.events);
+    let mut query = cold_boot("successor", 60_000);
+    query.now = successor.now();
+    successor.settle_day(&query);
+    let projection = successor.state.project();
+    let campaign = projection.climb.campaign.as_ref().unwrap();
+    assert!(
+        matches!(campaign.history, CampaignHistory::Complete {}),
+        "{:?}",
+        campaign.history
+    );
+    assert_eq!(campaign.consumed, 1);
+    assert_eq!(campaign.provisional, 1);
+    assert_eq!(campaign.reclassified, 1);
+    assert_eq!(campaign.events.len(), 1);
+    let event = &campaign.events[0];
+    // The canonical event is its own alias; the others are the two bridged identities.
+    for boot in ["first", "second", "third"] {
+        assert!(
+            event.event == id(boot) || event.aliases.contains(&id(boot)),
+            "{boot}: {event:?}"
+        );
+    }
+    assert!(event.aliases.len() <= 3);
+    assert!(event.provisional && event.reclassified);
+    assert!(!event.witnesses.is_empty());
+    assert_eq!(replay(&successor.events).project(), projection);
+    assert_eq!(snapshot(&successor.state).project(), projection);
+}
+
+/// A successor whose predecessor left only a veto of CCD 0 at `depth`, with no raw daily
+/// witness, qualified for the candidate CCD 0 at -5 and waiting at its first cold boot.
+fn veto_successor(depth: i64) -> Journal {
+    let predecessor: togi_journal::SessionId = "20231101T000000Z".parse().unwrap();
+    let (journal, _) = Journal::qualified_compact_after(|journal| {
+        let vetoed = zero().with(
+            crate::fixture::ccd(0),
+            togi_machine::TargetOffset::new(depth).unwrap(),
+        );
+        let veto = Event::new(
+            Seq::new(2).unwrap(),
+            Stamp {
+                time: journal.now(),
+                mono: None,
+            },
+            BootId::from("lost".to_owned()),
+            Vec::new(),
+            togi_journal::DayVeto {
+                event: togi_journal::DayEventId::Boot {
+                    boot: BootId::from("lost".to_owned()),
+                },
+                profile: togi_journal::ObservedProfile::PerCore {
+                    cores: offsets_of(&vetoed),
+                },
+                state: togi_journal::VetoState::Active,
+                evidence: Vec::new(),
+                reason: "provisional event vetoes its profile".into(),
+            }
+            .into(),
+        );
+        let mut record = imported(&veto);
+        record.original.session = predecessor;
+        journal.append(record.into(), &[]);
+        journal.append(
+            togi_journal::CampaignStart {
+                campaign: togi_journal::CampaignId(togi_journal::Provenance {
+                    session: predecessor,
+                    seq: Seq::FIRST,
+                }),
+                allowance: 2,
+                origin: togi_journal::CampaignOrigin::Successor {
+                    sources: Vec::new(),
+                },
+                history: CampaignHistory::Complete {},
+            }
+            .into(),
+            &[],
+        );
+    });
+    journal
+}
+
+#[test_case(-5, false; "a veto of the candidate holds it")]
+#[test_case(-3, false; "a shallower veto holds the deeper candidate")]
+#[test_case(-6, true; "a deeper veto leaves the shallower candidate")]
+fn an_imported_veto_without_a_raw_witness_forbids_its_profile_and_deeper(
+    depth: i64,
+    promotes: bool,
+) {
+    let mut journal = veto_successor(depth);
+    let committed = journal.settle_day(&cold_boot("day1", 60_000));
+    assert_eq!(
+        committed.iter().any(|payload| matches!(payload, Payload::ClimbDecision(record) if matches!(record.decision, ClimbAction::Promote { .. }))),
+        promotes
+    );
+    assert_eq!(replay(&journal.events).project(), journal.state.project());
+    assert_eq!(
+        snapshot(&journal.state).project(),
+        journal.state.project()
+    );
+}
+
+/// A successor of `source`: its records imported under their original identities, then the
+/// campaign start enrolling the successor.
+fn successor_of(source: &[Event]) -> Journal {
+    let start = source
+        .iter()
+        .find_map(|event| {
+            if let Payload::CampaignStart(start) = &event.payload {
+                Some(start.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let mut successor = Journal::ready();
+    successor.start_session("20231120T221320Z");
+    for event in source {
+        successor.append(imported(event).into(), &[]);
+    }
+    let mut start = start;
+    start.origin = togi_journal::CampaignOrigin::Successor {
+        sources: Vec::new(),
+    };
+    successor.append(start.into(), &[]);
+    successor
+}
+
+#[test]
+fn a_reset_after_a_denied_nonzero_proposal_stays_reconstructible_with_no_step() {
+    let (journal, target) = Journal::promoted_compact();
+    let application = journal.events.iter().rposition(|event| matches!(&event.payload, Payload::DayApplied(applied) if applied.target.ccd() == &target)).unwrap();
+    let mut events = journal.events[..application].to_vec();
+    let mut receipt = journal.events[application].clone();
+    let Payload::DayApplied(applied) = &mut receipt.payload else {
+        unreachable!();
+    };
+    applied.target = togi_journal::CcdVector::expand(zero(), &crate::fixture::cores()).unwrap();
+    applied.readbacks = offsets_of(&zero());
+    events.push(receipt);
+    let mut successor = successor_of(&events);
+    let mut query = cold_boot("successor", 60_000);
+    query.now = successor.now();
+    let committed = successor.settle_day(&query);
+    let projection = successor.state.project();
+    assert!(
+        matches!(
+            projection.climb.campaign.as_ref().unwrap().history,
+            CampaignHistory::Complete {}
+        ),
+        "{:?}",
+        projection.climb.campaign.as_ref().unwrap().history
+    );
+    assert!(!committed.iter().any(|payload| matches!(payload, Payload::ClimbDecision(record) if matches!(&record.decision, ClimbAction::Hold { blocked_by } if blocked_by.contains(&ClimbBlocker::CampaignHistory {})))));
+    assert_eq!(
+        projection.applied,
+        Some(togi_tuner::UnitProfile::of_ccd(&zero()))
+    );
+    assert!(
+        projection
+            .climb
+            .units
+            .iter()
+            .all(|unit| unit.latest_step.is_none())
+    );
+    assert_eq!(projection.climb.campaign.as_ref().unwrap().consumed, 0);
+    assert_eq!(replay(&successor.events).project(), projection);
+}
+
+pub(crate) fn imported(event: &Event) -> togi_journal::DayImported {
     let wire: serde_json::Value = serde_json::from_str(&event.encode().unwrap()).unwrap();
     togi_journal::DayImported {
         original: togi_journal::Provenance {

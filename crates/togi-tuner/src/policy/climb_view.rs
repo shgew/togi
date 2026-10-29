@@ -11,10 +11,46 @@ use crate::{
     UnitProfile,
     cap::{Bound, Hours, Rate, poisson_upper},
     climb,
+    day::{Invocation, Pause},
 };
 use togi_journal::{self as journal, Seq};
 
 impl State {
+    /// What blocks the next cold-boot decision now, by the same decision the day owes: `None` when it would
+    /// not hold. The committed decisions are history; a night that maps an edge or completes a certificate
+    /// after the last one changes the blockers without a new decision. The clock is the latest committed
+    /// time, since a projection reads only the journal.
+    fn current_climb_blockers(&self) -> Option<Vec<journal::ClimbBlocker>> {
+        let view = self.day_view().ok()?;
+        let now = self
+            .climb
+            .decisions
+            .values()
+            .next_back()
+            .map(|commit| commit.time)
+            .into_iter()
+            .chain(self.days.applications.last().map(|application| application.time))
+            .chain(self.qualification_records().iter().map(|record| record.latest.time))
+            .max()
+            .unwrap_or(jiff::Timestamp::MIN);
+        let plan = self
+            .climb_decision(
+                &view,
+                now,
+                Invocation::ColdBoot {
+                    pause: Pause::Running,
+                },
+            )
+            .ok()?;
+        match &plan.action {
+            climb::ClimbAction::Hold { blocked_by } => self.climb_blockers(blocked_by, &view).ok(),
+            climb::ClimbAction::FirmwareZero { .. }
+            | climb::ClimbAction::Retreat(_)
+            | climb::ClimbAction::Restore(_)
+            | climb::ClimbAction::Promote(_) => None,
+        }
+    }
+
     pub(super) fn climb_projection(&self) -> ClimbProjection {
         let Some(history) = &self.climb.history else {
             return ClimbProjection::default();
@@ -35,6 +71,7 @@ impl State {
             })
         });
         let latest = self.climb.decisions.values().next_back();
+        let blockers = self.current_climb_blockers();
         let applied = vector(history.current(), history.units()).ok();
         let units = history
             .units()
@@ -62,11 +99,9 @@ impl State {
                             .get(&unit.id)
                             .map_or_else(Vec::new, |stop| stop.payload.witnesses.clone()),
                     }
-                } else if let Some(journal::ClimbAction::Hold { blocked_by }) =
-                    latest.map(|commit| &commit.payload.decision)
-                {
+                } else if let Some(reason) = &blockers {
                     ClimbUnitState::Held {
-                        reason: blocked_by.clone(),
+                        reason: reason.clone(),
                     }
                 } else {
                     ClimbUnitState::Climbing

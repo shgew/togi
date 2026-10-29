@@ -399,7 +399,7 @@ impl State {
             .max()
     }
 
-    fn climb_blockers(
+    pub(super) fn climb_blockers(
         &self,
         blocked: &[climb::Blocker],
         view: &DayView,
@@ -448,7 +448,7 @@ impl State {
                     );
                 }
                 climb::Blocker::Veto => result.extend(
-                    crate::day::vetoes(&view.events)
+                    self.active_vetoes(view)
                         .iter()
                         .filter_map(|veto| self.journal_event_id(&veto.event))
                         .map(|event| journal::ClimbBlocker::Veto { event }),

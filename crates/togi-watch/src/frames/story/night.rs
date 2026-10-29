@@ -484,19 +484,80 @@ fn event_words(event: &togi_journal::DayEventId) -> String {
         togi_journal::DayEventId::Requalification { night } => format!("requalification {night}"),
     }
 }
+
+/// One line of the D narration: plain words, or the daily-evidence line whose clauses a renderer may drop
+/// when the line does not fit.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum ClimbLine {
+    Text(String),
+    Daily(DailyWords),
+}
+
+impl ClimbLine {
+    /// The line at full length.
+    pub(crate) fn words(&self) -> String {
+        match self {
+            Self::Text(text) => text.clone(),
+            Self::Daily(daily) => daily.words(),
+        }
+    }
+}
+
+impl From<String> for ClimbLine {
+    fn from(text: String) -> Self {
+        Self::Text(text)
+    }
+}
+
+/// What the current exact profile's daily evidence bounds, if anything.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum DailyBound {
+    Unavailable,
+    /// The numeric rate bound together with its fixed-rate-model qualification; neither shows without the other.
+    Rate(String),
+}
+
+/// The daily-evidence line in the clauses it is fitted by: the clean hours always, the bound with its
+/// qualification as one clause, the observed counts last.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DailyWords {
+    pub(crate) head: String,
+    pub(crate) bound: DailyBound,
+    pub(crate) observed: String,
+}
+
+impl DailyWords {
+    pub(crate) const BOUND_SEP: &'static str = "; ";
+    pub(crate) const OBSERVED_SEP: &'static str = " · ";
+
+    fn words(&self) -> String {
+        let bound = match &self.bound {
+            DailyBound::Unavailable => "rate bound unavailable",
+            DailyBound::Rate(rate) => rate,
+        };
+        format!(
+            "{}{}{bound}{}{}",
+            self.head,
+            Self::BOUND_SEP,
+            Self::OBSERVED_SEP,
+            self.observed
+        )
+    }
+}
+
 /// Campaign and daily evidence are already projected; no renderer invents a permission or rate bound.
-pub(crate) fn climb_lines(policy: &Projection) -> Vec<String> {
+pub(crate) fn climb_lines(policy: &Projection) -> Vec<ClimbLine> {
     use togi_journal::{CampaignEventPhase, CampaignHistory, ClimbAction};
     let climb = &policy.climb;
-    let mut lines = vec![
-        PERMISSION.to_owned(),
-        allowance_words(climb.campaign.as_ref()),
+    let mut lines: Vec<ClimbLine> = vec![
+        ClimbLine::Text(PERMISSION.to_owned()),
+        ClimbLine::Text(allowance_words(climb.campaign.as_ref())),
     ];
     if let Some(campaign) = &climb.campaign {
         if let CampaignHistory::Unreconstructible { reason } = &campaign.history {
-            lines.push(format!(
+            lines.push(ClimbLine::Text(format!(
                 "campaign history unavailable: {reason}; new exploration blocked"
-            ));
+            )));
         }
         for event in &campaign.events {
             let phase = match event.phase {
@@ -510,7 +571,7 @@ pub(crate) fn climb_lines(policy: &Projection) -> Vec<String> {
                 togi_journal::Classification::NonCpu {} => "non-CPU".to_owned(),
                 togi_journal::Classification::Unexplained {} => "unexplained".to_owned(),
             };
-            lines.push(format!(
+            lines.push(ClimbLine::Text(format!(
                 "{phase} event {}: {class}{}{}",
                 event_words(&event.event),
                 if event.provisional {
@@ -523,43 +584,46 @@ pub(crate) fn climb_lines(policy: &Projection) -> Vec<String> {
                 } else {
                     ""
                 }
-            ));
+            )));
         }
     }
     match &climb.daily {
-        None => lines.push(
+        None => lines.push(ClimbLine::Text(
             "experimental: current exact-profile daily evidence unavailable; no rate bound"
                 .to_owned(),
-        ),
+        )),
         Some(daily) => {
             let bound = daily
                 .poisson_upper_per_h
                 .filter(|rate| rate.is_finite() && *rate > 0.0)
-                .map_or_else(
-                    || "rate bound unavailable".to_owned(),
-                    |rate| {
-                        format!(
-                            "at most 1 crash per {:.0} h (95%, fixed-rate model)",
-                            1.0 / rate
-                        )
-                    },
-                );
-            lines.push(format!(
-                "experimental: {} clean hours; {bound} · {} crashes / {} observed h",
-                hours(daily.clean_s),
-                daily.crashes,
-                hours(daily.observed_s)
-            ));
+                .map_or(DailyBound::Unavailable, |rate| {
+                    DailyBound::Rate(format!(
+                        "at most 1 crash per {:.0} h (95%, fixed-rate model)",
+                        1.0 / rate
+                    ))
+                });
+            lines.push(ClimbLine::Daily(DailyWords {
+                head: format!("experimental: {} clean hours", hours(daily.clean_s)),
+                bound,
+                observed: format!(
+                    "{} crashes / {} observed h",
+                    daily.crashes,
+                    hours(daily.observed_s)
+                ),
+            }));
         }
     }
     if let Some(profile) = &climb.profiles.proposed {
-        lines.push(format!("proposed, not applied: {}", vector_words(profile)));
+        lines.push(ClimbLine::Text(format!(
+            "proposed, not applied: {}",
+            vector_words(profile)
+        )));
     }
     if let Some(profile) = &climb.profiles.paused_saved {
-        lines.push(format!(
+        lines.push(ClimbLine::Text(format!(
             "paused saved D, not readback: {}",
             vector_words(profile)
-        ));
+        )));
     }
     for unit in &climb.units {
         let name = match unit.unit {
@@ -584,11 +648,11 @@ pub(crate) fn climb_lines(policy: &Projection) -> Vec<String> {
                 last_clean.get()
             ),
         };
-        lines.push(format!(
+        lines.push(ClimbLine::Text(format!(
             "{name}: {state}; hold {} / {} h at exact D",
             hours(unit.hold.credited_s),
             hours(unit.hold.required_s)
-        ));
+        )));
         if let Some(step) = &unit.latest_step {
             let action = match &step.action {
                 ClimbAction::Hold { blocked_by } => format!(
@@ -627,10 +691,10 @@ pub(crate) fn climb_lines(policy: &Projection) -> Vec<String> {
                 },
                 ClimbAction::FirmwareZero {} => "firmware reset to stock".to_owned(),
             };
-            lines.push(format!(
+            lines.push(ClimbLine::Text(format!(
                 "{name}: applied {action}; application {:?}; witnesses {:?}",
                 step.application, step.witnesses
-            ));
+            )));
         }
     }
     lines

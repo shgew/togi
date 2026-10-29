@@ -121,6 +121,28 @@ impl State {
             .push(committed(event, receipt.clone()));
     }
 
+    /// The vetoes the classified events stand for plus the predecessor's, which survive the
+    /// transition under their original identity unless raw evidence now classifies that event.
+    pub(super) fn active_vetoes(&self, view: &super::day_events::DayView) -> Vec<day::Veto> {
+        let mut vetoes = day::vetoes(&view.events);
+        vetoes.extend(
+            self.climb
+                .imported_vetoes
+                .iter()
+                .filter(|(id, _)| view.events.iter().all(|event| &event.id != *id))
+                .filter_map(|(id, profile)| {
+                    let (journal::ObservedProfile::Ccd { cores, .. }
+                    | journal::ObservedProfile::PerCore { cores }) = profile;
+                    Some(day::Veto {
+                        event: id.clone(),
+                        certainty: day::Certainty::Definite,
+                        profile: day::CoreProfile::new(*cores).ok()?,
+                    })
+                }),
+        );
+        vetoes
+    }
+
     pub(super) fn reconstruct_campaign(&mut self, at: jiff::Timestamp) -> Result<(), FoldError> {
         if self.climb.imports.is_empty() && self.climb.import_summary.is_none() {
             return Ok(());
@@ -211,6 +233,10 @@ impl State {
                 provisional: charge.provisional,
                 reclassified: charge.reclassified,
             });
+        }
+        for veto in &reconstructed.vetoes {
+            let event = self.imported_identity(&veto.event);
+            self.climb.imported_vetoes.insert(event, veto.profile.clone());
         }
         for stop in reconstructed.stops.values() {
             if let Some(&seq) = self.climb.import_sequences.get(&stop.witness) {

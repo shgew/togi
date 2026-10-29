@@ -54,8 +54,8 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0...             22:13  start    session started on 16 cores
 ~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt             ggggg  tttttttt ttttttttttttttttttttttttttt
-│  experimental: 50.000 clean hours; at most 1 crash per 17 h (95%...
-~  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  experimental: 50.000 clean hours
+~  tttttttttttttttttttttttttttttttt
 │  proposed, not applied: 0:-5 1:-5 2:-5 3:-5 4:-5 5:-5 6:-5 7:-5 8:0 9:0...
 ~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  CCD 0: climbing; hold 50.000 / 50.000 h at exact D

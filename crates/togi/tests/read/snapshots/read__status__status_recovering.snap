@@ -9,8 +9,8 @@ BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
 in flight: none
 
 UNIT   CORES                  D  C        D-C  HOLD h  STATE
-CCD 0  0,1,2,3,4,5,6,7        0  -5       5    0/50    climbing
-CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    climbing
+CCD 0  0,1,2,3,4,5,6,7        0  -5       5    0/50    held
+CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    held
 
 Day policy
 permission: experimental hold + exact night qualification
@@ -24,7 +24,7 @@ paused-saved profile: none
 allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
   U: observed -10 [#3129]
-  state: climbing
+  state: held: hold 0/50 h
   next proposal: core 0 -3, core 1 -3, core 2 -3, core 3 -3, core 4 -3, core 5
   -3, core 6 -3, core 7 -3, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
   core 13 0, core 14 0, core 15 0
@@ -52,7 +52,7 @@ unit: CCD 0, phase coarse, parent none, inherited start 0
   diagnostic S (non-authorizing): 0 [#3133]
 unit: CCD 1, phase coarse, parent none, inherited start 0
   U: unknown
-  state: climbing
+  state: held: hold 0/50 h
   diagnostic S (non-authorizing): 0 [#3105]
 current exact profile daily evidence: 0 h; 0 crashes []
 experimental: rate bound unavailable (95%, fixed-rate model)

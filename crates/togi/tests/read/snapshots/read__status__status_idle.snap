@@ -11,8 +11,8 @@ in flight: [#1270] trial 0209 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
   control task control #0 night #34
 
 UNIT   CORES                  D  C        D-C  HOLD h  STATE
-CCD 0  0,1,2,3,4,5,6,7        0  unknown  -    0/50    climbing
-CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    climbing
+CCD 0  0,1,2,3,4,5,6,7        0  unknown  -    0/50    held
+CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    held
 
 Day policy
 permission: experimental hold + exact night qualification
@@ -26,10 +26,10 @@ paused-saved profile: none
 allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
   U: unknown
-  state: climbing
+  state: held: unknown edge for CCD 0; unknown edge for CCD 1
 unit: CCD 1, phase coarse, parent none, inherited start 0
   U: unknown
-  state: climbing
+  state: held: unknown edge for CCD 0; unknown edge for CCD 1
 current exact profile daily evidence: 0 h; 0 crashes []
 experimental: rate bound unavailable (95%, fixed-rate model)
 firmware restoration: none

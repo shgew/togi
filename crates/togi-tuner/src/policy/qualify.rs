@@ -17,7 +17,7 @@ use super::decision::{Decision, PolicyPayload};
 use super::ledger::{Sig, is_adequate};
 use super::night_query::NotReady;
 use super::plan::workloads_of;
-use crate::day::{CoreProfile, vetoes};
+use crate::day::CoreProfile;
 use crate::night::{Cell, Layout, Matrix, Reuse, Source, qualification_cells};
 use crate::{EVIDENCE_EPOCH, UnitProfile};
 
@@ -710,7 +710,7 @@ impl State {
         let Some(proposal) = permission.candidate(&view.events)? else {
             return Ok(None);
         };
-        let vetoes = vetoes(&view.events);
+        let vetoes = self.active_vetoes(&view);
         if !vetoes.is_empty() {
             let core = CoreProfile::of_units(&proposal, &self.machine.cores)?;
             if vetoes.iter().any(|veto| veto.profile.forbids(&core)) {

@@ -13,10 +13,11 @@ use togi_tuner::unit::UnitProfile;
 
 use super::super::colours::Paint;
 use super::super::draw::bounded_rows;
-use super::super::fit::rule;
+use super::super::fit::{Clause, Form, fit_clauses, rule};
 use super::super::layout::SizeClass;
 use super::super::measure::Measure;
 use super::super::scene::{Scene, hm};
+use super::super::story::{ClimbLine, DailyBound, DailyWords};
 use super::table::{cell, field_row};
 use crate::day_totals::unknown_intervals;
 
@@ -266,6 +267,31 @@ fn reproduction_value(scene: &Scene<'_>, reproduction: &ReproductionProjection) 
     value(scene, Paint::Text, text)
 }
 
+/// The daily-evidence line fitted to `width`: the observed counts go first, then the numeric bound together with
+/// its fixed-rate-model qualification, so a number never shows without the qualification it needs.
+fn daily_value(scene: &Scene<'_>, daily: DailyWords, width: usize) -> Line<'static> {
+    let text = |text: String| cell(scene, Paint::Text, text);
+    let bound = match daily.bound {
+        DailyBound::Unavailable => Clause::whole(
+            DailyWords::BOUND_SEP,
+            text("rate bound unavailable".to_owned()),
+        ),
+        DailyBound::Rate(rate) => Clause::new(
+            DailyWords::BOUND_SEP,
+            vec![Form::new(text(rate), 1), Form::empty()],
+        ),
+    };
+    let clauses = [
+        Clause::whole("", text(daily.head)),
+        bound,
+        Clause::new(
+            DailyWords::OBSERVED_SEP,
+            vec![Form::new(text(daily.observed), 2), Form::empty()],
+        ),
+    ];
+    fit_clauses(width, &clauses, scene.colours)
+}
+
 fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'static>> {
     let applied = policy.climb.profiles.applied.as_ref().map_or_else(
         || {
@@ -284,8 +310,11 @@ fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'
         scene.style(Paint::Track),
         scene.colours,
     )];
-    for text in super::super::story::climb_lines(policy) {
-        out.push(value(scene, Paint::Text, text));
+    for line in super::super::story::climb_lines(policy) {
+        out.push(match line {
+            ClimbLine::Text(text) => value(scene, Paint::Text, text),
+            ClimbLine::Daily(daily) => daily_value(scene, daily, width),
+        });
     }
     if policy.climb.units.is_empty() {
         out.push(field_row(scene, "hold", hold_value(scene, day), width));

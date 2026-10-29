@@ -282,7 +282,11 @@ fn permission_frames(visit: &mut impl FnMut(&str, &Buffer, Form)) {
 fn d_state_snapshots(case: Case) {
     visit_case(case, &mut checked);
     let hand = case.hand();
-    let text = super::super::story::climb_lines(&hand.policy).join("\n");
+    let text = super::super::story::climb_lines(&hand.policy)
+        .iter()
+        .map(super::super::story::ClimbLine::words)
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(text.contains("permission: experimental hold + exact night qualification"));
     assert!(text.contains(
         "experimental: 50.000 clean hours; at most 1 crash per 17 h (95%, fixed-rate model)"
@@ -315,6 +319,22 @@ fn d_state_snapshots(case: Case) {
 #[test]
 fn permission_views_at_every_size_and_colour() {
     permission_frames(&mut checked);
+}
+
+#[test]
+fn the_rate_bound_never_shows_without_its_fixed_rate_model_qualification() {
+    let mut shown = 0;
+    for case in Case::ALL {
+        visit_case(case, &mut |name, buf, _| {
+            for row in rows_of(buf) {
+                if row.contains("at most 1 crash per") {
+                    shown += 1;
+                    assert!(row.contains("fixed-rate model)"), "{name}: {row}");
+                }
+            }
+        });
+    }
+    assert!(shown > 0, "no layout shows the bound");
 }
 
 #[test]

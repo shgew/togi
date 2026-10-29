@@ -665,7 +665,14 @@ impl Journal {
     ///
     /// For focused day tests; `crate::flow::promoted` reaches D through the whole first night instead.
     pub(crate) fn promoted_compact() -> (Self, CcdProfile) {
+        Self::promoted_compact_after(|_| {})
+    }
+
+    /// The ready session after `setup`, a successor's imported predecessor history and campaign
+    /// enrollment preceding its first stock hold, then a night that qualifies the candidate.
+    fn qualified_candidate(setup: impl FnOnce(&mut Self)) -> (Self, CcdProfile) {
         let mut journal = Self::ready();
+        setup(&mut journal);
         journal.hold_stock();
         journal.reboot("tuning1");
         let opening = crate::next_plan(&mut journal);
@@ -743,7 +750,19 @@ impl Journal {
             .into(),
             &[observed],
         );
+        (journal, proposal)
+    }
+
+    /// [`Self::promoted_compact_after`] without its promotion: the qualified candidate waits at the
+    /// cold boot `day1`, whose commitments the caller settles.
+    pub(crate) fn qualified_compact_after(setup: impl FnOnce(&mut Self)) -> (Self, CcdProfile) {
+        let (mut journal, proposal) = Self::qualified_candidate(setup);
         journal.boot_start("day1");
+        (journal, proposal)
+    }
+
+    pub(crate) fn promoted_compact_after(setup: impl FnOnce(&mut Self)) -> (Self, CcdProfile) {
+        let (mut journal, proposal) = Self::qualified_compact_after(setup);
         let committed = journal.settle_day(&cold_boot("day1", 60_000));
         let step = steps(&committed)
             .into_iter()

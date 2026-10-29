@@ -33,7 +33,7 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │  DAY ───────────────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  permission: experimental hold + exact night qualification
 │  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0...             22:13  start    session started on 16 cores
-│  experimental: 50.000 clean hours; at most 1 crash per 17 h (95%...
+│  experimental: 50.000 clean hours
 │  CCD 0: climbing; hold 50.000 / 50.000 h at exact D
 │  CCD 0: applied step -5 → -10 (5 counts); application ApplicationId(2)...
 │  CCD 1: climbing; hold 50.000 / 50.000 h at exact D

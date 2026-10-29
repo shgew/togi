@@ -47,8 +47,8 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ allowance: 0 consumed / 2 limit; 2 remaining · 0…           22:13  start    session started on 16 cores
 ~ ttttttttttttttttttttttttttttttttttttttttttttttttt           ggggg  tttttttt ttttttttttttttttttttttttttt
-│ experimental: 50.000 clean hours; at most 1 crash per 17…
-~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ experimental: 50.000 clean hours
+~ tttttttttttttttttttttttttttttttt
 │ proposed, not applied: 0:-15 1:-15 2:-15 3:-15 4:-15…
 ~ ttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ CCD 0: held/unfinished: exact candidate qualification…

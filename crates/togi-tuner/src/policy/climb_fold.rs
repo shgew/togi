@@ -92,7 +92,7 @@ impl State {
         let view = self
             .day_view()
             .map_err(|_| FoldError::ClimbRecord("invalid daily history"))?;
-        let vetoes = day::vetoes(&view.events);
+        let vetoes = self.active_vetoes(&view);
         let action = match &recorded.decision {
             journal::ClimbAction::Hold { .. } => climb::ClimbAction::Hold {
                 blocked_by: Vec::new(),
