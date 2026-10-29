@@ -1,9 +1,12 @@
 //! Changelog fragments: one file per pull request under `changes/` (ADR 0033).
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs, io};
+
+use pulldown_cmark::{Event, LinkType, Parser, Tag, TagEnd};
 
 use crate::{Pattern, PatternError, compiled, pattern};
 
@@ -278,7 +281,7 @@ fn read_fragment_dir(dir: &Path) -> Result<BTreeMap<String, String>, CheckError>
 
 /// The release section the entries make, without its heading, and the pull requests it links, ascending and
 /// distinct. Sections follow [`Section::ALL`]; in each, breaking entries come first, then by pull request number,
-/// each linked as ` ([#N])` before its final period.
+/// each linked as ` ([#N])` before its final period, with its `../` links rewritten for `CHANGELOG.md`.
 pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
     let mut body = String::new();
     for section in Section::ALL {
@@ -293,7 +296,7 @@ pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
         let _ = write!(body, "### {section}\n\n");
         for e in lines {
             let text = e.text.strip_suffix('.').unwrap_or(&e.text);
-            let _ = writeln!(body, "- {text} ([#{}]).", e.pr);
+            let _ = writeln!(body, "- {} ([#{}]).", relocate_links(text), e.pr);
         }
     }
     if body.ends_with('\n') {
@@ -303,6 +306,69 @@ pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
     prs.sort_unstable();
     prs.dedup();
     (body, prs)
+}
+
+/// `text` with its links relative to `CHANGELOG.md` at the repository root instead of to [`FRAGMENT_DIR`], where
+/// the fragment was written: the destination of each inline link or image that starts with `../`, as the
+/// Markdown parser reads the entry, loses that step. Everything else stays as written.
+fn relocate_links(text: &str) -> Cow<'_, str> {
+    // Per open link or image: whether its destination leaves `changes/`, and where its text ends so far.
+    let mut open: Vec<(bool, usize)> = Vec::new();
+    let mut cuts = Vec::new();
+    for (event, range) in Parser::new(text).into_offset_iter() {
+        if let Event::Start(
+            Tag::Link {
+                link_type,
+                dest_url,
+                ..
+            }
+            | Tag::Image {
+                link_type,
+                dest_url,
+                ..
+            },
+        ) = event
+        {
+            open.push((
+                link_type == LinkType::Inline && dest_url.starts_with("../"),
+                range.start + 1,
+            ));
+            continue;
+        }
+        if let Event::End(TagEnd::Link | TagEnd::Image) = event
+            && let Some((leaves, text_end)) = open.pop()
+            && leaves
+            && let Some(at) = destination(text, text_end, range.end)
+        {
+            cuts.push(at);
+        }
+        // Everything inside a link's text, nested links and images included, extends that text.
+        if let Some((_, end)) = open.last_mut() {
+            *end = (*end).max(range.end);
+        }
+    }
+    if cuts.is_empty() {
+        return Cow::Borrowed(text);
+    }
+    cuts.sort_unstable();
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    for at in cuts {
+        out.push_str(&text[copied..at]);
+        copied = at + "../".len();
+    }
+    out.push_str(&text[copied..]);
+    Cow::Owned(out)
+}
+
+/// Where the `../` destination of the inline link spanning up to `end`, whose text ends at `text_end`, starts:
+/// past the `](` that closes the text, spaces and an opening `<`.
+fn destination(text: &str, text_end: usize, end: usize) -> Option<usize> {
+    let after = text_end + text.get(text_end..end)?.find("](")? + "](".len();
+    let rest = text[after..end].trim_start_matches([' ', '\t', '\n']);
+    let rest = rest.strip_prefix('<').unwrap_or(rest);
+    // `rest` is a suffix of `text[..end]`.
+    rest.starts_with("../").then_some(end - rest.len())
 }
 
 #[cfg(test)]

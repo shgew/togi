@@ -100,6 +100,72 @@ fn assembles_release_section() {
     assert_eq!(bump("0.8.0", &body).unwrap().0, "0.9.0");
 }
 
+#[test_case(
+    "See [crashes](../docs/howto.md#recording-a-crash-togi-did-not-observe) and [tuning](../docs/how-togi-tunes.md).",
+    "See [crashes](docs/howto.md#recording-a-crash-togi-did-not-observe) and [tuning](docs/how-togi-tunes.md) ([#7])."
+    ; "fragment-relative links"
+)]
+#[test_case("A chart ![cores](../docs/cores.svg).", "A chart ![cores](docs/cores.svg) ([#7])." ; "image")]
+#[test_case(
+    "See [docs](https://github.com/shgew/togi/blob/main/README.md) and [issue 42](https://github.com/shgew/togi/issues/42).",
+    "See [docs](https://github.com/shgew/togi/blob/main/README.md) and [issue 42](https://github.com/shgew/togi/issues/42) ([#7])."
+    ; "absolute links"
+)]
+#[test_case("Use `../togi` from [a](#usage).", "Use `../togi` from [a](#usage) ([#7])." ; "not a link destination")]
+#[test_case("Read [docs](<../docs/howto.md>).", "Read [docs](<docs/howto.md>) ([#7])." ; "angle destination")]
+#[test_case("Read [docs]( ../docs/howto.md).", "Read [docs]( docs/howto.md) ([#7])." ; "spaced destination")]
+#[test_case(
+    "Keep `[docs](../docs/howto.md)` and ``a ` [b](../c)`` as written, then [docs](../docs/howto.md).",
+    "Keep `[docs](../docs/howto.md)` and ``a ` [b](../c)`` as written, then [docs](docs/howto.md) ([#7])."
+    ; "code spans"
+)]
+#[test_case("A stray ` then [docs](../docs/howto.md).", "A stray ` then [docs](docs/howto.md) ([#7])." ; "unmatched backtick")]
+#[test_case(r"Not a link: [x\](../y) or \[x\](../y).", r"Not a link: [x\](../y) or \[x\](../y) ([#7])." ; "escaped bracket")]
+#[test_case(r"Not a link: \[docs](../docs/howto.md).", r"Not a link: \[docs](../docs/howto.md) ([#7])." ; "escaped opener")]
+#[test_case("Not a link: docs](../docs/howto.md).", "Not a link: docs](../docs/howto.md) ([#7])." ; "no opener")]
+#[test_case("See [a [nested] link](../docs/howto.md).", "See [a [nested] link](docs/howto.md) ([#7])." ; "nested brackets")]
+#[test_case(
+    r#"See [docs](https://example.com "Example [x](../y)") and [howto](../docs/howto.md 'Its [x](../y)')."#,
+    r#"See [docs](https://example.com "Example [x](../y)") and [howto](docs/howto.md 'Its [x](../y)') ([#7])."#
+    ; "link titles"
+)]
+#[test_case(
+    "See [a](../docs/a_(b).md (Its [x])) then [c](../docs/c.md).",
+    "See [a](docs/a_(b).md (Its [x])) then [c](docs/c.md) ([#7])."
+    ; "parentheses in destination and title"
+)]
+#[test_case("Not a link: [x](../docs/a b).", "Not a link: [x](../docs/a b) ([#7])." ; "space in bare destination")]
+#[test_case(
+    "Not a link: [x](<bad) then [docs](../docs/howto.md).",
+    "Not a link: [x](<bad) then [docs](docs/howto.md) ([#7])."
+    ; "unclosed angle destination"
+)]
+#[test_case(
+    "Not a link: [outer [inner](https://example.com)](../docs/howto.md).",
+    "Not a link: [outer [inner](https://example.com)](../docs/howto.md) ([#7])."
+    ; "link inside link text"
+)]
+#[test_case(
+    "A [![chart](../docs/cores.svg)](../docs/howto.md) image link.",
+    "A [![chart](docs/cores.svg)](docs/howto.md) image link ([#7])."
+    ; "image inside link text"
+)]
+#[test_case(
+    r#"Keep <span title="[x](../y)">text</span> then [docs](../docs/howto.md)."#,
+    r#"Keep <span title="[x](../y)">text</span> then [docs](docs/howto.md) ([#7])."#
+    ; "raw HTML"
+)]
+#[test_case(
+    r#"Not a link: [docs]( "Example [x](../y)")."#,
+    r#"Not a link: [docs]( "Example [x](y)") ([#7])."#
+    ; "quote opens a bare destination"
+)]
+fn assembles_links_relative_to_changelog(text: &str, want: &str) {
+    let files = BTreeMap::from([("7.md".to_owned(), format!("### Fixed\n\n- {text}\n"))]);
+    let (body, _) = assemble(&parse_fragments(&files).unwrap());
+    assert_eq!(body, format!("### Fixed\n\n- {want}"));
+}
+
 #[test]
 fn real_fs_check_fragments_accepts_valid_directory() {
     let dir = tempfile::tempdir().unwrap();
