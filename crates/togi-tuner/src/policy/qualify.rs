@@ -10,7 +10,7 @@ use togi_journal::{
     QualificationPurpose, QualificationState, Queue, Seq, TaskId, Tested, WorkloadContent,
 };
 use togi_machine::{
-    BiosContext, CcdId, CcdProfile, ContentId, CoreSet, Digest, TargetOffset, WorkloadId,
+    BiosContext, CcdId, ContentId, CoreSet, Digest, TargetOffset, WorkloadId,
 };
 
 use super::State;
@@ -19,7 +19,7 @@ use super::decision::{Decision, PolicyPayload};
 use super::ledger::{Sig, is_adequate};
 use super::night_query::NotReady;
 use super::plan::workloads_of;
-use crate::EVIDENCE_EPOCH;
+use crate::{EVIDENCE_EPOCH, UnitProfile};
 use crate::day::{CoreProfile, awaiting, next_proposal, shallower, vetoes};
 use crate::night::{Cell, Layout, Matrix, Reuse, Source, qualification_cells};
 
@@ -91,7 +91,7 @@ pub(super) enum QualWork {
     None,
     /// A matrix is wanted but not yet frozen.
     NeedStart {
-        profile: CcdProfile,
+        profile: UnitProfile,
         purpose: QualificationPurpose,
     },
     /// A frozen matrix has cells outstanding.
@@ -177,8 +177,11 @@ fn group_commit(records: &mut Vec<QualRecord>, commit: &Committed<NightQualifica
 }
 
 impl State {
-    pub(super) fn ccd_vector(&self, profile: &CcdProfile) -> Result<CcdVector, NotReady> {
-        Ok(CcdVector::expand(profile.clone(), &self.machine.cores)?)
+    pub(super) fn ccd_vector(&self, profile: &UnitProfile) -> Result<CcdVector, NotReady> {
+        Ok(CcdVector::expand(
+            profile.to_ccd().ok_or(NotReady::NonCoarse)?,
+            &self.machine.cores,
+        )?)
     }
 
     /// Every qualification commitment grouped into records, in order of start. Grouped incrementally:
@@ -219,7 +222,7 @@ impl State {
     }
 
     /// The profile D applied just before `seq`.
-    fn applied_before(&self, seq: Seq) -> Option<&CcdProfile> {
+    fn applied_before(&self, seq: Seq) -> Option<&UnitProfile> {
         let history = self.days.history.as_ref()?;
         history
             .iter()
@@ -233,11 +236,11 @@ impl State {
     /// `cutoff` derives it, partial chains included, and the evidence seq of each reused cell.
     fn matrix_at(
         &self,
-        profile: &CcdProfile,
+        profile: &UnitProfile,
         purpose: QualificationPurpose,
         ordinal: u32,
         cutoff: Seq,
-        applied: Option<&CcdProfile>,
+        applied: Option<&UnitProfile>,
     ) -> Result<(Matrix, HashMap<Cell, Seq>), NotReady> {
         self.layout_at(Some(cutoff), |layout| {
             self.matrix_in(layout, profile, purpose, ordinal, cutoff, applied)
@@ -250,20 +253,27 @@ impl State {
     fn matrix_in(
         &self,
         layout: &Layout<'_>,
-        profile: &CcdProfile,
+        profile: &UnitProfile,
         purpose: QualificationPurpose,
         ordinal: u32,
         cutoff: Seq,
-        applied: Option<&CcdProfile>,
+        applied: Option<&UnitProfile>,
     ) -> Result<(Matrix, HashMap<Cell, Seq>), NotReady> {
         if purpose == QualificationPurpose::Requalification {
             let matrix = qualification_cells(layout, profile, ordinal, &Reuse::AllFresh)?;
             return Ok((matrix, HashMap::new()));
         }
-        let changed: BTreeSet<CcdId> = profile
+        let units = crate::Units::for_profile(layout.topology, profile);
+        let changed: BTreeSet<CcdId> = self
+            .machine
+            .cores
             .iter()
-            .filter(|&(ccd, offset)| applied.is_none_or(|applied| applied.get(ccd) != Some(offset)))
-            .map(|(ccd, _)| ccd)
+            .filter_map(|info| {
+                let unit = units.unit_of(info.core)?;
+                applied
+                    .is_none_or(|applied| applied.get(unit) != profile.get(unit))
+                    .then_some(info.ccd)
+            })
             .collect();
         let certified = self.certified_witnesses(cutoff);
         let candidates = qualification_cells(layout, profile, ordinal, &Reuse::AllFresh)?;
@@ -276,7 +286,7 @@ impl State {
             if changed.contains(&ccd) {
                 continue;
             }
-            let Some(offset) = profile.get(ccd) else {
+            let Some(offset) = profile.get(crate::UnitId::Ccd(ccd)) else {
                 continue;
             };
             let Some(&witness) = certified.get(&(ccd, offset, Sig::of_cell(&cell))) else {
@@ -361,7 +371,7 @@ impl State {
         let start = &record.start;
         let cutoff = start.causes.iter().copied().max().unwrap_or(start.seq);
         let (matrix, reused) = self.matrix_at(
-            start.payload.profile.ccd(),
+            &UnitProfile::of_ccd(start.payload.profile.ccd()),
             start.payload.purpose,
             record.index,
             cutoff,
@@ -589,16 +599,16 @@ impl State {
     fn current_records<'a>(
         &'a self,
         records: &'a [QualRecord],
-        profile: &'a CcdProfile,
+        profile: &'a UnitProfile,
     ) -> impl Iterator<Item = &'a QualRecord> {
         records.iter().filter(move |record| {
-            record.start.payload.profile.ccd() == profile && self.is_current_record(record)
+            profile.matches_ccd(record.start.payload.profile.ccd()) && self.is_current_record(record)
         })
     }
 
     /// The profiles with a complete, current qualification no older than the re-qualification period at
     /// `now`: the ones a promotion may apply.
-    pub(super) fn qualified_profiles(&self, now: jiff::Timestamp) -> BTreeSet<CcdProfile> {
+    pub(super) fn qualified_profiles(&self, now: jiff::Timestamp) -> BTreeSet<UnitProfile> {
         self.qualification_records()
             .iter()
             .filter(|record| {
@@ -608,7 +618,7 @@ impl State {
                 ) && self.is_current_record(record)
                     && !Self::elapsed(record, now)
             })
-            .map(|record| record.start.payload.profile.ccd().clone())
+            .map(|record| UnitProfile::of_ccd(record.start.payload.profile.ccd()))
             .collect()
     }
 
@@ -620,7 +630,7 @@ impl State {
     }
 
     /// Whether a current qualification of `profile` ended in failure.
-    fn failed_current(&self, records: &[QualRecord], profile: &CcdProfile) -> bool {
+    fn failed_current(&self, records: &[QualRecord], profile: &UnitProfile) -> bool {
         self.current_records(records, profile).any(|record| {
             matches!(
                 record.latest.payload.state,
@@ -634,13 +644,13 @@ impl State {
     /// the failed commitment when it was written. Raw failures alone block, so an interrupted failed
     /// commitment still does; neither content, night nor restart lifts the block
     /// (`docs/spec/tuner.md`, Failed next-step qualification).
-    pub(super) fn qualification_blocked(&self, profile: &CcdProfile) -> Option<Vec<Seq>> {
+    pub(super) fn qualification_blocked(&self, profile: &UnitProfile) -> Option<Vec<Seq>> {
         let firmware = self.machine.firmware.as_ref()?;
         let session = self.machine.session?;
         let mut blocked = Vec::new();
         for record in self.qualification_records().iter().filter(|record| {
             record.queue() == Queue::Qualification
-                && record.start.payload.profile.ccd() == profile
+                && profile.matches_ccd(record.start.payload.profile.ccd())
                 && &record.start.payload.firmware == firmware
                 && record.start.payload.epoch == EVIDENCE_EPOCH
         }) {
@@ -659,7 +669,7 @@ impl State {
                         observed.outcome == Outcome::Failure
                             && observed.activity == Activity::Qualification
                             && observed.tested == Tested::Exact {}
-                            && observed.profile.ccd() == profile
+                            && profile.matches_ccd(observed.profile.ccd())
                             && &observed.firmware == firmware
                             && observed.epoch == EVIDENCE_EPOCH
                             && observed.source.session == session
@@ -683,7 +693,7 @@ impl State {
     /// toward the committed cap S, unless an active veto
     /// forbids it. A vetoed proposal is held, not replaced by another CCD or step, so there is nothing
     /// to qualify until a cap or a veto changes.
-    pub(super) fn proposal(&self) -> Result<Option<CcdProfile>, NotReady> {
+    pub(super) fn proposal(&self) -> Result<Option<UnitProfile>, NotReady> {
         let Some(history) = self.days.history.as_ref() else {
             return Ok(None);
         };
@@ -694,7 +704,7 @@ impl State {
         };
         let vetoes = vetoes(&view.events);
         if !vetoes.is_empty() {
-            let core = CoreProfile::of_ccd(&proposal.profile, &self.machine.cores)?;
+            let core = CoreProfile::of_units(&proposal.profile, &self.machine.cores)?;
             if vetoes.iter().any(|veto| veto.profile.forbids(&core)) {
                 return Ok(None);
             }
@@ -704,7 +714,7 @@ impl State {
 
     /// The retreat profile CO 0 is holding for a required step back, as the day would restore it under
     /// the committed caps; `None` when CO 0 holds nothing or the restoration would be CO 0 itself.
-    fn fallback_target(&self) -> Result<Option<CcdProfile>, NotReady> {
+    fn fallback_target(&self) -> Result<Option<UnitProfile>, NotReady> {
         let view = self.day_view()?;
         let Some(statuses) = self.statuses(&view)? else {
             return Ok(None);
@@ -780,7 +790,7 @@ impl State {
     }
 
     /// The nonzero profile applied just before the latest firmware zero, while D has not returned to it.
-    fn retained_profile(history: &crate::day::DayHistory) -> Option<CcdProfile> {
+    fn retained_profile(history: &crate::day::DayHistory) -> Option<UnitProfile> {
         let applications: Vec<_> = history.iter().collect();
         let zeroed = applications.iter().rposition(|application| {
             application.kind == crate::day::ApplicationKind::FirmwareZero
@@ -792,7 +802,7 @@ impl State {
     fn work_for(
         &self,
         records: &[QualRecord],
-        profile: CcdProfile,
+        profile: UnitProfile,
         purpose: QualificationPurpose,
         now: jiff::Timestamp,
     ) -> Result<QualWork, NotReady> {
@@ -832,7 +842,7 @@ impl State {
     /// The commitment that freezes the matrix of `profile` and starts its qualification.
     pub(super) fn start_qualification(
         &self,
-        profile: &CcdProfile,
+        profile: &UnitProfile,
         purpose: QualificationPurpose,
         contents: &BTreeMap<WorkloadId, ContentId>,
     ) -> Result<Decision, NotReady> {
