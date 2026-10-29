@@ -22,15 +22,18 @@ mod day_events;
 mod day_query;
 mod decision;
 mod evidence;
+mod filler;
 mod fold;
 mod ledger;
 mod mapping;
 mod night_next;
 mod night_query;
+mod permission;
 mod plan;
 mod projection;
 mod qualify;
 mod reproduce;
+mod statistical;
 pub mod successor;
 mod wire;
 
@@ -111,14 +114,14 @@ pub struct State {
 /// A cap outcome with what it was derived from.
 type CapCache = std::collections::BTreeMap<
     togi_machine::CcdId,
-    (mapping::CapKey, std::sync::Arc<mapping::CapOutcome>),
+    (statistical::CapKey, std::sync::Arc<statistical::CapOutcome>),
 >;
 
 /// A cap's journal payload with the outcome, committed cap and edge it was built from.
 type PayloadCache = std::collections::BTreeMap<
     togi_machine::CcdId,
     (
-        std::sync::Arc<mapping::CapOutcome>,
+        std::sync::Arc<statistical::CapOutcome>,
         Option<Seq>,
         togi_journal::Edge,
         std::sync::Arc<Option<togi_journal::CcdCap>>,

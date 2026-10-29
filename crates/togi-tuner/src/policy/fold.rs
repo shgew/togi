@@ -252,6 +252,15 @@ impl State {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
+            | Payload::UnitMapping(_)
+            | Payload::UnitEdge(_)
+            | Payload::ClimbDecision(_)
+            | Payload::UnitStop(_)
+            | Payload::CampaignStart(_)
+            | Payload::CampaignCharge(_)
+            | Payload::CampaignReclassified(_)
+            | Payload::FirmwareRestoration(_)
+            | Payload::SuccessorImported(_)
             | Payload::StateRebuilt(_) => {}
         }
         Ok(())
