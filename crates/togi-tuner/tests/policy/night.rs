@@ -287,13 +287,11 @@ fn the_filler_repeats_exact_current_cells_and_never_probes_below_the_cap() {
             .events
             .iter()
             .rev()
-            .find_map(|event| match &event.payload {
-                Payload::UnitEdge(edge)
-                    if edge.unit == togi_journal::UnitId::Ccd(crate::fixture::ccd(ccd)) =>
-                {
-                    Some(edge)
-                }
-                _ => None,
+            .find_map(|event| {
+                let Payload::UnitEdge(edge) = &event.payload else {
+                    return None;
+                };
+                (edge.unit == togi_journal::UnitId::Ccd(crate::fixture::ccd(ccd))).then_some(edge)
             })
             .unwrap();
         assert!(
@@ -306,18 +304,17 @@ fn the_filler_repeats_exact_current_cells_and_never_probes_below_the_cap() {
     let sweep: Vec<_> = journal
         .events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialIntent(intent)
-                if intent.task.is_some_and(|task| task.queue == Queue::Mapping) =>
-            {
-                match intent.tested {
-                    Some(Tested::Isolated { offset, .. }) if offset.get() % 5 != 0 => {
-                        Some(offset.get())
-                    }
-                    _ => None,
-                }
+        .filter_map(|event| {
+            let Payload::TrialIntent(intent) = &event.payload else {
+                return None;
+            };
+            if intent.task.is_none_or(|task| task.queue != Queue::Mapping) {
+                return None;
             }
-            _ => None,
+            let Some(Tested::Isolated { offset, .. }) = intent.tested else {
+                return None;
+            };
+            (offset.get() % 5 != 0).then_some(offset.get())
         })
         .collect();
     assert!(!sweep.is_empty());
@@ -337,9 +334,12 @@ fn unknown_edges_are_committed_without_a_ceiling_before_the_descent_completes() 
     let edges: Vec<_> = journal
         .events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::UnitEdge(edge) => Some(edge),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::UnitEdge(edge) = &event.payload {
+                Some(edge)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(edges.len(), 2);
@@ -361,9 +361,12 @@ fn a_backend_change_invalidates_edges_without_repeating_unknown_commitments() {
     assert_eq!(plan.activity, Activity::Control);
     let edges: Vec<_> = journal.events[from..]
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::UnitEdge(edge) => Some(edge),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::UnitEdge(edge) = &event.payload {
+                Some(edge)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(edges.len(), 2);

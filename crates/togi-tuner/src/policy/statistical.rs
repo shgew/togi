@@ -5,11 +5,11 @@ use super::evidence::ClassCap;
 use super::ledger::{Sig, saturating_u32};
 use super::night_query::NotReady;
 use super::{State, mapping::MappingPlan};
+use crate::UnitId;
 use crate::cap::{
     self, Beta, CapLimits, EDGE_MARGIN, Hours, LikelihoodCutoff, Rate, Refresh, Slope,
 };
 use crate::night::{EdgeU, Layout, mapping_cells};
-use crate::{UnitId, UnitProfile};
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -368,8 +368,8 @@ impl State {
             }
             let mut causes: Vec<Seq> = self
                 .nights
-                .edges
-                .get(&ccd)
+                .unit_edges
+                .get(&UnitId::Ccd(ccd))
                 .map(|edge| edge.seq)
                 .into_iter()
                 .collect();
@@ -384,18 +384,6 @@ impl State {
             )));
         }
         Ok(None)
-    }
-
-    /// The committed cap S of every CCD; CO 0 until a cap is committed.
-    pub(super) fn committed_caps(&self) -> Result<UnitProfile, NotReady> {
-        let ccds = self.ccds();
-        let mut caps = togi_machine::CcdProfile::zero(ccds.iter().copied())?;
-        for ccd in ccds {
-            if let Some(cap) = self.nights.caps.get(&ccd) {
-                caps = caps.with(ccd, cap.payload.new);
-            }
-        }
-        Ok(UnitProfile::of_ccd(&caps))
     }
 }
 fn same_cap(a: &CcdCap, b: &CcdCap) -> bool {
