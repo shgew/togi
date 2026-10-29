@@ -1,4 +1,4 @@
-//! `togi day`: durable, read-only observation of normal boots.
+//! `togi day`: stock-only application and durable observation of normal boots.
 
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
@@ -19,6 +19,7 @@ use crate::cli::Context;
 use crate::exit::Exit;
 use crate::report::{current_build, exit_with};
 
+mod apply;
 mod faults;
 mod load_mix;
 mod notify;
@@ -37,10 +38,7 @@ const FAULT_POLL: Duration = Duration::from_secs(30);
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     crate::cli::examples(&[
-        (
-            "sudo togi day",
-            "Observe this boot without applying offsets",
-        ),
+        ("sudo togi day", "Apply stock and observe this boot"),
         ("togi events --kind day", "Read recorded day observations"),
         (
             "togi day answer <boot> frozen",
@@ -53,18 +51,17 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     ])
 });
 
-/// Observe daily use, answer what happened after an unclean end, or record a crash togi missed
+/// Apply stock, observe daily use, answer an unclean end, or record a crash togi missed
 ///
-/// With no subcommand, reads every core at start and each ten-minute checkpoint, records active
-/// hours excluding suspend, samples per-CPU load every few seconds into a mix of load shapes
-/// checkpointed with the hours, journals each machine check, kernel error and SIGILL, SIGBUS or
-/// general-protection fault once, and writes a final checkpoint before a clean stop on SIGTERM,
-/// SIGINT or SIGHUP. Observation requires root and an existing compatible session journal. It holds the
-/// host and writer locks: stop the day service before tuning. Status/watch stay lock-free.
+/// With no subcommand, requires an all-core CO-0 baseline and PID1's armed, counting watchdog,
+/// then applies stock through durable intent, write and readback. It records active hours excluding
+/// suspend and journals kernel faults. Stop signals zero and verify every core before the final
+/// checkpoint and clean marker. It requires root and an existing compatible session journal.
+/// The service holds the host and writer locks: stop it before tuning; status/watch stay lock-free.
 ///
-/// The answer and notify subcommands need no root or journal access. They use the running day
-/// service's credential-checked socket; configure services.togi.day.users for access. The record
-/// subcommand needs root and writes the journal itself, so it needs the day service stopped.
+/// Answer and notify use the credential-checked day socket without root or journal access.
+/// Record requires root and hands the record to the live writer, opening the writer itself only
+/// when no day service runs. Nonzero day offsets are not enabled.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -85,6 +82,9 @@ pub enum Command {
     },
     /// Send pending questions and the morning evidence report to this graphical session.
     Notify,
+    /// Reapply stock after system resume; used by the system sleep hook.
+    #[command(hide = true)]
+    Reapply,
     Record(record::Args),
 }
 
@@ -102,13 +102,14 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             Command::Answer { boot, answer } => answer_end(boot, *answer, ctx),
             Command::Notify => notify::run(ctx),
             Command::Record(record) => record::run(record, ctx),
+            Command::Reapply => reapply(ctx),
         };
     }
     if let Err(error) = ctx.system.check_platform() {
         return exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error);
     }
     if !ctx.system.privileged() {
-        return exit_with(ctx, "day", "daily observation needs root", Exit::Error);
+        return exit_with(ctx, "day", "daily application needs root", Exit::Error);
     }
     let build = current_build();
     if let Err(exit) = crate::day_destination::available(ctx, &build) {
@@ -143,7 +144,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(error) => return exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error),
     };
     let mut clock = crate::system::SystemClock(ctx.system);
-    let result = observe_with_socket(
+    let result = serve_with_socket(
         &mut journal,
         &mut *observer,
         &mut clock,
@@ -151,14 +152,24 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         &build,
         socket.as_ref(),
     );
-    // Close before dropping the hardware capability and its borrowed host lock.
+    // Close before dropping hardware and its borrowed exclusion lock.
     let closed = journal.close();
     if let Err(error) = result {
         return exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error);
     }
     match closed {
         Ok(_dir) => Exit::Ok,
-        Err(error) => exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error),
+        Err(error) => {
+            if let Err(cleanup) = apply::emergency(&mut *observer) {
+                return exit_with(
+                    ctx,
+                    "day emergency zero",
+                    togi_render::error_chain(&cleanup),
+                    Exit::Error,
+                );
+            }
+            exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error)
+        }
     }
 }
 
@@ -171,7 +182,12 @@ fn answer_end(boot: &str, answer: togi_journal::DayAnswerKind, ctx: &mut Context
             crate::report::emit(ctx, format_args!("answer recorded for boot {boot}"))
                 .map_or_else(|exit| exit, |()| Exit::Ok)
         }
-        Ok(socket::Reply::Questions { .. } | socket::Reply::Refused { .. }) => exit_with(
+        Ok(
+            socket::Reply::Questions { .. }
+            | socket::Reply::Recorded { .. }
+            | socket::Reply::Reapplied
+            | socket::Reply::Refused { .. },
+        ) => exit_with(
             ctx,
             "day answer",
             "unexpected day service reply",
@@ -180,6 +196,29 @@ fn answer_end(boot: &str, answer: togi_journal::DayAnswerKind, ctx: &mut Context
         Err(error) => exit_with(
             ctx,
             "day answer",
+            togi_render::error_chain(&error),
+            Exit::Error,
+        ),
+    }
+}
+
+fn reapply(ctx: &mut Context<'_>) -> Exit {
+    match ctx.system.day_request(&socket::Request::Reapply) {
+        Ok(socket::Reply::Reapplied) => Exit::Ok,
+        Ok(
+            socket::Reply::Questions { .. }
+            | socket::Reply::Answered
+            | socket::Reply::Recorded { .. }
+            | socket::Reply::Refused { .. },
+        ) => exit_with(
+            ctx,
+            "day reapply",
+            "unexpected day service reply",
+            Exit::Error,
+        ),
+        Err(error) => exit_with(
+            ctx,
+            "day reapply",
             togi_render::error_chain(&error),
             Exit::Error,
         ),
@@ -201,6 +240,30 @@ pub enum Error {
     Topology,
     #[error("serve day questions")]
     Socket(#[from] socket::Error),
+    #[error("daily application requires every recorded core to read CO 0")]
+    Baseline,
+    #[error("daily application requires PID1's hardware watchdog to be armed and counting")]
+    Watchdog,
+    #[error("nonzero daily application is blocked by an unresolved too-aggressive defect")]
+    Defect,
+    #[error("day application identity overflowed")]
+    ApplicationOverflow,
+    #[error("invalid day profile")]
+    Profile(#[from] togi_machine::CcdProfileError),
+    #[error("fold daily policy")]
+    PolicyFold(#[from] togi_tuner::policy::FoldError),
+    #[error("query daily policy")]
+    PolicyQuery(#[from] togi_tuner::policy::NotReady),
+    #[error("apply stock day profile")]
+    Apply(#[from] togi_session::DayWriteError),
+    #[error("this observation has no applying capability")]
+    NotApplying,
+    #[error("emergency zero failed after daily service error: {original}")]
+    Emergency {
+        original: Box<Error>,
+        #[source]
+        cleanup: togi_machine::Error,
+    },
 }
 
 fn append(
@@ -230,7 +293,52 @@ pub fn observe(
     cancel: &CancellationToken,
     build: &Build,
 ) -> Result<(), Error> {
-    observe_with_socket(journal, observer, clock, cancel, build, None)
+    observe_with_socket(journal, observer, clock, cancel, build, None, None)
+}
+
+/// Applies stock and observes through the same seams used by the running service.
+///
+/// # Errors
+/// Refuses an unverified stock baseline or watchdog. A later error takes the journal-independent
+/// zero-only emergency path and never fabricates a clean marker.
+pub fn serve(
+    journal: &mut Journal,
+    observer: &mut dyn Observer,
+    clock: &mut dyn Clock,
+    cancel: &CancellationToken,
+    build: &Build,
+) -> Result<(), Error> {
+    serve_with_socket(journal, observer, clock, cancel, build, None)
+}
+
+fn serve_with_socket(
+    journal: &mut Journal,
+    observer: &mut dyn Observer,
+    clock: &mut dyn Clock,
+    cancel: &CancellationToken,
+    build: &Build,
+    socket: Option<&socket::Server>,
+) -> Result<(), Error> {
+    let mut live = apply::Live::preflight(journal, observer)?;
+    let result = observe_with_socket(
+        journal,
+        observer,
+        clock,
+        cancel,
+        build,
+        socket,
+        Some(&mut live),
+    );
+    if let Err(original) = result {
+        if let Err(cleanup) = apply::emergency(observer) {
+            return Err(Error::Emergency {
+                original: Box::new(original),
+                cleanup,
+            });
+        }
+        return Err(original);
+    }
+    Ok(())
 }
 
 fn observe_with_socket(
@@ -240,6 +348,7 @@ fn observe_with_socket(
     cancel: &CancellationToken,
     build: &Build,
     socket: Option<&socket::Server>,
+    mut live: Option<&mut apply::Live>,
 ) -> Result<(), Error> {
     let ledger = Ledger::of(journal.events());
     for (boot, previous) in &ledger.boots {
@@ -284,6 +393,14 @@ fn observe_with_socket(
             watchdog: Some(watchdog.clone()),
         },
     )?;
+    if let Some(live) = live.as_deref_mut() {
+        live.start(
+            journal,
+            observer,
+            clock,
+            ledger.boots.contains_key(journal.boot()),
+        )?;
+    }
     let mut sampler = Sampler::new(
         session_cores(journal.events())?,
         ledger
@@ -299,7 +416,11 @@ fn observe_with_socket(
     let mut polled = started;
     loop {
         if let Some(socket) = socket {
-            socket.poll(journal, clock)?;
+            socket.poll(journal, clock, &mut |journal, clock| {
+                live.as_deref_mut()
+                    .ok_or(Error::NotApplying)?
+                    .reapply(journal, observer, clock)
+            })?;
         }
         let wait = if socket.is_some() {
             Duration::from_secs(1)
@@ -340,7 +461,11 @@ fn observe_with_socket(
         let applied = accumulated
             .checked_add(elapsed)
             .ok_or(Error::DurationOverflow)?;
-        let readback = observer.offsets()?;
+        let readback = if stopping && let Some(live) = live.as_deref_mut() {
+            live.zero(journal, observer, clock)?
+        } else {
+            observer.offsets()?
+        };
         if readback != offsets {
             append(journal, clock, DayOffsetsChanged { offsets: readback })?;
             offsets = readback;

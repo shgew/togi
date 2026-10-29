@@ -359,7 +359,17 @@ pub(super) fn day_applied(p: &DayApplied) -> String {
     let cause = match p.cause {
         ApplyCause::Step { decision } => format!("decision {}", decision.0),
         ApplyCause::Reapplication {} => "reapplication of the unchanged day profile".to_owned(),
-        ApplyCause::Reset { .. } => "tuner-directed reset".to_owned(),
+        ApplyCause::Reset { .. } => {
+            if p.target
+                .ccd()
+                .iter()
+                .all(|(_, offset)| offset == togi_machine::TargetOffset::ZERO)
+            {
+                "stock-only safety reset: nonzero day offsets are not enabled yet; no promotion consumed".to_owned()
+            } else {
+                "tuner-directed reset".to_owned()
+            }
+        }
     };
     format!(
         "applied day profile {} and read it back ({cause}); application {}",

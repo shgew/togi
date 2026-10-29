@@ -20,7 +20,7 @@ module completions {
     --help(-h)                # Print help (see more with '--help')
   ]
 
-  # Observe daily use, answer what happened after an unclean end, or record a crash togi missed
+  # Apply stock, observe daily use, answer an unclean end, or record a crash togi missed
   export extern "togi day" [
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
@@ -36,6 +36,12 @@ module completions {
 
   # Send pending questions and the morning evidence report to this graphical session
   export extern "togi day notify" [
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help
+  ]
+
+  # Reapply stock after system resume; used by the system sleep hook
+  export extern "togi day reapply" [
     --state-dir: directory    # State directory
     --help(-h)                # Print help
   ]
@@ -63,6 +69,10 @@ module completions {
 
   # Send pending questions and the morning evidence report to this graphical session
   export extern "togi day help notify" [
+  ]
+
+  # Reapply stock after system resume; used by the system sleep hook
+  export extern "togi day help reapply" [
   ]
 
   # Record a crash togi did not observe
@@ -164,7 +174,7 @@ module completions {
   export extern "togi help run" [
   ]
 
-  # Observe daily use, answer what happened after an unclean end, or record a crash togi missed
+  # Apply stock, observe daily use, answer an unclean end, or record a crash togi missed
   export extern "togi help day" [
   ]
 
@@ -174,6 +184,10 @@ module completions {
 
   # Send pending questions and the morning evidence report to this graphical session
   export extern "togi help day notify" [
+  ]
+
+  # Reapply stock after system resume; used by the system sleep hook
+  export extern "togi help day reapply" [
   ]
 
   # Record a crash togi did not observe

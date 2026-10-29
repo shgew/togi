@@ -327,7 +327,54 @@ mod vm_recovery {
         kernel: Option<togi_detect::Kernel>,
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the VM day adapter delegates its SMU seam to the persistent fake"
+    )]
+    impl Smu for VmObserver {
+        fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, Error> {
+            if path("offsets").exists() {
+                FileSmu.offset(core)
+            } else {
+                log(&format!("read core {:02} 0", core.get()));
+                Ok(ObservedOffset(0))
+            }
+        }
+
+        fn set_offset(&mut self, core: CoreId, offset: TargetOffset) -> Result<(), Error> {
+            FileSmu.set_offset(core, offset)
+        }
+
+        fn set_all_offsets(&mut self, offset: TargetOffset) -> Result<(), Error> {
+            FileSmu.set_all_offsets(offset)
+        }
+
+        fn emergency_zero(
+            &mut self,
+            validated: SmuValidated,
+            stopped: &Stopped,
+        ) -> Result<(), Error> {
+            FileSmu.emergency_zero(validated, stopped)
+        }
+    }
+
     impl Observer for VmObserver {
+        fn validated(&mut self) -> Result<SmuValidated, Error> {
+            VmHost.validate_smu()
+        }
+
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the VM day seam confirms the real cgroup tree contains no trial scopes"
+        )]
+        fn stop_workloads(&mut self) -> Result<Stopped, Error> {
+            if trial_scopes().is_empty() {
+                Ok(Stopped::confirmed())
+            } else {
+                Err(other("the VM still has live trial scopes"))
+            }
+        }
+
         fn bios_context(&mut self) -> Result<BiosContext, Error> {
             Ok(BiosContext {
                 bios_version: "vm".to_owned(),
@@ -341,7 +388,7 @@ mod vm_recovery {
         fn offsets(&mut self) -> Result<PerCore<ObservedOffset>, Error> {
             let mut offsets = PerCore::default();
             for info in topology() {
-                offsets.set(info.core, FileSmu.offset(info.core)?);
+                offsets.set(info.core, self.offset(info.core)?);
             }
             Ok(offsets)
         }
@@ -362,8 +409,38 @@ mod vm_recovery {
         }
 
         fn watchdog(&mut self) -> togi_machine::WatchdogState {
-            togi_machine::WatchdogState::Unarmed {
-                detail: "the VM observer reads no watchdog".to_owned(),
+            let device = Path::new("/sys/class/watchdog/watchdog0");
+            let active = std::fs::read_to_string(device.join("state"))
+                .is_ok_and(|state| state.trim() == "active");
+            let counting = std::fs::read_to_string(device.join("timeleft")).map_or_else(
+                |error| error.kind() == io::ErrorKind::NotFound,
+                |left| {
+                    let timeout = std::fs::read_to_string(device.join("timeout"));
+                    left.trim()
+                        .parse::<u64>()
+                        .ok()
+                        .zip(
+                            timeout
+                                .ok()
+                                .and_then(|value| value.trim().parse::<u64>().ok()),
+                        )
+                        .is_some_and(|(left, timeout)| left <= timeout)
+                },
+            );
+            let held = std::fs::read_dir("/proc/1/fd").is_ok_and(|entries| {
+                entries.filter_map(Result::ok).any(|entry| {
+                    std::fs::read_link(entry.path()).is_ok_and(|target| {
+                        target == Path::new("/dev/watchdog0")
+                            || target == Path::new("/dev/watchdog")
+                    })
+                })
+            });
+            let detail =
+                format!("VM watchdog active={active} counting={counting} held-by-PID1={held}");
+            if active && counting && held {
+                togi_machine::WatchdogState::Armed { detail }
+            } else {
+                togi_machine::WatchdogState::Unarmed { detail }
             }
         }
 
@@ -389,9 +466,9 @@ mod vm_recovery {
         }
     }
 
-    /// Writes a session's first event with the current build, as `togi run` would have, and nothing else. Only this
-    /// helper does it: the production `togi day` never creates a session.
-    fn seed_session() -> i32 {
+    /// Seeds a current-build session and its stock baseline, as `togi run` would.
+    /// Only this helper does it: the production `togi day` never creates a session.
+    fn seed_session(shipped: bool) -> i32 {
         std::fs::create_dir_all(STATE_DIR).unwrap();
         let dir = StateDir::lock(STATE_DIR).unwrap();
         let now = Timestamp::now();
@@ -405,10 +482,32 @@ mod vm_recovery {
         let start = SessionStart {
             build: togi_cli::report::current_build(),
             session,
-            cores: topology(),
+            cores: if shipped {
+                (0_u16..8)
+                    .map(|core| CoreInfo {
+                        core: CoreId::new(i64::from(core)).unwrap(),
+                        ccd: CcdId::new(0).unwrap(),
+                        cpus: vec![CpuId::from(core)],
+                    })
+                    .collect()
+            } else {
+                topology()
+            },
         };
+        let offsets = start
+            .cores
+            .iter()
+            .map(|info| (info.core, ObservedOffset(0)))
+            .collect();
         journal
             .append(stamp, Payload::SessionStart(start), &[])
+            .unwrap();
+        journal
+            .append(
+                stamp,
+                Payload::SessionBaseline(togi_journal::SessionBaseline { offsets }),
+                &[],
+            )
             .unwrap();
         journal.close().unwrap();
         0
@@ -764,8 +863,11 @@ mod vm_recovery {
 
     fn run_togi(arguments: &[String]) -> i32 {
         let system = VmSystem::default();
-        if arguments.get(1).map(String::as_str) == Some("seed-session") {
-            return seed_session();
+        if matches!(
+            arguments.get(1).map(String::as_str),
+            Some("seed-session" | "seed-shipped-session")
+        ) {
+            return seed_session(arguments[1] == "seed-shipped-session");
         }
         if arguments.get(1).map(String::as_str) == Some("run") {
             return serve(&system);

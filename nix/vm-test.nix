@@ -1101,10 +1101,9 @@ let
       '';
     };
 
-    # Runs the shipped module's `togi-day` service in a normal boot over the vm_recovery fake SMU, a file the test never
-    # lets the observer write: a clean stop ends with a final checkpoint of positive active time and then the clean
-    # stop, and a hard reset of the machine leaves an end the next boot's observer records as unclean. Only a helper
-    # command seeds the session journal with the current build; `togi day` itself never creates a session. The reset's
+    # Runs the module's day service over the persistent helper SMU. Stock application and a clean stop
+    # include the zero/write/readback transaction; a hard reset still leaves an end the successor records
+    # as unclean. Only a helper seeds the current-build session; `togi day` never creates one. The reset's
     # unclean end is then a pending question: a day.users member answers it without root over /run/togi/day.sock and
     # changes the answer, a user outside the togi group is refused, and the module's group, directory and notifier
     # unit are checked as installed.
@@ -1118,12 +1117,14 @@ let
         services.togi = {
           enable = true;
           day.enable = true;
+          day.watchdog = true;
           day.users = [ "alice" ];
           package = pkgs.writeShellScriptBin "togi" ''
             exec ${vmRecovery}/bin/togi-vm-recovery --exact vm_recovery::helper --nocapture -- togi "$@"
           '';
         };
         hardware.cpu.amd.ryzen-smu.enable = false;
+        boot.initrd.kernelModules = [ "i6300esb" ];
         users.users.alice.isNormalUser = true;
         users.users.mallory.isNormalUser = true;
         systemd.tmpfiles.rules = [
@@ -1148,7 +1149,7 @@ let
 
         machine.start(allow_reboot=True)
         machine.wait_for_unit("multi-user.target")
-        # Without a session the observer refuses and creates no journal.
+        # Without a session the service refuses and creates no journal.
         machine.wait_until_succeeds("journalctl -u togi-day.service -o cat --no-pager | grep -F 'no session journal'")
         machine.succeed(f"test ! -e {journal}")
         machine.succeed("systemctl stop togi-day.service; systemctl reset-failed togi-day.service")
@@ -1157,18 +1158,26 @@ let
         assert "SyncIntervalSec=5s" in machine.succeed("cat /etc/systemd/journald.conf")
         machine.succeed("togi seed-session")
 
-        # A clean stop writes the final checkpoint, then the stop.
+        # A clean stop zeroes and reads back before the final checkpoint and clean marker.
         machine.succeed("systemctl start togi-day.service")
         machine.wait_until_succeeds(f"grep -q day.boot_start {journal}")
         machine.sleep(3)
         machine.succeed("systemctl stop togi-day.service")
         assert machine.succeed("systemctl show togi-day.service -p Result --value").strip() == "success"
         kinds = [e["kind"] for e in day()]
-        assert kinds == ["day.boot_start", "day.checkpoint", "day.clean_stop"], kinds
+        assert kinds[0] == "day.boot_start" and kinds[-2:] == ["day.checkpoint", "day.clean_stop"], kinds
+        applied = day("day.applied")
+        assert len(applied) == 1, applied
+        assert applied[0]["data"]["target"] == {"ccd": {"0": 0}, "cores": {str(c): 0 for c in range(4)}}, applied
+        assert applied[0]["data"]["readbacks"] == {str(c): 0 for c in range(4)}, applied
+        stop_readbacks = [e for e in events() if e["kind"] == "smu.readback"][-4:]
+        assert len(stop_readbacks) == 4 and all(e["data"]["offset"] == 0 for e in stop_readbacks), stop_readbacks
+        assert stop_readbacks[-1]["seq"] < day("day.checkpoint")[-1]["seq"] < day("day.clean_stop")[-1]["seq"]
         checkpoint = day("day.checkpoint")[0]
         assert checkpoint["data"]["applied_secs"] > 0, checkpoint
-        # The observer only reads the fake SMU: it never wrote it.
-        machine.succeed("! grep -E '^pid=[0-9]+ (set|set-all|emergency-zero|restore-baseline)' /var/lib/togi-vm/smu.log")
+        # The helper records only stock commands; both application and stop wrote and read all cores.
+        machine.succeed("grep -q '^pid=[0-9]* set-all 0 0 0 0$' /var/lib/togi-vm/smu.log")
+        machine.succeed("! grep -E '^pid=[0-9]+ (set|set-all|emergency-zero wrote).* -[0-9]+' /var/lib/togi-vm/smu.log")
         machine.succeed("grep -q '^pid=[0-9]* read core' /var/lib/togi-vm/smu.log")
 
         # A reset leaves no clean stop; the next boot's observer records the end as unclean.
@@ -1432,6 +1441,7 @@ in
       ];
     }
   ];
+  day-apply-stock = import ./day-apply-stock.nix { inherit pkgs package vmRecovery; };
   display = oneScenario "display" "kmscon-display";
   efi = oneScenario "efi" "night-systemd-boot";
 }

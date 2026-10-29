@@ -475,6 +475,186 @@ mod record {
     }
 
     #[test]
+    fn a_running_service_receives_the_record_and_the_command_writes_nothing() {
+        let host = host();
+        *host.day_service.borrow_mut() = Some(Ok(togi_cli::day::socket::Reply::Recorded {
+            seq: togi_journal::Seq::FIRST,
+        }));
+        // The service owns the writer, so drafting must read the journal without locking it.
+        let _writer = host.lock_state_dir(Path::new(STATE)).unwrap();
+        let ran = record(&host, &["--boot", "seed", "--running", "build"]);
+        assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+        assert!(ran.out.contains("crash recorded as event"), "{}", ran.out);
+        let [(session, sent)] = host.day_records.borrow().clone().try_into().unwrap();
+        assert_eq!(
+            session,
+            SessionId::new(Timestamp::UNIX_EPOCH, None).unwrap()
+        );
+        assert_eq!(
+            sent.boot,
+            CrashedBoot::UncleanEnd {
+                boot: "seed".to_owned().into()
+            }
+        );
+        assert_eq!(sent.running, Running::Build);
+        assert!(records(&host).is_empty());
+    }
+
+    #[test]
+    fn without_a_service_the_command_writes_the_record_itself() {
+        let host = host();
+        let ran = record(&host, &["--boot", "seed"]);
+        assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+        assert_eq!(host.day_records.borrow().len(), 1);
+        assert_eq!(records(&host).len(), 1);
+    }
+
+    #[test_case::test_case(Err(togi_cli::day::socket::Error::Refused("boot seed already has a crash record".into())), "already has a crash record"; "refused by the service")]
+    #[test_case::test_case(Err(togi_cli::day::socket::Error::Io(std::io::Error::from(std::io::ErrorKind::PermissionDenied))), "access day question socket"; "unauthorized service")]
+    #[test_case::test_case(Err(togi_cli::day::socket::Error::TooLarge { limit: 16 }), "larger than the day service accepts"; "too large")]
+    #[test_case::test_case(Ok(togi_cli::day::socket::Reply::Answered), "unexpected day service reply"; "wrong reply")]
+    fn a_service_that_does_not_record_is_never_replaced_by_a_local_write(
+        reply: Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error>,
+        message: &str,
+    ) {
+        let host = host();
+        *host.day_service.borrow_mut() = Some(reply);
+        let ran = record(&host, &["--boot", "seed"]);
+        assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+        assert!(ran.err.contains(message), "{}", ran.err);
+        assert_eq!(host.day_records.borrow().len(), 1);
+        assert!(records(&host).is_empty());
+    }
+
+    const OTHER: &str = "/other";
+    const UNOBSERVED: [&str; 6] = [
+        "--unobserved-at",
+        "2026-10-19T11:00:00Z",
+        "--offset",
+        "all=-20",
+        "--entered-at",
+        ENTERED,
+    ];
+
+    /// A second state directory on the same machine, the same cores, holding only a later session's start.
+    fn other_session(host: &support::Host) -> SessionId {
+        let session = SessionId::new(Timestamp::from_second(86_400).unwrap(), None).unwrap();
+        let mut journal = host
+            .lock_state_dir(Path::new(OTHER))
+            .unwrap()
+            .open_at("other".to_owned().into(), Timestamp::UNIX_EPOCH)
+            .unwrap();
+        journal
+            .append(
+                Stamp {
+                    time: Timestamp::from_second(86_400).unwrap(),
+                    mono: None,
+                },
+                SessionStart {
+                    build: togi_cli::report::current_build(),
+                    session,
+                    cores: host.topology.clone(),
+                }
+                .into(),
+                &[],
+            )
+            .unwrap();
+        journal.close().unwrap();
+        session
+    }
+
+    /// Starts the day service on `/state`; it holds that directory's writer until the test closes it.
+    fn serve_state(host: &support::Host) {
+        let journal = host
+            .lock_state_dir(Path::new(STATE))
+            .unwrap()
+            .open_at("next".to_owned().into(), Timestamp::UNIX_EPOCH)
+            .unwrap();
+        *host.day_journal.borrow_mut() = Some(journal);
+    }
+
+    fn stop_service(host: &support::Host) {
+        host.day_journal
+            .borrow_mut()
+            .take()
+            .unwrap()
+            .close()
+            .unwrap();
+    }
+
+    fn text(host: &support::Host, dir: &str) -> String {
+        host.read_to_string(Path::new(dir).join("events.jsonl"))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_service_observing_another_session_refuses_the_record_and_neither_journal_changes() {
+        let host = host();
+        let other = other_session(&host);
+        serve_state(&host);
+        let (service_before, other_before) = (text(&host, STATE), text(&host, OTHER));
+        let ran = host.run(
+            Path::new(OTHER),
+            &[["day", "record"].as_slice(), UNOBSERVED.as_slice()].concat(),
+        );
+        stop_service(&host);
+        assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+        assert!(
+            ran.err.contains(&format!("not session {other}")),
+            "{}",
+            ran.err
+        );
+        let [(sent, _)] = host.day_records.borrow().clone().try_into().unwrap();
+        assert_eq!(sent, other);
+        assert_eq!(text(&host, STATE), service_before);
+        assert_eq!(text(&host, OTHER), other_before);
+    }
+
+    #[test]
+    fn a_service_observing_the_same_session_appends_the_record_to_it() {
+        let host = host();
+        other_session(&host);
+        serve_state(&host);
+        let other_before = text(&host, OTHER);
+        let ran = record(&host, &UNOBSERVED);
+        stop_service(&host);
+        assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+        let [record] = records(&host).try_into().unwrap();
+        assert_eq!(
+            record.boot,
+            CrashedBoot::Unobserved {
+                at: "2026-10-19T11:00:00Z".parse().unwrap()
+            }
+        );
+        assert_eq!(text(&host, OTHER), other_before);
+    }
+
+    #[test]
+    fn a_session_replaced_before_the_direct_write_refuses_the_record_and_appends_nothing() {
+        let host = host();
+        let drafted = SessionId::new(Timestamp::UNIX_EPOCH, None).unwrap();
+        other_session(&host);
+        // While the record is on its way and no service runs, `reset --all` and a new session leave the state
+        // directory holding a later session's journal with the same cores.
+        let replaced = text(&host, OTHER);
+        let (fs, journal, written) = (
+            host.fs.clone(),
+            Path::new(STATE).join("events.jsonl"),
+            replaced.clone(),
+        );
+        *host.day_meanwhile.borrow_mut() =
+            Some(Box::new(move || fs.put(journal, written.into_bytes())));
+        let ran = record(&host, &UNOBSERVED);
+        assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+        assert!(
+            ran.err.contains(&format!("not session {drafted}")),
+            "{}",
+            ran.err
+        );
+        assert_eq!(text(&host, STATE), replaced);
+    }
+
+    #[test]
     fn the_terminal_and_the_flags_journal_the_same_record() {
         let by_flags = host();
         assert_eq!(

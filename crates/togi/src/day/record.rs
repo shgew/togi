@@ -1,18 +1,23 @@
 //! `togi day record`: journal a crash no day observer saw.
 //!
-//! The command gathers a [`Draft`] from flags, asks at a terminal for whatever the flags leave out, and hands it
-//! to `togi-session`, which checks it against the journal. Flags and answers are one grammar, so the same
-//! description gives the same record either way.
+//! The command gathers a [`Draft`] from flags, asks at a terminal for whatever the flags leave out, and checks it
+//! against the journal with `togi-session`. Flags and answers are one grammar, so the same description gives the
+//! same record either way. The confirmed record goes to the running day service, which owns the journal writer and
+//! checks it again against the live journal; only when no service runs does the command append it itself.
 
 use std::io;
 
 use clap::Args as ClapArgs;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use togi_journal::{DayCrashes, Journal, Payload, RecordableEnd, Running};
+use togi_journal::{
+    Build, CrashedBoot, DayCrashes, DayRecord, Event, Journal, OffsetSource, Payload,
+    RecordableEnd, Running, Seq, SessionId,
+};
 use togi_machine::{BootId, CcdId, CoreId};
-use togi_session::{Crash, Draft, Entered, OffsetSpec, append_record, draft_record};
+use togi_session::{Crash, Draft, Entered, OffsetSpec, RecordError, append_record, draft_record};
 
+use super::socket::{Error as SocketError, Reply, Request};
 use crate::cli::Context;
 use crate::exit::Exit;
 use crate::report::{current_build, emit, exit_with};
@@ -32,7 +37,8 @@ const COMMAND: &str = "day record";
 /// --offset are entered offsets and need --entered-at. Give every core of the session a value:
 /// all=-20, ccd1=-25 or core3=-10, where a more specific one overrides a less specific one.
 ///
-/// Needs root and a session journal. It holds the writer lock: stop the day service first. Times are
+/// Needs root and a session journal. A running day service appends the record when it observes the same
+/// session and refuses it otherwise; without a service the command holds the writer lock itself. Times are
 /// RFC 3339 (2026-10-19T14:30:00Z) or local (2026-10-19 14:30).
 #[derive(ClapArgs, Debug)]
 pub struct Args {
@@ -477,7 +483,62 @@ fn collect(
     })
 }
 
-/// Records a crash under the state directory's writer lock.
+/// Why a record cannot be appended to the journal as it stands.
+#[derive(Debug, thiserror::Error)]
+pub(super) enum CheckError {
+    #[error("an unobserved crash has no offsets a day observer read back")]
+    UnobservedReadBack,
+    #[error("the journal describes a different record for the same crash")]
+    Differs,
+    #[error(transparent)]
+    Refused(#[from] RecordError),
+}
+
+/// Checks `record` against `events` by drafting it again: the boot must have an unclean end no record names,
+/// an unobserved crash must be new, entered offsets must cover the session's cores, and read-back offsets and
+/// time must be the ones the journal holds. The record must be exactly what that draft yields.
+pub(super) fn check(events: &[Event], record: &DayRecord) -> Result<(), CheckError> {
+    let entered = |at| Entered {
+        at,
+        specs: record
+            .offsets
+            .get()
+            .iter()
+            .map(|(core, offset)| OffsetSpec::Core(core, offset.0))
+            .collect(),
+    };
+    let crash = match (&record.boot, &record.source) {
+        (CrashedBoot::UncleanEnd { boot }, OffsetSource::ReadBack { .. }) => Crash::Observed {
+            boot: boot.clone(),
+            entered: None,
+        },
+        (CrashedBoot::UncleanEnd { boot }, OffsetSource::Entered { at }) => Crash::Observed {
+            boot: boot.clone(),
+            entered: Some(entered(*at)),
+        },
+        (CrashedBoot::Unobserved { at: crashed }, OffsetSource::Entered { at }) => {
+            Crash::Unobserved {
+                at: *crashed,
+                entered: entered(*at),
+            }
+        }
+        (CrashedBoot::Unobserved { .. }, OffsetSource::ReadBack { .. }) => {
+            return Err(CheckError::UnobservedReadBack);
+        }
+    };
+    let draft = Draft {
+        crash,
+        running: record.running,
+        note: record.note.clone(),
+    };
+    if draft_record(events, &draft)? == *record {
+        Ok(())
+    } else {
+        Err(CheckError::Differs)
+    }
+}
+
+/// Records a crash through the running day service, or under the writer lock when none runs.
 pub(super) fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     if !ctx.system.privileged() {
         return exit_with(ctx, COMMAND, "recording a crash needs root", Exit::Error);
@@ -491,32 +552,50 @@ pub(super) fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         }
     };
     let build = current_build();
-    let boot = match ctx.system.boot_id() {
-        Ok(boot) => boot,
-        Err(error) => {
-            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
-        }
-    };
-    let mut journal = match crate::day_destination::open(ctx, boot, &build) {
-        Ok(journal) => journal,
+    if let Err(exit) = crate::day_destination::available(ctx, &build) {
+        return exit;
+    }
+    // The service may own the writer, so drafting reads the journal without locking it.
+    let recording = match crate::read::open(ctx, COMMAND) {
+        Ok(recording) => recording,
         Err(exit) => return exit,
     };
-    let exit = record(args, &given, &zone, ctx, &mut journal);
-    match journal.close() {
-        Ok(_dir) => exit,
-        Err(error) => exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error),
-    }
+    let Some(session) = started(recording.events()) else {
+        return exit_with(
+            ctx,
+            COMMAND,
+            "the journal has no session start",
+            Exit::Error,
+        );
+    };
+    let record = match confirmed(args, &given, &zone, ctx, recording.events()) {
+        Ok(record) => record,
+        Err(exit) => return exit,
+    };
+    hand_off(ctx, &build, session, record)
 }
 
-fn record(
+/// The session the journal holds, which binds a handed-off record to this state directory.
+fn started(events: &[Event]) -> Option<SessionId> {
+    events.first().and_then(|event| {
+        if let Payload::SessionStart(start) = &event.payload {
+            Some(start.session)
+        } else {
+            None
+        }
+    })
+}
+
+/// The record the flags and answers describe, printed and, at a terminal, confirmed.
+fn confirmed(
     args: &Args,
     given: &Given,
     zone: &TimeZone,
     ctx: &mut Context<'_>,
-    journal: &mut Journal,
-) -> Exit {
+    events: &[Event],
+) -> Result<DayRecord, Exit> {
     let interactive = ctx.system.interactive();
-    let crashes = DayCrashes::of(journal.events());
+    let crashes = DayCrashes::of(events);
     let drafted = if interactive {
         collect(
             given,
@@ -532,19 +611,27 @@ fn record(
         Ok(draft) => draft,
         Err(error) => {
             let exit = error.exit();
-            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), exit);
+            return Err(exit_with(
+                ctx,
+                COMMAND,
+                togi_render::error_chain(&error),
+                exit,
+            ));
         }
     };
-    let record = match draft_record(journal.events(), &draft) {
+    let record = match draft_record(events, &draft) {
         Ok(record) => record,
         Err(error) => {
-            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+            return Err(exit_with(
+                ctx,
+                COMMAND,
+                togi_render::error_chain(&error),
+                Exit::Error,
+            ));
         }
     };
     let described = Payload::DayRecord(record.clone()).message();
-    if let Err(exit) = emit(ctx, format_args!("{described}\n{}", record.effect())) {
-        return exit;
-    }
+    emit(ctx, format_args!("{described}\n{}", record.effect()))?;
     if interactive && !args.yes {
         let confirmed = Terminal { ctx: &mut *ctx }.ask("Append this record? [Y/n]");
         match confirmed {
@@ -552,15 +639,88 @@ fn record(
                 if line.is_empty()
                     || line.eq_ignore_ascii_case("y")
                     || line.eq_ignore_ascii_case("yes") => {}
-            Ok(Some(_) | None) => return exit_with(ctx, COMMAND, "nothing recorded", Exit::Error),
+            Ok(Some(_) | None) => {
+                return Err(exit_with(ctx, COMMAND, "nothing recorded", Exit::Error));
+            }
             Err(error) => {
-                return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+                return Err(exit_with(
+                    ctx,
+                    COMMAND,
+                    togi_render::error_chain(&error),
+                    Exit::Error,
+                ));
             }
         }
     }
+    Ok(record)
+}
+
+/// Gives the record to the day service, bound to the session it was drafted from, so a service observing another
+/// state directory refuses it. Only a missing service lets the command write the journal itself: a refusal, a
+/// protocol failure or an unauthorized service is that service's answer, not its absence.
+fn hand_off(ctx: &mut Context<'_>, build: &Build, session: SessionId, record: DayRecord) -> Exit {
+    let request = Request::Record {
+        session,
+        record: record.clone(),
+    };
+    match ctx.system.day_request(&request) {
+        Ok(Reply::Recorded { seq }) => recorded(ctx, seq),
+        Ok(
+            Reply::Questions { .. } | Reply::Answered | Reply::Reapplied | Reply::Refused { .. },
+        ) => exit_with(ctx, COMMAND, "unexpected day service reply", Exit::Error),
+        Err(SocketError::Absent(_)) => write_here(ctx, build, session, record),
+        Err(
+            error @ (SocketError::Io(_)
+            | SocketError::TooLarge { .. }
+            | SocketError::Protocol(_)
+            | SocketError::Refused(_)),
+        ) => exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error),
+    }
+}
+
+fn recorded(ctx: &mut Context<'_>, seq: Seq) -> Exit {
+    emit(ctx, format_args!("crash recorded as event {seq}")).map_or_else(|exit| exit, |()| Exit::Ok)
+}
+
+/// Appends under the state directory's writer lock, which no day service holds, only while the directory still
+/// holds the session the record was drafted from: it may have been reset and restarted since.
+fn write_here(ctx: &mut Context<'_>, build: &Build, session: SessionId, record: DayRecord) -> Exit {
+    let boot = match ctx.system.boot_id() {
+        Ok(boot) => boot,
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+        }
+    };
+    let mut journal = match crate::day_destination::open(ctx, boot, build) {
+        Ok(journal) => journal,
+        Err(exit) => return exit,
+    };
+    let exit = append_here(ctx, &mut journal, session, record);
+    match journal.close() {
+        Ok(_dir) => exit,
+        Err(error) => exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error),
+    }
+}
+
+fn append_here(
+    ctx: &mut Context<'_>,
+    journal: &mut Journal,
+    session: SessionId,
+    record: DayRecord,
+) -> Exit {
+    let live = journal.session();
+    if live != Some(session) {
+        let reason = live.map_or_else(
+            || format!("the journal has no session now, not session {session}"),
+            |live| format!("the journal now records session {live}, not session {session}"),
+        );
+        return exit_with(ctx, COMMAND, reason, Exit::Error);
+    }
+    if let Err(error) = check(journal.events(), &record) {
+        return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+    }
     match append_record(journal, &SystemClock(ctx.system), record) {
-        Ok(seq) => emit(ctx, format_args!("crash recorded as event {seq}"))
-            .map_or_else(|exit| exit, |()| Exit::Ok),
+        Ok(seq) => recorded(ctx, seq),
         Err(error) => exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error),
     }
 }

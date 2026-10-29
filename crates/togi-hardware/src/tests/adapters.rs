@@ -121,12 +121,16 @@ fn an_emergency_zero_without_mapped_slots_is_refused_before_any_mailbox_command(
     let error = smu
         .emergency_zero(validated, &Stopped::confirmed())
         .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .starts_with("offsets unchanged: the core slots are not mapped: "),
-        "{error}"
-    );
+    let togi_machine::Error::Other(source) = &error else {
+        panic!("{error}");
+    };
+    assert!(matches!(
+        source.downcast_ref::<togi_smu::Error>(),
+        Some(togi_smu::Error::SlotMapping {
+            operation: togi_smu::Operation::EmergencyZero,
+            ..
+        })
+    ));
     // Validation starts the PM table reader, which may read `pm_table_version`/`pm_table`
     // concurrently; only the mailbox and SMN files show an SMU command was sent.
     let commanded: Vec<_> = watch

@@ -6,11 +6,11 @@
 Moves a Zen 5 desktop CPU towards deeper per-CCD Curve Optimizer offsets, as far as its own test evidence supports: nights test, days observe. A night runs until you end it (Ctrl-C, F10 in the dashboard, or a reboot); a crash reboot continues it, and the next run after you end it opens the next night.
 
 - Nights [map](docs/spec/tuner.md#night-edge-u) each CCD's failure edge alone, derive each CCD's [cap](docs/spec/tuner.md#cap-s-margin-from-measured-slope) from the measured failure rate, run [CO-0 controls](docs/spec/tuner.md#co-0-controls) and qualify the exact next day profile across the whole [coverage matrix](docs/spec/workloads.md#coverage-matrix).
-- Days [step](docs/spec/tuner.md#day-steps) the profile towards the cap only after a hold, and a CPU-suspect daily event, including your answer about an unclean end, [vetoes the profile and retreats](docs/spec/tuner.md#whole-profile-veto-and-escalation) the step.
+- Days calculate [steps](docs/spec/tuner.md#day-steps), holds and [event retreats](docs/spec/tuner.md#whole-profile-veto-and-escalation), but the applying capability currently enforces **stock (CO 0) only**. Automatic nonzero day offsets await the successor rules, gate and hardware acceptance.
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
 - Survives crashes: the next run reads its journal, attributes the crash and continues.
 - Records every action in a plain-text journal you can read to see what it did and why.
-- BIOS stays at CO 0, and a nonzero starting baseline is refused. The day service will apply the day profile at each normal boot ([#1218](https://github.com/shgew/togi/issues/1218)); togi never asks you to enter offsets in BIOS.
+- BIOS stays at CO 0, and a nonzero starting baseline is refused. The day service applies stock at each normal boot, restart and resume, with an armed, counting PID 1 watchdog and verified readback ([day transitions](docs/spec/runtime.md#ruleset-13-policy-boundary)).
 
 *togi* (研ぎ) is Japanese for polishing a blade: coarse stones first, then fine ones, until the edge shows.
 
@@ -22,7 +22,7 @@ Works today, on a simulated 16-core machine:
 - a conclusive failure at all-zero stops tuning with `platform unstable at stock` ([Dead ends](docs/spec/tuner.md#dead-ends));
 - reading a session's activity, each CCD's D, S and U with its slope and coverage, the night's queues and shares, qualification progress and the day policy (hold, latest step and its blockers, freeze, firmware validity, events and vetoes) with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands));
 - console-compatible dashboard rendering and a [rich truecolour profile](docs/spec/runtime.md#dashboard) using the same colours with Unicode gauges and text;
-- normal-boot observation with `togi day`: checkpointed hours per offset profile, clean/unclean ends with the evidence around them, and a question per unclean end that you answer without root. Answers and evidence classify [daily events](docs/spec/tuner.md#daily-events), which veto profiles and retreat day steps.
+- normal-boot stock application and observation with `togi day`: durable intent/write/readback, zero-before-clean-stop ordering, checkpointed hours, clean/unclean ends and questions you answer without root. Answers and evidence classify [daily events](docs/spec/tuner.md#daily-events); nonzero application remains disabled.
 
 Built for real hardware, a Granite Ridge desktop running NixOS, and tested piece by piece on one with GRUB:
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
@@ -31,7 +31,7 @@ Built for real hardware, a Granite Ridge desktop running NixOS, and tested piece
 - the NixOS module and unattended tuning boot support GRUB and systemd-boot, with two service restart-limit retry boots before returning to the normal system and durable leave reasons; VM checks cover switching between day and night without tuning hardware.
 
 Not yet:
-- applying the day profile in normal boots: the day service will do it ([#1218](https://github.com/shgew/togi/issues/1218));
+- nonzero day application: the safe path currently applies stock only ([#1218](https://github.com/shgew/togi/issues/1218)).
 - a full night-and-day cycle on real hardware.
 
 `just sim` runs a simulated session from a source checkout, for development; see [docs/simulating.md](docs/simulating.md).
@@ -44,9 +44,9 @@ sudo togi doctor                       # check this machine is ready for a run, 
 sudo togi doctor --day                 # check day prerequisites and this boot's recorded stock-baseline proof
 sudo togi run                          # tune tonight; Ctrl-C ends the night, the next run opens the next
 sudo togi night                        # GRUB or systemd-boot: confirm, remember the day's selection and reboot into tuning
-sudo togi day                          # observe daily use after a session exists; stop before run/reset
+sudo togi day                          # apply stock and observe; needs verified CO 0 and PID 1's counting watchdog
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
-sudo togi day record                   # journal a crash togi did not observe, with the offsets it ran; stop the day service first
+sudo togi day record                   # record a missed crash through the live service; no stop needed
 togi status                            # activity, each CCD's D, S and U, night queues, day policy and observations
 togi status --evidence                 # cap reasons, hours, coverage gaps and profile/stock evidence; no verdict
 togi watch                             # full-width dashboard: current trial, every core

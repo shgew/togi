@@ -424,6 +424,15 @@ impl Smu for Driver {
         _validated: SmuValidated,
         _stopped: &Stopped,
     ) -> Result<(), togi_machine::Error> {
-        Ok(self.write_all(Operation::EmergencyZero, TargetOffset::ZERO)?)
+        // A validated identity does not authorize a command after topology mapping failed.
+        let operation = Operation::EmergencyZero;
+        validated(&mut self.stage, operation)?
+            .slots
+            .as_ref()
+            .map_err(|source| Error::SlotMapping {
+                operation,
+                source: Arc::clone(source),
+            })?;
+        Ok(self.write_all(operation, TargetOffset::ZERO)?)
     }
 }

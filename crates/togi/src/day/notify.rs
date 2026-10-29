@@ -76,7 +76,9 @@ fn serve(ctx: &mut Context<'_>, cancel: &CancellationToken, clock: &mut impl Clo
     loop {
         let (pending, morning) = match ctx.system.day_request(&Request::Questions) {
             Ok(Reply::Questions { pending, morning }) => (pending, morning),
-            Ok(Reply::Answered | Reply::Refused { .. }) => {
+            Ok(
+                Reply::Answered | Reply::Recorded { .. } | Reply::Reapplied | Reply::Refused { .. },
+            ) => {
                 return exit_with(
                     ctx,
                     "day notify",
@@ -137,7 +139,12 @@ fn serve(ctx: &mut Context<'_>, cancel: &CancellationToken, clock: &mut impl Clo
                     answer,
                 }) {
                     Ok(Reply::Answered) => {}
-                    Ok(Reply::Questions { .. } | Reply::Refused { .. }) => {
+                    Ok(
+                        Reply::Questions { .. }
+                        | Reply::Recorded { .. }
+                        | Reply::Reapplied
+                        | Reply::Refused { .. },
+                    ) => {
                         return exit_with(
                             ctx,
                             "day notify",
@@ -401,6 +408,9 @@ mod tests {
             self.requests.borrow_mut().push(match request {
                 Request::Questions => Seen::Questions,
                 Request::Answer { boot, answer } => Seen::Answer(boot.clone(), *answer),
+                Request::Record { .. } | Request::Reapply => {
+                    panic!("notifier must not request record or reapply")
+                }
             });
             let mut replies = self.replies.borrow_mut();
             let reply = replies.pop_front().expect("unscripted day request");

@@ -7,8 +7,14 @@
 //! is what a trial needs to start.
 //!
 //! [`Verified`] cannot be built outside this module and [`apply`] takes the proof that no workload runs.
+//!
+//! [`apply`] appends through a [`Ledger`]: the run's [`Appender`], or the day's journal for [`apply_day_stock`], which
+//! writes only zero to every core, so a day can apply nothing but the stock profile.
 
-use togi_journal::{Payload, ProfileApplied, ProfileRestored, Seq, SmuCommand, SmuOp, SmuReadback};
+use togi_journal::{
+    Payload, ProfileApplied, ProfileRestored, Seq, SmuCommand, SmuIntentReceipt, SmuOp,
+    SmuReadback, SmuWritten,
+};
 use togi_machine::{
     Condition, CoreId, CoreSet, Error, ObservedOffset, PerCore, Smu, Stopped, TargetOffset,
 };
@@ -99,6 +105,43 @@ pub(crate) mod authority;
 
 pub(crate) use authority::Verified;
 use authority::execute;
+
+mod day;
+
+pub use day::{DayWriteError, StockApplied, apply_day_stock};
+
+/// Where a write transaction's events go: the run's [`Appender`], which folds and logs each, or a day journal that
+/// only appends. One transaction chain serves both, so a day write cannot skip a step the night's takes.
+pub(crate) trait Ledger {
+    /// Appends an event that is neither an intent nor a write.
+    fn append(&mut self, payload: Payload, causes: &[Seq]) -> Result<Seq, AppendFailure>;
+    /// Makes the intent to run `command` durable and returns the receipt that authorizes writing it.
+    fn smu_intent(
+        &mut self,
+        command: SmuCommand,
+        causes: &[Seq],
+    ) -> Result<SmuIntentReceipt, AppendFailure>;
+    /// Records that the command the receipt authorizes was written, spending the receipt.
+    fn smu_written(&mut self, receipt: SmuIntentReceipt) -> Result<SmuWritten, AppendFailure>;
+}
+
+impl Ledger for Appender<'_> {
+    fn append(&mut self, payload: Payload, causes: &[Seq]) -> Result<Seq, AppendFailure> {
+        Appender::append(self, payload, causes)
+    }
+
+    fn smu_intent(
+        &mut self,
+        command: SmuCommand,
+        causes: &[Seq],
+    ) -> Result<SmuIntentReceipt, AppendFailure> {
+        Appender::smu_intent(self, command, causes)
+    }
+
+    fn smu_written(&mut self, receipt: SmuIntentReceipt) -> Result<SmuWritten, AppendFailure> {
+        Appender::smu_written(self, receipt)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Refused {
@@ -257,7 +300,7 @@ impl From<AppendFailure> for WriteFailure {
 /// The slots of those cores are unknown from before the command goes out until a readback confirms the target, so
 /// a failure at any point leaves nothing believed that was not read.
 pub(crate) fn apply(
-    appender: &mut Appender,
+    ledger: &mut impl Ledger,
     smu: &mut dyn Smu,
     _stopped: &Stopped,
     checked: CheckedWrite<'_>,
@@ -269,7 +312,7 @@ pub(crate) fn apply(
         Some(core) => vec![core],
         None => hardware.cores.iter().collect(),
     };
-    let receipt = appender.smu_intent(command, causes)?;
+    let receipt = ledger.smu_intent(command, causes)?;
     let intent = receipt.intent();
     let command = receipt.command();
     for &core in &touched {
@@ -277,7 +320,7 @@ pub(crate) fn apply(
     }
     if let Err(error) = execute(smu, &receipt) {
         return Err(failed(
-            appender,
+            ledger,
             command.op(),
             command.core(),
             Some(target),
@@ -285,14 +328,14 @@ pub(crate) fn apply(
             error,
         ));
     }
-    let written = appender.smu_written(receipt)?;
+    let written = ledger.smu_written(receipt)?;
     let mut readbacks = Vec::with_capacity(touched.len());
     for &core in &touched {
         let observed = match smu.offset(core) {
             Ok(observed) => observed,
             Err(error) => {
                 return Err(failed(
-                    appender,
+                    ledger,
                     SmuOp::Read,
                     Some(core),
                     Some(target),
@@ -301,7 +344,7 @@ pub(crate) fn apply(
                 ));
             }
         };
-        let seq = appender.append(
+        let seq = ledger.append(
             Payload::SmuReadback(SmuReadback {
                 core,
                 offset: observed,
@@ -327,7 +370,7 @@ pub(crate) fn apply(
 }
 
 fn failed(
-    appender: &mut Appender,
+    ledger: &mut impl Ledger,
     op: SmuOp,
     core: Option<CoreId>,
     offset: Option<TargetOffset>,
@@ -343,7 +386,7 @@ fn failed(
         offset,
         error: togi_render::error_chain(&error),
     });
-    match appender.append(record, causes) {
+    match ledger.append(record, causes) {
         Ok(_) => WriteFailure::Smu { op, core, error },
         Err(failure) => failure.into(),
     }

@@ -59,7 +59,7 @@ in
       description = "An explicitly authorized existing group whose members may acquire the root-owned host lock for delegated hardware tests. The default permits root only. This does not grant access to hardware or a delegated cpuset controller.";
     };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB or systemd-boot entry that tunes unattended";
-    day.enable = lib.mkEnableOption "the togi day observer, a read-only service in the normal boot that records the machine's day in togi's journal. It holds the host lock and the journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops, and it refuses to start while there is no session. It never exists in the tuning boot, and enabling it keeps the journal on disk with a 5s sync interval";
+    day.enable = lib.mkEnableOption "the togi stock-only day application and observer in the normal boot. It requires a CO 0 baseline and an armed, counting PID 1 hardware watchdog. It holds the host lock and journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops; `togi day record` hands records to the running service. It refuses to start without a session, never exists in the tuning boot, and keeps the journal on disk with a 5s sync interval";
     day.watchdog = lib.mkEnableOption "the PID 1 hardware watchdog in the normal boot with the day observer, RuntimeWatchdogSec=60s, so a hang resets the machine and the observer can record the unclean end. A unit ordered before sleep.target releases the watchdog before suspend or hibernation, reloads sp5100_tco after resume to restore its timer decoding after deep sleep, and re-arms PID 1's watchdog even if the reload fails. The pause is retained for s2idle, where the timer may keep counting. It sets no lockup panic kernel parameter and never applies in the tuning boot, which keeps its own 30s watchdog";
     day.users = lib.mkOption {
       type = lib.types.listOf lib.types.str;
@@ -161,7 +161,7 @@ in
           };
         };
         systemd.services.togi-day = {
-          description = "togi day observer";
+          description = "togi stock-only day application and observer";
           wantedBy = [ "multi-user.target" ];
           after = [
             "systemd-modules-load.service"
@@ -172,6 +172,32 @@ in
             Restart = "on-failure";
             RestartSec = 60;
             StateDirectory = "togi";
+          };
+          # A killed process cannot run its journaled stop transaction. This hook has only zero
+          # authority and does not need the journal; lock/identity/topology refusals still stand.
+          postStop = ''
+            [ "''${SERVICE_RESULT:-}" != success ] || exit 0
+            exec ${lib.getExe cfg.package} emergency-stop
+          '';
+        };
+        # Start before watchdog sleep so reverse stop ordering restores its counting timer before
+        # the day process verifies and reapplies stock. The hook never starts an inactive day service.
+        systemd.services.togi-day-resume = {
+          description = "Reapply togi stock profile after sleep";
+          wantedBy = [ "sleep.target" ];
+          before = [
+            "sleep.target"
+            "togi-day-watchdog-sleep.service"
+          ];
+          unitConfig.StopWhenUnneeded = true;
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = "${pkgs.coreutils}/bin/true";
+            ExecStopPost = pkgs.writeShellScript "togi-day-resume" ''
+              ${config.systemd.package}/bin/systemctl --quiet is-active togi-day.service || exit 0
+              exec ${lib.getExe cfg.package} day reapply
+            '';
           };
         };
       })
