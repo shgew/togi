@@ -63,7 +63,7 @@ fn next_build() -> Build {
 }
 
 #[test]
-fn a_journal_of_another_ruleset_archives_and_imports_only_its_day_records() {
+fn a_journal_of_another_ruleset_archives_and_selects_raw_observations_and_campaign_history() {
     let bench = bench();
     let id = finished(&bench);
     let prepared = prepared(&bench, &next_build());
@@ -85,14 +85,14 @@ fn a_journal_of_another_ruleset_archives_and_imports_only_its_day_records() {
         .collect();
     assert_eq!(
         kinds,
-        ["day.boot_start", "day.checkpoint", "day.clean_stop"]
+        ["session.start", "campaign.start", "exposure.observed", "day.boot_start", "day.checkpoint", "day.clean_stop"]
     );
     assert!(manifest.records().iter().all(|r| r.original.session == id));
     assert!(manifest.unknown().is_empty());
     let counts = manifest.commitment().counts;
     assert_eq!(
         (counts.selected, counts.imported, counts.duplicates),
-        (3, 3, 0)
+        (6, 6, 0)
     );
     assert_eq!(counts.excluded, 0);
 }
@@ -103,7 +103,12 @@ fn an_imported_record_names_what_its_payload_lacked() {
     finished(&bench);
     let import = prepared(&bench, &next_build()).import.unwrap();
     let records = import.manifest().records();
-    let (start, checkpoint, stop) = (&records[0], &records[1], &records[2]);
+    let by_kind = |kind| records.iter().find(|record| record.original_kind == kind).unwrap();
+    let (start, checkpoint, stop) = (
+        by_kind(togi_journal::EventKind::DayBootStart),
+        by_kind(togi_journal::EventKind::DayCheckpoint),
+        by_kind(togi_journal::EventKind::DayCleanStop),
+    );
     assert_eq!(start.class, ImportClass::Boot);
     assert!(start.missing.is_empty());
     assert!(start.build.is_some() && start.firmware.is_some() && start.profile.is_some());
@@ -146,7 +151,7 @@ fn a_journal_of_another_ruleset_is_archived_unread_and_prepare_repeats_the_same_
     assert_eq!(archived(&first.journal), [id]);
     let import = first.import.clone().unwrap();
     assert_eq!(import.source(), id);
-    assert_eq!(import.manifest().records().len(), 3);
+    assert_eq!(import.manifest().records().len(), 6);
     drop(first.journal.close().unwrap());
 
     let again = prepared(&bench, &next_build());
@@ -257,7 +262,7 @@ fn an_import_the_live_journal_committed_clears_its_marker_and_is_not_imported_ag
         .iter()
         .filter(|event| matches!(&event.payload, Payload::DayImported(_)))
         .count();
-    assert_eq!(imported, 3);
+    assert_eq!(imported, 6);
     assert!(
         committed
             .events()
@@ -319,16 +324,17 @@ fn a_transition_out_of_an_uncommitted_import_keeps_the_original_source_and_count
     assert_eq!(again.source(), id);
     assert!(again.destination() > import.destination());
     let manifest = again.manifest();
-    assert_eq!(manifest.records(), import.manifest().records());
+    assert!(import.manifest().records().iter().all(|record| manifest.records().contains(record)));
+    assert_eq!(manifest.records().last().unwrap().original.session, import.destination());
     let counts = manifest.commitment().counts;
     assert_eq!(
         (counts.selected, counts.imported, counts.duplicates),
-        (3, 3, 1)
+        (7, 7, 1)
     );
 }
 
 #[test]
-fn a_transition_out_of_a_committed_import_reads_no_further_back_than_the_committing_session() {
+fn a_transition_reads_campaign_history_before_the_last_committed_import() {
     let bench = bench();
     let id = finished(&bench);
     let first = prepared(&bench, &next_build());
@@ -348,20 +354,18 @@ fn a_transition_out_of_a_committed_import_reads_no_further_back_than_the_committ
     assert_eq!(archived(&second.journal), [id, import.destination()]);
     let manifest = again.manifest();
     let counts = manifest.commitment().counts;
-    assert_eq!((counts.selected, counts.duplicates), (3, 0));
-    assert!(
-        manifest
-            .records()
-            .iter()
-            .all(|record| record.original.session == id)
-    );
+    assert!(counts.selected > 6);
+    assert!(counts.duplicates > 0);
+    assert!(manifest.records().iter().any(|record| record.original.session == id));
+    let selected: std::collections::HashSet<_> = manifest.selected().collect();
+    assert_eq!(selected.len(), manifest.records().len());
     let sources = manifest.commitment().sources;
     assert_eq!(
         sources
             .iter()
             .map(|source| source.session)
             .collect::<Vec<_>>(),
-        [import.destination()]
+        [id, import.destination()]
     );
 }
 
@@ -383,7 +387,10 @@ fn a_live_journal_at_the_reset_boundary_is_archived_unchanged_and_the_import_mar
 
     let prepared = prepared(&bench, &next_build());
     assert!(prepared.journal.events().is_empty());
-    assert!(prepared.import.is_none());
+    assert!(prepared.import.as_ref().unwrap().manifest().records().iter().all(|record|
+        !matches!(record.original_kind, togi_journal::EventKind::ExposureObserved |
+            togi_journal::EventKind::DayBootStart | togi_journal::EventKind::DayCheckpoint |
+            togi_journal::EventKind::DayCleanStop)));
     assert_eq!(marked(&prepared.journal), [(Marker::ResetAll, id)]);
     assert_eq!(archived(&prepared.journal), [older, id]);
     assert_eq!(
@@ -393,7 +400,7 @@ fn a_live_journal_at_the_reset_boundary_is_archived_unchanged_and_the_import_mar
 }
 
 #[test]
-fn a_pending_import_the_boundary_passed_is_dropped_without_an_import() {
+fn a_pending_import_the_boundary_passed_keeps_campaign_history_without_raw_tuning_data() {
     let bench = bench();
     let id = finished(&bench);
     let first = prepared(&bench, &next_build());
@@ -401,12 +408,13 @@ fn a_pending_import_the_boundary_passed_is_dropped_without_an_import() {
     dir.mark_reset_all().unwrap();
     drop::<StateDir>(dir);
     let after = prepared(&bench, &next_build());
-    assert!(after.import.is_none());
-    assert_eq!(marked(&after.journal), [(Marker::ResetAll, id)]);
+    assert!(after.import.as_ref().unwrap().manifest().records().iter().all(|record|
+        matches!(record.original_kind, togi_journal::EventKind::SessionStart | togi_journal::EventKind::CampaignStart)));
+    assert_eq!(marked(&after.journal), [(Marker::ImportPending, id), (Marker::ResetAll, id)]);
 }
 
 #[test]
-fn a_reset_boundary_ends_the_walk_so_nothing_before_it_is_imported() {
+fn a_reset_boundary_stops_raw_tuning_carry_but_not_campaign_history() {
     let bench = bench();
     let old = finished(&bench);
     let mut dir = simulated(&bench.mem);
@@ -436,14 +444,13 @@ fn a_reset_boundary_ends_the_walk_so_nothing_before_it_is_imported() {
     let prepared = prepared(&bench, &next_build());
     let import = prepared.import.unwrap();
     assert_eq!(import.source(), id);
-    assert!(
-        import
-            .manifest()
-            .records()
-            .iter()
-            .all(|record| record.original.session == id)
-    );
-    assert_eq!(import.manifest().records().len(), 1);
+    let records = import.manifest().records();
+    assert!(records.iter().any(|record| record.original.session == old
+        && record.original_kind == togi_journal::EventKind::CampaignStart));
+    assert!(records.iter().filter(|record| record.original.session == old)
+        .all(|record| matches!(record.original_kind, togi_journal::EventKind::SessionStart | togi_journal::EventKind::CampaignStart)));
+    assert!(records.iter().any(|record| record.original.session == id
+        && record.original_kind == togi_journal::EventKind::DayCleanStop));
 }
 
 #[test]
@@ -457,7 +464,7 @@ fn unknown_kinds_and_unreadable_lines_are_listed_and_never_imported() {
     bench.mem.put("/state/events.jsonl", bytes.clone());
     let import = prepared(&bench, &next_build()).import.unwrap();
     let manifest = import.manifest();
-    assert_eq!(manifest.records().len(), 3);
+    assert_eq!(manifest.records().len(), 6);
     let kinds: Vec<_> = manifest
         .unknown()
         .iter()
@@ -488,7 +495,7 @@ fn a_torn_tail_that_parses_is_never_an_imported_record() {
     bench.mem.put("/state/events.jsonl", bytes);
     let import = prepared(&bench, &next_build()).import.unwrap();
     let manifest = import.manifest();
-    assert_eq!(manifest.records().len(), 3);
+    assert_eq!(manifest.records().len(), 6);
     assert!(manifest.unknown().is_empty());
     assert!(
         manifest
@@ -498,14 +505,6 @@ fn a_torn_tail_that_parses_is_never_an_imported_record() {
     );
 }
 
-#[test_case(b"\n", true; "terminated")]
-#[test_case(b"", false; "torn")]
-fn only_a_terminated_commitment_line_ends_the_archive_walk(end: &[u8], committed: bool) {
-    let mut bytes = br#"{"seq":1,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"session.imported","data":{}}"#
-        .to_vec();
-    bytes.extend_from_slice(end);
-    assert_eq!(import::commits_import(&bytes), committed);
-}
 
 #[test]
 fn an_archive_that_cannot_be_read_fails_the_preparation() {
@@ -732,4 +731,111 @@ fn a_kept_journal_this_build_refuses_is_refused_and_left_unchanged() {
     assert!(matches!(error, PrepareError::Refused(_)), "{error:?}");
     assert_eq!(bench.mem.contents("/state/events.jsonl"), Some(before));
     assert!(simulated(&bench.mem).archives().unwrap().is_empty());
+}
+
+/// An explicit predecessor stamp exercises the transition without changing the production ruleset.
+fn predecessor(bench: &Bench) -> (SessionId, Vec<u8>) {
+    let mut input = bench.input_ending_at(bench.short_night());
+    input.build.ruleset = togi_tuner::RULESET - 1;
+    let mut journal = run(input).journal;
+    let id = session_of(&journal);
+    let bios = journal.events().iter().find_map(|event| {
+        if let Payload::SessionContext(context) = &event.payload { Some(context.bios_context()) } else { None }
+    }).unwrap();
+    let stamp = Stamp { time: bench.sim.now(), mono: None };
+    let offsets = journal.events().iter().find_map(|event| {
+        if let Payload::SessionBaseline(baseline) = &event.payload { Some(baseline.offsets) } else { None }
+    }).unwrap();
+    journal.append(stamp, Payload::DayBootStart(togi_journal::DayBootStart {
+        build: Build { ruleset: togi_tuner::RULESET - 1, ..build() },
+        bios, offsets, watchdog: None,
+    }), &[]).unwrap();
+    journal.append(stamp, Payload::DayCheckpoint(togi_journal::DayCheckpoint {
+        applied_secs: 60, load_mix: togi_journal::LoadMix::default(), watchdog: None,
+    }), &[]).unwrap();
+    journal.append(stamp, Payload::DayCleanStop(togi_journal::DayCleanStop {}), &[]).unwrap();
+    drop(journal.close().unwrap());
+    (id, bench.mem.contents("/state/events.jsonl").unwrap())
+}
+
+fn successor_build() -> Build {
+    Build { ruleset: togi_tuner::RULESET, ..build() }
+}
+
+fn enroll(bench: &Bench) -> Ended {
+    let ready = prepared(bench, &successor_build());
+    drop(ready.journal.close().unwrap());
+    let mut input = bench.input_ending_at(bench.short_night());
+    input.build = successor_build();
+    input.import = ready.import;
+    run(input)
+}
+
+#[test]
+fn a_ruleset13_session_is_archived_and_its_raw_history_imported_without_permission() {
+    let bench = bench();
+    let (id, before) = predecessor(&bench);
+    let ended = enroll(&bench);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert_eq!(bench.mem.contents(format!("/state/archive/{id}.jsonl")), Some(before));
+    let prefix: Vec<_> = ended.journal.events().iter()
+        .take_while(|event| !matches!(event.payload, Payload::CampaignStart(_))).collect();
+    assert!(prefix.iter().any(|event| matches!(&event.payload,
+        Payload::SessionBaseline(baseline) if baseline.offsets.iter().all(|(_, offset)| offset.0 == 0))));
+    assert!(!prefix.iter().any(|event| matches!(event.payload,
+        Payload::DayApplied(_) | Payload::CcdCap(_) | Payload::NightQualification(_))));
+    assert!(prefix.iter().any(|event| matches!(event.payload, Payload::SuccessorImported(_))));
+    let start = ended.journal.events().iter().find_map(|event| {
+        if let Payload::CampaignStart(start) = &event.payload { Some(start) } else { None }
+    }).unwrap();
+    assert!(matches!(start.origin, togi_journal::CampaignOrigin::Successor { .. }));
+    assert_eq!(start.history, togi_journal::CampaignHistory::Complete {});
+}
+
+#[test]
+fn the_successor_import_deduplicates_after_a_crash() {
+    let bench = bench();
+    predecessor(&bench);
+    let ready = prepared(&bench, &successor_build());
+    let expected: Vec<_> = ready.import.as_ref().unwrap().manifest().selected().collect();
+    drop(ready.journal.close().unwrap());
+    let mut input = bench.input_ending_at(bench.short_night());
+    input.build = successor_build();
+    input.import = ready.import;
+    input.on_append = Some(Box::new(|event| {
+        if matches!(event.payload, Payload::DayImported(_)) {
+            panic!("interrupted successor import");
+        }
+    }));
+    let interrupted = run(input);
+    assert!(interrupted.panic.is_some());
+    drop(interrupted.journal.close().unwrap());
+    let resumed = enroll(&bench);
+    assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+    let mut originals: Vec<_> = resumed.journal.events().iter().filter_map(|event| {
+        if let Payload::DayImported(record) = &event.payload { Some(record.original) } else { None }
+    }).collect();
+    originals.sort_by_key(|original| (original.session, original.seq));
+    let mut expected = expected;
+    expected.sort_by_key(|original| (original.session, original.seq));
+    assert_eq!(originals, expected);
+    assert_eq!(resumed.journal.events().iter().filter(|event|
+        matches!(event.payload, Payload::SuccessorImported(_))).count(), 1);
+    assert_eq!(resumed.journal.events().iter().filter(|event|
+        matches!(event.payload, Payload::CampaignStart(_))).count(), 1);
+}
+
+#[test]
+fn unreconstructible_campaign_history_blocks_nonzero_exploration() {
+    let bench = bench();
+    predecessor(&bench);
+    let mut bytes = bench.mem.contents("/state/events.jsonl").unwrap();
+    bytes.extend_from_slice(b"{\"seq\":9999,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"old\",\"kind\":\"day.applied\",\"data\":{}}\n");
+    bench.mem.put("/state/events.jsonl", bytes);
+    let ended = enroll(&bench);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let history = ended.journal.events().iter().find_map(|event| {
+        if let Payload::CampaignStart(start) = &event.payload { Some(&start.history) } else { None }
+    }).unwrap();
+    assert!(matches!(history, togi_journal::CampaignHistory::Unreconstructible { reason } if !reason.is_empty()));
 }

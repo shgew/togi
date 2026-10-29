@@ -573,8 +573,8 @@ impl<'events> Names<'events> {
                             | ClimbBlocker::HoldProfile {}
                             | ClimbBlocker::SafeApply {}
                             | ClimbBlocker::ActivationClosed {}
-                            | ClimbBlocker::Finished { .. } => format!("{blocker:?}"),
-                            ClimbBlocker::Ceiling { .. } => format!("{blocker:?}"),
+                            | ClimbBlocker::Finished { .. }
+                            | ClimbBlocker::Ceiling { .. } => format!("{blocker:?}"),
                         }
                     })
                     .collect();
@@ -1011,7 +1011,41 @@ impl<'events> Names<'events> {
             None => "night None".to_owned(),
         });
         lines.push(format!("stopped {stopped}"));
-        lines.push(format!("climb {climb:?}"));
+        let mut value = serde_json::to_value(climb).unwrap();
+        self.climb_citations(&mut value);
+        lines.push(format!("climb {value}"));
         lines
+    }
+
+    /// Preserve every projection field while naming local evidence by the same bounded anchors.
+    fn climb_citations(&mut self, value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                for (key, value) in fields {
+                    if key == "witness" || key == "certificate" {
+                        if let Some(seq) = value.as_u64().and_then(Seq::new) {
+                            *value = serde_json::Value::String(self.seq(seq));
+                        }
+                    } else if key == "witnesses" {
+                        if let Some(values) = value.as_array_mut() {
+                            for value in values {
+                                if let Some(seq) = value.as_u64().and_then(Seq::new) {
+                                    *value = serde_json::Value::String(self.seq(seq));
+                                } else {
+                                    self.climb_citations(value);
+                                }
+                            }
+                        }
+                    } else {
+                        self.climb_citations(value);
+                    }
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values { self.climb_citations(value); }
+            }
+            serde_json::Value::Null | serde_json::Value::Bool(_) |
+            serde_json::Value::Number(_) | serde_json::Value::String(_) => {}
+        }
     }
 }
