@@ -10,11 +10,11 @@ use togi_journal::{
     TaskId, TaskStatus, Tested,
 };
 use togi_machine::{CcdId, Regime, ResetKind, Signal};
-use togi_tuner::unit::{UnitId, UnitProfile};
 use togi_tuner::policy::{
     DayProjection, FirmwareValidity, NightProjection, Params, Projection, QualificationProgress,
     State,
 };
+use togi_tuner::unit::{UnitId, UnitProfile};
 
 use super::{
     last_lines, narrator_lines, operation, problem_story, resting_band, starting_story, story,

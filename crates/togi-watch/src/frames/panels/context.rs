@@ -5,11 +5,11 @@ use std::time::Duration;
 
 use ratatui::text::{Line, Span};
 use togi_journal::{Classification, DayEventId, DayStep, HoldReason, Queue, Resolution, StepKind};
-use togi_tuner::unit::UnitProfile;
 use togi_tuner::policy::{
     DayProjection, EventProjection, FirmwareValidity, NightProjection, Projection,
     QualificationProgress, ReproductionProjection,
 };
+use togi_tuner::unit::UnitProfile;
 
 use super::super::colours::Paint;
 use super::super::draw::bounded_rows;
@@ -405,7 +405,10 @@ fn reason_words(reason: &HoldReason) -> String {
         HoldReason::Paused {} => "paused".to_owned(),
         HoldReason::Expired {} => "expired".to_owned(),
         HoldReason::QualificationFailed { profile, .. } => {
-            format!("{} failed qualification", profile_text(&UnitProfile::of_ccd(profile.ccd())))
+            format!(
+                "{} failed qualification",
+                profile_text(&UnitProfile::of_ccd(profile.ccd()))
+            )
         }
     }
 }

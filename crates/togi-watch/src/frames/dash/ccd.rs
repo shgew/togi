@@ -380,7 +380,12 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             colours,
         );
     }
-    let projection = scene.s.policy.units.iter().find(|p| p.unit == togi_tuner::unit::UnitId::Ccd(id));
+    let projection = scene
+        .s
+        .policy
+        .units
+        .iter()
+        .find(|p| p.unit == togi_tuner::unit::UnitId::Ccd(id));
     match projection {
         Some(projection) => {
             put(buf, r, 0, 1, &facts_line(scene, projection, width), colours);

@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use togi_journal::Seq;
 use togi_machine::{CcdId, CoreId, CoreInfo, CoreSet, CpuId, TargetOffset};
-use togi_tuner::{HonestChain, Topology};
 use togi_tuner::unit::{UnitId, UnitProfile, Units};
+use togi_tuner::{HonestChain, Topology};
 
 pub(crate) fn ccd(id: u8) -> CcdId {
     CcdId::try_from(id).unwrap()

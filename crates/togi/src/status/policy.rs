@@ -14,7 +14,8 @@ use togi_journal::{
 };
 use togi_machine::{CcdProfile, CoreId, CoreSet, TargetOffset};
 use togi_tuner::policy::{
-    DayProjection, FirmwareValidity, NightProjection, Projection, QualificationStage, UnitProjection,
+    DayProjection, FirmwareValidity, NightProjection, Projection, QualificationStage,
+    UnitProjection,
 };
 use togi_tuner::unit::{UnitId, UnitProfile};
 
@@ -195,7 +196,11 @@ fn profile_word(profile: &UnitProfile) -> String {
 }
 
 fn ccd_profile_word(profile: &CcdProfile) -> String {
-    profile_words(profile.iter().map(|(ccd, offset)| (UnitId::Ccd(ccd), offset)))
+    profile_words(
+        profile
+            .iter()
+            .map(|(ccd, offset)| (UnitId::Ccd(ccd), offset)),
+    )
 }
 
 fn profile_words(profile: impl Iterator<Item = (UnitId, TargetOffset)>) -> String {

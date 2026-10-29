@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use ratatui::text::{Line, Span};
 use togi_journal::{DayEventId, Queue, ReproductionState, Tested};
-use togi_tuner::unit::UnitProfile;
 use togi_tuner::policy::{NightProjection, Projection};
+use togi_tuner::unit::UnitProfile;
 
 use crate::frames::colours::Paint;
 use crate::frames::layout::SizeClass;

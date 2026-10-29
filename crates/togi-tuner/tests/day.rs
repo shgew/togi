@@ -9,9 +9,7 @@ mod day {
     use jiff::Timestamp;
     use test_case::test_case;
     use togi_journal::{DayAnswerKind, EndClass, Seq};
-    use togi_machine::{
-        BootId, CcdId, CoreId, CoreInfo, ObservedOffset, PerCore, TargetOffset,
-    };
+    use togi_machine::{BootId, CcdId, CoreId, CoreInfo, ObservedOffset, PerCore, TargetOffset};
     use togi_tuner::day::{
         Answer, ApplicationKind, Blocker, Certainty, Classification, CoreProfile, CpuCause,
         DailyEvent, DayApplication, DayDecision, DayHistory, DayInputs, DayInterval, DayParams,
@@ -318,9 +316,13 @@ mod day {
     ) {
         let proposal = propose(&profile(applied), &profile(caps)).unwrap();
         assert_eq!(
-            proposal
-                .as_ref()
-                .map(|step| (match step.unit { UnitId::Ccd(ccd) => ccd.get(), UnitId::Core(_) => panic!("coarse proposal expected") }, step.to.get())),
+            proposal.as_ref().map(|step| (
+                match step.unit {
+                    UnitId::Ccd(ccd) => ccd.get(),
+                    UnitId::Core(_) => panic!("coarse proposal expected"),
+                },
+                step.to.get()
+            )),
             expected
         );
         if let (Some(step), Some((moved, _))) = (proposal, expected) {

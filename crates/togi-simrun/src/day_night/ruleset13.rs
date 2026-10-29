@@ -296,7 +296,9 @@ impl Ruleset13 {
                 .applied
                 .ok_or(RunError::Calendar("no committed day profile to reapply"))?
                 .to_ccd()
-                .ok_or(RunError::Calendar("a day profile must contain only CCD units"))?;
+                .ok_or(RunError::Calendar(
+                    "a day profile must contain only CCD units",
+                ))?;
             let cores = self.cores()?;
             let target = CcdVector::expand(applied, &cores)?;
             (ApplyCause::Reapplication {}, target)

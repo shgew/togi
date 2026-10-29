@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use togi_machine::TargetOffset;
 use togi_tuner::night::{
-    UnitMapping, Cursor, EdgeU, IsolatedObservation, IsolatedResult, Location, MappingBoard,
-    MappingKind, StepResult, write_limit,
+    Cursor, EdgeU, IsolatedObservation, IsolatedResult, Location, MappingBoard, MappingKind,
+    StepResult, UnitMapping, write_limit,
 };
 
-use crate::fixture::{unit, offset, seq};
+use crate::fixture::{offset, seq, unit};
 
 fn fail(witness: u64) -> StepResult {
     StepResult::Failed {
@@ -279,7 +279,10 @@ fn a_ccd_with_nothing_to_map_is_skipped_and_the_rotation_wraps() {
     board.finish_step(unit(2), StepResult::Passed);
     let next = board.next_target(&caps(&[])).unwrap();
     assert_eq!((next.unit, next.offset.get()), (unit(0), -5));
-    assert_eq!(board.unit(unit(1)).unwrap().edge().offset(), Some(offset(0)));
+    assert_eq!(
+        board.unit(unit(1)).unwrap().edge().offset(),
+        Some(offset(0))
+    );
 }
 
 #[test]
