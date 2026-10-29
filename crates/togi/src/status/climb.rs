@@ -78,7 +78,9 @@ fn blocker(reason: &ClimbBlocker) -> String {
         }
         ClimbBlocker::Finished { unit } => format!("{} already finished", journal_unit_name(*unit)),
         ClimbBlocker::CampaignHistory {} => "campaign history unavailable".to_owned(),
-        ClimbBlocker::SameBoot {} => "cold boot required; restart or resume cannot promote".to_owned(),
+        ClimbBlocker::SameBoot {} => {
+            "cold boot required; restart or resume cannot promote".to_owned()
+        }
         ClimbBlocker::HoldProfile {} => "exact applied profile hold required".to_owned(),
         ClimbBlocker::SafeApply {} => "safe-apply prerequisites incomplete".to_owned(),
         ClimbBlocker::ActivationClosed {} => "nonzero activation closed; stock only".to_owned(),
@@ -343,12 +345,7 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
             line(
                 out,
                 "  finished at: ",
-                &format!(
-                    "{}; {} [{}]",
-                    at.clock(*time),
-                    vector(profile),
-                    witnesses(seqs)
-                ),
+                &format!("{}; {} [{}]", time, vector(profile), witnesses(seqs)),
             );
         }
         if let Some(proposal) = &unit.next {
@@ -415,11 +412,14 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
             );
             match daily.poisson_upper_per_h {
                 Some(rate) if rate.is_finite() && rate > 0.0 => {
-                    let _ = writeln!(
+                    line(
                         out,
-                        "experimental: {} clean hours; at most 1 crash per {:.1} h (95%, fixed-rate model)",
-                        hours(daily.clean_s),
-                        1.0 / rate
+                        "experimental: ",
+                        &format!(
+                            "{} clean hours; at most 1 crash per {:.1} h (95%, fixed-rate model)",
+                            hours(daily.clean_s),
+                            1.0 / rate
+                        ),
                     );
                     if daily.goal == ClimbGoalSupport::MeetsGoal {
                         out.push_str(
@@ -439,20 +439,28 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
     match &policy.firmware_restoration {
         None => out.push_str("firmware restoration: none\n"),
         Some(restoration) => {
-            let state = match restoration.state {
+            let state = match &restoration.state {
                 FirmwareRestorationState::Saved {} => {
-                    "saved; awaiting new-context qualification and stock hold"
+                    "saved; awaiting new-context qualification and stock hold".to_owned()
                 }
-                FirmwareRestorationState::Qualified { .. } => "qualified in new context",
-                FirmwareRestorationState::Held { .. } => "held for stock hours",
-                FirmwareRestorationState::Restored { .. } => {
-                    "restored in one whole-profile learning step"
+                FirmwareRestorationState::Qualified { certificate } => {
+                    format!("qualified in new context [#{certificate}]")
                 }
-                FirmwareRestorationState::SteppedBack { .. } => {
-                    "stepped back to stock; restored units stopped"
-                }
+                FirmwareRestorationState::Held { hold } => format!(
+                    "held for stock hours: {} h [{}]",
+                    hours(hold.eligible_s),
+                    witnesses(&hold.credited)
+                ),
+                FirmwareRestorationState::Restored { application } => format!(
+                    "restored in one whole-profile learning step; application {}",
+                    application.0
+                ),
+                FirmwareRestorationState::SteppedBack { event: id } => format!(
+                    "stepped back to stock; restored units stopped after {}",
+                    event(id)
+                ),
             };
-            line(out, "firmware restoration: ", state);
+            line(out, "firmware restoration: ", &state);
             line(out, "  saved exact profile: ", &vector(&restoration.saved));
         }
     }

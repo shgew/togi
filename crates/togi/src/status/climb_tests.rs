@@ -146,13 +146,17 @@ fn shown(policy: &ClimbProjection, color: bool) -> String {
         },
     );
     // Status intentionally uses plain text in both terminal-color modes.
-    Renderer::new(OutputFacts {
+    let renderer = Renderer::new(OutputFacts {
         is_terminal: color,
         no_color: !color,
         journald: false,
-    })
-    .text(Style::Plain, &text)
-    .to_string()
+    });
+    use std::fmt::Write as _;
+    let mut shown = String::new();
+    for line in text.lines() {
+        writeln!(shown, "{}", renderer.text(Style::Plain, line)).unwrap();
+    }
+    shown
 }
 
 fn case_fixture(case: Case) -> ClimbProjection {

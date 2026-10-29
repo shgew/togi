@@ -12,12 +12,12 @@ allowance: 2 consumed / 2 limit; 0 remaining; 1 provisional; 0 reclassified;
   exhausted
 event: boot day-a: learning, CPU-suspect, provisional true, reclassified false
   [#9]
-event: boot day-b: post_finish, CPU-suspect, provisional false, reclassified false
-  [#10]
+event: boot day-b: post_finish, CPU-suspect, provisional false, reclassified
+  false [#10]
 unit: core 0, phase core, parent CCD 0, inherited start 0
   U: observed -30 [#4]
   state: finished: allowance exhausted; last clean -5
-  finished at: 01:00; core 0 -5 [#9 #10]
+  finished at: 2026-01-01T01:00:00Z; core 0 -5 [#9 #10]
   diagnostic S (non-authorizing): 0 [#3]
 current exact profile daily evidence: 50 h; 0 crashes [#7]
 experimental: 50 clean hours; at most 1 crash per 16.7 h (95%, fixed-rate model)

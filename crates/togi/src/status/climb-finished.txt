@@ -12,7 +12,7 @@ allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: core 0, phase core, parent CCD 0, inherited start 0
   U: observed -30 [#4]
   state: finished: ceiling; last clean -25
-  finished at: 01:00; core 0 -25 [#4]
+  finished at: 2026-01-01T01:00:00Z; core 0 -25 [#4]
   diagnostic S (non-authorizing): 0 [#3]
 current exact profile daily evidence: 50 h; 0 crashes [#7]
 experimental: 50 clean hours; at most 1 crash per 16.7 h (95%, fixed-rate model)
