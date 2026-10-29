@@ -1,0 +1,76 @@
+ruleset-13-day-night: policy summary; only ruleset13 can pass the gate; registered slopes [1.5, 2.0]
+scenario comparator seeds CO/day suspect year1/CCD climb-free% converge-d overshoot steps final-depth retained% bg-retreat CO-retreat nonCPU-retreat censored
+edge-shallow ruleset13 10 0 0 0 0.0 inf 0 0 0.0 0.0 0 0 0 10
+edge-deep ruleset13 10 0 0 0 0.0 inf 0 3 0.0 0.0 0 0 0 10
+no-write-limit-failure ruleset13 10 0 0 0 0.0 inf 0 3 0.0 0.0 0 0 0 10
+slope-flat ruleset13 10 0 0 0 0.0 inf 0 5 0.0 0.0 0 0 0 10
+slope-steep ruleset13 10 0 0 0 0.0 inf 0 1 0.0 0.0 0 0 0 10
+flattening-tail ruleset13 10 0 0 0 0.0 inf 0 5 0.0 0.0 0 0 0 10
+flatter-dangerous-class ruleset13 10 0 0 0 0.0 inf 0 2 0.0 0.0 0 0 0 10
+delayed-onset ruleset13 10 0 0 0 0.0 inf 0 3 0.0 0.0 0 0 0 10
+thermal-history ruleset13 10 0 0 0 0.0 inf 0 3 0.0 0.0 0 0 0 10
+hidden-daily ruleset13 10 0 0 0 0.0 inf 0 2 0.0 0.0 0 0 0 10
+partial-only ruleset13 10 0 0 0 0.0 inf 0 2 0.0 0.0 0 0 0 10
+single-core-binding ruleset13 10 0 0 0 0.0 inf 0 4 0.0 0.0 0 0 0 10
+jointly-binding ruleset13 10 0 0 0 0.0 inf 0 1 0.0 0.0 0 0 0 10
+r8-nonbinding ruleset13 10 0 0 0 0.0 inf 0 7 0.0 0.0 0 0 0 10
+both-ccd-interaction ruleset13 10 0 0 0 0.0 inf 22 8 7.2 0.0 0 0 0 10
+stock-background ruleset13 10 0 2 0 0.0 inf 0 7 0.0 0.0 9 0 0 10
+single-ccd ruleset13 10 0 0 0 0.0 inf 0 0 0.0 0.0 0 0 0 10
+moving-cap ruleset13 10 0 0 0 0.0 inf 0 8 2.0 0.0 0 0 0 10
+firmware-change ruleset13 10 0 0 0 0.0 inf 0 8 0.0 0.0 0 0 0 10
+non-cpu-correct ruleset13 10 0 0 0 0.0 inf 0 7 0.8 0.0 0 0 0 10
+non-cpu-wrong ruleset13 10 0 15 0 0.0 inf 0 7 0.0 0.0 0 0 41 10
+non-cpu-missing ruleset13 10 0 14 0 0.0 inf 0 7 0.0 0.0 0 0 40 10
+CO/day counts unique CO-caused daily crashes over seeds; retreats sum per-CCD counts; year1/CCD, overshoot and steps are maxima; convergence is median worst-CCD day (inf = not converged); final-depth is median per-run mean CCD depth. Per-CCD JSON crash counts can charge both CCDs for a joint crash. Censored partial counts are lower bounds.
+### ruleset13 (fallback slope 2×)
+| scenario | climb-free | year-one | overshoot ≤1 | overshoot max | median convergence d | retained | max steps | censored | result |
+|---|---|---|---|---|---|---|---|---|---|
+| edge-shallow | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 0 ≤ 7 ✗ | 10/10 | FAIL |
+| edge-deep | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 3 ≤ 7 ✗ | 10/10 | FAIL |
+| no-write-limit-failure | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 3 ≤ 7 ✗ | 10/10 | FAIL |
+| slope-flat | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 5 ≤ 7 ✗ | 10/10 | FAIL |
+| slope-steep | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 1 ≤ 7 ✗ | 10/10 | FAIL |
+| flattening-tail | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 5 ≤ 7 ✗ | 10/10 | FAIL |
+| flatter-dangerous-class | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 2 ≤ 7 ✗ | 10/10 | FAIL |
+| delayed-onset | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 3 ≤ 7 ✗ | 10/10 | FAIL |
+| thermal-history | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 3 ≤ 7 ✗ | 10/10 | FAIL |
+| hidden-daily | — | 0.000 ≥ 0.90 ✗ | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 2 ≤ 7 ✗ | 10/10 | FAIL |
+| partial-only | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 2 ≤ 7 ✗ | 10/10 | FAIL |
+| single-core-binding | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 4 ≤ 7 ✗ | 10/10 | FAIL |
+| jointly-binding | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 1 ≤ 7 ✗ | 10/10 | FAIL |
+| r8-nonbinding | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 7 ≤ 7 ✗ | 10/10 | FAIL |
+| both-ccd-interaction | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 22 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 8 ≤ 7 ✗ | 10/10 | FAIL |
+| stock-background | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | 0.000 ≥ 0.90 ✗ | 7 ≤ 7 ✗ | 10/10 | FAIL |
+| single-ccd | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 0 ≤ 7 ✗ | 10/10 | FAIL |
+| moving-cap | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | — | 10/10 | FAIL |
+| firmware-change | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | — | 10/10 | FAIL |
+| non-cpu-correct | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 7 ≤ 7 ✗ | 10/10 | FAIL |
+| non-cpu-wrong | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 7 ≤ 7 ✗ | 10/10 | FAIL |
+| non-cpu-missing | 0.000 ≥ 0.90 ✗ | — | 0.000 ≥ 0.95 ✗ | 0 ≤ 3 ✗ | inf ≤ 90 ✗ | — | 7 ≤ 7 ✗ | 10/10 | FAIL |
+ruleset-13-day-night: FAIL
+| scenario | policy | runs | mean night hours | mean run wall s |
+|---|---|---|---|---|
+| edge-shallow | ruleset13 | 10 | 2504.0 | 53.02 |
+| edge-deep | ruleset13 | 10 | 2504.0 | 88.61 |
+| no-write-limit-failure | ruleset13 | 10 | 2504.0 | 88.65 |
+| slope-flat | ruleset13 | 10 | 2504.0 | 97.20 |
+| slope-steep | ruleset13 | 10 | 2504.0 | 71.27 |
+| flattening-tail | ruleset13 | 10 | 2504.0 | 154.28 |
+| flatter-dangerous-class | ruleset13 | 10 | 2504.0 | 130.04 |
+| delayed-onset | ruleset13 | 10 | 2504.0 | 161.06 |
+| thermal-history | ruleset13 | 10 | 2504.0 | 135.02 |
+| hidden-daily | ruleset13 | 10 | 2504.0 | 116.76 |
+| partial-only | ruleset13 | 10 | 2504.0 | 93.17 |
+| single-core-binding | ruleset13 | 10 | 2504.0 | 82.59 |
+| jointly-binding | ruleset13 | 10 | 2504.0 | 79.19 |
+| r8-nonbinding | ruleset13 | 10 | 2504.0 | 95.19 |
+| both-ccd-interaction | ruleset13 | 10 | 2504.0 | 114.68 |
+| stock-background | ruleset13 | 10 | 2499.7 | 91.87 |
+| single-ccd | ruleset13 | 10 | 2504.0 | 78.42 |
+| moving-cap | ruleset13 | 10 | 2504.0 | 112.88 |
+| firmware-change | ruleset13 | 10 | 2504.0 | 70.81 |
+| non-cpu-correct | ruleset13 | 10 | 2504.0 | 123.77 |
+| non-cpu-wrong | ruleset13 | 10 | 2504.0 | 126.44 |
+| non-cpu-missing | ruleset13 | 10 | 2504.0 | 111.85 |
+total wall time: 1011.7 s
