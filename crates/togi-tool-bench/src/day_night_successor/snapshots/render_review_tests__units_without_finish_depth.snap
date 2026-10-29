@@ -1,0 +1,11 @@
+---
+source: crates/togi-tool-bench/src/day_night_successor/render_review_tests.rs
+expression: "rendered(|out| units(out, &group))"
+---
+Per-unit totals over complete seeds (unit totals never stand in for per-core depth):
+
+| Unit | Finished | Mean finish depth | Mean final depth | Promotions | Retreat steps | Hold h | Qualification launches | Qualification h | Night h | Loss co | Loss background | Loss non-cpu | Loss unattributed | Loss history | CO attributions |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 0/2 | n/a | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+CO attributions are not additive: one interaction crash implicating several units counts once in K and is attributed to each implicated unit here.

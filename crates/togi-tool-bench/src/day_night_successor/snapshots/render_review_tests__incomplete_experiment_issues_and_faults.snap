@@ -1,0 +1,35 @@
+---
+source: crates/togi-tool-bench/src/day_night_successor/render_review_tests.rs
+expression: "rendered(|out| { header(out, &result); scenarios(out, &result); faults(out, &result); })"
+---
+# Successor day/night score
+
+- Verdict: **INCOMPLETE**
+- Registration: `successor-review` (SHA-256 `sha-review`)
+- Policy: `successor-candidate`, resolved identity `identity-1`, role Candidate
+- Split: Holdout; run profile: Registered
+- Slopes scored: 1.5 of registered 1.5, 2
+- Complete cells: 1/3
+- **The experiment is not complete.** Missing, duplicated, unexpected, invalid, incompatible, truncated and error cells preclude a pass; descriptive fractions below use the complete records as their denominator.
+- Issue: slope 2.5 is not registered
+- Issue: cell \| mismatch
+
+## Scenarios
+
+Safety and usefulness are separate columns; each row is one scenario, unit mode and slope, with no averaging across rows.
+
+| Scenario | Mode | Slope | Complete seeds | Safety | Usefulness | Status |
+|---|---|---|---|---|---|---|
+| successor-ccd-incomplete | ccd-uniform | 1.5 | 0/3 | - (descriptive) | - (descriptive) | INCOMPLETE |
+
+## Incomplete cells
+
+Partial-run counts are lower bounds and never zeros; none of these cells counts toward a fraction's denominator.
+
+| Scenario | Mode | Slope | Seed | Fault | Detail |
+|---|---|---|---|---|---|
+| successor-ccd-incomplete | ccd-uniform | 1.5 | 2 | missing |  |
+| successor-ccd-incomplete | ccd-uniform | 1.5 | 3 | duplicate | 2 records |
+| successor-ccd-incomplete | ccd-uniform | 1.5 | 4 | invalid | bad \| unit |
+| successor-ccd-incomplete | ccd-uniform | 1.5 | 5 | incompatible | policy identity differs; registration hash differs |
+| successor-ccd-incomplete | ccd-uniform | 1.5 | 6 | inconsistent | outcome contradicts events |

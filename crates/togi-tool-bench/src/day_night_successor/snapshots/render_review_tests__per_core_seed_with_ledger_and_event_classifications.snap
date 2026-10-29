@@ -1,0 +1,32 @@
+---
+source: crates/togi-tool-bench/src/day_night_successor/render_review_tests.rs
+expression: "rendered(|out| seed_section(out, &group, &item))"
+---
+### successor-per-core-events — per-core — slope 1.5 — seed 7
+
+Outcome Converged; first finish 10; settled 12; unit-total depth 10 of reference M = 12 (physical maximum 12, required 9); physical-core mean depth 2.5; final depths [3,2,3,2]; at first finish [3,3,3,2].
+
+Events (unique): daily 6 total / 4 CO / 1 background / 1 non-CPU / 0 unattributed; night 1 total / 1 CO. Learning-phase daily CO 2; post-finish daily CO 2.
+
+| Unit | Finish | Finish day | Settled | Finish depth | Final depth | Promotions | Retreat steps | Learning H | Post-finish H |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | Ceiling | 10 | 10 | 3 | 3 | 3 | 0 | 0.5 | 0 |
+| 1 | CpuSuspectStop | 9.5 | 9.5 | 3 | 2 | 3 | 1 | 0.25 | 0.125 |
+| 2 | AllowanceExhausted | 10 | 10 | 3 | 3 | 3 | 0 | 0 | 0 |
+| 3 | FirmwareRestorationStop | 10 | 10 | 2 | 2 | 2 | 0 | 0 | 0 |
+
+Allowance: limit 2, consumed 4, remaining 0, overspend 2, exhausted true at day 4.25; provisional 1, reclassified 1; stopped units [1,3]; newest step step-3.
+
+| Event | Day | Period | Phase | Restoration tag | Classification | Provisional | Reclassified from | Charged | True cause | Implicated units | Newest step |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| crash-a | 3.5 | day | learning | - | cpu-suspect | false | - | true | co | 1 | step-1 |
+| crash-b | 4.25 | day | learning | - | unanswered | true | - | true | co | 0,2 | - |
+| bg-c | 6 | day | learning | - | non-cpu | false | - | false | background |  | - |
+| crash-d | 11 | day | post-finish | fw-1 | unexplained | false | - | true | co | 3 | step-3 |
+| flip-e | 12.5 | day | post-finish | - | non-cpu | false | cpu-suspect | true | non-cpu |  | - |
+| night-f | 20 | night | post-finish | - | unanswered | false | unexplained | false | co | 1 | - |
+| silent-g | 21 | day | post-finish | - | unreported | false | - | false | co | 0 | - |
+
+| Epoch | Context | Days | Operational M | Physical max | Per-unit feasible | Certificate | Hours in A / total | In A at end | Recovered to A at |
+|---|---|---|---|---|---|---|---|---|---|
+| epoch-0 | stock | 0–731 | 6 | 6 | [3,3] | exact | 700.5 / 1000 | true | never |

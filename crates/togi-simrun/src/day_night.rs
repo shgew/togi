@@ -3,6 +3,7 @@
 mod machine;
 mod policy;
 mod ruleset13;
+pub mod successor;
 
 use std::time::Duration;
 
