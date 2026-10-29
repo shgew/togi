@@ -217,3 +217,150 @@ pub fn read(path: &Path) -> Result<Vec<Record>, Error> {
     })?;
     decode(path, BufReader::new(file))
 }
+
+/// Trial and failure counts, as a summary records them and as its trial lines add up.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Totals {
+    pub trials: usize,
+    pub failures: usize,
+}
+
+impl Totals {
+    fn of(sums: &Sums) -> Self {
+        Self {
+            trials: sums.trials,
+            failures: sums.failures,
+        }
+    }
+
+    fn add(&mut self, other: Self) {
+        self.trials = self.trials.saturating_add(other.trials);
+        self.failures = self.failures.saturating_add(other.failures);
+    }
+}
+
+impl std::fmt::Display for Totals {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} trials and {} failures", self.trials, self.failures)
+    }
+}
+
+/// Why records are not the whole output of [`encode`]; `line` counts from 1, as [`decode`] does.
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+pub enum Defect {
+    #[error("it does not begin with the input line")]
+    NoInput,
+    #[error("line {line} is a second input")]
+    SecondInput { line: usize },
+    #[error("line {line} names another session than the trial lines of its section")]
+    WrongSession { line: usize },
+    #[error("line {line} names a session whose summary already closed it")]
+    RepeatedSession { line: usize },
+    #[error("the session at line {line} records {recorded} where its trial lines hold {counted}")]
+    SessionTotals {
+        line: usize,
+        recorded: Totals,
+        counted: Totals,
+    },
+    #[error("{trials} trial lines follow the last session summary")]
+    UnsummarizedTrials { trials: usize },
+    #[error(
+        "the pooled summary at line {line} records {recorded} where the sessions hold {counted}"
+    )]
+    PooledTotals {
+        line: usize,
+        recorded: Totals,
+        counted: Totals,
+    },
+    #[error("it ends without the pooled summary")]
+    NoPooled,
+    #[error("line {line} is a second pooled summary")]
+    SecondPooled { line: usize },
+    #[error("line {line} follows the pooled summary")]
+    AfterPooled { line: usize },
+}
+
+/// Requires `records` to be what [`encode`] writes: the input, each held-out session's trial lines
+/// followed by its summary, then exactly one pooled summary and nothing after it, with every summary's
+/// trial and failure counts equal to those of the trial lines it closes. A file cut short, or a summary
+/// that disagrees with its trials, is refused.
+pub fn require_complete(records: &[Record]) -> Result<(), Defect> {
+    if !matches!(records.first(), Some(Record::Input { .. })) {
+        return Err(Defect::NoInput);
+    }
+    let mut section = Totals::default();
+    let mut section_session = None;
+    let mut pool = Totals::default();
+    let mut pooled = false;
+    let mut closed = std::collections::BTreeSet::new();
+    for (index, record) in records.iter().enumerate().skip(1) {
+        let line = index.saturating_add(1);
+        if pooled {
+            return Err(match record {
+                Record::Pooled { .. } => Defect::SecondPooled { line },
+                Record::Input { .. } | Record::Trial { .. } | Record::Session { .. } => {
+                    Defect::AfterPooled { line }
+                }
+            });
+        }
+        match record {
+            Record::Input { .. } => return Err(Defect::SecondInput { line }),
+            Record::Trial {
+                session, failure, ..
+            } => {
+                if closed.contains(session) {
+                    return Err(Defect::RepeatedSession { line });
+                }
+                if section_session.is_some_and(|open| open != *session) {
+                    return Err(Defect::WrongSession { line });
+                }
+                section_session = Some(*session);
+                section.add(Totals {
+                    trials: 1,
+                    failures: usize::from(*failure),
+                });
+            }
+            Record::Session { session, sums, .. } => {
+                if closed.contains(session) {
+                    return Err(Defect::RepeatedSession { line });
+                }
+                if section_session.is_some_and(|open| open != *session) {
+                    return Err(Defect::WrongSession { line });
+                }
+                let recorded = Totals::of(sums);
+                if recorded != section {
+                    return Err(Defect::SessionTotals {
+                        line,
+                        recorded,
+                        counted: section,
+                    });
+                }
+                pool.add(section);
+                section = Totals::default();
+                section_session = None;
+                closed.insert(*session);
+            }
+            Record::Pooled { sums } => {
+                if section.trials > 0 {
+                    return Err(Defect::UnsummarizedTrials {
+                        trials: section.trials,
+                    });
+                }
+                let recorded = Totals::of(sums);
+                if recorded != pool {
+                    return Err(Defect::PooledTotals {
+                        line,
+                        recorded,
+                        counted: pool,
+                    });
+                }
+                pooled = true;
+            }
+        }
+    }
+    if pooled {
+        Ok(())
+    } else {
+        Err(Defect::NoPooled)
+    }
+}

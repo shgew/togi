@@ -165,6 +165,40 @@ fn real_process_records_pair_with_a_rerun_and_compare_equal() {
     assert!(unpaired.stdout.is_empty());
 }
 
+#[test]
+fn real_process_compare_refuses_records_cut_after_their_last_trial() {
+    let dir = tempfile::tempdir().unwrap();
+    let extract = two_sessions(dir.path());
+    let complete = dir.path().join("complete.jsonl");
+    let ran = fit(&[
+        "--facts",
+        extract.to_str().unwrap(),
+        "--forward-only",
+        "--records",
+        complete.to_str().unwrap(),
+    ]);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    let lines = std::fs::read_to_string(&complete).unwrap();
+    let cut = dir.path().join("cut.jsonl");
+    std::fs::write(
+        &cut,
+        lines.lines().take(2).collect::<Vec<_>>().join("\n") + "\n",
+    )
+    .unwrap();
+
+    let [complete, cut] = [&complete, &cut].map(|path| path.to_str().unwrap());
+    let refused = fit(&["--compare", cut, cut]);
+    assert_eq!(refused.status.code(), Some(1), "{}", text(&refused.stdout));
+    assert!(refused.stdout.is_empty(), "{}", text(&refused.stdout));
+    assert!(
+        text(&refused.stderr).contains("is not a complete forward check"),
+        "{}",
+        text(&refused.stderr)
+    );
+    let against = fit(&["--compare", complete, cut]);
+    assert_eq!(against.status.code(), Some(1), "{}", text(&against.stdout));
+}
+
 /// Two sessions recorded after the original research artifact: #480's spent score sessions.
 fn later_sessions(dir: &Path) -> PathBuf {
     let mut offsets = [0; 16];

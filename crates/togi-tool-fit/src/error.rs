@@ -87,6 +87,11 @@ pub enum Error {
         line: usize,
         source: serde_json::Error,
     },
+    #[error("{} is not a complete forward check", path.display())]
+    Incomplete {
+        path: PathBuf,
+        source: crate::records::Defect,
+    },
     #[error("the records do not pair: {0}")]
     Unpaired(String),
     #[error("the shared-voltage fit requires 16 cores: fact {session}:{seq} has {cores}")]
