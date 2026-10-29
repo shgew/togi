@@ -47,9 +47,9 @@ The pause lifetime is durable before zeroing, in [`day.pause`](journal.md#rulese
 
 At a cold boot the service feeds the tuner's existing paused-boot eligibility flag before applying. A boot starting paused cannot promote later in that boot. The tuner still computes required step-backs, vetoes and firmware resets; ending the pause applies the committed result through the stock-only capability. A crash while paused is observed at its verified CO-0 readbacks and remains platform/background evidence. Learned night observations are not reset.
 
-The service checkpoints at control boundaries and emits explicit `day.interval` spans tagged `paused`, excluding those hours from applied exposure and holds without changing the tuner's rules. Suspend and unobserved downtime stay excluded independently.
+The service checkpoints at control boundaries. The raw pause fold excludes paused time from applied exposure; the tuner derives explicit `day.interval` spans tagged `paused` from those checkpoints, so paused hours earn no holds without changing the tuner's rules. Suspend and unobserved downtime stay excluded independently.
 
-`togi day notify` polls pause state as well as questions. Once a timed pause has at most five minutes left, it warns with the deadline and offers an action to extend that deadline by one hour; dismissal changes nothing. After a verified ending it notifies that stock was reapplied. Notifications never claim that nonzero offsets were restored. On the dashboard's main view, `p` toggles untimed pause/resume and `f` toggles freeze/unfreeze through these same commands.
+`togi day notify` polls pause state as well as questions. Once a timed pause has at most five minutes left, it warns with the deadline and offers an action to extend that deadline by one hour; dismissal changes nothing. After a verified ending it notifies that stock was reapplied. Notifications never claim that nonzero offsets were restored. On the dashboard's main view, `p` toggles untimed pause/resume and `f` toggles freeze/unfreeze through the same credential-checked socket controls.
 
 
 ## Day observation
