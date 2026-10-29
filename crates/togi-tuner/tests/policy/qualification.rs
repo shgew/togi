@@ -23,7 +23,7 @@ fn fail_first_proposal(journal: &mut Journal, built: &ContentId) -> CcdProfile {
         let plan = journal.until_trial(journal.now());
         if qualifies_proposal(&plan) {
             journal.run_built(&plan, Ending::Fail(None), built);
-            return plan.profile;
+            return plan.profile.to_ccd().unwrap();
         }
         journal.run(&plan, Ending::Pass);
     }
@@ -41,7 +41,7 @@ fn next_proposal_cycle(journal: &mut Journal) -> Vec<CcdProfile> {
             return qualified;
         }
         if qualifies_proposal(&plan) {
-            qualified.push(plan.profile.clone());
+            qualified.push(plan.profile.to_ccd().unwrap());
         }
         journal.run(&plan, Ending::Pass);
     }
@@ -155,7 +155,7 @@ fn a_failed_certificate_lends_no_witness_to_a_later_qualification() {
         let plan = journal.until_trial(journal.now());
         if qualifies_proposal(&plan) && lent {
             journal.run(&plan, Ending::Fail(Some(0)));
-            break plan.profile;
+            break plan.profile.to_ccd().unwrap();
         }
         lent |= qualifies_proposal(&plan) && ccd1_only(&plan);
         journal.run(&plan, Ending::Pass);

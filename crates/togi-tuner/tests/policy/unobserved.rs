@@ -160,7 +160,7 @@ fn an_unobserved_crash_record_gets_one_reproduction_night_that_closes_under_its_
     journal.reboot("tuning2");
     let plan = journal.until_trial(at(62_000));
     assert_eq!(plan.task.queue, Queue::Reproduction);
-    assert_eq!(plan.profile, d);
+    assert_eq!(plan.profile.to_ccd().unwrap(), d);
     let night = plan.night;
     journal.run(&plan, Ending::Pass);
     journal.boot_start("day3");
