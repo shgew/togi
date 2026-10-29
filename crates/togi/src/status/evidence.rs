@@ -77,7 +77,7 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, sta
     out.push_str("\nEvidence\n");
     line(
         out,
-        "Ruleset 13 (compatibility RULESET 3). S uses isolated mapping classes only. Qualification, reproduction and controls can inform slope but cannot supply mapping rate coverage. The cap is coverage-incomplete.",
+        "Statistical S is diagnostic only and never authorizes a step. S uses isolated mapping classes only. Qualification, reproduction and controls can inform slope but cannot supply mapping rate coverage. The diagnostic cap is coverage-incomplete.",
     );
     line(
         out,
