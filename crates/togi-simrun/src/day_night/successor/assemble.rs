@@ -833,6 +833,7 @@ fn summaries(
                         StepKind::Climb { .. }
                         | StepKind::Retreat { .. }
                         | StepKind::Restoration { .. }
+                        | StepKind::ReclassifiedRestoration { .. }
                         | StepKind::StockReset { .. } => {}
                     }
                 }
@@ -884,8 +885,14 @@ fn summaries(
                                     qualification,
                                     ..
                                 } if owner == &unit.unit => Some(qualification),
+                                StepKind::ReclassifiedRestoration {
+                                    units,
+                                    qualification,
+                                    ..
+                                } if units.contains(&unit.unit) => qualification.as_ref(),
                                 StepKind::Climb { .. }
                                 | StepKind::Restoration { .. }
+                                | StepKind::ReclassifiedRestoration { .. }
                                 | StepKind::Retreat { .. }
                                 | StepKind::StockReset { .. } => None,
                             };

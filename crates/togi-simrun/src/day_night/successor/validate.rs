@@ -591,7 +591,10 @@ impl Record {
                 "newest unit step identity",
             ),
             StepIdentity::Restoration { restoration, units } => require(
-                self.restorations.iter().any(|item| &item.id == restoration)
+                (self.restorations.iter().any(|item| &item.id == restoration)
+                    || self.steps.iter().any(|step| &step.id == restoration
+                        && matches!(&step.kind, StepKind::ReclassifiedRestoration { units: restored, .. }
+                            if restored.len() == units.len() && restored.iter().all(|unit| units.contains(unit)))))
                     && !units.is_empty()
                     && units.iter().all(|unit| unit.index() < self.units.len()),
                 "newest restoration identity",
@@ -668,6 +671,49 @@ impl Record {
                         && units.iter().all(|unit| unit.index() < self.units.len()),
                     "retreat step identities",
                 )?,
+                StepKind::ReclassifiedRestoration {
+                    retreat,
+                    event,
+                    reclassified_day,
+                    units,
+                    hold,
+                    qualification,
+                    crash_vetoes,
+                    ..
+                } => {
+                    // Linkage to the retreat/event, hold and qualification presence are
+                    // semantic audit subjects; only their representation is checked here.
+                    require(
+                        !retreat.is_empty()
+                            && !event.is_empty()
+                            && day(*reclassified_day)
+                            && self.observes_instant(*reclassified_day)
+                            && !units.is_empty()
+                            && units.iter().all(|unit| unit.index() < self.units.len())
+                            && units.iter().collect::<BTreeSet<_>>().len() == units.len(),
+                        "reclassified restoration identities",
+                    )?;
+                    if let Some(hold) = hold {
+                        require(
+                            day(hold.start_day)
+                                && nonnegative(hold.clean_hours)
+                                && !hold.witnesses.is_empty()
+                                && unique_text(hold.witnesses.iter().map(String::as_str)),
+                            "reclassified restoration hold",
+                        )?;
+                        self.validate_profile(&hold.profile)?;
+                    }
+                    if let Some(qualification) = qualification {
+                        self.validate_qualification(qualification)?;
+                    }
+                    for veto in crash_vetoes {
+                        require(
+                            !veto.event.is_empty(),
+                            "reclassified restoration veto event",
+                        )?;
+                        self.validate_profile(&veto.profile)?;
+                    }
+                }
                 StepKind::StockReset { epoch } => require(
                     self.epochs.iter().any(|item| &item.id == epoch),
                     "stock reset epoch",

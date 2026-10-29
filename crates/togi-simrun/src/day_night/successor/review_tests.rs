@@ -6,8 +6,8 @@ use togi_machine::{CoreId, PerCore};
 use super::{event, fixture};
 use crate::day_night::successor::{
     CeilingEvidence, Classification, EdgeObservation, FinishReason, Outcome, PartialCounts, Period,
-    Phase, ProfileStep, Qualification, Record, StepIdentity, StepKind, TruthCause, UnitId,
-    ValidationError,
+    Phase, ProfileStep, ProfileVeto, Qualification, Record, RestorationHold, StepIdentity,
+    StepKind, TruthCause, UnitId, ValidationError,
 };
 
 fn uid(index: u16) -> UnitId {
@@ -291,4 +291,87 @@ fn source_allocation_roundoff_is_relative_without_relaxing_membership(
             Err(ValidationError::Invalid("joint hazard source allocation"))
         ));
     }
+}
+
+fn reclassified(record: &mut Record, full: bool) {
+    let deployed = record.intervals[0].profile;
+    record.steps.push(ProfileStep {
+        id: "reclassified".into(),
+        day: 1.0,
+        before: deployed,
+        after: deployed,
+        kind: StepKind::ReclassifiedRestoration {
+            retreat: "missing-retreat".into(),
+            event: "missing-event".into(),
+            reclassified_day: 1.0,
+            units: vec![uid(0), uid(1)],
+            hold: full.then(|| RestorationHold {
+                start_day: 1.0,
+                profile: deployed,
+                clean_hours: 50.0,
+                witnesses: vec!["hold-witness".into()],
+            }),
+            qualification: full.then(|| Qualification {
+                id: "reclassified-qualified".into(),
+                day: 1.0,
+                epoch: "initial".into(),
+                profile: deployed,
+                stock_controls: vec!["stock".into()],
+                fresh_witnesses: vec!["fresh".into()],
+                reused_witnesses: vec![],
+                safety_checks_satisfied: true,
+            }),
+            consumed_before: 3,
+            consumed_after: 2,
+            crash_vetoes: if full {
+                vec![ProfileVeto {
+                    event: "veto-event".into(),
+                    profile: deployed,
+                }]
+            } else {
+                vec![]
+            },
+        },
+    });
+}
+
+#[test_case(true; "with hold, certificate and vetoes")]
+#[test_case(false; "absent hold and certificate stay auditable")]
+fn a_reclassified_restoration_roundtrips_and_validates_without_semantic_linkage(full: bool) {
+    let mut record = fixture();
+    reclassified(&mut record, full);
+    record.validate().unwrap();
+    let bytes = serde_json::to_vec(&record).unwrap();
+    assert_eq!(Record::parse(&bytes).unwrap(), record);
+}
+
+fn reclassified_mut(record: &mut Record) -> &mut StepKind {
+    &mut record.steps.last_mut().unwrap().kind
+}
+
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { retreat, .. } = kind { retreat.clear() }, "reclassified restoration identities"; "empty retreat")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { event, .. } = kind { event.clear() }, "reclassified restoration identities"; "empty event")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { reclassified_day, .. } = kind { *reclassified_day = f64::NAN }, "reclassified restoration identities"; "nonfinite day")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { units, .. } = kind { units.clear() }, "reclassified restoration identities"; "no units")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { units, .. } = kind { units.push(uid(0)) }, "reclassified restoration identities"; "duplicate unit")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { units, .. } = kind { units.push(uid(15)) }, "reclassified restoration identities"; "unit out of range")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind { hold.clean_hours = f64::INFINITY }, "reclassified restoration hold"; "nonfinite hold hours")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind { hold.start_day = 0.0 }, "reclassified restoration hold"; "hold day before origin")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind { hold.witnesses.clear() }, "reclassified restoration hold"; "no hold witnesses")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind { hold.witnesses = vec!["a".into(), "a".into()] }, "reclassified restoration hold"; "duplicate hold witnesses")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind { hold.profile = profile(51) }, "physical-core profile dimensions/write range"; "hold profile out of range")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { qualification: Some(q), .. } = kind { q.id.clear() }, "qualification identity"; "empty qualification")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { crash_vetoes, .. } = kind { crash_vetoes[0].event.clear() }, "reclassified restoration veto event"; "empty veto event")]
+#[test_case(|kind| if let StepKind::ReclassifiedRestoration { crash_vetoes, .. } = kind { crash_vetoes[0].profile = profile(51) }, "physical-core profile dimensions/write range"; "veto profile out of range")]
+fn a_reclassified_restoration_rejects_unrepresentable_fields(
+    corrupt: fn(&mut StepKind),
+    reason: &'static str,
+) {
+    let mut record = fixture();
+    reclassified(&mut record, true);
+    corrupt(reclassified_mut(&mut record));
+    assert!(matches!(
+        record.validate(),
+        Err(ValidationError::Invalid(found)) if found == reason
+    ));
 }
