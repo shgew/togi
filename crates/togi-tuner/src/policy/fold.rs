@@ -26,6 +26,10 @@ pub enum FoldError {
     History(#[from] HistoryError),
     #[error("building a profile from a journal record")]
     Profile(#[from] CcdProfileError),
+    #[error("recording a bounded-climb application")]
+    Climb(#[from] crate::climb::ClimbError),
+    #[error("invalid climb record: {0}")]
+    ClimbRecord(&'static str),
 }
 
 impl State {
@@ -136,6 +140,26 @@ impl State {
             }
             Payload::UnitEdge(p) => {
                 self.nights.unit_edges.insert(p.unit, committed(event, p.clone()));
+                self.observe_finishes(event.time);
+            }
+            Payload::UnitMapping(p) => self.fold_mapping(event, p)?,
+            Payload::ClimbDecision(p) => self.fold_climb_decision(event, p)?,
+            Payload::UnitStop(p) => self.fold_unit_stop(event, p)?,
+            Payload::CampaignStart(p) => self.fold_campaign_start(event, p),
+            Payload::CampaignCharge(p) => {
+                self.climb.charges.push(committed(event, p.clone()));
+            }
+            Payload::CampaignReclassified(p) => {
+                self.climb.reclassifications.push(committed(event, p.clone()));
+            }
+            Payload::FirmwareRestoration(p) => {
+                self.climb.restoration = Some(committed(event, p.clone()));
+            }
+            Payload::SuccessorImported(p) => {
+                self.climb.successor = Some(committed(event, p.clone()));
+            }
+            Payload::SessionImported(p) => {
+                self.climb.import_summary = Some(p.clone());
             }
             // A completed stop is the durable record that tuning was left: the operator's (signal,
             // F10, the power button) or the dead end's (`docs/spec/runtime.md`, Night declaration).
@@ -190,7 +214,11 @@ impl State {
             Payload::NightReproduction(p) => {
                 self.nights.reproductions.push(committed(event, p.clone()));
             }
-            Payload::DayEvent(p) => self.day_event(event, p),
+            Payload::DayEvent(p) => {
+                self.day_event(event, p);
+                self.observe_campaign_event(p);
+                self.observe_finishes(event.time);
+            }
             Payload::DayVeto(p) => {
                 self.days
                     .vetoes
@@ -205,7 +233,12 @@ impl State {
             }
             Payload::DayApplied(p) => self.applied(event, p)?,
             Payload::DayFreeze(p) => self.freeze(p),
-            Payload::DayImported(p) => self.imported(seq, p),
+            Payload::DayImported(p) => {
+                if !self.climb.imports.iter().any(|known| known.original == p.original) {
+                    self.climb.imports.push(p.clone());
+                }
+                self.imported(seq, p);
+            }
             Payload::DeadEnd(p) => {
                 if p.condition == DeadEndCondition::FailureAtZero && self.stop.is_none() {
                     self.stop = Some(Stop {});
@@ -219,7 +252,6 @@ impl State {
             Payload::SessionNotice(_)
             | Payload::SessionWarning(_)
             | Payload::SessionArchived(_)
-            | Payload::SessionImported(_)
             | Payload::SessionCarried(_)
             | Payload::ConfigLoaded(_)
             | Payload::PreflightCheck(_)
@@ -255,14 +287,6 @@ impl State {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
-            | Payload::UnitMapping(_)
-            | Payload::ClimbDecision(_)
-            | Payload::UnitStop(_)
-            | Payload::CampaignStart(_)
-            | Payload::CampaignCharge(_)
-            | Payload::CampaignReclassified(_)
-            | Payload::FirmwareRestoration(_)
-            | Payload::SuccessorImported(_)
             | Payload::StateRebuilt(_) => {}
         }
         Ok(())
@@ -275,6 +299,9 @@ impl State {
         };
         let zero = CcdProfile::zero(topology.ccds().iter().map(|&(ccd, _)| ccd))?;
         self.days.history = Some(DayHistory::baseline(seq, UnitProfile::of_ccd(&zero)));
+        if self.climb.history.is_none() {
+            self.climb.history = Some(crate::climb::ClimbHistory::stock(crate::Units::coarse(topology)));
+        }
         self.machine.anchor.clone_from(&self.machine.firmware);
         Ok(())
     }
@@ -566,6 +593,7 @@ impl State {
 
     /// A successful application extends the day history. Its kind comes from the step it carried out.
     fn applied(&mut self, event: &Event, applied: &DayApplied) -> Result<(), FoldError> {
+        self.fold_climb_application(event, applied)?;
         let kind = self.application_kind(applied);
         let zeroed = kind == ApplicationKind::FirmwareZero;
         self.days
@@ -585,6 +613,9 @@ impl State {
     }
 
     fn application_kind(&self, applied: &DayApplied) -> ApplicationKind {
+        if let Some(kind) = self.climb_application_kind(applied) {
+            return kind;
+        }
         let step = match applied.cause {
             ApplyCause::Reapplication {} => return ApplicationKind::Reapplication,
             // A reset starts a new hold and consumes nothing, as a cap retreat does.

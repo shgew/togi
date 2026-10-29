@@ -345,3 +345,44 @@ impl Default for Days {
         }
     }
 }
+
+/// The D campaign is independent of session-local hold and certificate books.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(super) struct Climb {
+    pub(super) history: Option<crate::climb::ClimbHistory>,
+    pub(super) campaign: crate::climb::Campaign,
+    pub(super) start: Option<Committed<togi_journal::CampaignStart>>,
+    pub(super) mapping: Option<Committed<togi_journal::UnitMapping>>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) decisions: BTreeMap<Seq, Committed<togi_journal::ClimbDecision>>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) plans: BTreeMap<Seq, crate::climb::ClimbDecision>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) stops: BTreeMap<crate::UnitId, Committed<togi_journal::UnitStop>>,
+    pub(super) charges: Vec<Committed<togi_journal::CampaignCharge>>,
+    pub(super) reclassifications: Vec<Committed<togi_journal::CampaignReclassified>>,
+    pub(super) restoration: Option<Committed<togi_journal::FirmwareRestoration>>,
+    pub(super) imports: Vec<togi_journal::DayImported>,
+    pub(super) import_summary: Option<togi_journal::SessionImported>,
+    pub(super) successor: Option<Committed<togi_journal::SuccessorImported>>,
+}
+
+impl Default for Climb {
+    fn default() -> Self {
+        Self {
+            history: None,
+            campaign: crate::climb::Campaign::Unreconstructible,
+            start: None,
+            mapping: None,
+            decisions: BTreeMap::new(),
+            plans: BTreeMap::new(),
+            stops: BTreeMap::new(),
+            charges: Vec::new(),
+            reclassifications: Vec::new(),
+            restoration: None,
+            imports: Vec::new(),
+            import_summary: None,
+            successor: None,
+        }
+    }
+}

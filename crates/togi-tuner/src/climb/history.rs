@@ -191,6 +191,21 @@ impl ClimbHistory {
         Ok(())
     }
 
+    /// A verified reset changes the actual vector without inventing a learning step.
+    pub fn observe_application(
+        &mut self,
+        application: ApplicationId,
+        profile: UnitProfile,
+    ) -> Result<(), ClimbError> {
+        if self.latest.is_some_and(|latest| application <= latest) {
+            return Err(ClimbError::ApplicationOrder);
+        }
+        profile.expand(&self.units)?;
+        self.current = profile;
+        self.latest = Some(application);
+        Ok(())
+    }
+
     /// Call only after a complete successful apply/readback transaction, never for a plan.
     pub fn apply(
         &mut self,
