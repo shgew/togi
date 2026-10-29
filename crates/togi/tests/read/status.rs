@@ -1053,7 +1053,7 @@ fn first_day_status_and_evidence_show_the_same_morning_report() {
     super::support::snapshot("status__evidence_morning", &evidence);
 }
 
-/// Explicit fixture publication only; ordinary tests stay on MemFs.
+/// Explicit fixture publication only; ordinary tests stay on `MemFs`.
 #[test]
 #[ignore = "writes status fixtures to an explicitly supplied temporary directory"]
 fn real_fs_generate_status_snapshots() {
