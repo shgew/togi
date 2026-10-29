@@ -212,7 +212,7 @@ fn a_client_decodes_the_pending_ends_the_service_lists() {
 fn the_morning_report_is_read_only_socket_data() {
     let mut journal = crate::day::tests::journal();
     let before = journal.events().len();
-    let reply = respond(&mut journal, &FixedClock, 1000, Request::Questions).unwrap();
+    let reply = serve(&mut journal, 1000, Request::Questions).unwrap();
     let Reply::Questions { morning, .. } = reply else {
         panic!("questions must return the read-only report")
     };
