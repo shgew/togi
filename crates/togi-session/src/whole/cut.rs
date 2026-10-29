@@ -30,8 +30,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use test_case::test_case;
@@ -399,14 +397,15 @@ fn day(
         assert!(!fired, "the day continued after its cut");
         let events = day.events().to_vec();
         if matches!(fate, Fate::Killed) {
+            let replay = folded(&events);
             assert_eq!(
                 serde_json::to_value(&day.state).unwrap(),
-                serde_json::to_value(folded(&events)).unwrap(),
+                serde_json::to_value(&replay).unwrap(),
                 "live day state versus replay",
             );
             assert_lines_equal(
                 &compared_projection(&events, &day.state.project()),
-                &projection(&events),
+                &compared_projection(&events, &replay.project()),
                 "live day versus replay",
             );
         }
@@ -807,42 +806,39 @@ fn cuts(played: &[Played], from: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// CI runs the sweep tests sequentially; each sweep uses this many cut workers, independent of the host.
-const CUT_WORKERS: usize = 2;
+/// Each nextest test owns one partition; the recovery runner bounds concurrent shards to two.
+const CUT_SHARDS: usize = 8;
 
-/// Runs `check` on every cut in parallel, and fails with every cut it failed on.
-fn each(cuts: &[(usize, usize)], check: impl Fn(usize, usize) + Sync) {
-    let next = AtomicUsize::new(0);
-    let failed = Mutex::new(Vec::new());
-    std::thread::scope(|scope| {
-        for _ in 0..CUT_WORKERS {
-            scope.spawn(|| {
-                while let Some(&(phase, after)) = cuts.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let checked =
-                        std::panic::catch_unwind(AssertUnwindSafe(|| check(phase, after)));
-                    if let Err(panic) = checked {
-                        let message = panic
-                            .downcast_ref::<String>()
-                            .cloned()
-                            .or_else(|| {
-                                panic
-                                    .downcast_ref::<&str>()
-                                    .map(|message| (*message).to_owned())
-                            })
-                            .unwrap_or_default();
-                        failed.lock().unwrap().push((after, message));
-                    }
-                }
-            });
+fn shard_cuts(cuts: &[(usize, usize)], shard: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
+    assert!(shard < CUT_SHARDS);
+    cuts.iter().copied().skip(shard).step_by(CUT_SHARDS)
+}
+
+/// Runs `check` on every cut in this shard, and fails with every cut it failed on.
+fn each(cuts: &[(usize, usize)], shard: usize, check: impl Fn(usize, usize)) {
+    let mut failed = Vec::new();
+    let mut checked = 0;
+    for (phase, after) in shard_cuts(cuts, shard) {
+        checked += 1;
+        if let Err(panic) = std::panic::catch_unwind(AssertUnwindSafe(|| check(phase, after))) {
+            let message = panic
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| {
+                    panic
+                        .downcast_ref::<&str>()
+                        .map(|message| (*message).to_owned())
+                })
+                .unwrap_or_default();
+            failed.push((after, message));
         }
-    });
-    let mut failed = failed.into_inner().unwrap();
+    }
     failed.sort();
     assert!(
         failed.is_empty(),
         "{} of {} cuts failed:\n{}",
         failed.len(),
-        cuts.len(),
+        checked,
         failed
             .iter()
             .map(|(after, message)| format!("cut after event {after}: {message}"))
@@ -1418,8 +1414,17 @@ fn assert_window(played: &[Played], from: usize, cuts: &[(usize, usize)]) {
     );
 }
 
-#[test]
-fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments() {
+#[test_case(0; "shard 1")]
+#[test_case(1; "shard 2")]
+#[test_case(2; "shard 3")]
+#[test_case(3; "shard 4")]
+#[test_case(4; "shard 5")]
+#[test_case(5; "shard 6")]
+#[test_case(6; "shard 7")]
+#[test_case(7; "shard 8")]
+fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments(
+    shard: usize,
+) {
     let (model, played, from) = scenario();
     let cuts = cuts(&played, from);
     assert_window(&played, from, &cuts);
@@ -1427,7 +1432,7 @@ fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection
         .iter()
         .map(|phase| projection(&phase.events))
         .collect();
-    each(&cuts, |phase, after| {
+    each(&cuts, shard, |phase, after| {
         let reference = &played[phase];
         let events = resume(reference, &model, after, Fate::Killed);
         assert_eq!(&events[..after], &reference.events[..after]);
@@ -1445,6 +1450,12 @@ fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection
             "commitments",
         );
     });
+    eprintln!(
+        "kill coverage shard {}/{}: {} durable events; no stride",
+        shard + 1,
+        CUT_SHARDS,
+        shard_cuts(&cuts, shard).count(),
+    );
 }
 
 #[test_case(false, false; "before single-core launch")]
@@ -1510,13 +1521,61 @@ fn trial_cuts(played: &[Played], from: usize) -> Vec<(usize, usize)> {
     cuts
 }
 
+fn smu_cuts(played: &[Played], from: usize) -> Vec<(usize, usize)> {
+    played
+        .iter()
+        .enumerate()
+        .skip(from)
+        .flat_map(|(phase, played)| (1..=played.accesses.len()).map(move |at| (phase, at)))
+        .collect()
+}
+
 #[test]
-fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve_decisions() {
+fn sweep_shards_cover_every_durable_dual_kind_and_smu_cut_exactly_once() {
+    let (_, played, from) = scenario();
+    let durable = cuts(&played, from);
+    let trials = trial_cuts(&played, from);
+    let smu = smu_cuts(&played, from);
+    assert_window(&played, from, &durable);
+    assert!(!smu.is_empty());
+    let expected: BTreeMap<_, _> = durable
+        .iter()
+        .map(|&(phase, at)| (("power loss", phase, at), 1))
+        .chain(trials.iter().map(|&(phase, at)| (("crash", phase, at), 1)))
+        .chain(smu.iter().map(|&(phase, at)| (("SMU", phase, at), 1)))
+        .collect();
+    assert_eq!(expected.len(), durable.len() + trials.len() + smu.len());
+    let mut actual = BTreeMap::new();
+    for shard in 0..CUT_SHARDS {
+        for (phase, at) in shard_cuts(&durable, shard) {
+            *actual.entry(("power loss", phase, at)).or_insert(0) += 1;
+            if trials.contains(&(phase, at)) {
+                *actual.entry(("crash", phase, at)).or_insert(0) += 1;
+            }
+        }
+        for (phase, at) in shard_cuts(&smu, shard) {
+            *actual.entry(("SMU", phase, at)).or_insert(0) += 1;
+        }
+    }
+    assert_eq!(actual, expected);
+}
+
+#[test_case(0; "shard 1")]
+#[test_case(1; "shard 2")]
+#[test_case(2; "shard 3")]
+#[test_case(3; "shard 4")]
+#[test_case(4; "shard 5")]
+#[test_case(5; "shard 6")]
+#[test_case(6; "shard 7")]
+#[test_case(7; "shard 8")]
+fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve_decisions(
+    shard: usize,
+) {
     let (model, played, from) = scenario();
     let trials = trial_cuts(&played, from);
     let cuts = cuts(&played, from);
     assert_window(&played, from, &cuts);
-    each(&cuts, |phase, after| {
+    each(&cuts, shard, |phase, after| {
         let events = resume(&played[phase], &model, after, Fate::PowerLoss);
         assert_unchanged_decisions(
             &played[phase],
@@ -1532,21 +1591,20 @@ fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve
             resume(&played[phase], &model, after, Fate::Crashed);
         }
     });
-    let smu: Vec<_> = played
-        .iter()
-        .enumerate()
-        .skip(from)
-        .flat_map(|(phase, played)| (1..=played.accesses.len()).map(move |at| (phase, at)))
-        .collect();
+    let smu = smu_cuts(&played, from);
     assert!(!smu.is_empty(), "the swept phases touched no SMU");
-    each(&smu, |phase, at| {
+    each(&smu, shard, |phase, at| {
         resume_at_smu(&played[phase], &model, at);
     });
     eprintln!(
-        "crash coverage: {} power-loss durable events ({} dual-kind trial events), {} SMU hooks; no stride",
-        cuts.len(),
-        trials.len(),
-        smu.len()
+        "crash coverage shard {}/{}: {} power-loss durable events ({} dual-kind trial events), {} SMU hooks; no stride",
+        shard + 1,
+        CUT_SHARDS,
+        shard_cuts(&cuts, shard).count(),
+        shard_cuts(&cuts, shard)
+            .filter(|cut| trials.contains(cut))
+            .count(),
+        shard_cuts(&smu, shard).count(),
     );
 }
 
