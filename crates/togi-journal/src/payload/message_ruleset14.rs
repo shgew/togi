@@ -118,6 +118,11 @@ fn blocker(blocker: &ClimbBlocker) -> String {
         ClimbBlocker::AllowanceExhausted {} => "machine allowance exhausted".into(),
         ClimbBlocker::UnknownEdge { unit: id } => format!("{} edge unknown", unit(*id)),
         ClimbBlocker::Finished { unit: id } => format!("{} finished", unit(*id)),
+        ClimbBlocker::CampaignHistory {} => "campaign history cannot be reconstructed".into(),
+        ClimbBlocker::SameBoot {} => "a restart or resume cannot promote".into(),
+        ClimbBlocker::HoldProfile {} => "hold belongs to another exact profile".into(),
+        ClimbBlocker::SafeApply {} => "safe application prerequisites missing".into(),
+        ClimbBlocker::ActivationClosed {} => "nonzero activation closed".into(),
     }
 }
 
@@ -196,6 +201,8 @@ pub(super) fn unit_stop(p: &UnitStop) -> String {
         UnitStopReason::RestorationBackstep { event: id } => {
             format!("restoration stepped back after {}", event(id))
         }
+        UnitStopReason::AdverseCeiling {} => "adverse night ceiling required a backstep".into(),
+        UnitStopReason::Veto {} => "whole-profile veto required a backstep".into(),
     };
     format!(
         "{} finished: {reason}; last clean depth {}; profile {}",
