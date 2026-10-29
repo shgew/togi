@@ -38,6 +38,12 @@ pub use policy::{
     QualificationProjection, QualificationStage, ReproductionProjection, State, TrialPlan,
     UnitProjection, VetoProjection,
 };
+pub use policy::{
+    ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
+    ClimbHoldProjection, ClimbPermissionMode, ClimbProfiles, ClimbProjection,
+    ClimbProposalProjection, ClimbQualificationProjection, ClimbQualificationState,
+    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+};
 pub use topology::{Topology, TopologyError};
 pub use unit::{Phase, TuningUnit, UnitId, UnitProfile, UnitProfileError, Units};
 

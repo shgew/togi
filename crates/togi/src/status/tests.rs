@@ -308,6 +308,7 @@ fn projection(night: Option<NightProjection>) -> Projection {
         qualifications: Vec::new(),
         night,
         stopped: false,
+        climb: Default::default(),
     }
 }
 
