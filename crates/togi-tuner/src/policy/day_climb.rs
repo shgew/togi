@@ -1,7 +1,7 @@
 //! Durable explanations of the pure climb, never hardware applications.
 
 use togi_journal::{self as journal, Seq};
-use crate::{UnitProfile, climb, day::{EventId, Invocation, QuestionState}};
+use crate::{climb, day::{EventId, Invocation, QuestionState}};
 use super::{State, DayQuery, Decision, PolicyPayload, NotReady, day_events::DayView, permission::{mapping, vector}};
 
 impl State {
@@ -154,7 +154,7 @@ impl State {
     /// Keeps a crash's exact applied profile, including nonuniform read-back within a coarse unit.
     /// The unit mapping describes attribution; it must not round an observation into permission.
     pub(super) fn observed_vector(observed: &crate::day::CoreProfile, units: &crate::Units) -> Result<journal::UnitVector, NotReady> {
-        let cores = observed.offsets().iter().map(|(&core, offset)| {
+        let cores = observed.offsets().iter().map(|(core, offset)| {
             togi_machine::TargetOffset::new(offset.0)
                 .map(|offset| (core, offset))
                 .map_err(crate::day::DayStepError::from)
