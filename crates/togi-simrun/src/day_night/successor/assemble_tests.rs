@@ -43,9 +43,9 @@ fn config(scenario: &truth::Scenario, days: u32, mode: UnitMode) -> RunConfig {
 }
 
 #[test]
-fn ruleset13_promotions_and_night_failures_keep_their_journal_witnesses() {
+fn ruleset13_promotions_keep_their_journal_witnesses() {
     use std::collections::BTreeSet;
-    use togi_journal::{ApplyCause, Outcome, Payload, StepKind as JournalStep};
+    use togi_journal::{ApplyCause, Payload, StepKind as JournalStep};
 
     let scenario = truth::Scenario::builtin("successor-edge-deep", 20_001).unwrap();
     let mut policy = crate::day_night::Ruleset13::new(1.5).unwrap().recording();
@@ -89,7 +89,7 @@ fn ruleset13_promotions_and_night_failures_keep_their_journal_witnesses() {
             );
         }
     }
-    for summary in &record.units {
+    for summary in record.units.iter().filter(|unit| unit.promotions > 0) {
         let witnesses: BTreeSet<_> = record
             .steps
             .iter()
@@ -132,16 +132,24 @@ fn ruleset13_promotions_and_night_failures_keep_their_journal_witnesses() {
             );
         }
     }
+}
+
+#[test]
+fn ruleset13_night_failures_keep_their_journal_classification() {
+    use togi_journal::{Outcome, Payload};
+
+    // The shallow edge binds at five to seven counts, so the ordinary hunt encounters it
+    // without waiting for the deep-edge fixture's long clean climb.
+    let scenario = truth::Scenario::builtin("successor-edge-shallow", 20_001).unwrap();
+    let mut policy = crate::day_night::Ruleset13::new(1.5).unwrap().recording();
+    let record =
+        crate::day_night::successor::run(config(&scenario, 7, UnitMode::CcdUniform), &mut policy)
+            .unwrap();
+    let journal = policy.events().unwrap();
     let failures: Vec<_> = journal
         .iter()
-        .filter_map(|event| {
-            if let Payload::TrialEnd(end) = &event.payload
-                && end.outcome == Outcome::Failure
-            {
-                Some(event)
-            } else {
-                None
-            }
+        .filter(|event| {
+            matches!(&event.payload, Payload::TrialEnd(end) if end.outcome == Outcome::Failure)
         })
         .collect();
     assert!(!failures.is_empty(), "fixture never failed at night");
