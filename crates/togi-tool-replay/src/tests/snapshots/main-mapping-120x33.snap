@@ -13,8 +13,8 @@ expression: body
 
 
  CCD 0 one loaded 0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
- D 0 · S 0 fallback slope · baseline · U unknown · at S      D 0 · S 0 fallback slope · baseline · U unknown · at S
- 64 covered for the cap · 129 uncovered for the cap          64 covered for the cap · 128 uncovered for the cap
+ D 0 · S 0 · calc 0: unknown edge · U unknown · at S         D 0 · S 0 · calc 0: unknown edge · U unknown · at S
+ Ruleset 13: 1.5h · 129 gaps                                 Ruleset 13: 1.5h · 128 gaps
  ► 00  -5 LOADED   ▄▄▄                                         08   0
    01  -5          ▄▄▄                                         09   0
    02  -5          ▄▄▄                                         10   0
@@ -30,5 +30,5 @@ expression: body
              CCD 1 at -5                                     11:55  cap      CCD1 cap 0 → 0 · no cap yet · fallback...
  shares      reproduction 0%/25% · qualification 0%/75%...   11:55  pass     mapping · CCD 1 at 0 · mapping task 1...
  DAY ───────────────────────────────────────── applied 0/0   11:53  cap      CCD1 cap 0 → 0 · no cap yet · fallback...
- hold        no hold started                                 11:53  pass     mapping · CCD 1 at 0 · mapping task 1...
- firmware    valid                                           +516 more
+ Ruleset 13  mapping-only cap; CO 0 is not hazard-goal...    11:53  pass     mapping · CCD 1 at 0 · mapping task 1...
+ +2 more                                                     +516 more

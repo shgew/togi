@@ -967,6 +967,32 @@ fn read_only_projection_distinguishes_missing_mapping_exposure_from_unknown_edge
 }
 
 #[test]
+fn a_zero_exposure_interruption_adds_no_slope_input() {
+    let evidence = |interrupted| {
+        let mut journal = Journal::ready();
+        loop {
+            let plan = journal.until_trial(journal.now());
+            if plan.activity == Activity::Mapping {
+                if interrupted {
+                    journal.run_unstarted(&plan);
+                }
+                journal.run(&plan, Ending::Pass);
+                let _ = journal.until_trial(journal.now());
+                return journal
+                    .state
+                    .project()
+                    .ccds
+                    .into_iter()
+                    .map(|ccd| ccd.evidence)
+                    .collect::<Vec<_>>();
+            }
+            journal.run(&plan, Ending::Pass);
+        }
+    };
+    assert_eq!(evidence(true), evidence(false));
+}
+
+#[test]
 fn qualification_projection_reports_measured_seconds_once_not_completed_cell_counts() {
     let (journal, profile) = Journal::promoted_compact();
     let projected = journal.state.project();

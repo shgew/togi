@@ -65,6 +65,7 @@ pub struct CapEvidence {
     /// Each rate cell projected at `offset`, in the same order; absent without justified decay.
     pub projected: Vec<togi_journal::RateBound>,
     pub uncovered: Vec<UncoveredClass>,
+    /// Observations with no hours and no failures contribute nothing; interrupted empty cells are omitted.
     pub slope_inputs: Vec<SlopeCell>,
 }
 /// A committed cap S and what produced it.
@@ -678,13 +679,17 @@ impl State {
             .filter_map(|group| group.cap.get(&ccd))
             .flatten()
             .flat_map(|class| {
-                class.cells.iter().map(|cell| SlopeCell {
-                    class: class.class.clone(),
-                    offset: cell.offset,
-                    purpose: cell.purpose,
-                    failures: cell.failures,
-                    hours: cell.hours,
-                })
+                class
+                    .cells
+                    .iter()
+                    .filter(|cell| cell.hours > 0.0 || cell.failures > 0)
+                    .map(|cell| SlopeCell {
+                        class: class.class.clone(),
+                        offset: cell.offset,
+                        purpose: cell.purpose,
+                        failures: cell.failures,
+                        hours: cell.hours,
+                    })
             })
             .collect();
         Ok(CapEvidence {
