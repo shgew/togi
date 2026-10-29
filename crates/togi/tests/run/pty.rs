@@ -27,7 +27,7 @@ const SCENARIO: &str = "TOGI_RUN_TEST_PTY";
 const DIR: &str = "TOGI_RUN_TEST_PTY_DIR";
 // Match the real_process_ slow-timeout in both nextest profiles: five 60-second periods.
 // Host load can delay the helper; the runner, not a shorter local bound, owns the test limit.
-const BOUND: Duration = Duration::from_secs(60 * 5);
+const BOUND: Duration = Duration::from_mins(5);
 /// The file in [`DIR`] that lets a `real-panic` trial panic.
 const GO: &str = "panic-now";
 
