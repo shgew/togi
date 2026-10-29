@@ -575,7 +575,7 @@ impl JournalFold {
                         };
                         item.id.clone()
                     }
-                    journal::RestorationKind::Reclassified => id.clone(),
+                    journal::RestorationKind::Reclassified => return Ok(()),
                 };
                 self.report.newest_step = Some(records::StepIdentity::Restoration {
                     restoration: restoration_id.clone(),
