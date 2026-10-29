@@ -20,7 +20,7 @@ module completions {
     --help(-h)                # Print help (see more with '--help')
   ]
 
-  # Apply stock, observe daily use, answer an unclean end, or record a crash togi missed
+  # Apply stock, observe daily use, pause or freeze, and report crashes
   export extern "togi day" [
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
@@ -59,6 +59,32 @@ module completions {
     --help(-h)                # Print help (see more with '--help')
   ]
 
+  # Keep every core at stock until the next cold boot or a deadline
+  export extern "togi day pause" [
+    --until: string           # Pause until the next occurrence of this local time (HH:MM)
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help
+    duration?: string         # Pause for a positive duration, such as 30m, 2h or 1h30m; omitted means until cold boot
+  ]
+
+  # End the pause early and verify a stock-only reapplication
+  export extern "togi day resume" [
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help
+  ]
+
+  # Keep the committed profile and prevent promotions, never safety retreats
+  export extern "togi day freeze" [
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help
+  ]
+
+  # Lift the promotion freeze
+  export extern "togi day unfreeze" [
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help
+  ]
+
   # Print this message or the help of the given subcommand(s)
   export extern "togi day help" [
   ]
@@ -77,6 +103,22 @@ module completions {
 
   # Record a crash togi did not observe
   export extern "togi day help record" [
+  ]
+
+  # Keep every core at stock until the next cold boot or a deadline
+  export extern "togi day help pause" [
+  ]
+
+  # End the pause early and verify a stock-only reapplication
+  export extern "togi day help resume" [
+  ]
+
+  # Keep the committed profile and prevent promotions, never safety retreats
+  export extern "togi day help freeze" [
+  ]
+
+  # Lift the promotion freeze
+  export extern "togi day help unfreeze" [
   ]
 
   # Print this message or the help of the given subcommand(s)
@@ -103,7 +145,7 @@ module completions {
   ]
 
   def "nu-complete togi events kind" [] {
-    [ "backend" "backend.retry" "boot" "boot.leave_reason" "boot.saved_entry" "ccd" "ccd.cap" "ccd.edge" "checking" "checking.chain" "checking.cycle" "checking.step" "combination" "command" "command.reset" "config" "config.loaded" "core" "core.phase" "crash" "crash.detected" "day" "day.answer" "day.applied" "day.boot_start" "day.checkpoint" "day.clean_stop" "day.event" "day.fault" "day.freeze" "day.hold" "day.imported" "day.interval" "day.offsets_changed" "day.record" "day.step" "day.unclean_end" "day.veto" "deadend" "deepening" "deepening.round" "defect" "defect.answered" "defect.found" "exposure" "exposure.observed" "failure" "failure.carried" "host" "host.ranking" "hunt" "hunt.end" "hunt.group" "hunt.skipped" "hunt.start" "journal" "journal.torn" "mce" "night" "night.plan" "night.qualification" "night.reproduction" "preflight" "preflight.check" "profile" "profile.applied" "profile.change" "profile.restored" "session" "session.archived" "session.baseline" "session.carried" "session.context" "session.imported" "session.notice" "session.start" "session.warning" "shutdown" "smu" "smu.error" "smu.intent" "smu.readback" "smu.write" "state" "state.rebuilt" "task" "task.start" "trial" "trial.carried" "trial.end" "trial.intent" "trial.progress" "trial.sample" "trial.signal" "trial.start" "tuner" "tuner.decision" "tuner.warning" ]
+    [ "backend" "backend.retry" "boot" "boot.leave_reason" "boot.saved_entry" "ccd" "ccd.cap" "ccd.edge" "checking" "checking.chain" "checking.cycle" "checking.step" "combination" "command" "command.reset" "config" "config.loaded" "core" "core.phase" "crash" "crash.detected" "day" "day.answer" "day.applied" "day.boot_start" "day.checkpoint" "day.clean_stop" "day.event" "day.fault" "day.freeze" "day.hold" "day.imported" "day.interval" "day.offsets_changed" "day.pause" "day.record" "day.step" "day.unclean_end" "day.veto" "deadend" "deepening" "deepening.round" "defect" "defect.answered" "defect.found" "exposure" "exposure.observed" "failure" "failure.carried" "host" "host.ranking" "hunt" "hunt.end" "hunt.group" "hunt.skipped" "hunt.start" "journal" "journal.torn" "mce" "night" "night.plan" "night.qualification" "night.reproduction" "preflight" "preflight.check" "profile" "profile.applied" "profile.change" "profile.restored" "session" "session.archived" "session.baseline" "session.carried" "session.context" "session.imported" "session.notice" "session.start" "session.warning" "shutdown" "smu" "smu.error" "smu.intent" "smu.readback" "smu.write" "state" "state.rebuilt" "task" "task.start" "trial" "trial.carried" "trial.end" "trial.intent" "trial.progress" "trial.sample" "trial.signal" "trial.start" "tuner" "tuner.decision" "tuner.warning" ]
   }
 
   # Print the journal, one readable line per event
@@ -157,7 +199,7 @@ module completions {
     --help(-h)                # Print help (see more with '--help')
   ]
 
-  # Show the session as a read-only dashboard
+  # Show the session dashboard with rootless stock-only day controls
   export extern "togi watch" [
     --width: string           # Frame width in columns, 1 to 1000, when stdout is not a terminal
     --height: string          # Frame height in rows, 1 to 1000, when stdout is not a terminal
@@ -174,7 +216,7 @@ module completions {
   export extern "togi help run" [
   ]
 
-  # Apply stock, observe daily use, answer an unclean end, or record a crash togi missed
+  # Apply stock, observe daily use, pause or freeze, and report crashes
   export extern "togi help day" [
   ]
 
@@ -192,6 +234,22 @@ module completions {
 
   # Record a crash togi did not observe
   export extern "togi help day record" [
+  ]
+
+  # Keep every core at stock until the next cold boot or a deadline
+  export extern "togi help day pause" [
+  ]
+
+  # End the pause early and verify a stock-only reapplication
+  export extern "togi help day resume" [
+  ]
+
+  # Keep the committed profile and prevent promotions, never safety retreats
+  export extern "togi help day freeze" [
+  ]
+
+  # Lift the promotion freeze
+  export extern "togi help day unfreeze" [
   ]
 
   # Print a shell completion script
@@ -230,7 +288,7 @@ module completions {
   export extern "togi help status" [
   ]
 
-  # Show the session as a read-only dashboard
+  # Show the session dashboard with rootless stock-only day controls
   export extern "togi help watch" [
   ]
 

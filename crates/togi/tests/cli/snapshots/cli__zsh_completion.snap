@@ -95,6 +95,36 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
 ;;
+(pause)
+_arguments "${_arguments_options[@]}" : \
+'--until=[Pause until the next occurrence of this local time (HH\:MM)]:HH:MM:_default' \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help]' \
+'--help[Print help]' \
+'::duration -- Pause for a positive duration, such as 30m, 2h or 1h30m; omitted means until cold boot:_default' \
+&& ret=0
+;;
+(resume)
+_arguments "${_arguments_options[@]}" : \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(freeze)
+_arguments "${_arguments_options[@]}" : \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(unfreeze)
+_arguments "${_arguments_options[@]}" : \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : \
 ":: :_togi__subcmd__day__subcmd__help_commands" \
@@ -120,6 +150,22 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (record)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(pause)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(resume)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(freeze)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(unfreeze)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -155,7 +201,7 @@ _arguments "${_arguments_options[@]}" : \
 (events)
 _arguments "${_arguments_options[@]}" : \
 '--core=[Only events naming core N, and the outcomes of trials that load it]:N:' \
-'*--kind=[Only these comma-separated known kinds, or groups such as trial for every trial.* kind]:kinds:_sequence compadd - backend backend.retry boot boot.leave_reason boot.saved_entry ccd ccd.cap ccd.edge checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.applied day.boot_start day.checkpoint day.clean_stop day.event day.fault day.freeze day.hold day.imported day.interval day.offsets_changed day.record day.step day.unclean_end day.veto deadend deepening deepening.round defect defect.answered defect.found exposure exposure.observed failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce night night.plan night.qualification night.reproduction preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.imported session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt task task.start trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning' \
+'*--kind=[Only these comma-separated known kinds, or groups such as trial for every trial.* kind]:kinds:_sequence compadd - backend backend.retry boot boot.leave_reason boot.saved_entry ccd ccd.cap ccd.edge checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.applied day.boot_start day.checkpoint day.clean_stop day.event day.fault day.freeze day.hold day.imported day.interval day.offsets_changed day.pause day.record day.step day.unclean_end day.veto deadend deepening deepening.round defect defect.answered defect.found exposure exposure.observed failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce night night.plan night.qualification night.reproduction preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.imported session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt task task.start trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning' \
 '--trial=[Only events of trial ID]:ID:' \
 '--since=[Only events at or after this RFC 3339 time]:time:' \
 '--until=[Only events before this RFC 3339 time]:time:' \
@@ -264,6 +310,22 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(pause)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(resume)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(freeze)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(unfreeze)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
         esac
     ;;
 esac
@@ -325,7 +387,7 @@ esac
 _togi_commands() {
     local commands; commands=(
 'run:Start or resume the night'\''s tuning session in the foreground' \
-'day:Apply stock, observe daily use, answer an unclean end, or record a crash togi missed' \
+'day:Apply stock, observe daily use, pause or freeze, and report crashes' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -335,7 +397,7 @@ _togi_commands() {
 'restart-limit:Recover after the tuning service reaches its restart limit' \
 'emergency-stop:Internal emergency recovery that stops leftover trials and sets every core to offset 0' \
 'status:Show the session at a glance' \
-'watch:Show the session as a read-only dashboard' \
+'watch:Show the session dashboard with rootless stock-only day controls' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'togi commands' commands "$@"
@@ -352,6 +414,10 @@ _togi__subcmd__day_commands() {
 'notify:Send pending questions and the morning evidence report to this graphical session' \
 'reapply:Reapply stock after system resume; used by the system sleep hook' \
 'record:Record a crash togi did not observe' \
+'pause:Keep every core at stock until the next cold boot or a deadline' \
+'resume:End the pause early and verify a stock-only reapplication' \
+'freeze:Keep the committed profile and prevent promotions, never safety retreats' \
+'unfreeze:Lift the promotion freeze' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'togi day commands' commands "$@"
@@ -361,6 +427,11 @@ _togi__subcmd__day__subcmd__answer_commands() {
     local commands; commands=()
     _describe -t commands 'togi day answer commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__day__subcmd__freeze_commands] )) ||
+_togi__subcmd__day__subcmd__freeze_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day freeze commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__day__subcmd__help_commands] )) ||
 _togi__subcmd__day__subcmd__help_commands() {
     local commands; commands=(
@@ -368,6 +439,10 @@ _togi__subcmd__day__subcmd__help_commands() {
 'notify:Send pending questions and the morning evidence report to this graphical session' \
 'reapply:Reapply stock after system resume; used by the system sleep hook' \
 'record:Record a crash togi did not observe' \
+'pause:Keep every core at stock until the next cold boot or a deadline' \
+'resume:End the pause early and verify a stock-only reapplication' \
+'freeze:Keep the committed profile and prevent promotions, never safety retreats' \
+'unfreeze:Lift the promotion freeze' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'togi day help commands' commands "$@"
@@ -376,6 +451,11 @@ _togi__subcmd__day__subcmd__help_commands() {
 _togi__subcmd__day__subcmd__help__subcmd__answer_commands() {
     local commands; commands=()
     _describe -t commands 'togi day help answer commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__freeze_commands] )) ||
+_togi__subcmd__day__subcmd__help__subcmd__freeze_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day help freeze commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__day__subcmd__help__subcmd__help_commands] )) ||
 _togi__subcmd__day__subcmd__help__subcmd__help_commands() {
@@ -387,6 +467,11 @@ _togi__subcmd__day__subcmd__help__subcmd__notify_commands() {
     local commands; commands=()
     _describe -t commands 'togi day help notify commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__pause_commands] )) ||
+_togi__subcmd__day__subcmd__help__subcmd__pause_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day help pause commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__day__subcmd__help__subcmd__reapply_commands] )) ||
 _togi__subcmd__day__subcmd__help__subcmd__reapply_commands() {
     local commands; commands=()
@@ -397,10 +482,25 @@ _togi__subcmd__day__subcmd__help__subcmd__record_commands() {
     local commands; commands=()
     _describe -t commands 'togi day help record commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__resume_commands] )) ||
+_togi__subcmd__day__subcmd__help__subcmd__resume_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day help resume commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__unfreeze_commands] )) ||
+_togi__subcmd__day__subcmd__help__subcmd__unfreeze_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day help unfreeze commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__day__subcmd__notify_commands] )) ||
 _togi__subcmd__day__subcmd__notify_commands() {
     local commands; commands=()
     _describe -t commands 'togi day notify commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__pause_commands] )) ||
+_togi__subcmd__day__subcmd__pause_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day pause commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__day__subcmd__reapply_commands] )) ||
 _togi__subcmd__day__subcmd__reapply_commands() {
@@ -411,6 +511,16 @@ _togi__subcmd__day__subcmd__reapply_commands() {
 _togi__subcmd__day__subcmd__record_commands() {
     local commands; commands=()
     _describe -t commands 'togi day record commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__resume_commands] )) ||
+_togi__subcmd__day__subcmd__resume_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day resume commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__unfreeze_commands] )) ||
+_togi__subcmd__day__subcmd__unfreeze_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day unfreeze commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__doctor_commands] )) ||
 _togi__subcmd__doctor_commands() {
@@ -431,7 +541,7 @@ _togi__subcmd__events_commands() {
 _togi__subcmd__help_commands() {
     local commands; commands=(
 'run:Start or resume the night'\''s tuning session in the foreground' \
-'day:Apply stock, observe daily use, answer an unclean end, or record a crash togi missed' \
+'day:Apply stock, observe daily use, pause or freeze, and report crashes' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -441,7 +551,7 @@ _togi__subcmd__help_commands() {
 'restart-limit:Recover after the tuning service reaches its restart limit' \
 'emergency-stop:Internal emergency recovery that stops leftover trials and sets every core to offset 0' \
 'status:Show the session at a glance' \
-'watch:Show the session as a read-only dashboard' \
+'watch:Show the session dashboard with rootless stock-only day controls' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'togi help commands' commands "$@"
@@ -458,6 +568,10 @@ _togi__subcmd__help__subcmd__day_commands() {
 'notify:Send pending questions and the morning evidence report to this graphical session' \
 'reapply:Reapply stock after system resume; used by the system sleep hook' \
 'record:Record a crash togi did not observe' \
+'pause:Keep every core at stock until the next cold boot or a deadline' \
+'resume:End the pause early and verify a stock-only reapplication' \
+'freeze:Keep the committed profile and prevent promotions, never safety retreats' \
+'unfreeze:Lift the promotion freeze' \
     )
     _describe -t commands 'togi help day commands' commands "$@"
 }
@@ -466,10 +580,20 @@ _togi__subcmd__help__subcmd__day__subcmd__answer_commands() {
     local commands; commands=()
     _describe -t commands 'togi help day answer commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__help__subcmd__day__subcmd__freeze_commands] )) ||
+_togi__subcmd__help__subcmd__day__subcmd__freeze_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help day freeze commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__help__subcmd__day__subcmd__notify_commands] )) ||
 _togi__subcmd__help__subcmd__day__subcmd__notify_commands() {
     local commands; commands=()
     _describe -t commands 'togi help day notify commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__day__subcmd__pause_commands] )) ||
+_togi__subcmd__help__subcmd__day__subcmd__pause_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help day pause commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__help__subcmd__day__subcmd__reapply_commands] )) ||
 _togi__subcmd__help__subcmd__day__subcmd__reapply_commands() {
@@ -480,6 +604,16 @@ _togi__subcmd__help__subcmd__day__subcmd__reapply_commands() {
 _togi__subcmd__help__subcmd__day__subcmd__record_commands() {
     local commands; commands=()
     _describe -t commands 'togi help day record commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__day__subcmd__resume_commands] )) ||
+_togi__subcmd__help__subcmd__day__subcmd__resume_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help day resume commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__day__subcmd__unfreeze_commands] )) ||
+_togi__subcmd__help__subcmd__day__subcmd__unfreeze_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help day unfreeze commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__help__subcmd__doctor_commands] )) ||
 _togi__subcmd__help__subcmd__doctor_commands() {

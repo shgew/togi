@@ -812,11 +812,11 @@ mod tests {
         });
     }
 
-    #[test_case('p', super::super::DayControl::Pause; "pause")]
-    #[test_case('f', super::super::DayControl::Freeze; "freeze")]
+    #[test_case('p', crate::terminal::DayControl::Pause; "pause")]
+    #[test_case('f', crate::terminal::DayControl::Freeze; "freeze")]
     fn day_control_keys_restore_the_terminal_before_delegating(
         key: char,
-        control: super::super::DayControl,
+        control: crate::terminal::DayControl,
     ) {
         crate::terminal::testing::paused(async move {
             local(async move {
@@ -948,6 +948,7 @@ mod tests {
                     &Setup {
                         palette: false,
                         keys: false,
+                        day_controls: false,
                         colours,
                         quit: Quit::Keys,
                         switch: None,

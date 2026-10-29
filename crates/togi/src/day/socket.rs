@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use togi_journal::{
-    DayAnswer, DayAnswerKind, DayQuestions, DayRecord, DayUncleanEnd, Journal, PauseState, Seq, SessionId,
+    DayAnswer, DayAnswerKind, DayQuestions, DayRecord, DayUncleanEnd, Journal, PauseState, Seq,
+    SessionId,
 };
 use togi_machine::{BootId, Clock};
 use togi_session::{AppendRecordError, append_record};
