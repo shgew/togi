@@ -6,92 +6,36 @@ night since 00:00, 11h55m elapsed: mapping (task mapping #2)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#2321] trial 0388 core 00 offset -5 R1 mprime SSE 4K-21K 90 s
-  together mapping task mapping #2 night #31 testing CCD0 at -5
+in flight: [#2324] trial 0388 core 00 offset -5 R1 mprime SSE 4K-21K 90 s
+  together mapping task mapping #2 night #34 testing CCD0 at -5
 
-Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
-  prove the hazard goal. Coverage gaps remain unknown.
-CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
-0   0-7   0   0   fallback baseline unknown      0         64      129
-1   8-15  0   0   fallback baseline unknown      0         64      128
-  CCD 0 current cap calculation: S 0; unknown edge; 1.5 h eligible mapping
-    witnesses; 129 coverage gaps
-  CCD 1 current cap calculation: S 0; unknown edge; 1.5 h eligible mapping
-    witnesses; 128 coverage gaps
-  CCD 0 uncovered for the cap, no observations: R8
-    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 0 120s
-    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
-    core 1 120s isolated; R8
-    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 2 120s
-    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
-    core 3 120s isolated; R8
-    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 4 120s
-    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
-    core 5 120s isolated; R8
-    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 6 120s
-    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
-    core 7 120s isolated; R9 ycruncher-snt-svt-all-threads serial cpu 2 120s
-    isolated
-  CCD 0 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
-    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
-    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
-    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
-    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
-    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
-    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
-    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
-    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
-    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
-    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    1 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
-    core 2 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
-    light core 3 120s exact; R8
-    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s exact;
-    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s
-    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6
-    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    7 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
-    core 0 600s exact
-  CCD 1 uncovered for the cap, no observations: R8
-    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 8 120s
-    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
-    core 9 120s isolated; R8
-    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 10 120s
-    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
-    core 11 120s isolated; R8
-    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 12 120s
-    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
-    core 13 120s isolated; R8
-    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 14 120s
-    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
-    core 15 120s isolated; R9 ycruncher-snt-svt-all-threads serial cpu 10 120s
-    isolated
-  CCD 1 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
-    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
-    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
-    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
-    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
-    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
-    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
-    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
-    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
-    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8
-    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    9 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
-    core 10 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
-    light core 11 120s exact; R8
-    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12 120s exact;
-    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s
-    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14
-    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    15 120s exact
-  A class is uncovered for the cap when mapping has not adequately exposed it or
-    it lies outside the mapping projection; uncovered is never read as safe.
+UNIT   CORES                  D  C        D-C  HOLD h  STATE
+CCD 0  0,1,2,3,4,5,6,7        0  unknown  -    0/50    climbing
+CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    climbing
 
 Day policy
-applied profile: CCD 0 0, CCD 1 0
-hold: none recorded
-latest step: none
+permission: experimental hold + exact night qualification
+S: diagnostic, non-authorizing; finishing is not a safety certificate
+applied profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
+  core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core
+  13 0, core 14 0, core 15 0
+read-back profile: unavailable
+proposed profile: none
+paused-saved profile: none
+allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
+unit: CCD 0, phase coarse, parent none, inherited start 0
+  U: unknown
+  state: climbing
+  diagnostic S (non-authorizing): 0 [#1917]
+unit: CCD 1, phase coarse, parent none, inherited start 0
+  U: unknown
+  state: climbing
+  diagnostic S (non-authorizing): 0 [#2296]
+current exact profile daily evidence: 0 h; 0 crashes []
+experimental: rate bound unavailable (95%, fixed-rate model)
+firmware restoration: none
+
+Daily safety
 freeze: off
 firmware: valid
 
@@ -108,9 +52,10 @@ mapping CCD 0: next offset -5
 mapping CCD 1: next offset -5
 
 Evidence
-Ruleset 13 (compatibility RULESET 3). S uses isolated mapping classes only.
-  Qualification, reproduction and controls can inform slope but cannot supply
-  mapping rate coverage. The cap is coverage-incomplete.
+Statistical S is diagnostic only and never authorizes a step. S uses isolated
+  mapping classes only. Qualification, reproduction and controls can inform
+  slope but cannot supply mapping rate coverage. The diagnostic cap is
+  coverage-incomplete.
 The machine incremental hazard goal is 1 crash per 3,000 applied hours, divided
   among CCDs. Poisson bounds and log-linear projection are modeling assumptions,
   not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that
@@ -125,7 +70,7 @@ stock (CO 0): 0.0h observed, 0 crashes
 Cap calculation witnesses
 CCD 0: current read-only calculation S 0; unknown edge; fallback beta=0.405465
 CCD share of incremental hazard goal: 0.00016667/h
-committed S 0 [#1914]; fallback beta=0.405465
+committed S 0 [#1917]; fallback beta=0.405465
 R1 mprime-sse-4k-21k 90s isolated cores 0 at CO 0: 85 eligible s (0 h), 0
   failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
 R1 mprime-sse-4k-21k 90s isolated cores 1 at CO 0: 85 eligible s (0 h), 0
@@ -908,7 +853,7 @@ uncovered for the cap (no observations): R9 ycruncher-snt-svt-all-threads serial
   cpu 2 120s isolated cores 0-7
 CCD 1: current read-only calculation S 0; unknown edge; fallback beta=0.405465
 CCD share of incremental hazard goal: 0.00016667/h
-committed S 0 [#2293]; fallback beta=0.405465
+committed S 0 [#2296]; fallback beta=0.405465
 R1 mprime-sse-4k-21k 90s isolated cores 8 at CO 0: 85 eligible s (0 h), 0
   failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
 R1 mprime-sse-4k-21k 90s isolated cores 9 at CO 0: 85 eligible s (0 h), 0
@@ -1704,981 +1649,981 @@ Applied-step history
 none recorded; a proposal is not an application
 
 Night exposure provenance
-[#38] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #35; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 0
-[#43] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #40; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 1
-[#48] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #45; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 2
-[#53] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #50; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 3
-[#58] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #55; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 4
-[#63] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #60; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 5
-[#68] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #65; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 6
-[#73] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #70; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 7
-[#78] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #75; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 8
-[#83] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #80; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 9
-[#88] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #85; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 10
-[#93] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #90; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 11
-[#98] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #95; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 12
-[#103] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #100; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 13
-[#108] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #105; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 14
-[#113] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #110; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 15
-[#118] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #115; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 0
-[#123] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #120; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 1
-[#128] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #125; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 2
-[#133] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #130; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 3
-[#138] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #135; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 4
-[#143] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #140; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 5
-[#148] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #145; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 6
-[#153] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #150; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 7
-[#158] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #155; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 8
-[#163] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #160; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 9
-[#168] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #165; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 10
-[#173] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #170; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 11
-[#178] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #175; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 12
-[#183] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #180; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 13
-[#188] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #185; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 14
-[#193] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #190; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 15
-[#198] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #195; epoch 1; R1 ycruncher-snt-svt 90s exact cores 0
-[#203] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #200; epoch 1; R1 ycruncher-snt-svt 90s exact cores 1
-[#208] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #205; epoch 1; R1 ycruncher-snt-svt 90s exact cores 2
-[#213] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #210; epoch 1; R1 ycruncher-snt-svt 90s exact cores 3
-[#218] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #215; epoch 1; R1 ycruncher-snt-svt 90s exact cores 4
-[#223] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #220; epoch 1; R1 ycruncher-snt-svt 90s exact cores 5
-[#228] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #225; epoch 1; R1 ycruncher-snt-svt 90s exact cores 6
-[#233] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #230; epoch 1; R1 ycruncher-snt-svt 90s exact cores 7
-[#238] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #235; epoch 1; R1 ycruncher-snt-svt 90s exact cores 8
-[#243] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #240; epoch 1; R1 ycruncher-snt-svt 90s exact cores 9
-[#248] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #245; epoch 1; R1 ycruncher-snt-svt 90s exact cores 10
-[#253] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #250; epoch 1; R1 ycruncher-snt-svt 90s exact cores 11
-[#258] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #255; epoch 1; R1 ycruncher-snt-svt 90s exact cores 12
-[#263] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #260; epoch 1; R1 ycruncher-snt-svt 90s exact cores 13
-[#268] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #265; epoch 1; R1 ycruncher-snt-svt 90s exact cores 14
-[#273] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #270; epoch 1; R1 ycruncher-snt-svt 90s exact cores 15
-[#278] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #275; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 0
-[#283] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #280; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 1
-[#288] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #285; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 2
-[#293] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #290; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 3
-[#298] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #295; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 4
-[#303] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #300; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 5
-[#308] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #305; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 6
-[#313] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #310; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 7
-[#318] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #315; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 8
-[#323] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #320; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 9
-[#328] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #325; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 10
-[#333] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #330; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 11
-[#338] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #335; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 12
-[#343] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #340; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 13
-[#348] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #345; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 14
-[#353] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #350; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 15
-[#358] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #355; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 0
-[#363] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #360; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 1
-[#368] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #365; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 2
-[#373] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #370; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 3
-[#378] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #375; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 4
-[#383] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #380; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 5
-[#388] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #385; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 6
-[#393] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #390; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 7
-[#398] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #395; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 8
-[#403] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #400; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 9
-[#408] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #405; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 10
-[#413] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #410; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 11
-[#418] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #415; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 12
-[#423] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #420; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 13
-[#428] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #425; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 14
-[#433] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #430; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 15
-[#438] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #435; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 0
-[#443] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #440; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 1
-[#448] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #445; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 2
-[#453] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #450; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 3
-[#458] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #455; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 4
-[#463] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #460; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 5
-[#468] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #465; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 6
-[#473] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #470; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 7
-[#478] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #475; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 8
-[#483] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #480; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 9
-[#488] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #485; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 10
-[#493] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #490; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 11
-[#498] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #495; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 12
-[#503] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #500; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 13
-[#508] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #505; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 14
-[#513] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
-  20260101T000000Z #510; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 15
-[#520] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #515; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 0
-[#527] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #522; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 1
-[#534] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #529; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 2
-[#541] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #536; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 3
-[#548] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #543; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 4
-[#555] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #550; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 5
-[#562] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #557; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 6
-[#569] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #564; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 7
-[#576] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #571; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 8
-[#583] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #578; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 9
-[#590] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #585; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 10
-[#597] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #592; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 11
-[#604] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #599; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 12
-[#611] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #606; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 13
-[#618] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #613; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 14
-[#625] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #620; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 15
-[#632] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #627; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#41] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #38; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 0
+[#46] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #43; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 1
+[#51] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #48; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 2
+[#56] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #53; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 3
+[#61] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #58; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 4
+[#66] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #63; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 5
+[#71] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #68; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 6
+[#76] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #73; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 7
+[#81] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #78; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 8
+[#86] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #83; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 9
+[#91] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #88; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 10
+[#96] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #93; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 11
+[#101] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #98; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 12
+[#106] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #103; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 13
+[#111] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #108; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 14
+[#116] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #113; epoch 1; R1 mprime-sse-4k-21k 90s exact cores 15
+[#121] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #118; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 0
+[#126] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #123; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 1
+[#131] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #128; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 2
+[#136] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #133; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 3
+[#141] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #138; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 4
+[#146] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #143; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 5
+[#151] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #148; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 6
+[#156] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #153; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 7
+[#161] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #158; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 8
+[#166] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #163; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 9
+[#171] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #168; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 10
+[#176] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #173; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 11
+[#181] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #178; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 12
+[#186] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #183; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 13
+[#191] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #188; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 14
+[#196] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #193; epoch 1; R1 ycruncher-bkt-sftv4 90s exact cores 15
+[#201] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #198; epoch 1; R1 ycruncher-snt-svt 90s exact cores 0
+[#206] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #203; epoch 1; R1 ycruncher-snt-svt 90s exact cores 1
+[#211] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #208; epoch 1; R1 ycruncher-snt-svt 90s exact cores 2
+[#216] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #213; epoch 1; R1 ycruncher-snt-svt 90s exact cores 3
+[#221] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #218; epoch 1; R1 ycruncher-snt-svt 90s exact cores 4
+[#226] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #223; epoch 1; R1 ycruncher-snt-svt 90s exact cores 5
+[#231] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #228; epoch 1; R1 ycruncher-snt-svt 90s exact cores 6
+[#236] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #233; epoch 1; R1 ycruncher-snt-svt 90s exact cores 7
+[#241] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #238; epoch 1; R1 ycruncher-snt-svt 90s exact cores 8
+[#246] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #243; epoch 1; R1 ycruncher-snt-svt 90s exact cores 9
+[#251] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #248; epoch 1; R1 ycruncher-snt-svt 90s exact cores 10
+[#256] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #253; epoch 1; R1 ycruncher-snt-svt 90s exact cores 11
+[#261] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #258; epoch 1; R1 ycruncher-snt-svt 90s exact cores 12
+[#266] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #263; epoch 1; R1 ycruncher-snt-svt 90s exact cores 13
+[#271] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #268; epoch 1; R1 ycruncher-snt-svt 90s exact cores 14
+[#276] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #273; epoch 1; R1 ycruncher-snt-svt 90s exact cores 15
+[#281] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #278; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 0
+[#286] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #283; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 1
+[#291] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #288; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 2
+[#296] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #293; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 3
+[#301] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #298; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 4
+[#306] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #303; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 5
+[#311] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #308; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 6
+[#316] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #313; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 7
+[#321] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #318; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 8
+[#326] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #323; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 9
+[#331] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #328; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 10
+[#336] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #333; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 11
+[#341] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #338; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 12
+[#346] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #343; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 13
+[#351] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #348; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 14
+[#356] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #353; epoch 1; R2 mprime-avx2-36k-248k 90s exact cores 15
+[#361] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #358; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 0
+[#366] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #363; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 1
+[#371] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #368; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 2
+[#376] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #373; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 3
+[#381] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #378; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 4
+[#386] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #383; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 5
+[#391] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #388; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 6
+[#396] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #393; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 7
+[#401] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #398; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 8
+[#406] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #403; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 9
+[#411] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #408; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 10
+[#416] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #413; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 11
+[#421] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #418; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 12
+[#426] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #423; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 13
+[#431] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #428; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 14
+[#436] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #433; epoch 1; R2 mprime-avx512-36k-248k 90s exact cores 15
+[#441] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #438; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 0
+[#446] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #443; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 1
+[#451] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #448; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 2
+[#456] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #453; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 3
+[#461] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #458; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 4
+[#466] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #463; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 5
+[#471] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #468; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 6
+[#476] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #473; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 7
+[#481] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #478; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 8
+[#486] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #483; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 9
+[#491] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #488; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 10
+[#496] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #493; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 11
+[#501] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #498; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 12
+[#506] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #503; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 13
+[#511] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #508; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 14
+[#516] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #513; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact cores 15
+[#523] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #518; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 0
+[#530] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #525; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 1
+[#537] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #532; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 2
+[#544] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #539; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 3
+[#551] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #546; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 4
+[#558] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #553; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 5
+[#565] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #560; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 6
+[#572] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #567; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 7
+[#579] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #574; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 8
+[#586] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #581; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 9
+[#593] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #588; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 10
+[#600] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #595; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 11
+[#607] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #602; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 12
+[#614] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #609; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 13
+[#621] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #616; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 14
+[#628] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #623; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact cores 15
+[#635] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #630; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   0
-[#639] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #634; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#642] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #637; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   1
-[#646] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #641; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#649] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #644; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   2
-[#653] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #648; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#656] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #651; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   3
-[#660] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #655; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#663] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #658; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   4
-[#667] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #662; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#670] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #665; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   5
-[#674] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #669; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#677] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #672; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   6
-[#681] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #676; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#684] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #679; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   7
-[#688] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #683; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#691] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #686; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   8
-[#695] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #690; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#698] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #693; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   9
-[#702] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #697; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#705] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #700; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   10
-[#709] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #704; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#712] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #707; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   11
-[#716] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #711; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#719] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #714; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   12
-[#723] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #718; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#726] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #721; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   13
-[#730] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #725; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#733] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #728; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   14
-[#737] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #732; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
+[#740] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #735; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact cores
   15
-[#744] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #739; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 0
-[#751] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #746; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 1
-[#758] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #753; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 2
-[#765] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #760; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 3
-[#772] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #767; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 4
-[#779] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #774; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 5
-[#786] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #781; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 6
-[#793] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #788; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 7
-[#800] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #795; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 8
-[#807] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #802; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 9
-[#814] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #809; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 10
-[#821] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #816; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 11
-[#828] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #823; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 12
-[#835] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #830; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 13
-[#842] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #837; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 14
-[#849] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #844; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 15
-[#856] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #851; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 0
-[#863] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #858; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 1
-[#870] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #865; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 2
-[#877] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #872; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 3
-[#884] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #879; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 4
-[#891] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #886; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 5
-[#898] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #893; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 6
-[#905] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #900; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 7
-[#912] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #907; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 8
-[#919] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #914; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 9
-[#926] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #921; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
+[#747] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #742; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 0
+[#754] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #749; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 1
+[#761] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #756; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 2
+[#768] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #763; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 3
+[#775] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #770; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 4
+[#782] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #777; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 5
+[#789] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #784; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 6
+[#796] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #791; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 7
+[#803] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #798; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 8
+[#810] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #805; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 9
+[#817] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #812; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 10
+[#824] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #819; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 11
+[#831] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #826; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 12
+[#838] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #833; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 13
+[#845] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #840; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 14
+[#852] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #847; epoch 1; R3 ycruncher-snt-svt-steps 120s exact cores 15
+[#859] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #854; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 0
+[#866] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #861; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 1
+[#873] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #868; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 2
+[#880] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #875; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 3
+[#887] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #882; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 4
+[#894] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #889; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 5
+[#901] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #896; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 6
+[#908] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #903; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 7
+[#915] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #910; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 8
+[#922] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #917; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores 9
+[#929] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #924; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
   10
-[#933] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #928; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
+[#936] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #931; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
   11
-[#940] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #935; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
+[#943] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #938; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
   12
-[#947] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #942; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
+[#950] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #945; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
   13
-[#954] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #949; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
+[#957] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #952; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
   14
-[#961] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #956; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
+[#964] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #959; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact cores
   15
-[#968] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #963; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
+[#971] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #966; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
   0
-[#975] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #970; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
+[#978] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #973; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
   1
-[#982] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #977; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
+[#985] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #980; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
   2
-[#989] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #984; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
+[#992] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #987; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
   3
-[#996] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #991; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
+[#999] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #994; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
   4
-[#1003] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #998; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact cores
-  5
-[#1010] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1005; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1006] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1001; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+  cores 5
+[#1013] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1008; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 6
-[#1017] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1012; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1020] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1015; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 7
-[#1024] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1019; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1027] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1022; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 8
-[#1031] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1026; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1034] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1029; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 9
-[#1038] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1033; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1041] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1036; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 10
-[#1045] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1040; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1048] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1043; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 11
-[#1052] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1047; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1055] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1050; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 12
-[#1059] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1054; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1062] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1057; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 13
-[#1066] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1061; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1069] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1064; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 14
-[#1073] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1068; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1076] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1071; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
   cores 15
-[#1080] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1075; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1083] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1078; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   0
-[#1087] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1082; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1090] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1085; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   1
-[#1094] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1089; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1097] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1092; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   2
-[#1101] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1096; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1104] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1099; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   3
-[#1108] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1103; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1111] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1106; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   4
-[#1115] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1110; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1118] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1113; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   5
-[#1122] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1117; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1125] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1120; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   6
-[#1129] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1124; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1132] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1127; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   7
-[#1136] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1131; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1139] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1134; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   8
-[#1143] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1138; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1146] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1141; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   9
-[#1150] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1145; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1153] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1148; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   10
-[#1157] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1152; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1160] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1155; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   11
-[#1164] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1159; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1167] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1162; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   12
-[#1171] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1166; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1174] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1169; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   13
-[#1178] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1173; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1181] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1176; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   14
-[#1185] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1180; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
+[#1188] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1183; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact cores
   15
-[#1190] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1187; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 0
-[#1195] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1192; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 1
-[#1200] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1197; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 2
-[#1205] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1202; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 3
-[#1210] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1207; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 4
-[#1215] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1212; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 5
-[#1220] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1217; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 6
-[#1225] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1222; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 7
-[#1230] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1227; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 8
-[#1235] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1232; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 9
-[#1240] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1237; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 10
-[#1245] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1242; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 11
-[#1250] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1247; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 12
-[#1255] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1252; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 13
-[#1260] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1257; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 14
-[#1265] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1262; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 15
-[#1272] CCD 0 0, CCD 1 0: 895 eligible s, Control, Live; source session
-  20260101T000000Z #1267; epoch 1; R6 mprime-sse-4k-21k-idle 900s exact cores
+[#1193] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1190; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 0
+[#1198] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1195; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 1
+[#1203] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1200; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 2
+[#1208] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1205; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 3
+[#1213] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1210; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 4
+[#1218] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1215; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 5
+[#1223] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1220; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 6
+[#1228] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1225; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 7
+[#1233] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1230; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 8
+[#1238] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1235; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 9
+[#1243] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1240; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 10
+[#1248] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1245; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 11
+[#1253] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1250; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 12
+[#1258] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1255; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 13
+[#1263] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1260; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 14
+[#1268] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1265; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact cores 15
+[#1275] CCD 0 0, CCD 1 0: 895 eligible s, Control, Live; source session
+  20260101T000000Z #1270; epoch 1; R6 mprime-sse-4k-21k-idle 900s exact cores
   0-15
-[#1277] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1274; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1280] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1277; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 0-7
-[#1282] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1279; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1285] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1282; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 8-15
-[#1287] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1284; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1290] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1287; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 0-6
-[#1292] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1289; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1295] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1292; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 0-5
-[#1297] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1294; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1300] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1297; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 0-4
-[#1302] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1299; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1305] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1302; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 0-3
-[#1307] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1304; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1310] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1307; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 0-2
-[#1312] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1309; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1315] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1312; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 0-1
-[#1317] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1314; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1320] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1317; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 8-14
-[#1322] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1319; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1325] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1322; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 8-13
-[#1327] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1324; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1330] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1327; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 8-12
-[#1332] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1329; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1335] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1332; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 8-11
-[#1337] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1334; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1340] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1337; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 8-10
-[#1342] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1339; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1345] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1342; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 8-9
-[#1347] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
-  20260101T000000Z #1344; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1350] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1347; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
   cores 0-15
-[#1352] CCD 0 0, CCD 1 0: 595 eligible s, Control, Live; source session
-  20260101T000000Z #1349; epoch 1; R7 mprime-avx2-36k-248k-allcore 600s exact
+[#1355] CCD 0 0, CCD 1 0: 595 eligible s, Control, Live; source session
+  20260101T000000Z #1352; epoch 1; R7 mprime-avx2-36k-248k-allcore 600s exact
   cores 0-15
-[#1357] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1354; epoch 1; R8
+[#1360] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1357; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 120s exact
   cores 0-7
-[#1362] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1359; epoch 1; R8
+[#1365] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1362; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1 120s exact
   cores 0-7
-[#1367] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1364; epoch 1; R8
+[#1370] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1367; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2 120s exact
   cores 0-7
-[#1372] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1369; epoch 1; R8
+[#1375] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1372; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3 120s exact
   cores 0-7
-[#1377] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1374; epoch 1; R8
+[#1380] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1377; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s exact
   cores 0-7
-[#1382] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1379; epoch 1; R8
+[#1385] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1382; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s exact
   cores 0-7
-[#1387] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1384; epoch 1; R8
+[#1390] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1387; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6 120s exact
   cores 0-7
-[#1392] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1389; epoch 1; R8
+[#1395] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1392; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7 120s exact
   cores 0-7
-[#1397] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1394; epoch 1; R8
+[#1400] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1397; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8 120s exact
   cores 8-15
-[#1402] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1399; epoch 1; R8
+[#1405] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1402; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 9 120s exact
   cores 8-15
-[#1407] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1404; epoch 1; R8
+[#1410] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1407; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 10 120s exact
   cores 8-15
-[#1412] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1409; epoch 1; R8
+[#1415] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1412; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 11 120s exact
   cores 8-15
-[#1417] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1414; epoch 1; R8
+[#1420] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1417; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12 120s exact
   cores 8-15
-[#1422] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1419; epoch 1; R8
+[#1425] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1422; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s exact
   cores 8-15
-[#1427] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1424; epoch 1; R8
+[#1430] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1427; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14 120s exact
   cores 8-15
-[#1432] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1429; epoch 1; R8
+[#1435] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1432; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 15 120s exact
   cores 8-15
-[#1437] CCD 0 0, CCD 1 0: 570 eligible s, Control, Live; source session
-  20260101T000000Z #1434; epoch 1; R8
+[#1440] CCD 0 0, CCD 1 0: 570 eligible s, Control, Live; source session
+  20260101T000000Z #1437; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 600s exact
   cores 0-7
-[#1442] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1439; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 0
+[#1445] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1442; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 0
   120s exact cores 0-15
-[#1447] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1444; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 1
+[#1450] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1447; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 1
   120s exact cores 0-15
-[#1452] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1449; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 2
+[#1455] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1452; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 2
   120s exact cores 0-15
-[#1457] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1454; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 3
+[#1460] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1457; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 3
   120s exact cores 0-15
-[#1462] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1459; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 4
+[#1465] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1462; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 4
   120s exact cores 0-15
-[#1467] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1464; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 5
+[#1470] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1467; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 5
   120s exact cores 0-15
-[#1472] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1469; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 6
+[#1475] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1472; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 6
   120s exact cores 0-15
-[#1477] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1474; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 7
+[#1480] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1477; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 7
   120s exact cores 0-15
-[#1482] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1479; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 8
+[#1485] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1482; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 8
   120s exact cores 0-15
-[#1487] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1484; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 9
+[#1490] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1487; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 9
   120s exact cores 0-15
-[#1492] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1489; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+[#1495] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1492; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
   10 120s exact cores 0-15
-[#1497] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1494; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+[#1500] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1497; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
   11 120s exact cores 0-15
-[#1502] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1499; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+[#1505] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1502; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
   12 120s exact cores 0-15
-[#1507] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1504; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+[#1510] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1507; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
   13 120s exact cores 0-15
-[#1512] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1509; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+[#1515] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1512; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
   14 120s exact cores 0-15
-[#1517] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
-  20260101T000000Z #1514; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+[#1520] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1517; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
   15 120s exact cores 0-15
-[#1522] CCD 0 0, CCD 1 0: 570 eligible s, Control, Live; source session
-  20260101T000000Z #1519; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 0
+[#1525] CCD 0 0, CCD 1 0: 570 eligible s, Control, Live; source session
+  20260101T000000Z #1522; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 0
   600s exact cores 0-15
-[#1528] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1525; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 0
-[#1534] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1531; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 1
-[#1540] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1537; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 2
-[#1546] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1543; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 3
-[#1552] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1549; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 4
-[#1558] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1555; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 5
-[#1564] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1561; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 6
-[#1570] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1567; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 7
-[#1576] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1573; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 0
-[#1582] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1579; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 1
-[#1588] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1585; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 2
-[#1594] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1591; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 3
-[#1600] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1597; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 4
-[#1606] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1603; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 5
-[#1612] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1609; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 6
-[#1618] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1615; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 7
-[#1624] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1621; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 0
-[#1630] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1627; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 1
-[#1636] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1633; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 2
-[#1642] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1639; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 3
-[#1648] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1645; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 4
-[#1654] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1651; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 5
-[#1660] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1657; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 6
-[#1666] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1663; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 7
-[#1672] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1669; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 0
-[#1678] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1675; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 1
-[#1684] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1681; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 2
-[#1690] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1687; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 3
-[#1696] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1693; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 4
-[#1702] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1699; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 5
-[#1708] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1705; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 6
-[#1714] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1711; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 7
-[#1720] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1717; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1531] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1528; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 0
+[#1537] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1534; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 1
+[#1543] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1540; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 2
+[#1549] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1546; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 3
+[#1555] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1552; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 4
+[#1561] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1558; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 5
+[#1567] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1564; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 6
+[#1573] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1570; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 7
+[#1579] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1576; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 0
+[#1585] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1582; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 1
+[#1591] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1588; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 2
+[#1597] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1594; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 3
+[#1603] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1600; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 4
+[#1609] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1606; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 5
+[#1615] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1612; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 6
+[#1621] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1618; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 7
+[#1627] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1624; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 0
+[#1633] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1630; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 1
+[#1639] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1636; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 2
+[#1645] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1642; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 3
+[#1651] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1648; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 4
+[#1657] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1654; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 5
+[#1663] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1660; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 6
+[#1669] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1666; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 7
+[#1675] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1672; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 0
+[#1681] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1678; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 1
+[#1687] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1684; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 2
+[#1693] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1690; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 3
+[#1699] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1696; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 4
+[#1705] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1702; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 5
+[#1711] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1708; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 6
+[#1717] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1714; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 7
+[#1723] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1720; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   0
-[#1726] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1723; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1729] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1726; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   1
-[#1732] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1729; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1735] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1732; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   2
-[#1738] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1735; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1741] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1738; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   3
-[#1744] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1741; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1747] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1744; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   4
-[#1750] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1747; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1753] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1750; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   5
-[#1756] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1753; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1759] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1756; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   6
-[#1762] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1759; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1765] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1762; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   7
-[#1768] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1765; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#1771] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1768; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   0
-[#1774] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1771; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#1777] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1774; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   1
-[#1780] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1777; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#1783] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1780; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   2
-[#1786] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1783; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#1789] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1786; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   3
-[#1792] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1789; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#1795] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1792; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   4
-[#1798] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1795; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#1801] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1798; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   5
-[#1804] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1801; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#1807] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1804; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   6
-[#1810] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1807; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#1813] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1810; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   7
-[#1816] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #1813; epoch 1; R8
+[#1819] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1816; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 120s isolated
   cores 0-7
-[#1822] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #1819; epoch 1; R8
+[#1825] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1822; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1 120s isolated
   cores 0-7
-[#1828] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #1825; epoch 1; R8
+[#1831] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1828; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2 120s isolated
   cores 0-7
-[#1834] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #1831; epoch 1; R8
+[#1837] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1834; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3 120s isolated
   cores 0-7
-[#1840] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #1837; epoch 1; R8
+[#1843] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1840; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s isolated
   cores 0-7
-[#1846] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #1843; epoch 1; R8
+[#1849] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1846; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s isolated
   cores 0-7
-[#1852] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #1849; epoch 1; R8
+[#1855] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1852; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6 120s isolated
   cores 0-7
-[#1858] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #1855; epoch 1; R8
+[#1861] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1858; epoch 1; R8
   mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7 120s isolated
   cores 0-7
-[#1864] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #1861; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1867] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1864; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
   cores 0-7
-[#1870] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #1867; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1873] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1870; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
   cores 0-6
-[#1876] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #1873; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1879] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1876; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
   cores 0-5
-[#1882] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #1879; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1885] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1882; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
   cores 0-4
-[#1888] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #1885; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1891] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1888; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
   cores 0-3
-[#1894] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #1891; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1897] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1894; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
   cores 0-2
-[#1900] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #1897; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1903] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1900; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
   cores 0-1
-[#1906] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #1903; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 0
+[#1909] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1906; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 0
   120s isolated cores 0-7
-[#1913] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1910; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 8
-[#1920] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1917; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 9
-[#1926] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1923; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 10
-[#1932] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1929; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 11
-[#1938] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1935; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 12
-[#1944] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1941; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 13
-[#1950] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1947; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 14
-[#1956] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1953; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 15
-[#1962] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1959; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 8
-[#1968] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1965; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 9
-[#1974] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1971; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 10
-[#1980] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1977; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 11
-[#1986] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1983; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 12
-[#1992] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1989; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 13
-[#1998] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1995; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 14
-[#2004] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2001; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 15
-[#2010] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2007; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 8
-[#2016] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2013; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 9
-[#2022] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2019; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 10
-[#2028] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2025; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 11
-[#2034] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2031; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 12
-[#2040] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2037; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 13
-[#2046] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2043; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 14
-[#2052] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2049; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 15
-[#2058] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2055; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 8
-[#2064] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2061; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 9
-[#2070] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2067; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 10
-[#2076] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2073; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 11
-[#2082] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2079; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 12
-[#2088] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2085; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 13
-[#2094] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2091; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 14
-[#2100] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2097; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 15
-[#2106] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2103; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1916] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1913; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 8
+[#1923] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1920; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 9
+[#1929] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1926; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 10
+[#1935] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1932; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 11
+[#1941] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1938; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 12
+[#1947] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1944; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 13
+[#1953] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1950; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 14
+[#1959] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1956; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 15
+[#1965] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1962; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 8
+[#1971] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1968; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 9
+[#1977] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1974; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 10
+[#1983] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1980; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 11
+[#1989] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1986; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 12
+[#1995] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1992; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 13
+[#2001] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1998; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 14
+[#2007] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2004; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 15
+[#2013] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2010; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 8
+[#2019] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2016; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 9
+[#2025] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2022; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 10
+[#2031] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2028; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 11
+[#2037] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2034; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 12
+[#2043] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2040; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 13
+[#2049] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2046; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 14
+[#2055] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2052; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 15
+[#2061] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2058; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 8
+[#2067] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2064; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 9
+[#2073] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2070; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 10
+[#2079] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2076; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 11
+[#2085] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2082; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 12
+[#2091] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2088; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 13
+[#2097] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2094; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 14
+[#2103] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2100; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 15
+[#2109] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2106; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   8
-[#2112] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2109; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2115] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2112; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   9
-[#2118] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2115; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2121] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2118; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   10
-[#2124] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2121; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2127] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2124; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   11
-[#2130] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2127; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2133] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2130; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   12
-[#2136] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2133; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2139] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2136; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   13
-[#2142] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2139; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2145] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2142; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   14
-[#2148] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2145; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2151] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2148; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   15
-[#2154] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2151; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2157] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2154; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   8
-[#2160] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2157; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2163] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2160; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   9
-[#2166] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2163; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2169] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2166; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   10
-[#2172] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2169; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2175] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2172; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   11
-[#2178] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2175; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2181] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2178; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   12
-[#2184] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2181; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2187] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2184; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   13
-[#2190] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2187; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2193] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2190; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   14
-[#2196] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2193; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2199] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2196; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   15
-[#2202] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2199; epoch 1; R8
+[#2205] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2202; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 8 120s
   isolated cores 8-15
-[#2208] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2205; epoch 1; R8
+[#2211] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2208; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 9 120s
   isolated cores 8-15
-[#2214] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2211; epoch 1; R8
+[#2217] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2214; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 10 120s
   isolated cores 8-15
-[#2220] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2217; epoch 1; R8
+[#2223] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2220; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 11 120s
   isolated cores 8-15
-[#2226] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2223; epoch 1; R8
+[#2229] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2226; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 12 120s
   isolated cores 8-15
-[#2232] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2229; epoch 1; R8
+[#2235] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2232; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 13 120s
   isolated cores 8-15
-[#2238] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2235; epoch 1; R8
+[#2241] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2238; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 14 120s
   isolated cores 8-15
-[#2244] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2241; epoch 1; R8
+[#2247] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2244; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 15 120s
   isolated cores 8-15
-[#2250] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #2247; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+[#2253] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2250; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
   isolated cores 8-15
-[#2256] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #2253; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+[#2259] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2256; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
   isolated cores 8-14
-[#2262] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #2259; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+[#2265] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2262; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
   isolated cores 8-13
-[#2268] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #2265; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+[#2271] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2268; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
   isolated cores 8-12
-[#2274] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #2271; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+[#2277] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2274; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
   isolated cores 8-11
-[#2280] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #2277; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+[#2283] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2280; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
   isolated cores 8-10
-[#2286] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #2283; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+[#2289] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2286; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
   isolated cores 8-9
-[#2292] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2289; epoch 1; R9 ycruncher-bkt-sftv4-all-threads serial cpu
+[#2295] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2292; epoch 1; R9 ycruncher-bkt-sftv4-all-threads serial cpu
   25 120s isolated cores 8-15
 
 Comparable same-class night clocks and temperatures

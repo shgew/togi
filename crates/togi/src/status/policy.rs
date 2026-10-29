@@ -96,6 +96,29 @@ pub(super) fn class_word(class: &ExposureClass) -> String {
     esc(&text)
 }
 
+/// Physical cores in ascending compact ranges, without changing the evidence's subset.
+fn core_ranges(cores: togi_machine::CoreSet) -> String {
+    let mut ids = cores.into_iter().map(togi_machine::CoreId::get).peekable();
+    let mut text = String::new();
+    while let Some(start) = ids.next() {
+        let mut end = start;
+        while ids.peek().is_some_and(|next| *next == end + 1) {
+            end = ids.next().unwrap_or(end);
+        }
+        if !text.is_empty() {
+            text.push(' ');
+        }
+        let _ = write!(text, "{start}");
+        if end != start {
+            let _ = write!(text, "-{end}");
+        }
+    }
+    if text.is_empty() {
+        text.push('-');
+    }
+    text
+}
+
 /// Expanded evidence must distinguish loaded subsets even when the concise status groups them.
 pub(super) fn evidence_class_word(class: &ExposureClass) -> String {
     format!("{} cores {}", class_word(class), core_ranges(class.cores))

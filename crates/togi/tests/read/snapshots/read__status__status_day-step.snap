@@ -93,7 +93,8 @@ requalification  10%    0%    0s
 current task: none
 mapping CCD 0: next offset -49
 mapping CCD 1: next offset -49
-qualification: CCD 0 -5, CCD 1 0 (next step) complete
+qualification: CCD 0 -5, CCD 1 0 (next step) complete, 7.8 h eligible witnessed
+  exposure
 
 Day
 boots observed: 16; clean ends: 15; unclean ends: 0

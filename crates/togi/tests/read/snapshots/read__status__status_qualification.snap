@@ -343,8 +343,9 @@ requalification  10%    0%    0s
 current task: qualification (task qualification #0)
 mapping CCD 0: next offset -49
 mapping CCD 1: next offset -50
-qualification: CCD 0 -5, CCD 1 0 (next step) started
-qualifying CCD 0 -5, CCD 1 0: 0 cells witnessed, 259 outstanding
+qualification: CCD 0 -5, CCD 1 0 (next step) started, 0 h eligible witnessed
+  exposure
+qualifying CCD 0 -5, CCD 1 0: 0 h eligible witnessed exposure, 259 outstanding
   outstanding R1 mprime-sse-4k-21k 90s exact x16; R1 ycruncher-bkt-sftv4 90s
     exact x16; R1 ycruncher-snt-svt 90s exact x16; R2 mprime-avx2-36k-248k 90s
     exact x16; R2 mprime-avx512-36k-248k 90s exact x16; R2
