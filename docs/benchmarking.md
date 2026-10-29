@@ -211,43 +211,32 @@ Actual-history expected failures are integrated over the trajectory's real therm
 #### Limitations
 
 The calendar idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat, so these records omit that overhead, as the [Ruleset 13 gate](#daynight-gate) does. The hardware's actual overhead must be measured and the [production workload rules](spec/workloads.md#durations-and-checking-schedule) still charge it. The Poisson upper rate is a model-based diagnostic, not an adaptive-policy guarantee. Synthetic trajectories and their hazard are not hardware evidence, establish no real-night feasibility and authorize no nonzero deployment.
-#### Successor registration draft
+
+#### Successor registration
 
 [`tools/bench/day-night-successor.json`](../tools/bench/day-night-successor.json)
-owns the successor's numbers, applicability, policy identities, source pins,
-commands, run profiles and execution limits for
-[#1483](https://github.com/shgew/togi/issues/1483). **It is a draft, not a frozen
-registration or authorization to score.** Required simulator, runner, scorer and
-comparator source pins and command availability must be resolved after the runner
-lands. D's source remains explicitly `{"kind":"pending"}`; pinning it requires a
-separate reviewed commit before any D scoring, including development scoring.
+owns the numbers, applicability, source pins, commands, profiles and execution
+limits for [#1483](https://github.com/shgew/togi/issues/1483), separately from the
+frozen Ruleset 13 record. It registers CCD-uniform evaluation against all
+successor physical-core truths, not per-core-policy acceptance.
 
-The separate [physical-core truth catalog](simulating.md#successor-physical-core-truth)
-preserves complete readbacks and joint admissibility while this registration
-evaluates CCD-uniform policies only. Safety, usefulness and completeness are
-separate verdicts; complete unconverged trajectories are not crashes or missing
-observations. Learning allowance and post-finish risk remain separate accounts,
-including firmware restoration without a safety grace interval.
+D's source is explicitly `{"kind":"pending"}`. A separate reviewed commit must
+pin it and register implemented candidate commands before any D scoring.
+The registered development commands name the implemented comparators only.
+Comparator A's complete-unconverged outcomes and observed safety remain as
+reported; unavailable finish evidence is not fabricated convergence.
 
-The shipped Ruleset 13 comparator A supplies no successor finish witnesses:
-its full-horizon runs remain complete-unconverged, not fabricated convergence.
-Keep those outcomes and their safety observations unchanged; comparator status
-cannot pass D's gate or weaken an applicable criterion.
+The holdout remains sealed and is refused by the pinned runner: its command
+field records refused invocations, not executable confirmations. A later
+reviewed implementation and explicit repository authorization in the issue are
+required. Any executed confirmation is spent, interrupted included; failure
+stays failed. Registration does not authorize scoring, a campaign, a
+compatibility switch or deployment.
 
 Concurrency is fixed by the registration. Changing it requires separately
 identified registration/input provenance; the execution budget can affect
-completeness. A different job count is not the same registered invocation, even
-when its complete cell trajectories agree.
+completeness, so a different job count is not the same registered invocation.
 
-Use the registration's `commands` only after finalization. Reduced development
-output is **EXPLORATORY REDUCED DEV — NOT A REGISTERED SCORE**; it cannot pass the
-gate. Registered development retains every registered cell and the full horizon.
-Runtime expiry retains partial evidence and returns for a decision, never an
-easier seed set or horizon. The sealed holdout requires explicit authorization in
-the issue; any executed confirmation is spent, interrupted included, and a failed
-confirmation stays failed. Neither profile establishes hardware reliability or
-per-core-policy acceptance. Simulated setup/teardown and placement/repeat
-idealizations still require separate hardware acceptance.
 
 ### Historical gates
 

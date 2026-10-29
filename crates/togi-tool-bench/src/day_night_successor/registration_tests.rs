@@ -132,9 +132,9 @@ fn explicit_scenario_modes_narrow_the_applicable_modes() {
 }
 
 #[test]
-fn committed_draft_matches_the_truth_catalog_but_requires_final_source_pins() {
+fn committed_registration_loads_and_matches_the_truth_catalog() {
     let bytes = include_bytes!("../../../../tools/bench/day-night-successor.json");
-    let registration: Registration = serde_json::from_slice(bytes).expect("draft schema");
+    let registration = Registration::parse(bytes).expect("committed registration validates");
     assert_eq!(
         registration
             .scenarios
@@ -143,9 +143,6 @@ fn committed_draft_matches_the_truth_catalog_but_requires_final_source_pins() {
             .collect::<Vec<_>>(),
         togi_sim::day_night::successor::SCENARIO_IDS
     );
-    registration
-        .validate_scenarios()
-        .expect("registered scenario roles");
     assert!(
         registration
             .policy("successor")
@@ -153,10 +150,14 @@ fn committed_draft_matches_the_truth_catalog_but_requires_final_source_pins() {
             .source
             .is_pending()
     );
-    assert!(matches!(
-        Registration::parse(bytes),
-        Err(Error::Invalid("simulator, runner and report revisions"))
-    ));
+    for policy in &registration.sources.policies {
+        assert_eq!(
+            policy.parameters_sha256,
+            sha256_hex(&serde_json::to_vec(&policy.parameters).expect("typed parameters")),
+            "{} parameter hash",
+            policy.name
+        );
+    }
 }
 
 #[test]

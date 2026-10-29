@@ -4,16 +4,17 @@
 
 This program is a versioned historical record of the original Ruleset 13 experiment, not authorization for a new campaign; see [the day/night gate](../../docs/benchmarking.md#daynight-gate) for the read's scope, provenance and reproduction.
 
-## Successor registration draft
+## Successor registration
 
 [`day-night-successor.json`](day-night-successor.json) owns the separate
-successor experiment's numbers and commands; see
-[its registration status](../../docs/benchmarking.md#successor-registration-draft).
-It remains a draft until required merged source identities and implemented
-commands are frozen before scoring. D's source stays explicitly pending until a
-separate reviewed pinning commit; no D scoring is permitted before that commit.
-The draft neither changes the historical program below nor authorizes a
-campaign, holdout confirmation, compatibility switch or deployment.
+successor experiment's numbers and implemented comparator commands; see
+[its registration status](../../docs/benchmarking.md#successor-registration).
+D's source stays explicitly pending until a separate reviewed pinning commit
+registers implemented candidate commands; no D scoring is permitted before it.
+Holdout is refused by the pinned runner and requires a later reviewed
+implementation and explicit repository authorization. This registration neither
+changes the historical program below nor authorizes a campaign, confirmation,
+compatibility switch or deployment.
 
 ## Original Ruleset 13 program
 

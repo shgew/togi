@@ -20,8 +20,8 @@
     }
   },
   "holdout": {
-    "authorized_by": "Explicit authorization in issue #1483 is required before unsealing.",
-    "procedure": "Only an explicit authorization recorded in issue #1483 may unseal the confirmation after candidate/source/parameters are frozen and the registered development read is accepted. No execution or inspection of per-seed generated truth, partial tables or outcome-driven selection before then. Exactly one confirmation per candidate/slope; any executed confirmation is spent, including an interruption. A failed confirmation stays failed. Redesign requires a new registration and unused confirmation allocation. No resume.",
+    "authorized_by": "Explicit repository authorization recorded in issue #1483 is required before unsealing.",
+    "procedure": "Holdout is refused by the pinned runner. The command field records refused invocations, not an executable confirmation procedure. A later reviewed implementation and explicit repository authorization in issue #1483 are required before any unsealing, after candidate/source/parameters are frozen and the registered development read is accepted. No execution or inspection of per-seed generated truth, partial tables or outcome-driven selection before then. Exactly one confirmation per candidate/slope; any executed confirmation is spent, including an interruption. A failed confirmation stays failed. Redesign requires a new registration and unused confirmation allocation. No resume. A command refused before execution does not unseal or spend holdout.",
     "command": "just bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split holdout --policy successor --slope 1.5 --jobs 16 --out successor-registered-holdout-successor-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split holdout --policy successor --slope 2.0 --jobs 16 --out successor-registered-holdout-successor-2.0.jsonl",
     "confirmations_per_slope": 1,
     "spent_when_started": true,
@@ -2496,9 +2496,9 @@
     }
   ],
   "sources": {
-    "simulator_revision": "PENDING_MERGED_SIMULATOR_REVISION",
-    "runner_revision": "PENDING_MERGED_RUNNER_REVISION",
-    "report_revision": "PENDING_MERGED_SCORER_REVISION",
+    "simulator_revision": "f1f7bd42288c96579189decb1e69b3e137efc5c6",
+    "runner_revision": "62a5ed4c4c2579790dd1a88a52a7298e285b994e",
+    "report_revision": "4ed8e3f177c3f7da11477a3d23bad05883506fb5",
     "binary_sha256": null,
     "input_sha256": null,
     "policies": [
@@ -2509,7 +2509,7 @@
         "source": {
           "kind": "pending"
         },
-        "parameters_sha256": "1b2cbd78fb245a93a00256c314b0e15efb92bd6c67685f61f635e19c58e42808",
+        "parameters_sha256": "3ebb42479a3fae680c1dc05f6cfa9366ae57d4699da07948caf522058b9a9298",
         "parameters": [
           {
             "name": "first_step_clean_stock_hours",
@@ -2587,10 +2587,10 @@
         "role": "comparator",
         "source": {
           "kind": "pinned",
-          "revision": "PENDING_MERGED_CO_ZERO_REVISION",
-          "sha256": "PENDING_SOURCE_SHA256"
+          "revision": "62a5ed4c4c2579790dd1a88a52a7298e285b994e",
+          "sha256": "b798411e30fe00423e0ac46aa94784f65eac259c9324a3bbfde1b5e17309ea5b"
         },
-        "parameters_sha256": "e361128109651893b30c5d0b523affcf9ef26c2c35300a305eb15b56de4bf597",
+        "parameters_sha256": "df94fe9d3125ea4d7edfdeea7360fdfc68fe34accb4d70dcaf65d736e286d0ba",
         "parameters": [
           {
             "name": "offset",
@@ -2604,10 +2604,10 @@
         "role": "comparator",
         "source": {
           "kind": "pinned",
-          "revision": "PENDING_MERGED_RULESET13_REVISION",
-          "sha256": "PENDING_SOURCE_SHA256"
+          "revision": "2bc7f131b8c9cd5e397ed4623f0896ae8d5107ce",
+          "sha256": "0b44f2e250c44bc96908afb49b00183f447d9be765cd82084e3a2c8aad3ecf4a"
         },
-        "parameters_sha256": "ae63b9b173c38bce20e5e9c6ce446866a4b6a222310b1e3851384a5cfdf09a23",
+        "parameters_sha256": "cce0e775274e5352e921e4b516dd020011226208725cc160a00af13a5bd3985b",
         "parameters": [
           {
             "name": "ruleset",
@@ -2622,8 +2622,8 @@
     ]
   },
   "commands": {
-    "reduced_dev": "just bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy successor --slope 1.5 --jobs 16 --out successor-reduced-dev-dev-successor-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy successor --slope 2.0 --jobs 16 --out successor-reduced-dev-dev-successor-2.0.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy co-zero --slope 1.5 --jobs 16 --out successor-reduced-dev-dev-co-zero-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy co-zero --slope 2.0 --jobs 16 --out successor-reduced-dev-dev-co-zero-2.0.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy ruleset13 --slope 1.5 --jobs 16 --out successor-reduced-dev-dev-ruleset13-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy ruleset13 --slope 2.0 --jobs 16 --out successor-reduced-dev-dev-ruleset13-2.0.jsonl",
-    "registered": "just bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy successor --slope 1.5 --jobs 16 --out successor-registered-dev-successor-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy successor --slope 2.0 --jobs 16 --out successor-registered-dev-successor-2.0.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy co-zero --slope 1.5 --jobs 16 --out successor-registered-dev-co-zero-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy co-zero --slope 2.0 --jobs 16 --out successor-registered-dev-co-zero-2.0.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy ruleset13 --slope 1.5 --jobs 16 --out successor-registered-dev-ruleset13-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy ruleset13 --slope 2.0 --jobs 16 --out successor-registered-dev-ruleset13-2.0.jsonl"
+    "reduced_dev": "just bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy co-zero --slope 1.5 --jobs 16 --out successor-reduced-dev-dev-co-zero-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy co-zero --slope 2.0 --jobs 16 --out successor-reduced-dev-dev-co-zero-2.0.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy ruleset13 --slope 1.5 --jobs 16 --out successor-reduced-dev-dev-ruleset13-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy ruleset13 --slope 2.0 --jobs 16 --out successor-reduced-dev-dev-ruleset13-2.0.jsonl",
+    "registered": "just bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy co-zero --slope 1.5 --jobs 16 --out successor-registered-dev-co-zero-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy co-zero --slope 2.0 --jobs 16 --out successor-registered-dev-co-zero-2.0.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy ruleset13 --slope 1.5 --jobs 16 --out successor-registered-dev-ruleset13-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy ruleset13 --slope 2.0 --jobs 16 --out successor-registered-dev-ruleset13-2.0.jsonl"
   },
   "streams": {
     "domains": [
@@ -2655,8 +2655,9 @@
     "holdout_resumable": false
   },
   "notes": [
-    "LOCAL DRAFT ONLY — NOT FROZEN AND NOT AUTHORIZATION TO SCORE. Merged source revisions, source hashes and implemented commands must be finalized before publication or scoring. No policy result is recorded.",
-    "Pending fields: sources.simulator_revision, sources.runner_revision, sources.report_revision, comparator policies[].source.revision and source.sha256; resolved policy identities must bind the merged sources. D's source remains explicitly pending in this registration; a separate reviewed commit must pin it before any D scoring, including development scoring. Optional binary/input hashes remain unset until an actual artifact is produced. commands.reduced_dev, commands.registered and holdout.command are draft command lists pending the runner and candidate selectors.",
+    "Separate successor registration frozen before any scoring against its criteria. No policy result is recorded. This registration does not authorize a research campaign, holdout execution, RULESET/SCHEMA switch or deployment.",
+    "D's source remains explicitly pending; a separate reviewed commit must pin it and register implemented candidate commands before any D scoring, including development scoring. The frozen commands execute the implemented comparators only. Holdout commands are refused by the pinned runner; a later reviewed implementation and explicit repository authorization in issue #1483 are required before confirmation.",
+    "Comparator source SHA-256s hash the raw UTF-8 bytes of crates/togi-simrun/src/day_night/policy.rs for co-zero and crates/togi-simrun/src/day_night/ruleset13.rs for ruleset13 at their pinned revisions, without normalization or concatenation. Parameters SHA-256 hashes serde_json::to_vec of each typed Vec<Parameter> in its registered order, including f64 serialization. Simulator, runner and report revisions identify the last source changes in the merged preparation history; the runner scope includes togi-simrun day_night and togi-tool-bench day_night_cli. Optional binary/input pins are null; the runner must still compute and record actual binary/input SHA-256s.",
     "Each catalog-daily-i refers to the exact ith TrialClass returned by the pinned successor Scenario::daily_mix(), preserving order, workload/roles/placement/intended duration and seed-permuted weak-core identity. Four blocks each last 7200 seconds. Definitions and numeric family transformations are the pinned togi-sim catalog, original scenarios/curve and successor exposure implementation, never a generic workload alias.",
     "All criteria are per scenario and slope with no cross-scenario or cross-mode rescue. Missing, duplicate, mismatched, harness-error or truncated cells are INCOMPLETE, never PASS. Complete-unconverged trajectories remain in descriptive safety denominators and fail applicable utility/convergence/retention.",
     "The shipped Ruleset 13 comparator A has no successor finish witnesses: full-horizon records remain complete-unconverged. Preserve those outcomes and actual safety observations without inventing finish witnesses, excluding complete observations, or weakening any applicable criterion. A comparator cannot establish a candidate pass.",
