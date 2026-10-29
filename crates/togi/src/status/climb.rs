@@ -76,6 +76,9 @@ fn blocker(reason: &ClimbBlocker) -> String {
         ClimbBlocker::UnknownEdge { unit } => {
             format!("unknown edge for {}", journal_unit_name(*unit))
         }
+        ClimbBlocker::Ceiling { unit } => {
+            format!("{} is at its ceiling", journal_unit_name(*unit))
+        }
         ClimbBlocker::Finished { unit } => format!("{} already finished", journal_unit_name(*unit)),
         ClimbBlocker::CampaignHistory {} => "campaign history unavailable".to_owned(),
         ClimbBlocker::SameBoot {} => {
@@ -93,6 +96,11 @@ fn finish(reason: &UnitStopReason) -> String {
         UnitStopReason::AllowanceExhausted {} => "allowance exhausted".to_owned(),
         UnitStopReason::AdverseCeiling {} => "stopped: adverse ceiling".to_owned(),
         UnitStopReason::Veto {} => "stopped: whole-profile veto".to_owned(),
+        UnitStopReason::Predecessor { original } => format!(
+            "stopped: predecessor event {}:{}",
+            original.session,
+            original.seq
+        ),
         UnitStopReason::FirstBackstep {
             event: id,
             application,
