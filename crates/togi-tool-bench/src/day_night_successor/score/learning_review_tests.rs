@@ -7,11 +7,11 @@
 use test_case::test_case;
 use togi_machine::{CoreId, PerCore};
 use togi_simrun::day_night::successor::{
-    CeilingEvidence, Classification, EdgeObservation, FinishReason, Qualification, Record,
+    CeilingEvidence, Classification, EdgeObservation, FinishReason, Phase, Qualification, Record,
     RestorationOutcome, RestorationResult, StepIdentity, StepKind, UnitFinish,
 };
 
-use super::super::fixture::{Ev, Lab, Restore, Spec, uid};
+use super::super::fixture::{Ev, Lab, Restore, Spec, resync, uid};
 use super::{Audit, LearningAudit, Rules, audit};
 
 const EDGE: &str = "successor-edge-deep";
@@ -584,26 +584,152 @@ fn first_climb_qualification(record: &mut Record) -> &mut Qualification {
     }
 }
 
-/// A moving-limit epoch keeps the observable context, so citing the other truth epoch is clean.
+/// Promotes unit 0 once more at `day`, inside a later truth epoch, from the deployed profile to `depth`
+/// under `ceiling`, with a qualification dated `qualified` that cites `epoch`. The record stays
+/// coherent: the interval holding `day` splits there, every later interval deploys the new profile at
+/// the fixture's nonzero hazard, and unit 0 now finishes at this promotion, so the original
+/// first-finish boundary and the phase accounts move with it.
+fn promote_unit_zero_again(
+    record: &mut Record,
+    day: f64,
+    ceiling: u8,
+    depth: u8,
+    epoch: &str,
+    qualified: f64,
+) {
+    let template = record
+        .intervals
+        .iter()
+        .find(|interval| interval.profile.iter().any(|(_, depth)| depth > 0))
+        .expect("a deployed nonzero interval")
+        .clone();
+    let mut at = record
+        .intervals
+        .iter()
+        .position(|interval| interval.start_day <= day && day < interval.end_day)
+        .expect("the interval holding the promotion");
+    let whole = record.intervals[at].clone();
+    if whole.start_day < day {
+        let share = (day - whole.start_day) / (whole.end_day - whole.start_day);
+        let mut head = whole.clone();
+        head.end_day = day;
+        head.verified_daily_active_hours *= share;
+        for risk in &mut head.sources {
+            risk.expected_failures *= share;
+        }
+        let mut tail = whole;
+        tail.start_day = day;
+        tail.verified_daily_active_hours *= 1.0 - share;
+        for risk in &mut tail.sources {
+            risk.expected_failures *= 1.0 - share;
+        }
+        record.intervals.splice(at..=at, [head, tail]);
+        at += 1;
+    }
+    let before = record.intervals[at].profile;
+    let mut after = before;
+    for core in &record.provenance.membership[0].cores {
+        after.set(*core, depth);
+    }
+    for interval in &mut record.intervals[at..] {
+        let scale = interval.verified_daily_active_hours / template.verified_daily_active_hours;
+        interval.profile = after;
+        interval.admissibility = template.admissibility.clone();
+        interval.sources = template.sources.clone();
+        for risk in &mut interval.sources {
+            risk.expected_failures *= scale;
+        }
+    }
+    let index = record.steps.partition_point(|step| step.day <= day);
+    record.steps.insert(
+        index,
+        super::ProfileStep {
+            id: "climb-0b".into(),
+            day,
+            before,
+            after,
+            kind: StepKind::Climb {
+                unit: uid(0),
+                ceiling_depth: ceiling,
+                clean_hold_hours: 50.0,
+                qualification: Qualification {
+                    id: "q-0b".into(),
+                    day: qualified,
+                    epoch: epoch.into(),
+                    profile: after,
+                    stock_controls: vec!["control-0b".into()],
+                    fresh_witnesses: vec!["fresh-0b".into()],
+                    reused_witnesses: vec![],
+                    safety_checks_satisfied: true,
+                },
+            },
+        },
+    );
+    record.units[0].promotions += 1;
+    record.units[0]
+        .finish
+        .as_mut()
+        .expect("a unit 0 finish")
+        .day = day;
+    record.policy.finishes = record
+        .units
+        .iter()
+        .filter_map(|summary| summary.finish.clone())
+        .collect();
+    record.policy.readback = Some(after);
+    let finish = record.first_finish_day().expect("every unit finishes");
+    for interval in &mut record.intervals {
+        interval.phase = if interval.start_day >= finish {
+            Phase::PostFinish
+        } else {
+            Phase::Learning
+        };
+    }
+    resync(record);
+    record
+        .validate()
+        .unwrap_or_else(|error| panic!("the synthetic record is invalid: {error}"));
+}
+
+/// A moving-limit epoch keeps the observable context: a promotion in the second truth epoch may apply
+/// a qualification recorded in the first.
 #[test]
-fn a_qualification_citing_another_truth_epoch_of_the_same_context_is_clean() {
+fn a_qualification_from_an_earlier_truth_epoch_of_the_same_context_is_clean() {
     let lab = lab("successor-moving-cap");
     let mut record = Spec::new("successor-moving-cap", 20_001, SLOPE).build(&lab);
-    assert_eq!(record.epochs[0].context, record.epochs[1].context);
-    let other = record.epochs[1].id.clone();
-    first_climb_qualification(&mut record).epoch = other;
+    let (first, second) = (record.epochs[0].clone(), record.epochs[1].clone());
+    assert_eq!(first.context, second.context);
+    // Unit 0 holds 5 under a learned ceiling of 7: the rule moves it one count to 6.
+    promote_unit_zero_again(
+        &mut record,
+        second.start_day + 4.0,
+        7,
+        6,
+        &first.id,
+        first.end_day - 6.0,
+    );
     assert_eq!(rules(&judged(&lab, &record)), Vec::<&str>::new());
 }
 
-/// A firmware change opens a new context, so citing the other side's epoch fails.
+/// A firmware change opens a new context: a promotion after the reset cannot apply a qualification
+/// of the old firmware, even one dated and epoch-stamped consistently inside it.
 #[test]
-fn a_qualification_citing_the_other_firmware_context_is_refused() {
+fn a_qualification_from_the_previous_firmware_context_is_refused() {
     let lab = lab(FIRMWARE);
-    let mut record = firmware(&lab, Restore::Retained, vec![]);
-    assert_ne!(record.epochs[0].context, record.epochs[1].context);
-    let other = record.epochs[1].id.clone();
-    first_climb_qualification(&mut record).epoch = other;
-    assert!(rules(&judged(&lab, &record)).contains(&"qualification-context"));
+    let mut record = firmware(&lab, Restore::Blocked, vec![]);
+    let (first, second) = (record.epochs[0].clone(), record.epochs[1].clone());
+    assert_ne!(first.context, second.context);
+    // The blocked restoration leaves stock from the reset; nine clean stock days later unit 0
+    // climbs 0 -> 5 under a ceiling of 10.
+    promote_unit_zero_again(
+        &mut record,
+        second.start_day + 9.0,
+        10,
+        5,
+        &first.id,
+        first.end_day - 6.0,
+    );
+    assert_eq!(rules(&judged(&lab, &record)), vec!["qualification-context"]);
 }
 
 #[test]
