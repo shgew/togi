@@ -33,7 +33,7 @@ pub struct TrialPlan {
     pub task: TaskId,
     pub activity: Activity,
     pub cell: Cell,
-    /// The whole CCD profile the trial runs at.
+    /// The whole tuning-group profile the trial runs at.
     pub profile: UnitProfile,
     /// What the trial's outcome is charged to: the isolated CCD at its offset, or the exact profile.
     pub tested: Tested,

@@ -207,7 +207,7 @@ pub enum Reuse<'a> {
 pub enum AttemptScope {
     /// The exact failed profile.
     Exact,
-    /// One CCD alone at its failed offset, the others at CO 0.
+    /// One tuning group alone at its failed offset, the others at CO 0.
     Unit { unit: UnitId },
 }
 
@@ -227,7 +227,7 @@ pub enum MatrixError {
     UnknownCcd(CcdId),
     #[error("unit {0:?} is not in the topology")]
     UnknownUnit(UnitId),
-    #[error("a CCD profile could not be built")]
+    #[error("a unit profile could not be built")]
     Profile(#[from] UnitProfileError),
 }
 
@@ -576,7 +576,7 @@ fn fresh(cells: impl IntoIterator<Item = Cell>) -> impl Iterator<Item = PlannedC
     })
 }
 
-/// `profile` with every CCD at CO 0.
+/// `profile` with every tuning group at CO 0.
 #[must_use]
 pub fn zeroed(profile: &UnitProfile) -> UnitProfile {
     profile.iter().fold(profile.clone(), |zero, (ccd, _)| {
@@ -584,7 +584,7 @@ pub fn zeroed(profile: &UnitProfile) -> UnitProfile {
     })
 }
 
-/// `profile` zeroed except `ccd` at `offset`.
+/// `profile` zeroed except the selected tuning group at `offset`.
 fn isolated_profile(
     layout: &Layout<'_>,
     unit: UnitId,

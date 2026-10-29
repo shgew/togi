@@ -28,7 +28,7 @@ pub struct CapProjection {
     pub witness: Seq,
 }
 
-/// One CCD's committed edge U, cap S, applied day offset D and the distance between them.
+/// One tuning group's committed edge U, cap S, applied day offset D and their distance.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct UnitProjection {
     pub unit: UnitId,
