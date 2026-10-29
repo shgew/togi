@@ -40,7 +40,9 @@ fn vector(values: &[i64]) -> UnitVector {
                 .map(|(id, _)| UnitMembership {
                     unit: togi_journal::UnitId::Core(core(i64::try_from(id).unwrap())),
                     cores: [core(i64::try_from(id).unwrap())].into_iter().collect(),
-                    parent: Some(togi_journal::UnitId::Ccd(CcdId::new(0).unwrap())),
+                    parent: Some(togi_journal::UnitId::Ccd(
+                        CcdId::new(i64::try_from(id / 8).unwrap()).unwrap(),
+                    )),
                 })
                 .collect(),
         },
@@ -146,13 +148,17 @@ fn shown(policy: &ClimbProjection, color: bool) -> String {
         },
     );
     // Status intentionally uses plain text in both terminal-color modes.
-    Renderer::new(OutputFacts {
+    let renderer = Renderer::new(OutputFacts {
         is_terminal: color,
         no_color: !color,
         journald: false,
-    })
-    .text(Style::Plain, &text)
-    .to_string()
+    });
+    use std::fmt::Write as _;
+    let mut shown = String::new();
+    for line in text.lines() {
+        writeln!(shown, "{}", renderer.text(Style::Plain, line)).unwrap();
+    }
+    shown
 }
 
 fn case_fixture(case: Case) -> ClimbProjection {
@@ -291,6 +297,7 @@ fn sixteen_nonuniform_core_units_are_presented_without_ccd_averaging() {
     policy.units = (0..16)
         .map(|id| ClimbUnitProjection {
             unit: UnitId::Core(core(id)),
+            parent: Some(UnitId::Ccd(CcdId::new(id / 8).unwrap())),
             cores: [core(id)].into_iter().collect(),
             applied: offset(-id),
             ..template.clone()
@@ -409,6 +416,7 @@ fn full_profile_projection_data_round_trips_without_losing_any_unit() {
     policy.units = (0..16)
         .map(|id| ClimbUnitProjection {
             unit: UnitId::Core(core(id)),
+            parent: Some(UnitId::Ccd(CcdId::new(id / 8).unwrap())),
             cores: [core(id)].into_iter().collect(),
             ..template.clone()
         })
@@ -419,4 +427,52 @@ fn full_profile_projection_data_round_trips_without_losing_any_unit() {
     let json = serde_json::to_value(&policy).unwrap();
     let restored: ClimbProjection = serde_json::from_value(json).unwrap();
     assert_eq!(restored, policy);
+}
+
+#[test_case(togi_journal::FirmwareRestorationState::Saved {}, "saved; awaiting new-context qualification and stock hold"; "saved")]
+#[test_case(togi_journal::FirmwareRestorationState::Qualified { certificate: seq(8) }, "qualified in new context [#8]"; "qualified")]
+#[test_case(togi_journal::FirmwareRestorationState::Held { hold: togi_journal::ClimbHold { application: togi_journal::ApplicationId(2), credited: vec![seq(7)], eligible_s: 90_000 } }, "held for stock hours: 25 h [#7]"; "stock_hold")]
+#[test_case(togi_journal::FirmwareRestorationState::Restored { application: togi_journal::ApplicationId(2) }, "restored in one whole-profile learning step; application 2"; "restored")]
+#[test_case(togi_journal::FirmwareRestorationState::SteppedBack { event: DayEventId::Boot { boot: "day-a".to_owned().into() } }, "stepped back to stock; restored units stopped after boot day-a"; "stepped_back")]
+fn firmware_restoration_names_its_state_and_exact_saved_vector(
+    state: togi_journal::FirmwareRestorationState,
+    expected: &str,
+) {
+    let mut policy = fixture();
+    policy.firmware_restoration = Some(togi_journal::FirmwareRestoration {
+        saved: vector(&[-5]),
+        state,
+    });
+    let out = shown(&policy, false);
+    let flat = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(flat.contains(expected), "{out}");
+    assert!(flat.contains("saved exact profile: core 0 -5"), "{out}");
+}
+
+#[test]
+fn a_night_ceiling_blocker_is_held_not_finished() {
+    let mut policy = fixture();
+    policy.units[0].state = ClimbUnitState::Held {
+        reason: vec![ClimbBlocker::Ceiling {
+            unit: policy.units[0].unit,
+        }],
+    };
+    let out = shown(&policy, false);
+    assert!(out.contains("held: core 0 is at its ceiling"), "{out}");
+}
+
+#[test]
+fn a_predecessor_stop_preserves_its_original_event_identity() {
+    let mut policy = case_fixture(Case::Finished);
+    let ClimbUnitState::Finished { reason, .. } = &mut policy.units[0].state else {
+        panic!("finished fixture");
+    };
+    *reason = UnitStopReason::Predecessor {
+        original: serde_json::from_str(r#"{"session":"20261002T011407Z","seq":4}"#).unwrap(),
+    };
+    let out = shown(&policy, false);
+    assert!(
+        out.contains("stopped: predecessor event 20261002T011407Z:4"),
+        "{out}"
+    );
 }
