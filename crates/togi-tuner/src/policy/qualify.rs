@@ -358,7 +358,18 @@ impl State {
     }
 
     fn matrix_digest(matrix: &Matrix) -> Result<Digest, NotReady> {
-        let bytes = serde_json::to_vec(matrix)?;
+        // The released qualification hash includes the historical CCD profile representation.
+        #[derive(serde::Serialize)]
+        struct JournalMatrix<'a> {
+            profile: togi_machine::CcdProfile,
+            cells: &'a [crate::night::PlannedCell],
+            uncovered: &'a [crate::night::Uncovered],
+        }
+        let bytes = serde_json::to_vec(&JournalMatrix {
+            profile: matrix.profile.to_ccd().ok_or(NotReady::NonCoarse)?,
+            cells: &matrix.cells,
+            uncovered: &matrix.uncovered,
+        })?;
         let hash: [u8; 32] = Sha256::digest(bytes).into();
         Ok(Digest::from_bytes(hash))
     }
