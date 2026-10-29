@@ -12,7 +12,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_journal::{
     Build, CrashedBoot, DayCrashes, DayRecord, Event, Journal, OffsetSource, Payload,
-    RecordableEnd, Running, Seq,
+    RecordableEnd, Running, Seq, SessionId,
 };
 use togi_machine::{BootId, CcdId, CoreId};
 use togi_session::{Crash, Draft, Entered, OffsetSpec, RecordError, append_record, draft_record};
@@ -37,8 +37,9 @@ const COMMAND: &str = "day record";
 /// --offset are entered offsets and need --entered-at. Give every core of the session a value:
 /// all=-20, ccd1=-25 or core3=-10, where a more specific one overrides a less specific one.
 ///
-/// Needs root and a session journal. A running day service appends the record; without one the command
-/// holds the writer lock itself. Times are RFC 3339 (2026-10-19T14:30:00Z) or local (2026-10-19 14:30).
+/// Needs root and a session journal. A running day service appends the record when it observes the same
+/// session and refuses it otherwise; without a service the command holds the writer lock itself. Times are
+/// RFC 3339 (2026-10-19T14:30:00Z) or local (2026-10-19 14:30).
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// The crashed boot: the ID of a boot with a recorded unclean end
@@ -559,11 +560,30 @@ pub(super) fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Ok(recording) => recording,
         Err(exit) => return exit,
     };
+    let Some(session) = started(recording.events()) else {
+        return exit_with(
+            ctx,
+            COMMAND,
+            "the journal has no session start",
+            Exit::Error,
+        );
+    };
     let record = match confirmed(args, &given, &zone, ctx, recording.events()) {
         Ok(record) => record,
         Err(exit) => return exit,
     };
-    hand_off(ctx, &build, record)
+    hand_off(ctx, &build, session, record)
+}
+
+/// The session the journal holds, which binds a handed-off record to this state directory.
+fn started(events: &[Event]) -> Option<SessionId> {
+    events.first().and_then(|event| {
+        if let Payload::SessionStart(start) = &event.payload {
+            Some(start.session)
+        } else {
+            None
+        }
+    })
 }
 
 /// The record the flags and answers describe, printed and, at a terminal, confirmed.
@@ -635,10 +655,12 @@ fn confirmed(
     Ok(record)
 }
 
-/// Gives the record to the day service. Only a missing service lets the command write the journal itself: a
-/// refusal, a protocol failure or an unauthorized service is that service's answer, not its absence.
-fn hand_off(ctx: &mut Context<'_>, build: &Build, record: DayRecord) -> Exit {
+/// Gives the record to the day service, bound to the session it was drafted from, so a service observing another
+/// state directory refuses it. Only a missing service lets the command write the journal itself: a refusal, a
+/// protocol failure or an unauthorized service is that service's answer, not its absence.
+fn hand_off(ctx: &mut Context<'_>, build: &Build, session: SessionId, record: DayRecord) -> Exit {
     let request = Request::Record {
+        session,
         record: record.clone(),
     };
     match ctx.system.day_request(&request) {

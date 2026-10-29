@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use togi_journal::{
-    DayAnswer, DayAnswerKind, DayQuestions, DayRecord, DayUncleanEnd, Journal, Seq,
+    DayAnswer, DayAnswerKind, DayQuestions, DayRecord, DayUncleanEnd, Journal, Seq, SessionId,
 };
 use togi_machine::{BootId, Clock};
 use togi_session::{AppendRecordError, append_record};
@@ -26,14 +26,20 @@ const EXCHANGE: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one request per connection, decoded once; boxing the record would only add an allocation"
+)]
 pub enum Request {
     Questions,
     Answer {
         boot: BootId,
         answer: DayAnswerKind,
     },
-    /// A crash record the user confirmed; the service checks it against the live journal before appending.
+    /// A crash record the user confirmed, drafted against `session`; the service appends it only when its live
+    /// journal is that session, after checking it against that journal.
     Record {
+        session: SessionId,
         record: DayRecord,
     },
     /// Root only: reapply the day profile after resume; answered only once the transaction succeeded.
@@ -296,8 +302,12 @@ fn read_reply(stream: &mut impl io::Read) -> Result<Reply, Error> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-/// Process an already-authenticated request, recording identity from the kernel, not the request.
-fn respond(
+/// Process an already-authenticated request, recording identity from the kernel, not the request. This is the
+/// service's whole answer to a peer `uid`, without the transport.
+///
+/// # Errors
+/// A failed append or reapplication, which ends observation; refusals are [`Reply::Refused`].
+pub fn respond(
     journal: &mut Journal,
     clock: &dyn Clock,
     uid: u32,
@@ -339,11 +349,23 @@ fn respond(
             reapply(journal, clock)?;
             Ok(Reply::Reapplied)
         }
-        Request::Record { record } => {
+        Request::Record { session, record } => {
             // Answering is open to the day group; recording a crash needs root, as the command does.
             if uid != 0 {
                 return Ok(Reply::Refused {
                     reason: "recording a crash needs root".into(),
+                });
+            }
+            // The command drafted against the state directory it was given, which need not be the service's.
+            let live = journal.session();
+            if live != Some(session) {
+                return Ok(Reply::Refused {
+                    reason: live.map_or_else(
+                        || format!("the day service journal has no session, not session {session}"),
+                        |live| {
+                            format!("the day service records session {live}, not session {session}")
+                        },
+                    ),
                 });
             }
             if let Err(refusal) = super::record::check(journal.events(), &record) {
@@ -363,18 +385,26 @@ fn respond(
 /// Sends one request to the running day service. A missing or unlistened socket is [`Error::Absent`]; every
 /// other failure, refusals included, is the service's answer and never means no service runs.
 pub fn request(request: &Request) -> Result<Reply, Error> {
+    request_at(Path::new(PATH), request)
+}
+
+/// Only a socket path that does not exist or that nothing listens at means no service runs; the command then
+/// writes the journal itself, so every other connect failure stays an error.
+fn connect_error(error: io::Error) -> Error {
+    if matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+    ) {
+        Error::Absent(error)
+    } else {
+        Error::Io(error)
+    }
+}
+
+fn request_at(path: &Path, request: &Request) -> Result<Reply, Error> {
     let mut line = serde_json::to_vec(request)?;
     line.push(b'\n');
-    let mut stream = UnixStream::connect(PATH).map_err(|error| {
-        if matches!(
-            error.kind(),
-            io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
-        ) {
-            Error::Absent(error)
-        } else {
-            Error::Io(error)
-        }
-    })?;
+    let mut stream = UnixStream::connect(path).map_err(connect_error)?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     // Clients must not send answers to an endpoint impersonated by another user.

@@ -142,7 +142,7 @@ togi day answer <boot> frozen
 
 ### Recording a crash togi did not observe
 
-A freeze from before the day service existed has no unclean end to answer. `sudo togi day record` journals it, so Ruleset 13 can treat the offsets it ran as a whole-profile veto; the [journal spec](spec/journal.md#day-observation) has the rules, and the command prints what the record will do before it appends. Leave the day service running: the command sends your confirmed record to its credential-checked socket, and the live writer validates and appends it. Only when no service runs does the command take the writer lock itself; a refused or failed socket request never falls back to a second writer.
+A freeze from before the day service existed has no unclean end to answer. `sudo togi day record` journals it, so Ruleset 13 can treat the offsets it ran as a whole-profile veto; the [journal spec](spec/journal.md#day-observation) has the rules, and the command prints what the record will do before it appends. Leave the day service running: the command sends your confirmed record to its credential-checked socket, and the live writer validates and appends it. The service refuses a record drafted from a session other than the one it observes, such as one a `--state-dir` naming another directory selects. Only when no service runs does the command take the writer lock itself; a refused or failed socket request never falls back to a second writer.
 
 For a boot the observer saw end uncleanly, name it with `--boot <boot>`; the offsets are the ones the observer read back, unless you pass `--offset` for the ones you remember entering:
 

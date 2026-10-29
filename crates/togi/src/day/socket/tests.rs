@@ -79,6 +79,14 @@ fn records(journal: &Journal) -> usize {
         .count()
 }
 
+/// A record request for the session [`crate::day::tests::journal`] starts.
+fn ours(record: DayRecord) -> Request {
+    Request::Record {
+        session: SessionId::new(Timestamp::UNIX_EPOCH, None).unwrap(),
+        record,
+    }
+}
+
 #[test_case(0, 100, true; "root")]
 #[test_case(1000, 42, true; "primary group")]
 #[test_case(1001, 100, true; "supplementary group")]
@@ -328,14 +336,7 @@ fn real_fs_socket_credentials_come_from_the_kernel() {
 fn a_record_from_root_is_appended_to_the_live_journal() {
     let mut journal = crate::day::tests::journal();
     let record = recordable(&mut journal);
-    let reply = serve(
-        &mut journal,
-        0,
-        Request::Record {
-            record: record.clone(),
-        },
-    )
-    .unwrap();
+    let reply = serve(&mut journal, 0, ours(record.clone())).unwrap();
     assert!(matches!(reply, Reply::Recorded { .. }));
     assert_eq!(records(&journal), 1);
     let Some(togi_journal::Payload::DayRecord(appended)) =
@@ -350,15 +351,8 @@ fn a_record_from_root_is_appended_to_the_live_journal() {
 fn a_second_record_of_the_same_boot_is_refused_by_the_service() {
     let mut journal = crate::day::tests::journal();
     let record = recordable(&mut journal);
-    serve(
-        &mut journal,
-        0,
-        Request::Record {
-            record: record.clone(),
-        },
-    )
-    .unwrap();
-    let reply = serve(&mut journal, 0, Request::Record { record }).unwrap();
+    serve(&mut journal, 0, ours(record.clone())).unwrap();
+    let reply = serve(&mut journal, 0, ours(record)).unwrap();
     let Reply::Refused { reason } = reply else {
         panic!("a duplicate record must be refused")
     };
@@ -375,7 +369,7 @@ fn a_record_for_a_boot_without_an_unclean_end_is_refused() {
         },
         ..recordable(&mut journal)
     };
-    let reply = serve(&mut journal, 0, Request::Record { record }).unwrap();
+    let reply = serve(&mut journal, 0, ours(record)).unwrap();
     let Reply::Refused { reason } = reply else {
         panic!("an unknown boot must be refused")
     };
@@ -392,8 +386,32 @@ fn a_record_claiming_a_read_back_the_journal_lacks_is_refused() {
         },
         ..recordable(&mut journal)
     };
-    let reply = serve(&mut journal, 0, Request::Record { record }).unwrap();
+    let reply = serve(&mut journal, 0, ours(record)).unwrap();
     assert!(matches!(reply, Reply::Refused { .. }));
+    assert_eq!(records(&journal), 0);
+}
+
+#[test]
+fn a_record_drafted_from_another_session_is_refused_without_appending() {
+    let mut journal = crate::day::tests::journal();
+    let record = recordable(&mut journal);
+    let elsewhere = SessionId::new(Timestamp::from_second(86_400).unwrap(), None).unwrap();
+    let reply = serve(
+        &mut journal,
+        0,
+        Request::Record {
+            session: elsewhere,
+            record,
+        },
+    )
+    .unwrap();
+    let Reply::Refused { reason } = reply else {
+        panic!("a record for another session must be refused")
+    };
+    assert!(
+        reason.contains(&format!("not session {elsewhere}")),
+        "{reason}"
+    );
     assert_eq!(records(&journal), 0);
 }
 
@@ -401,7 +419,7 @@ fn a_record_claiming_a_read_back_the_journal_lacks_is_refused() {
 fn a_record_from_the_answer_group_is_refused_without_appending() {
     let mut journal = crate::day::tests::journal();
     let record = recordable(&mut journal);
-    let reply = serve(&mut journal, 1000, Request::Record { record }).unwrap();
+    let reply = serve(&mut journal, 1000, ours(record)).unwrap();
     let Reply::Refused { reason } = reply else {
         panic!("recording needs root")
     };
@@ -416,7 +434,7 @@ fn a_record_with_a_long_note_fits_one_request() {
         note: Some("n".repeat(8 * 1024)),
         ..recordable(&mut journal)
     };
-    let line = serde_json::to_vec(&Request::Record { record }).unwrap();
+    let line = serde_json::to_vec(&ours(record)).unwrap();
     assert!((line.len() as u64) < LIMIT, "{}", line.len());
 }
 
@@ -457,4 +475,43 @@ fn reapply_from_the_answer_group_is_refused_without_running_it() {
     let mut journal = crate::day::tests::journal();
     let reply = serve(&mut journal, 1000, Request::Reapply).unwrap();
     assert!(matches!(reply, Reply::Refused { .. }));
+}
+
+#[test]
+fn real_fs_a_missing_socket_means_no_service_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let reached = request_at(&dir.path().join("day.sock"), &Request::Questions);
+    assert!(matches!(reached, Err(Error::Absent(_))), "{reached:?}");
+}
+
+#[test]
+fn real_fs_a_socket_nothing_listens_at_means_no_service_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("day.sock");
+    // A service that stopped without removing its socket leaves the file behind.
+    drop(UnixListener::bind(&path).unwrap());
+    assert!(
+        std::fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_socket()
+    );
+    let reached = request_at(&path, &Request::Questions);
+    assert!(matches!(reached, Err(Error::Absent(_))), "{reached:?}");
+}
+
+#[test]
+fn real_fs_a_socket_path_that_cannot_be_reached_is_an_error_not_absence() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("file");
+    std::fs::write(&file, b"").unwrap();
+    let reached = request_at(&file.join("day.sock"), &Request::Questions);
+    assert!(matches!(reached, Err(Error::Io(_))), "{reached:?}");
+}
+
+/// Root search permission bypasses directory modes, so a denied connect is pinned without the filesystem.
+#[test]
+fn a_denied_connect_is_an_error_not_absence() {
+    let error = connect_error(io::Error::from(io::ErrorKind::PermissionDenied));
+    assert!(matches!(error, Error::Io(_)), "{error:?}");
 }

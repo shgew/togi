@@ -485,7 +485,11 @@ mod record {
         let ran = record(&host, &["--boot", "seed", "--running", "build"]);
         assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
         assert!(ran.out.contains("crash recorded as event"), "{}", ran.out);
-        let [sent] = host.day_records.borrow().clone().try_into().unwrap();
+        let [(session, sent)] = host.day_records.borrow().clone().try_into().unwrap();
+        assert_eq!(
+            session,
+            SessionId::new(Timestamp::UNIX_EPOCH, None).unwrap()
+        );
         assert_eq!(
             sent.boot,
             CrashedBoot::UncleanEnd {
@@ -520,6 +524,109 @@ mod record {
         assert!(ran.err.contains(message), "{}", ran.err);
         assert_eq!(host.day_records.borrow().len(), 1);
         assert!(records(&host).is_empty());
+    }
+
+    const OTHER: &str = "/other";
+    const UNOBSERVED: [&str; 6] = [
+        "--unobserved-at",
+        "2026-10-19T11:00:00Z",
+        "--offset",
+        "all=-20",
+        "--entered-at",
+        ENTERED,
+    ];
+
+    /// A second state directory on the same machine, the same cores, holding only a later session's start.
+    fn other_session(host: &support::Host) -> SessionId {
+        let session = SessionId::new(Timestamp::from_second(86_400).unwrap(), None).unwrap();
+        let mut journal = host
+            .lock_state_dir(Path::new(OTHER))
+            .unwrap()
+            .open_at("other".to_owned().into(), Timestamp::UNIX_EPOCH)
+            .unwrap();
+        journal
+            .append(
+                Stamp {
+                    time: Timestamp::from_second(86_400).unwrap(),
+                    mono: None,
+                },
+                SessionStart {
+                    build: togi_cli::report::current_build(),
+                    session,
+                    cores: host.topology.clone(),
+                }
+                .into(),
+                &[],
+            )
+            .unwrap();
+        journal.close().unwrap();
+        session
+    }
+
+    /// Starts the day service on `/state`; it holds that directory's writer until the test closes it.
+    fn serve_state(host: &support::Host) {
+        let journal = host
+            .lock_state_dir(Path::new(STATE))
+            .unwrap()
+            .open_at("next".to_owned().into(), Timestamp::UNIX_EPOCH)
+            .unwrap();
+        *host.day_journal.borrow_mut() = Some(journal);
+    }
+
+    fn stop_service(host: &support::Host) {
+        host.day_journal
+            .borrow_mut()
+            .take()
+            .unwrap()
+            .close()
+            .unwrap();
+    }
+
+    fn text(host: &support::Host, dir: &str) -> String {
+        host.read_to_string(Path::new(dir).join("events.jsonl"))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_service_observing_another_session_refuses_the_record_and_neither_journal_changes() {
+        let host = host();
+        let other = other_session(&host);
+        serve_state(&host);
+        let (service_before, other_before) = (text(&host, STATE), text(&host, OTHER));
+        let ran = host.run(
+            Path::new(OTHER),
+            &[["day", "record"].as_slice(), UNOBSERVED.as_slice()].concat(),
+        );
+        stop_service(&host);
+        assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+        assert!(
+            ran.err.contains(&format!("not session {other}")),
+            "{}",
+            ran.err
+        );
+        let [(sent, _)] = host.day_records.borrow().clone().try_into().unwrap();
+        assert_eq!(sent, other);
+        assert_eq!(text(&host, STATE), service_before);
+        assert_eq!(text(&host, OTHER), other_before);
+    }
+
+    #[test]
+    fn a_service_observing_the_same_session_appends_the_record_to_it() {
+        let host = host();
+        other_session(&host);
+        serve_state(&host);
+        let other_before = text(&host, OTHER);
+        let ran = record(&host, &UNOBSERVED);
+        stop_service(&host);
+        assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+        let [record] = records(&host).try_into().unwrap();
+        assert_eq!(
+            record.boot,
+            CrashedBoot::Unobserved {
+                at: "2026-10-19T11:00:00Z".parse().unwrap()
+            }
+        );
+        assert_eq!(text(&host, OTHER), other_before);
     }
 
     #[test]

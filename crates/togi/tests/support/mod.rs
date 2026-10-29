@@ -120,11 +120,14 @@ pub struct Host {
     pub diagnoses: RefCell<Vec<(Option<BiosContext>, bool)>>,
     pub calls: Cell<usize>,
     pub day_answers: RefCell<Vec<(togi_machine::BootId, togi_journal::DayAnswerKind)>>,
-    /// What a running day service answers a crash record with, once; `None` means no service runs.
+    /// What a running day service answers a crash record with, once; `None` means no service runs unless
+    /// `day_journal` holds one.
     pub day_service:
         RefCell<Option<Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error>>>,
-    /// The crash records handed to the day service.
-    pub day_records: RefCell<Vec<togi_journal::DayRecord>>,
+    /// The live journal of a running day service, which answers crash records the way the service does.
+    pub day_journal: RefCell<Option<togi_journal::Journal>>,
+    /// The crash records handed to the day service, with the session each was drafted from.
+    pub day_records: RefCell<Vec<(togi_journal::SessionId, togi_journal::DayRecord)>>,
     /// Whether stdin and stderr are terminals, and the lines typed at them.
     pub terminal: Cell<bool>,
     pub typed: RefCell<std::collections::VecDeque<String>>,
@@ -171,6 +174,7 @@ impl Host {
             calls: Cell::new(0),
             day_answers: RefCell::default(),
             day_service: RefCell::new(None),
+            day_journal: RefCell::new(None),
             day_records: RefCell::default(),
             terminal: Cell::new(false),
             typed: RefCell::default(),
@@ -318,8 +322,32 @@ impl System for Host {
                 self.day_answers.borrow_mut().push((boot.clone(), *answer));
                 Ok(Reply::Answered)
             }
-            Request::Record { record } => {
-                self.day_records.borrow_mut().push(record.clone());
+            Request::Record { session, record } => {
+                self.day_records
+                    .borrow_mut()
+                    .push((*session, record.clone()));
+                if let Some(journal) = self.day_journal.borrow_mut().as_mut() {
+                    let reply = togi_cli::day::socket::respond(
+                        journal,
+                        &togi_cli::system::SystemClock(self),
+                        0,
+                        Request::Record {
+                            session: *session,
+                            record: record.clone(),
+                        },
+                        &mut |_, _| panic!("a crash record must not reapply"),
+                    )
+                    .unwrap();
+                    return match reply {
+                        Reply::Refused { reason } => {
+                            Err(togi_cli::day::socket::Error::Refused(reason))
+                        }
+                        Reply::Questions { .. }
+                        | Reply::Answered
+                        | Reply::Recorded { .. }
+                        | Reply::Reapplied => Ok(reply),
+                    };
+                }
                 self.day_service.borrow_mut().take().unwrap_or_else(|| {
                     Err(togi_cli::day::socket::Error::Absent(io::Error::from(
                         io::ErrorKind::NotFound,
