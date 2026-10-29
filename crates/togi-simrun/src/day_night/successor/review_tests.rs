@@ -286,9 +286,9 @@ fn source_allocation_roundoff_is_relative_without_relaxing_membership(
     }
     assert_eq!(record.validate().is_ok(), valid);
     if !valid {
-        assert_eq!(
+        assert!(matches!(
             record.validate(),
             Err(ValidationError::Invalid("joint hazard source allocation"))
-        );
+        ));
     }
 }
