@@ -54,18 +54,24 @@ hardware *args:
 fuzz seconds="60": _dev-shell
     cd crates/togi-journal && mkdir -p fuzz/corpus/reader && cargo fuzz run -s none reader fuzz/corpus/reader tests/reader_fuzz/seeds -- -max_total_time="$1"
 
-# Print changed lines no test reached since a base, and the changed files the run does not build (`just cover origin/main`)
+# Print changed lines no test reached, adding named workspace packages to product tests (`just cover origin/main togi-tool-release`)
 [group('test')]
-cover base: _dev-shell
+cover base *crates: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
     trace=$(mktemp)
     trap 'rm -f "$trace"' EXIT
     target=${CARGO_LLVM_COV_TARGET_DIR:-$(cargo metadata --format-version 1 --no-deps | nu --stdin -c '$in | from json | get build_directory')/llvm-cov-target}
-    args=$(just _product-test-args)
+    product=$(just _product-test-args)
+    args=$(nu --no-config-file tools/cover/args.nu "$product" "${@:2}")
     read -r -a packages <<< "$args"
     CARGO_LLVM_COV_TARGET_DIR="$target" CARGO_BUILD_BUILD_DIR="$target" cargo llvm-cov nextest --locked "${packages[@]}" --lcov --output-path "$trace" >&2
     cargo run --quiet --locked -p togi-tool-cover -- --lcov "$trace" --build-dir "$target/debug" --base "$1"
+
+# Test additive coverage package arguments without compiling or running test packages
+[group('test')]
+cover-test: _dev-shell
+    nu --no-config-file tools/cover/tests.nu
 
 # Check the Nushell board's syntax and run workspace clippy for the host with default and all features and, with all features, for whichever of x86_64 Linux and aarch64 macOS is not the host
 [group('quality')]
