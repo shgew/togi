@@ -1,7 +1,7 @@
 use super::*;
 use crate::day_night::CalendarConfig;
 use crate::day_night::successor::{
-    AllowanceLedger, FinishReason, Provenance, RunProfile, Split, UnitFinish,
+    AllowanceLedger, FinishReason, Provenance, Qualification, RunProfile, Split, UnitFinish,
 };
 use togi_sim::day_night::TrialClass;
 
@@ -981,4 +981,149 @@ fn runner_nested_machine_budget_error_is_truncation_not_harness_failure() {
     assert!(matches!(record.outcome, Outcome::Truncated { .. }));
     assert_eq!(record.outcome.observed_until_day(), 1.0);
     assert_eq!(record.exposure.observed_seconds, 0.0);
+}
+
+#[test]
+fn reclassified_restoration_witnesses_qualify_only_restored_units_without_promotion() {
+    let scenario = truth::Scenario::builtin("successor-core-interactions", 20_001).unwrap();
+    let deployed = raw(&scenario, 30);
+    let retreated = raw(&scenario, 20);
+    let stock = raw(&scenario, 0);
+    let class = &scenario
+        .daily_mix()
+        .iter()
+        .find(|block| {
+            let loaded = block.class.loaded();
+            scenario
+                .topology()
+                .iter()
+                .all(|core| loaded.contains(core.core))
+        })
+        .unwrap()
+        .class;
+    let membership = scenario
+        .topology()
+        .iter()
+        .take(3)
+        .enumerate()
+        .map(|(index, core)| PolicyUnit {
+            unit: unit_id(index).unwrap(),
+            cores: vec![core.core],
+            kind: UnitPhase::Core,
+            parent: None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(membership.len(), 3);
+    let duration = Duration::from_secs(60).min(class.duration());
+    let mut state = truth::TruthState::cold(scenario.topology()).unwrap();
+    let witnessed = active(
+        &scenario,
+        &mut state,
+        class,
+        Duration::ZERO,
+        duration,
+        deployed,
+        true,
+        None,
+    );
+    let unwitnessed = active(
+        &scenario,
+        &mut state,
+        class,
+        duration,
+        duration,
+        deployed,
+        true,
+        None,
+    );
+    let (witness, witnessed_seconds) = match &witnessed.kind {
+        ObservationKind::Active {
+            trial_id, seconds, ..
+        } => (trial_id.clone().unwrap(), seconds.observed),
+        ObservationKind::Sleep | ObservationKind::ProfileChange => unreachable!(),
+    };
+    let unwitnessed_seconds = match &unwitnessed.kind {
+        ObservationKind::Active { seconds, .. } => seconds.observed,
+        ObservationKind::Sleep | ObservationKind::ProfileChange => unreachable!(),
+    };
+    let restored = vec![membership[0].unit, membership[1].unit];
+    let steps = vec![ProfileStep {
+        id: "reclassified".to_owned(),
+        day: 2.0,
+        before: retreated,
+        after: deployed,
+        kind: StepKind::ReclassifiedRestoration {
+            retreat: "retreat".to_owned(),
+            event: "event".to_owned(),
+            reclassified_day: 1.5,
+            units: restored.clone(),
+            hold: None,
+            qualification: Some(Qualification {
+                id: "reclassified-qualification".to_owned(),
+                day: 2.0,
+                epoch: "initial".to_owned(),
+                profile: deployed,
+                stock_controls: Vec::new(),
+                fresh_witnesses: vec![witness],
+                reused_witnesses: Vec::new(),
+                safety_checks_satisfied: true,
+            }),
+            consumed_before: 1,
+            consumed_after: 0,
+            crash_vetoes: Vec::new(),
+        },
+    }];
+    let report = PolicyReport {
+        allowance: Some(AllowanceLedger {
+            limit: 2,
+            consumed: 0,
+            provisional: 0,
+            reclassified: 1,
+            exhausted_day: None,
+        }),
+        ..PolicyReport::unavailable()
+    };
+    let units = summaries(
+        &membership,
+        &report,
+        &[witnessed, unwitnessed],
+        &[],
+        &[],
+        &steps,
+        &[],
+        stock,
+    )
+    .unwrap();
+    let night_hours =
+        witnessed_seconds.as_secs_f64() / 3600.0 + unwitnessed_seconds.as_secs_f64() / 3600.0;
+    assert!(witnessed_seconds > Duration::ZERO);
+    assert_eq!(
+        units
+            .iter()
+            .map(|summary| (
+                summary.unit,
+                summary.promotions,
+                summary.qualification_launches,
+                summary.qualification_hours,
+                summary.night_hours,
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                restored[0],
+                0,
+                1,
+                witnessed_seconds.as_secs_f64() / 3600.0,
+                night_hours
+            ),
+            (
+                restored[1],
+                0,
+                1,
+                witnessed_seconds.as_secs_f64() / 3600.0,
+                night_hours
+            ),
+            (membership[2].unit, 0, 0, 0.0, night_hours),
+        ]
+    );
 }
