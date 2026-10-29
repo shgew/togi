@@ -144,6 +144,15 @@ pub fn style_for(payload: &Payload) -> Style {
         | Payload::DayFreeze(_)
         | Payload::DayInterval(_)
         | Payload::DayImported(_)
+        | Payload::UnitMapping(_)
+        | Payload::UnitEdge(_)
+        | Payload::ClimbDecision(_)
+        | Payload::UnitStop(_)
+        | Payload::CampaignStart(_)
+        | Payload::CampaignCharge(_)
+        | Payload::CampaignReclassified(_)
+        | Payload::FirmwareRestoration(_)
+        | Payload::SuccessorImported(_)
         | Payload::StateRebuilt(_) => Style::Plain,
     }
 }
