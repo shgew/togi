@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 
 use togi_journal::{Activity, HoldReason, Queue, Resolution, StepKind, TaskId, TaskStatus, Tested};
-use togi_machine::CcdProfile;
+use togi_tuner::unit::{UnitId, UnitProfile};
 use togi_tuner::policy::{FirmwareValidity, NightProjection, Projection};
 
 use super::super::colours::Paint;
@@ -93,16 +93,19 @@ pub(super) fn activity_label(activity: Activity, task: Option<TaskId>) -> Option
 }
 
 /// A CCD profile as words: `CCD 0 at -10, CCD 1 at -5`.
-pub(super) fn profile_words(profile: &CcdProfile) -> String {
+pub(super) fn profile_words(profile: &UnitProfile) -> String {
     profile
         .iter()
-        .map(|(ccd, offset)| format!("CCD {} at {}", ccd.get(), offset.get()))
+        .map(|(unit, offset)| match unit {
+            UnitId::Ccd(ccd) => format!("CCD {} at {}", ccd.get(), offset.get()),
+            UnitId::Core(core) => format!("core {} at {}", core.get(), offset.get()),
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
 
 /// A CCD profile as its offsets: `-10/-5`.
-pub(super) fn profile_offsets(profile: &CcdProfile) -> String {
+pub(super) fn profile_offsets(profile: &UnitProfile) -> String {
     profile
         .iter()
         .map(|(_, offset)| offset.get().to_string())
@@ -155,14 +158,14 @@ pub(super) fn is_filler(task: Option<TaskId>) -> bool {
 }
 
 /// The CCD profile a trial runs at, from its intent's per-core offsets; `None` when no core of it has a known CCD.
-pub(super) fn trial_profile(scene: &Scene<'_>, trial: &TrialView) -> Option<CcdProfile> {
+pub(super) fn trial_profile(scene: &Scene<'_>, trial: &TrialView) -> Option<UnitProfile> {
     let mut ccds = std::collections::BTreeMap::new();
     for (core, offset) in trial.profile.iter() {
         if let Some(view) = scene.s.cores.iter().find(|view| view.id == core) {
-            ccds.entry(view.ccd).or_insert(offset);
+            ccds.entry(UnitId::Ccd(view.ccd)).or_insert(offset);
         }
     }
-    CcdProfile::try_from(ccds).ok()
+    UnitProfile::try_from(ccds).ok()
 }
 
 /// The profile an exact trial is named by: a filler repeat by the profile the trial actually runs, any other trial
@@ -171,7 +174,7 @@ pub(super) fn exact_profile<'s>(
     scene: &'s Scene<'_>,
     trial: &TrialView,
     task: Option<TaskId>,
-) -> Option<Cow<'s, CcdProfile>> {
+) -> Option<Cow<'s, UnitProfile>> {
     if is_filler(task) {
         trial_profile(scene, trial).map(Cow::Owned)
     } else {
@@ -191,7 +194,7 @@ fn filler_purpose(
     activity: Activity,
     task: Option<TaskId>,
     tested: Option<Tested>,
-    profile: Option<&CcdProfile>,
+    profile: Option<&UnitProfile>,
     task_part: &str,
 ) -> Option<(String, String)> {
     if !is_filler(task) {
@@ -264,7 +267,7 @@ fn purpose(
     activity: Activity,
     task: Option<TaskId>,
     tested: Option<Tested>,
-    profile: Option<&CcdProfile>,
+    profile: Option<&UnitProfile>,
 ) -> (String, String) {
     let task_part = task.map_or_else(String::new, |task| format!(" ({})", task_words(task)));
     if let Some(said) = filler_purpose(activity, task, tested, profile, &task_part) {

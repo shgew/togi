@@ -1,11 +1,16 @@
 use std::collections::BTreeMap;
 
 use togi_journal::Seq;
-use togi_machine::{CcdId, CcdProfile, CoreId, CoreInfo, CoreSet, CpuId, TargetOffset};
+use togi_machine::{CcdId, CoreId, CoreInfo, CoreSet, CpuId, TargetOffset};
 use togi_tuner::{HonestChain, Topology};
+use togi_tuner::unit::{UnitId, UnitProfile, Units};
 
 pub(crate) fn ccd(id: u8) -> CcdId {
     CcdId::try_from(id).unwrap()
+}
+
+pub(crate) fn unit(id: u8) -> UnitId {
+    UnitId::Ccd(ccd(id))
 }
 
 pub(crate) fn core(id: u8) -> CoreId {
@@ -54,13 +59,14 @@ pub(crate) fn machine(ccds: u8, per_ccd: u8) -> Machine {
     }
 }
 
-pub(crate) fn profile(offsets: &[i64]) -> CcdProfile {
-    let zero = CcdProfile::zero((0..).map(ccd).take(offsets.len())).unwrap();
+pub(crate) fn profile(offsets: &[i64]) -> UnitProfile {
+    let machine = machine(u8::try_from(offsets.len()).unwrap(), 1);
+    let zero = UnitProfile::zero(&Units::coarse(&machine.topology));
     offsets
         .iter()
         .zip(0..)
         .fold(zero, |profile, (&counts, id)| {
-            profile.with(ccd(id), offset(counts))
+            profile.with(unit(id), offset(counts))
         })
 }
 

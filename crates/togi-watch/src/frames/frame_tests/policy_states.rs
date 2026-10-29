@@ -175,6 +175,6 @@ fn a_retried_re_qualification_says_so() {
 #[test]
 fn a_ccd_the_tuner_has_no_state_for_says_so() {
     let mut hand = Staged::Between.hand();
-    hand.policy.ccds.clear();
+    hand.policy.units.clear();
     assert_shows(&shown(&hand), "no tuner state for this CCD yet");
 }
