@@ -15,6 +15,7 @@ use togi_machine::{
 use crate::random::{self, Domain};
 
 mod scenarios;
+pub mod successor;
 pub use scenarios::SCENARIO_IDS;
 
 const HOUR: f64 = 3600.0;
