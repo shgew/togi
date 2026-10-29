@@ -3,8 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use togi_journal::{ApplyCause, Event, Payload, RateBound, Slope};
-use togi_machine::{CcdProfile, ObservedOffset, PerCore};
+use togi_machine::{CcdProfile, ObservedOffset, PerCore, TargetOffset};
 use togi_tuner::policy::{CapReason, EvidenceProfile, Projection, State};
+use togi_tuner::unit::{UnitId, UnitProfile};
 
 use super::policy::{evidence_class_word as class_word, hours};
 use crate::table::wrap;
@@ -13,19 +14,33 @@ fn line(out: &mut String, text: &str) {
     wrap(out, "", "  ", text);
 }
 
-fn profile_word(profile: &CcdProfile) -> String {
+fn profile_word(profile: &UnitProfile) -> String {
+    profile_words(profile.iter())
+}
+
+fn ccd_profile_word(profile: &CcdProfile) -> String {
+    profile_words(
+        profile
+            .iter()
+            .map(|(ccd, offset)| (UnitId::Ccd(ccd), offset)),
+    )
+}
+
+fn profile_words(profile: impl Iterator<Item = (UnitId, TargetOffset)>) -> String {
     profile
-        .iter()
-        .map(|(ccd, offset)| format!("CCD {ccd} {}", offset.get()))
+        .map(|(unit, offset)| match unit {
+            UnitId::Ccd(ccd) => format!("CCD {ccd} {}", offset.get()),
+            UnitId::Core(core) => format!("core {core} {}", offset.get()),
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
 
-fn offsets(profile: &CcdProfile, policy: &Projection) -> PerCore<ObservedOffset> {
+fn offsets(profile: &UnitProfile, policy: &Projection) -> PerCore<ObservedOffset> {
     let mut offsets = PerCore::default();
-    for ccd in &policy.ccds {
-        if let Some(offset) = profile.get(ccd.ccd) {
-            for core in ccd.cores {
+    for unit in &policy.units {
+        if let Some(offset) = profile.get(unit.unit) {
+            for core in unit.cores {
                 offsets.set(core, offset.observed());
             }
         }
@@ -103,13 +118,13 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, sta
     );
 
     out.push_str("\nCap calculation witnesses\n");
-    for ccd in &policy.ccds {
-        let Some(evidence) = &ccd.evidence else {
+    for unit in &policy.units {
+        let Some(evidence) = &unit.evidence else {
             line(
                 out,
                 &format!(
                     "CCD {}: current evidence context unavailable; no inferred rate or eligible hours",
-                    ccd.ccd
+                    unit.unit
                 ),
             );
             continue;
@@ -118,7 +133,7 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, sta
             out,
             &format!(
                 "CCD {}: current read-only calculation S {}; {}; {}",
-                ccd.ccd,
+                unit.unit,
                 evidence.offset.get(),
                 evidence.reason.label(),
                 slope_word(evidence.slope)
@@ -151,7 +166,7 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, sta
             }
             CapReason::NoAdequateClass | CapReason::UnknownEdge | CapReason::NoJustifiedDecay => {}
         }
-        if let Some(cap) = &ccd.cap {
+        if let Some(cap) = &unit.cap {
             line(
                 out,
                 &format!(
@@ -320,7 +335,7 @@ fn applications(out: &mut String, events: &[Event]) {
                     "[#{}] {}: {}; verified application {} ({cause})",
                     event.seq,
                     event.time,
-                    profile_word(applied.target.ccd()),
+                    ccd_profile_word(applied.target.ccd()),
                     applied.application.0
                 ),
             );
@@ -331,12 +346,14 @@ fn applications(out: &mut String, events: &[Event]) {
     }
 }
 
-fn observations(out: &mut String, events: &[Event], profile: Option<&CcdProfile>) {
+fn observations(out: &mut String, events: &[Event], profile: Option<&UnitProfile>) {
     out.push_str("\nNight exposure provenance\n");
     let mut seen = BTreeSet::new();
     for event in events {
         if let Payload::ExposureObserved(observed) = &event.payload {
-            if !observed.profile.ccd().is_zero() && profile != Some(observed.profile.ccd()) {
+            if !observed.profile.ccd().is_zero()
+                && !profile.is_some_and(|profile| profile.matches_ccd(observed.profile.ccd()))
+            {
                 continue;
             }
             if !seen.insert((observed.source.session, observed.source.seq)) {
@@ -347,7 +364,7 @@ fn observations(out: &mut String, events: &[Event], profile: Option<&CcdProfile>
                 &format!(
                     "[#{}] {}: {} eligible s, {:?}, {:?}; source session {} #{}; epoch {}; {}",
                     event.seq,
-                    profile_word(observed.profile.ccd()),
+                    ccd_profile_word(observed.profile.ccd()),
                     observed.eligible_s,
                     observed.activity,
                     observed.origin,
@@ -366,7 +383,7 @@ fn observations(out: &mut String, events: &[Event], profile: Option<&CcdProfile>
 
 /// Format the tuner's comparable witness pairs. Missing clocks/temperatures stay unknown rather
 /// than becoming zero or an uplift.
-fn comparisons(out: &mut String, events: &[Event], profile: Option<&CcdProfile>, state: &State) {
+fn comparisons(out: &mut String, events: &[Event], profile: Option<&UnitProfile>, state: &State) {
     out.push_str("\nComparable same-class night clocks and temperatures\n");
     let Some(profile) = profile.filter(|profile| !profile.is_zero()) else {
         line(
@@ -536,7 +553,7 @@ mod tests {
         for event in events {
             state.fold(event).unwrap();
         }
-        comparisons(out, events, Some(profile), &state);
+        comparisons(out, events, Some(&UnitProfile::of_ccd(profile)), &state);
     }
 
     #[test]

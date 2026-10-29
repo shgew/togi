@@ -10,7 +10,7 @@ use togi_journal::{
     PlannedTask, QualificationPurpose, QualificationState, ReproductionState, Resolution, Seq,
     Slope, TaskId, TaskStatus, UnavailableBackend, UncoveredClass, VetoState,
 };
-use togi_machine::{BootId, CoreSet, TargetOffset};
+use togi_machine::{BootId, CcdId, CoreSet, TargetOffset};
 
 use super::State;
 use super::ledger::{Sig, saturating_u32};
@@ -237,9 +237,9 @@ pub struct Projection {
 /// Which recorded profile an expanded evidence reader should inspect.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EvidenceProfile<'a> {
-    Applied(&'a CcdProfile),
-    NightQualified(&'a CcdProfile),
-    Baseline(&'a CcdProfile),
+    Applied(&'a UnitProfile),
+    NightQualified(&'a UnitProfile),
+    Baseline(&'a UnitProfile),
 }
 
 impl Projection {

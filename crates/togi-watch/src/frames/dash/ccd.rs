@@ -264,7 +264,11 @@ pub(super) fn facts_line(scene: &Scene<'_>, ccd: &UnitProjection, width: usize) 
 }
 
 /// The cap owner's eligible mapping witness hours and gaps; non-mapping exposure is not coverage.
-pub(super) fn coverage_line(scene: &Scene<'_>, ccd: &UnitProjection, width: usize) -> Line<'static> {
+pub(super) fn coverage_line(
+    scene: &Scene<'_>,
+    ccd: &UnitProjection,
+    width: usize,
+) -> Line<'static> {
     let text = |value: String| Line::from(scene.paint(Paint::Grey, value));
     let (full, short) = match &ccd.evidence {
         Some(evidence) => {

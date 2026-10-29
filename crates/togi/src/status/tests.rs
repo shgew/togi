@@ -554,7 +554,7 @@ fn current_cap_calculation_is_distinct_from_the_committed_cap() {
         uncovered: Vec::new(),
         slope_inputs: Vec::new(),
     });
-    policy.ccds.push(ccd);
+    policy.units.push(ccd);
     let out = shown(&policy, UTC);
     let flat = out.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(

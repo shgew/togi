@@ -729,11 +729,11 @@ fn measured() -> Journal {
     assert_eq!(cap_of(&journal, 0), 0);
     let projected = journal.state.project();
     assert_eq!(
-        projected.ccds[0].evidence.as_ref().unwrap().reason,
+        projected.units[0].evidence.as_ref().unwrap().reason,
         togi_tuner::policy::CapReason::NoJustifiedDecay
     );
     assert!(
-        !projected.ccds[0]
+        !projected.units[0]
             .evidence
             .as_ref()
             .unwrap()
@@ -943,7 +943,7 @@ fn a_trial_killed_before_its_start_adds_no_class_to_the_caps() {
 fn read_only_projection_distinguishes_missing_mapping_exposure_from_unknown_edge() {
     let mut journal = Journal::ready();
     assert_eq!(
-        journal.state.project().ccds[0]
+        journal.state.project().units[0]
             .evidence
             .as_ref()
             .unwrap()
@@ -962,10 +962,10 @@ fn read_only_projection_distinguishes_missing_mapping_exposure_from_unknown_edge
     let before = serde_json::to_value(&journal.state).unwrap();
     let projected = journal.state.project();
     assert_eq!(
-        projected.ccds[0].evidence.as_ref().unwrap().reason,
+        projected.units[0].evidence.as_ref().unwrap().reason,
         togi_tuner::policy::CapReason::UnknownEdge
     );
-    let evidence = projected.ccds[0].evidence.as_ref().unwrap();
+    let evidence = projected.units[0].evidence.as_ref().unwrap();
     assert!(!evidence.cells.is_empty());
     assert!(evidence.cells[0].eligible_s > 0);
     assert_eq!(evidence.cells.len(), evidence.projected.len());
@@ -987,7 +987,7 @@ fn a_zero_exposure_interruption_adds_no_slope_input() {
                 return journal
                     .state
                     .project()
-                    .ccds
+                    .units
                     .into_iter()
                     .map(|ccd| ccd.evidence)
                     .collect::<Vec<_>>();
@@ -1005,7 +1005,7 @@ fn qualification_projection_reports_measured_seconds_once_not_completed_cell_cou
     let qualification = projected
         .qualifications
         .iter()
-        .find(|record| record.profile == profile)
+        .find(|record| record.profile.matches_ccd(&profile))
         .unwrap();
     assert_eq!(
         qualification.eligible_s,

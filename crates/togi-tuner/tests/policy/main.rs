@@ -293,8 +293,8 @@ fn the_projection_names_the_units_the_day_and_the_running_task() {
             {"unit": {"Ccd": 1}, "cores": json["units"][1]["cores"], "edge": null, "cap": null, "evidence": json["units"][1]["evidence"], "day": 0, "remaining": null},
         ])
     );
-    for ccd in json["ccds"].as_array().unwrap() {
-        let evidence = &ccd["evidence"];
+    for unit in json["units"].as_array().unwrap() {
+        let evidence = &unit["evidence"];
         let uncovered = evidence["uncovered"].as_array().unwrap();
         assert!(!uncovered.is_empty(), "{evidence}");
         for gap in uncovered {
@@ -409,11 +409,15 @@ fn comparable_exposures_use_the_latest_distinct_stock_witness() {
     journal.append(stock.into(), &[]);
     assert_ne!(first, newer_seq);
     assert_eq!(
-        journal.state.comparable_exposures(&profile),
+        journal
+            .state
+            .comparable_exposures(&togi_tuner::UnitProfile::of_ccd(&profile)),
         vec![(selected_seq, newer_seq)]
     );
     assert_eq!(
-        journal.state.comparable_exposures(&fixture::zero()),
+        journal
+            .state
+            .comparable_exposures(&togi_tuner::UnitProfile::of_ccd(&fixture::zero())),
         Vec::new()
     );
 }
