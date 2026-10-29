@@ -30,9 +30,7 @@ impl Bench {
         let bench = Self {
             tree: common::Tree::new(),
             calls: Arc::new(AtomicUsize::new(0)),
-            events: session::session(&togi_sim::MachineDefinition::default(), 1, None, 1000)
-                .events
-                .into(),
+            events: session::concluded().into(),
         };
         bench.write(bench.path("suite.json"), r#"{"scenarios":[{"name":"default","dev":[1,2,3],"holdout":[101]},{"name":"late","dev":[1]}]}"#);
         bench

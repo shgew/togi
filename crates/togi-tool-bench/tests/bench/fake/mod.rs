@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use togi_journal::Event;
-use togi_sim::MachineDefinition;
 use togi_tool_bench::{Options, Selection, Tree};
 
 use crate::session;
@@ -20,7 +19,7 @@ impl ProcessBench {
         let bench = Self {
             dir: tempfile::tempdir().unwrap(),
         };
-        bench.journal(&session::session(&MachineDefinition::default(), 1, None, 1000).events);
+        bench.journal(&session::concluded());
         fs::write(
             bench.path("suite.json"),
             r#"{"scenarios":[{"name":"default","dev":[1,2,3],"holdout":[101]},{"name":"late","dev":[1]}]}"#,

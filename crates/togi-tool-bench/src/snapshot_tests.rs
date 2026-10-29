@@ -32,17 +32,28 @@ fn hunting() -> MachineDefinition {
     .unwrap()
 }
 
-fn generated(seed: u64, cores: i64) -> (Vec<Event>, MachineDefinition) {
-    generated_from(
+fn generated(
+    seed: u64,
+    cores: i64,
+    minutes: i64,
+    crashing: bool,
+) -> (Vec<Event>, MachineDefinition) {
+    let definition = if crashing {
+        hunting()
+    } else {
         MachineDefinition {
             cores,
             ..MachineDefinition::default()
-        },
-        seed,
-    )
+        }
+    };
+    generated_from(definition, seed, SignedDuration::from_mins(minutes))
 }
 
-fn generated_from(definition: MachineDefinition, seed: u64) -> (Vec<Event>, MachineDefinition) {
+fn generated_from(
+    definition: MachineDefinition,
+    seed: u64,
+    duration: SignedDuration,
+) -> (Vec<Event>, MachineDefinition) {
     let simulator = Simulator::new(
         Model::new(&definition, seed).unwrap(),
         RunSettings {
@@ -51,7 +62,7 @@ fn generated_from(definition: MachineDefinition, seed: u64) -> (Vec<Event>, Mach
         },
     )
     .unwrap();
-    let night_end = simulator.now() + SignedDuration::from_hours(8);
+    let night_end = simulator.now() + duration;
     let persistence = Persistence::Memory(MemFs::new());
     simulate(SimInput {
         config: Config::default(),
@@ -114,9 +125,10 @@ proptest! {
     #[test]
     fn snapshot_plus_random_tail_equals_full_replay_for_every_reader(
         seed in any::<u64>(), cores in prop::sample::select(vec![4_i64, 6]),
+        minutes in 15_i64..91, crashing in any::<bool>(),
         cuts in prop::collection::vec(any::<usize>(), 1..5),
     ) {
-        let (events, definition) = generated(seed, cores);
+        let (events, definition) = generated(seed, cores, minutes, crashing);
         let full = ReadState::replay(&events).unwrap();
         let model = Model::new(&definition, seed).unwrap();
         let measured = measure(&events, &model, None).unwrap();
@@ -147,7 +159,7 @@ proptest! {
 #[test_case::test_case(false; "shutdown")]
 #[test_case::test_case(true; "detected crash")]
 fn snapshot_then_config_reload_has_the_same_cleared_trial_end_as_full_replay(crash: bool) {
-    let (events, _) = generated_from(hunting(), 1);
+    let (events, _) = generated_from(hunting(), 1, SignedDuration::from_hours(8));
     let cut = events
         .iter()
         .rposition(|event| {

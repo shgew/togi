@@ -136,7 +136,7 @@ fn real_process_kept_runs_are_named_on_stderr() {
 #[test]
 fn real_process_a_run_that_breaks_an_audit_check_fails_the_bench_and_is_named() {
     let bench = Bench::new();
-    let events = session::session(&session::hunting(), 1, None, 2).events;
+    let events = session::unfinished();
     let seq = events.last().unwrap().seq;
     bench.journal(&events);
     let mut command = bench_command(&bench);

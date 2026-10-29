@@ -35,6 +35,8 @@ The default recovery witnesses in `togi-session` cover interrupted failure attri
 
 The two exhaustive session cut sweeps and the long runner warm/cold matrix are excluded by nextest's default filter in both local and CI profiles. The `nextest-recovery` flake check selects those excluded tests from `togi-session` and `togi-simrun`, one test at a time, with two inner cut workers. It is CI tier: PR CI and release run it, while the local gate, check and review-fix paths skip it. Run `just recovery` to build it explicitly. The full-window sweep assertions remain unchanged; this changes the frequency of exhaustive evidence, not its scope.
 
+The bench's orchestration and real-process tests use a simulated history through the first ended trial, with a command shutdown for successful fake commands and the same prefix without shutdown for censored runs. The snapshot cross-reader property generates bounded nights of fifteen to ninety minutes with varied seeds, core counts, stable/crashing machines and snapshot cuts; crash/reload and boot-cap measurement tests retain the longer histories their assertions need. These fixtures still exercise journal parsing, snapshot sealing, replay, measurement and audit rather than replacing those stages.
+
 ## Crates and toolchain
 
 A new crate needs a `Cargo.toml` with `[lints] workspace = true`. The `productCrates` closure in `flake.nix` discovers dependencies of `togi`, `togi-simrun` and `togi-watchtest`; register an unshipped crate outside that closure in `toolCrates`. Evaluation rejects missing, repeated or unknown registrations. Register fixtures read outside `crates/` in `crateFixtures` there, for the crate whose tests read them. The exact toolchain in `rust-toolchain.toml` changes only in its own pull request.

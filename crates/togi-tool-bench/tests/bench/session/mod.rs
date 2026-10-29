@@ -3,13 +3,13 @@ use std::num::NonZeroU32;
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use togi_config::Config;
-use togi_journal::{Build, Event, FixStamp, MemFs, SCHEMA};
+use togi_journal::{Build, Event, FixStamp, MemFs, Payload, SCHEMA, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
 use togi_session::ConfigSource;
 use togi_sim::replay::Replay;
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
-use togi_simrun::{Persistence, SimInput, SimOutcome, events, simulate};
+use togi_simrun::{Observe, Observer, Persistence, SimInput, SimOutcome, events, simulate};
 
 /// A whole simulated session and the journal it left, kept in memory.
 pub(crate) struct Session {
@@ -22,6 +22,16 @@ pub(crate) fn session(
     seed: u64,
     replay: Option<Replay>,
     max_boots: u32,
+) -> Session {
+    session_with(definition, seed, replay, max_boots, None)
+}
+
+fn session_with(
+    definition: &MachineDefinition,
+    seed: u64,
+    replay: Option<Replay>,
+    max_boots: u32,
+    observer: Option<Observer>,
 ) -> Session {
     let simulator = Simulator::new(
         Model::new(definition, seed).unwrap(),
@@ -57,7 +67,7 @@ pub(crate) fn session(
         renderer: Renderer::default(),
         zone: TimeZone::UTC,
         cancel: CancellationToken::new(),
-        observer: None,
+        observer,
         dump_to: None,
     })
     .unwrap();
@@ -65,6 +75,42 @@ pub(crate) fn session(
         events: events(&persistence).unwrap(),
         outcome,
     }
+}
+
+/// A short real trial history for fake commands that finish successfully.
+/// Command completion, unlike an early signal, is a deterministic, cacheable outcome.
+pub(crate) fn concluded() -> Vec<Event> {
+    let mut events = brief(&MachineDefinition::default(), 1).events;
+    let Payload::Shutdown(shutdown) = &mut events.last_mut().unwrap().payload else {
+        panic!("the short night must shut down");
+    };
+    assert_eq!(shutdown.reason, ShutdownReason::Signal);
+    shutdown.reason = ShutdownReason::Command;
+    events
+}
+
+/// The same valid recording without its terminal shutdown, for censored/termination checks.
+pub(crate) fn unfinished() -> Vec<Event> {
+    let mut events = concluded();
+    events.pop().unwrap();
+    events
+}
+
+/// Stop after one ended trial: the measurement and process contracts do not need a whole night.
+pub(crate) fn brief(definition: &MachineDefinition, seed: u64) -> Session {
+    session_with(
+        definition,
+        seed,
+        None,
+        1000,
+        Some(Box::new(|event| {
+            if matches!(event.payload, Payload::TrialEnd(_)) {
+                Observe::Stop
+            } else {
+                Observe::Continue
+            }
+        })),
+    )
 }
 
 /// Four cores that crash once a trial pushes them past their limits at -10: a Ruleset 13 night needs a neighbour on
