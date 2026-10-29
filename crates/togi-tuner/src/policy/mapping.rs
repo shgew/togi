@@ -464,11 +464,9 @@ impl State {
             let committed = self.nights.unit_edges.get(&unit).filter(|committed| {
                 &committed.payload.firmware == firmware
                     && committed.payload.epoch == crate::EVIDENCE_EPOCH
-                    && self
-                        .machine
-                        .context_since
-                        .is_none_or(|since| committed.seq >= since)
             });
+            // Replay already filters U's witnesses by workload context. Unknown has no positive
+            // evidence to invalidate; a speculative content query must not recommit it forever.
             let old = committed.map_or(Edge::Unknown {}, |committed| committed.payload.new.clone());
             if committed.is_some() && edge == old {
                 return None;

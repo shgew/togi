@@ -11,7 +11,7 @@ use togi_journal::{
 use togi_machine::{Backend, BootId, CoreId, CoreSet, PerCore, Regime};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::night::{PackageLoad, Roles};
-use togi_tuner::policy::{Action, DayQuery, EndReason, Params, TrialPlan};
+use togi_tuner::policy::{DayQuery, EndReason, Params, TrialPlan};
 
 use crate::fixture::{Ending, Journal, at, cores, cores_per_ccd};
 
@@ -351,6 +351,28 @@ fn unknown_edges_are_committed_without_a_ceiling_before_the_descent_completes() 
     }
 }
 
+#[test]
+fn a_backend_change_invalidates_edges_without_repeating_unknown_commitments() {
+    let mut journal = Journal::ready();
+    journal.until_filler(|_| Ending::Pass);
+    let from = journal.events.len();
+    journal.rebuild(crate::fixture::rebuilt());
+    let plan = journal.until_trial(journal.now());
+    assert_eq!(plan.activity, Activity::Control);
+    let edges: Vec<_> = journal.events[from..]
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::UnitEdge(edge) => Some(edge),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(edges.len(), 2);
+    for edge in edges {
+        assert_eq!(edge.new, togi_journal::Edge::Unknown {});
+        assert_eq!(edge.ceiling, None);
+    }
+}
+
 #[test_case(-30, -25; "observed_deep_edge")]
 #[test_case(-4, 0; "observed_near_stock_edge")]
 fn isolated_failures_commit_the_observed_unit_edge_and_its_ceiling(u: i64, c: i64) {
@@ -496,14 +518,11 @@ fn switching_away_from_a_qualification_task_commits_its_progress_first() {
 
 #[test]
 fn no_query_before_a_night_owes_a_closure() {
-    let journal = Journal::ready();
-    let Ok(Action::Decide(decision)) = journal.next(at(100)) else {
-        panic!("expected the opening plan");
-    };
-    let Payload::NightPlan(plan) = Payload::from(decision.payload) else {
-        panic!("expected a night.plan");
-    };
-    assert_eq!(plan.night, None);
+    let mut journal = Journal::ready();
+    journal.until_trial(at(100));
+    let plans = plans_since(&journal, 0);
+    assert_eq!(plans.first().map(|(night, _)| *night), Some(None));
+    assert_eq!(journal.state.project().night.unwrap().closed_by, None);
 }
 
 #[test]
