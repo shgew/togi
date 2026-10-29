@@ -162,6 +162,8 @@ pub struct NightProjection {
 /// The `tuner` key of `state.json` and what `status` and `watch` read.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Projection {
+    #[serde(default)]
+    pub climb: super::ClimbProjection,
     pub applied: Option<UnitProfile>,
     pub units: Vec<UnitProjection>,
     pub day: DayProjection,
@@ -204,6 +206,7 @@ impl State {
             .as_ref()
             .map(|history| history.current().profile.clone());
         Projection {
+            climb: super::ClimbProjection::default(),
             units: self.unit_projections(applied.as_ref()),
             applied,
             day: self.day_projection(),
