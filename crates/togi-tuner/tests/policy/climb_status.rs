@@ -149,3 +149,79 @@ fn status_lists_the_predecessor_veto_the_tuner_enforces_under_its_original_ident
     assert!(held, "the hold names the imported veto: {committed:?}");
     assert_eq!(journal.state.project().vetoes, vec![expected]);
 }
+
+/// A certified candidate promoted at its cold boot, then a later boot whose record lands `age_s` after the
+/// certificate completed, with no decision between them.
+fn aged_certificate(age_s: i64) -> Journal {
+    let (mut journal, _) = Journal::qualified_compact_after(|journal| {
+        let predecessor: togi_journal::SessionId = "20231101T000000Z".parse().unwrap();
+        journal.append(
+            togi_journal::CampaignStart {
+                campaign: togi_journal::CampaignId(togi_journal::Provenance {
+                    session: predecessor,
+                    seq: togi_journal::Seq::FIRST,
+                }),
+                allowance: 2,
+                origin: togi_journal::CampaignOrigin::Successor {
+                    sources: Vec::new(),
+                },
+                history: togi_journal::CampaignHistory::Complete {},
+            }
+            .into(),
+            &[],
+        );
+    });
+    let completed = journal
+        .events
+        .iter()
+        .rev()
+        .find_map(|event| match &event.payload {
+            Payload::NightQualification(record)
+                if matches!(record.state, togi_journal::QualificationState::Complete { .. }) =>
+            {
+                Some(event.time)
+            }
+            _ => None,
+        })
+        .expect("the candidate was certified");
+    let mut first = cold_boot("day1", 60_000);
+    first.now = journal.now();
+    journal.settle_day(&first);
+    let target = completed.as_second() + age_s;
+    journal.advance(target - journal.now().as_second());
+    journal.boot_start("day2");
+    assert_eq!(journal.events.last().unwrap().time.as_second(), target);
+    journal
+}
+
+#[test_case::test_case(24 * 3_600, false; "a day after")]
+#[test_case::test_case(30 * 24 * 3_600 - 1, false; "one second inside the month the certificate stands")]
+#[test_case::test_case(30 * 24 * 3_600, true; "at the month the certificate no longer qualifies")]
+#[test_case::test_case(45 * 24 * 3_600, true; "long after it")]
+fn a_boot_after_the_certificates_month_holds_its_unit_though_no_decision_followed(
+    age_s: i64,
+    held: bool,
+) {
+    let mut journal = aged_certificate(age_s);
+    let states: Vec<_> = journal
+        .state
+        .project()
+        .climb
+        .units
+        .iter()
+        .map(|unit| (unit.unit.clone(), unit.state.clone()))
+        .collect();
+    let shown = journal.state.project().climb.units.iter().any(|unit| {
+        matches!(unit.state, ClimbUnitState::Held { .. })
+            && unit.unit == togi_tuner::UnitId::Ccd(crate::fixture::ccd(0))
+    });
+    // What the day itself decides at that boot.
+    let mut query = cold_boot("day2", 60_000);
+    query.now = journal.now();
+    let committed = journal.settle_day(&query);
+    let promoted = committed.iter().any(|payload| {
+        matches!(payload, Payload::ClimbDecision(record) if matches!(record.decision, ClimbAction::Promote { .. }))
+    });
+    assert!(!(held && promoted), "an expired certificate promoted: {committed:?}");
+    assert_eq!(shown, held, "{states:?}");
+}

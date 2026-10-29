@@ -331,12 +331,24 @@ fn one_retreat_across_several_units_restores_them_together_in_one_proposal() {
     // Ruleset 14 promotes one unit per step; a single retreat may still undo several units'
     // steps, and its restoration returns them together instead of one unit per proposal.
     let mut f = Fixture::new(coarse());
-    f.advance();
-    f.advance();
+    for _ in 0..4 {
+        f.advance();
+    }
+    f.event("first", cpu());
+    f.apply_retreat(&[-10, -5]);
     let original = f.history.current().clone();
-    f.event("both", cpu());
+    f.event("second", cpu());
     f.apply_retreat(&[-5, 0]);
-    f.events[0].class = Classification::NonCpu;
+    let retreat = f.history.retreats().last().unwrap();
+    assert!(
+        original
+            .iter()
+            .all(|(unit, depth)| retreat.after.get(unit) != Some(depth)),
+        "the retreat must undo both units"
+    );
+    for event in &mut f.events {
+        event.class = Classification::NonCpu;
+    }
     let owed = climb::restoration_candidate(&f.history, &f.events)
         .unwrap()
         .unwrap();

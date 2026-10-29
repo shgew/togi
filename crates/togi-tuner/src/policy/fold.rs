@@ -55,6 +55,7 @@ impl State {
             self.observe_raw_campaign(event.time)?;
         }
         self.last = Some(event.seq);
+        self.last_time = self.last_time.max(Some(event.time));
         Ok(())
     }
 

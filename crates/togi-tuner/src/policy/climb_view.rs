@@ -19,30 +19,12 @@ use togi_journal::{self as journal, Seq};
 impl State {
     /// What blocks the next cold-boot decision now, by the same decision the day owes: `None` when it would
     /// not hold. The committed decisions are history; a night that maps an edge or completes a certificate
-    /// after the last one changes the blockers without a new decision. The clock is the latest committed
-    /// time, since a projection reads only the journal.
+    /// after the last one changes the blockers without a new decision. The clock is the latest time any
+    /// committed record carries, since a projection reads only the journal: a certificate older than its
+    /// month by then no longer qualifies, as the day itself would refuse it.
     fn current_climb_blockers(&self) -> Option<Vec<journal::ClimbBlocker>> {
         let view = self.day_view().ok()?;
-        let now = self
-            .climb
-            .decisions
-            .values()
-            .next_back()
-            .map(|commit| commit.time)
-            .into_iter()
-            .chain(
-                self.days
-                    .applications
-                    .last()
-                    .map(|application| application.time),
-            )
-            .chain(
-                self.qualification_records()
-                    .iter()
-                    .map(|record| record.latest.time),
-            )
-            .max()
-            .unwrap_or(jiff::Timestamp::MIN);
+        let now = self.last_time.unwrap_or(jiff::Timestamp::MIN);
         let plan = self
             .climb_decision(
                 &view,

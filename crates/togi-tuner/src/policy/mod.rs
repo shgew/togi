@@ -105,6 +105,9 @@ pub struct State {
     params: Params,
     /// The last folded position; earlier events replay as no-ops.
     last: Option<Seq>,
+    /// The latest time any folded event carried: the clock a projection reads, which has no wall clock.
+    #[serde(default)]
+    last_time: Option<jiff::Timestamp>,
     machine: Machine,
     trials: Trials,
     ledger: Ledger,
@@ -154,6 +157,7 @@ impl State {
         Self {
             params,
             last: None,
+            last_time: None,
             machine: Machine::default(),
             trials: Trials::default(),
             ledger: Ledger::default(),

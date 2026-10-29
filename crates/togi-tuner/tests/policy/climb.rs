@@ -378,6 +378,85 @@ fn a_requalification_failure_cut_before_its_derived_event_blocks_the_successor()
 }
 
 #[test]
+fn a_requalification_failure_cut_before_its_failed_qualification_blocks_the_successor() {
+    let source = requalification_failed();
+    let exposure = source
+        .events
+        .iter()
+        .position(|event| matches!(&event.payload, Payload::ExposureObserved(observed) if observed.outcome == togi_journal::Outcome::Failure && matches!(observed.tested, togi_journal::Tested::Exact {})))
+        .unwrap();
+    let failed = source
+        .events
+        .iter()
+        .position(|event| matches!(&event.payload, Payload::NightQualification(record) if matches!(record.state, togi_journal::QualificationState::Failed { .. })))
+        .unwrap();
+    assert!(exposure < failed);
+    // The session was reset after the conclusive failure of D and before its qualification concluded: the
+    // imported qualification is still open and nothing derived from the failure exists.
+    let cut = &source.events[..=exposure];
+    assert!(cut.iter().any(|event| matches!(&event.payload, Payload::NightQualification(record) if record.purpose == togi_journal::QualificationPurpose::Requalification && matches!(record.state, togi_journal::QualificationState::Start { .. }))));
+    assert!(!cut.iter().any(|event| matches!(&event.payload, Payload::NightQualification(record) if matches!(record.state, togi_journal::QualificationState::Failed { .. }))));
+    let successor = successor_of(cut);
+    let history = successor.state.project().climb.campaign.unwrap().history;
+    assert!(
+        matches!(history, CampaignHistory::Unreconstructible { .. }),
+        "{history:?}"
+    );
+}
+
+/// D after its monthly re-qualification passed, then a conclusive failure of a filler re-run of D's
+/// exact cells, with the derived `day.event` the night then wrote.
+fn filler_failed() -> Journal {
+    let (mut journal, _) = promoted();
+    journal.advance(31 * 24 * 3_600);
+    journal.reboot("tuning2");
+    for _ in 0..3_500 {
+        let plan = journal.until_trial(journal.now());
+        if plan.task.queue == togi_journal::Queue::Filler
+            && matches!(plan.tested, togi_journal::Tested::Exact {})
+            && !plan.profile.is_zero()
+        {
+            journal.run(&plan, crate::fixture::Ending::Fail(None));
+            let _ = journal.until_end(journal.now(), &std::collections::BTreeMap::new());
+            return journal;
+        }
+        journal.run(&plan, crate::fixture::Ending::Pass);
+    }
+    panic!("D's filler was never failed");
+}
+
+#[test]
+fn a_charged_filler_failure_stays_reconstructible_under_the_importers_exposure_identity() {
+    let source = filler_failed();
+    assert!(source.events.iter().any(|event| matches!(&event.payload, Payload::DayEvent(_))));
+    let successor = successor_of(&source.events);
+    let history = successor.state.project().climb.campaign.unwrap().history;
+    assert!(matches!(history, CampaignHistory::Complete {}), "{history:?}");
+}
+
+#[test]
+fn a_filler_failure_cut_before_its_derived_event_blocks_the_successor() {
+    let source = filler_failed();
+    let exposure = source
+        .events
+        .iter()
+        .rposition(|event| matches!(&event.payload, Payload::ExposureObserved(observed) if observed.outcome == togi_journal::Outcome::Failure))
+        .unwrap();
+    let derived = source
+        .events
+        .iter()
+        .position(|event| matches!(&event.payload, Payload::DayEvent(_)))
+        .unwrap();
+    assert!(exposure < derived);
+    let successor = successor_of(&source.events[..derived]);
+    let history = successor.state.project().climb.campaign.unwrap().history;
+    assert!(
+        matches!(history, CampaignHistory::Unreconstructible { .. }),
+        "{history:?}"
+    );
+}
+
+#[test]
 fn a_requalification_failure_with_its_derived_event_charges_the_successor() {
     let source = requalification_failed();
     assert!(
@@ -687,7 +766,7 @@ fn successor_of(source: &[Event]) -> Journal {
         .unwrap();
     let mut successor = Journal::ready();
     successor.start_session("20231120T221320Z");
-    for event in source {
+    for event in source.iter().filter(|event| crosses_reset(event)) {
         successor.append(imported(event).into(), &[]);
     }
     let mut start = start;
@@ -696,6 +775,26 @@ fn successor_of(source: &[Event]) -> Journal {
     };
     successor.append(start.into(), &[]);
     successor
+}
+
+/// Whether the session importer copies `event` across a reset: day observations, campaign history and
+/// exposures. Trial records stay behind, which is why an exposure keeps its trial's identity.
+fn crosses_reset(event: &Event) -> bool {
+    let kind = event.kind().to_string();
+    kind.starts_with("day.")
+        || kind == "exposure.observed"
+        || [
+            "session.start",
+            "climb.decision",
+            "unit.mapping",
+            "unit.stop",
+            "campaign.start",
+            "campaign.charge",
+            "campaign.reclassified",
+            "night.qualification",
+            "successor.imported",
+        ]
+        .contains(&kind.as_str())
 }
 
 #[test]
@@ -739,13 +838,23 @@ fn a_reset_after_a_denied_nonzero_proposal_stays_reconstructible_with_no_step() 
     assert_eq!(replay(&successor.events).project(), projection);
 }
 
+/// An event as the session importer copies it: an exposure keeps the identity of its trial, not its
+/// own journal seq.
 pub(crate) fn imported(event: &Event) -> togi_journal::DayImported {
     let wire: serde_json::Value = serde_json::from_str(&event.encode().unwrap()).unwrap();
-    togi_journal::DayImported {
-        original: togi_journal::Provenance {
+    let original = if let Payload::ExposureObserved(observed) = &event.payload {
+        togi_journal::Provenance {
+            session: observed.source.session,
+            seq: observed.source.seq,
+        }
+    } else {
+        togi_journal::Provenance {
             session: crate::fixture::SESSION.parse().unwrap(),
             seq: event.seq,
-        },
+        }
+    };
+    togi_journal::DayImported {
+        original,
         original_kind: event.kind(),
         raw: serde_json::to_string(&wire["data"]).unwrap(),
         time: event.time,

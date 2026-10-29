@@ -267,6 +267,9 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
             );
         }
     }
+    if let Some(reason) = uncharged_current_failure(&decoded) {
+        return Err(reason.into());
+    }
     let mut history = History::default();
     let mut latest = HashMap::new();
     let mut raw = State::new(Params::SPEC);
@@ -964,6 +967,81 @@ fn identity(
 fn nonzero(profile: &ObservedProfile) -> bool {
     let (ObservedProfile::Ccd { cores, .. } | ObservedProfile::PerCore { cores }) = profile;
     cores.iter().any(|(_, offset)| offset.0 != 0)
+}
+
+/// A conclusive exact failure of the nonzero profile applied at that moment is a failed re-qualification
+/// of D or a filler re-run of its cells: a CPU-suspect event owed a derived `day.event`. When the session
+/// ended before the failed qualification or that event landed, nothing here can charge it faithfully, so
+/// the history fails closed. The records are evidence only and grant no permission.
+fn uncharged_current_failure(records: &[(Provenance, Event)]) -> Option<&'static str> {
+    let mut applied = HashMap::new();
+    for (original, event) in records {
+        if let Payload::DayApplied(now) = &event.payload {
+            applied.insert(original.session, now.target.cores());
+        } else if let Payload::ExposureObserved(exposure) = &event.payload
+            && exposure.outcome == togi_journal::Outcome::Failure
+            && matches!(exposure.tested, togi_journal::Tested::Exact {})
+            && exposure
+                .profile
+                .cores()
+                .iter()
+                .any(|(_, offset)| offset.get() != 0)
+            && applied.get(&original.session) == Some(&exposure.profile.cores())
+            && !failure_is_charged(records, *original, exposure)
+        {
+            return Some("a conclusive failure of the current profile has no derived campaign event");
+        }
+    }
+    None
+}
+
+/// Whether the failure `exposure` is cited by a derived `day.event` (a filler re-run of D's cells) or
+/// concluded a failed re-qualification of D that began before it, whose own derived event is checked
+/// separately.
+///
+/// An imported exposure keeps the identity of its trial (`ExposureObserved::source`), which precedes the
+/// journal seq a derived `day.event` cites. The records the failure owes are therefore looked up in the
+/// window from its trial to the next imported exposure: a trial's exposure and what derives from it land
+/// before the next trial begins.
+fn failure_is_charged(
+    records: &[(Provenance, Event)],
+    original: Provenance,
+    exposure: &togi_journal::ExposureObserved,
+) -> bool {
+    let next = records
+        .iter()
+        .filter(|(other, event)| {
+            other.session == original.session
+                && other.seq > original.seq
+                && matches!(event.payload, Payload::ExposureObserved(_))
+        })
+        .map(|(other, _)| other.seq)
+        .min();
+    let within = |seq: Seq| seq >= original.seq && next.is_none_or(|next| seq < next);
+    let same_profile = |profile: &togi_journal::CcdVector| profile.cores() == exposure.profile.cores();
+    let began = records.iter().any(|(began, start)| {
+        began.session == original.session
+            && began.seq < original.seq
+            && matches!(&start.payload, Payload::NightQualification(start)
+                if start.purpose == QualificationPurpose::Requalification
+                    && matches!(start.state, QualificationState::Start { .. })
+                    && same_profile(&start.profile))
+    });
+    records.iter().any(|(other, derived)| {
+        other.session == original.session
+            && if let Payload::DayEvent(classified) = &derived.payload {
+                matches!(classified.event, DayEventId::Requalification { .. })
+                    && classified.witnesses.iter().any(|&seq| within(seq))
+            } else if let Payload::NightQualification(failed) = &derived.payload {
+                began
+                    && within(other.seq)
+                    && failed.purpose == QualificationPurpose::Requalification
+                    && matches!(failed.state, QualificationState::Failed { .. })
+                    && same_profile(&failed.profile)
+            } else {
+                false
+            }
+    })
 }
 
 fn charge(

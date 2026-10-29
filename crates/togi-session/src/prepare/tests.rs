@@ -105,6 +105,29 @@ fn a_journal_of_another_ruleset_archives_and_selects_raw_observations_and_campai
 }
 
 #[test]
+fn an_imported_exposure_keeps_its_trials_identity_and_its_source_still_reconstructs() {
+    let bench = bench();
+    let id = finished(&bench);
+    let import = prepared(&bench, &next_build()).import.unwrap();
+    let manifest = import.manifest();
+    let exposure = manifest
+        .records()
+        .iter()
+        .find(|record| record.original_kind == togi_journal::EventKind::ExposureObserved)
+        .unwrap();
+    let observed: togi_journal::ExposureObserved = serde_json::from_str(&exposure.raw).unwrap();
+    assert_eq!(
+        (exposure.original.session, exposure.original.seq),
+        (observed.source.session, observed.source.seq)
+    );
+    assert_eq!(observed.source.session, id);
+    assert!(matches!(
+        manifest.reconstruction(),
+        togi_tuner::policy::successor::Reconstruction::Complete(_)
+    ));
+}
+
+#[test]
 fn an_imported_record_names_what_its_payload_lacked() {
     let bench = bench();
     finished(&bench);
