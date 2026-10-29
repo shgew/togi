@@ -99,6 +99,8 @@ pub fn style_for(payload: &Payload) -> Style {
             UnitStopReason::Ceiling {} => Style::Green,
             UnitStopReason::FirstBackstep { .. }
             | UnitStopReason::RestorationBackstep { .. }
+            | UnitStopReason::AdverseCeiling {}
+            | UnitStopReason::Veto {}
             | UnitStopReason::AllowanceExhausted {} => Style::Yellow,
         },
         Payload::CampaignCharge(charge) => {

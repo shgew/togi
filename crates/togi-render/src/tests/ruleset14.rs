@@ -38,6 +38,8 @@ fn restoration(state: Value) -> Value {
 #[test_case("climb.decision", decision(json!({"kind": "firmware_zero"})), Style::Yellow; "firmware_zero")]
 #[test_case("unit.stop", stop(json!({"kind": "ceiling"})), Style::Green; "ceiling_finish")]
 #[test_case("unit.stop", stop(json!({"kind": "allowance_exhausted"})), Style::Yellow; "allowance_finish")]
+#[test_case("unit.stop", stop(json!({"kind": "adverse_ceiling"})), Style::Yellow; "adverse_ceiling_stop")]
+#[test_case("unit.stop", stop(json!({"kind": "veto"})), Style::Yellow; "veto_stop")]
 #[test_case("unit.stop", stop(json!({"kind": "first_backstep", "event": {"kind": "boot", "boot": "boot-a"}, "application": 1})), Style::Yellow; "first_backstep")]
 #[test_case("unit.stop", stop(json!({"kind": "restoration_backstep", "event": {"kind": "boot", "boot": "boot-a"}})), Style::Yellow; "restoration_backstep")]
 #[test_case("campaign.charge", charge(false), Style::Red; "provisional_charge")]
@@ -47,6 +49,9 @@ fn restoration(state: Value) -> Value {
 #[test_case("firmware.restoration", restoration(json!({"kind": "held", "hold": {"application": 1, "credited": [], "eligible_s": 1}})), Style::Plain; "stock_hold")]
 #[test_case("firmware.restoration", restoration(json!({"kind": "restored", "application": 4})), Style::Green; "restored")]
 #[test_case("firmware.restoration", restoration(json!({"kind": "stepped_back", "event": {"kind": "boot", "boot": "boot-a"}})), Style::Yellow; "restoration_retreat")]
+#[test_case("unit.mapping", json!({"phase": "core", "units": [{"unit": {"core": 0}, "cores": [0], "parent": {"ccd": 0}}]}), Style::Plain; "unit_mapping")]
+#[test_case("campaign.start", json!({"campaign": {"session": "20261002T011407Z", "seq": 1}, "allowance": 2, "origin": {"kind": "fresh"}, "history": {"kind": "complete"}}), Style::Plain; "campaign_start")]
+#[test_case("successor.imported", json!({"sources": [], "counts": {"selected": 0, "imported": 0, "duplicates": 0, "unknown": 0, "excluded": 0}, "vetoes": [], "night_observations": [], "campaign": {"kind": "complete"}}), Style::Plain; "successor_import")]
 fn ruleset14_style_comes_from_payload_not_message(kind: &str, data: Value, expected: Style) {
     let event = event_with(kind, "FAIL crash success held finished", &data);
     assert_eq!(style_for(&event.payload), expected);
