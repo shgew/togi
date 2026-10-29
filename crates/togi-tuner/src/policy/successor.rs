@@ -158,6 +158,17 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
         let event = decode(record).map_err(|error| format!("undecodable {}: {error}", record.original_kind))?;
         decoded.push((record.original, event));
     }
+    let mut topologies = HashMap::new();
+    for (original, event) in &decoded {
+        if let Payload::SessionStart(start) = &event.payload {
+            if start.session != original.session {
+                return Err("predecessor topology has the wrong original session".into());
+            }
+            let topology = crate::Topology::new(&start.cores)
+                .map_err(|error| format!("cannot reconstruct predecessor topology: {error}"))?;
+            topologies.insert(start.session, topology.all());
+        }
+    }
     let mut identities = HashMap::new();
     for (original, event) in &decoded {
         if let Payload::DayRecord(record) = &event.payload {
@@ -167,6 +178,15 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
             };
             identities.insert(*original, identity);
         }
+        let id = if let Payload::DayEvent(classified) = &event.payload {
+            Some(&classified.event)
+        } else if let Payload::CampaignCharge(charged) = &event.payload {
+            Some(&charged.event)
+        } else { None };
+        if let Some(DayEventId::Requalification { night }) = id {
+            identities.insert(Provenance { session: original.session, seq: night.0 },
+                Identity::Requalification { session: original.session, night: *night });
+        }
     }
     let mut history = History::default();
     let mut latest = HashMap::new();
@@ -175,6 +195,7 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
     let mut climbs = HashMap::new();
     let mut recorded_consumed = 0;
     for (index, (original, event)) in decoded.iter().enumerate() {
+        validate_profile(original.session, &event.payload, &topologies)?;
         match &event.payload {
             Payload::CampaignStart(start) => {
                 if history.campaign.is_some_and(|campaign| campaign != start.campaign) {
@@ -264,16 +285,43 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                     history.vetoes.push(Veto { event: id, profile: veto.profile.clone(), witness: *original });
                 }
             }
-            _ => {}
+            Payload::SessionStart(_) | Payload::SessionContext(_) | Payload::SessionBaseline(_) |
+            Payload::SessionNotice(_) | Payload::SessionWarning(_) | Payload::SessionArchived(_) |
+            Payload::SessionImported(_) | Payload::SessionCarried(_) | Payload::ConfigLoaded(_) |
+            Payload::PreflightCheck(_) | Payload::SmuIntent(_) | Payload::SmuWrite(_) |
+            Payload::SmuReadback(_) | Payload::SmuError(_) | Payload::ProfileApplied(_) |
+            Payload::ProfileChange(_) | Payload::ProfileRestored(_) | Payload::TrialIntent(_) |
+            Payload::TrialStart(_) | Payload::TrialProgress(_) | Payload::TrialSignal(_) |
+            Payload::TrialSample(_) | Payload::TrialEnd(_) | Payload::TrialCarried(_) |
+            Payload::Failure(_) | Payload::FailureCarried(_) | Payload::Mce(_) |
+            Payload::CrashDetected(_) | Payload::TunerDecision(_) | Payload::CorePhase(_) |
+            Payload::CheckingCycle(_) | Payload::CheckingStep(_) | Payload::CheckingChain(_) |
+            Payload::HostRanking(_) | Payload::HuntStart(_) | Payload::HuntGroup(_) |
+            Payload::HuntEnd(_) | Payload::HuntSkipped(_) | Payload::Combination(_) |
+            Payload::DeepeningRound(_) | Payload::TunerWarning(_) | Payload::BackendRetry(_) |
+            Payload::CommandReset(_) | Payload::DefectFound(_) | Payload::DefectAnswered(_) |
+            Payload::DeadEnd(_) | Payload::BootSavedEntry(_) | Payload::BootLeaveReason(_) |
+            Payload::Shutdown(_) | Payload::JournalTorn(_) | Payload::StateRebuilt(_) |
+            Payload::DayBootStart(_) | Payload::DayCheckpoint(_) | Payload::DayOffsetsChanged(_) |
+            Payload::DayCleanStop(_) | Payload::DayUncleanEnd(_) | Payload::DayAnswer(_) |
+            Payload::DayRecord(_) | Payload::DayFault(_) | Payload::ExposureObserved(_) |
+            Payload::CcdEdge(_) | Payload::CcdCap(_) | Payload::NightPlan(_) | Payload::TaskStart(_) |
+            Payload::NightQualification(_) | Payload::NightReproduction(_) | Payload::DayHold(_) |
+            Payload::DayFreeze(_) | Payload::DayInterval(_) | Payload::DayImported(_) |
+            Payload::UnitMapping(_) | Payload::UnitEdge(_) | Payload::FirmwareRestoration(_) => {}
         }
         if raw_kind(event.kind()) {
             let mut event = event.clone();
             event.seq = Seq::new(u64::try_from(index).map_err(|_| "too many predecessor records")?.checked_add(1).ok_or("too many predecessor records")?).ok_or("invalid predecessor sequence")?;
             raw.fold(&event).map_err(|error| format!("cannot reconstruct raw predecessor history: {error}"))?;
+            if matches!(event.kind(), EventKind::DayCheckpoint | EventKind::DayCleanStop) {
+                continue;
+            }
             let view = raw.day_view().map_err(|error| format!("cannot classify predecessor history: {error}"))?;
             for event in view.events {
                 let id = match event.id {
                     EventId::Boot(boot) => Identity::Boot(boot),
+                    EventId::Imported(original) => Identity::Record(original),
                     EventId::Unobserved(at) => Identity::Unobserved(at),
                     EventId::Requalification(seq) => Identity::Requalification { session: original.session, night: togi_journal::NightId(seq) },
                 };
@@ -305,6 +353,45 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
     Ok(history)
 }
 
+fn validate_profile(
+    session: SessionId,
+    payload: &Payload,
+    topologies: &HashMap<SessionId, togi_machine::CoreSet>,
+) -> Result<(), String> {
+    let observed = if let Payload::DayBootStart(start) = payload { Some(&start.offsets) }
+        else if let Payload::DayUncleanEnd(end) = payload { Some(&end.offsets) }
+        else if let Payload::DayFault(fault) = payload { Some(&fault.offsets) }
+        else if let Payload::DayRecord(record) = payload { Some(record.offsets.get()) }
+        else if let Payload::DayAnswer(answer) = payload { Some(&answer.offsets) }
+        else if let Payload::DayOffsetsChanged(changed) = payload { Some(&changed.offsets) }
+        else if let Payload::DayEvent(event) = payload {
+            let (ObservedProfile::Ccd { cores, .. } | ObservedProfile::PerCore { cores }) = &event.profile;
+            Some(cores)
+        } else { None };
+    if let Some(observed) = observed {
+        full_vector(session, observed, topologies)?;
+    }
+    if let Payload::DayApplied(applied) = payload {
+        full_vector(session, applied.target.cores(), topologies)?;
+    }
+    if let Payload::CampaignCharge(charge) = payload {
+        full_vector(session, &charge.profile.cores, topologies)?;
+    }
+    Ok(())
+}
+
+fn full_vector<T>(
+    session: SessionId,
+    offsets: &togi_machine::PerCore<T>,
+    topologies: &HashMap<SessionId, togi_machine::CoreSet>,
+) -> Result<(), String> {
+    let cores = topologies.get(&session).ok_or("missing predecessor campaign topology")?;
+    if offsets.len() != cores.len() || offsets.iter_ref().any(|(core, _)| !cores.contains(core)) {
+        return Err("incomplete predecessor campaign profile".into());
+    }
+    Ok(())
+}
+
 fn raw_kind(kind: EventKind) -> bool {
     matches!(kind, EventKind::DayBootStart | EventKind::DayCheckpoint | EventKind::DayOffsetsChanged |
         EventKind::DayCleanStop | EventKind::DayUncleanEnd | EventKind::DayAnswer | EventKind::DayRecord |
@@ -328,7 +415,16 @@ fn nonzero(profile: &ObservedProfile) -> bool {
 }
 
 fn charge(history: &mut History, event: Identity, aliases: Vec<Identity>, profile: ObservedProfile, provisional: bool, witness: Provenance) {
-    history.charges.push(Charge { event, aliases, profile, provisional, reclassified: false, witnesses: vec![witness] });
+    if let Some(held) = history.charges.iter_mut().find(|held| held.event == event || held.aliases.contains(&event)) {
+        held.provisional |= provisional;
+        held.profile = profile;
+        if !held.witnesses.contains(&witness) { held.witnesses.push(witness); }
+        for alias in aliases {
+            if alias != held.event && !held.aliases.contains(&alias) { held.aliases.push(alias); }
+        }
+    } else {
+        history.charges.push(Charge { event, aliases, profile, provisional, reclassified: false, witnesses: vec![witness] });
+    }
 }
 
 fn merge_aliases(charges: &mut Vec<Charge>) {
@@ -364,11 +460,25 @@ mod tests {
 
     fn record(kind: &str, seq: u64, data: serde_json::Value) -> DayImported {
         DayImported {
-            original: Provenance { session: "20261001T000000Z".parse().unwrap(), seq: Seq::new(seq).unwrap() },
+            original: Provenance { session: "20261001T000000Z".parse().unwrap(), seq: Seq::new(seq + 1).unwrap() },
             original_kind: kind.parse().unwrap(), raw: data.to_string(),
             time: "2026-10-01T00:00:00Z".parse().unwrap(), boot: BootId::from("boot".to_owned()),
             build: None, firmware: None, profile: None, class: togi_journal::ImportClass::Manual, missing: Vec::new(),
         }
+    }
+
+    fn header() -> DayImported {
+        let start = togi_journal::SessionStart {
+            session: "20261001T000000Z".parse().unwrap(),
+            build: togi_journal::Build { version: "0.1.0".into(), rev: None, ruleset: 2,
+                schema: togi_journal::SCHEMA, fixes: togi_journal::FixStamp::none(), evidence: 1 },
+            cores: vec![togi_machine::CoreInfo {
+                core: togi_machine::CoreId::new(0).unwrap(),
+                ccd: togi_machine::CcdId::try_from(0).unwrap(),
+                cpus: vec![togi_machine::CpuId::new(0).unwrap(), togi_machine::CpuId::new(1).unwrap()],
+            }],
+        };
+        record("session.start", 0, serde_json::to_value(start).unwrap())
     }
 
     fn classified(seq: u64, classification: serde_json::Value) -> DayImported {
@@ -383,7 +493,8 @@ mod tests {
     }
 
     fn complete(records: &[DayImported]) -> History {
-        match reconstruct(records, &[]) {
+        let records: Vec<_> = std::iter::once(header()).chain(records.iter().cloned()).collect();
+        match reconstruct(&records, &[]) {
             Reconstruction::Complete(history) => history,
             other => panic!("{other:?}"),
         }
@@ -408,7 +519,7 @@ mod tests {
             "running":"idle"
         }));
         let mut second = first.clone();
-        second.original.seq = Seq::new(2).unwrap();
+        second.original.seq = Seq::new(3).unwrap();
         let history = complete(&[second, first.clone(), first]);
         assert_eq!(history.charges.len(), 1);
         assert_eq!(history.vetoes.len(), 1);
@@ -436,7 +547,7 @@ mod tests {
             "target":{"ccd":{"0":-5},"cores":{"0":-5}},
             "readbacks":{"0":-5},"transactions":[1],"boot":"boot","mono_ns":0
         }));
-        assert!(matches!(reconstruct(&[applied], &[]), Reconstruction::Unreconstructible { reason } if reason.contains("decision")));
+        assert!(matches!(reconstruct(&[header(), applied], &[]), Reconstruction::Unreconstructible { reason } if reason.contains("decision")));
     }
 
     #[test]
@@ -456,5 +567,26 @@ mod tests {
         assert_eq!(history.stops.len(), 1);
         assert_eq!(history.stops.values().next().unwrap().last_clean, TargetOffset::ZERO);
         assert_eq!(history.applications.len(), 1);
+    }
+
+    #[test]
+    fn a_raw_provisional_end_is_charged_even_when_its_derived_commitment_was_lost() {
+        let end = record("day.unclean_end", 1, json!({
+            "boot":"crashed","offsets":{"0":-5},"reset_reason":{"raw":[],"supported":true}
+        }));
+        let answer = record("day.answer", 2, json!({
+            "boot":"crashed","offsets":{"0":-5},"answer":"power_off","uid":1000
+        }));
+        let history = complete(&[end, answer]);
+        assert_eq!(history.charges.len(), 1);
+        assert!(history.charges[0].provisional);
+        assert!(history.charges[0].reclassified);
+        assert!(history.vetoes.is_empty());
+    }
+
+    #[test]
+    fn missing_campaign_topology_is_unreconstructible() {
+        let event = classified(1, json!({"kind":"cpu_suspect","certainty":"definite"}));
+        assert!(matches!(reconstruct(&[event], &[]), Reconstruction::Unreconstructible { reason } if reason.contains("topology")));
     }
 }
