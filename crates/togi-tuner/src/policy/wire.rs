@@ -1,10 +1,10 @@
 //! Serde helpers for the fold's books.
 
 /// A map as a sequence of pairs, so keys that are not strings survive JSON.
-pub(super) mod pairs {
+pub(crate) mod pairs {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub(in crate::policy) fn serialize<'a, M, K, V, S>(
+    pub(crate) fn serialize<'a, M, K, V, S>(
         map: &'a M,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
@@ -17,7 +17,7 @@ pub(super) mod pairs {
         serializer.collect_seq(map)
     }
 
-    pub(in crate::policy) fn deserialize<'de, M, K, V, D>(deserializer: D) -> Result<M, D::Error>
+    pub(crate) fn deserialize<'de, M, K, V, D>(deserializer: D) -> Result<M, D::Error>
     where
         M: FromIterator<(K, V)>,
         K: Deserialize<'de>,
