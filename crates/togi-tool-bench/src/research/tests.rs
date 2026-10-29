@@ -575,7 +575,9 @@ fn evaluator_arguments_pass_through_unchanged(jobs: Option<&str>) {
     let fake = fake(&sessions());
     let mut live = Live::start(&model_manifest(&fake), 427, &fake);
     let mut command = FORWARD.to_owned();
-    let mut expected = ["--facts", FACTS, "--seal", "1"].map(str::to_owned).to_vec();
+    let mut expected = ["--facts", FACTS, "--seal", "1"]
+        .map(str::to_owned)
+        .to_vec();
     if let Some(jobs) = jobs {
         command.push_str(&format!(" --jobs {jobs}"));
         expected.extend(["--jobs".to_owned(), jobs.to_owned()]);
@@ -601,15 +603,7 @@ fn forward_records_are_written_inside_the_run() {
         .unwrap();
     assert_eq!(
         planned.started.args,
-        [
-            "--facts",
-            FACTS,
-            "--seal",
-            "1",
-            "--records",
-            &records
-        ]
-        .map(str::to_owned)
+        ["--facts", FACTS, "--seal", "1", "--records", &records].map(str::to_owned)
     );
 }
 
