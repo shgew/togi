@@ -1,6 +1,6 @@
 # Tune one offset per CCD first
 
-Status: accepted for the Ruleset 13 stack.
+Status: accepted for the Ruleset 13 stack (shipped in v0.12.0; its registered gate was not met). Its coarse-first direction and rejection of requester blame are retained, with the per-core continuation, in [0094](0094-two-ends-bounded-exploration.md), which owns current policy; this record is historical.
 
 At frequent failures, shared voltage and noisy attribution moved the wrong cores: repeated charges made a requester shallower without removing the failing condition. The owner chose one offset per CCD before any per-core refinement ([#1214](https://github.com/shgew/togi/issues/1214)). [Per-CCD state and isolated night edges](../spec/tuner.md#per-ccd-state) replace inferred per-core constraints; joint failures stay profile-level until an isolated trial supplies evidence.
 

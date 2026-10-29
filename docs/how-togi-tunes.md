@@ -4,6 +4,16 @@ This is the entry point to the tuning policy. It explains the shape of the polic
 
 Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More negative is **deeper**. It deliberately encounters failures, including crashes; passing the workloads tested is evidence about those workloads, not a promise that the machine cannot fail later.
 
+## Approved next ruleset: two-ends D
+
+[Ruleset 14 #1460](https://github.com/shgew/togi/issues/1460) tracks the approved [D design #1458](https://github.com/shgew/togi/issues/1458). **The shipped binary still implements Ruleset 13, described below; D is specified, not implemented or enabled.** [The successor specification](spec/tuner-ruleset14.md) owns its rules and [ADR 0094](adr/0094-two-ends-bounded-exploration.md) records why.
+
+D makes clean daily observation permission for a bounded experiment beneath a night-derived ceiling, not statistical certification by S. Nights must qualify the exact next whole profile; each daily change earns a fresh hold, including the first change from stock. A suspect event stops the newest stepped unit, with whole-profile vetoes and further retreats; a durable machine allowance is shared across coarse and later core refinement, never automatically renewed. Firmware changes return to stock before guarded exact-profile restoration. Per-core refinement inherits real coarse history rather than restarting the climb.
+
+Finishing the climb does not mean “stable” or “meets your goal”: evidence remains experimental until current-profile observations support the stated model claim. The [successor evidence wording](spec/tuner-ruleset14.md#6-finish-steady-use-and-the-words-shown), [per-core cost contract](spec/tuner-ruleset14.md#8-per-core-refinement-is-the-end-goal-not-a-restart-from-zero) and [activation gate](spec/tuner-ruleset14.md#9-safety-and-activation) explain those limits. The original Ruleset 13 policy shipped in v0.12.0 but did not meet its registered gate; [#1457](https://github.com/shgew/togi/issues/1457) registers the successor, without retrospectively accepting the old result.
+
+## Shipped policy: Ruleset 13
+
 ## Days and nights
 
 - **Nights test.** The operator starts a night (the tuning boot, or `togi run` by hand). It tests with workloads and runs until the operator ends it or the next normal boot begins; it has no end time. Ending it restores every core to CO 0.
