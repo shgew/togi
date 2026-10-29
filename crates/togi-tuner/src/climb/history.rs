@@ -299,7 +299,10 @@ impl ClimbHistory {
         });
     }
 
-    pub(super) fn newest(
+    /// The newest real transition still available to backstep at `now`, after the supplied
+    /// per-unit cursors have consumed earlier retreats. Reconstruction uses the same ancestry
+    /// selection as current safety decisions.
+    pub fn newest(
         &self,
         unit: UnitId,
         now: TargetOffset,
