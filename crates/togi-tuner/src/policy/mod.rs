@@ -16,6 +16,7 @@
 
 mod books;
 mod cache;
+mod climb_projection;
 mod controls;
 mod climb_fold;
 mod day_climb;
@@ -39,6 +40,12 @@ pub(crate) mod wire;
 
 use togi_machine::CcdId;
 
+pub use climb_projection::{
+    ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
+    ClimbHoldProjection, ClimbPermissionMode, ClimbProfiles, ClimbProjection,
+    ClimbProposalProjection, ClimbQualificationProjection, ClimbQualificationState,
+    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+};
 pub use day_query::DayQuery;
 pub use decision::{Decision, PolicyPayload};
 pub use fold::FoldError;
