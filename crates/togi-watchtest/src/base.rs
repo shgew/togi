@@ -133,7 +133,9 @@ fn calendar() -> Result<Vec<Event>, Error> {
         &mut policy,
     )?;
     if !policy.is_finished() {
-        return Err(Error::NoCut("the Calendar's first reproduction trial start"));
+        return Err(Error::NoCut(
+            "the Calendar's first reproduction trial start",
+        ));
     }
     Ok(policy
         .inner
@@ -190,9 +192,11 @@ impl Policy for CpuAnswerAfterPromotion {
     }
 
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
-        let progress = self.inner.night_until_trial_start(night, machine, |intent| {
-            intent.activity == Some(Activity::Reproduction)
-        })?;
+        let progress = self
+            .inner
+            .night_until_trial_start(night, machine, |intent| {
+                intent.activity == Some(Activity::Reproduction)
+            })?;
         if let ControlFlow::Break(()) = progress {
             self.progress = CalendarProgress::Complete;
         }
