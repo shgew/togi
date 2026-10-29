@@ -414,6 +414,34 @@ fn resume_reapplies_with_verified_readback_and_preserves_the_step() {
     );
 }
 
+#[test_case("unarmed"; "unarmed watchdog")]
+#[test_case("active timer did not count down"; "non-counting watchdog")]
+fn resume_with_an_unarmed_or_noncounting_watchdog_refuses_without_a_write(detail: &str) {
+    let mut journal = seed();
+    let mut hardware = Hardware::stock();
+    let clock = ActiveClock::one();
+    let mut live = crate::day::apply::Live::preflight(&journal, &mut hardware).unwrap();
+    live.start(&mut journal, &mut hardware, &clock, false)
+        .unwrap();
+    let events = journal.events().len();
+    let applied = applications(&journal).len();
+    let writes = hardware.writes.clone();
+    assert!(!writes.is_empty());
+    hardware.reading.watchdog = [WatchdogState::Unarmed {
+        detail: detail.into(),
+    }]
+    .into();
+    assert!(matches!(
+        live.reapply(&mut journal, &mut hardware, &clock),
+        Err(Error::Watchdog)
+    ));
+    assert_eq!(hardware.writes, writes);
+    assert_eq!(hardware.emergency, 0);
+    assert_eq!(applications(&journal).len(), applied);
+    // No SMU intent, day application or any other event follows the refusal.
+    assert_eq!(journal.events().len(), events);
+}
+
 #[test]
 fn firmware_change_resets_a_historical_nonzero_profile_before_applying_stock() {
     let mut journal = seed();
