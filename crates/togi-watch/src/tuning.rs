@@ -81,6 +81,15 @@ impl TuningClock {
             // A day observer runs outside tuning: its events, written in any boot, neither extend a run nor mark
             // a reboot inside one.
             | Payload::DayBootStart(_)
+            | Payload::UnitMapping(_)
+            | Payload::UnitEdge(_)
+            | Payload::ClimbDecision(_)
+            | Payload::UnitStop(_)
+            | Payload::CampaignStart(_)
+            | Payload::CampaignCharge(_)
+            | Payload::CampaignReclassified(_)
+            | Payload::FirmwareRestoration(_)
+            | Payload::SuccessorImported(_)
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
