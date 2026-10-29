@@ -225,10 +225,6 @@ fn applications(snapshots: &[Snapshot]) -> (Vec<ProfileStep>, Vec<FirmwareRestor
     (steps, restorations.into_values().collect())
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "firmware assembly joins the observed reset with policy-owned witnesses"
-)]
 fn firmware(
     config: &RunConfig,
     scenario: &truth::Scenario,
@@ -674,10 +670,10 @@ fn integrate(
                 .get_mut(cursor)
                 .ok_or(RunError::Calendar("observation interval coverage"))?;
             let after = ends[cursor].min(observation.after);
-            if after <= before {
-                return Err(RunError::Calendar("observation boundary precision"));
-            }
-            let duration = after - before;
+            let duration = after
+                .checked_sub(before)
+                .filter(|duration| !duration.is_zero())
+                .ok_or(RunError::Calendar("observation boundary precision"))?;
             match &observation.kind {
                 ObservationKind::Active {
                     class, exposure, ..

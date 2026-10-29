@@ -784,7 +784,7 @@ fn firmware_restoration_records_real_full_vector_crash_and_recomputes_without_gr
     let restored = record
         .intervals
         .iter()
-        .find(|interval| interval.start_day == applied.day)
+        .find(|interval| interval.start_day.to_bits() == applied.day.to_bits())
         .expect("application splits the trajectory");
     assert_eq!(restored.profile, policy.previous);
     assert_eq!(restored.period, Period::Day);

@@ -47,6 +47,10 @@ pub(super) struct Observation {
     pub kind: ObservationKind,
 }
 
+#[expect(
+    clippy::large_enum_variant,
+    reason = "inline exposure avoids a separate heap allocation for every active slice"
+)]
 pub(super) enum ObservationKind {
     Active {
         class: TrialClass,
@@ -452,6 +456,10 @@ impl Smu for CycleSmu {
         state.capture_profile().map_err(machine_error)
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the synthetic seam forwards a teardown-confirmed reset to simulated registers"
+    )]
     fn emergency_zero(&mut self, validated: SmuValidated, stopped: &Stopped) -> Result<(), Error> {
         let mut state = self.0.borrow_mut();
         state.base.smu.emergency_zero(validated, stopped)?;

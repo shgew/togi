@@ -186,9 +186,8 @@ fn holdout_refusal_names_once_only_procedure(split: Split) {
     let (registration, bytes) = fixture();
     let mut args = args("co-zero");
     args.split = split;
-    let error = match plan(&args, &registration, &bytes) {
-        Ok(_) => panic!("holdout accepted"),
-        Err(error) => error,
+    let Err(error) = plan(&args, &registration, &bytes) else {
+        panic!("holdout accepted");
     };
     assert!(matches!(&error, Error::Holdout { .. }));
     assert!(error.to_string().contains("named-once-only-confirmation"));

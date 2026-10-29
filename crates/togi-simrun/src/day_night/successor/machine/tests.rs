@@ -67,7 +67,7 @@ fn nonuniform_readbacks_keep_every_physical_core_and_each_write_boundary() {
     for observation in observations {
         assert_eq!(observation.before, Duration::ZERO);
         assert_eq!(observation.after, Duration::ZERO);
-        assert_eq!(observation.night, false);
+        assert!(!observation.night);
         assert!(matches!(observation.kind, ObservationKind::ProfileChange));
         assert_eq!(observation.profile.len(), scenario.topology().len());
     }
@@ -137,7 +137,7 @@ fn actual_failed_prefix_uses_the_full_nonuniform_profile_for_draw_and_integrals(
             .unwrap()
     );
     assert_eq!(cause, Some(Cause::Truth(expected.cause)));
-    assert_eq!(launch, true);
+    assert!(launch);
     for (core, depth) in depths.iter() {
         if depth == 0 {
             assert_eq!(exposure.co_per_core.get(core), Some(0.0));
@@ -291,8 +291,11 @@ fn night_prefix_and_sleep_account_actual_time_and_firmware_resets_all_cores() {
     let observations = runtime.drain_observations();
     assert_eq!(observations.len(), 1);
     let observation = &observations[0];
-    assert_eq!(observation.night, true);
-    assert_eq!(observation.after - observation.before, ran);
+    assert!(observation.night);
+    assert_eq!(
+        observation.after.checked_sub(observation.before).unwrap(),
+        ran
+    );
     let ObservationKind::Active {
         exposure,
         trial_id,
@@ -324,7 +327,7 @@ fn night_prefix_and_sleep_account_actual_time_and_firmware_resets_all_cores() {
         .unwrap();
     let sleep = runtime.drain_observations().pop().unwrap();
     assert!(matches!(sleep.kind, ObservationKind::Sleep));
-    assert_eq!(sleep.night, false);
+    assert!(!sleep.night);
     assert_eq!(sleep.before, ran);
     assert_eq!(sleep.after, ran + Duration::from_mins(30));
     assert_eq!(sleep.profile, depths);
@@ -334,7 +337,10 @@ fn night_prefix_and_sleep_account_actual_time_and_firmware_resets_all_cores() {
         panic!("expected resumed active observation");
     };
     assert_eq!(resumed.before, sleep.after);
-    assert_eq!(resumed.after - resumed.before, event.elapsed);
+    assert_eq!(
+        resumed.after.checked_sub(resumed.before).unwrap(),
+        event.elapsed
+    );
     assert_eq!(
         exposure,
         scenario

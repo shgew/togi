@@ -110,9 +110,10 @@ struct Execution {
 }
 
 fn binary_hash() -> Result<String, Error> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut binary = File::open(std::env::current_exe()?)?;
     let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 65_536];
+    let mut buffer = [0_u8; 8192];
     loop {
         let count = match binary.read(&mut buffer) {
             Ok(0) => break,
@@ -122,7 +123,6 @@ fn binary_hash() -> Result<String, Error> {
         };
         digest.update(&buffer[..count]);
     }
-    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut hash = String::with_capacity(64);
     for byte in digest.finalize() {
         hash.push(char::from(HEX[usize::from(byte >> 4)]));
