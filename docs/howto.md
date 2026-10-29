@@ -51,7 +51,7 @@ When upgrading from TOML configuration, module users rebuild to generate the JSO
 
 The module also creates the unprivileged `togi-trial` system user and group and sets `"backend_user": "togi-trial"` in the configuration. Togi itself still runs as root; mprime and y-cruncher use that account, which can write only their own trial instance directory within togi's state ([Backends](spec/workloads.md#backends)). Rebuild after upgrading to this behavior so the account exists before the next run. A hand-written configuration must set `backend_user` to an existing unprivileged account; [Privileges](spec/runtime.md#privileges) and [Preflight](spec/runtime.md#preflight) say what is refused.
 
-To move to a newer release, change the tag in `url`, run `nix flake update togi` and rebuild. The Ruleset 13 cutover archives the prior session and starts fresh, importing raw day observations only ([section 7](#7-after-a-breaking-update)).
+To move to a newer release, change the tag in `url`, run `nix flake update togi` and rebuild. Ruleset 14 archives Ruleset 13 unchanged, starts from verified stock and reconstructs the durable campaign ([section 7](#7-after-a-breaking-update)).
 
 The module installs `inputs.togi.packages.${pkgs.stdenv.hostPlatform.system}.default`, the `togi` built with crane. Moving a host from the earlier Go build of togi takes the steps in [Go to Rust cutover](#go-to-rust-cutover). From a checkout, `nix build .#default` builds the package, `just togi ARGS` runs the binary from the tree and `just check-one package` checks its version and completion scripts.
 
@@ -307,7 +307,7 @@ A night's mapping and qualification are evidence, not proof of stability. Qualif
 
 That coverage does not include light work on many cores at once or both threads of many cores at once beyond the matrix's own classes. The idle trial is not proof of stability through real desktop idle, sleep and wake, or changing background activity. Trial offsets also do not exercise the early boot stages before togi applies a profile. A qualified profile can still crash in ordinary use.
 
-Keep BIOS Curve Optimizer at **0** ([ADR 0082](adr/0082-bios-stays-at-zero.md)); do not copy the proposed day profile into firmware. The [day-step policy](spec/tuner.md#day-steps) and [application boundary](spec/runtime.md#ruleset-13-policy-boundary) specify when a proposal may be applied and committed after verified readback. The observer `togi day` itself remains read-only. Let each applied step run ordinary use before heavy or write-intensive work, such as package builds and system rebuilds, and keep backups: a crash during writes risks the filesystem and package store. No fixed observation period makes a profile proven stable.
+Keep BIOS Curve Optimizer at **0**; never copy a proposed day profile into firmware. [Ruleset 14](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) requires 50 clean exact-profile hours even at initial stock, exact next-profile qualification and an eligible cold boot for each bounded step toward C. Status/watch show D/C/U, hold and campaign allowance, not “remaining to S”; S is diagnostic only. Evidence reads `experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`. Keep backups: neither a completed hold nor a finished climb proves stability.
 
 ### If the profile crashes in daily use
 
@@ -332,15 +332,15 @@ Leave reasons survive outside the tuning journal as one pending `togi_leave_reas
 
 **The Go to Rust switch is the exception to everything below.** The Rust build neither archives nor imports from a Go session: move the Go state directory aside first, as [Go to Rust cutover](#go-to-rust-cutover) says.
 
-For Ruleset 13, update configuration and command invocations before starting the tuning boot. Removed options such as `togi run --cycles` and per-core `candidate_solo_limits`/`start_offsets` settings are not tuning hints: remove them rather than expecting them to seed the new policy. An invalid configuration exits 2 before the transition archives anything.
+Update configuration before the tuning boot; invalid configuration exits 2 before archiving. Rebuild and reboot into the tuning boot with its active watchdog. The Ruleset 14 cutover archives Ruleset 13 unchanged and starts the durably identified successor at verified stock; no manual reset is needed.
 
-Rebuild, then reboot into the tuning boot. Its active hardware watchdog is especially important after a breaking update; an in-session run without one can freeze until a manual reset. When this build encounters an older ruleset, schema or evidence epoch with no newer dimension, `togi run` archives the source to `/var/lib/togi/archive/` and starts a fresh session that maps from scratch, following [Transitions](spec/journal.md#transitions) and [ADR 0084](adr/0084-a-fresh-ruleset-transition.md). It imports only eligible raw day observations, not prior tuning failures, passes, limits, steps or decisions. No manual reset is needed for that transition.
+It imports original-identity raw daily observations, compatible `exposure.observed`, and CPU-suspect events, stops and vetoes needed to reconstruct the campaign. Inspect commitments with `togi events --kind successor.imported` and `togi events --kind campaign.start`. Missing/unreconstructible campaign history blocks nonzero exploration; old S, qualification conclusions and nonzero D are never permission.
 
-[Fact eligibility](spec/journal.md#fact-eligibility) specifies which raw day observations can be imported and the reset boundaries they may not cross. Their source identities and import commitment are visible with `togi events --kind day.imported` and `togi events --kind session.imported`; there is no `carried:` tuning-state line or `session.carried` event.
+The two-event machine allowance includes provisional charges and is never renewed by restart, reset, firmware change, new session or reboot. Later non-CPU reclassification is displayed separately without refund. `sudo togi reset --all` stops raw tuning carry at a permanent boundary, but campaign-ledger records cross it. There is no per-core reset.
 
-A change to the recorded BIOS context (BIOS version, microcode, board, CPU or boost limit), including a BIOS or AGESA update, alone does not archive the session. The same session records the changed context and follows [firmware invalidation](spec/tuner.md#firmware), retaining historical observations without treating them as current-context qualification or exposure.
+A firmware change remains in-session: it returns to stock and requires new-context exact qualification and 50 clean stock hours before guarded restoration of the previous full profile. It never reopens a stopped unit.
 
-To start over without importing earlier observations, use `sudo togi reset --all`. There is no `reset --core`. A session written by a newer ruleset, schema or evidence epoch is still refused by `run`: install its writing build again or archive it with `sudo togi reset --all`. [Reset and compatibility](spec/runtime.md#reset-and-compatibility) gives the refusal advice and pending-import recovery behavior.
+For rollback, an older build refuses to resume a newer-ruleset journal before append. Same-schema inspection remains possible with warnings/skipped unknown kinds, but strict reset may refuse unknown additive kinds; reinstall the writing build to archive it safely. [Reset and compatibility](spec/runtime.md#reset-and-compatibility) describes the exact operation-specific behavior. `SCHEMA` remains 1; build-fingerprint changes rebuild snapshots.
 
 ## Go to Rust cutover
 

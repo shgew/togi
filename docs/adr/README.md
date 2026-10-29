@@ -27,7 +27,7 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0078](0078-controller-clock-and-rotation.md) Cap isolated controller clocks and rotate loaded hosts — in force.
 - [0092](0092-rust-native-implementation.md) togi is a native Rust program; tools follow the same language rule — in force; supersedes 0001, 0048, 0058 and 0071.
 - [0093](0093-journal-fold-and-snapshots.md) The journal is authoritative; folds drive decisions and snapshots cache reads — in force; supersedes 0003, 0059 and 0077.
-- [0094](0094-two-ends-bounded-exploration.md) Two ends: clean daily holds earn bounded, night-qualified steps — in force, implementation pending; Ruleset 13 stays the shipped binary (registered gate not met); consolidates 0079–0084.
+- [0094](0094-two-ends-bounded-exploration.md) Two ends: clean daily holds earn bounded, night-qualified steps — in force as Ruleset 14; replaces Ruleset 13's statistical permission and consolidates 0079–0084.
 
 ## Historical
 
