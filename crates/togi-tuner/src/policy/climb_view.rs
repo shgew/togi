@@ -97,19 +97,19 @@ impl State {
         for event in &view.events {
             let Some(id) = self.journal_event_id(&event.id) else { continue; };
             let charge = self.climb.campaign.charges().iter().find(|charge| charge.aliases.contains(&event.id));
-            let profile = Self::profile_of_observed(&event.profile, history.units()).ok()?;
+            let Ok(profile) = Self::observed_vector(&event.profile, history.units()) else { continue; };
             let meta = view.meta.get(&event.id);
             events.push(ClimbEventProjection {
                 event: id.clone(), aliases: charge.map_or_else(Vec::new, |charge| charge.aliases.iter().filter_map(|id| self.journal_event_id(id)).collect()),
                 phase: charge.map_or(journal::CampaignEventPhase::PostFinish, |charge| match charge.phase { climb::EventPhase::Learning => journal::CampaignEventPhase::Learning, climb::EventPhase::PostFinish => journal::CampaignEventPhase::PostFinish }),
                 unit_phase: charge.map_or(history.units().phase(), |charge| charge.unit_phase),
-                profile: vector(&profile, history.units()).ok()?, provisional: charge.is_some_and(|charge| charge.provisional),
+                profile, provisional: charge.is_some_and(|charge| charge.provisional),
                 classification: self.days.events.get(&id).map_or(journal::Classification::Unexplained {}, |book| book.latest.payload.classification),
                 reclassified: charge.is_some_and(|charge| charge.reclassified), witnesses: meta.map_or_else(Vec::new, |meta| meta.witnesses.clone()),
             });
         }
         Some(ClimbCampaignProjection {
-            campaign: start.payload.campaign, history: if self.climb.campaign.consumed().is_some() { journal::CampaignHistory::Complete {} } else { start.payload.history.clone() },
+            campaign: start.payload.campaign, history: if self.climb.campaign.consumed().is_some() { journal::CampaignHistory::Complete {} } else { journal::CampaignHistory::Unreconstructible { reason: "The immutable campaign history cannot be reconstructed.".into() } },
             limit: 2, consumed: saturating_u32(u64::try_from(self.climb.campaign.charges().len()).unwrap_or(u64::MAX)),
             remaining: saturating_u32(u64::try_from(self.climb.campaign.remaining().unwrap_or(0)).unwrap_or(u64::MAX)),
             provisional: saturating_u32(u64::try_from(self.climb.campaign.charges().iter().filter(|charge| charge.provisional).count()).unwrap_or(u64::MAX)),

@@ -63,7 +63,17 @@ impl State {
         self.nights.unit_edges.iter().filter(|(_, commit)| {
             self.machine.firmware.as_ref() == Some(&commit.payload.firmware)
                 && commit.payload.epoch == crate::EVIDENCE_EPOCH
-                && self.machine.context_since.is_none_or(|since| commit.seq >= since)
+                && self.machine.context_since.is_none_or(|since| {
+                    if commit.seq >= since { return true; }
+                    let current = |witness: &togi_journal::Seq| self.trials.all.iter().any(|trial| {
+                        trial.end.as_ref().is_some_and(|end| &end.seq == witness) && self.is_current_trial(trial)
+                    });
+                    match &commit.payload.new {
+                        Edge::Unknown {} => true,
+                        Edge::Observed { witness, .. } => current(witness),
+                        Edge::Censored { witnesses, .. } => !witnesses.is_empty() && witnesses.iter().all(current),
+                    }
+                })
         }).map(|(&unit, commit)| (unit, ceiling(&commit.payload.new))).collect()
     }
 
@@ -84,12 +94,9 @@ impl State {
         let permission = self.permission()?;
         let qualified = self.qualified_profiles(now);
         let candidate = permission.candidate(&view.events)?;
-        let mut failed = std::collections::BTreeSet::new();
-        if let Some(candidate) = candidate
-            && self.qualification_blocked(&candidate).is_some()
-        {
-            failed.insert(candidate);
-        }
+        let mut checked = qualified.clone();
+        checked.extend(candidate);
+        let failed = checked.into_iter().filter(|profile| self.qualification_blocked(profile).is_some()).collect();
         let vetoes = vetoes(&view.events);
         let statuses = self.statuses(view)?.unwrap_or_default();
         let (_, seconds) = self.credited();

@@ -700,7 +700,7 @@ impl State {
 
 impl State {
     /// The day policy's name for a journal event identity. A manual record's identity is its crash's: the
-    /// crashed boot, or the crash instant of one no observer saw. A record the state never folded has none.
+    /// crashed boot or crash instant; a receipt without its raw record keeps its original namespace.
     pub(super) fn policy_event_id(&self, id: &DayEventId) -> Option<EventId> {
         match id {
             DayEventId::Boot { boot } => Some(EventId::Boot(boot.clone())),
@@ -718,6 +718,7 @@ impl State {
                         CrashedBoot::UncleanEnd { boot } => EventId::Boot(boot.clone()),
                         CrashedBoot::Unobserved { at } => EventId::Unobserved(*at),
                     })
+                    .or(Some(EventId::Imported(origin)))
             }
         }
     }
@@ -730,6 +731,7 @@ impl State {
             EventId::Requalification(at) => Some(DayEventId::Requalification {
                 night: togi_journal::NightId(*at),
             }),
+            EventId::Imported(origin) => Some(DayEventId::Record { session: origin.session, seq: origin.seq }),
             EventId::Unobserved(at) => self
                 .days
                 .manual

@@ -16,6 +16,7 @@ pub enum StopReason {
     },
     AdverseCeiling,
     Veto,
+    Predecessor { original: togi_journal::Provenance },
     RestorationBackstep {
         event: EventId,
         application: ApplicationId,

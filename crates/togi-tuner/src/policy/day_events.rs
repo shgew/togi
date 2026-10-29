@@ -346,7 +346,7 @@ impl State {
                     );
                     Some(boot.clone())
                 }
-                EventId::Unobserved(_) | EventId::Requalification(_) => None,
+                EventId::Unobserved(_) | EventId::Requalification(_) | EventId::Imported(_) => None,
             };
             witnesses.sort();
             witnesses.dedup();

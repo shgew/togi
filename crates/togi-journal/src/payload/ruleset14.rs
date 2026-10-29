@@ -141,6 +141,7 @@ object_only! {
         AllowanceExhausted {},
         UnknownEdge { unit: UnitId },
         Finished { unit: UnitId },
+        Ceiling { unit: UnitId },
         CampaignHistory {},
         SameBoot {},
         HoldProfile {},
@@ -206,6 +207,7 @@ object_only! {
         RestorationBackstep { event: DayEventId },
         AdverseCeiling {},
         Veto {},
+        Predecessor { original: Provenance },
     }
 
     /// Sticky completion: the envelope records time; witnesses retain the edge/application history.
