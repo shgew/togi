@@ -1009,3 +1009,308 @@ fn unreconstructible_campaign_history_blocks_nonzero_exploration() {
         matches!(history, togi_journal::CampaignHistory::Unreconstructible { reason } if !reason.is_empty())
     );
 }
+
+/// Applied ancestry, not a saved nonzero profile, makes these events campaign charges.
+fn charged_predecessor(bench: &Bench) -> togi_journal::CampaignId {
+    use serde_json::json;
+    use togi_journal::CcdVector;
+    use togi_machine::{CcdId, CcdProfile, TargetOffset};
+
+    predecessor(bench);
+    let boot = bench.sim.seams().host.boot_id().unwrap();
+    let mut journal = simulated(&bench.mem)
+        .open_at(boot.clone(), bench.sim.now())
+        .unwrap();
+    let topology = match &journal.events()[0].payload {
+        Payload::SessionStart(start) => start.cores.clone(),
+        payload => panic!("{payload:?}"),
+    };
+    let campaign = journal
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::CampaignStart(start) => Some(start.campaign),
+            _ => None,
+        })
+        .unwrap();
+    let changed = CcdId::new(0).unwrap();
+    let vector = |depth| {
+        let ccds: std::collections::BTreeMap<_, _> = topology
+            .iter()
+            .map(|core| {
+                (
+                    core.ccd,
+                    TargetOffset::new(if core.ccd == changed { depth } else { 0 }).unwrap(),
+                )
+            })
+            .collect();
+        CcdVector::expand(CcdProfile::try_from(ccds).unwrap(), &topology).unwrap()
+    };
+    let old = vector(0);
+    let proposed = vector(-5);
+    let stamp = Stamp {
+        time: bench.sim.now(),
+        mono: None,
+    };
+    let decision = journal.events().last().unwrap().seq.next().unwrap();
+    journal
+        .append(
+            stamp,
+            Payload::DayStep(
+                serde_json::from_value(json!({
+                    "decision": decision, "cold_boot": boot, "old": old,
+                    "proposed": proposed, "step": {"kind": "promote", "changed": changed},
+                    "hours": [], "hold_s": 0, "causes": {}, "reason": "predecessor promotion"
+                }))
+                .unwrap(),
+            ),
+            &[],
+        )
+        .unwrap();
+    journal
+        .append(
+            stamp,
+            Payload::DayApplied(
+                serde_json::from_value(json!({
+                    "application": 1, "cause": {"kind": "step", "decision": decision},
+                    "target": proposed, "readbacks": proposed.cores(),
+                    "transactions": [decision], "boot": boot, "mono_ns": 0
+                }))
+                .unwrap(),
+            ),
+            &[],
+        )
+        .unwrap();
+    let mut classify = |boot, classification| {
+        journal
+            .append(
+                stamp,
+                Payload::DayEvent(
+                    serde_json::from_value(json!({
+                        "event": {"kind": "boot", "boot": boot},
+                        "profile": {"kind": "per_core", "cores": proposed.cores()},
+                        "from": stamp.time, "to": stamp.time, "witnesses": [decision],
+                        "classification": classification,
+                        "resolution": {"kind": "unresolved"},
+                        "reason": "predecessor classification", "reproduction": "pending"
+                    }))
+                    .unwrap(),
+                ),
+                &[],
+            )
+            .unwrap();
+    };
+    classify(
+        "provisional-crash",
+        json!({"kind": "cpu_suspect", "certainty": "provisional"}),
+    );
+    classify("provisional-crash", json!({"kind": "non_cpu"}));
+    classify(
+        "definite-crash",
+        json!({"kind": "cpu_suspect", "certainty": "definite"}),
+    );
+    drop(journal.close().unwrap());
+    campaign
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CampaignCut {
+    Uninterrupted,
+    SessionImported,
+    FirstCharge,
+    SecondCharge,
+    Reclassified,
+    SuccessorImported,
+}
+
+#[test_case(false, CampaignCut::Uninterrupted; "transition")]
+#[test_case(true, CampaignCut::Uninterrupted; "reset")]
+#[test_case(false, CampaignCut::SessionImported; "transition after session imported")]
+#[test_case(true, CampaignCut::SessionImported; "reset after session imported")]
+#[test_case(false, CampaignCut::FirstCharge; "transition after first charge")]
+#[test_case(true, CampaignCut::FirstCharge; "reset after first charge")]
+#[test_case(false, CampaignCut::SecondCharge; "transition after second charge")]
+#[test_case(true, CampaignCut::SecondCharge; "reset after second charge")]
+#[test_case(false, CampaignCut::Reclassified; "transition after reclassification")]
+#[test_case(true, CampaignCut::Reclassified; "reset after reclassification")]
+#[test_case(false, CampaignCut::SuccessorImported; "transition before campaign start")]
+#[test_case(true, CampaignCut::SuccessorImported; "reset before campaign start")]
+fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: bool, cut: CampaignCut) {
+    use togi_journal::{CampaignHistory, Certainty, Classification, DayEventId};
+    use togi_tuner::policy::successor::Reconstruction;
+
+    // Two physical cores per CCD let an uninterrupted run schedule neighbour-load work.
+    let bench = Bench::defined(&MachineDefinition {
+        cores: 4,
+        model: ModelDef {
+            past_limit_rate: 0.0,
+            ..ModelDef::default()
+        },
+        ..MachineDefinition::default()
+    });
+    let campaign = charged_predecessor(&bench);
+    if reset {
+        let mut dir = simulated(&bench.mem);
+        assert!(dir.mark_reset_all().unwrap().is_some());
+        drop(dir);
+    }
+    let ready = prepared(&bench, &successor_build());
+    let Reconstruction::Complete(expected) = ready.import.as_ref().unwrap().manifest().reconstruction()
+    else {
+        panic!("predecessor history must reconstruct");
+    };
+    assert_eq!(expected.campaign, Some(campaign));
+    assert_eq!(expected.charges.len(), 2);
+    assert_eq!(expected.stops.len(), 1);
+    assert_eq!(
+        expected.stops.values().next().unwrap().last_clean,
+        togi_machine::TargetOffset::ZERO
+    );
+    drop(ready.journal.close().unwrap());
+    let mut input = bench.input_ending_at(bench.short_night());
+    input.build = successor_build();
+    input.import = ready.import;
+    let mut end_night = input.on_append.take().unwrap();
+    input.on_append = Some(Box::new(move |event| {
+        end_night(event);
+        let reached = match cut {
+            CampaignCut::Uninterrupted => false,
+            CampaignCut::SessionImported => matches!(event.payload, Payload::SessionImported(_)),
+            CampaignCut::FirstCharge => {
+                matches!(&event.payload, Payload::CampaignCharge(charge) if charge.consumed == 1)
+            }
+            CampaignCut::SecondCharge => {
+                matches!(&event.payload, Payload::CampaignCharge(charge) if charge.consumed == 2)
+            }
+            CampaignCut::Reclassified => matches!(event.payload, Payload::CampaignReclassified(_)),
+            CampaignCut::SuccessorImported => matches!(event.payload, Payload::SuccessorImported(_)),
+        };
+        assert!(!reached, "interrupted campaign enrollment after {cut:?}");
+    }));
+    let first = run(input);
+    assert_eq!(
+        first.panic.is_some(),
+        !matches!(cut, CampaignCut::Uninterrupted)
+    );
+    if !matches!(cut, CampaignCut::Uninterrupted) {
+        assert!(!first.journal.events().iter().any(|event| matches!(
+            event.payload,
+            Payload::CampaignStart(_)
+        )));
+    }
+    let resumed = if matches!(cut, CampaignCut::Uninterrupted) {
+        first
+    } else {
+        drop(first.journal.close().unwrap());
+        enroll(&bench)
+    };
+    assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+    let events = resumed.journal.events();
+    let starts: Vec<_> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::CampaignStart(start) => Some(start),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(starts.len(), 1);
+    assert_eq!(starts[0].campaign, campaign);
+    assert_eq!(starts[0].history, CampaignHistory::Complete {});
+    let charges: Vec<_> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::CampaignCharge(charge) => Some(charge),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(charges.len(), 2);
+    assert_eq!(
+        charges
+            .iter()
+            .map(|charge| (
+                charge.campaign,
+                charge.event.clone(),
+                charge.provisional,
+                charge.consumed,
+                charge.remaining,
+                charge.exhausted,
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (
+                campaign,
+                DayEventId::Boot {
+                    boot: "provisional-crash".to_owned().into()
+                },
+                true, 1, 1, false
+            ),
+            (
+                campaign,
+                DayEventId::Boot {
+                    boot: "definite-crash".to_owned().into()
+                },
+                false, 2, 0, true
+            ),
+        ]
+    );
+    assert!(charges.iter().all(|charge| {
+        charge
+            .profile
+            .cores
+            .iter()
+            .any(|(_, offset)| offset == togi_machine::TargetOffset::new(-5).unwrap())
+    }));
+    let revisions: Vec<_> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::CampaignReclassified(revision) => Some(revision),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(revisions.len(), 1);
+    assert_eq!(revisions[0].campaign, campaign);
+    assert_eq!(revisions[0].event, charges[0].event);
+    assert_eq!(
+        revisions[0].from,
+        Classification::CpuSuspect {
+            certainty: Certainty::Provisional
+        }
+    );
+    assert_eq!(revisions[0].to, Classification::NonCpu {});
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.payload, Payload::SuccessorImported(_)))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.payload, Payload::SessionImported(_)))
+            .count(),
+        1
+    );
+    drop(resumed.journal.close().unwrap());
+
+    // A fresh transition reconstructs only durable journal bytes, including permanent stops.
+    let next = Build {
+        ruleset: togi_tuner::RULESET + 1,
+        ..build()
+    };
+    let reopened = prepared(&bench, &next);
+    let Reconstruction::Complete(history) = reopened.import.unwrap().manifest().reconstruction() else {
+        panic!("enrolled history must remain reconstructible");
+    };
+    assert_eq!(history.campaign, Some(campaign));
+    assert_eq!(history.charges.len(), 2);
+    assert_eq!(
+        history
+            .charges
+            .iter()
+            .filter(|charge| charge.reclassified)
+            .count(),
+        1
+    );
+    assert_eq!(history.stops, expected.stops);
+}
