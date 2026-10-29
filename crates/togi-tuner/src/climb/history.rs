@@ -11,7 +11,7 @@ use super::{
     SavedProfile, StopReason,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct ApplicationId(u64);
 
 impl ApplicationId {
@@ -24,13 +24,13 @@ impl ApplicationId {
 }
 
 /// One actual successful transition, referenced rather than copied when units subdivide.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct TransitionId {
     pub application: ApplicationId,
     pub source: UnitId,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AncestryLink {
     pub transition: TransitionId,
     pub before: TargetOffset,
@@ -39,20 +39,20 @@ pub struct AncestryLink {
 
 /// A current unit's consumed reference to a real transition. Siblings can reference one parent
 /// transition without creating extra learning steps or event charges.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct Cursor {
     pub unit: UnitId,
     pub transition: TransitionId,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum StepKind {
     Ordinary,
     FirmwareRestoration,
     ReclassificationRestoration,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LearningStep {
     pub application: ApplicationId,
     pub at: Timestamp,
@@ -62,7 +62,7 @@ pub struct LearningStep {
     pub kind: StepKind,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RetreatRecord {
     pub application: ApplicationId,
     pub units: Units,
@@ -91,12 +91,13 @@ pub enum ClimbError {
 }
 
 /// Successful applications alone advance ancestry, cursors and permanent stops.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ClimbHistory {
     units: Units,
     current: UnitProfile,
     latest: Option<ApplicationId>,
     steps: Vec<LearningStep>,
+    #[serde(with = "crate::policy::wire::pairs")]
     links: BTreeMap<UnitId, Vec<AncestryLink>>,
     consumed: BTreeSet<Cursor>,
     retreats: Vec<RetreatRecord>,
