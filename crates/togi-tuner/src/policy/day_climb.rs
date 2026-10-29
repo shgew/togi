@@ -136,13 +136,13 @@ impl State {
             }
             let Some(observed) = view.events.iter().find(|event| event.id == charge.event) else { continue; };
             let history = self.climb.history.as_ref().ok_or(NotReady::NoBaseline)?;
-            let profile = Self::profile_of_observed(&observed.profile, history.units())?;
+            let profile = Self::observed_vector(&observed.profile, history.units())?;
             let consumed = u32::try_from(index + 1).map_err(|_| NotReady::SeqExhausted)?;
             let aliases = charge.aliases.iter().filter_map(|id| self.journal_event_id(id)).collect();
             let causes = self.days.events.get(&event).map(|book| book.latest.seq).into_iter().collect();
             return Ok(Some(Decision::new(PolicyPayload::CampaignCharge(journal::CampaignCharge {
                 campaign: start.payload.campaign, event, aliases,
-                profile: vector(&profile, history.units())?,
+                profile,
                 phase: match charge.phase { climb::EventPhase::Learning => journal::CampaignEventPhase::Learning, climb::EventPhase::PostFinish => journal::CampaignEventPhase::PostFinish },
                 unit_phase: match charge.unit_phase { crate::Phase::Coarse => journal::UnitPhase::Coarse, crate::Phase::Core => journal::UnitPhase::Core },
                 provisional: charge.provisional, consumed, remaining: 2_u32.saturating_sub(consumed), exhausted: consumed >= 2,
@@ -151,15 +151,15 @@ impl State {
         Ok(None)
     }
 
-    pub(super) fn profile_of_observed(observed: &crate::day::CoreProfile, units: &crate::Units) -> Result<UnitProfile, NotReady> {
-        let mut values = Vec::new();
-        for unit in units.iter() {
-            let mut offsets = unit.cores.iter().filter_map(|core| observed.offsets().get(core));
-            let first = offsets.next().ok_or(NotReady::NoBaseline)?;
-            if offsets.any(|offset| offset != first) { return Err(NotReady::NonCoarse); }
-            values.push((unit.id, togi_machine::TargetOffset::new(first.0).map_err(crate::day::DayStepError::from)?));
-        }
-        Ok(UnitProfile::try_from(values)?)
+    /// Keeps a crash's exact applied profile, including nonuniform read-back within a coarse unit.
+    /// The unit mapping describes attribution; it must not round an observation into permission.
+    pub(super) fn observed_vector(observed: &crate::day::CoreProfile, units: &crate::Units) -> Result<journal::UnitVector, NotReady> {
+        let cores = observed.offsets().iter().map(|(&core, offset)| {
+            togi_machine::TargetOffset::new(offset.0)
+                .map(|offset| (core, offset))
+                .map_err(crate::day::DayStepError::from)
+        }).collect::<Result<_, _>>()?;
+        Ok(journal::UnitVector { cores, mapping: mapping(units) })
     }
 
     pub(super) fn qualification_seq_for_vector(&self, vector: &journal::UnitVector) -> Option<Seq> {
