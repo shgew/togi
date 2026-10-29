@@ -2,6 +2,8 @@
 
 Status: see [the index](README.md).
 
+Superseded by [ADR 0090](0090-nextest-runs-by-concern.md). The groups and measurements below describe the earlier decision.
+
 Amends [ADR 0074](0074-pull-request-ci-gates-landing-on-main.md)'s pull request job set, [ADR 0047](0047-gate-before-every-push.md)'s gate contents and [ADR 0051](0051-light-checks-for-review-fixes.md)'s fix-push tests ([#1146](https://github.com/shgew/togi/issues/1146)).
 
 ## Context

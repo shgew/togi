@@ -1,8 +1,8 @@
 # Every flake check runs, on pull requests and on workflow_dispatch alike, unless the public Cachix cache `togi`
 # already holds its output, which the owner's gate publishes for what it built (ADR 0085, ADR 0074). A pull request
 # builds the cheap checks named in the eval step together in one light job and every other uncached check, such as
-# clippy, doc, each `nextest-<group>` and the VM tests, in a job of its own so the VM tests
-# boot in parallel (ADR 0075). The release dispatches and waits for a run on the exact main head before making its
+# clippy, doc, nextest, nextest-tools, nextest-recovery and the VM tests, in a job of its own so the VM tests
+# boot in parallel (ADR 0090). The release dispatches and waits for a run on the exact main head before making its
 # release commit; a check that run finds cached counts as passed.
 # No job runs on macOS (ADR 0061): `just lint` and `just gate` clippy the Rust workspace for
 # aarch64-apple-darwin from Linux, and a breakage found on a Mac is fixed as a bug.
