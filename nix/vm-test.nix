@@ -60,11 +60,6 @@ let
         services.togi.day.enable = true;
         services.togi.day.watchdog = true;
         users.groups.togi-hardware = { };
-        users.users.togi-hardware = {
-          isNormalUser = true;
-          group = "togi-hardware";
-        };
-        systemd.services."user@".serviceConfig.Delegate = "cpu cpuset io memory pids";
       };
 
       testScript = ''
