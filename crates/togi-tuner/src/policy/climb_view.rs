@@ -1,8 +1,14 @@
 //! Journal-derived D status, with statistical S explicitly confined to diagnostics.
 
 use togi_journal::{self as journal, Seq};
-use crate::{UnitId, UnitProfile, climb, cap::{Bound, Hours, Rate, poisson_upper}};
-use super::{State, CapProjection, climb_projection::*, permission::vector, ledger::saturating_u32};
+use crate::{UnitProfile, climb, cap::{Bound, Hours, Rate, poisson_upper}};
+use super::{State, CapProjection, permission::vector, ledger::saturating_u32};
+use super::climb_projection::{
+    ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
+    ClimbHoldProjection, ClimbPermissionMode, ClimbProfiles, ClimbProjection,
+    ClimbProposalProjection, ClimbQualificationProjection, ClimbQualificationState,
+    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+};
 
 impl State {
     pub(super) fn climb_projection(&self) -> ClimbProjection {
@@ -91,7 +97,7 @@ impl State {
         for event in &view.events {
             let Some(id) = self.journal_event_id(&event.id) else { continue; };
             let charge = self.climb.campaign.charges().iter().find(|charge| charge.aliases.contains(&event.id));
-            let profile = self.profile_of_observed(&event.profile, history.units()).ok()?;
+            let profile = Self::profile_of_observed(&event.profile, history.units()).ok()?;
             let meta = view.meta.get(&event.id);
             events.push(ClimbEventProjection {
                 event: id.clone(), aliases: charge.map_or_else(Vec::new, |charge| charge.aliases.iter().filter_map(|id| self.journal_event_id(id)).collect()),
