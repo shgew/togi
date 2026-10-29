@@ -63,12 +63,12 @@ cover base *crates: _dev-shell
     trap 'rm -f "$trace"' EXIT
     target=${CARGO_LLVM_COV_TARGET_DIR:-$(cargo metadata --format-version 1 --no-deps | nu --stdin -c '$in | from json | get build_directory')/llvm-cov-target}
     product=$(just _product-test-args)
-    args=$(nu --no-config-file tools/cover/args.nu "$product" "${@:2}")
+    args=$(cargo metadata --locked --format-version 1 --no-deps | nu --no-config-file --stdin tools/cover/args.nu "$product" "${@:2}")
     read -r -a packages <<< "$args"
     CARGO_LLVM_COV_TARGET_DIR="$target" CARGO_BUILD_BUILD_DIR="$target" cargo llvm-cov nextest --locked "${packages[@]}" --lcov --output-path "$trace" >&2
     cargo run --quiet --locked -p togi-tool-cover -- --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
-# Test additive coverage package arguments without compiling or running test packages
+# Test additive coverage package arguments without compiling or running test packages; `quality` also runs them
 [group('test')]
 cover-test: _dev-shell
     nu --no-config-file tools/cover/tests.nu

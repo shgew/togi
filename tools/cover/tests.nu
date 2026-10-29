@@ -14,6 +14,11 @@ const metadata = {
     ]
 }
 const product_args = [-p togi -p togi-tuner]
+const cli = path self args.nu
+
+def run-cli [product: string, ...extra: string] {
+    $metadata | to json | ^nu --no-config-file --stdin $cli $product ...$extra | complete
+}
 
 def test-product-only [] {
     assert equal (selection $product $metadata []) $product_args
@@ -47,13 +52,13 @@ def test-nonworkspace-dependency-fails [] { assert-rejected serde }
 def test-option-is-not-a-package [] { assert-rejected '--workspace' }
 
 def test-cli-preserves-package-spelling [] {
-    let result = (^nu --no-config-file tools/cover/args.nu '-p togi -p togi-tuner' togi-tool-release togi-tool-release | complete)
+    let result = (run-cli '-p togi -p togi-tuner' togi-tool-release togi-tool-release)
     assert equal $result.exit_code 0
     assert equal ($result.stdout | str trim) '-p togi -p togi-tuner -p togi-tool-release'
 }
 
 def test-cli-rejects-before-producing-arguments [] {
-    let result = (^nu --no-config-file tools/cover/args.nu '-p togi' serde | complete)
+    let result = (run-cli '-p togi' serde)
     assert ($result.exit_code != 0)
     assert equal $result.stdout ''
     assert str contains $result.stderr 'coverage package is not a workspace member: serde'

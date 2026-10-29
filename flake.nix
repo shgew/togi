@@ -303,6 +303,17 @@
                   HOME=$TMPDIR nu --no-config-file tests.nu
                   touch "$out"
                 '';
+            cover-test =
+              pkgs.runCommand "togi-cover-test"
+                {
+                  nativeBuildInputs = [ pkgs.nushell ];
+                  src = ./tools/cover;
+                }
+                ''
+                  cd "$src"
+                  HOME=$TMPDIR nu --no-config-file tests.nu
+                  touch "$out"
+                '';
             sql-test =
               pkgs.runCommand "togi-sql-test"
                 {

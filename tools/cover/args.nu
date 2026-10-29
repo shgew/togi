@@ -9,8 +9,9 @@ export def selection [product: list<string>, metadata: record, extra: list<strin
     $product | append $extra | uniq | each {|name| ['-p' $name] } | flatten
 }
 
+# Standard input is `cargo metadata --locked --format-version 1 --no-deps` JSON.
 def main [product_args: string, ...extra: string] {
-    let metadata = (^cargo metadata --locked --format-version 1 --no-deps | from json)
+    let metadata = ($in | from json)
     let product = ($product_args | split row ' ' | where {|arg| $arg != '-p' and $arg != '' })
     selection $product $metadata $extra | str join ' ' | print
 }
