@@ -40,6 +40,7 @@ fn restoration(state: &Value) -> Value {
 #[test_case("unit.stop", &stop(&json!({"kind": "allowance_exhausted"})), Style::Yellow; "allowance_finish")]
 #[test_case("unit.stop", &stop(&json!({"kind": "adverse_ceiling"})), Style::Yellow; "adverse_ceiling_stop")]
 #[test_case("unit.stop", &stop(&json!({"kind": "veto"})), Style::Yellow; "veto_stop")]
+#[test_case("unit.stop", &stop(&json!({"kind": "predecessor", "original": {"session": "20261002T011407Z", "seq": 4}})), Style::Yellow; "predecessor_stop")]
 #[test_case("unit.stop", &stop(&json!({"kind": "first_backstep", "event": {"kind": "boot", "boot": "boot-a"}, "application": 1})), Style::Yellow; "first_backstep")]
 #[test_case("unit.stop", &stop(&json!({"kind": "restoration_backstep", "event": {"kind": "boot", "boot": "boot-a"}})), Style::Yellow; "restoration_backstep")]
 #[test_case("campaign.charge", &charge(false), Style::Red; "provisional_charge")]

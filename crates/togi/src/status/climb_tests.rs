@@ -448,3 +448,31 @@ fn firmware_restoration_names_its_state_and_exact_saved_vector(
     assert!(flat.contains(expected), "{out}");
     assert!(flat.contains("saved exact profile: core 0 -5"), "{out}");
 }
+
+#[test]
+fn a_night_ceiling_blocker_is_held_not_finished() {
+    let mut policy = fixture();
+    policy.units[0].state = ClimbUnitState::Held {
+        reason: vec![ClimbBlocker::Ceiling {
+            unit: policy.units[0].unit,
+        }],
+    };
+    let out = shown(&policy, false);
+    assert!(out.contains("held: core 0 is at its ceiling"), "{out}");
+}
+
+#[test]
+fn a_predecessor_stop_preserves_its_original_event_identity() {
+    let mut policy = case_fixture(Case::Finished);
+    let ClimbUnitState::Finished { reason, .. } = &mut policy.units[0].state else {
+        panic!("finished fixture");
+    };
+    *reason = UnitStopReason::Predecessor {
+        original: serde_json::from_str(r#"{"session":"20261002T011407Z","seq":4}"#).unwrap(),
+    };
+    let out = shown(&policy, false);
+    assert!(
+        out.contains("stopped: predecessor event 20261002T011407Z:4"),
+        "{out}"
+    );
+}
