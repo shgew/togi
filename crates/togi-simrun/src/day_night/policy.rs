@@ -5,15 +5,106 @@ use togi_machine::{
     TrialSpec,
 };
 
+use super::successor::{
+    FinishReason, PolicyReport, PolicyUnit, UnitFinish, UnitId, UnitMode, UnitPhase,
+};
 use super::{DayClassification, DayObservation, Night, Policy, RunError};
 
 /// The stock comparator deliberately performs no night experiments.
-pub struct CoZero;
+pub struct CoZero {
+    mode: UnitMode,
+    report: PolicyReport,
+}
+
+impl Default for CoZero {
+    fn default() -> Self {
+        Self::new(UnitMode::CcdUniform)
+    }
+}
+
+impl CoZero {
+    pub fn new(mode: UnitMode) -> Self {
+        Self {
+            mode,
+            report: PolicyReport::unavailable(),
+        }
+    }
+
+    fn initialize(&mut self, day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        if !self.report.unit_membership.is_empty() {
+            return Ok(());
+        }
+        let topology = machine.host.topology()?;
+        self.report.readback = Some(
+            topology
+                .iter()
+                .map(|info| {
+                    let offset = machine.smu.offset(info.core)?.0;
+                    let depth = u8::try_from(-i64::from(offset))
+                        .map_err(|_| RunError::Calendar("stock readback depth"))?;
+                    Ok((info.core, depth))
+                })
+                .collect::<Result<_, RunError>>()?,
+        );
+        let mut ccds: Vec<_> = topology.iter().map(|info| info.ccd).collect();
+        ccds.sort_unstable();
+        ccds.dedup();
+        let groups: Vec<Vec<_>> = match self.mode {
+            UnitMode::CcdUniform => ccds
+                .iter()
+                .map(|ccd| {
+                    topology
+                        .iter()
+                        .filter(|info| info.ccd == *ccd)
+                        .map(|info| info.core)
+                        .collect()
+                })
+                .collect(),
+            UnitMode::PerCore => topology.iter().map(|info| vec![info.core]).collect(),
+        };
+        for (index, cores) in groups.into_iter().enumerate() {
+            let id = |index| {
+                UnitId::new(
+                    u16::try_from(index).map_err(|_| RunError::Calendar("stock unit count"))?,
+                )
+                .map_err(|_| RunError::Calendar("stock unit index"))
+            };
+            let unit = id(index)?;
+            let parent = match self.mode {
+                UnitMode::CcdUniform => None,
+                UnitMode::PerCore => Some(id(
+                    ccds.iter()
+                        .position(|ccd| {
+                            topology
+                                .iter()
+                                .any(|info| info.core == cores[0] && info.ccd == *ccd)
+                        })
+                        .ok_or(RunError::Calendar("stock parent CCD"))?,
+                )?),
+            };
+            self.report.unit_membership.push(PolicyUnit {
+                unit,
+                cores,
+                kind: match self.mode {
+                    UnitMode::CcdUniform => UnitPhase::Coarse,
+                    UnitMode::PerCore => UnitPhase::Core,
+                },
+                parent,
+            });
+            self.report.finishes.push(UnitFinish {
+                unit,
+                reason: FinishReason::FixedStock,
+                day: f64::from(day),
+                witnesses: vec!["fixed-stock-policy".to_owned()],
+            });
+        }
+        Ok(())
+    }
+}
 
 impl Policy for CoZero {
-    fn report(&self) -> super::successor::PolicyReport {
-        // Stock never attempts a climb: it has no finish witness or learning allowance.
-        super::successor::PolicyReport::unavailable()
+    fn report(&self) -> PolicyReport {
+        self.report.clone()
     }
 
     #[expect(
@@ -29,9 +120,9 @@ impl Policy for CoZero {
         clippy::disallowed_methods,
         reason = "the stock diagnostic comparator writes only simulated registers"
     )]
-    fn start_day(&mut self, _day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
+    fn start_day(&mut self, day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
         machine.smu.set_all_offsets(TargetOffset::ZERO)?;
-        Ok(())
+        self.initialize(day, machine)
     }
 
     fn observe_day(

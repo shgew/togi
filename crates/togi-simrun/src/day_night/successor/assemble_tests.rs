@@ -92,6 +92,7 @@ fn active(
     night: bool,
     cause: Option<Cause>,
 ) -> machine::Observation {
+    state.interrupt();
     let profile = profile(&raw, scenario).unwrap();
     let seconds = scenario
         .slice_seconds(
@@ -395,6 +396,154 @@ fn finish_trigger_keeps_learning_and_later_reports_cannot_move_original_finish()
         Outcome::CompleteConverged {
             observed_until_day: 2.0
         }
+    );
+}
+
+fn finished_profile(scenario: &truth::Scenario, mut config: RunConfig, depths: &[u8]) -> Record {
+    grouping(&mut config, scenario).unwrap();
+    assert_eq!(depths.len(), config.provenance.membership.len());
+    let deployed = config
+        .provenance
+        .membership
+        .iter()
+        .zip(depths)
+        .flat_map(|(unit, depth)| unit.cores.iter().map(move |core| (*core, *depth)))
+        .collect();
+    let report = PolicyReport {
+        finishes: config
+            .provenance
+            .membership
+            .iter()
+            .map(|unit| UnitFinish {
+                unit: unit.unit,
+                reason: FinishReason::Ceiling,
+                day: 1.0,
+                witnesses: vec![format!("synthetic-finish-{}", unit.unit.get())],
+            })
+            .collect(),
+        ..PolicyReport::unavailable()
+    };
+    let observed = Duration::from_hours(24);
+    let record = assemble(
+        config,
+        scenario,
+        vec![
+            change(Duration::ZERO, deployed, false),
+            sleep(Duration::ZERO, observed, deployed),
+        ],
+        vec![snapshot(Duration::ZERO, report)],
+        observed,
+        None,
+        0.0,
+    )
+    .unwrap();
+    record.validate().unwrap();
+    assert_eq!(record.intervals.last().unwrap().phase, Phase::PostFinish);
+    assert!(record.intervals.last().unwrap().admissibility.member);
+    record
+}
+
+#[test_case::test_case(36, false; "below the required total")]
+#[test_case::test_case(37, true; "at the required total")]
+fn benign_convergence_requires_ceil_eighty_percent_total(second_depth: u8, expected: bool) {
+    let scenario = truth::Scenario::builtin("successor-edge-deep", 20_001).unwrap();
+    let record = finished_profile(
+        &scenario,
+        config(&scenario, 1, UnitMode::CcdUniform),
+        &[35, second_depth],
+    );
+    assert_eq!(record.epochs[0].reference.operational_max, 90);
+    assert_eq!((4 * 90_u32).div_ceil(5), 72);
+    assert_eq!(
+        record.outcome,
+        if expected {
+            Outcome::CompleteConverged {
+                observed_until_day: 2.0,
+            }
+        } else {
+            Outcome::CompleteUnconvergedCrashFree {
+                observed_until_day: 2.0,
+            }
+        }
+    );
+}
+
+#[test_case::test_case("successor-edge-deep", 4, false; "deep edge below unit floor")]
+#[test_case::test_case("successor-edge-deep", 5, true; "deep edge meets unit floor")]
+#[test_case::test_case("successor-within-ccd-heterogeneous", 4, false; "heterogeneous below unit floor")]
+#[test_case::test_case("successor-within-ccd-heterogeneous", 5, true; "heterogeneous meets unit floor")]
+fn benign_convergence_requires_each_units_floor(scenario: &str, first_depth: u8, expected: bool) {
+    let scenario = truth::Scenario::builtin(scenario, 20_001).unwrap();
+    let mut config = config(&scenario, 1, UnitMode::PerCore);
+    let groups = grouping(&mut config, &scenario).unwrap();
+    references(&mut config, &scenario, &groups).unwrap();
+    let mut depths = config.epochs[0].reference.per_unit_max_feasible.clone();
+    depths[0] = first_depth;
+    let record = finished_profile(&scenario, config, &depths);
+    assert!(
+        depths.iter().map(|depth| u32::from(*depth)).sum::<u32>()
+            >= (4 * record.epochs[0].reference.operational_max).div_ceil(5)
+    );
+    assert_eq!(
+        matches!(record.outcome, Outcome::CompleteConverged { .. }),
+        expected
+    );
+}
+
+#[test]
+fn benign_unit_floor_is_capped_by_maximum_feasible_below_five() {
+    let scenario = truth::Scenario::builtin("successor-edge-deep", 20_001).unwrap();
+    let reference = truth::Reference::new(
+        &scenario,
+        1,
+        truth::UnitGrouping::ccd(scenario.topology()).unwrap(),
+        &truth::ReferenceCalendar::standard(&scenario).unwrap(),
+        truth::LAMBDA,
+        0.0,
+    )
+    .unwrap();
+    let shallow = reference
+        .admissibility(&profile(&raw(&scenario, 3), &scenario).unwrap())
+        .unwrap();
+    // A stricter synthetic risk budget makes a sub-five floor feasible and necessary.
+    let mut config = config(&scenario, 1, UnitMode::CcdUniform);
+    config.calendar.lambda_per_hour = shallow
+        .per_unit
+        .iter()
+        .copied()
+        .map(|rate| rate * 2.0)
+        .fold(shallow.joint, f64::max)
+        * 1.01;
+    config.tolerance = 0.0;
+    let grouping = grouping(&mut config, &scenario).unwrap();
+    references(&mut config, &scenario, &grouping).unwrap();
+    let depths = config.epochs[0].reference.per_unit_max_feasible.clone();
+    assert!(depths.iter().all(|maximum| (1..5).contains(maximum)));
+    let record = finished_profile(&scenario, config, &depths);
+    assert_eq!(
+        record.outcome,
+        Outcome::CompleteConverged {
+            observed_until_day: 2.0,
+        }
+    );
+}
+
+#[test_case::test_case(43, false; "one unit below depth forty-four")]
+#[test_case::test_case(44, true; "all units at depth forty-four")]
+fn no_write_limit_failure_convergence_requires_depth_forty_four(first_depth: u8, expected: bool) {
+    let scenario = truth::Scenario::builtin("successor-no-write-limit-failure", 20_001).unwrap();
+    let record = finished_profile(
+        &scenario,
+        config(&scenario, 1, UnitMode::CcdUniform),
+        &[first_depth, 44],
+    );
+    assert!(
+        u32::from(first_depth) + 44
+            >= (4 * record.epochs[0].reference.operational_max).div_ceil(5)
+    );
+    assert_eq!(
+        matches!(record.outcome, Outcome::CompleteConverged { .. }),
+        expected
     );
 }
 

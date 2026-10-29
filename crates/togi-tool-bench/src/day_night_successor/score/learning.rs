@@ -9,8 +9,8 @@
 use serde::Serialize;
 use togi_machine::PerCore;
 use togi_simrun::day_night::successor::{
-    Classification, FirmwareRestoration, MachineEvent, Period, Phase, ProfileStep, Qualification,
-    Record, RestorationOutcome, RestorationResult, StepIdentity, StepKind, UnitId,
+    Classification, FinishReason, FirmwareRestoration, MachineEvent, Period, Phase, ProfileStep,
+    Qualification, Record, RestorationOutcome, RestorationResult, StepIdentity, StepKind, UnitId,
 };
 
 use super::rules::{MAX_STEP, Rules};
@@ -73,19 +73,22 @@ pub struct PromotionView {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct LearningAudit {
-    /// The record carried an allowance ledger, so the contract could be judged; false means unreported,
-    /// which is not the same as zero violations.
+    /// The contract could be judged from a ledger or proved inapplicable by a fixed-stock trajectory.
+    /// False means unavailable evidence, which is not the same as zero violations.
     pub reported: bool,
     pub violations: Vec<Violation>,
     pub promotions: Vec<PromotionView>,
     pub restorations: Vec<RestorationView>,
 }
 
-/// Audits the learning contract. A record without an allowance ledger has nothing to judge: the audit
-/// is returned unreported, never as an empty violation list.
+/// Audits the learning contract. Without a ledger, only a fully witnessed fixed-stock/no-climb
+/// trajectory establishes non-applicability; other policies remain unreported.
 pub fn audit(record: &Record, rules: &Rules) -> LearningAudit {
     if record.policy.allowance.is_none() {
-        return LearningAudit::default();
+        return LearningAudit {
+            reported: fixed_stock(record, rules),
+            ..LearningAudit::default()
+        };
     }
     let mut audit = Audit {
         record,
@@ -104,6 +107,33 @@ pub fn audit(record: &Record, rules: &Rules) -> LearningAudit {
     audit.restorations();
     audit.tags();
     audit.result
+}
+
+/// The finish is a policy fact, but non-applicability also requires the observed history to show
+/// stock throughout and no climb or restoration application. A missing ledger alone proves nothing.
+fn fixed_stock(record: &Record, rules: &Rules) -> bool {
+    !record.units.is_empty()
+        && record.units.iter().all(|unit| {
+            unit.finish.as_ref().is_some_and(|finish| {
+                finish.reason == FinishReason::FixedStock
+                    && (finish.day - 1.0).abs() <= rules.day_tolerance
+            })
+                && unit.promotions == 0
+                && unit.retreats.steps == 0
+        })
+        && !record.intervals.is_empty()
+        && record.intervals.iter().all(|interval| zero(&interval.profile))
+        && record.policy.readback.as_ref().is_some_and(zero)
+        && record.policy.newest_step.is_none()
+        && record.policy.events.iter().all(|event| !event.charged)
+        && record.steps.iter().all(|step| {
+            matches!(step.kind, StepKind::StockReset { .. })
+                && zero(&step.before)
+                && zero(&step.after)
+        })
+        && record.restorations.iter().all(|restoration| {
+            matches!(restoration.outcome, RestorationOutcome::Blocked { .. })
+        })
 }
 
 struct Audit<'a> {

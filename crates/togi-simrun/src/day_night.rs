@@ -110,7 +110,7 @@ impl PolicyKind {
     /// Refuses parameters the policy cannot run with.
     pub fn build(self, calendar: &CalendarConfig) -> Result<Box<dyn Policy>, RunError> {
         Ok(match self {
-            Self::CoZero => Box::new(CoZero),
+            Self::CoZero => Box::new(CoZero::default()),
             Self::FixedMargin => {
                 Box::new(FixedMargin::new(calendar.fixed_margin, calendar.day_step)?)
             }

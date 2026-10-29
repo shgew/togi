@@ -62,6 +62,9 @@ pub(super) enum ObservationKind {
         cause: Option<Cause>,
         trial_id: Option<String>,
         /// True only on the first slice of a run: intended seconds count once per launch.
+        /// A launch is a separate start, so its onset and warm-up clock begins afresh while
+        /// heat persists; replay interrupts the truth clock before every launch slice. Later
+        /// slices of the same launch are checkpoints that keep the clock running.
         launch: bool,
     },
     Sleep,
@@ -220,6 +223,7 @@ impl Runtime {
         let mut state = self.0.borrow_mut();
         state.check_deadline()?;
         state.capture_profile()?;
+        state.truth.interrupt();
         let failure = state.draw(class, duration)?;
         let non_cpu = state
             .scenario
@@ -258,9 +262,6 @@ impl Runtime {
             }
         };
         state.active(class, event.elapsed, duration, event.cause, None)?;
-        if event.cause.is_some() {
-            state.truth.interrupt();
-        }
         Ok(event)
     }
 }
@@ -610,6 +611,9 @@ impl Running for CycleRunning {
             let mut state = self.shared.borrow_mut();
             state.check_deadline().map_err(machine_error)?;
             state.capture_profile().map_err(machine_error)?;
+            // A separately started trial never continues an earlier launch's onset or
+            // warm-up clock, even for the same class and profile; heat persists.
+            state.truth.interrupt();
             let window = self.spec.duration.min(state.night_remaining.ok_or_else(|| {
                 machine_error(RunError::Calendar("trials require a night allocation"))
             })?);
@@ -625,9 +629,6 @@ impl Running for CycleRunning {
                     Some(&self.spec.id),
                 )
                 .map_err(machine_error)?;
-            if failure.is_some() || operator_end {
-                state.truth.interrupt();
-            }
             let failure = if let Some(failure) = failure {
                 // Local failures retain their physical core. Joint and platform failures have
                 // no policy-visible culprit: report the ordinary first loaded trial core.

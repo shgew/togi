@@ -670,6 +670,12 @@ fn integrate(
             state.interrupt();
             continue;
         }
+        if matches!(
+            observation.kind,
+            ObservationKind::Active { launch: true, .. }
+        ) {
+            state.interrupt();
+        }
         let exact = profile(&observation.profile, scenario)?;
         let mut before = observation.before;
         while before < observation.after {

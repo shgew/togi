@@ -14,7 +14,7 @@ use super::super::fixture::{Ev, Lab, Spec, resync, retopologize, uid};
 use super::super::rules::{Rules, Scope};
 use super::super::stats::{CONFIDENCE, poisson_upper_mean, poisson_upper_rate};
 use super::super::{Criterion, Group, Score, Share, score_validated as score};
-use super::{SeedMetrics, measure};
+use super::{Losses, SeedMetrics, measure};
 
 const SLOPE: f64 = 1.5;
 const EDGE_DEEP: &str = "successor-edge-deep";
@@ -197,6 +197,71 @@ fn records_with(
         validated(record);
     }
     records
+}
+
+#[test]
+fn ruleset13_observed_costs_survive_without_successor_applications() {
+    let lab = Lab::new(&[EDGE_DEEP], 1);
+    let mut record = built(&lab, &Spec::new(EDGE_DEEP, FIRST_SEED, SLOPE));
+    record.provenance.policy_identity = "ruleset13".into();
+    record.policy.allowance = None;
+    record.policy.finishes.clear();
+    record.steps.clear();
+    for interval in &mut record.intervals {
+        interval.phase = Phase::Learning;
+    }
+    for summary in &mut record.units {
+        summary.finish = None;
+    }
+    record.units[0].promotions = 2;
+    record.units[0].retreats.steps = 3;
+    record.units[0].retreats.co_counts = 2;
+    record.units[0].retreats.background_counts = 1;
+    record.units[0].retreats.non_cpu_counts = 1;
+    record.units[0].retreats.unattributed_counts = 1;
+    record.units[1].promotions = 1;
+    record.units[1].retreats.steps = 2;
+    record.units[1].retreats.co_counts = 3;
+    record.units[1].retreats.unattributed_counts = 2;
+    record.outcome = Outcome::CompleteUnconvergedCrashFree {
+        observed_until_day: record.intervals.last().expect("observed interval").end_day,
+    };
+    resync(&mut record);
+    validated(&record);
+    let seed = metrics(&lab, &record);
+
+    // Observable applications do not manufacture a successor permission ledger or witnesses.
+    assert!(record.steps.is_empty());
+    assert!(seed.ledger.is_none());
+    assert!(!seed.learning.reported);
+    assert!(seed.units.iter().all(|unit| unit.finish.is_none()));
+    assert_eq!(
+        seed.units
+            .iter()
+            .map(|unit| (unit.promotions, unit.retreat_steps))
+            .collect::<Vec<_>>(),
+        [(2, 3), (1, 2)]
+    );
+    assert_eq!(
+        seed.units[0].losses,
+        Losses {
+            co: 2,
+            background: 1,
+            non_cpu: 1,
+            unattributed: 1,
+            history: 0,
+        }
+    );
+    assert_eq!(
+        seed.units[1].losses,
+        Losses {
+            co: 3,
+            background: 0,
+            non_cpu: 0,
+            unattributed: 2,
+            history: 0,
+        }
+    );
 }
 
 #[test]

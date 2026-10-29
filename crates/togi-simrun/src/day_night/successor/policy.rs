@@ -8,6 +8,8 @@ use super::{Phase, UnitId};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FinishReason {
+    /// A deliberately fixed stock profile has no climb to complete.
+    FixedStock,
     Ceiling,
     CpuSuspectStop,
     AllowanceExhausted,

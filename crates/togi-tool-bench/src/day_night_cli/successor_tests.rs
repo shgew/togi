@@ -100,6 +100,7 @@ fn short_comparator_runs_through_cli_executor(policy: &str) {
             assert!(config.deadline.is_some());
             togi_simrun::day_night::successor::run(config, policy)
         },
+        &Instant::now,
         &mut output,
     )
     .expect("CLI executor")
@@ -131,6 +132,7 @@ fn expiry_inside_a_run_retains_partial_record_without_verdict() {
             config.deadline = Some(Instant::now());
             togi_simrun::day_night::successor::run(config, policy)
         },
+        &Instant::now,
         &mut output,
     )
     .expect("partial artifacts");
@@ -161,6 +163,7 @@ fn expired_invocation_starts_no_runs_and_remains_incomplete() {
         plan,
         &registration,
         &|_, _| panic!("expired invocation must not execute"),
+        &Instant::now,
         &mut output,
     )
     .expect("manifest");
@@ -204,6 +207,7 @@ fn registered_profile_is_diagnostics_only() {
         plan,
         &registration,
         &togi_simrun::day_night::successor::run,
+        &Instant::now,
         &mut Vec::new(),
     )
     .expect("diagnostic run")
@@ -318,6 +322,16 @@ fn score_from_combines_files_without_running_or_writing_run_artifacts() {
     .expect("score-only CLI")
     .args;
     assert!(args.out.is_none());
+    let first = horizon_record_jsonl(1.5);
+    let second = horizon_record_jsonl(2.0);
+    assert_ne!(first, second);
+    let expected = registration
+        .cells(
+            togi_simrun::day_night::successor::Split::Dev,
+            RunProfile::ReducedDev,
+        )
+        .expect("reduced cells")
+        .len();
     let calls = AtomicUsize::new(0);
     let mut output = Vec::new();
     let incomplete = super::score_files(
@@ -326,18 +340,27 @@ fn score_from_combines_files_without_running_or_writing_run_artifacts() {
         &bytes,
         &|path| {
             calls.fetch_add(1, Ordering::SeqCst);
-            assert!(
-                path == std::path::Path::new("slope-1.5.jsonl")
-                    || path == std::path::Path::new("slope-2.0.jsonl")
-            );
-            Ok(Vec::new())
+            if path == std::path::Path::new("slope-1.5.jsonl") {
+                Ok(first.clone())
+            } else if path == std::path::Path::new("slope-2.0.jsonl") {
+                Ok(second.clone())
+            } else {
+                panic!("unexpected score input {path:?}")
+            }
         },
         &mut output,
     )
-    .expect("synthetic missing-record score");
+    .expect("synthetic partial-record score");
     assert!(incomplete);
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     let output = String::from_utf8(output).expect("rendered score");
+    // Each input's record completes its own cell: a dropped input leaves 1 complete cell.
+    assert!(output.contains(&format!("Complete cells: 2/{expected}")));
+    let missing = output
+        .lines()
+        .filter(|line| line.contains("| missing |"))
+        .count();
+    assert_eq!(missing, expected - 2);
     assert!(output.contains(registration::REDUCED_DEV_LABEL));
     assert!(output.contains("Slopes scored: 1.5, 2"));
     assert!(!output.contains("PASS"));
@@ -413,16 +436,162 @@ fn registered_single_slope_renders_criteria_and_demands_other_slope_records() {
     assert!(output.contains("Single-slope criteria only: no registered gate verdict"));
     assert!(output.contains("| Criterion | Column | Rule | Measured | Result |"));
     assert!(!output.contains("PASS"));
-    assert!(super::invocation_failed(&result));
+    assert!(super::invocation_failed(&registration, &result));
     // Synthetic exit-disposition fixture: cell completeness is supplied directly, not
     // claimed as a simulated result. The remaining issue is the real scorer's slope subset.
     result.faults.clear();
     result.complete_cells = result.expected_cells;
-    assert!(!super::invocation_failed(&result));
+    assert!(!super::invocation_failed(&registration, &result));
     result
         .issues
         .push("synthetic conflicting provenance".to_owned());
-    assert!(super::invocation_failed(&result));
+    assert!(super::invocation_failed(&registration, &result));
+}
+
+#[test]
+fn complete_reduced_report_succeeds_without_a_gate_subset_issue() {
+    let (tiny, bytes) = fixture();
+    let arguments = args("co-zero");
+    let execution = execute_plan(
+        plan(&arguments, &tiny, &bytes).expect("tiny plan"),
+        &tiny,
+        &togi_simrun::day_night::successor::run,
+        &Instant::now,
+        &mut Vec::new(),
+    )
+    .expect("completed tiny execution");
+    let registration = Registration::parse(&bytes).expect("full registration");
+    let mut output = Vec::new();
+    let failed = super::report_execution_with_score(
+        &arguments,
+        &registration,
+        &execution,
+        &mut output,
+        |selection, output| {
+            let mut result = super::render_score(
+                &registration,
+                &registration::sha256_hex(&bytes),
+                selection,
+                &[],
+                &mut Vec::new(),
+            )?;
+            assert!(result.issues.is_empty());
+            // The scorer's issue shape is real; complete cells are an arithmetic fixture
+            // isolating report/exit handling, not a claim about a registered experiment.
+            result.faults.clear();
+            result.complete_cells = result.expected_cells;
+            result.verdict = super::Verdict::ExploratoryReduced;
+            std::io::Write::write_all(
+                output,
+                super::render::render_seeds(&result).as_bytes(),
+            )?;
+            Ok(result)
+        },
+    )
+    .expect("successful reduced report");
+    assert!(!failed);
+    let output = String::from_utf8(output).expect("report");
+    assert!(output.contains("Completed 1/1; retained 1"));
+    assert!(output.contains(registration::REDUCED_DEV_LABEL));
+    assert!(!output.contains("PASS"));
+}
+
+#[test]
+fn only_a_gate_profile_expects_the_slope_subset_issue() {
+    let (_, bytes) = fixture();
+    let registration = Registration::parse(&bytes).expect("full registration");
+    let sha = registration::sha256_hex(&bytes);
+    // The scorer adds the slope-subset issue only for a registered gate profile.
+    for (profile, scorer_issues) in [(Profile::ReducedDev, 0), (Profile::Registered, 1)] {
+        let mut args = args("co-zero");
+        args.slope = Some(1.5);
+        args.run_profile = Some(profile);
+        let selection = super::score_selection(&args, &registration).expect("single slope");
+        let mut result =
+            super::render_score(&registration, &sha, &selection, &[], &mut Vec::new())
+                .expect("synthetic missing-record score");
+        assert_eq!(result.selected_slopes, vec![1.5]);
+        assert!(result.registered_slopes.len() > 1);
+        assert_eq!(result.issues.len(), scorer_issues);
+        // Exit-disposition fixture: only cell completeness is supplied directly.
+        result.faults.clear();
+        result.complete_cells = result.expected_cells;
+        assert!(!super::invocation_failed(&registration, &result));
+        // A reduced run must not tolerate the gate issue, and a gate run must still demand it.
+        let subset = "slope selection covers 1 of 2 registered slopes".to_owned();
+        let mut changed = result.clone();
+        if scorer_issues == 0 {
+            changed.issues.push(subset);
+        } else {
+            changed.issues.clear();
+        }
+        assert!(super::invocation_failed(&registration, &changed));
+    }
+}
+
+/// One real stock run of the synthetic edge-deep scenario over the registered horizon: valid and
+/// complete, never a scored result.
+fn horizon_record_jsonl(slope: f64) -> Vec<u8> {
+    let (mut registration, bytes) = fixture();
+    registration.calendar.days = 730;
+    let mut args = args("co-zero");
+    args.slope = Some(slope);
+    let plan = plan(&args, &registration, &bytes).expect("horizon plan");
+    let mut output = Vec::new();
+    execute_plan(
+        plan,
+        &registration,
+        &togi_simrun::day_night::successor::run,
+        &Instant::now,
+        &mut output,
+    )
+    .expect("horizon run");
+    let record = togi_simrun::day_night::successor::Record::parse(&output).expect("valid record");
+    assert!(record.outcome.is_complete());
+    assert_eq!(record.provenance.slope, slope);
+    output
+}
+
+#[test]
+fn manifest_timing_separates_run_wall_sum_max_jobs_and_compilation() {
+    let (mut registration, bytes) = fixture();
+    registration.seeds.dev.count = 3;
+    registration.resources.jobs = 2;
+    let plan = plan(&args("co-zero"), &registration, &bytes).expect("plan");
+    assert_eq!(plan.configs.len(), 3);
+    let base = plan.started;
+    let walls = [1.5, 4.25, 2.0];
+    let next = AtomicUsize::new(0);
+    let mut output = Vec::new();
+    let execution = execute_plan(
+        plan,
+        &registration,
+        &|config, policy| {
+            let mut record = togi_simrun::day_night::successor::run(config, policy)?;
+            record.runtime.wall_seconds = walls[next.fetch_add(1, Ordering::SeqCst)];
+            Ok(record)
+        },
+        // A fixed instant 90 s after the start: invocation elapsed without sleeping.
+        &|| base + Duration::from_secs(90),
+        &mut output,
+    )
+    .expect("timed run");
+    let manifest = &execution.manifest;
+    assert_eq!(manifest.retained_count, 3);
+    assert_eq!(manifest.jobs, 2);
+    assert_eq!(manifest.invocation_wall_seconds, 90.0);
+    assert_eq!(manifest.summed_run_wall_seconds, 7.75);
+    assert_eq!(manifest.maximum_run_wall_seconds, 4.25);
+    assert_eq!(manifest.compilation_seconds, 2.5);
+    assert!(!manifest.budget_expired);
+    let full = Registration::parse(&bytes).expect("full registration");
+    let mut rendered = Vec::new();
+    super::report_execution(&args("co-zero"), &full, &execution, &mut rendered)
+        .expect("timing report");
+    let rendered = String::from_utf8(rendered).expect("rendered timing");
+    assert!(rendered.contains(
+        "Completed 3/3; retained 3; run wall 90.000s; sum 7.750s; max 4.250s; compilation 2.500s; jobs 2"
+    ));
 }
 
 #[test]

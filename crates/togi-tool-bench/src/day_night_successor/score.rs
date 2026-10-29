@@ -354,7 +354,7 @@ pub fn score(
 }
 
 /// Internal criterion fixtures use smaller cell sets without changing the public registration.
-fn score_validated(
+pub(super) fn score_validated(
     registration: &Registration,
     registration_sha256: &str,
     selection: &ScoreSelection,
@@ -906,7 +906,7 @@ fn build_group(
         passed: rate.all(),
     });
     let learning = count(&|seed| seed.learning.reported && seed.learning.violations.is_empty());
-    list.push(Criterion { name: "learning-contract", column: Column::Safety, rule: "an allowance ledger is reported and there is no allowance, stop, step, hold, qualification or restoration violation on any complete seed".into(), share: Some(learning), measured: learning.to_string(), passed: learning.all() });
+    list.push(Criterion { name: "learning-contract", column: Column::Safety, rule: "allowance evidence or verified fixed-stock non-applicability is established, with no allowance, stop, step, hold, qualification or restoration violation on any complete seed".into(), share: Some(learning), measured: learning.to_string(), passed: learning.all() });
 
     if scope.benign {
         let benign = count(&|seed| seed.benign_ok);

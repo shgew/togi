@@ -1,12 +1,14 @@
 use std::time::Duration;
 
 use togi_journal::{
-    ApplyCause, Event, Outcome, Payload, QualificationState, ShutdownReason, StepKind,
+    ApplyCause, Certainty, DayAnswer, DayAnswerKind, Event, Outcome, Payload, QualificationState,
+    ShutdownReason, StepKind,
 };
 use togi_machine::{CcdProfile, Machine};
 use togi_tuner::policy::{Params, State};
 
-use super::Ruleset13;
+use super::{OPERATOR_UID, Ruleset13, reported_classification};
+use crate::day_night::successor::{Classification, LearningEvent};
 use crate::day_night::{
     CalendarConfig, DayClassification, DayObservation, DayStart, EndAnswer, Night, Policy,
     PolicyKind, RunError, run_controlled, run_with_policy,
@@ -314,6 +316,178 @@ fn a_cpu_suspect_answer_leads_to_a_retreat() {
         |event| event.classification == crate::day_night::successor::Classification::CpuSuspect
     ));
     assert!(report.events.iter().all(|event| !event.charged));
+}
+
+/// Delegates to [`Ruleset13`], replacing one day observation with an unanswered end: the first day
+/// unless `after_promotion`, otherwise the first day after a promotion. With `late`, the operator
+/// answers that end at the next day boot, through the same journal the adapter folds.
+struct UnansweredEnd {
+    inner: Ruleset13,
+    after_promotion: bool,
+    late: Option<DayAnswerKind>,
+    /// The adapter's report of the end, as it stood when the day was observed.
+    ended: Option<LearningEvent>,
+    answered: bool,
+}
+
+impl UnansweredEnd {
+    fn new(after_promotion: bool, late: Option<DayAnswerKind>) -> Self {
+        Self {
+            inner: Ruleset13::new(1.5).unwrap().recording(),
+            after_promotion,
+            late,
+            ended: None,
+            answered: false,
+        }
+    }
+}
+
+impl Policy for UnansweredEnd {
+    fn firmware_changed(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        self.inner.firmware_changed(machine)
+    }
+    fn start_day(&mut self, day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        if let (Some(_), Some(answer), false) = (&self.ended, self.late, self.answered) {
+            let answer = self
+                .inner
+                .events()
+                .unwrap()
+                .iter()
+                .rev()
+                .find_map(|event| match &event.payload {
+                    Payload::DayUncleanEnd(end) => Some(DayAnswer {
+                        boot: end.boot.clone(),
+                        offsets: end.offsets,
+                        answer,
+                        uid: OPERATOR_UID,
+                    }),
+                    _ => None,
+                })
+                .unwrap();
+            self.inner.append(machine, answer.into(), &[])?;
+            self.answered = true;
+        }
+        self.inner.start_day(day, machine)
+    }
+    fn observe_day(
+        &mut self,
+        day: u32,
+        evidence: &DayObservation,
+        machine: &mut Machine<'_>,
+    ) -> Result<DayClassification, RunError> {
+        if self.ended.is_none() && (!self.after_promotion || holds_promotion(&self.inner)) {
+            let end = DayObservation::Ended {
+                active: Duration::from_hours(1),
+                answer: None,
+            };
+            let classification = self.inner.observe_day(day, &end, machine)?;
+            self.ended = self.inner.report().events.last().cloned();
+            return Ok(classification);
+        }
+        self.inner.observe_day(day, evidence, machine)
+    }
+    fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        self.inner.night(night, machine)
+    }
+}
+
+#[test]
+fn an_answer_reclassifies_a_provisional_event_under_its_original_identity() {
+    let mut policy = UnansweredEnd::new(true, Some(DayAnswerKind::Graphics));
+    // The run ends once the next day boot has folded the answer and settled the day query.
+    run_until(&mut policy, |policy| {
+        if policy.answered {
+            DayStart::Stop
+        } else {
+            DayStart::Run
+        }
+    });
+    let ended = policy.ended.clone().unwrap();
+    // An unanswered end at a nonzero day profile is provisionally CPU-suspect.
+    assert_eq!(ended.classification, Classification::Unanswered);
+    assert!(ended.provisional);
+    assert_eq!(ended.reclassified_from, None);
+    let report = policy.inner.report();
+    let current: Vec<_> = report
+        .events
+        .iter()
+        .filter(|event| event.id == ended.id)
+        .collect();
+    // A graphics answer reclassifies the same event as non-CPU, keeping what it was first reported as.
+    assert_eq!(
+        current,
+        [&LearningEvent {
+            classification: Classification::NonCpu,
+            provisional: false,
+            reclassified_from: Some(Classification::Unanswered),
+            ..ended
+        }]
+    );
+    assert_eq!(report.allowance, None);
+    assert!(report.events.iter().all(|event| !event.charged));
+}
+
+#[test]
+fn an_unanswered_end_at_stock_reports_a_non_cpu_event_without_an_allowance() {
+    let mut policy = UnansweredEnd::new(false, None);
+    run_until(&mut policy, |policy| {
+        if policy.ended.is_some() {
+            DayStart::Stop
+        } else {
+            DayStart::Run
+        }
+    });
+    let ended = policy.ended.clone().unwrap();
+    // An end at CO 0 is platform evidence, which the journal records as non-CPU.
+    assert_eq!(ended.classification, Classification::NonCpu);
+    assert!(!ended.provisional);
+    assert_eq!(ended.reclassified_from, None);
+    assert!(!ended.charged);
+    let report = policy.inner.report();
+    assert_eq!(report.allowance, None);
+    assert_eq!(report.finishes, Vec::new());
+    assert_eq!(report.events, [ended]);
+}
+
+/// The adapter's own unclean ends carry no readable evidence, so its journal never classifies one as
+/// unexplained; the mapping still reports that class, and an event the journal has not committed, as
+/// unexplained and not provisional.
+#[test]
+fn every_journal_classification_maps_to_its_reported_class() {
+    let cases = [
+        (
+            Some(togi_journal::Classification::CpuSuspect {
+                certainty: Certainty::Definite,
+            }),
+            Classification::CpuSuspect,
+            false,
+        ),
+        (
+            Some(togi_journal::Classification::CpuSuspect {
+                certainty: Certainty::Provisional,
+            }),
+            Classification::Unanswered,
+            true,
+        ),
+        (
+            Some(togi_journal::Classification::NonCpu {}),
+            Classification::NonCpu,
+            false,
+        ),
+        (
+            Some(togi_journal::Classification::Unexplained {}),
+            Classification::Unexplained,
+            false,
+        ),
+        (None, Classification::Unexplained, false),
+    ];
+    for (journal, reported, provisional) in cases {
+        assert_eq!(
+            reported_classification(journal),
+            (reported, provisional),
+            "{journal:?}"
+        );
+    }
 }
 
 #[test]

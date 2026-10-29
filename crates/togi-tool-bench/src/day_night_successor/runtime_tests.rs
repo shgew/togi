@@ -533,6 +533,221 @@ fn provenance(lab: &Lab) -> Provenance {
 #[test]
 #[expect(
     clippy::too_many_lines,
+    reason = "one end-to-end comparison pins the real stock trajectory against every fixture row"
+)]
+fn real_stock_runner_matches_stock_fixture_safety_and_non_benign_rows_without_a_ledger() {
+    let mut lab = Lab::new(&["successor-edge-deep", "successor-hidden-daily"], 1);
+    for scenario in &mut lab.registration.scenarios {
+        scenario.epochs[0].id = "initial".into();
+        scenario.epochs[0].context = "ctx-initial".into();
+    }
+    let comparator = lab.registration.policy("shipped").expect("comparator metadata");
+    let super::registration::SourceIdentity::Pinned { revision, sha256 } = &comparator.source else {
+        panic!("synthetic comparator source is pinned");
+    };
+    let records: Vec<_> = lab
+        .cells(Split::Dev, RunProfile::Registered)
+        .iter()
+        .map(|cell| {
+            let mut provenance = provenance(&lab);
+            provenance.policy_identity.clone_from(&comparator.identity);
+            provenance.source_revision.clone_from(revision);
+            provenance.policy_source_sha256.clone_from(sha256);
+            provenance.parameters_sha256.clone_from(&comparator.parameters_sha256);
+            provenance.scenario.clone_from(&cell.scenario);
+            provenance.seed = cell.seed;
+            provenance.slope = cell.slope;
+            provenance.unit_mode = cell.unit_mode;
+            provenance.run_profile = RunProfile::Registered;
+            let mut policy = togi_simrun::day_night::CoZero::new(cell.unit_mode);
+            assert!(policy.report().finishes.is_empty(), "no day has started yet");
+            let record = successor::run(
+                RunConfig {
+                    calendar: CalendarConfig::default(),
+                    provenance,
+                    epochs: Vec::new(),
+                    daily: Vec::new(),
+                    jobs: lab.registration.resources.jobs,
+                    tolerance: lab.registration.tolerance.admissibility,
+                    resource_class: lab.registration.resources.resource_class.clone(),
+                    compilation_seconds: 0.0,
+                    deadline: None,
+                },
+                &mut policy,
+            )
+            .expect("synthetic stock execution");
+            record.validate().expect("valid real stock trajectory");
+            assert!(record.policy.allowance.is_none());
+            assert!(record.steps.is_empty());
+            assert_eq!(record.policy.finishes.len(), record.units.len());
+            assert!(record.units.iter().all(|unit| {
+                unit.finish.as_ref().is_some_and(|finish| {
+                    finish.reason == FinishReason::FixedStock
+                        && (finish.day - 1.0).abs() < f64::EPSILON
+                        && finish.witnesses == ["fixed-stock-policy"]
+                })
+            }));
+            assert!(record.intervals.iter().all(|interval| {
+                interval.phase == Phase::PostFinish
+                    && interval.profile.iter().all(|(_, depth)| depth == 0)
+            }));
+            let roundtrip = successor::Record::parse(&serde_json::to_vec(&record).unwrap())
+                .expect("fixed-stock finish round trip");
+            assert_eq!(roundtrip.policy, record.policy);
+            record
+        })
+        .collect();
+    let mut selection = lab.selection(Split::Dev, RunProfile::Registered);
+    selection.policy = "shipped".into();
+    let actual = super::score::score_validated(&lab.registration, &lab.sha, &selection, &records)
+        .expect("score real stock trajectories");
+    let fixture = super::score::score_validated(
+        &lab.registration,
+        &lab.sha,
+        &lab.selection(Split::Dev, RunProfile::Registered),
+        &lab.records(Split::Dev, RunProfile::Registered, super::score::fixture::Spec::stock),
+    )
+    .expect("score stock fixtures");
+    assert!(actual.complete(), "{:?} {:?}", actual.faults, actual.issues);
+    assert_eq!(actual.complete_cells, 4);
+    for group in &actual.groups {
+        let reference = fixture.groups.iter().find(|reference| {
+            reference.scenario == group.scenario
+                && (reference.slope - group.slope).abs() < f64::EPSILON
+        }).expect("matching fixture group");
+        assert_eq!(
+            group.criteria.iter().map(|row| (row.name, row.passed)).collect::<Vec<_>>(),
+            reference.criteria.iter().map(|row| (row.name, row.passed)).collect::<Vec<_>>(),
+            "{}",
+            group.scenario,
+        );
+        assert!(group.safety_met);
+        assert!(group.seeds.iter().all(|seed| {
+            seed.ledger.is_none()
+                && seed.learning.reported
+                && seed.learning.violations.is_empty()
+                && seed.risk.t > 0.0
+        }));
+        if group.scenario == "successor-edge-deep" {
+            assert!(!group.usefulness_met);
+            assert!(group.criteria.iter().filter(|row| {
+                matches!(row.name, "benign-depth" | "convergence" | "benign-median-settled-day")
+            }).all(|row| !row.passed));
+            assert_eq!(group.status, super::score::GroupStatus::NotMet);
+        } else {
+            assert!(group.usefulness_met);
+            assert_eq!(group.status, super::score::GroupStatus::Met);
+        }
+    }
+}
+
+#[test_case::test_case(UnitMode::CcdUniform, 2; "ccd units")]
+#[test_case::test_case(UnitMode::PerCore, 16; "physical core units")]
+fn stock_reports_each_decision_unit_finished_on_its_first_day(mode: UnitMode, units: usize) {
+    let lab = Lab::new(&["successor-edge-deep"], 1);
+    let mut provenance = provenance(&lab);
+    provenance.scenario = "successor-edge-deep".into();
+    provenance.unit_mode = mode;
+    let mut policy = togi_simrun::day_night::CoZero::new(mode);
+    let record = successor::run(
+        RunConfig {
+            calendar: CalendarConfig {
+                days: 1,
+                ..CalendarConfig::default()
+            },
+            provenance,
+            epochs: Vec::new(),
+            daily: Vec::new(),
+            jobs: 1,
+            tolerance: lab.registration.tolerance.admissibility,
+            resource_class: "synthetic-stock-correctness".into(),
+            compilation_seconds: 0.0,
+            deadline: None,
+        },
+        &mut policy,
+    ).expect("one synthetic stock day");
+    record.validate().expect("valid stock membership");
+    assert_eq!(record.units.len(), units);
+    assert_eq!(record.policy.finishes.len(), units);
+    assert_eq!(record.policy.unit_membership, record.provenance.membership);
+    assert!(record.policy.allowance.is_none());
+    assert!(record.units.iter().all(|unit| unit.finish.as_ref().is_some_and(|finish| {
+        finish.reason == FinishReason::FixedStock && (finish.day - 1.0).abs() < f64::EPSILON
+    })));
+    assert!(record.policy.readback.as_ref().unwrap().iter().all(|(_, depth)| depth == 0));
+}
+
+#[test_case::test_case(|record| record.units[0].finish = None; "missing fixed-stock finish")]
+#[test_case::test_case(|record| record.intervals[0].profile.set(CoreId::new(0).unwrap(), 1); "nonzero observed profile")]
+#[test_case::test_case(|record| record.policy.readback.as_mut().unwrap().set(CoreId::new(0).unwrap(), 1); "nonzero final readback")]
+#[test_case::test_case(|record| record.units[0].promotions = 1; "observed comparator promotion")]
+#[test_case::test_case(|record| record.units[0].finish.as_mut().unwrap().reason = FinishReason::Ceiling; "finish without a fixed-stock contract")]
+#[test_case::test_case(|record| record.policy.events.push(LearningEvent {
+    id: "charged-stock-event".into(),
+    day: 1.0,
+    classification: Classification::CpuSuspect,
+    provisional: false,
+    reclassified_from: None,
+    charged: true,
+    phase: Phase::PostFinish,
+    unit_phase: UnitPhase::Coarse,
+    newest_step: None,
+}); "charged policy event")]
+fn no_ledger_learning_audit_requires_fixed_stock_evidence(invalidate: fn(&mut successor::Record)) {
+    let lab = Lab::new(&["successor-edge-deep"], 1);
+    let mut record = super::score::fixture::Spec::new("successor-edge-deep", SEED, 2.0)
+        .stock()
+        .build(&lab);
+    record.policy.allowance = None;
+    for unit in &mut record.units {
+        let finish = unit.finish.as_mut().expect("stock fixture finish");
+        finish.reason = FinishReason::FixedStock;
+        finish.day = 1.0;
+    }
+    record.policy.finishes = record
+        .units
+        .iter()
+        .filter_map(|unit| unit.finish.clone())
+        .collect();
+    record.validate().expect("valid synthetic fixed-stock evidence");
+    let rules = Rules::new(&lab.registration);
+    assert!(learning::audit(&record, &rules).reported);
+    invalidate(&mut record);
+    assert!(!learning::audit(&record, &rules).reported);
+    assert!(record.policy.allowance.is_none());
+}
+
+#[test]
+fn fixed_stock_label_cannot_hide_climb_applications_without_a_ledger() {
+    let lab = Lab::new(&["successor-edge-deep"], 1);
+    let mut record = super::score::fixture::Spec::new("successor-edge-deep", SEED, 2.0)
+        .build(&lab);
+    assert!(!record.steps.is_empty(), "the fixture applied a climb");
+    record.policy.allowance = None;
+    record.policy.newest_step = None;
+    for unit in &mut record.units {
+        let finish = unit.finish.as_mut().unwrap();
+        finish.reason = FinishReason::FixedStock;
+        finish.day = 1.0;
+        unit.promotions = 0;
+    }
+    for interval in &mut record.intervals {
+        interval.profile = interval.profile.iter().map(|(core, _)| (core, 0)).collect();
+    }
+    record.policy.readback = Some(
+        record.provenance.topology.iter().map(|info| (info.core, 0)).collect(),
+    );
+    let stock = record.policy.readback.unwrap();
+    for step in &mut record.steps {
+        step.before = stock;
+        step.after = stock;
+    }
+    assert!(!learning::audit(&record, &Rules::new(&lab.registration)).reported);
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
     reason = "one end-to-end trajectory pins runtime, representation and public recomputation"
 )]
 fn firmware_restoration_records_real_full_vector_crash_and_recomputes_without_grace() {

@@ -198,6 +198,7 @@ pub(super) fn execute(args: &DayNightArgs, bytes: &[u8]) -> Result<bool, Error> 
         plan,
         &registration,
         &togi_simrun::day_night::successor::run,
+        &Instant::now,
         &mut output,
     )?;
     output.flush()?;
@@ -213,6 +214,24 @@ fn report_execution(
     registration: &Registration,
     execution: &Execution,
     output: &mut dyn Write,
+) -> Result<bool, Error> {
+    report_execution_with_score(args, registration, execution, output, |selection, output| {
+        render_score(
+            registration,
+            &execution.manifest.registration_sha256,
+            selection,
+            &execution.records,
+            output,
+        )
+    })
+}
+
+fn report_execution_with_score(
+    args: &DayNightArgs,
+    registration: &Registration,
+    execution: &Execution,
+    output: &mut dyn Write,
+    score_records: impl FnOnce(&ScoreSelection, &mut dyn Write) -> Result<score::Score, Error>,
 ) -> Result<bool, Error> {
     let manifest = &execution.manifest;
     writeln!(
@@ -252,22 +271,21 @@ fn report_execution(
             .slope
             .ok_or(Error::Invalid("missing evaluation slope"))?,
     ]);
-    let result = render_score(
-        registration,
-        &manifest.registration_sha256,
-        &selection,
-        &execution.records,
-        output,
-    )?;
+    let result = score_records(&selection, output)?;
     // A successful single-slope run is not an incomplete execution merely because the other
     // slope's separately retained records are required for the experiment-level score.
-    Ok(invocation_failed(&result))
+    Ok(invocation_failed(registration, &result))
 }
 
-fn invocation_failed(result: &score::Score) -> bool {
-    // The scorer always adds exactly one issue for a slope subset. That issue is expected
-    // after one successful invocation; any further issue or record fault remains a failure.
-    let subset_issue = usize::from(result.selected_slopes.len() != result.registered_slopes.len());
+fn invocation_failed(registration: &Registration, result: &score::Score) -> bool {
+    // Only a gate-verdict profile makes the scorer add exactly one issue for a slope subset.
+    // That issue is expected after one successful invocation; any further issue or record fault
+    // remains a failure. A reduced profile is single-slope by design and adds none.
+    let gate = registration
+        .run_profile(result.run_profile)
+        .is_some_and(|spec| spec.gate_verdict);
+    let subset_issue =
+        usize::from(gate && result.selected_slopes.len() != result.registered_slopes.len());
     !result.faults.is_empty()
         || result.complete_cells != result.expected_cells
         || result.issues.len() != subset_issue
@@ -620,6 +638,7 @@ fn execute_plan(
     plan: Plan,
     registration: &Registration,
     executor: &(impl Fn(RunConfig, &mut dyn Policy) -> Result<Record, RunError> + Sync),
+    clock: &(impl Fn() -> Instant + Sync),
     output: &mut dyn Write,
 ) -> Result<Execution, Error> {
     let started = plan.started;
@@ -668,7 +687,7 @@ fn execute_plan(
             let policy = plan.policy;
             workers.push(scope.spawn(move || {
                 loop {
-                    if Instant::now() >= deadline {
+                    if clock() >= deadline {
                         break;
                     }
                     let config = match queue.lock() {
@@ -742,8 +761,9 @@ fn execute_plan(
         }
         Ok(())
     })?;
-    manifest.invocation_wall_seconds = started.elapsed().as_secs_f64();
-    manifest.budget_expired = Instant::now() >= deadline;
+    let finished = clock();
+    manifest.invocation_wall_seconds = finished.duration_since(started).as_secs_f64();
+    manifest.budget_expired = finished >= deadline;
     Ok(Execution { manifest, records })
 }
 
