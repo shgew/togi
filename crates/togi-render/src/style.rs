@@ -101,6 +101,7 @@ pub fn style_for(payload: &Payload) -> Style {
             | UnitStopReason::RestorationBackstep { .. }
             | UnitStopReason::AdverseCeiling {}
             | UnitStopReason::Veto {}
+            | UnitStopReason::Predecessor { .. }
             | UnitStopReason::AllowanceExhausted {} => Style::Yellow,
         },
         Payload::CampaignCharge(charge) => {
