@@ -19,7 +19,7 @@ fn samples_cover_every_kind_once() {
     let kinds: BTreeSet<_> = samples().iter().map(Payload::kind).collect();
     assert_eq!(kinds.len(), samples().len());
     assert_eq!(kinds, EventKind::ALL.iter().copied().collect());
-    assert_eq!(EventKind::ALL.len(), 74);
+    assert_eq!(EventKind::ALL.len(), 83);
 }
 
 #[test]
@@ -115,7 +115,10 @@ fn every_kind_matches_its_golden() {
                 .unwrap()
         })
         .collect();
-    let golden = include_str!("snapshots/every_kind.jsonl");
+    let golden = concat!(
+        include_str!("snapshots/every_kind.jsonl"),
+        include_str!("snapshots/ruleset14.jsonl"),
+    );
     assert_eq!(lines.len(), golden.lines().count());
     for (line, pinned) in lines.iter().zip(golden.lines()) {
         assert_eq!(line, pinned);
