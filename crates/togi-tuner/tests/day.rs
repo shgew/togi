@@ -10,7 +10,7 @@ mod day {
     use test_case::test_case;
     use togi_journal::{DayAnswerKind, EndClass, Seq};
     use togi_machine::{
-        BootId, CcdId, CcdProfile, CoreId, CoreInfo, ObservedOffset, PerCore, TargetOffset,
+        BootId, CcdId, CoreId, CoreInfo, ObservedOffset, PerCore, TargetOffset,
     };
     use togi_tuner::day::{
         Answer, ApplicationKind, Blocker, Certainty, Classification, CoreProfile, CpuCause,
@@ -20,6 +20,7 @@ mod day {
         ReproductionOutcome, RetreatCause, Reverted, Witness, classify, credited_secs,
         daily_events, day_step, next_proposal, propose, vetoes,
     };
+    use togi_tuner::unit::{UnitId, UnitProfile};
 
     const HOURS_50: u64 = 50 * 3600;
 
@@ -27,14 +28,18 @@ mod day {
         CcdId::try_from(n).unwrap()
     }
 
+    fn unit(n: u8) -> UnitId {
+        UnitId::Ccd(ccd(n))
+    }
+
     fn offset(value: i64) -> TargetOffset {
         TargetOffset::new(value).unwrap()
     }
 
-    fn profile(values: [i64; 2]) -> CcdProfile {
-        CcdProfile::try_from(BTreeMap::from([
-            (ccd(0), offset(values[0])),
-            (ccd(1), offset(values[1])),
+    fn profile(values: [i64; 2]) -> UnitProfile {
+        UnitProfile::try_from(BTreeMap::from([
+            (unit(0), offset(values[0])),
+            (unit(1), offset(values[1])),
         ]))
         .unwrap()
     }
@@ -52,7 +57,7 @@ mod day {
     }
 
     fn core_profile(values: [i64; 2]) -> CoreProfile {
-        CoreProfile::of_ccd(&profile(values), &topology()).unwrap()
+        CoreProfile::of_units(&profile(values), &topology()).unwrap()
     }
 
     fn seq(value: u64) -> Seq {
@@ -79,9 +84,9 @@ mod day {
         answers: Vec<Answer>,
         reproductions: BTreeMap<EventId, ReproductionOutcome>,
         intervals: Vec<DayInterval>,
-        caps: CcdProfile,
-        qualified: BTreeSet<CcdProfile>,
-        blocked: BTreeSet<CcdProfile>,
+        caps: UnitProfile,
+        qualified: BTreeSet<UnitProfile>,
+        blocked: BTreeSet<UnitProfile>,
         firmware: Firmware,
         freeze: Freeze,
         invocation: Invocation,
@@ -282,7 +287,7 @@ mod day {
         }
     }
 
-    fn retreat(decision: DayDecision) -> (CcdProfile, Vec<RetreatCause>, Option<CcdProfile>) {
+    fn retreat(decision: DayDecision) -> (UnitProfile, Vec<RetreatCause>, Option<UnitProfile>) {
         match decision {
             DayDecision::Retreat {
                 to,
@@ -315,13 +320,13 @@ mod day {
         assert_eq!(
             proposal
                 .as_ref()
-                .map(|step| (step.ccd.get(), step.to.get())),
+                .map(|step| (match step.unit { UnitId::Ccd(ccd) => ccd.get(), UnitId::Core(_) => panic!("coarse proposal expected") }, step.to.get())),
             expected
         );
         if let (Some(step), Some((moved, _))) = (proposal, expected) {
             let other = u8::from(moved == 0);
             assert_eq!(
-                step.profile.get(ccd(other)),
+                step.profile.get(unit(other)),
                 Some(offset(applied[usize::from(other)])),
                 "the other CCD keeps D"
             );
@@ -330,10 +335,10 @@ mod day {
 
     #[test]
     fn a_cap_over_other_ccds_is_an_error() {
-        let caps = CcdProfile::uniform([ccd(0)], offset(-10)).unwrap();
+        let caps = UnitProfile::uniform([unit(0)], offset(-10)).unwrap();
         assert_eq!(
             propose(&profile([0, 0]), &caps),
-            Err(DayStepError::Ccd(ccd(1)))
+            Err(DayStepError::Unit(unit(1)))
         );
     }
 
@@ -994,7 +999,7 @@ mod day {
             matches!(
                 causes.as_slice(),
                 [RetreatCause::StepBack { reverted, .. }]
-                    if *reverted == [Reverted { step: steps[4], ccd: ccd(0) }]
+                    if *reverted == [Reverted { step: steps[4], unit: unit(0) }]
             ),
             "{causes:?}"
         );
@@ -1009,8 +1014,8 @@ mod day {
                 causes.as_slice(),
                 [RetreatCause::Escalation { reverted, .. }]
                     if *reverted == [
-                        Reverted { step: steps[2], ccd: ccd(0) },
-                        Reverted { step: steps[3], ccd: ccd(1) },
+                        Reverted { step: steps[2], unit: unit(0) },
+                        Reverted { step: steps[3], unit: unit(1) },
                     ]
             ),
             "{causes:?}"
@@ -1324,7 +1329,7 @@ mod day {
             proposal.restores, None,
             "`a` still blames the fallback's consumed step"
         );
-        assert_eq!(proposal.ccd, ccd(1), "{proposal:?}");
+        assert_eq!(proposal.unit, unit(1), "{proposal:?}");
 
         // Once `a` is reclassified as well, the completion owns the fallback's step again.
         day.answer("a", DayAnswerKind::Graphics);
@@ -1356,7 +1361,7 @@ mod day {
         let mut day = stepped_back_provisionally();
         day.caps = profile([-12, -20]);
         let ordinary = propose(&profile([-12, -15]), &day.caps).unwrap().unwrap();
-        assert_eq!(ordinary.ccd, ccd(1), "another CCD has an ordinary step");
+        assert_eq!(ordinary.unit, unit(1), "another CCD has an ordinary step");
         day.qualify(&[[-14, -15], [-12, ordinary.to.get()]]);
         day.answer("a", DayAnswerKind::Graphics);
         assert_eq!(
@@ -1473,10 +1478,10 @@ mod day {
         assert_eq!(
             history.push(DayApplication {
                 at: seq(6),
-                profile: CcdProfile::uniform([ccd(0)], offset(-10)).unwrap(),
+                profile: UnitProfile::uniform([unit(0)], offset(-10)).unwrap(),
                 kind: ApplicationKind::Promotion,
             }),
-            Err(HistoryError::Ccds { at: seq(6) })
+            Err(HistoryError::Units { at: seq(6) })
         );
     }
 

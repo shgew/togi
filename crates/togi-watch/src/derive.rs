@@ -151,9 +151,9 @@ fn core_views(
         .iter()
         .map(|core| {
             let profile = policy
-                .ccds
+                .units
                 .iter()
-                .find(|ccd| ccd.ccd == core.ccd)
+                .find(|unit| unit.cores.contains(core.core))
                 .map_or(TargetOffset::ZERO, |ccd| ccd.day);
             let loaded = trial
                 .is_some_and(|trial| trial.started.is_some() && trial.cores.contains(core.core));

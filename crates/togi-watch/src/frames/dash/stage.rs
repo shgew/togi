@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use ratatui::text::{Line, Span};
 use togi_journal::{DayEventId, Queue, ReproductionState, Tested};
-use togi_machine::CcdProfile;
+use togi_tuner::unit::UnitProfile;
 use togi_tuner::policy::{NightProjection, Projection};
 
 use crate::frames::colours::Paint;
@@ -37,7 +37,7 @@ fn elapsed(night: &NightProjection) -> Duration {
     Duration::from_secs(night.budgets.iter().map(|budget| budget.consumed_s).sum())
 }
 
-fn profile_text(profile: &CcdProfile) -> String {
+fn profile_text(profile: &UnitProfile) -> String {
     profile
         .iter()
         .map(|(_, offset)| offset.get().to_string())
