@@ -2,7 +2,8 @@
 //! `git diff` against the merge base, it prints the changed Rust lines no test reached as
 //! `path:first-last` ranges, then names as `path: not built for <host triple>` each changed file
 //! the coverage build leaves out in part or whole, by its dep-info files and the host's `cfg`
-//! (ADRs 0030 and 0032). `just reviews snapshot --cover` reads that text.
+//! ([coverage policy](https://github.com/shgew/togi/blob/main/REVIEW.md#coverage)).
+//! `just reviews snapshot --cover` reads that text.
 
 pub mod cfg;
 pub mod cli;
