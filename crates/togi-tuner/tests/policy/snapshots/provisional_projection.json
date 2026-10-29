@@ -1,46 +1,500 @@
 {
   "applied": [
-    [{"ccd": 0}, -1],
-    [{"ccd": 1}, 0]
+    [
+      {
+        "ccd": 0
+      },
+      -5
+    ],
+    [
+      {
+        "ccd": 1
+      },
+      0
+    ]
   ],
-  "units": [
-    {
-      "binding": "rate",
-      "cap": -1,
-      "unit": {"ccd": 0},
-      "cores": [
-        0,
-        1
-      ],
-      "day": -1,
-      "edge": {
-        "kind": "censored",
-        "limit": -50,
-        "witnesses": [
-          7
-        ]
+  "climb": {
+    "campaign": {
+      "campaign": {
+        "seq": 36,
+        "session": "20231114T221320Z"
       },
-      "remaining": 0
-    },
-    {
-      "binding": "rate",
-      "cap": -1,
-      "unit": {"ccd": 1},
-      "cores": [
-        2,
-        3
+      "consumed": 1,
+      "events": [
+        {
+          "aliases": [
+            {
+              "boot": "day1",
+              "kind": "boot"
+            }
+          ],
+          "classification": {
+            "certainty": "provisional",
+            "kind": "cpu_suspect"
+          },
+          "event": {
+            "boot": "day1",
+            "kind": "boot"
+          },
+          "phase": "learning",
+          "profile": {
+            "cores": {
+              "0": -5,
+              "1": -5,
+              "2": 0,
+              "3": 0
+            },
+            "mapping": {
+              "phase": "coarse",
+              "units": [
+                {
+                  "cores": [
+                    0,
+                    1
+                  ],
+                  "unit": {
+                    "ccd": 0
+                  }
+                },
+                {
+                  "cores": [
+                    2,
+                    3
+                  ],
+                  "unit": {
+                    "ccd": 1
+                  }
+                }
+              ]
+            }
+          },
+          "provisional": true,
+          "reclassified": false,
+          "unit_phase": "Coarse",
+          "witnesses": [
+            40
+          ]
+        }
       ],
-      "day": 0,
-      "edge": {
-        "kind": "censored",
-        "limit": -50,
-        "witnesses": [
-          13
-        ]
+      "exhausted": false,
+      "history": {
+        "kind": "complete"
       },
+      "limit": 2,
+      "provisional": 1,
+      "reclassified": 0,
       "remaining": 1
-    }
-  ],
+    },
+    "daily": {
+      "clean_s": 0,
+      "crashes": 1,
+      "epoch": 1,
+      "firmware": {
+        "bios_version": "1",
+        "board": "board",
+        "boost_limit_mhz": 5000,
+        "cpu_model": "cpu",
+        "microcode": "mc"
+      },
+      "goal": "insufficient_evidence",
+      "observed_s": 0,
+      "poisson_upper_per_h": null,
+      "profile": {
+        "cores": {
+          "0": -5,
+          "1": -5,
+          "2": 0,
+          "3": 0
+        },
+        "mapping": {
+          "phase": "coarse",
+          "units": [
+            {
+              "cores": [
+                0,
+                1
+              ],
+              "unit": {
+                "ccd": 0
+              }
+            },
+            {
+              "cores": [
+                2,
+                3
+              ],
+              "unit": {
+                "ccd": 1
+              }
+            }
+          ]
+        }
+      },
+      "witnesses": [
+        41
+      ]
+    },
+    "firmware_restoration": null,
+    "permission": "experimental_hold_exact_night_qualification",
+    "profiles": {
+      "applied": {
+        "cores": {
+          "0": -5,
+          "1": -5,
+          "2": 0,
+          "3": 0
+        },
+        "mapping": {
+          "phase": "coarse",
+          "units": [
+            {
+              "cores": [
+                0,
+                1
+              ],
+              "unit": {
+                "ccd": 0
+              }
+            },
+            {
+              "cores": [
+                2,
+                3
+              ],
+              "unit": {
+                "ccd": 1
+              }
+            }
+          ]
+        }
+      },
+      "paused_saved": null,
+      "proposed": {
+        "cores": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0
+        },
+        "mapping": {
+          "phase": "coarse",
+          "units": [
+            {
+              "cores": [
+                0,
+                1
+              ],
+              "unit": {
+                "ccd": 0
+              }
+            },
+            {
+              "cores": [
+                2,
+                3
+              ],
+              "unit": {
+                "ccd": 1
+              }
+            }
+          ]
+        }
+      },
+      "read_back": {
+        "0": -5,
+        "1": -5,
+        "2": 0,
+        "3": 0
+      }
+    },
+    "units": [
+      {
+        "applied": -5,
+        "ceiling": -45,
+        "cores": [
+          0,
+          1
+        ],
+        "diagnostic_s": {
+          "cap": {
+            "adequate": [
+              {
+                "cores": [
+                  0
+                ],
+                "duration_s": 90,
+                "placement": "isolated",
+                "regime": "R1",
+                "workloads": [
+                  {
+                    "content": {
+                      "backend": "mprime",
+                      "configuration": "0202020202020202020202020202020202020202020202020202020202020202",
+                      "executable": "0101010101010101010101010101010101010101010101010101010101010101"
+                    },
+                    "workload": "mprime-sse-4k-21k"
+                  }
+                ]
+              }
+            ],
+            "binding": {
+              "class": {
+                "cores": [
+                  0
+                ],
+                "duration_s": 90,
+                "placement": "isolated",
+                "regime": "R1",
+                "workloads": [
+                  {
+                    "content": {
+                      "backend": "mprime",
+                      "configuration": "0202020202020202020202020202020202020202020202020202020202020202",
+                      "executable": "0101010101010101010101010101010101010101010101010101010101010101"
+                    },
+                    "workload": "mprime-sse-4k-21k"
+                  }
+                ]
+              },
+              "kind": "rate"
+            },
+            "offset": -1,
+            "slope": {
+              "beta": -0.1,
+              "kind": "fallback"
+            },
+            "uncovered": [],
+            "witness": 16
+          }
+        },
+        "edge": {
+          "kind": "censored",
+          "limit": -50,
+          "witnesses": [
+            13
+          ]
+        },
+        "hold": {
+          "credited_s": 0,
+          "required_s": 180000,
+          "witnesses": []
+        },
+        "inherited_start": 0,
+        "latest_step": {
+          "action": {
+            "from": 0,
+            "kind": "promote",
+            "step": 5,
+            "to": -5,
+            "unit": {
+              "ccd": 0
+            }
+          },
+          "after": {
+            "cores": {
+              "0": -5,
+              "1": -5,
+              "2": 0,
+              "3": 0
+            },
+            "mapping": {
+              "phase": "coarse",
+              "units": [
+                {
+                  "cores": [
+                    0,
+                    1
+                  ],
+                  "unit": {
+                    "ccd": 0
+                  }
+                },
+                {
+                  "cores": [
+                    2,
+                    3
+                  ],
+                  "unit": {
+                    "ccd": 1
+                  }
+                }
+              ]
+            }
+          },
+          "application": 1,
+          "at": "2023-11-17T00:13:58Z",
+          "before": {
+            "cores": {
+              "0": 0,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "mapping": {
+              "phase": "coarse",
+              "units": [
+                {
+                  "cores": [
+                    0,
+                    1
+                  ],
+                  "unit": {
+                    "ccd": 0
+                  }
+                },
+                {
+                  "cores": [
+                    2,
+                    3
+                  ],
+                  "unit": {
+                    "ccd": 1
+                  }
+                }
+              ]
+            }
+          },
+          "witnesses": [
+            37,
+            38
+          ]
+        },
+        "next": null,
+        "parent": null,
+        "phase": "Coarse",
+        "remaining": 40,
+        "state": {
+          "kind": "climbing"
+        },
+        "unit": {
+          "ccd": 0
+        }
+      },
+      {
+        "applied": 0,
+        "ceiling": -45,
+        "cores": [
+          2,
+          3
+        ],
+        "diagnostic_s": {
+          "cap": {
+            "adequate": [
+              {
+                "cores": [
+                  2
+                ],
+                "duration_s": 90,
+                "placement": "isolated",
+                "regime": "R1",
+                "workloads": [
+                  {
+                    "content": {
+                      "backend": "mprime",
+                      "configuration": "0202020202020202020202020202020202020202020202020202020202020202",
+                      "executable": "0101010101010101010101010101010101010101010101010101010101010101"
+                    },
+                    "workload": "mprime-sse-4k-21k"
+                  }
+                ]
+              }
+            ],
+            "binding": {
+              "class": {
+                "cores": [
+                  2
+                ],
+                "duration_s": 90,
+                "placement": "isolated",
+                "regime": "R1",
+                "workloads": [
+                  {
+                    "content": {
+                      "backend": "mprime",
+                      "configuration": "0202020202020202020202020202020202020202020202020202020202020202",
+                      "executable": "0101010101010101010101010101010101010101010101010101010101010101"
+                    },
+                    "workload": "mprime-sse-4k-21k"
+                  }
+                ]
+              },
+              "kind": "rate"
+            },
+            "offset": -1,
+            "slope": {
+              "beta": -0.1,
+              "kind": "fallback"
+            },
+            "uncovered": [],
+            "witness": 22
+          }
+        },
+        "edge": {
+          "kind": "censored",
+          "limit": -50,
+          "witnesses": [
+            19
+          ]
+        },
+        "hold": {
+          "credited_s": 0,
+          "required_s": 180000,
+          "witnesses": []
+        },
+        "inherited_start": 0,
+        "latest_step": null,
+        "next": {
+          "profile": {
+            "cores": {
+              "0": -5,
+              "1": -5,
+              "2": -5,
+              "3": -5
+            },
+            "mapping": {
+              "phase": "coarse",
+              "units": [
+                {
+                  "cores": [
+                    0,
+                    1
+                  ],
+                  "unit": {
+                    "ccd": 0
+                  }
+                },
+                {
+                  "cores": [
+                    2,
+                    3
+                  ],
+                  "unit": {
+                    "ccd": 1
+                  }
+                }
+              ]
+            }
+          },
+          "qualification": {
+            "outstanding": [],
+            "state": {
+              "kind": "missing"
+            },
+            "witnesses": []
+          }
+        },
+        "parent": null,
+        "phase": "Coarse",
+        "remaining": 45,
+        "state": {
+          "kind": "climbing"
+        },
+        "unit": {
+          "ccd": 1
+        }
+      }
+    ]
+  },
   "day": {
     "firmware": {
       "kind": "valid"
@@ -49,76 +503,23 @@
     "hold": {
       "eligible_s": 0,
       "profile": [
-        [{"ccd": 0}, -1],
-        [{"ccd": 1}, 0]
+        [
+          {
+            "ccd": 0
+          },
+          -5
+        ],
+        [
+          {
+            "ccd": 1
+          },
+          0
+        ]
       ],
       "required_s": 180000,
-      "witness": 31
+      "witness": 43
     },
-    "last_step": [
-      32,
-      {
-        "causes": {
-          "caps": [
-            10,
-            16
-          ],
-          "events": [
-            29
-          ],
-          "vetoes": [
-            30
-          ]
-        },
-        "cold_boot": "day2",
-        "decision": 1,
-        "hold_s": 0,
-        "hours": [],
-        "old": {
-          "ccd": {
-            "0": -1,
-            "1": 0
-          },
-          "cores": {
-            "0": -1,
-            "1": -1,
-            "2": 0,
-            "3": 0
-          }
-        },
-        "predecessor": 0,
-        "proposed": {
-          "ccd": {
-            "0": 0,
-            "1": 0
-          },
-          "cores": {
-            "0": 0,
-            "1": 0,
-            "2": 0,
-            "3": 0
-          }
-        },
-        "reason": "step the day profile back",
-        "step": {
-          "cause": {
-            "escalation": {
-              "kind": "revert_newest",
-              "reverted": 0
-            },
-            "event": {
-              "boot": "day1",
-              "kind": "boot"
-            },
-            "kind": "event"
-          },
-          "changed": [
-            0
-          ],
-          "kind": "retreat"
-        }
-      }
-    ],
+    "last_step": null,
     "pending_questions": []
   },
   "events": [
@@ -170,12 +571,42 @@
         "share_pct": 0
       }
     ],
-    "closed_by": 23,
+    "closed_by": 29,
     "filler": 0,
-    "night": 4,
+    "night": 10,
     "unavailable": []
   },
   "stopped": false,
+  "units": [
+    {
+      "binding": "rate",
+      "cap": -1,
+      "cores": [
+        0,
+        1
+      ],
+      "day": -5,
+      "edge": null,
+      "remaining": 40,
+      "unit": {
+        "ccd": 0
+      }
+    },
+    {
+      "binding": "rate",
+      "cap": -1,
+      "cores": [
+        2,
+        3
+      ],
+      "day": 0,
+      "edge": null,
+      "remaining": 45,
+      "unit": {
+        "ccd": 1
+      }
+    }
+  ],
   "vetoes": [
     {
       "event": {

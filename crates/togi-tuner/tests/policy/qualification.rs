@@ -2,8 +2,8 @@
 //! (`docs/spec/tuner.md`, Failed next-step qualification).
 
 use togi_journal::{
-    Activity, CellEvidence, DayStep, Payload, QualificationPurpose, QualificationState, Queue,
-    StepKind,
+    Activity, CellEvidence, ClimbAction, ClimbDecision, Payload, QualificationPurpose,
+    QualificationState, Queue,
 };
 use togi_machine::{BootId, CcdProfile, ContentId};
 use togi_tuner::day::{Invocation, Pause};
@@ -98,8 +98,8 @@ fn a_failed_proposal_stays_blocked_across_a_new_night_and_a_rebuilt_backend() {
             .any(|payload| matches!(payload, Payload::DayEvent(_))
                 || matches!(
                     payload,
-                    Payload::DayStep(DayStep {
-                        step: StepKind::Retreat { .. },
+                    Payload::ClimbDecision(ClimbDecision {
+                        decision: ClimbAction::Retreat { .. },
                         ..
                     })
                 )),
@@ -109,7 +109,10 @@ fn a_failed_proposal_stays_blocked_across_a_new_night_and_a_rebuilt_backend() {
     journal.reboot("tuning1");
     journal.rebuild(rebuilt());
     let qualified = next_proposal_cycle(&mut journal);
-    assert!(!qualified.is_empty());
+    assert!(
+        qualified.is_empty(),
+        "a blocked deterministic candidate has no alternate: {qualified:?}"
+    );
     assert!(qualified.iter().all(|q| q != &failed), "{qualified:?}");
 }
 
@@ -120,7 +123,10 @@ fn a_proposal_whose_failed_commitment_never_landed_stays_blocked() {
     let failed = fail_first_proposal(&mut journal, &rebuilt());
     journal.rebuild(rebuilt());
     let qualified = next_proposal_cycle(&mut journal);
-    assert!(!qualified.is_empty());
+    assert!(
+        qualified.is_empty(),
+        "a blocked deterministic candidate has no alternate: {qualified:?}"
+    );
     assert_eq!(failed_commitments(&journal, &failed), 0);
     assert!(qualified.iter().all(|q| q != &failed), "{qualified:?}");
 }
@@ -151,8 +157,15 @@ fn a_failed_certificate_lends_no_witness_to_a_later_qualification() {
                 .all(|info| info.ccd == ccd(1))
     };
     let mut lent = false;
+    let mut isolated: [Option<TrialPlan>; 2] = [None, None];
     let failed = loop {
         let plan = journal.until_trial(journal.now());
+        if let togi_journal::Tested::Isolated { ccd, .. } = plan.tested {
+            isolated[usize::from(ccd.get())] = Some(plan.clone());
+        }
+        if qualifies_proposal(&plan) && ccd1_only(&plan) && isolated[1].is_none() {
+            isolated[1] = Some(plan.clone());
+        }
         if qualifies_proposal(&plan) && lent {
             journal.run(&plan, Ending::Fail(Some(0)));
             break plan.profile.to_ccd().unwrap();
@@ -160,6 +173,20 @@ fn a_failed_certificate_lends_no_witness_to_a_later_qualification() {
         lent |= qualifies_proposal(&plan) && ccd1_only(&plan);
         journal.run(&plan, Ending::Pass);
     };
+    // Real shallower edge failures change the deterministic candidate. CCD 1 remains
+    // at stock in the next vector, so its earlier passing cell would otherwise match.
+    for (id, plan) in isolated.into_iter().enumerate() {
+        let mut plan = plan.unwrap();
+        let ccd = ccd(u8::try_from(id).unwrap());
+        let offset = togi_machine::TargetOffset::new(-6).unwrap();
+        plan.activity = Activity::Reproduction;
+        plan.task.queue = Queue::Reproduction;
+        plan.task.ordinal = 50_000 + u32::try_from(id).unwrap();
+        plan.tested = togi_journal::Tested::Isolated { ccd, offset };
+        plan.profile = togi_tuner::UnitProfile::of_ccd(&crate::fixture::zero().with(ccd, offset));
+        let core = plan.cell.loaded.iter().next().unwrap().get();
+        journal.run(&plan, Ending::Fail(Some(core)));
+    }
     next_proposal_cycle(&mut journal);
     let committed = |pick: fn(&QualificationState) -> bool| {
         journal.events.iter().filter_map(move |event| {
