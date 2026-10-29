@@ -1177,7 +1177,7 @@ let
         assert checkpoint["data"]["applied_secs"] > 0, checkpoint
         # The helper records only stock commands; both application and stop wrote and read all cores.
         machine.succeed("grep -q '^pid=[0-9]* set-all 0 0 0 0$' /var/lib/togi-vm/smu.log")
-        machine.succeed("! grep -E '^pid=[0-9]+ (set|set-all|emergency-zero wrote).*-' /var/lib/togi-vm/smu.log")
+        machine.succeed("! grep -E '^pid=[0-9]+ (set|set-all|emergency-zero wrote).* -[0-9]+' /var/lib/togi-vm/smu.log")
         machine.succeed("grep -q '^pid=[0-9]* read core' /var/lib/togi-vm/smu.log")
 
         # A reset leaves no clean stop; the next boot's observer records the end as unclean.

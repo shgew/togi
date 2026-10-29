@@ -1,7 +1,7 @@
 use test_case::test_case;
 use togi_journal::{
-    ApplyCause, CcdVector, DayApplied, DayStep, DecisionId, SessionBaseline, SessionContext,
-    StepCauses, StepKind,
+    ApplicationId, ApplyCause, CcdVector, DayApplied, DayStep, DecisionId, SessionBaseline,
+    SessionContext, StepCauses, StepKind,
 };
 use togi_machine::{CcdProfile, Smu, SmuValidated, Stopped, TargetOffset};
 
@@ -412,6 +412,67 @@ fn resume_reapplies_with_verified_readback_and_preserves_the_step() {
             .count(),
         steps
     );
+}
+
+#[test]
+fn firmware_change_resets_a_historical_nonzero_profile_before_applying_stock() {
+    let mut journal = seed();
+    let proposal = proposed(&mut journal);
+    let historical = target(&journal, -5);
+    let boot = journal.boot().clone();
+    journal
+        .append(
+            Stamp {
+                time: Timestamp::UNIX_EPOCH,
+                mono: Some(Duration::ZERO),
+            },
+            DayApplied {
+                application: ApplicationId(0),
+                cause: ApplyCause::Step {
+                    decision: DecisionId(0),
+                },
+                target: historical,
+                readbacks: offsets(-5),
+                transactions: Vec::new(),
+                boot,
+                mono_ns: 0,
+            }
+            .into(),
+            &[proposal],
+        )
+        .unwrap();
+    let mut hardware = Hardware::stock();
+    hardware.firmware.microcode = "new".into();
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    let reset = journal
+        .events()
+        .iter()
+        .rev()
+        .find_map(|event| {
+            if let Payload::DayStep(step) = &event.payload {
+                Some(step)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert!(matches!(reset.step, StepKind::FirmwareZero { .. }));
+    let actual = applications(&journal).last().copied().unwrap();
+    assert_eq!(actual.target, target(&journal, 0));
+    assert_eq!(
+        actual.cause,
+        ApplyCause::Step {
+            decision: reset.decision
+        }
+    );
+    assert_eq!(hardware.writes, [TargetOffset::ZERO, TargetOffset::ZERO]);
 }
 
 #[test]
