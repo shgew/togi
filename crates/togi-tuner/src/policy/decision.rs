@@ -7,10 +7,6 @@ use togi_journal::{
 
 /// A commitment the policy appends to the journal.
 #[derive(Clone, Debug, PartialEq)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "commitments are built, journaled and dropped at once, never stored in bulk"
-)]
 pub enum PolicyPayload {
     Failure(Failure),
     ExposureObserved(ExposureObserved),
