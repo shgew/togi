@@ -470,6 +470,31 @@ fn unresolved_day_events_are_counted_as_blocking_promotion() {
     assert_eq!(said.lines[2], "2 day events still block promotion.");
 }
 
+#[test]
+fn a_two_unit_unknown_edge_hold_names_both_units() {
+    let mut hand = crate::frames::hand::Staged::Day.hand();
+    hand.policy.climb.units[0].state = togi_tuner::policy::ClimbUnitState::Held {
+        reason: vec![
+            togi_journal::ClimbBlocker::UnknownEdge {
+                unit: togi_tuner::UnitId::Ccd(ccd_id(0)),
+            },
+            togi_journal::ClimbBlocker::UnknownEdge {
+                unit: togi_tuner::UnitId::Ccd(ccd_id(1)),
+            },
+        ],
+    };
+    let words = super::super::night::climb_lines(&hand.policy)
+        .iter()
+        .map(super::super::night::ClimbLine::words)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        words.contains("held/unfinished: unknown edge for CCD 0, unknown edge for CCD 1"),
+        "{words}"
+    );
+}
+
+#[test_case::test_case(&togi_journal::ClimbBlocker::UnknownEdge { unit: togi_tuner::UnitId::Core(core(3)) }, "unknown edge for core 3"; "unknown core edge")]
 #[test_case::test_case(&togi_journal::ClimbBlocker::CampaignHistory {}, "campaign history unavailable"; "missing campaign history")]
 #[test_case::test_case(&togi_journal::ClimbBlocker::SameBoot {}, "promotion requires an eligible cold boot"; "same boot")]
 #[test_case::test_case(&togi_journal::ClimbBlocker::HoldProfile {}, "hold belongs to a different exact profile"; "wrong hold profile")]

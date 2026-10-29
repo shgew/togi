@@ -417,8 +417,15 @@ fn hours(seconds: u64) -> String {
     format!("{}.{:03}", seconds / 3600, seconds % 3600 * 1000 / 3600)
 }
 
-/// The day state, in up to two lines: the applied profile and what the latest proposal says.
-pub(crate) fn blocker_words(reason: &togi_journal::ClimbBlocker) -> &'static str {
+fn unit_name(unit: UnitId) -> String {
+    match unit {
+        UnitId::Ccd(id) => format!("CCD {}", id.get()),
+        UnitId::Core(id) => format!("core {}", id.get()),
+    }
+}
+
+/// A permission blocker, naming the affected unit when its edge is unknown.
+pub(crate) fn blocker_words(reason: &togi_journal::ClimbBlocker) -> Cow<'static, str> {
     use togi_journal::ClimbBlocker;
     match reason {
         ClimbBlocker::Hold { .. } => "exact-profile hold incomplete",
@@ -431,7 +438,9 @@ pub(crate) fn blocker_words(reason: &togi_journal::ClimbBlocker) -> &'static str
         ClimbBlocker::Frozen {} => "promotion frozen",
         ClimbBlocker::Paused {} => "paused",
         ClimbBlocker::AllowanceExhausted {} => "allowance exhausted",
-        ClimbBlocker::UnknownEdge { .. } => "unknown U",
+        ClimbBlocker::UnknownEdge { unit } => {
+            return Cow::Owned(format!("unknown edge for {}", unit_name(*unit)));
+        }
         ClimbBlocker::Finished { .. } => "exploration finished",
         ClimbBlocker::Ceiling { .. } => "hard night ceiling blocks the target",
         ClimbBlocker::CampaignHistory {} => "campaign history unavailable",
@@ -440,6 +449,7 @@ pub(crate) fn blocker_words(reason: &togi_journal::ClimbBlocker) -> &'static str
         ClimbBlocker::SafeApply {} => "safe application prerequisites missing",
         ClimbBlocker::ActivationClosed {} => "nonzero activation closed",
     }
+    .into()
 }
 
 pub(crate) fn finish_words(reason: &togi_journal::UnitStopReason) -> &'static str {
@@ -628,10 +638,7 @@ pub(crate) fn climb_lines(policy: &Projection) -> Vec<ClimbLine> {
         )));
     }
     for unit in &climb.units {
-        let name = match unit.unit {
-            UnitId::Ccd(id) => format!("CCD {}", id.get()),
-            UnitId::Core(id) => format!("core {}", id.get()),
-        };
+        let name = unit_name(unit.unit);
         let state = match &unit.state {
             togi_tuner::policy::ClimbUnitState::Climbing => "climbing".to_owned(),
             togi_tuner::policy::ClimbUnitState::Held { reason } => format!(
