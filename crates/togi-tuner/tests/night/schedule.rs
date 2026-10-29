@@ -63,7 +63,7 @@ fn qualification(secs: u32) -> Work {
 
 fn mapping(secs: u32) -> Work {
     let target = togi_tuner::night::MappingTarget {
-        ccd: crate::fixture::ccd(0),
+        unit: crate::fixture::unit(0),
         offset: crate::fixture::offset(0),
         kind: togi_tuner::night::MappingKind::Coarse,
     };
@@ -400,17 +400,17 @@ fn reproduction_stops_an_attempt_at_its_first_failure_and_moves_to_the_next_prof
         alone.reason,
         Reason::Reproduction {
             event,
-            attempt: AttemptScope::Ccd {
-                ccd: crate::fixture::ccd(0)
+            attempt: AttemptScope::Unit {
+                unit: crate::fixture::unit(0)
             }
         }
     );
     assert_eq!(alone.profile, profile(&[-10, 0]));
-    log.failed.insert(AttemptScope::Ccd {
-        ccd: crate::fixture::ccd(0),
+    log.failed.insert(AttemptScope::Unit {
+        unit: crate::fixture::unit(0),
     });
-    log.failed.insert(AttemptScope::Ccd {
-        ccd: crate::fixture::ccd(1),
+    log.failed.insert(AttemptScope::Unit {
+        unit: crate::fixture::unit(1),
     });
     assert_eq!(
         stage(&log, AttemptNight::This),

@@ -415,7 +415,7 @@ fn control_cells_are_the_full_matrix_at_all_zero_fresh() {
 #[test]
 fn mapping_runs_r1_r2_r8_r7_r9_on_one_ccd_with_the_others_at_zero() {
     let machine = two_ccds();
-    let matrix = mapping_cells(&machine.layout(), ccd(1), offset(-15), 0).unwrap();
+    let matrix = mapping_cells(&machine.layout(), crate::fixture::unit(1), offset(-15), 0).unwrap();
     assert_eq!(matrix.profile, profile(&[0, -15]));
     assert_eq!(
         regime_order(&matrix),
@@ -445,12 +445,44 @@ fn mapping_runs_r1_r2_r8_r7_r9_on_one_ccd_with_the_others_at_zero() {
 #[test]
 fn mapping_selections_are_frozen_by_the_mapping_ordinal() {
     let machine = two_ccds();
-    let at = |ordinal| mapping_cells(&machine.layout(), ccd(0), offset(-5), ordinal).unwrap();
+    let at = |ordinal| {
+        mapping_cells(
+            &machine.layout(),
+            crate::fixture::unit(0),
+            offset(-5),
+            ordinal,
+        )
+        .unwrap()
+    };
     let pair = |matrix: &Matrix| regime_cells(matrix, Regime::R8)[0].workloads;
     assert_ne!(pair(&at(0)), pair(&at(1)));
     assert_eq!(pair(&at(1)), pair(&at(7)));
     let serial_core = |matrix: &Matrix| regime_cells(matrix, Regime::R9)[0].position().unwrap();
     assert_eq!(serial_core(&at(3)), core(3));
+}
+
+#[test]
+fn a_core_unit_maps_its_own_positions_under_its_whole_ccds_package_loads() {
+    let machine = two_ccds();
+    let layout = machine.layout();
+    let unit = togi_tuner::UnitId::Core(core(9));
+    let matrix = mapping_cells(&layout, unit, offset(-15), 0).unwrap();
+    let coarse = mapping_cells(&layout, crate::fixture::unit(1), offset(-15), 0).unwrap();
+    assert_eq!(matrix.profile.get(unit), Some(offset(-15)));
+    assert!(
+        matrix
+            .cells
+            .iter()
+            .filter_map(|planned| planned.cell.position())
+            .all(|position| position == core(9))
+    );
+    assert_eq!(
+        regime_cells(&matrix, Regime::R7),
+        regime_cells(&coarse, Regime::R7)
+    );
+    assert_eq!(matrix.uncovered, coarse.uncovered);
+    let all_threads = regime_cells(&matrix, Regime::R9)[0];
+    assert_eq!(all_threads.loaded, set(&[8, 9, 10, 11, 12, 13, 14, 15]));
 }
 
 #[test]
@@ -462,8 +494,12 @@ fn reproduction_tests_the_exact_profile_then_each_nonzero_ccd_alone() {
         scopes,
         [
             AttemptScope::Exact,
-            AttemptScope::Ccd { ccd: ccd(0) },
-            AttemptScope::Ccd { ccd: ccd(1) }
+            AttemptScope::Unit {
+                unit: crate::fixture::unit(0)
+            },
+            AttemptScope::Unit {
+                unit: crate::fixture::unit(1)
+            }
         ]
     );
     assert_eq!(attempts[0].matrix.profile, profile(&[-10, -5]));
@@ -501,7 +537,12 @@ fn a_ccd_at_zero_has_nothing_to_isolate() {
     let machine = two_ccds();
     let attempts = reproduction_cells(&machine.layout(), &profile(&[-10, 0]), 0).unwrap();
     assert_eq!(attempts.len(), 2);
-    assert_eq!(attempts[1].scope, AttemptScope::Ccd { ccd: ccd(0) });
+    assert_eq!(
+        attempts[1].scope,
+        AttemptScope::Unit {
+            unit: crate::fixture::unit(0)
+        }
+    );
 }
 
 #[test]

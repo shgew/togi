@@ -581,7 +581,7 @@ fn a_running_trial_gives_each_core_its_word(loaded: bool, want: &str) {
 fn gauge_of(
     colours: Colours,
     loaded: bool,
-    projection: &togi_tuner::policy::CcdProjection,
+    projection: &togi_tuner::policy::UnitProjection,
     applied: i64,
     cells: usize,
 ) -> Line<'static> {
@@ -603,7 +603,7 @@ fn gauge_of(
 
 fn gauge_text(
     colours: Colours,
-    projection: &togi_tuner::policy::CcdProjection,
+    projection: &togi_tuner::policy::UnitProjection,
     applied: i64,
     cells: usize,
 ) -> String {
@@ -615,7 +615,7 @@ fn gauge_text(
     .to_owned()
 }
 
-fn capped(edge: Option<togi_journal::Edge>) -> togi_tuner::policy::CcdProjection {
+fn capped(edge: Option<togi_journal::Edge>) -> togi_tuner::policy::UnitProjection {
     with_cap(
         ccd_row(0, &[0], -10),
         cap(-26, rate_bound(), fallback(), 2, 0),
@@ -682,7 +682,7 @@ fn the_edge_cell_is_the_edge_even_where_the_applied_depth_passes_it() {
     assert_eq!(gauge_text(Colours::Full, &projection, -40, 50), want);
 }
 
-fn ccd_projection() -> togi_tuner::policy::CcdProjection {
+fn ccd_projection() -> togi_tuner::policy::UnitProjection {
     with_cap(
         ccd_row(0, &[0, 1], -10),
         cap(-15, rate_bound(), fallback(), 2, 1),
@@ -691,7 +691,7 @@ fn ccd_projection() -> togi_tuner::policy::CcdProjection {
     )
 }
 
-fn facts_text(projection: &togi_tuner::policy::CcdProjection, width: usize) -> String {
+fn facts_text(projection: &togi_tuner::policy::UnitProjection, width: usize) -> String {
     let hand = Hand::new(vec![], bare(vec![projection.clone()]));
     let zone = TimeZone::UTC;
     let snapshot = hand.snapshot();
@@ -705,7 +705,7 @@ fn facts_text(projection: &togi_tuner::policy::CcdProjection, width: usize) -> S
     )
 }
 
-fn coverage_text(projection: &togi_tuner::policy::CcdProjection, width: usize) -> String {
+fn coverage_text(projection: &togi_tuner::policy::UnitProjection, width: usize) -> String {
     let hand = Hand::new(vec![], bare(vec![projection.clone()]));
     let zone = TimeZone::UTC;
     let snapshot = hand.snapshot();

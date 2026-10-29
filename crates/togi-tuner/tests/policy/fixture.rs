@@ -552,7 +552,7 @@ fn r1_trial(
     night: togi_journal::NightId,
     task: TaskId,
     core: u8,
-    profile: CcdProfile,
+    profile: &CcdProfile,
     tested: Tested,
     causes: Vec<Seq>,
 ) -> TrialPlan {
@@ -575,7 +575,7 @@ fn r1_trial(
             purpose,
             sustained: false,
         },
-        profile,
+        profile: togi_tuner::UnitProfile::of_ccd(profile),
         tested,
         retry: false,
         causes,
@@ -606,7 +606,7 @@ impl Journal {
                 firmware: context().bios_context(),
                 epoch: togi_tuner::EVIDENCE_EPOCH,
                 class: class.clone(),
-                profile: vector(&plan.profile),
+                profile: vector(&plan.profile.to_ccd().unwrap()),
                 tested: plan.tested,
                 activity: plan.activity,
                 outcome: Outcome::Pass,
@@ -646,7 +646,7 @@ impl Journal {
                 night,
                 task,
                 2 * ccd_id,
-                zero().with(ccd(ccd_id), limit),
+                &zero().with(ccd(ccd_id), limit),
                 tested,
                 Vec::new(),
             );
@@ -690,14 +690,7 @@ impl Journal {
             queue: togi_journal::Queue::Qualification,
             ordinal: 0,
         };
-        let plan = r1_trial(
-            night,
-            task,
-            0,
-            proposal.clone(),
-            Tested::Exact {},
-            vec![started],
-        );
+        let plan = r1_trial(night, task, 0, &proposal, Tested::Exact {}, vec![started]);
         let (_, observed) = journal.witnessed_pass(&plan, &cell);
         journal.append(
             qualification(QualificationState::Complete {

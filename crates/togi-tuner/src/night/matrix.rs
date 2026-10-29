@@ -4,9 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
+use crate::{UnitId, UnitProfile, UnitProfileError, Units};
 use togi_machine::{
-    CcdId, CcdProfile, CcdProfileError, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Purpose, Regime,
-    TargetOffset, WorkloadId, pick_workload,
+    CcdId, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Purpose, Regime, TargetOffset, WorkloadId,
+    pick_workload,
 };
 
 use crate::numbers::index;
@@ -159,7 +160,7 @@ pub struct Uncovered {
 /// An ordered list of cells and the whole CCD profile they run at.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Matrix {
-    pub profile: CcdProfile,
+    pub profile: UnitProfile,
     pub cells: Vec<PlannedCell>,
     /// R7 partials the topology cannot supply, listed instead of silently dropped.
     pub uncovered: Vec<Uncovered>,
@@ -206,8 +207,8 @@ pub enum Reuse<'a> {
 pub enum AttemptScope {
     /// The exact failed profile.
     Exact,
-    /// One CCD alone at its failed offset, the others at CO 0.
-    Ccd { ccd: CcdId },
+    /// One tuning group alone at its failed offset, the others at CO 0.
+    Unit { unit: UnitId },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -224,8 +225,10 @@ pub enum MatrixError {
     NoCpu(CoreId),
     #[error("CCD {0} is not in the topology")]
     UnknownCcd(CcdId),
-    #[error("a CCD profile could not be built")]
-    Profile(#[from] CcdProfileError),
+    #[error("unit {0:?} is not in the topology")]
+    UnknownUnit(UnitId),
+    #[error("a unit profile could not be built")]
+    Profile(#[from] UnitProfileError),
 }
 
 /// The machine a matrix is generated for.
@@ -249,6 +252,31 @@ impl Layout<'_> {
             return Err(MatrixError::NoCpu(core));
         }
         Ok(&info.cpus)
+    }
+
+    /// The physical CCD of `unit`, all that CCD's cores, and the unit's own positions: a coarse
+    /// unit's positions are its whole CCD, a core unit's only that core. Package and interaction
+    /// loads stay on the whole physical CCD either way.
+    fn unit_cores(&self, unit: UnitId) -> Result<(CcdId, CoreSet, CoreSet), MatrixError> {
+        let ccd = match unit {
+            UnitId::Ccd(ccd) => ccd,
+            UnitId::Core(core) => self
+                .topology
+                .ccd_of(core)
+                .ok_or(MatrixError::UnknownUnit(unit))?,
+        };
+        let cores = self
+            .topology
+            .ccds()
+            .iter()
+            .find(|(id, _)| *id == ccd)
+            .map(|(_, cores)| *cores)
+            .ok_or(MatrixError::UnknownUnit(unit))?;
+        let positions = match unit {
+            UnitId::Ccd(_) => cores,
+            UnitId::Core(core) => core_set(core),
+        };
+        Ok((ccd, cores, positions))
     }
 
     fn ccd_cores(&self, ccd: CcdId) -> Result<CoreSet, MatrixError> {
@@ -284,16 +312,24 @@ impl Layout<'_> {
     }
 }
 
-/// CCDs a matrix covers, their cores, and the rotation ordinal.
+/// The physical CCDs a matrix covers with all their cores, the tuning positions its per-core rows
+/// visit, and the rotation ordinal. Positions are every covered core except in a core unit's
+/// isolated scope, whose package and interaction loads still span its whole CCD.
 struct Scope<'a> {
     layout: &'a Layout<'a>,
     ccds: Vec<(CcdId, CoreSet)>,
+    positions: CoreSet,
     purpose: Purpose,
     ordinal: u32,
 }
 
 impl Scope<'_> {
     fn positions(&self) -> CoreSet {
+        self.positions
+    }
+
+    /// Every core of the covered physical CCDs.
+    fn loaded(&self) -> CoreSet {
         self.ccds
             .iter()
             .flat_map(|(_, cores)| cores.iter())
@@ -424,7 +460,7 @@ impl Scope<'_> {
         if with_all_ccds && self.ccds.len() > 1 {
             cells.push(self.cell(
                 one,
-                self.positions(),
+                self.loaded(),
                 Roles::Package(PackageLoad::AllCcds),
                 SHORT_DURATION,
                 false,
@@ -442,7 +478,7 @@ impl Scope<'_> {
         };
         self.cell(
             Workloads::One { workload },
-            self.positions(),
+            self.loaded(),
             Roles::Package(roles),
             SUSTAINED_DURATION,
             true,
@@ -503,7 +539,7 @@ impl Scope<'_> {
         let workload = pick_workload(Regime::R9, index(self.ordinal)).id();
         Ok(self.cell(
             Workloads::One { workload },
-            self.positions(),
+            self.loaded(),
             Roles::AllThreads {
                 core,
                 serial: self.serial(core)?,
@@ -537,12 +573,30 @@ fn scope<'a>(
     purpose: Purpose,
     ordinal: u32,
 ) -> Scope<'a> {
+    let positions = ccds.iter().flat_map(|(_, cores)| cores.iter()).collect();
     Scope {
         layout,
         ccds,
+        positions,
         purpose,
         ordinal,
     }
+}
+
+/// The isolated scope of one tuning unit: its positions inside its whole physical CCD.
+fn unit_scope<'a>(
+    layout: &'a Layout<'a>,
+    unit: UnitId,
+    ordinal: u32,
+) -> Result<Scope<'a>, MatrixError> {
+    let (ccd, cores, positions) = layout.unit_cores(unit)?;
+    Ok(Scope {
+        layout,
+        ccds: vec![(ccd, cores)],
+        positions,
+        purpose: Purpose::Isolated,
+        ordinal,
+    })
 }
 
 fn machine_ccds(layout: &Layout<'_>) -> Vec<(CcdId, CoreSet)> {
@@ -556,22 +610,22 @@ fn fresh(cells: impl IntoIterator<Item = Cell>) -> impl Iterator<Item = PlannedC
     })
 }
 
-/// `profile` with every CCD at CO 0.
+/// `profile` with every tuning group at CO 0.
 #[must_use]
-pub fn zeroed(profile: &CcdProfile) -> CcdProfile {
+pub fn zeroed(profile: &UnitProfile) -> UnitProfile {
     profile.iter().fold(profile.clone(), |zero, (ccd, _)| {
         zero.with(ccd, TargetOffset::ZERO)
     })
 }
 
-/// `profile` zeroed except `ccd` at `offset`.
-fn isolated_profile(
-    layout: &Layout<'_>,
-    ccd: CcdId,
-    offset: TargetOffset,
-) -> Result<CcdProfile, MatrixError> {
-    let zero = CcdProfile::zero(layout.topology.ccds().iter().map(|(id, _)| *id))?;
-    Ok(zero.with(ccd, offset))
+/// `profile` zeroed except the selected tuning group at `offset`.
+fn isolated_profile(layout: &Layout<'_>, unit: UnitId, offset: TargetOffset) -> UnitProfile {
+    let units = match unit {
+        UnitId::Ccd(_) => Units::coarse(layout.topology),
+        UnitId::Core(_) => Units::cores(layout.topology),
+    };
+    let zero = UnitProfile::zero(&units);
+    zero.with(unit, offset)
 }
 
 /// The whole qualification matrix in R1..R9 order: R1–R5 for every core, then the package and
@@ -624,7 +678,7 @@ fn qualification_rows(
 /// qualification ordinal that rotates the selected entries and positions.
 pub fn qualification_cells(
     layout: &Layout<'_>,
-    profile: &CcdProfile,
+    profile: &UnitProfile,
     ordinal: u32,
     reuse: &Reuse<'_>,
 ) -> Result<Matrix, MatrixError> {
@@ -641,24 +695,23 @@ pub fn qualification_cells(
 /// fresh, no reuse.
 pub fn control_cells(
     layout: &Layout<'_>,
-    profile: &CcdProfile,
+    profile: &UnitProfile,
     ordinal: u32,
 ) -> Result<Matrix, MatrixError> {
     qualification_cells(layout, &zeroed(profile), ordinal, &Reuse::AllFresh)
 }
 
-/// One mapping step of `ccd` at `offset`, other CCDs at zero: R1, R2, the rotating R8 pair at every
-/// light position, R7 full and honest partials, and the selected R9 serial position, in that
-/// order. `ordinal` is the mapping-step ordinal. Mapping has no sustained blocks and never
-/// qualifies a day profile.
+/// One mapping step of `unit` at `offset`, other units at zero: R1, R2, the rotating R8 pair at
+/// every light position, R7 full and honest partials of the unit's CCD, and the selected R9 serial
+/// position, in that order. `ordinal` is the mapping-step ordinal. Mapping has no sustained blocks
+/// and never qualifies a day profile.
 pub fn mapping_cells(
     layout: &Layout<'_>,
-    ccd: CcdId,
+    unit: UnitId,
     offset: TargetOffset,
     ordinal: u32,
 ) -> Result<Matrix, MatrixError> {
-    let cores = layout.ccd_cores(ccd)?;
-    let scope = scope(layout, vec![(ccd, cores)], Purpose::Isolated, ordinal);
+    let scope = unit_scope(layout, unit, ordinal)?;
     let mut uncovered = Vec::new();
     let mut cells: Vec<PlannedCell> = Vec::new();
     cells.extend(fresh(scope.single_core(Regime::R1, BREADTH_ENTRIES)));
@@ -673,36 +726,35 @@ pub fn mapping_cells(
         )?]));
     }
     Ok(Matrix {
-        profile: isolated_profile(layout, ccd, offset)?,
+        profile: isolated_profile(layout, unit, offset),
         cells,
         uncovered,
     })
 }
 
 /// A reproduction night's attempts for the failed `profile`, in order: the exact profile, then each
-/// CCD alone at its failed offset in ascending CCD order (a CCD at CO 0 has nothing to isolate).
+/// unit alone at its failed offset in ascending unit order (a unit at CO 0 has nothing to isolate).
 /// Every attempt lists the qualification matrix's classes in qualification order, all fresh; the
 /// caller stops an attempt at its first conclusive failure.
 pub fn reproduction_cells(
     layout: &Layout<'_>,
-    profile: &CcdProfile,
+    profile: &UnitProfile,
     ordinal: u32,
 ) -> Result<Vec<Attempt>, MatrixError> {
     let mut attempts = vec![Attempt {
         scope: AttemptScope::Exact,
         matrix: qualification_cells(layout, profile, ordinal, &Reuse::AllFresh)?,
     }];
-    for (ccd, offset) in profile
+    for (unit, offset) in profile
         .iter()
         .filter(|(_, offset)| *offset != TargetOffset::ZERO)
     {
-        let cores = layout.ccd_cores(ccd)?;
-        let isolated = scope(layout, vec![(ccd, cores)], Purpose::Isolated, ordinal);
+        let isolated = unit_scope(layout, unit, ordinal)?;
         let (cells, uncovered) = qualification_rows(&isolated, &Reuse::AllFresh)?;
         attempts.push(Attempt {
-            scope: AttemptScope::Ccd { ccd },
+            scope: AttemptScope::Unit { unit },
             matrix: Matrix {
-                profile: isolated_profile(layout, ccd, offset)?,
+                profile: isolated_profile(layout, unit, offset),
                 cells,
                 uncovered,
             },

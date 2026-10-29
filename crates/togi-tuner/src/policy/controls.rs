@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use togi_machine::CcdProfile;
+use crate::UnitProfile;
 
 use super::State;
 use super::books::Exposure;
@@ -40,7 +40,7 @@ impl State {
                 class: self.exposure_cell(record)?,
             });
         }
-        let zero = CcdProfile::zero(self.ccds())?;
+        let zero = UnitProfile::zero(&crate::Units::coarse(layout.topology));
         let ordinal = self.control_ordinal()?;
         let matrix = control_cells(layout, &zero, ordinal)?;
         let passed: HashSet<Sig> = self
@@ -93,7 +93,10 @@ impl State {
             });
             if !rerun {
                 let cell = self.exposure_cell(record)?;
-                return Ok(Some(Work::co_zero_rerun(&cell, observed.profile.ccd())));
+                return Ok(Some(Work::co_zero_rerun(
+                    &cell,
+                    &UnitProfile::of_ccd(observed.profile.ccd()),
+                )));
             }
         }
         Ok(None)

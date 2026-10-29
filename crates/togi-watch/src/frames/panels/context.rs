@@ -5,11 +5,11 @@ use std::time::Duration;
 
 use ratatui::text::{Line, Span};
 use togi_journal::{Classification, DayEventId, DayStep, HoldReason, Queue, Resolution, StepKind};
-use togi_machine::CcdProfile;
 use togi_tuner::policy::{
     DayProjection, EventProjection, FirmwareValidity, NightProjection, Projection,
     QualificationProgress, ReproductionProjection,
 };
+use togi_tuner::unit::UnitProfile;
 
 use super::super::colours::Paint;
 use super::super::draw::bounded_rows;
@@ -62,7 +62,7 @@ fn secs(seconds: u64) -> String {
     hm(Duration::from_secs(seconds))
 }
 
-fn profile_text(profile: &CcdProfile) -> String {
+fn profile_text(profile: &UnitProfile) -> String {
     profile
         .iter()
         .map(|(_, offset)| offset.get().to_string())
@@ -111,11 +111,11 @@ fn night_lines(
         let text = match (step.cursor, step.bracket) {
             (_, Some((failing, bracket))) => format!(
                 "CCD {}: failed at {}, bracket at {}",
-                step.ccd.get(),
+                step.unit,
                 failing.get(),
                 bracket.get()
             ),
-            (Some(cursor), None) => format!("CCD {} at {}", step.ccd.get(), cursor.get()),
+            (Some(cursor), None) => format!("CCD {} at {}", step.unit, cursor.get()),
             (None, None) => continue,
         };
         out.push(field_row(
@@ -405,7 +405,10 @@ fn reason_words(reason: &HoldReason) -> String {
         HoldReason::Paused {} => "paused".to_owned(),
         HoldReason::Expired {} => "expired".to_owned(),
         HoldReason::QualificationFailed { profile, .. } => {
-            format!("{} failed qualification", profile_text(profile.ccd()))
+            format!(
+                "{} failed qualification",
+                profile_text(&UnitProfile::of_ccd(profile.ccd()))
+            )
         }
     }
 }

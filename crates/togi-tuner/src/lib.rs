@@ -14,6 +14,7 @@ mod numbers;
 mod partial;
 pub mod policy;
 mod topology;
+pub mod unit;
 
 #[cfg(test)]
 mod honest_chain_tests;
@@ -24,13 +25,14 @@ pub use class::Secs;
 pub use crash::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 pub use partial::{HonestChain, PartialBasis, UncoveredReason};
 pub use policy::{
-    Action, CapProjection, CcdProjection, Contents, DayProjection, DayQuery, Decision, EndReason,
-    EventProjection, FirmwareValidity, FoldError, HoldProjection, MappingProjection,
-    NightProjection, NightQuery, NotReady, Params, PlanError, PolicyPayload, Projection,
-    QualificationProgress, QualificationProjection, QualificationStage, ReproductionProjection,
-    State, TrialPlan, VetoProjection,
+    Action, CapProjection, Contents, DayProjection, DayQuery, Decision, EndReason, EventProjection,
+    FirmwareValidity, FoldError, HoldProjection, MappingProjection, NightProjection, NightQuery,
+    NotReady, Params, PlanError, PolicyPayload, Projection, QualificationProgress,
+    QualificationProjection, QualificationStage, ReproductionProjection, State, TrialPlan,
+    UnitProjection, VetoProjection,
 };
 pub use topology::{Topology, TopologyError};
+pub use unit::{Phase, TuningUnit, UnitId, UnitProfile, UnitProfileError, Units};
 
 /// The strategy ruleset this build tunes by (`docs/spec/tuner.md`, Ruleset): its evidence, cap, night,
 /// day and daily-event rules. Bump it when any of them changes; a session started under another ruleset is

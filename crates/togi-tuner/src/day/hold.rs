@@ -1,5 +1,5 @@
+use crate::UnitProfile;
 use togi_journal::Seq;
-use togi_machine::CcdProfile;
 
 /// Whether an applied interval's readback was verified unchanged.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -15,7 +15,7 @@ pub enum Readback {
 pub enum IntervalKind {
     /// Observed active at `profile`.
     Applied {
-        profile: CcdProfile,
+        profile: UnitProfile,
         readback: Readback,
     },
     Paused,
@@ -38,7 +38,7 @@ pub struct DayInterval {
 /// The seconds that count toward a hold at `profile`: applied intervals with a verified unchanged
 /// readback at exactly that profile, recorded after `origin` (`docs/spec/tuner.md`, Hold and next
 /// proposal). Suspended, paused, unobserved, ambiguous and other-profile time is excluded.
-pub fn credited_secs(intervals: &[DayInterval], profile: &CcdProfile, origin: Seq) -> u64 {
+pub fn credited_secs(intervals: &[DayInterval], profile: &UnitProfile, origin: Seq) -> u64 {
     intervals
         .iter()
         .filter(|interval| interval.at > origin)

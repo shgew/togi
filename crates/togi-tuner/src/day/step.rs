@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::{UnitId, UnitProfile};
 use togi_journal::Seq;
-use togi_machine::{CcdId, CcdProfile, CoreInfo, TargetOffset};
+use togi_machine::{CoreInfo, TargetOffset};
 
 use super::DayParams;
 use super::error::DayStepError;
@@ -59,23 +60,23 @@ pub struct DayInputs<'a> {
     pub reproductions: &'a BTreeMap<EventId, ReproductionOutcome>,
     /// The typed intervals of the day, in journal order.
     pub intervals: &'a [DayInterval],
-    /// Each CCD's current cap S.
-    pub caps: &'a CcdProfile,
+    /// Each unit's current cap S.
+    pub caps: &'a UnitProfile,
     /// The exact profiles night-qualified under current content, epoch and firmware.
-    pub qualified: &'a BTreeSet<CcdProfile>,
+    pub qualified: &'a BTreeSet<UnitProfile>,
     /// The exact proposed profiles a conclusive qualification failure durably blocks in this session
     /// and firmware context (`docs/spec/tuner.md`, Failed next-step qualification).
-    pub blocked: &'a BTreeSet<CcdProfile>,
+    pub blocked: &'a BTreeSet<UnitProfile>,
     pub firmware: Firmware,
     pub freeze: Freeze,
     pub invocation: Invocation,
     pub params: DayParams,
 }
 
-/// One CCD's next step toward its cap.
+/// One unit's next step toward its cap.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Proposal {
-    pub ccd: CcdId,
+    pub unit: UnitId,
     pub from: TargetOffset,
     pub to: TargetOffset,
     /// `D - S` before the step.
@@ -83,7 +84,7 @@ pub struct Proposal {
     /// Counts moved: `max(1, ceil((D - S) / 2))`.
     pub step: i64,
     /// The whole proposed profile.
-    pub profile: CcdProfile,
+    pub profile: UnitProfile,
     /// The undone step back this proposal restores; `None` for an ordinary half-distance step.
     pub restores: Option<Restoration>,
 }
@@ -100,22 +101,25 @@ pub struct Restoration {
     pub retreat: Seq,
 }
 
-/// The next promotion proposal: among the CCDs with `D > S`, the largest `D - S` (ties to the
-/// lower CCD id) moves `max(1, ceil((D - S) / 2))` counts toward S and never past it; other CCDs
-/// keep D (`docs/spec/tuner.md`, Hold and next proposal). `None` when no CCD has distance left.
-pub fn propose(applied: &CcdProfile, caps: &CcdProfile) -> Result<Option<Proposal>, DayStepError> {
-    let mut best: Option<(CcdId, TargetOffset, i64)> = None;
-    for (ccd, offset) in applied.iter() {
-        let cap = caps.get(ccd).ok_or(DayStepError::Ccd(ccd))?;
+/// The next promotion proposal: among the units with `D > S`, the largest `D - S` (ties to the
+/// lower unit id) moves `max(1, ceil((D - S) / 2))` counts toward S and never past it; other units
+/// keep D (`docs/spec/tuner.md`, Hold and next proposal). `None` when no unit has distance left.
+pub fn propose(
+    applied: &UnitProfile,
+    caps: &UnitProfile,
+) -> Result<Option<Proposal>, DayStepError> {
+    let mut best: Option<(UnitId, TargetOffset, i64)> = None;
+    for (unit, offset) in applied.iter() {
+        let cap = caps.get(unit).ok_or(DayStepError::Unit(unit))?;
         let distance = offset.get() - cap.get();
         if distance <= 0 {
             continue;
         }
         if best.is_none_or(|(_, _, widest)| distance > widest) {
-            best = Some((ccd, offset, distance));
+            best = Some((unit, offset, distance));
         }
     }
-    let Some((ccd, from, remaining)) = best else {
+    let Some((unit, from, remaining)) = best else {
         return Ok(None);
     };
     // `remaining` is at least 1, so `(remaining + 1) / 2` is its ceiling half and at least 1, and
@@ -123,26 +127,26 @@ pub fn propose(applied: &CcdProfile, caps: &CcdProfile) -> Result<Option<Proposa
     let step = (remaining + 1) / 2;
     let to = TargetOffset::new(from.get() - step)?;
     Ok(Some(Proposal {
-        ccd,
+        unit,
         from,
         to,
         remaining,
         step,
-        profile: applied.with(ccd, to),
+        profile: applied.with(unit, to),
         restores: None,
     }))
 }
 
 /// The restoration a reclassification owes (`docs/spec/tuner.md`, Undoing a reclassified retreat):
 /// among the applied step backs whose events were all since reclassified as no CPU evidence, the
-/// newest original promotion they reverted (ties to the lower CCD id) that no later promotion
-/// restored, as `(promotion, CCD, step back)`. A step back that first fell back to CO 0 is applied
+/// newest original promotion they reverted (ties to the lower unit id) that no later promotion
+/// restored, as `(promotion, unit, step back)`. A step back that first fell back to CO 0 is applied
 /// once its wanted profile qualifies, and owns the steps its fallback consumed only when every event
 /// of that fallback was reclassified too. Promotions before a firmware reset are never restored.
 fn restoration<'a>(
     history: &'a DayHistory,
     events: &[DailyEvent],
-) -> Option<(Promotion<'a>, CcdId, RetreatRecord<'a>)> {
+) -> Option<(Promotion<'a>, UnitId, RetreatRecord<'a>)> {
     let promotions = history.promotions();
     let reclassified = |id: &EventId| {
         events
@@ -150,7 +154,7 @@ fn restoration<'a>(
             .any(|event| &event.id == id && event.class == Classification::NonCpu)
     };
     let mut fallbacks: Vec<RetreatRecord<'a>> = Vec::new();
-    let mut best: Option<(Promotion<'a>, CcdId, RetreatRecord<'a>)> = None;
+    let mut best: Option<(Promotion<'a>, UnitId, RetreatRecord<'a>)> = None;
     for record in history.retreats() {
         if matches!(record.outcome, RetreatOutcome::Fallback { .. }) {
             fallbacks.push(record);
@@ -173,19 +177,19 @@ fn restoration<'a>(
             else {
                 continue;
             };
-            let Some(value) = promotion.to.get(reverted.ccd) else {
+            let Some(value) = promotion.to.get(reverted.unit) else {
                 continue;
             };
             let restored = promotions.iter().any(|later| {
                 later.at > record.at
-                    && later.changed().any(|ccd| ccd == reverted.ccd)
-                    && later.to.get(reverted.ccd).is_some_and(|at| at <= value)
+                    && later.changed().any(|unit| unit == reverted.unit)
+                    && later.to.get(reverted.unit).is_some_and(|at| at <= value)
             });
-            let newer = best.as_ref().is_none_or(|(chosen, ccd, _)| {
-                promotion.at > chosen.at || (promotion.at == chosen.at && reverted.ccd < *ccd)
+            let newer = best.as_ref().is_none_or(|(chosen, unit, _)| {
+                promotion.at > chosen.at || (promotion.at == chosen.at && reverted.unit < *unit)
             });
             if !restored && newer {
-                best = Some((*promotion, reverted.ccd, record.clone()));
+                best = Some((*promotion, reverted.unit, record.clone()));
             }
         }
     }
@@ -193,32 +197,32 @@ fn restoration<'a>(
 }
 
 /// The next promotion proposal the day rules make. A restoration a reclassification owes comes
-/// first: its CCD returns to the original promotion's value, never past the cap, and the other CCDs
+/// first: its unit returns to the original promotion's value, never past the cap, and the other units
 /// keep D; with no room left under the cap it proposes nothing rather than fall through to another
-/// CCD. Otherwise the half-distance step toward the caps.
+/// unit. Otherwise the half-distance step toward the caps.
 pub fn next_proposal(
     history: &DayHistory,
     events: &[DailyEvent],
-    caps: &CcdProfile,
+    caps: &UnitProfile,
 ) -> Result<Option<Proposal>, DayStepError> {
     let applied = &history.current().profile;
-    let Some((promotion, ccd, record)) = restoration(history, events) else {
+    let Some((promotion, unit, record)) = restoration(history, events) else {
         return propose(applied, caps);
     };
-    let value = promotion.to.get(ccd).ok_or(DayStepError::Ccd(ccd))?;
-    let cap = caps.get(ccd).ok_or(DayStepError::Ccd(ccd))?;
-    let from = applied.get(ccd).ok_or(DayStepError::Ccd(ccd))?;
+    let value = promotion.to.get(unit).ok_or(DayStepError::Unit(unit))?;
+    let cap = caps.get(unit).ok_or(DayStepError::Unit(unit))?;
+    let from = applied.get(unit).ok_or(DayStepError::Unit(unit))?;
     let to = value.max(cap);
     if from <= to {
         return Ok(None);
     }
     Ok(Some(Proposal {
-        ccd,
+        unit,
         from,
         to,
         remaining: from.get() - cap.get(),
         step: from.get() - to.get(),
-        profile: applied.with(ccd, to),
+        profile: applied.with(unit, to),
         restores: Some(Restoration {
             events: record.events.to_vec(),
             promotion: promotion.at,
@@ -252,9 +256,9 @@ pub enum Blocker {
     UnresolvedEvents {
         events: Vec<EventId>,
     },
-    /// Every CCD is already at its cap.
+    /// Every unit is already at its cap.
     NothingToPromote,
-    /// The chosen proposal is vetoed; no other CCD or step is tried.
+    /// The chosen proposal is vetoed; no other unit or step is tried.
     Vetoed {
         proposal: Proposal,
         veto: Veto,
@@ -263,7 +267,7 @@ pub enum Blocker {
     NotQualified {
         proposal: Proposal,
     },
-    /// A conclusive qualification failure durably blocks the exact proposed profile; no other CCD or
+    /// A conclusive qualification failure durably blocks the exact proposed profile; no other unit or
     /// step is tried.
     QualificationFailed {
         proposal: Proposal,
@@ -285,27 +289,27 @@ pub enum DayDecision {
         proposal: Proposal,
         hold: HoldCredit,
         /// The caps the proposal stays within.
-        caps: CcdProfile,
+        caps: UnitProfile,
     },
     Retreat {
-        to: CcdProfile,
+        to: UnitProfile,
         causes: Vec<RetreatCause>,
         /// The retreat profile that lacked qualification when `to` fell back to CO 0 for it.
-        unqualified: Option<CcdProfile>,
+        unqualified: Option<UnitProfile>,
     },
     FirmwareZero {
-        to: CcdProfile,
+        to: UnitProfile,
         /// The retained re-qualification target.
-        previous: CcdProfile,
+        previous: UnitProfile,
     },
 }
 
 fn forbidden(
     vetoes: &[Veto],
     topology: &[CoreInfo],
-    profile: &CcdProfile,
+    profile: &UnitProfile,
 ) -> Result<Option<Veto>, DayStepError> {
-    let core = CoreProfile::of_ccd(profile, topology)?;
+    let core = CoreProfile::of_units(profile, topology)?;
     Ok(vetoes
         .iter()
         .find(|veto| veto.profile.forbids(&core))

@@ -24,7 +24,7 @@ fn record() -> DayEventId {
 /// The reason a hold names when CCD 0 -15, CCD 1 -5 failed qualification.
 fn failed_qualification() -> HoldReason {
     HoldReason::QualificationFailed {
-        profile: expanded(profile_of(&[(0, -15), (1, -5)])),
+        profile: expanded(profile_of(&[(0, -15), (1, -5)]).to_ccd().unwrap()),
         witnesses: vec![seq(9)],
     }
 }
@@ -175,6 +175,6 @@ fn a_retried_re_qualification_says_so() {
 #[test]
 fn a_ccd_the_tuner_has_no_state_for_says_so() {
     let mut hand = Staged::Between.hand();
-    hand.policy.ccds.clear();
+    hand.policy.units.clear();
     assert_shows(&shown(&hand), "no tuner state for this CCD yet");
 }

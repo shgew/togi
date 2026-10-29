@@ -443,7 +443,9 @@ fn a_held_step_names_every_blocker() {
             HoldReason::Paused {},
             HoldReason::Expired {},
             HoldReason::QualificationFailed {
-                profile: crate::tests::kit::expanded(profile(&[(0, -15), (1, -5)])),
+                profile: crate::tests::kit::expanded(
+                    profile(&[(0, -15), (1, -5)]).to_ccd().unwrap(),
+                ),
                 witnesses: vec![togi_journal::Seq::new(9).expect("a seq")],
             },
         ],

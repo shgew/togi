@@ -137,7 +137,7 @@ impl Session<'_> {
     pub(crate) fn ensure_profile(&mut self, plan: &TrialPlan) -> Step<()> {
         let target: PerCore<TargetOffset> = plan
             .profile
-            .expand(&self.topology)
+            .expand_topology(&self.topology)
             .map_err(togi_tuner::policy::PlanError::from)
             .map_err(SessionError::Plan)?;
         let applied = self

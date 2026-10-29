@@ -128,7 +128,10 @@ fn promoted_with(params: Params) -> (Journal, CcdProfile) {
 fn a_qualified_proposal_is_promoted_at_the_cold_boot_and_its_application_commits_d() {
     let (journal, qualified) = promoted();
     assert!(!qualified.is_zero());
-    assert_eq!(journal.state.project().applied, Some(qualified));
+    assert_eq!(
+        journal.state.project().applied,
+        Some(togi_tuner::UnitProfile::of_ccd(&qualified))
+    );
 }
 
 #[test]
@@ -144,7 +147,10 @@ fn a_firmware_change_zeroes_a_nonzero_d_and_the_next_night_requalifies_it_after_
         .unwrap_or_else(|| panic!("no firmware zero in {committed:?}"));
     assert!(step.proposed.ccd().is_zero());
     apply(&mut journal, &step, 2, "day2");
-    assert_eq!(journal.state.project().applied, Some(zero()));
+    assert_eq!(
+        journal.state.project().applied,
+        Some(togi_tuner::UnitProfile::of_ccd(&zero()))
+    );
     // The tuning night runs the stock controls first, then re-qualifies the retained D exactly.
     journal.reboot("tuning2");
     journal.append(firmware("2").into(), &[]);
@@ -265,7 +271,7 @@ fn a_reproduction_gets_one_night_even_across_a_crash_and_is_unreproduced_when_it
     let plan = journal.until_trial(at(62_000));
     assert_eq!(plan.task.queue, Queue::Reproduction);
     assert_eq!(plan.tested, Tested::Exact {});
-    assert_eq!(plan.profile, d);
+    assert_eq!(plan.profile.to_ccd().unwrap(), d);
     let night = plan.night;
     journal.run(&plan, Ending::Pass);
     // A crash reboot back into tuning continues the same night and the same reproduction.
@@ -393,7 +399,7 @@ fn a_monthly_requalification_of_d_runs_every_cell_afresh() {
 }
 
 /// The projection after an unexplained end's provisional retreat, pinned except for the cap's class lists
-/// and the night's task detail: the CCDs, the day, its event and veto, and the night that closed. It starts
+/// and the night's task detail: the units, the day, its event and veto, and the night that closed. It starts
 /// from the compact promoted day, so every sequence it pins is one of that scenario's own events.
 #[test]
 fn the_projection_after_a_provisional_retreat_matches_its_snapshot() {
@@ -403,18 +409,18 @@ fn the_projection_after_a_provisional_retreat_matches_its_snapshot() {
     let projection = serde_json::to_value(journal.state.project()).unwrap();
     let pinned = serde_json::json!({
         "applied": projection["applied"],
-        "ccds": projection["ccds"]
+        "units": projection["units"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|ccd| serde_json::json!({
-                "ccd": ccd["ccd"],
-                "cores": ccd["cores"],
-                "edge": ccd["edge"],
-                "cap": ccd["cap"]["offset"],
-                "binding": ccd["cap"]["binding"]["kind"],
-                "day": ccd["day"],
-                "remaining": ccd["remaining"],
+            .map(|unit| serde_json::json!({
+                "unit": unit["unit"],
+                "cores": unit["cores"],
+                "edge": unit["edge"],
+                "cap": unit["cap"]["offset"],
+                "binding": unit["cap"]["binding"]["kind"],
+                "day": unit["day"],
+                "remaining": unit["remaining"],
             }))
             .collect::<Vec<_>>(),
         "day": projection["day"],
@@ -475,7 +481,7 @@ fn night_until_filler(journal: &mut Journal, boot: &str) -> Vec<TrialPlan> {
 
 /// The committed cap's offset on `ccd`.
 fn cap_of(journal: &Journal, ccd: usize) -> i64 {
-    serde_json::to_value(journal.state.project()).unwrap()["ccds"][ccd]["cap"]["offset"]
+    serde_json::to_value(journal.state.project()).unwrap()["units"][ccd]["cap"]["offset"]
         .as_i64()
         .unwrap()
 }
@@ -526,7 +532,7 @@ fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores
         let fails = plan.activity == Activity::Mapping
             && plan
                 .profile
-                .get(ccd(0))
+                .get(togi_tuner::UnitId::Ccd(ccd(0)))
                 .is_some_and(|offset| offset.get() <= -19);
         journal.run(
             &plan,
@@ -556,12 +562,12 @@ fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores
     apply(&mut journal, &fallback, 3, "day3");
     // The next night qualifies the wanted profile, not the ordinary proposal from CO 0.
     let plans = night_until_filler(&mut journal, "tuning3");
-    let qualified: Vec<&CcdProfile> = plans
+    let qualified: Vec<CcdProfile> = plans
         .iter()
         .filter(|plan| plan.activity == Activity::Qualification && !plan.profile.is_zero())
-        .map(|plan| &plan.profile)
+        .map(|plan| plan.profile.to_ccd().unwrap())
         .collect();
-    assert_eq!(qualified.first(), Some(&&first), "{qualified:?}");
+    assert_eq!(qualified.first(), Some(&first), "{qualified:?}");
     // The next cold boot restores it: a retreat completing the event, not a promotion.
     journal.boot_start("day4");
     let committed = journal.settle_day(&cold_boot_at("day4", journal.now()));
@@ -693,7 +699,7 @@ fn deep() -> Params {
 
 /// The committed slope's kind on `ccd`.
 fn slope_kind(journal: &Journal, ccd: usize) -> String {
-    serde_json::to_value(journal.state.project()).unwrap()["ccds"][ccd]["cap"]["slope"]["kind"]
+    serde_json::to_value(journal.state.project()).unwrap()["units"][ccd]["cap"]["slope"]["kind"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -709,7 +715,7 @@ fn measured() -> Journal {
         let fails = plan.activity == Activity::Mapping
             && plan
                 .profile
-                .get(ccd(0))
+                .get(togi_tuner::UnitId::Ccd(ccd(0)))
                 .is_some_and(|offset| offset.get() <= -10);
         journal.run(
             &plan,
@@ -723,11 +729,11 @@ fn measured() -> Journal {
     assert_eq!(cap_of(&journal, 0), 0);
     let projected = journal.state.project();
     assert_eq!(
-        projected.ccds[0].evidence.as_ref().unwrap().reason,
+        projected.units[0].evidence.as_ref().unwrap().reason,
         togi_tuner::policy::CapReason::NoJustifiedDecay
     );
     assert!(
-        !projected.ccds[0]
+        !projected.units[0]
             .evidence
             .as_ref()
             .unwrap()
@@ -937,7 +943,7 @@ fn a_trial_killed_before_its_start_adds_no_class_to_the_caps() {
 fn read_only_projection_distinguishes_missing_mapping_exposure_from_unknown_edge() {
     let mut journal = Journal::ready();
     assert_eq!(
-        journal.state.project().ccds[0]
+        journal.state.project().units[0]
             .evidence
             .as_ref()
             .unwrap()
@@ -956,10 +962,10 @@ fn read_only_projection_distinguishes_missing_mapping_exposure_from_unknown_edge
     let before = serde_json::to_value(&journal.state).unwrap();
     let projected = journal.state.project();
     assert_eq!(
-        projected.ccds[0].evidence.as_ref().unwrap().reason,
+        projected.units[0].evidence.as_ref().unwrap().reason,
         togi_tuner::policy::CapReason::UnknownEdge
     );
-    let evidence = projected.ccds[0].evidence.as_ref().unwrap();
+    let evidence = projected.units[0].evidence.as_ref().unwrap();
     assert!(!evidence.cells.is_empty());
     assert!(evidence.cells[0].eligible_s > 0);
     assert_eq!(evidence.cells.len(), evidence.projected.len());
@@ -981,7 +987,7 @@ fn a_zero_exposure_interruption_adds_no_slope_input() {
                 return journal
                     .state
                     .project()
-                    .ccds
+                    .units
                     .into_iter()
                     .map(|ccd| ccd.evidence)
                     .collect::<Vec<_>>();
@@ -999,7 +1005,7 @@ fn qualification_projection_reports_measured_seconds_once_not_completed_cell_cou
     let qualification = projected
         .qualifications
         .iter()
-        .find(|record| record.profile == profile)
+        .find(|record| record.profile.matches_ccd(&profile))
         .unwrap();
     assert_eq!(
         qualification.eligible_s,
