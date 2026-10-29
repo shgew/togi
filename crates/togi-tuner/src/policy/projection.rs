@@ -3,13 +3,14 @@
 
 use std::collections::HashMap;
 
+use crate::{UnitId, UnitProfile};
 use serde::{Deserialize, Serialize};
 use togi_journal::{
     Activity, Binding, Budget, Classification, DayEventId, DayStep, Edge, ExposureClass, NightId,
     PlannedTask, QualificationPurpose, QualificationState, ReproductionState, Resolution, Seq,
     Slope, TaskId, TaskStatus, UnavailableBackend, UncoveredClass, VetoState,
 };
-use togi_machine::{BootId, CcdId, CcdProfile, CoreSet, TargetOffset};
+use togi_machine::{BootId, CoreSet, TargetOffset};
 
 use super::State;
 use super::ledger::{Sig, saturating_u32};
@@ -82,8 +83,8 @@ pub struct CapProjection {
 
 /// One CCD's committed edge U, cap S, applied day offset D and the distance between them.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CcdProjection {
-    pub ccd: CcdId,
+pub struct UnitProjection {
+    pub unit: UnitId,
     pub cores: CoreSet,
     /// `None` until a `ccd.edge` was committed; absence is not offset zero.
     pub edge: Option<Edge>,
@@ -124,7 +125,7 @@ pub enum QualificationStage {
 /// A qualification record and where it stands.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct QualificationProjection {
-    pub profile: CcdProfile,
+    pub profile: UnitProfile,
     pub purpose: QualificationPurpose,
     pub state: QualificationStage,
     /// Whether it was made under the current firmware, epoch and content.
@@ -137,7 +138,7 @@ pub struct QualificationProjection {
 /// The applied-hour hold at the current D.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct HoldProjection {
-    pub profile: CcdProfile,
+    pub profile: UnitProfile,
     pub eligible_s: u64,
     pub required_s: u64,
     /// The `day.hold` event.
@@ -170,7 +171,7 @@ pub struct DayProjection {
 /// Where one CCD's mapping descent stands.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MappingProjection {
-    pub ccd: CcdId,
+    pub unit: UnitId,
     /// The offset in progress.
     pub cursor: Option<TargetOffset>,
     /// The first failing coarse step and the bracket offset in progress.
@@ -180,7 +181,7 @@ pub struct MappingProjection {
 /// The open qualification's progress.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct QualificationProgress {
-    pub profile: CcdProfile,
+    pub profile: UnitProfile,
     pub outstanding: Vec<ExposureClass>,
     pub witnessed: usize,
     #[serde(default)]
@@ -222,8 +223,8 @@ pub struct NightProjection {
 /// The `tuner` key of `state.json` and what `status` and `watch` read.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Projection {
-    pub applied: Option<CcdProfile>,
-    pub ccds: Vec<CcdProjection>,
+    pub applied: Option<UnitProfile>,
+    pub units: Vec<UnitProjection>,
     pub day: DayProjection,
     pub events: Vec<EventProjection>,
     pub vetoes: Vec<VetoProjection>,
@@ -292,7 +293,7 @@ impl State {
             .as_ref()
             .map(|history| history.current().profile.clone());
         Projection {
-            ccds: self.ccd_projections(applied.as_ref()),
+            units: self.unit_projections(applied.as_ref()),
             applied,
             day: self.day_projection(),
             events: events
@@ -318,7 +319,7 @@ impl State {
                 .qualification_records()
                 .iter()
                 .map(|record| QualificationProjection {
-                    profile: record.start.payload.profile.ccd().clone(),
+                    profile: UnitProfile::of_ccd(record.start.payload.profile.ccd()),
                     purpose: record.start.payload.purpose,
                     state: match record.latest.payload.state {
                         QualificationState::Start { .. } => QualificationStage::Start,
@@ -340,7 +341,7 @@ impl State {
     /// observation uses the latest stock observation of its class and context, including historical
     /// contexts rather than silently treating them as current evidence.
     #[must_use]
-    pub fn comparable_exposures(&self, profile: &CcdProfile) -> Vec<(Seq, Seq)> {
+    pub fn comparable_exposures(&self, profile: &UnitProfile) -> Vec<(Seq, Seq)> {
         if profile.is_zero() {
             return Vec::new();
         }
@@ -368,7 +369,7 @@ impl State {
         self.ledger
             .records
             .iter()
-            .filter(|record| record.observed.profile.ccd() == profile)
+            .filter(|record| profile.matches_ccd(record.observed.profile.ccd()))
             .filter_map(|record| {
                 let observed = &record.observed;
                 let contexts = stocks.get(&Sig::of_class(&observed.class))?;
@@ -378,7 +379,7 @@ impl State {
             .collect()
     }
 
-    fn ccd_projections(&self, applied: Option<&CcdProfile>) -> Vec<CcdProjection> {
+    fn unit_projections(&self, applied: Option<&UnitProfile>) -> Vec<UnitProjection> {
         let known = self.known_contents(None);
         let plan = self
             .with_layout(|layout| self.mapping_plan(layout, &known))
@@ -391,11 +392,11 @@ impl State {
             .iter()
             .map(|&(ccd, cores)| {
                 let day = applied
-                    .and_then(|profile| profile.get(ccd))
+                    .and_then(|profile| profile.get(UnitId::Ccd(ccd)))
                     .unwrap_or(TargetOffset::ZERO);
                 let cap = self.nights.caps.get(&ccd);
-                CcdProjection {
-                    ccd,
+                UnitProjection {
+                    unit: UnitId::Ccd(ccd),
                     cores,
                     evidence: plan
                         .as_ref()
@@ -486,7 +487,7 @@ impl State {
                 self.ccds()
                     .into_iter()
                     .filter_map(|ccd| {
-                        let mapping = plan.mapped.board.ccd(ccd)?;
+                        let mapping = plan.mapped.board.unit(UnitId::Ccd(ccd))?;
                         let (cursor, bracket) = match mapping.cursor() {
                             Cursor::Coarse { offset: at } => (Some(offset(at)), None),
                             Cursor::Sweep { next } => (Some(offset(next)), None),
@@ -495,7 +496,7 @@ impl State {
                             }
                         };
                         Some(MappingProjection {
-                            ccd,
+                            unit: UnitId::Ccd(ccd),
                             cursor,
                             bracket,
                         })
@@ -517,7 +518,7 @@ impl State {
                             outstanding,
                             ..
                         } => Some(QualificationProgress {
-                            profile: record.start.payload.profile.ccd().clone(),
+                            profile: UnitProfile::of_ccd(record.start.payload.profile.ccd()),
                             outstanding: outstanding.clone(),
                             witnessed: witnesses.len(),
                             eligible_s: self.record_seconds(record, witnesses),

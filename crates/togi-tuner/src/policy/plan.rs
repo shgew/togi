@@ -5,17 +5,18 @@ use togi_journal::{
     Activity, NightId, Placement, Seq, TaskId, Tested, TrialId, TrialIntent, WorkloadContent,
 };
 use togi_machine::{
-    CcdProfile, CcdProfileError, Condition, CoreId, CoreInfo, CoreSet, CpuId, InvalidRoles,
-    PerCore, TargetOffset, TrialRole, WorkloadId,
+    Condition, CoreId, CoreInfo, CoreSet, CpuId, InvalidRoles, PerCore, TargetOffset, TrialRole,
+    WorkloadId,
 };
 
 use crate::night::{Cell, Purpose, Roles, Workloads};
+use crate::{UnitProfile, UnitProfileError};
 
 /// A reason a plan cannot become an intent or its roles.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum PlanError {
     #[error("expanding the plan's profile to cores")]
-    Profile(#[from] CcdProfileError),
+    Profile(#[from] UnitProfileError),
     #[error("building the plan's trial roles")]
     Roles(#[from] InvalidRoles),
     #[error("core {0} is missing from the topology listing")]
@@ -33,7 +34,7 @@ pub struct TrialPlan {
     pub activity: Activity,
     pub cell: Cell,
     /// The whole CCD profile the trial runs at.
-    pub profile: CcdProfile,
+    pub profile: UnitProfile,
     /// What the trial's outcome is charged to: the isolated CCD at its offset, or the exact profile.
     pub tested: Tested,
     /// Whether this relaunches a cell whose earlier launch was inconclusive or truncated.
@@ -67,7 +68,7 @@ impl TrialPlan {
         cores: &[CoreInfo],
         content: Vec<WorkloadContent>,
     ) -> Result<TrialIntent, PlanError> {
-        let profile: PerCore<TargetOffset> = self.profile.expand(cores)?;
+        let profile: PerCore<TargetOffset> = self.profile.expand_topology(cores)?;
         let (core, loaded, offset) = match self.cell.roles {
             Roles::SingleCore { core } | Roles::SmtPair { core } => {
                 (Some(core), CoreSet::default(), profile.get(core))

@@ -85,6 +85,10 @@ pub enum NotReady {
     NoFirmware,
     #[error("deciding a night before the day baseline")]
     NoBaseline,
+    #[error("encoding a core-unit profile in a CCD journal record")]
+    NonCoarse,
+    #[error("building a unit profile")]
+    UnitProfile(#[from] crate::UnitProfileError),
     #[error("naming a workload's content")]
     UnknownContent(WorkloadId),
     #[error("building a coverage matrix")]

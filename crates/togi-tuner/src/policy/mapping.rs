@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use crate::{UnitId, UnitProfile};
 use togi_journal::{
     Binding, Candidate, CcdCap, CcdEdge, Edge, ExposureClass, Finite, LowerEndpoint,
     Rate as JournalRate, RateBound, RateCell, Seq, Tested, UncoveredClass, UncoveredReason,
@@ -144,7 +145,7 @@ impl MapReplay {
                 context_since,
             }),
             mapped: Mapped {
-                board: MappingBoard::new(ccds.clone()),
+                board: MappingBoard::new(ccds.iter().copied().map(UnitId::Ccd)),
                 ccds,
                 censored: BTreeMap::new(),
                 open: BTreeMap::new(),
@@ -248,7 +249,7 @@ impl State {
             togi_journal::Queue::Reproduction | togi_journal::Queue::Filler => {
                 if let Some(result) = self.isolated_result(trial, ccd) {
                     replay.mapped.board.observe(IsolatedObservation {
-                        ccd,
+                        unit: UnitId::Ccd(ccd),
                         offset,
                         result,
                     });
@@ -261,10 +262,11 @@ impl State {
                 }
                 if let std::collections::hash_map::Entry::Vacant(slot) = replay.tasks.entry(ordinal)
                 {
-                    let wanted: HashSet<Sig> = mapping_cells(layout, ccd, offset, ordinal)?
-                        .fresh()
-                        .map(Sig::of_cell)
-                        .collect();
+                    let wanted: HashSet<Sig> =
+                        mapping_cells(layout, UnitId::Ccd(ccd), offset, ordinal)?
+                            .fresh()
+                            .map(Sig::of_cell)
+                            .collect();
                     slot.insert(TaskProgress {
                         ccd,
                         offset,
@@ -360,21 +362,25 @@ impl Mapped {
     fn finish(&mut self, ccd: CcdId, offset: TargetOffset, result: StepResult, passes: Vec<Seq>) {
         let mut board = self.board.clone();
         let reached = (0..MAX_ALIGN).any(|_| {
-            let Some(mapping) = board.ccd(ccd) else {
+            let Some(mapping) = board.unit(UnitId::Ccd(ccd)) else {
                 return false;
             };
             if cursor_offset(mapping.cursor()) == offset.get() {
                 return true;
             }
-            board.finish_step(ccd, StepResult::Passed);
+            board.finish_step(UnitId::Ccd(ccd), StepResult::Passed);
             false
         });
         if !reached {
             return;
         }
-        let before = board.ccd(ccd).map(super::super::night::CcdMapping::edge);
-        board.finish_step(ccd, result);
-        let after = board.ccd(ccd).map(super::super::night::CcdMapping::edge);
+        let before = board
+            .unit(UnitId::Ccd(ccd))
+            .map(super::super::night::UnitMapping::edge);
+        board.finish_step(UnitId::Ccd(ccd), result);
+        let after = board
+            .unit(UnitId::Ccd(ccd))
+            .map(super::super::night::UnitMapping::edge);
         if after == Some(EdgeU::Censored) && before != after {
             self.censored.insert(ccd, passes);
         }
@@ -386,13 +392,17 @@ impl Mapped {
     pub(super) fn edges(&self) -> BTreeMap<CcdId, EdgeU> {
         self.ccds
             .iter()
-            .filter_map(|&ccd| self.board.ccd(ccd).map(|mapping| (ccd, mapping.edge())))
+            .filter_map(|&ccd| {
+                self.board
+                    .unit(UnitId::Ccd(ccd))
+                    .map(|mapping| (ccd, mapping.edge()))
+            })
             .collect()
     }
 
     /// The ordinal a step at `target` runs under: its open task's, or the next one.
     pub(super) fn ordinal_for(&self, target: &MappingTarget) -> u32 {
-        match self.open.get(&target.ccd) {
+        match target.unit.ccd().and_then(|ccd| self.open.get(&ccd)) {
             Some(&(ordinal, offset)) if offset == target.offset => ordinal,
             Some(_) | None => self.next_ordinal,
         }
@@ -518,7 +528,7 @@ impl State {
             latest_mapping = latest_mapping.max(class.latest_mapping);
         }
         // Every class the mapping matrix runs is listed, observed or not: omission is never safety.
-        let seeds = mapping_cells(layout, ccd, TargetOffset::ZERO, ordinal)?;
+        let seeds = mapping_cells(layout, UnitId::Ccd(ccd), TargetOffset::ZERO, ordinal)?;
         for cell in seeds.fresh() {
             if let Some(class) = Self::class_of(cell, contents) {
                 let id = interner.id(&class);
@@ -620,13 +630,14 @@ impl State {
         target: &MappingTarget,
     ) -> Result<bool, NotReady> {
         let ordinal = mapped.ordinal_for(target);
-        let wanted: HashSet<Sig> = mapping_cells(layout, target.ccd, target.offset, ordinal)?
+        let ccd = target.unit.ccd().ok_or(NotReady::NonCoarse)?;
+        let wanted: HashSet<Sig> = mapping_cells(layout, target.unit, target.offset, ordinal)?
             .fresh()
             .map(Sig::of_cell)
             .collect();
         let covered: HashSet<Sig> = self
             .current_groups()
-            .filter_map(|group| group.mapping_covered.get(&(target.ccd, target.offset)))
+            .filter_map(|group| group.mapping_covered.get(&(ccd, target.offset)))
             .flatten()
             .cloned()
             .collect();
@@ -649,7 +660,7 @@ impl State {
             if !self.step_covered(layout, &mapped, &target)? {
                 break;
             }
-            mapped.board.finish_step(target.ccd, StepResult::Passed);
+            mapped.board.finish_step(target.unit, StepResult::Passed);
             plan = self.settle(layout, contents, &mapped)?;
         }
         Ok(MappingPlan { mapped, ..plan })
@@ -663,9 +674,9 @@ impl State {
     ) -> Result<MappingPlan, NotReady> {
         let edges = mapped.edges();
         let caps = self.caps_of(layout, contents, &edges, mapped.next_ordinal)?;
-        let limits: BTreeMap<CcdId, TargetOffset> = caps
+        let limits: BTreeMap<UnitId, TargetOffset> = caps
             .iter()
-            .map(|(&ccd, outcome)| (ccd, outcome.cap.offset))
+            .map(|(&ccd, outcome)| (UnitId::Ccd(ccd), outcome.cap.offset))
             .collect();
         let target = mapped.board.next_target(&limits);
         Ok(MappingPlan {
@@ -860,7 +871,7 @@ impl State {
     }
 
     /// The committed cap S of every CCD; CO 0 until a cap is committed.
-    pub(super) fn committed_caps(&self) -> Result<togi_machine::CcdProfile, NotReady> {
+    pub(super) fn committed_caps(&self) -> Result<UnitProfile, NotReady> {
         let ccds = self.ccds();
         let mut caps = togi_machine::CcdProfile::zero(ccds.iter().copied())?;
         for ccd in ccds {
@@ -868,7 +879,7 @@ impl State {
                 caps = caps.with(ccd, cap.payload.new);
             }
         }
-        Ok(caps)
+        Ok(UnitProfile::of_ccd(&caps))
     }
 }
 

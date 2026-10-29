@@ -9,9 +9,7 @@ use togi_journal::{
     Activity, CcdVector, CellEvidence, CellWitness, ExposureClass, NightQualification, Outcome,
     QualificationPurpose, QualificationState, Queue, Seq, TaskId, Tested, WorkloadContent,
 };
-use togi_machine::{
-    BiosContext, CcdId, ContentId, CoreSet, Digest, TargetOffset, WorkloadId,
-};
+use togi_machine::{BiosContext, CcdId, ContentId, CoreSet, Digest, TargetOffset, WorkloadId};
 
 use super::State;
 use super::books::Committed;
@@ -19,9 +17,9 @@ use super::decision::{Decision, PolicyPayload};
 use super::ledger::{Sig, is_adequate};
 use super::night_query::NotReady;
 use super::plan::workloads_of;
-use crate::{EVIDENCE_EPOCH, UnitProfile};
 use crate::day::{CoreProfile, awaiting, next_proposal, shallower, vetoes};
 use crate::night::{Cell, Layout, Matrix, Reuse, Source, qualification_cells};
+use crate::{EVIDENCE_EPOCH, UnitProfile};
 
 /// How long a complete qualification lasts before re-qualification is due.
 pub(super) const REQUALIFICATION_DAYS: i64 = 30;
@@ -602,7 +600,8 @@ impl State {
         profile: &'a UnitProfile,
     ) -> impl Iterator<Item = &'a QualRecord> {
         records.iter().filter(move |record| {
-            profile.matches_ccd(record.start.payload.profile.ccd()) && self.is_current_record(record)
+            profile.matches_ccd(record.start.payload.profile.ccd())
+                && self.is_current_record(record)
         })
     }
 

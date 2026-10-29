@@ -1,11 +1,12 @@
-//! The night edge U and the per-CCD mapping cursor (`docs/spec/tuner.md`, Night edge U and Night
+//! The night edge U and the per-unit mapping cursor (`docs/spec/tuner.md`, Night edge U and Night
 //! order and reserved budgets).
 
 use std::collections::BTreeMap;
 use std::ops::Bound;
 
+use crate::UnitId;
 use togi_journal::Seq;
-use togi_machine::{CcdId, MIN_OFFSET, TargetOffset};
+use togi_machine::{MIN_OFFSET, TargetOffset};
 
 /// Counts between coarse mapping steps.
 pub const COARSE_STEP: i64 = 5;
@@ -22,13 +23,13 @@ fn offset_of(counts: i64) -> TargetOffset {
     TargetOffset::clamped(counts)
 }
 
-/// A CCD's night edge U. Absence is never offset zero.
+/// A unit's night edge U. Absence is never offset zero.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "edge", rename_all = "snake_case")]
 pub enum EdgeU {
     /// No failure yet, and the write limit has not been passed cleanly.
     Unknown,
-    /// The shallowest actual failure on the tested CCD, kept even when a later launch passes there.
+    /// The shallowest actual failure on the tested unit, kept even when a later launch passes there.
     Observed { offset: TargetOffset, witness: Seq },
     /// The full mapping matrix passed at the write limit: no failure, so no invented one.
     Censored,
@@ -45,7 +46,7 @@ impl EdgeU {
         }
     }
 
-    /// This edge after a failure charged to the tested CCD. A shallower failure replaces a deeper
+    /// This edge after a failure charged to the tested unit. A shallower failure replaces a deeper
     /// one; a censored or unknown edge takes any failure.
     #[must_use]
     pub fn with_failure(self, offset: TargetOffset, witness: Seq) -> Self {
@@ -62,10 +63,10 @@ impl EdgeU {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Location {
-    /// On the tested CCD, including an unattributed controlled isolated failure and togi's own
+    /// On the tested unit, including an unattributed controlled isolated failure and togi's own
     /// controller, dashboard and workers running there.
     TestedCcd,
-    /// Visible, but not charged to the tested CCD.
+    /// Visible, but not charged to the tested unit.
     Elsewhere,
 }
 
@@ -79,7 +80,7 @@ pub enum IsolatedResult {
 /// A conclusive isolated mapping or reproduction observation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct IsolatedObservation {
-    pub ccd: CcdId,
+    pub unit: UnitId,
     pub offset: TargetOffset,
     pub result: IsolatedResult,
 }
@@ -90,7 +91,7 @@ pub struct IsolatedObservation {
 pub enum StepResult {
     /// Every cell of the step's mapping matrix passed (or was already covered).
     Passed,
-    /// The step stopped at its first failure charged to the tested CCD.
+    /// The step stopped at its first failure charged to the tested unit.
     Failed { witness: Seq },
 }
 
@@ -102,7 +103,7 @@ pub enum MappingKind {
     Sweep,
 }
 
-/// Where a CCD's mapping goes next, in counts (0 to -50, `Sweep` up toward S).
+/// Where a unit's mapping goes next, in counts (0 to -50, `Sweep` up toward S).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "cursor", rename_all = "snake_case")]
 pub enum Cursor {
@@ -115,14 +116,14 @@ pub enum Cursor {
     Sweep { next: i64 },
 }
 
-/// One CCD's edge and cursor.
+/// One unit's edge and cursor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct CcdMapping {
+pub struct UnitMapping {
     edge: EdgeU,
     cursor: Cursor,
 }
 
-impl Default for CcdMapping {
+impl Default for UnitMapping {
     fn default() -> Self {
         Self {
             edge: EdgeU::Unknown,
@@ -131,7 +132,7 @@ impl Default for CcdMapping {
     }
 }
 
-impl CcdMapping {
+impl UnitMapping {
     #[must_use]
     pub const fn edge(&self) -> EdgeU {
         self.edge
@@ -143,7 +144,7 @@ impl CcdMapping {
     }
 
     /// The next offset to map and why, or `None` when the descent and bracket are done and the
-    /// sweep has reached `cap`, the CCD's current S. An offset whose cells are all covered finishes
+    /// sweep has reached `cap`, the unit's current S. An offset whose cells are all covered finishes
     /// as [`StepResult::Passed`] without spending night time.
     #[must_use]
     pub fn target(&self, cap: TargetOffset) -> Option<(TargetOffset, MappingKind)> {
@@ -225,7 +226,7 @@ impl CcdMapping {
         }
     }
 
-    /// Fold an isolated observation from any source. Only a failure charged to the tested CCD
+    /// Fold an isolated observation from any source. Only a failure charged to the tested unit
     /// moves the edge; passes never undo it, and a failure elsewhere is not charged.
     pub fn observe(&mut self, offset: TargetOffset, result: IsolatedResult) {
         let IsolatedResult::Fail {
@@ -259,73 +260,74 @@ impl CcdMapping {
     }
 }
 
-/// A mapping offset to run: which CCD, at what offset, and why that one.
+/// A mapping offset to run: which unit, at what offset, and why that one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MappingTarget {
-    pub ccd: CcdId,
+    pub unit: UnitId,
     pub offset: TargetOffset,
     pub kind: MappingKind,
 }
 
-/// Every CCD's mapping, visited round-robin in ascending CCD order, one mapping offset per CCD
+/// Every unit's mapping, visited round-robin in ascending unit order, one mapping offset per unit
 /// before returning to the first.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MappingBoard {
-    ccds: BTreeMap<CcdId, CcdMapping>,
-    /// The CCD whose offset was mapped last.
-    visited: Option<CcdId>,
+    #[serde(with = "togi_machine::serde_pairs")]
+    units: BTreeMap<UnitId, UnitMapping>,
+    /// The unit whose offset was mapped last.
+    visited: Option<UnitId>,
 }
 
 impl MappingBoard {
     #[must_use]
-    pub fn new(ccds: impl IntoIterator<Item = CcdId>) -> Self {
+    pub fn new(units: impl IntoIterator<Item = UnitId>) -> Self {
         Self {
-            ccds: ccds
+            units: units
                 .into_iter()
-                .map(|ccd| (ccd, CcdMapping::default()))
+                .map(|unit| (unit, UnitMapping::default()))
                 .collect(),
             visited: None,
         }
     }
 
     #[must_use]
-    pub fn ccd(&self, ccd: CcdId) -> Option<&CcdMapping> {
-        self.ccds.get(&ccd)
+    pub fn unit(&self, unit: UnitId) -> Option<&UnitMapping> {
+        self.units.get(&unit)
     }
 
-    /// The next CCD with something to map after the last visited one, wrapping to the first, with
-    /// its offset. `caps` holds each CCD's S; a missing one is CO 0.
+    /// The next unit with something to map after the last visited one, wrapping to the first, with
+    /// its offset. `caps` holds each unit's S; a missing one is CO 0.
     #[must_use]
-    pub fn next_target(&self, caps: &BTreeMap<CcdId, TargetOffset>) -> Option<MappingTarget> {
+    pub fn next_target(&self, caps: &BTreeMap<UnitId, TargetOffset>) -> Option<MappingTarget> {
         let after = match self.visited {
             Some(visited) => self
-                .ccds
+                .units
                 .range((Bound::Excluded(visited), Bound::Unbounded)),
-            None => self.ccds.range::<CcdId, _>(..),
+            None => self.units.range::<UnitId, _>(..),
         };
         let wrapped = self
             .visited
             .into_iter()
-            .flat_map(|visited| self.ccds.range(..=visited));
-        after.chain(wrapped).find_map(|(&ccd, mapping)| {
-            let cap = caps.get(&ccd).copied().unwrap_or(TargetOffset::ZERO);
+            .flat_map(|visited| self.units.range(..=visited));
+        after.chain(wrapped).find_map(|(&unit, mapping)| {
+            let cap = caps.get(&unit).copied().unwrap_or(TargetOffset::ZERO);
             mapping
                 .target(cap)
-                .map(|(offset, kind)| MappingTarget { ccd, offset, kind })
+                .map(|(offset, kind)| MappingTarget { unit, offset, kind })
         })
     }
 
-    /// Fold a finished step of `ccd` and move the round-robin past it.
-    pub fn finish_step(&mut self, ccd: CcdId, result: StepResult) {
-        if let Some(mapping) = self.ccds.get_mut(&ccd) {
+    /// Fold a finished step of `unit` and move the round-robin past it.
+    pub fn finish_step(&mut self, unit: UnitId, result: StepResult) {
+        if let Some(mapping) = self.units.get_mut(&unit) {
             mapping.finish(result);
-            self.visited = Some(ccd);
+            self.visited = Some(unit);
         }
     }
 
     /// Fold an isolated observation of a mapping or reproduction trial.
     pub fn observe(&mut self, observation: IsolatedObservation) {
-        if let Some(mapping) = self.ccds.get_mut(&observation.ccd) {
+        if let Some(mapping) = self.units.get_mut(&observation.unit) {
             mapping.observe(observation.offset, observation.result);
         }
     }
