@@ -546,32 +546,58 @@ impl<'events> Names<'events> {
         use togi_journal::{ClimbAction, ClimbRetreatCause};
         match action {
             ClimbAction::Hold { blocked_by } => {
-                let blockers: Vec<_> = blocked_by.iter().map(|blocker| {
-                    use togi_journal::ClimbBlocker;
-                    match blocker {
-                        ClimbBlocker::CertificateFailed { profile, witnesses } => format!("certificate_failed {profile:?} {}", self.seqs(witnesses)),
-                        ClimbBlocker::EventUnresolved { event } => format!("event_unresolved {}", self.event_id(event)),
-                        ClimbBlocker::Veto { event } => format!("veto {}", self.event_id(event)),
-                        ClimbBlocker::Hold { .. } | ClimbBlocker::Certificate {} |
-                        ClimbBlocker::QuestionPending { .. } | ClimbBlocker::FirmwareInvalid {} |
-                        ClimbBlocker::Frozen {} | ClimbBlocker::Paused {} |
-                        ClimbBlocker::AllowanceExhausted {} | ClimbBlocker::UnknownEdge { .. } |
-                        ClimbBlocker::Finished { .. } => format!("{blocker:?}"),
-                    }
-                }).collect();
+                let blockers: Vec<_> = blocked_by
+                    .iter()
+                    .map(|blocker| {
+                        use togi_journal::ClimbBlocker;
+                        match blocker {
+                            ClimbBlocker::CertificateFailed { profile, witnesses } => {
+                                format!("certificate_failed {profile:?} {}", self.seqs(witnesses))
+                            }
+                            ClimbBlocker::EventUnresolved { event } => {
+                                format!("event_unresolved {}", self.event_id(event))
+                            }
+                            ClimbBlocker::Veto { event } => {
+                                format!("veto {}", self.event_id(event))
+                            }
+                            ClimbBlocker::Hold { .. }
+                            | ClimbBlocker::Certificate {}
+                            | ClimbBlocker::QuestionPending { .. }
+                            | ClimbBlocker::FirmwareInvalid {}
+                            | ClimbBlocker::Frozen {}
+                            | ClimbBlocker::Paused {}
+                            | ClimbBlocker::AllowanceExhausted {}
+                            | ClimbBlocker::UnknownEdge { .. }
+                            | ClimbBlocker::Finished { .. } => format!("{blocker:?}"),
+                        }
+                    })
+                    .collect();
                 format!("hold {blockers:?}")
             }
-            ClimbAction::Promote { unit, from, to, step } => format!("promote {unit:?} {from:?} {to:?} {step}"),
-            ClimbAction::Retreat { units, cause, wanted } => {
+            ClimbAction::Promote {
+                unit,
+                from,
+                to,
+                step,
+            } => format!("promote {unit:?} {from:?} {to:?} {step}"),
+            ClimbAction::Retreat {
+                units,
+                cause,
+                wanted,
+            } => {
                 let cause = match cause {
-                    ClimbRetreatCause::AdverseCeiling { edges } => format!("adverse_ceiling {}", self.seqs(edges)),
+                    ClimbRetreatCause::AdverseCeiling { edges } => {
+                        format!("adverse_ceiling {}", self.seqs(edges))
+                    }
                     ClimbRetreatCause::Event { event } => format!("event {}", self.event_id(event)),
                     ClimbRetreatCause::Veto { event } => format!("veto {}", self.event_id(event)),
                     ClimbRetreatCause::Completion {} => "completion".to_owned(),
                 };
                 format!("retreat {units:?} {cause} {wanted:?}")
             }
-            ClimbAction::Restore { restoration, units } => format!("restore {restoration:?} {units:?}"),
+            ClimbAction::Restore { restoration, units } => {
+                format!("restore {restoration:?} {units:?}")
+            }
             ClimbAction::FirmwareZero {} => "firmware_zero".to_owned(),
         }
     }
@@ -581,8 +607,12 @@ impl<'events> Names<'events> {
         match reason {
             UnitStopReason::Ceiling {} => "ceiling".to_owned(),
             UnitStopReason::AllowanceExhausted {} => "allowance_exhausted".to_owned(),
-            UnitStopReason::FirstBackstep { event, application } => format!("first_backstep {} {application:?}", self.event_id(event)),
-            UnitStopReason::RestorationBackstep { event } => format!("restoration_backstep {}", self.event_id(event)),
+            UnitStopReason::FirstBackstep { event, application } => {
+                format!("first_backstep {} {application:?}", self.event_id(event))
+            }
+            UnitStopReason::RestorationBackstep { event } => {
+                format!("restoration_backstep {}", self.event_id(event))
+            }
         }
     }
 
@@ -614,53 +644,136 @@ impl<'events> Names<'events> {
             Payload::DayInterval(interval) => self.day_interval(interval),
             Payload::UnitMapping(mapping) => format!("{mapping:?}"),
             Payload::UnitEdge(edge) => {
-                let togi_journal::UnitEdge { unit, firmware, epoch, old, new, ceiling, margin } = edge;
-                format!("{unit:?} {firmware:?} {epoch} old={} new={} {ceiling:?} {margin}",
-                    self.edge(old), self.edge(new))
+                let togi_journal::UnitEdge {
+                    unit,
+                    firmware,
+                    epoch,
+                    old,
+                    new,
+                    ceiling,
+                    margin,
+                } = edge;
+                format!(
+                    "{unit:?} {firmware:?} {epoch} old={} new={} {ceiling:?} {margin}",
+                    self.edge(old),
+                    self.edge(new)
+                )
             }
             Payload::ClimbDecision(decision) => {
                 let togi_journal::ClimbDecision {
-                    decision, cold_boot, before, proposed, hold, certificate, ceilings, events,
+                    decision,
+                    cold_boot,
+                    before,
+                    proposed,
+                    hold,
+                    certificate,
+                    ceilings,
+                    events,
                 } = decision;
-                let togi_journal::ClimbHold { application, credited, eligible_s } = hold;
-                format!("{} {cold_boot:?} {before:?} {proposed:?} hold={application:?}:{}:{eligible_s} cert={} ceilings={} events={}",
-                    self.climb_action(decision), self.seqs(credited), self.opt_seq(*certificate),
-                    self.seqs(ceilings), self.seqs(events))
+                let togi_journal::ClimbHold {
+                    application,
+                    credited,
+                    eligible_s,
+                } = hold;
+                format!(
+                    "{} {cold_boot:?} {before:?} {proposed:?} hold={application:?}:{}:{eligible_s} cert={} ceilings={} events={}",
+                    self.climb_action(decision),
+                    self.seqs(credited),
+                    self.opt_seq(*certificate),
+                    self.seqs(ceilings),
+                    self.seqs(events)
+                )
             }
             Payload::UnitStop(stop) => {
-                let togi_journal::UnitStop { unit, reason, profile, last_clean, witnesses } = stop;
-                format!("{unit:?} {} {profile:?} {last_clean:?} {}", self.unit_stop_reason(reason), self.seqs(witnesses))
+                let togi_journal::UnitStop {
+                    unit,
+                    reason,
+                    profile,
+                    last_clean,
+                    witnesses,
+                } = stop;
+                format!(
+                    "{unit:?} {} {profile:?} {last_clean:?} {}",
+                    self.unit_stop_reason(reason),
+                    self.seqs(witnesses)
+                )
             }
             Payload::CampaignStart(start) => {
-                let togi_journal::CampaignStart { campaign, allowance, origin, history } = start;
-                format!("{} {allowance} {origin:?} {history:?}", self.provenance(&campaign.0))
+                let togi_journal::CampaignStart {
+                    campaign,
+                    allowance,
+                    origin,
+                    history,
+                } = start;
+                format!(
+                    "{} {allowance} {origin:?} {history:?}",
+                    self.provenance(&campaign.0)
+                )
             }
             Payload::CampaignCharge(charge) => {
                 let togi_journal::CampaignCharge {
-                    campaign, event, aliases, profile, phase, unit_phase, provisional, consumed, remaining, exhausted,
+                    campaign,
+                    event,
+                    aliases,
+                    profile,
+                    phase,
+                    unit_phase,
+                    provisional,
+                    consumed,
+                    remaining,
+                    exhausted,
                 } = charge;
                 let aliases: Vec<_> = aliases.iter().map(|event| self.event_id(event)).collect();
-                format!("{} {} {aliases:?} {profile:?} {phase:?} {unit_phase:?} {provisional} {consumed} {remaining} {exhausted}",
-                    self.provenance(&campaign.0), self.event_id(event))
+                format!(
+                    "{} {} {aliases:?} {profile:?} {phase:?} {unit_phase:?} {provisional} {consumed} {remaining} {exhausted}",
+                    self.provenance(&campaign.0),
+                    self.event_id(event)
+                )
             }
             Payload::CampaignReclassified(revised) => {
-                let togi_journal::CampaignReclassified { campaign, event, from, to } = revised;
-                format!("{} {} {from:?} {to:?}", self.provenance(&campaign.0), self.event_id(event))
+                let togi_journal::CampaignReclassified {
+                    campaign,
+                    event,
+                    from,
+                    to,
+                } = revised;
+                format!(
+                    "{} {} {from:?} {to:?}",
+                    self.provenance(&campaign.0),
+                    self.event_id(event)
+                )
             }
             Payload::FirmwareRestoration(restoration) => {
                 let togi_journal::FirmwareRestoration { saved, state } = restoration;
                 use togi_journal::FirmwareRestorationState;
                 let state = match state {
                     FirmwareRestorationState::Saved {} => "saved".to_owned(),
-                    FirmwareRestorationState::Qualified { certificate } => format!("qualified {}", self.seq(*certificate)),
-                    FirmwareRestorationState::Held { hold } => format!("held {:?} {} {}", hold.application, self.seqs(&hold.credited), hold.eligible_s),
-                    FirmwareRestorationState::Restored { application } => format!("restored {application:?}"),
-                    FirmwareRestorationState::SteppedBack { event } => format!("stepped_back {}", self.event_id(event)),
+                    FirmwareRestorationState::Qualified { certificate } => {
+                        format!("qualified {}", self.seq(*certificate))
+                    }
+                    FirmwareRestorationState::Held { hold } => format!(
+                        "held {:?} {} {}",
+                        hold.application,
+                        self.seqs(&hold.credited),
+                        hold.eligible_s
+                    ),
+                    FirmwareRestorationState::Restored { application } => {
+                        format!("restored {application:?}")
+                    }
+                    FirmwareRestorationState::SteppedBack { event } => {
+                        format!("stepped_back {}", self.event_id(event))
+                    }
                 };
                 format!("{saved:?} {state}")
             }
             Payload::SuccessorImported(imported) => {
-                let togi_journal::SuccessorImported { sources, counts, vetoes, night_observations, campaign } = imported;
+                let togi_journal::SuccessorImported {
+                    sources,
+                    counts,
+                    vetoes,
+                    night_observations,
+                    campaign,
+                } = imported;
                 format!("{sources:?} {counts:?} {vetoes:?} {night_observations:?} {campaign:?}")
             }
             Payload::SessionStart(_)
