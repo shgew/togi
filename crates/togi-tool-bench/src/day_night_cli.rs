@@ -102,17 +102,20 @@ pub(crate) fn run(args: DayNightArgs) -> ExitCode {
 /// Returns whether a gating policy failed the gate.
 fn execute(args: DayNightArgs) -> Result<bool, Error> {
     let bytes = std::fs::read(&args.registration)?;
-    let identity: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(successor::Error::Decode)?;
+    let identity: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(successor::Error::Decode)?;
     if identity.get("id").and_then(serde_json::Value::as_str) != Some("ruleset-13-day-night") {
         return successor::execute(&args, &bytes).map_err(Error::from);
     }
-    if args.run_profile.is_some() || args.mode.is_some() || args.compilation_seconds != 0.0
+    if args.run_profile.is_some()
+        || args.mode.is_some()
+        || args.compilation_seconds != 0.0
         || !args.score_from.is_empty()
     {
         return Err(successor::Error::Invalid(
             "successor-only flags require a successor id/version registration",
-        ).into());
+        )
+        .into());
     }
     let registration = Registration::load(&args.registration)?;
     let policies = select_policies(&registration, &args.policies, args.slope)?;

@@ -22,9 +22,19 @@ struct Command {
 
 fn args(policy: &str) -> DayNightArgs {
     let mut argv = vec![
-        "bench-day-night", "--registration", "synthetic-registration.json",
-        "--split", "dev", "--out", "synthetic.jsonl", "--policy", policy,
-        "--run-profile", "reduced-dev", "--compilation-seconds", "2.5",
+        "bench-day-night",
+        "--registration",
+        "synthetic-registration.json",
+        "--split",
+        "dev",
+        "--out",
+        "synthetic.jsonl",
+        "--policy",
+        policy,
+        "--run-profile",
+        "reduced-dev",
+        "--compilation-seconds",
+        "2.5",
     ];
     if policy == "ruleset13" {
         argv.extend(["--slope", "1.5"]);
@@ -36,25 +46,40 @@ fn fixture() -> (Registration, Vec<u8>) {
     let mut value = registration_fixture::value(&togi_sim::day_night::successor::SCENARIO_IDS);
     value["resources"]["jobs"] = json!(1);
     value["holdout"]["procedure"] = json!("named-once-only-confirmation");
-    let policies = value["sources"]["policies"].as_array_mut().expect("policies");
-    let comparator = policies.iter().find(|source| source["name"] == "shipped")
-        .expect("shipped comparator").clone();
+    let policies = value["sources"]["policies"]
+        .as_array_mut()
+        .expect("policies");
+    let comparator = policies
+        .iter()
+        .find(|source| source["name"] == "shipped")
+        .expect("shipped comparator")
+        .clone();
     for name in ["co-zero", "ruleset13"] {
         let mut source = comparator.clone();
         source["name"] = json!(name);
         source["identity"] = json!(format!("synthetic-{name}"));
         policies.push(source);
     }
-    let scenario = value["scenarios"].as_array_mut().expect("scenarios").iter_mut()
-        .find(|scenario| scenario["name"] == "successor-edge-deep").expect("edge-deep");
-    scenario["daily_mix"] = json!((0..4).map(|index| json!({
-        "class": format!("catalog-daily-{index}"), "seconds": 7200,
-    })).collect::<Vec<_>>());
+    let scenario = value["scenarios"]
+        .as_array_mut()
+        .expect("scenarios")
+        .iter_mut()
+        .find(|scenario| scenario["name"] == "successor-edge-deep")
+        .expect("edge-deep");
+    scenario["daily_mix"] = json!(
+        (0..4)
+            .map(|index| json!({
+                "class": format!("catalog-daily-{index}"), "seconds": 7200,
+            }))
+            .collect::<Vec<_>>()
+    );
     scenario["epochs"] = json!([{"id":"initial","start_day":1,"context":"ctx-initial","description":"synthetic epoch"}]);
     let bytes = serde_json::to_vec(&value).expect("fixture JSON");
     let mut registration = Registration::parse(&bytes).expect("strict full registration fixture");
     // The tiny seam is applied only after production validation, never accepted by parse().
-    registration.scenarios.retain(|scenario| scenario.name == "successor-edge-deep");
+    registration
+        .scenarios
+        .retain(|scenario| scenario.name == "successor-edge-deep");
     registration.seeds.dev.count = 1;
     registration.calendar.days = 1;
     (registration, bytes)
@@ -67,11 +92,18 @@ fn short_comparator_runs_through_cli_executor(policy: &str) {
     let plan = plan(&args(policy), &registration, &bytes).expect("tiny plan");
     let mut output = Vec::new();
     let calls = AtomicUsize::new(0);
-    let manifest = execute_plan(plan, &registration, &|config, policy| {
-        calls.fetch_add(1, Ordering::SeqCst);
-        assert!(config.deadline.is_some());
-        togi_simrun::day_night::successor::run(config, policy)
-    }, &mut output).expect("CLI executor").manifest;
+    let manifest = execute_plan(
+        plan,
+        &registration,
+        &|config, policy| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            assert!(config.deadline.is_some());
+            togi_simrun::day_night::successor::run(config, policy)
+        },
+        &mut output,
+    )
+    .expect("CLI executor")
+    .manifest;
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(manifest.completion_count, 1);
     assert_eq!(manifest.retained_count, 1);
@@ -79,7 +111,10 @@ fn short_comparator_runs_through_cli_executor(policy: &str) {
     assert_eq!(manifest.label, registration::REDUCED_DEV_LABEL);
     assert_eq!(manifest.compilation_seconds, 2.5);
     let record: Value = serde_json::from_slice(&output).expect("one JSONL record");
-    assert_eq!(record["provenance"]["policy_identity"], format!("synthetic-{policy}"));
+    assert_eq!(
+        record["provenance"]["policy_identity"],
+        format!("synthetic-{policy}")
+    );
 }
 
 #[test]
@@ -88,19 +123,29 @@ fn expiry_inside_a_run_retains_partial_record_without_verdict() {
     let mut plan = plan(&args("co-zero"), &registration, &bytes).expect("plan");
     plan.budget = Duration::from_secs(30);
     let mut output = Vec::new();
-    let execution = execute_plan(plan, &registration, &|mut config, policy| {
-        // Deterministically expire the supplied in-run deadline, without sleeping.
-        config.deadline = Some(Instant::now());
-        togi_simrun::day_night::successor::run(config, policy)
-    }, &mut output).expect("partial artifacts");
+    let execution = execute_plan(
+        plan,
+        &registration,
+        &|mut config, policy| {
+            // Deterministically expire the supplied in-run deadline, without sleeping.
+            config.deadline = Some(Instant::now());
+            togi_simrun::day_night::successor::run(config, policy)
+        },
+        &mut output,
+    )
+    .expect("partial artifacts");
     let manifest = &execution.manifest;
-    let record: togi_simrun::day_night::successor::Record = serde_json::from_slice(&output).expect("partial record");
+    let record: togi_simrun::day_night::successor::Record =
+        serde_json::from_slice(&output).expect("partial record");
     assert!(matches!(record.outcome, Outcome::Truncated { .. }));
     assert_eq!(manifest.retained_count, 1);
     assert_eq!(manifest.completion_count, 0);
     assert_eq!(manifest.gate_verdict, None);
     let mut rendered = Vec::new();
-    assert!(super::report_execution(&args("co-zero"), &registration, &execution, &mut rendered).expect("interrupted report"));
+    assert!(
+        super::report_execution(&args("co-zero"), &registration, &execution, &mut rendered)
+            .expect("interrupted report")
+    );
     let rendered = String::from_utf8(rendered).expect("rendered interruption");
     assert!(rendered.contains("scorer skipped; no verdict"));
     assert!(!rendered.contains("# Successor day/night score"));
@@ -112,7 +157,13 @@ fn expired_invocation_starts_no_runs_and_remains_incomplete() {
     let mut plan = plan(&args("co-zero"), &registration, &bytes).expect("plan");
     plan.budget = Duration::ZERO;
     let mut output = Vec::new();
-    let execution = execute_plan(plan, &registration, &|_, _| panic!("expired invocation must not execute"), &mut output).expect("manifest");
+    let execution = execute_plan(
+        plan,
+        &registration,
+        &|_, _| panic!("expired invocation must not execute"),
+        &mut output,
+    )
+    .expect("manifest");
     let manifest = &execution.manifest;
     assert!(manifest.budget_expired);
     assert_eq!(manifest.completion_count, 0);
@@ -120,7 +171,10 @@ fn expired_invocation_starts_no_runs_and_remains_incomplete() {
     assert!(output.is_empty());
     assert_eq!(manifest.gate_verdict, None);
     let mut rendered = Vec::new();
-    assert!(super::report_execution(&args("co-zero"), &registration, &execution, &mut rendered).expect("budget report"));
+    assert!(
+        super::report_execution(&args("co-zero"), &registration, &execution, &mut rendered)
+            .expect("budget report")
+    );
     let rendered = String::from_utf8(rendered).expect("rendered budget expiry");
     assert!(rendered.contains("Execution budget expired"));
     assert!(!rendered.contains("PASS"));
@@ -132,7 +186,10 @@ fn holdout_refusal_names_once_only_procedure(split: Split) {
     let (registration, bytes) = fixture();
     let mut args = args("co-zero");
     args.split = split;
-    let error = match plan(&args, &registration, &bytes) { Ok(_) => panic!("holdout accepted"), Err(error) => error };
+    let error = match plan(&args, &registration, &bytes) {
+        Ok(_) => panic!("holdout accepted"),
+        Err(error) => error,
+    };
     assert!(matches!(&error, Error::Holdout { .. }));
     assert!(error.to_string().contains("named-once-only-confirmation"));
 }
@@ -144,7 +201,14 @@ fn registered_profile_is_diagnostics_only() {
     args.run_profile = Some(Profile::Registered);
     let plan = plan(&args, &registration, &bytes).expect("registered plan");
     assert_eq!(plan.profile, RunProfile::Registered);
-    let manifest = execute_plan(plan, &registration, &togi_simrun::day_night::successor::run, &mut Vec::new()).expect("diagnostic run").manifest;
+    let manifest = execute_plan(
+        plan,
+        &registration,
+        &togi_simrun::day_night::successor::run,
+        &mut Vec::new(),
+    )
+    .expect("diagnostic run")
+    .manifest;
     assert_eq!(manifest.gate_verdict, None);
     assert_eq!(manifest.completion_count, 1);
 }
@@ -164,7 +228,10 @@ fn missing_profile_incompatible_slope_and_fixed_margin_are_refused() {
 #[test]
 fn frozen_cli_defaults_are_unchanged() {
     let command = Command::try_parse_from(["bench-day-night"]).expect("frozen defaults");
-    assert_eq!(command.args.registration, PathBuf::from("tools/bench/day-night.json"));
+    assert_eq!(
+        command.args.registration,
+        PathBuf::from("tools/bench/day-night.json")
+    );
     assert!(command.args.run_profile.is_none());
     assert!(command.args.mode.is_none());
     assert!(command.args.policies.is_empty());
@@ -204,8 +271,12 @@ fn ordered_mix_and_epoch_context_must_match_truth() {
 #[test]
 fn pending_comparator_source_cannot_execute() {
     let (mut registration, bytes) = fixture();
-    let source = registration.sources.policies.iter_mut()
-        .find(|source| source.name == "co-zero").expect("co-zero source");
+    let source = registration
+        .sources
+        .policies
+        .iter_mut()
+        .find(|source| source.name == "co-zero")
+        .expect("co-zero source");
     source.source = registration::SourceIdentity::Pending {};
     assert!(plan(&args("co-zero"), &registration, &bytes).is_err());
 }
@@ -216,7 +287,10 @@ fn stock_comparator_accepts_registered_evaluation_slope_without_a_policy_paramet
     let mut args = args("co-zero");
     args.slope = Some(2.0);
     let stock_plan = plan(&args, &registration, &bytes).expect("stock evaluation cell");
-    assert_eq!(stock_plan.policy, togi_simrun::day_night::PolicyKind::CoZero);
+    assert_eq!(
+        stock_plan.policy,
+        togi_simrun::day_night::PolicyKind::CoZero
+    );
     assert_eq!(stock_plan.slope, 2.0);
     assert_eq!(stock_plan.configs[0].provenance.slope, 2.0);
     args.slope = Some(1.7);
@@ -228,18 +302,40 @@ fn score_from_combines_files_without_running_or_writing_run_artifacts() {
     let (_, bytes) = fixture();
     let registration = Registration::parse(&bytes).expect("full registration");
     let args = Command::try_parse_from([
-        "bench-day-night", "--registration", "synthetic-registration.json",
-        "--run-profile", "reduced-dev", "--split", "dev", "--policy", "co-zero",
-        "--score-from", "slope-1.5.jsonl", "--score-from", "slope-2.0.jsonl",
-    ]).expect("score-only CLI").args;
+        "bench-day-night",
+        "--registration",
+        "synthetic-registration.json",
+        "--run-profile",
+        "reduced-dev",
+        "--split",
+        "dev",
+        "--policy",
+        "co-zero",
+        "--score-from",
+        "slope-1.5.jsonl",
+        "--score-from",
+        "slope-2.0.jsonl",
+    ])
+    .expect("score-only CLI")
+    .args;
     assert!(args.out.is_none());
     let calls = AtomicUsize::new(0);
     let mut output = Vec::new();
-    let incomplete = super::score_files(&args, &registration, &bytes, &|path| {
-        calls.fetch_add(1, Ordering::SeqCst);
-        assert!(path == std::path::Path::new("slope-1.5.jsonl") || path == std::path::Path::new("slope-2.0.jsonl"));
-        Ok(Vec::new())
-    }, &mut output).expect("synthetic missing-record score");
+    let incomplete = super::score_files(
+        &args,
+        &registration,
+        &bytes,
+        &|path| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            assert!(
+                path == std::path::Path::new("slope-1.5.jsonl")
+                    || path == std::path::Path::new("slope-2.0.jsonl")
+            );
+            Ok(Vec::new())
+        },
+        &mut output,
+    )
+    .expect("synthetic missing-record score");
     assert!(incomplete);
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     let output = String::from_utf8(output).expect("rendered score");
@@ -256,8 +352,14 @@ fn score_only_holdout_is_refused_before_reading_any_records() {
     args.split = Split::Holdout;
     args.out = None;
     args.score_from = vec![PathBuf::from("sealed.jsonl")];
-    let error = super::score_files(&args, &registration, &bytes,
-        &|_| panic!("holdout records must not be read"), &mut Vec::new()).expect_err("holdout refused");
+    let error = super::score_files(
+        &args,
+        &registration,
+        &bytes,
+        &|_| panic!("holdout records must not be read"),
+        &mut Vec::new(),
+    )
+    .expect_err("holdout refused");
     assert!(matches!(error, Error::Holdout { .. }));
 }
 
@@ -267,8 +369,14 @@ fn score_only_refuses_malformed_records_and_names_the_file() {
     let mut args = args("co-zero");
     args.out = None;
     args.score_from = vec![PathBuf::from("broken.jsonl")];
-    let error = super::score_files(&args, &registration, &bytes,
-        &|_| Ok(b"{broken".to_vec()), &mut Vec::new()).expect_err("bad JSONL");
+    let error = super::score_files(
+        &args,
+        &registration,
+        &bytes,
+        &|_| Ok(b"{broken".to_vec()),
+        &mut Vec::new(),
+    )
+    .expect_err("bad JSONL");
     assert!(error.to_string().contains("broken.jsonl"));
 }
 
@@ -293,11 +401,35 @@ fn registered_single_slope_renders_criteria_and_demands_other_slope_records() {
     args.run_profile = Some(Profile::Registered);
     let selection = super::score_selection(&args, &registration).expect("single slope");
     let mut output = Vec::new();
-    let result = super::render_score(&registration, &registration::sha256_hex(&bytes),
-        &selection, &[], &mut output).expect("synthetic missing-record score");
+    let mut result = super::render_score(
+        &registration,
+        &registration::sha256_hex(&bytes),
+        &selection,
+        &[],
+        &mut output,
+    )
+    .expect("synthetic missing-record score");
     assert_eq!(result.verdict, super::Verdict::Incomplete);
     let output = String::from_utf8(output).expect("rendered score");
     assert!(output.contains("Single-slope criteria only: no registered gate verdict"));
-    assert!(output.contains("Criteria"));
+    assert!(output.contains("| Criterion | Column | Rule | Measured | Result |"));
     assert!(!output.contains("PASS"));
+    assert!(super::invocation_failed(&result));
+    // Synthetic exit-disposition fixture: cell completeness is supplied directly, not
+    // claimed as a simulated result. The remaining issue is the real scorer's slope subset.
+    result.faults.clear();
+    result.complete_cells = result.expected_cells;
+    assert!(!super::invocation_failed(&result));
+    result
+        .issues
+        .push("synthetic conflicting provenance".to_owned());
+    assert!(super::invocation_failed(&result));
+}
+
+#[test]
+fn equal_core_count_cannot_hide_a_different_ccd_membership() {
+    let (mut registration, bytes) = fixture();
+    registration.scenarios[0].topology.ccds = 1;
+    registration.scenarios[0].topology.cores_per_ccd = 16;
+    assert!(plan(&args("co-zero"), &registration, &bytes).is_err());
 }

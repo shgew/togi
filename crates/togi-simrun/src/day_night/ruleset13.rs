@@ -546,18 +546,20 @@ impl Policy for Ruleset13 {
         // Leaving both unavailable prevents a metric-derived convergence from masquerading
         // as a policy commitment, and leaves post-finish risk unavailable for this comparator.
         let mut report = super::successor::PolicyReport::unavailable();
-        report.events = self.report_events.iter().map(|(_, event)| event.clone()).collect();
+        report.events = self
+            .report_events
+            .iter()
+            .map(|(_, event)| event.clone())
+            .collect();
         let projected = self.state.project();
         for (event, (identity, _)) in report.events.iter_mut().zip(&self.report_events) {
-            if let Some(current) = projected.events.iter().find(|current| &current.event == identity) {
-                let (classification, provisional) = match current.classification {
-                    togi_journal::Classification::CpuSuspect { certainty } => match certainty {
-                        togi_journal::Certainty::Definite => (super::successor::Classification::CpuSuspect, false),
-                        togi_journal::Certainty::Provisional => (super::successor::Classification::Unanswered, true),
-                    },
-                    togi_journal::Classification::NonCpu {} => (super::successor::Classification::NonCpu, false),
-                    togi_journal::Classification::Unexplained {} => (super::successor::Classification::Unexplained, false),
-                };
+            if let Some(current) = projected
+                .events
+                .iter()
+                .find(|current| &current.event == identity)
+            {
+                let (classification, provisional) =
+                    reported_classification(Some(current.classification));
                 if event.classification != classification {
                     event.reclassified_from.get_or_insert(event.classification);
                     event.classification = classification;
@@ -656,6 +658,7 @@ impl Policy for Ruleset13 {
             .into_iter()
             .find(|projected| projected.event == event)
             .map(|projected| projected.classification);
+        let (reported, provisional) = reported_classification(classification);
         let classification = match classification {
             Some(togi_journal::Classification::CpuSuspect { .. }) => DayClassification::CpuSuspect,
             Some(
@@ -664,22 +667,20 @@ impl Policy for Ruleset13 {
             )
             | None => DayClassification::NotCpuSuspect,
         };
-        self.report_events.push((event, super::successor::LearningEvent {
-            id: format!("ruleset13-event-{}", self.report_events.len()),
-            day: 1.0 + machine.clock.monotonic()?.as_secs_f64() / 86_400.0,
-            classification: match (classification, answer) {
-                (DayClassification::CpuSuspect, None) => super::successor::Classification::Unanswered,
-                (DayClassification::CpuSuspect, Some(_)) => super::successor::Classification::CpuSuspect,
-                (DayClassification::NotCpuSuspect, Some(DayAnswerKind::Graphics)) => super::successor::Classification::NonCpu,
-                (DayClassification::NotCpuSuspect, _) => super::successor::Classification::Unexplained,
+        self.report_events.push((
+            event,
+            super::successor::LearningEvent {
+                id: format!("ruleset13-event-{}", self.report_events.len()),
+                day: 1.0 + machine.clock.monotonic()?.as_secs_f64() / 86_400.0,
+                classification: reported,
+                provisional,
+                reclassified_from: None,
+                charged: false,
+                phase: super::successor::Phase::Learning,
+                unit_phase: super::successor::UnitPhase::Coarse,
+                newest_step: None,
             },
-            provisional: classification == DayClassification::CpuSuspect && answer.is_none(),
-            reclassified_from: None,
-            charged: false,
-            phase: super::successor::Phase::Learning,
-            unit_phase: super::successor::UnitPhase::Coarse,
-            newest_step: None,
-        }));
+        ));
         Ok(classification)
     }
 
@@ -799,6 +800,27 @@ fn read_offsets(
         offsets.set(info.core, machine.smu.offset(info.core)?);
     }
     Ok(offsets)
+}
+
+fn reported_classification(
+    classification: Option<togi_journal::Classification>,
+) -> (super::successor::Classification, bool) {
+    match classification {
+        Some(togi_journal::Classification::CpuSuspect { certainty }) => match certainty {
+            togi_journal::Certainty::Definite => {
+                (super::successor::Classification::CpuSuspect, false)
+            }
+            togi_journal::Certainty::Provisional => {
+                (super::successor::Classification::Unanswered, true)
+            }
+        },
+        Some(togi_journal::Classification::NonCpu {}) => {
+            (super::successor::Classification::NonCpu, false)
+        }
+        Some(togi_journal::Classification::Unexplained {}) | None => {
+            (super::successor::Classification::Unexplained, false)
+        }
+    }
 }
 
 fn build() -> Build {

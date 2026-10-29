@@ -62,7 +62,11 @@ pub fn run(mut config: RunConfig, policy: &mut dyn Policy) -> Result<super::Reco
     if config.daily.is_empty() {
         config.daily = daily(&scenario, &config.calendar)?;
     }
-    let active = config.daily.iter().map(|(_, duration)| *duration).sum::<Duration>();
+    let active = config
+        .daily
+        .iter()
+        .map(|(_, duration)| *duration)
+        .sum::<Duration>();
     if active != Duration::from_secs_f64(config.calendar.active_hours * 3600.0) {
         return Err(RunError::Calendar("successor daily mix active duration"));
     }
@@ -72,7 +76,10 @@ pub fn run(mut config: RunConfig, policy: &mut dyn Policy) -> Result<super::Reco
     let mut snapshots = vec![snapshot(&runtime, policy)];
     let execution = (|| -> Result<Option<Stop>, RunError> {
         for day in 1..=config.calendar.days {
-            if config.deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            if config
+                .deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
+            {
                 return Ok(Some(Stop::BudgetExpired));
             }
             if policy.is_finished() {
@@ -95,12 +102,18 @@ pub fn run(mut config: RunConfig, policy: &mut dyn Policy) -> Result<super::Reco
                     if event.elapsed.is_zero() {
                         return Err(RunError::Calendar("zero-length successor active event"));
                     }
-                    remaining = remaining.checked_sub(event.elapsed)
+                    remaining = remaining
+                        .checked_sub(event.elapsed)
                         .ok_or(RunError::Calendar("successor active overrun"))?;
                     let evidence = if event.cause.is_some() {
-                        DayObservation::Ended { active: event.elapsed, answer: event.answer }
+                        DayObservation::Ended {
+                            active: event.elapsed,
+                            answer: event.answer,
+                        }
                     } else {
-                        DayObservation::Completed { active: event.elapsed }
+                        DayObservation::Completed {
+                            active: event.elapsed,
+                        }
                     };
                     policy.observe_day(day, &evidence, &mut machine)?;
                     capture(&mut snapshots, &runtime, policy);
@@ -109,11 +122,15 @@ pub fn run(mut config: RunConfig, policy: &mut dyn Policy) -> Result<super::Reco
                     }
                 }
             }
-            let weekday = u8::try_from((day - 1) % 7)
-                .map_err(|_| RunError::Calendar("successor weekday"))?;
+            let weekday =
+                u8::try_from((day - 1) % 7).map_err(|_| RunError::Calendar("successor weekday"))?;
             if config.calendar.night_weekdays.contains(&weekday) {
                 let budget = Duration::from_secs_f64(config.calendar.night_hours * 3600.0);
-                let night = Night { day, budget, trials: runtime.night_specs()? };
+                let night = Night {
+                    day,
+                    budget,
+                    trials: runtime.night_specs()?,
+                };
                 runtime.begin_night(budget);
                 let result = policy.night(&night, &mut machine);
                 runtime.end_night();
@@ -123,10 +140,18 @@ pub fn run(mut config: RunConfig, policy: &mut dyn Policy) -> Result<super::Reco
             if policy.is_finished() {
                 return Ok(Some(Stop::PolicyStopped));
             }
-            let spent = runtime.now().checked_sub(day_start)
-                .ok_or(RunError::Calendar("successor monotonic clock moved backwards"))?;
-            let remainder = Duration::from_hours(24).checked_sub(spent)
-                .ok_or(RunError::Calendar("successor policy overran the calendar day"))?;
+            let spent = runtime
+                .now()
+                .checked_sub(day_start)
+                .ok_or(RunError::Calendar(
+                    "successor monotonic clock moved backwards",
+                ))?;
+            let remainder =
+                Duration::from_hours(24)
+                    .checked_sub(spent)
+                    .ok_or(RunError::Calendar(
+                        "successor policy overran the calendar day",
+                    ))?;
             runtime.sleep(remainder)?;
             capture(&mut snapshots, &runtime, policy);
         }
@@ -149,14 +174,24 @@ pub fn run(mut config: RunConfig, policy: &mut dyn Policy) -> Result<super::Reco
     let observed = runtime.now();
     let observations = runtime.drain_observations();
     let mut record = assemble(
-        config, &runtime.scenario(), observations, snapshots, observed, stop, 0.0,
+        config,
+        &runtime.scenario(),
+        observations,
+        snapshots,
+        observed,
+        stop,
+        0.0,
     )?;
     record.runtime.wall_seconds = started.elapsed().as_secs_f64();
     Ok(record)
 }
 
 fn snapshot(runtime: &Runtime, policy: &dyn Policy) -> Snapshot {
-    Snapshot { at: runtime.now(), report: policy.report(), applications: policy.applications() }
+    Snapshot {
+        at: runtime.now(),
+        report: policy.report(),
+        applications: policy.applications(),
+    }
 }
 
 fn capture(snapshots: &mut Vec<Snapshot>, runtime: &Runtime, policy: &dyn Policy) {
@@ -171,7 +206,10 @@ fn capture(snapshots: &mut Vec<Snapshot>, runtime: &Runtime, policy: &dyn Policy
 fn budget_expired(error: &RunError) -> bool {
     let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(error);
     while let Some(error) = cause {
-        if error.downcast_ref::<RunError>().is_some_and(|error| matches!(error, RunError::BudgetExpired)) {
+        if error
+            .downcast_ref::<RunError>()
+            .is_some_and(|error| matches!(error, RunError::BudgetExpired))
+        {
             return true;
         }
         // Transparent machine errors forward their source and omit the boxed error
@@ -193,38 +231,66 @@ fn validate(config: &RunConfig) -> Result<(), RunError> {
     if calendar.days == 0 || calendar.days > 36_500 || calendar.year_days == 0 {
         return Err(RunError::Calendar("successor horizon"));
     }
-    if !calendar.active_hours.is_finite() || calendar.active_hours <= 0.0
-        || !calendar.night_hours.is_finite() || calendar.night_hours < 0.0
+    if !calendar.active_hours.is_finite()
+        || calendar.active_hours <= 0.0
+        || !calendar.night_hours.is_finite()
+        || calendar.night_hours < 0.0
         || calendar.active_hours + calendar.night_hours > 24.0
-        || !calendar.lambda_per_hour.is_finite() || calendar.lambda_per_hour <= 0.0
+        || !calendar.lambda_per_hour.is_finite()
+        || calendar.lambda_per_hour <= 0.0
         || calendar.night_weekdays.iter().any(|day| *day > 6)
-        || config.jobs == 0 || config.resource_class.is_empty()
-        || !config.compilation_seconds.is_finite() || config.compilation_seconds < 0.0
-        || !config.tolerance.is_finite() || config.tolerance < 0.0 || config.tolerance >= 1.0
+        || config.jobs == 0
+        || config.resource_class.is_empty()
+        || !config.compilation_seconds.is_finite()
+        || config.compilation_seconds < 0.0
+        || !config.tolerance.is_finite()
+        || config.tolerance < 0.0
+        || config.tolerance >= 1.0
     {
         return Err(RunError::Calendar("successor calendar and invocation"));
     }
     if calendar.firmware_change_day.is_some() {
-        return Err(RunError::Calendar("successor truth owns the firmware schedule"));
+        return Err(RunError::Calendar(
+            "successor truth owns the firmware schedule",
+        ));
     }
     Ok(())
 }
 
-fn daily(scenario: &Scenario, calendar: &CalendarConfig) -> Result<Vec<(TrialClass, Duration)>, RunError> {
+fn daily(
+    scenario: &Scenario,
+    calendar: &CalendarConfig,
+) -> Result<Vec<(TrialClass, Duration)>, RunError> {
     let fractions = calendar.daily_mix.clone().unwrap_or_else(|| {
-        scenario.daily_mix().iter().map(|block| block.fraction).collect()
+        scenario
+            .daily_mix()
+            .iter()
+            .map(|block| block.fraction)
+            .collect()
     });
     if fractions.len() != scenario.daily_mix().len()
-        || fractions.iter().any(|fraction| !fraction.is_finite() || *fraction < 0.0)
+        || fractions
+            .iter()
+            .any(|fraction| !fraction.is_finite() || *fraction < 0.0)
         || (fractions.iter().sum::<f64>() - 1.0).abs() > 1e-12
     {
         return Err(RunError::Calendar("successor daily mix"));
     }
     let active = Duration::from_secs_f64(calendar.active_hours * 3600.0);
     let mut remaining = active;
-    Ok(scenario.daily_mix().iter().zip(&fractions).enumerate().map(|(index, (block, fraction))| {
-        let duration = if index + 1 == fractions.len() { remaining } else { active.mul_f64(*fraction).min(remaining) };
-        remaining -= duration;
-        (block.class.clone(), duration)
-    }).collect())
+    Ok(scenario
+        .daily_mix()
+        .iter()
+        .zip(&fractions)
+        .enumerate()
+        .map(|(index, (block, fraction))| {
+            let duration = if index + 1 == fractions.len() {
+                remaining
+            } else {
+                active.mul_f64(*fraction).min(remaining)
+            };
+            remaining -= duration;
+            (block.class.clone(), duration)
+        })
+        .collect())
 }

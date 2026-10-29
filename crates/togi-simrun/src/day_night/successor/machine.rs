@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 use togi_machine::{
-    BiosContext, BootId, CancellationToken, Check, Clock, CoreId, CoreInfo, CoreRank, Error,
-    Host, Machine, ObservedOffset, Partial, PerCore, Reporter, Running, SampleError, Signal,
-    Smu, SmuValidated, Started, Stopped, Swept, TargetOffset, TrialConditions, TrialFailure,
+    BiosContext, BootId, CancellationToken, Check, Clock, CoreId, CoreInfo, CoreRank, Error, Host,
+    Machine, ObservedOffset, Partial, PerCore, Reporter, Running, SampleError, Signal, Smu,
+    SmuValidated, Started, Stopped, Swept, TargetOffset, TrialConditions, TrialFailure,
     TrialResult, TrialSpec, Trials,
 };
 use togi_sim::day_night::successor::{
@@ -92,7 +92,13 @@ impl Runtime {
             ..MachineDefinition::default()
         };
         let model = Model::new(&definition, seed)?;
-        let host = Simulator::new(model, RunSettings { seed, ..RunSettings::default() })?;
+        let host = Simulator::new(
+            model,
+            RunSettings {
+                seed,
+                ..RunSettings::default()
+            },
+        )?;
         let base = host.seams();
         let truth = TruthState::cold(scenario.topology())?;
         let profile = Profile::uniform(scenario.topology(), Depth::default());
@@ -154,7 +160,10 @@ impl Runtime {
 
     pub(super) fn seams(&self) -> Machine<'static> {
         let mut machine = self.0.borrow().host.seams();
-        machine.host = Box::new(CycleHost { inner: machine.host, shared: self.0.clone() });
+        machine.host = Box::new(CycleHost {
+            inner: machine.host,
+            shared: self.0.clone(),
+        });
         machine.smu = Box::new(CycleSmu(self.0.clone()));
         machine.clock = Box::new(CycleClock(self.0.clone()));
         machine.trials = Box::new(CycleTrials(self.0.clone()));
@@ -163,14 +172,20 @@ impl Runtime {
 
     pub(super) fn night_specs(&self) -> Result<Vec<TrialSpec>, RunError> {
         let state = self.0.borrow();
-        state.scenario.night_classes().iter().enumerate().map(|(index, class)| {
-            Ok(class.to_spec(
-                format!("night-{}-{index}", state.day),
-                PerCore::default(),
-                index,
-                state.seed,
-            )?)
-        }).collect()
+        state
+            .scenario
+            .night_classes()
+            .iter()
+            .enumerate()
+            .map(|(index, class)| {
+                Ok(class.to_spec(
+                    format!("night-{}-{index}", state.day),
+                    PerCore::default(),
+                    index,
+                    state.seed,
+                )?)
+            })
+            .collect()
     }
 
     pub(super) fn begin_night(&mut self, budget: Duration) {
@@ -202,11 +217,15 @@ impl Runtime {
         state.check_deadline()?;
         state.capture_profile()?;
         let failure = state.draw(class, duration)?;
-        let non_cpu = state.scenario.non_cpu_event(state.day)?
+        let non_cpu = state
+            .scenario
+            .non_cpu_event(state.day)?
             .filter(|_| !state.non_cpu_today);
         let non_cpu_at = duration / 2;
         let event = if let Some((cause, answer)) = non_cpu
-            && failure.as_ref().is_none_or(|failure| non_cpu_at < failure.elapsed)
+            && failure
+                .as_ref()
+                .is_none_or(|failure| non_cpu_at < failure.elapsed)
         {
             state.non_cpu_today = true;
             ActiveEvent {
@@ -228,7 +247,11 @@ impl Runtime {
                 answer: Some(EndAnswer::Cpu),
             }
         } else {
-            ActiveEvent { elapsed: duration, cause: None, answer: None }
+            ActiveEvent {
+                elapsed: duration,
+                cause: None,
+                answer: None,
+            }
         };
         state.active(class, event.elapsed, duration, event.cause, None)?;
         if event.cause.is_some() {
@@ -240,7 +263,10 @@ impl Runtime {
 
 impl State {
     fn check_deadline(&self) -> Result<(), RunError> {
-        if self.deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        if self
+            .deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
             Err(RunError::BudgetExpired)
         } else {
             Ok(())
@@ -273,23 +299,45 @@ impl State {
         Ok(())
     }
 
-    fn draw(&mut self, class: &TrialClass, duration: Duration) -> Result<Option<Failure>, RunError> {
+    fn draw(
+        &mut self,
+        class: &TrialClass,
+        duration: Duration,
+    ) -> Result<Option<Failure>, RunError> {
         let result = self.scenario.draw(
-            class, &self.profile, &self.truth, duration, self.day, self.seed, self.key,
+            class,
+            &self.profile,
+            &self.truth,
+            duration,
+            self.day,
+            self.seed,
+            self.key,
         )?;
-        self.key = self.key.checked_add(1)
+        self.key = self
+            .key
+            .checked_add(1)
             .ok_or(RunError::Calendar("random draw counter"))?;
         Ok(result)
     }
 
-    fn advance_clock(&mut self, class: Option<&TrialClass>, duration: Duration) -> Result<Duration, RunError> {
-        let after = self.elapsed.checked_add(duration)
+    fn advance_clock(
+        &mut self,
+        class: Option<&TrialClass>,
+        duration: Duration,
+    ) -> Result<Duration, RunError> {
+        let after = self
+            .elapsed
+            .checked_add(duration)
             .ok_or(RunError::Calendar("elapsed duration"))?;
-        if self.night_remaining.is_some_and(|remaining| duration > remaining) {
+        if self
+            .night_remaining
+            .is_some_and(|remaining| duration > remaining)
+        {
             return Err(RunError::NightOverrun);
         }
         let night_active = if class.is_some() && self.night_remaining.is_some() {
-            self.night_active.checked_add(duration)
+            self.night_active
+                .checked_add(duration)
                 .ok_or(RunError::Calendar("night active duration"))?
         } else {
             self.night_active
@@ -341,9 +389,9 @@ impl State {
                 ran,
                 Duration::from_secs(u64::from(class.regime().warm_up_s())),
             )?;
-            let exposure = self.scenario.evaluate(
-                class, &self.profile, &self.truth, ran, self.day,
-            )?;
+            let exposure =
+                self.scenario
+                    .evaluate(class, &self.profile, &self.truth, ran, self.day)?;
             let before = self.advance_clock(Some(class), ran)?;
             remaining -= ran;
             self.observations.push(Observation {
@@ -370,7 +418,11 @@ impl State {
 }
 
 fn profile_depths(profile: &Profile) -> PerCore<u8> {
-    profile.depths().iter().map(|(core, depth)| (core, depth.get())).collect()
+    profile
+        .depths()
+        .iter()
+        .map(|(core, depth)| (core, depth.get()))
+        .collect()
 }
 
 struct CycleSmu(Shared);
@@ -380,14 +432,20 @@ impl Smu for CycleSmu {
         self.0.borrow_mut().base.smu.offset(core)
     }
 
-    #[expect(clippy::disallowed_methods, reason = "this adapter writes simulated registers only")]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "this adapter writes simulated registers only"
+    )]
     fn set_offset(&mut self, core: CoreId, offset: TargetOffset) -> Result<(), Error> {
         let mut state = self.0.borrow_mut();
         state.base.smu.set_offset(core, offset)?;
         state.capture_profile().map_err(machine_error)
     }
 
-    #[expect(clippy::disallowed_methods, reason = "this adapter writes simulated registers only")]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "this adapter writes simulated registers only"
+    )]
     fn set_all_offsets(&mut self, offset: TargetOffset) -> Result<(), Error> {
         let mut state = self.0.borrow_mut();
         state.base.smu.set_all_offsets(offset)?;
@@ -407,22 +465,40 @@ struct CycleHost {
 }
 
 impl Host for CycleHost {
-    fn boot_id(&mut self) -> Result<BootId, Error> { self.inner.boot_id() }
+    fn boot_id(&mut self) -> Result<BootId, Error> {
+        self.inner.boot_id()
+    }
     fn topology(&mut self) -> Result<Vec<CoreInfo>, Error> {
         Ok(self.shared.borrow().scenario.topology().to_vec())
     }
-    fn validate_smu(&mut self) -> Result<SmuValidated, Error> { self.inner.validate_smu() }
-    fn bios_context(&mut self) -> Result<BiosContext, Error> { self.inner.bios_context() }
-    fn ranking(&mut self) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>> { self.inner.ranking() }
-    fn preflight(&mut self) -> Vec<Check> { self.inner.preflight() }
-    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> { self.inner.backends() }
-    fn watchdog(&mut self) -> Check { self.inner.watchdog() }
+    fn validate_smu(&mut self) -> Result<SmuValidated, Error> {
+        self.inner.validate_smu()
+    }
+    fn bios_context(&mut self) -> Result<BiosContext, Error> {
+        self.inner.bios_context()
+    }
+    fn ranking(&mut self) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>> {
+        self.inner.ranking()
+    }
+    fn preflight(&mut self) -> Vec<Check> {
+        self.inner.preflight()
+    }
+    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+        self.inner.backends()
+    }
+    fn watchdog(&mut self) -> Check {
+        self.inner.watchdog()
+    }
 }
 
 struct CycleClock(Shared);
 impl Clock for CycleClock {
-    fn now(&self) -> Timestamp { self.0.borrow().host.now() }
-    fn monotonic(&self) -> Result<Duration, Error> { Ok(self.0.borrow().host.monotonic()) }
+    fn now(&self) -> Timestamp {
+        self.0.borrow().host.now()
+    }
+    fn monotonic(&self) -> Result<Duration, Error> {
+        Ok(self.0.borrow().host.monotonic())
+    }
     fn sleep(&mut self, cancel: &CancellationToken, duration: Duration) -> Result<(), Error> {
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
@@ -433,8 +509,13 @@ impl Clock for CycleClock {
 
 struct CycleTrials(Shared);
 impl Trials for CycleTrials {
-    fn controller_pid(&self) -> u32 { togi_sim::CONTROLLER_PID }
-    fn content(&mut self, workload: togi_machine::WorkloadId) -> Result<togi_machine::ContentId, Error> {
+    fn controller_pid(&self) -> u32 {
+        togi_sim::CONTROLLER_PID
+    }
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, Error> {
         Ok(togi_sim::content_id(workload))
     }
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
@@ -453,9 +534,11 @@ impl Trials for CycleTrials {
         _ready: Stopped,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         let build = || {
-            if cancel.is_cancelled() { return Err(Error::Cancelled); }
-            let class = TrialClass::from_spec(&spec)
-                .map_err(|error| machine_error(error.into()))?;
+            if cancel.is_cancelled() {
+                return Err(Error::Cancelled);
+            }
+            let class =
+                TrialClass::from_spec(&spec).map_err(|error| machine_error(error.into()))?;
             let state = self.0.borrow();
             state.check_deadline().map_err(machine_error)?;
             spec.check_roles(state.scenario.topology())
@@ -463,14 +546,24 @@ impl Trials for CycleTrials {
             let remaining = state.night_remaining.ok_or_else(|| {
                 machine_error(RunError::Calendar("trials require a night allocation"))
             })?;
-            if remaining.is_zero() { return Err(Error::Cancelled); }
+            if remaining.is_zero() {
+                return Err(Error::Cancelled);
+            }
             Ok(Box::new(CycleRunning {
-                shared: self.0.clone(), spec, class, waited: false,
+                shared: self.0.clone(),
+                spec,
+                class,
+                waited: false,
             }) as Box<dyn Running>)
         };
-        build().map_err(|error| Partial { value: Some(confirmed()), error })
+        build().map_err(|error| Partial {
+            value: Some(confirmed()),
+            error,
+        })
     }
-    fn ended(&mut self, _id: &str) -> Result<(), Error> { Ok(()) }
+    fn ended(&mut self, _id: &str) -> Result<(), Error> {
+        Ok(())
+    }
     fn samples<'a>(
         &'a self,
         _id: &'a str,
@@ -488,7 +581,10 @@ struct CycleRunning {
 
 impl Running for CycleRunning {
     fn started(&self) -> Started {
-        Started { cpus: self.spec.cpus.clone(), ..Started::default() }
+        Started {
+            cpus: self.spec.cpus.clone(),
+            ..Started::default()
+        }
     }
     fn wait(
         &mut self,
@@ -496,7 +592,9 @@ impl Running for CycleRunning {
         reporter: &mut dyn Reporter,
     ) -> Result<TrialResult, Partial<TrialResult>> {
         let mut execute = || -> Result<(TrialResult, bool), Error> {
-            if cancel.is_cancelled() { return Err(Error::Cancelled); }
+            if cancel.is_cancelled() {
+                return Err(Error::Cancelled);
+            }
             if self.waited {
                 return Err(machine_error(RunError::Calendar("trial waited twice")));
             }
@@ -510,42 +608,82 @@ impl Running for CycleRunning {
             let failure = state.draw(&self.class, window).map_err(machine_error)?;
             let ran = failure.as_ref().map_or(window, |failure| failure.elapsed);
             let operator_end = failure.is_none() && window < self.spec.duration;
-            state.active(
-                &self.class, ran, self.spec.duration,
-                failure.map(|failure| Cause::Truth(failure.cause)),
-                Some(&self.spec.id),
-            ).map_err(machine_error)?;
-            if failure.is_some() || operator_end { state.truth.interrupt(); }
+            state
+                .active(
+                    &self.class,
+                    ran,
+                    self.spec.duration,
+                    failure.map(|failure| Cause::Truth(failure.cause)),
+                    Some(&self.spec.id),
+                )
+                .map_err(machine_error)?;
+            if failure.is_some() || operator_end {
+                state.truth.interrupt();
+            }
             let failure = if let Some(failure) = failure {
                 // Local failures retain their physical core. Joint and platform failures have
                 // no policy-visible culprit: report the ordinary first loaded trial core.
                 let core = match failure.cause {
                     FailureCause::Core(core) => Some(core),
-                    FailureCause::Interaction(_) | FailureCause::Background => self.spec.cores.first().copied(),
-                }.filter(|core| self.spec.cores.contains(core)).ok_or_else(|| {
+                    FailureCause::Interaction(_) | FailureCause::Background => {
+                        self.spec.cores.first().copied()
+                    }
+                }
+                .filter(|core| self.spec.cores.contains(core))
+                .ok_or_else(|| {
                     machine_error(RunError::Calendar("failure outside the trial's loaded set"))
                 })?;
-                reporter.signal(core, Signal::ComputationError, None, "night trial observed a failure");
-                Some(TrialFailure { core, signal: Signal::ComputationError, pid: None })
-            } else { None };
-            Ok((TrialResult { ran, failure, ..TrialResult::default() }, operator_end))
+                reporter.signal(
+                    core,
+                    Signal::ComputationError,
+                    None,
+                    "night trial observed a failure",
+                );
+                Some(TrialFailure {
+                    core,
+                    signal: Signal::ComputationError,
+                    pid: None,
+                })
+            } else {
+                None
+            };
+            Ok((
+                TrialResult {
+                    ran,
+                    failure,
+                    ..TrialResult::default()
+                },
+                operator_end,
+            ))
         };
         match execute() {
             Ok((result, false)) => Ok(result),
-            Ok((result, true)) => Err(Partial { value: result, error: Error::Cancelled }),
-            Err(error) => Err(Partial { value: TrialResult::default(), error }),
+            Ok((result, true)) => Err(Partial {
+                value: result,
+                error: Error::Cancelled,
+            }),
+            Err(error) => Err(Partial {
+                value: TrialResult::default(),
+                error,
+            }),
         }
     }
-    fn stop(self: Box<Self>) -> Result<Stopped, Error> { Ok(confirmed()) }
+    fn stop(self: Box<Self>) -> Result<Stopped, Error> {
+        Ok(confirmed())
+    }
 }
 
-fn machine_error(error: RunError) -> Error { Error::Other(Box::new(error)) }
+fn machine_error(error: RunError) -> Error {
+    Error::Other(Box::new(error))
+}
 
 #[expect(
     clippy::disallowed_methods,
     reason = "the simulator is a seam: no workload ever runs, so teardown is always confirmed"
 )]
-fn confirmed() -> Stopped { Stopped::confirmed() }
+fn confirmed() -> Stopped {
+    Stopped::confirmed()
+}
 
 #[cfg(test)]
 mod tests;
