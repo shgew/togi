@@ -361,6 +361,122 @@ day; they are never dropped from a benchmark denominator. Fixed-cap and moving-c
 reports remain distinguishable. Diagnostic comparator results cannot establish that the
 registered real-policy gate passed.
 
+### Successor physical-core truth
+
+`togi_sim::day_night::successor` is a separate truth catalog for
+[#1457](https://github.com/shgew/togi/issues/1457), not a repair or a rescore of
+the frozen Ruleset 13 experiment above. The original 22 `Scenario::builtin`
+identities, salts, failure clocks, reference optimizer and registration remain
+unchanged. No successor policy score or hardware reliability claim follows from
+these correctness fixtures.
+
+The successor's stable `SCENARIO_IDS` list contains the original 22 family names
+prefixed with `successor-`, followed by `successor-within-ccd-heterogeneous`,
+`successor-weak-core-hidden`, `successor-weak-core-delayed`,
+`successor-combined-adversary`, `successor-core-interactions` and
+`successor-core-refinement`. Every request carries a complete `Profile` of
+checked nonnegative `Depth` values, stored as `PerCore<Depth>` in physical-core
+order. Missing or extra readbacks are refused; no CCD average or extremum can
+replace the applied vector.
+
+For the 22 inherited families, each active CCD's original source is split
+equally among the physical cores that the class loads on that CCD. Each core's
+curve is evaluated at its own depth. A uniform-within-CCD vector therefore has
+the same uniform admissible region as the original family, up to numerical
+integration tolerance. The inherited machine interaction uses physical cores 0
+and 8 as its two endpoints and contributes once, separately from core sources;
+on the registered simultaneous-CCD classes this preserves the original uniform
+interaction. This is an explicit synthetic mapping, not a claim that real cores
+share one curve.
+
+The heterogeneous fixture has four weak and four strong cores per eight-core
+CCD. Their zero-added-risk edges are respectively depths 20 and 40, with zero
+added rate through the edge and `32 * (1/3000) * 2^(depth-edge-1)` failures/hour
+above it on a loaded core. The first violating count alone exceeds the joint
+budget under the registered daily mix. Thus the certified operational and
+physical objectives are **40 total CCD-unit counts** in CCD mode (mean physical
+depth 20), versus **480 total core-unit counts** in core mode (mean depth 30).
+Those different unit totals are not directly comparable performance quantities;
+the physical-core mean exposes the actual improvement. Weak/strong identities
+are shuffled independently within each CCD with `StdRng`, the run seed,
+`Domain::Limits` and salt `0x535543434553534f`; curves and objective values do
+not depend on the permutation.
+
+The weak-core variants select one weak core per CCD with that same permutation.
+Its binding edge is 20 versus 40 for its neighbors. Hidden truth binds on the
+R2 catalog workload at index 2, absent at night; delayed truth needs 600 seconds
+of uninterrupted matching exposure. The combined fixture includes both and
+the interaction sources. `missing_night_classes` returns exact missing class
+identities, including intended duration, rather than a guessed safety label.
+Interaction fixtures include a within-CCD pair (cores 0 and 1) and a
+cross-CCD machine source (cores 0 and 8). Each source adds `4/3000` failures/hour
+while both endpoints are loaded deeper than 20; either endpoint at 20 or
+shallower removes that source. In isolation their individual curves permit 40.
+Profiles choosing either endpoint shallow can therefore be admissible without
+matching one arbitrarily tie-broken optimizer vector.
+
+`refinement()` supplies the inherited depth-35 whole-CCD result, per-core
+ceilings of 36 on four weak cores and 40 on four strong cores per CCD, and
+exact single-core candidate profiles covering every count from inheritance
+through its ceiling. These ceilings correspond to night edges of 41 and 45
+with the retained five-count margin. The candidate list never defines the
+depth objective or narrows it to an artificial refinement window. The later
+runner must account for exact-profile night qualification, the additional
+50-hour daily holds and the unchanged shared machine allowance; this truth
+module grants no policy permission.
+
+`UnitGrouping` explicitly partitions physical topology into CCD units or
+single-core units. `Reference` integrates the ordered daily mix and sleep at
+periodic thermal equilibrium, excludes stock background, and reports each
+unit's source rate, the joint rate including interactions once, their ratios
+to `lambda/unit_count` and `lambda`, and membership using an explicit absolute
+numerical tolerance (default constant `1e-14` failures/active machine-hour).
+The registered target remains `lambda = 1/3000`; tolerance addresses floating
+point computation, not an extra risk allowance. Arbitrary nonuniform vectors
+are evaluated in full even in CCD mode; only the reference optimization
+enforces uniform depths within each declared tuning unit.
+Actual `Exposure::interactions` and reference `Admissibility::interactions`
+retain each pair's expected count or rate, including zero values. The stable
+`InteractionId` is the ordered physical-core endpoint pair, independent of
+tuning-unit grouping; aggregate interaction exposure is derived. Draws use
+`Domain::Joint((lower_core_id << 8) | higher_core_id)` under the successor
+salt. Background remains a separate competing account.
+
+The depth reference returns a certified **objective value and upper bound**,
+not a selected maximizing vector. It reports the operational maximum over
+admissible profiles with every physical depth at most 45, the physical maximum
+over the full 0–50 write range, their gap and each unit's independently feasible
+operational maximum. The no-write-limit fixture consequently has operational
+45 and physical 50 per unit, making the five-count policy cost explicit.
+The finite certificate checks monotonicity, enumerates only each sparse
+interaction-connected group (at most three tuning units in this catalog),
+and combines independent minimum-hazard-per-total-depth tables by min-plus
+convolution. Nonnegative joint terms permit only sound pruning. A reconstructed
+internal witness is rechecked against admissibility; the reported upper bound
+is the exact table maximum, not an unverified optimizer estimate.
+
+`epoch(day)` uses one-based public days: initial truth starts on day 1,
+moving truth changes before days 46, 91, …, 451, and firmware truth changes
+before day 181's active use. References are recomputed for the epoch and
+grouping; no safety grace interval is implied.
+
+Truth history separates actual thermal exposure from policy-eligible time.
+Ordinary onset is zero, delayed onset is 600 uninterrupted seconds, and
+thermal onset follows recorded heat and exponential cooling. Intended
+duration remains class identity when an operator ends a cell early.
+Checkpoint slices preserve the uninterrupted class/profile clock; a genuine
+interruption, sleep, class/role/placement/duration change or profile change
+resets it. An early failure remains a failure even before warm-up and cannot
+create eligible seconds or a full-duration pass. The slice interface reports
+intended, observed, eligible and per-core onset-active seconds separately.
+Many interrupted short launches cannot become one sustained launch.
+
+The reference excludes preceding nights; actual history-based exposure can
+still inherit their heat. The calendar continues to idealize zero setup and
+teardown and omit hardware controller-placement exclusions and required
+repeats. Synthetic correctness and optimizer timing do not establish real-night
+feasibility or authorize nonzero deployment.
+
 ### The simulator command (`togi-tool-sim`)
 
 `crates/togi-tool-sim` builds the `togi-tool-sim` command. It runs from a source checkout:
