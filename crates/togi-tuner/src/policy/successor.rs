@@ -81,10 +81,13 @@ impl Reconstruction {
 /// Decode the original payload strictly, including unknown-field checks.
 /// The synthetic envelope adds no policy facts or local cause references.
 pub fn decode(record: &DayImported) -> Result<Event, togi_journal::DecodeError> {
+    let boot = serde_json::to_string(&record.boot).map_err(|source| togi_journal::DecodeError::Envelope {
+        kind: Some(record.original_kind), source,
+    })?;
     let envelope = format!(
         "{{\"seq\":{},\"time\":\"{}\",\"boot\":{},\"kind\":\"{}\",\"msg\":\"\",\"data\":{}}}",
         record.original.seq, record.time,
-        serde_json::to_string(&record.boot).unwrap_or_default(),
+        boot,
         record.original_kind.as_str(), record.raw,
     );
     Event::decode(&envelope)
@@ -169,6 +172,8 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
     let mut latest = HashMap::new();
     let mut raw = State::new(Params::SPEC);
     let mut steps = HashMap::new();
+    let mut climbs = HashMap::new();
+    let mut recorded_consumed = 0;
     for (index, (original, event)) in decoded.iter().enumerate() {
         match &event.payload {
             Payload::CampaignStart(start) => {
@@ -186,23 +191,42 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                 }
             }
             Payload::DayStep(step) => { steps.insert((original.session, step.decision), step); }
+            Payload::ClimbDecision(decision) => {
+                climbs.insert((original.session, togi_journal::DecisionId(original.seq.get())), decision);
+            }
             Payload::DayApplied(applied) => {
                 if let ApplyCause::Step { decision } = applied.cause {
-                    let step = steps.get(&(original.session, decision))
-                        .ok_or_else(|| "successful application is missing its decision history".to_owned())?;
-                    if step.proposed != applied.target {
-                        return Err("successful application disagrees with its decision".into());
-                    }
-                    if let StepKind::Retreat { changed, .. } = &step.step {
-                        for ccd in changed {
-                            let unit = UnitId::Ccd(*ccd);
-                            let last_clean = applied.target.ccd().get(*ccd)
-                                .ok_or_else(|| "backstep is missing its resulting unit depth".to_owned())?;
-                            history.stops.entry(unit).or_insert(Stop { unit, witness: *original, last_clean });
+                    if let Some(step) = steps.get(&(original.session, decision)) {
+                        if step.proposed != applied.target {
+                            return Err("successful application disagrees with its decision".into());
                         }
+                        if let StepKind::Retreat { changed, .. } = &step.step {
+                            for ccd in changed {
+                                let unit = UnitId::Ccd(*ccd);
+                                let last_clean = applied.target.ccd().get(*ccd)
+                                    .ok_or_else(|| "backstep is missing its resulting unit depth".to_owned())?;
+                                history.stops.entry(unit).or_insert(Stop { unit, witness: *original, last_clean });
+                            }
+                        }
+                    } else if let Some(step) = climbs.get(&(original.session, decision)) {
+                        if &step.proposed.cores != applied.target.cores() {
+                            return Err("successful application disagrees with its climb decision".into());
+                        }
+                        if let togi_journal::ClimbAction::Retreat { units, .. } = &step.decision {
+                            for unit in units {
+                                let membership = step.proposed.mapping.units.iter().find(|member| member.unit == *unit)
+                                    .ok_or_else(|| "backstep is missing its unit membership".to_owned())?;
+                                let last_clean = membership.cores.first().and_then(|core| step.proposed.cores.get(core))
+                                    .ok_or_else(|| "backstep is missing its resulting unit depth".to_owned())?;
+                                history.stops.entry(*unit).or_insert(Stop { unit: *unit, witness: *original, last_clean });
+                            }
+                        }
+                    } else {
+                        return Err("successful application is missing its decision history".into());
                     }
                 }
-                if applied.target.cores().iter().any(|(core, offset)| applied.readbacks.get(core).map(|value| value.0) != Some(offset.get())) {
+                if applied.target.cores().is_empty() || applied.readbacks.len() != applied.target.cores().len()
+                    || applied.target.cores().iter().any(|(core, offset)| applied.readbacks.get(core).map(|value| value.0) != Some(offset.get())) {
                     return Err("successful application has inconsistent readbacks".into());
                 }
                 history.applications.push((*original, applied.clone()));
@@ -216,6 +240,12 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                 }
             }
             Payload::CampaignCharge(charged) => {
+                recorded_consumed = recorded_consumed.max(charged.consumed);
+                if charged.remaining != 2_u32.saturating_sub(charged.consumed)
+                    || charged.exhausted != (charged.consumed >= 2)
+                {
+                    return Err("inconsistent predecessor campaign charge".into());
+                }
                 let id = identity(&charged.event, original.session, &identities);
                 let aliases = charged.aliases.iter().map(|alias| identity(alias, original.session, &identities)).collect();
                 let profile = ObservedProfile::PerCore { cores: charged.profile.cores.iter().map(|(core, offset)| (core, offset.observed())).collect() };
@@ -257,7 +287,14 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
     }
     // Merge bridge aliases after all records have been read (not just adjacent copies).
     merge_aliases(&mut history.charges);
+    if u32::try_from(history.charges.len()).is_ok_and(|count| recorded_consumed > count) {
+        return Err("missing predecessor campaign charges".into());
+    }
     for charged in &mut history.charges {
+        let (ObservedProfile::Ccd { cores, .. } | ObservedProfile::PerCore { cores }) = &charged.profile;
+        if cores.is_empty() || cores.iter().any(|(_, offset)| TargetOffset::new(offset.0).is_err()) {
+            return Err("campaign event is missing a valid observed profile".into());
+        }
         charged.reclassified = std::iter::once(&charged.event).chain(&charged.aliases)
             .any(|id| matches!(latest.get(id), Some(Classification::NonCpu {})));
         if !charged.reclassified && !history.vetoes.iter().any(|veto| veto.event == charged.event) {
@@ -317,5 +354,107 @@ fn merge_aliases(charges: &mut Vec<Charge>) {
         charges[index].witnesses.sort_by_key(|witness| (witness.session, witness.seq));
         charges[index].witnesses.dedup();
         index += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn record(kind: &str, seq: u64, data: serde_json::Value) -> DayImported {
+        DayImported {
+            original: Provenance { session: "20261001T000000Z".parse().unwrap(), seq: Seq::new(seq).unwrap() },
+            original_kind: kind.parse().unwrap(), raw: data.to_string(),
+            time: "2026-10-01T00:00:00Z".parse().unwrap(), boot: BootId::from("boot".to_owned()),
+            build: None, firmware: None, profile: None, class: togi_journal::ImportClass::Manual, missing: Vec::new(),
+        }
+    }
+
+    fn classified(seq: u64, classification: serde_json::Value) -> DayImported {
+        record("day.event", seq, json!({
+            "event": {"kind":"boot","boot":"crashed"},
+            "profile":{"kind":"per_core","cores":{"0":-5}},
+            "from":"2026-10-01T00:00:00Z","to":"2026-10-01T00:00:00Z",
+            "witnesses":[1],"classification":classification,
+            "resolution":{"kind":"unresolved"},"reason":"raw witnesses",
+            "reproduction":"pending"
+        }))
+    }
+
+    fn complete(records: &[DayImported]) -> History {
+        match reconstruct(records, &[]) {
+            Reconstruction::Complete(history) => history,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn provisional_charges_survive_reclassification_and_import_copies() {
+        let provisional = classified(1, json!({"kind":"cpu_suspect","certainty":"provisional"}));
+        let revised = classified(2, json!({"kind":"non_cpu"}));
+        let history = complete(&[provisional.clone(), revised, provisional]);
+        assert_eq!(history.charges.len(), 1);
+        assert!(history.charges[0].provisional);
+        assert!(history.charges[0].reclassified);
+        assert!(history.vetoes.is_empty());
+    }
+
+    #[test]
+    fn copied_manual_witnesses_of_one_crash_consume_one_event_without_a_derived_commitment() {
+        let first = record("day.record", 1, json!({
+            "boot":{"kind":"unobserved","at":"2026-09-30T23:00:00Z"},
+            "offsets":{"0":-5},"source":{"kind":"entered","at":"2026-10-01T00:00:00Z"},
+            "running":"idle"
+        }));
+        let mut second = first.clone();
+        second.original.seq = Seq::new(2).unwrap();
+        let history = complete(&[second, first.clone(), first]);
+        assert_eq!(history.charges.len(), 1);
+        assert_eq!(history.vetoes.len(), 1);
+    }
+
+    #[test]
+    fn events_at_stock_do_not_consume_the_campaign_allowance() {
+        let mut event = classified(1, json!({"kind":"cpu_suspect","certainty":"definite"}));
+        let mut data: serde_json::Value = serde_json::from_str(&event.raw).unwrap();
+        data["profile"]["cores"]["0"] = json!(0);
+        event.raw = data.to_string();
+        assert!(complete(&[event]).charges.is_empty());
+    }
+
+    #[test]
+    fn undecodable_required_campaign_history_is_not_zero_consumption() {
+        let malformed = record("day.applied", 1, json!({}));
+        assert!(matches!(reconstruct(&[malformed], &[]), Reconstruction::Unreconstructible { .. }));
+    }
+
+    #[test]
+    fn missing_successful_application_ancestry_is_unreconstructible() {
+        let applied = record("day.applied", 1, json!({
+            "application":1,"cause":{"kind":"step","decision":1},
+            "target":{"ccd":{"0":-5},"cores":{"0":-5}},
+            "readbacks":{"0":-5},"transactions":[1],"boot":"boot","mono_ns":0
+        }));
+        assert!(matches!(reconstruct(&[applied], &[]), Reconstruction::Unreconstructible { reason } if reason.contains("decision")));
+    }
+
+    #[test]
+    fn successful_backsteps_reconstruct_permanent_stops() {
+        let step = record("day.step", 1, json!({
+            "decision":1,"cold_boot":"boot","old":{"ccd":{"0":-5},"cores":{"0":-5}},
+            "proposed":{"ccd":{"0":0},"cores":{"0":0}},
+            "step":{"kind":"retreat","changed":[0],"cause":{"kind":"completion"}},
+            "hours":[],"hold_s":0,"causes":{},"reason":"backstep"
+        }));
+        let applied = record("day.applied", 2, json!({
+            "application":1,"cause":{"kind":"step","decision":1},
+            "target":{"ccd":{"0":0},"cores":{"0":0}},
+            "readbacks":{"0":0},"transactions":[1],"boot":"boot","mono_ns":0
+        }));
+        let history = complete(&[applied, step]);
+        assert_eq!(history.stops.len(), 1);
+        assert_eq!(history.stops.values().next().unwrap().last_clean, TargetOffset::ZERO);
+        assert_eq!(history.applications.len(), 1);
     }
 }
