@@ -18,11 +18,12 @@ impl State {
     pub(super) fn fold_campaign_charge(&mut self, event: &Event, receipt: &journal::CampaignCharge) {
         if let Some(id) = self.policy_event_id(&receipt.event) {
             let aliases = receipt.aliases.iter().filter_map(|alias| self.policy_event_id(alias)).collect();
+            let reclassified = self.climb.campaign.charges().iter().any(|known| known.reclassified && (known.aliases.contains(&id) || !known.aliases.is_disjoint(&aliases)));
             self.climb.campaign.commit_charge(climb::Charge {
                 event: id, aliases,
                 phase: match receipt.phase { journal::CampaignEventPhase::Learning => climb::EventPhase::Learning, journal::CampaignEventPhase::PostFinish => climb::EventPhase::PostFinish },
                 unit_phase: match receipt.unit_phase { journal::UnitPhase::Coarse => crate::Phase::Coarse, journal::UnitPhase::Core => crate::Phase::Core },
-                provisional: receipt.provisional, reclassified: false,
+                provisional: receipt.provisional, reclassified,
             });
         }
         self.climb.charges.push(committed(event, receipt.clone()));
@@ -60,18 +61,14 @@ impl State {
         for charge in &reconstructed.charges {
             let event = self.imported_identity(&charge.event);
             let aliases = charge.aliases.iter().map(|alias| self.imported_identity(alias)).collect::<std::collections::BTreeSet<_>>();
-            let kept = self.climb.campaign.charges().iter().find(|kept| !kept.aliases.is_disjoint(&aliases));
-            let receipt = charge.witnesses.iter().find_map(|witness| {
-                self.climb.imports.iter().find(|record| record.original == *witness)
-                    .and_then(|record| successor::decode(record).ok())
-                    .and_then(|event| if let Payload::CampaignCharge(receipt) = event.payload { Some(receipt) } else { None })
-            });
-            let phase = receipt.as_ref().map_or_else(|| kept.map_or(climb::EventPhase::Learning, |kept| kept.phase), |receipt| match receipt.phase { journal::CampaignEventPhase::Learning => climb::EventPhase::Learning, journal::CampaignEventPhase::PostFinish => climb::EventPhase::PostFinish });
-            let unit_phase = receipt.as_ref().map_or_else(|| kept.map_or(crate::Phase::Coarse, |kept| kept.unit_phase), |receipt| match receipt.unit_phase { journal::UnitPhase::Coarse => crate::Phase::Coarse, journal::UnitPhase::Core => crate::Phase::Core });
-            let profile = receipt.map(|receipt| receipt.profile).or_else(|| {
+            let phase = match charge.phase { journal::CampaignEventPhase::Learning => climb::EventPhase::Learning, journal::CampaignEventPhase::PostFinish => climb::EventPhase::PostFinish };
+            let unit_phase = match charge.unit_phase { journal::UnitPhase::Coarse => crate::Phase::Coarse, journal::UnitPhase::Core => crate::Phase::Core };
+            let profile = charge.receipt.as_ref().map(|receipt| receipt.profile.clone()).or_else(|| {
                 let history = self.climb.history.as_ref()?;
                 let observed = match &charge.profile { journal::ObservedProfile::Ccd { cores, .. } | journal::ObservedProfile::PerCore { cores } => day::CoreProfile::new(*cores).ok()? };
-                Self::observed_vector(&observed, history.units()).ok()
+                let mut vector = Self::observed_vector(&observed, history.units()).ok()?;
+                if let Some(mapping) = &charge.mapping { vector.mapping.clone_from(mapping); }
+                Some(vector)
             });
             let causes = charge.witnesses.iter().filter_map(|original| self.climb.import_sequences.get(original).copied()).collect::<Vec<_>>();
             if let Some(seq) = causes.first().copied()

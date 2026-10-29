@@ -124,7 +124,6 @@ impl Campaign {
                 first = Some(first.map_or(index, |first: usize| first.min(index)));
                 let kept = charges.remove(index);
                 charge.aliases.extend(kept.aliases);
-                charge.reclassified |= kept.reclassified;
                 index = 0;
             }
         }
