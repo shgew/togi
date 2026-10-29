@@ -994,6 +994,49 @@ fn evidence_in(state: &Session, no_color: bool) -> String {
     text(&ran.stdout).to_owned()
 }
 
+#[test]
+fn baseline_stock_does_not_mask_a_completed_night_profile_without_the_day_service() {
+    let base = base();
+    let Payload::SessionContext(context) = &base[2].payload else {
+        unreachable!();
+    };
+    let qualification = togi_journal::NightQualification {
+        profile: profile(-3, 0),
+        firmware: context.bios_context(),
+        epoch: togi_tuner::EVIDENCE_EPOCH,
+        contents: Vec::new(),
+        matrix: togi_machine::Digest::from_bytes([3; 32]),
+        purpose: togi_journal::QualificationPurpose::NextStep,
+        state: togi_journal::QualificationState::Start {
+            outstanding: Vec::new(),
+        },
+    };
+    let events = append(
+        &base,
+        vec![
+            qualification.clone().into(),
+            togi_journal::NightQualification {
+                state: togi_journal::QualificationState::Complete {
+                    witnesses: Vec::new(),
+                },
+                ..qualification
+            }
+            .into(),
+        ],
+    );
+    let shown = flat(&evidence_in(&installed(&events), true));
+    assert!(
+        shown.contains(
+            "Exact night-qualified profile (not applied day evidence): CCD 0 -3, CCD 1 0"
+        ),
+        "{shown}"
+    );
+    assert!(
+        !shown.contains("no distinct nonzero selected profile"),
+        "{shown}"
+    );
+}
+
 #[test_case::test_case(Scenario::Controls; "no cap evidence")]
 #[test_case::test_case(Scenario::Mapping; "mapping witnesses")]
 #[test_case::test_case(Scenario::DayStep; "qualified profile without day application")]

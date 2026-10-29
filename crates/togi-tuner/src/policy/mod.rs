@@ -41,9 +41,9 @@ pub use night_query::{Action, Contents, EndReason, NightQuery, NotReady};
 pub use plan::{PlanError, TrialPlan};
 pub use projection::{
     CapEvidence, CapProjection, CapReason, CcdProjection, DayProjection, EventProjection,
-    FirmwareValidity, HoldProjection, MappingProjection, NightProjection, Projection,
-    QualificationProgress, QualificationProjection, QualificationStage, ReproductionProjection,
-    SlopeCell, VetoProjection,
+    EvidenceProfile, FirmwareValidity, HoldProjection, MappingProjection, NightProjection,
+    Projection, QualificationProgress, QualificationProjection, QualificationStage,
+    ReproductionProjection, SlopeCell, VetoProjection,
 };
 
 use crate::cap::{Beta, Rate};

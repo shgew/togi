@@ -366,3 +366,54 @@ fn the_incremental_state_equals_a_full_refold_and_a_resumed_capsule() {
     assert_eq!(format!("{:?}", resumed.next(&query).unwrap()), expected);
     assert_eq!(resumed.project(), journal.state.project());
 }
+
+#[test]
+fn comparable_exposures_use_the_latest_distinct_stock_witness() {
+    let mut journal = Journal::ready();
+    let plan = journal.until_trial(journal.now());
+    journal.run(&plan, Ending::Pass);
+    journal.until_trial(journal.now());
+    let (first, stock) = journal
+        .events
+        .iter()
+        .find_map(|event| {
+            if let Payload::ExposureObserved(observed) = &event.payload {
+                Some((event.seq, observed.clone()))
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let profile = fixture::zero().with(
+        fixture::ccd(0),
+        togi_machine::TargetOffset::new(-10).unwrap(),
+    );
+    let selected = togi_journal::ExposureObserved {
+        source: togi_journal::OriginalSource {
+            seq: togi_journal::Seq::new(1000).unwrap(),
+            ..stock.source.clone()
+        },
+        profile: togi_journal::CcdVector::expand(profile.clone(), &fixture::cores()).unwrap(),
+        ..stock.clone()
+    };
+    let selected_seq = journal.append(selected.into(), &[]);
+    let newer = togi_journal::ExposureObserved {
+        source: togi_journal::OriginalSource {
+            seq: togi_journal::Seq::new(1001).unwrap(),
+            ..stock.source.clone()
+        },
+        ..stock.clone()
+    };
+    let newer_seq = journal.append(newer.into(), &[]);
+    // A later copy cannot displace either original witness.
+    journal.append(stock.into(), &[]);
+    assert_ne!(first, newer_seq);
+    assert_eq!(
+        journal.state.comparable_exposures(&profile),
+        vec![(selected_seq, newer_seq)]
+    );
+    assert_eq!(
+        journal.state.comparable_exposures(&fixture::zero()),
+        Vec::new()
+    );
+}

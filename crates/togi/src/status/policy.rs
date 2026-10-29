@@ -147,6 +147,11 @@ pub(super) fn class_word(class: &ExposureClass) -> String {
     esc(&text)
 }
 
+/// Expanded evidence must distinguish loaded subsets even when the concise status groups them.
+pub(super) fn evidence_class_word(class: &ExposureClass) -> String {
+    format!("{} cores {}", class_word(class), core_ranges(class.cores))
+}
+
 /// Trial classes in words, first-seen order. Classes that differ only in the cores they load read the same,
 /// so each reading is shown once with how many classes share it: `R1 mprime-sse-4k-21k 90s exact x8`.
 fn classes_word(classes: &[ExposureClass]) -> String {
@@ -265,8 +270,9 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
                     .iter()
                     .fold(0_u64, |total, cell| total.saturating_add(cell.eligible_s));
                 format!(
-                    "CCD {} cap evidence: {}; {} h eligible mapping witnesses; {} coverage gaps",
+                    "CCD {} current cap calculation: S {}; {}; {} h eligible mapping witnesses; {} coverage gaps",
                     ccd.ccd,
+                    evidence.offset.get(),
                     evidence.reason.label(),
                     hours(seconds),
                     evidence.uncovered.len()

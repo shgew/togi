@@ -1,6 +1,8 @@
 //! What status and watch show of the policy, and the `tuner` key of `state.json`: the committed edges and
 //! caps, the applied profile and its hold, the events and vetoes, the qualifications and the latest night.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use togi_journal::{
     Activity, Binding, Budget, Classification, DayEventId, DayStep, Edge, ExposureClass, NightId,
@@ -10,7 +12,7 @@ use togi_journal::{
 use togi_machine::{BootId, CcdId, CcdProfile, CoreSet, TargetOffset};
 
 use super::State;
-use super::ledger::saturating_u32;
+use super::ledger::{Sig, saturating_u32};
 use super::qualify::QualStatus;
 use crate::day::{Freeze, QuestionState};
 use crate::night::Cursor;
@@ -230,6 +232,34 @@ pub struct Projection {
     pub stopped: bool,
 }
 
+/// Which recorded profile an expanded evidence reader should inspect.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EvidenceProfile<'a> {
+    Applied(&'a CcdProfile),
+    NightQualified(&'a CcdProfile),
+    Baseline(&'a CcdProfile),
+}
+
+impl Projection {
+    /// A nonzero day profile takes priority; baseline stock must not hide completed night work.
+    #[must_use]
+    pub fn evidence_profile(&self) -> Option<EvidenceProfile<'_>> {
+        if let Some(profile) = self.applied.as_ref().filter(|profile| !profile.is_zero()) {
+            return Some(EvidenceProfile::Applied(profile));
+        }
+        self.qualifications
+            .iter()
+            .rev()
+            .find(|record| {
+                record.current
+                    && record.state == QualificationStage::Complete
+                    && !record.profile.is_zero()
+            })
+            .map(|record| EvidenceProfile::NightQualified(&record.profile))
+            .or_else(|| self.applied.as_ref().map(EvidenceProfile::Baseline))
+    }
+}
+
 const fn activity_of(queue: togi_journal::Queue) -> Option<Activity> {
     match queue {
         togi_journal::Queue::Reproduction => Some(Activity::Reproduction),
@@ -302,6 +332,49 @@ impl State {
             night: self.night_projection(),
             stopped: self.stop.is_some(),
         }
+    }
+
+    /// Selected/stock exposure witnesses in journal order. The ledger owns original-identity
+    /// deduplication, Sig owns class identity and GroupKey owns context compatibility. Each selected
+    /// observation uses the latest stock observation of its class and context, including historical
+    /// contexts rather than silently treating them as current evidence.
+    #[must_use]
+    pub fn comparable_exposures(&self, profile: &CcdProfile) -> Vec<(Seq, Seq)> {
+        if profile.is_zero() {
+            return Vec::new();
+        }
+        let mut stocks: HashMap<Sig, Vec<(&super::evidence::GroupKey, Seq)>> = HashMap::new();
+        for record in &self.ledger.records {
+            let observed = &record.observed;
+            if !observed.profile.ccd().is_zero() {
+                continue;
+            }
+            let Some(group) = self
+                .ledger
+                .groups
+                .iter()
+                .find(|group| group.key.matches(observed))
+            else {
+                continue;
+            };
+            let contexts = stocks.entry(Sig::of_class(&observed.class)).or_default();
+            if let Some((_, seq)) = contexts.iter_mut().find(|(key, _)| *key == &group.key) {
+                *seq = record.seq;
+            } else {
+                contexts.push((&group.key, record.seq));
+            }
+        }
+        self.ledger
+            .records
+            .iter()
+            .filter(|record| record.observed.profile.ccd() == profile)
+            .filter_map(|record| {
+                let observed = &record.observed;
+                let contexts = stocks.get(&Sig::of_class(&observed.class))?;
+                let (_, stock) = contexts.iter().find(|(key, _)| key.matches(observed))?;
+                Some((record.seq, *stock))
+            })
+            .collect()
     }
 
     fn ccd_projections(&self, applied: Option<&CcdProfile>) -> Vec<CcdProjection> {

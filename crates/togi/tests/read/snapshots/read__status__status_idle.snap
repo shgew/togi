@@ -15,10 +15,10 @@ Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
 CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 0   0-7   0   -   -        -        unknown      -         -       -
 1   8-15  0   -   -        -        unknown      -         -       -
-  CCD 0 cap evidence: no adequate mapping class; 0 h eligible mapping witnesses;
-    161 coverage gaps
-  CCD 1 cap evidence: no adequate mapping class; 0 h eligible mapping witnesses;
-    161 coverage gaps
+  CCD 0 current cap calculation: S 0; no adequate mapping class; 0 h eligible
+    mapping witnesses; 161 coverage gaps
+  CCD 1 current cap calculation: S 0; no adequate mapping class; 0 h eligible
+    mapping witnesses; 161 coverage gaps
   A CCD with no cap yet has S at offset 0.
 
 Day policy

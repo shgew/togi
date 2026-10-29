@@ -15,10 +15,10 @@ CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
   bound by R9 ycruncher-bkt-sftv4-all-threads serial cpu 0 120s isolated
 1   8-15  0   -6  fallback rate     censored -50 6         114     142
   bound by R9 ycruncher-snt-svt-all-threads serial cpu 25 120s isolated
-  CCD 0 cap evidence: mapping rate bound; 2.9 h eligible mapping witnesses; 153
-    coverage gaps
-  CCD 1 cap evidence: mapping rate bound; 2.9 h eligible mapping witnesses; 142
-    coverage gaps
+  CCD 0 current cap calculation: S -6; mapping rate bound; 2.9 h eligible
+    mapping witnesses; 153 coverage gaps
+  CCD 1 current cap calculation: S -6; mapping rate bound; 2.9 h eligible
+    mapping witnesses; 142 coverage gaps
   CCD 0 uncovered for the cap, no observations: R8
     mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 0 120s
     isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light

@@ -2,11 +2,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use togi_journal::{ApplyCause, Event, ExposureObserved, Payload, RateBound, Seq, Slope};
+use togi_journal::{ApplyCause, Event, Payload, RateBound, Slope};
 use togi_machine::{CcdProfile, ObservedOffset, PerCore};
-use togi_tuner::policy::{CapReason, Projection, QualificationStage};
+use togi_tuner::policy::{CapReason, EvidenceProfile, Projection, State};
 
-use super::policy::{class_word, hours};
+use super::policy::{evidence_class_word as class_word, hours};
 use crate::table::wrap;
 
 fn line(out: &mut String, text: &str) {
@@ -58,7 +58,7 @@ fn slope_word(slope: Slope) -> String {
     }
 }
 
-pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection) {
+pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, state: &State) {
     out.push_str("\nEvidence\n");
     line(
         out,
@@ -68,23 +68,14 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection) {
         out,
         "The machine incremental hazard goal is 1 crash per 3,000 applied hours, divided among CCDs. Poisson bounds and log-linear projection are modeling assumptions, not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that stock meets the hazard goal.",
     );
-    let selected = policy
-        .applied
-        .as_ref()
-        .map(|profile| (profile, "applied day profile"))
-        .or_else(|| {
-            policy
-                .qualifications
-                .iter()
-                .rev()
-                .find(|record| record.current && record.state == QualificationStage::Complete)
-                .map(|record| {
-                    (
-                        &record.profile,
-                        "night-qualified profile (not applied day evidence)",
-                    )
-                })
-        });
+    let selected = policy.evidence_profile().map(|selected| match selected {
+        EvidenceProfile::Applied(profile) => (profile, "applied day profile"),
+        EvidenceProfile::NightQualified(profile) => (
+            profile,
+            "night-qualified profile (not applied day evidence)",
+        ),
+        EvidenceProfile::Baseline(profile) => (profile, "baseline stock profile"),
+    });
     let totals = togi_watch::day_totals::DayTotals::of(events);
     match selected {
         Some((profile, source)) => {
@@ -239,7 +230,7 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection) {
     day_provenance(out, events);
     applications(out, events);
     observations(out, events, selected.map(|(profile, _)| profile));
-    comparisons(out, events, selected.map(|(profile, _)| profile));
+    comparisons(out, events, selected.map(|(profile, _)| profile), state);
     line(
         out,
         "These are observations and coverage gaps. No stability verdict or completion time is inferred.",
@@ -373,9 +364,9 @@ fn observations(out: &mut String, events: &[Event], profile: Option<&CcdProfile>
     }
 }
 
-/// Compare complete class identities, firmware and epoch, never regime alone. Each pair retains both
-/// source records; missing clocks/temperatures stay unknown rather than becoming zero or an uplift.
-fn comparisons(out: &mut String, events: &[Event], profile: Option<&CcdProfile>) {
+/// Format the tuner's comparable witness pairs. Missing clocks/temperatures stay unknown rather
+/// than becoming zero or an uplift.
+fn comparisons(out: &mut String, events: &[Event], profile: Option<&CcdProfile>, state: &State) {
     out.push_str("\nComparable same-class night clocks and temperatures\n");
     let Some(profile) = profile.filter(|profile| !profile.is_zero()) else {
         line(
@@ -394,27 +385,17 @@ fn comparisons(out: &mut String, events: &[Event], profile: Option<&CcdProfile>)
             }
         })
         .collect();
-    let observed: Vec<(Seq, &ExposureObserved)> = events
-        .iter()
-        .filter_map(|event| {
-            if let Payload::ExposureObserved(observed) = &event.payload {
-                Some((event.seq, observed))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let mut found = false;
-    for (seq, selected) in &observed {
-        if selected.profile.ccd() != profile {
-            continue;
+    let observed = |seq| {
+        let at = events.binary_search_by_key(&seq, |event| event.seq).ok()?;
+        if let Payload::ExposureObserved(observed) = &events[at].payload {
+            Some(observed)
+        } else {
+            None
         }
-        let Some((stock_seq, stock)) = observed.iter().rev().find(|(_, stock)| {
-            stock.profile.ccd().is_zero()
-                && stock.class == selected.class
-                && stock.firmware == selected.firmware
-                && stock.epoch == selected.epoch
-        }) else {
+    };
+    let mut found = false;
+    for (seq, stock_seq) in state.comparable_exposures(profile) {
+        let (Some(selected), Some(stock)) = (observed(seq), observed(stock_seq)) else {
             continue;
         };
         found = true;
@@ -425,7 +406,7 @@ fn comparisons(out: &mut String, events: &[Event], profile: Option<&CcdProfile>)
                 class_word(&selected.class)
             ),
         );
-        for (label, observation) in [("selected", *selected), ("stock", *stock)] {
+        for (label, observation) in [("selected", selected), ("stock", stock)] {
             let sample = match observation.origin {
                 togi_journal::ExposureOrigin::Live {} => observation
                     .source
@@ -479,8 +460,8 @@ fn comparisons(out: &mut String, events: &[Event], profile: Option<&CcdProfile>)
 mod tests {
     use super::*;
     use togi_journal::{
-        Activity, CcdVector, ExposureClass, ExposureOrigin, OriginalSource, Outcome, Placement,
-        Stamp, Tested, TrialEnd, TrialId,
+        Activity, CcdVector, ExposureClass, ExposureObserved, ExposureOrigin, OriginalSource,
+        Outcome, Placement, Seq, Stamp, Tested, TrialEnd, TrialId,
     };
     use togi_machine::{BiosContext, CcdId, CoreId, CoreInfo, CpuId, Regime, TargetOffset};
 
@@ -550,6 +531,14 @@ mod tests {
         end
     }
 
+    fn compare(out: &mut String, events: &[Event], profile: &CcdProfile) {
+        let mut state = State::new(togi_tuner::policy::Params::SPEC);
+        for event in events {
+            state.fold(event).unwrap();
+        }
+        comparisons(out, events, Some(profile), &state);
+    }
+
     #[test]
     fn comparable_measurements_keep_both_raw_witnesses_without_an_uplift_verdict() {
         let stock = exposure("stock", 0);
@@ -559,10 +548,12 @@ mod tests {
             event(2, end("selected", 58, 5100)),
             event(3, stock),
             event(4, selected.clone()),
+            event(5, selected.clone()),
         ];
         let mut out = String::new();
-        comparisons(&mut out, &events, Some(selected.profile.ccd()));
+        compare(&mut out, &events, selected.profile.ccd());
         assert!(out.contains("selected [#4], stock [#3]"), "{out}");
+        assert_eq!(out.matches("(same class, content,").count(), 1, "{out}");
         assert!(
             out.contains("selected [#2]: clocks CCD 0 5100 MHz; maximum Tctl 58 C"),
             "{out}"
@@ -572,6 +563,19 @@ mod tests {
             "{out}"
         );
         assert!(!out.contains("faster"));
+    }
+
+    #[test]
+    fn expanded_class_labels_identify_loaded_cores() {
+        let mut class = exposure("selected", -10).class;
+        assert!(class_word(&class).contains("cores 0"));
+        class.cores = [CoreId::new(1).unwrap()].into_iter().collect();
+        assert!(class_word(&class).contains("cores 1"));
+        class.regime = Regime::R7;
+        class.cores = [CoreId::new(0).unwrap(), CoreId::new(1).unwrap()]
+            .into_iter()
+            .collect();
+        assert!(class_word(&class).contains("cores 0-1"));
     }
 
     fn different_class(observed: &mut ExposureObserved) {
@@ -593,7 +597,7 @@ mod tests {
         let selected = exposure("selected", -10);
         let events = vec![event(1, stock), event(2, selected.clone())];
         let mut out = String::new();
-        comparisons(&mut out, &events, Some(selected.profile.ccd()));
+        compare(&mut out, &events, selected.profile.ccd());
         assert!(out.contains("no matching stock/selected class"), "{out}");
     }
 
@@ -608,7 +612,7 @@ mod tests {
             event(3, selected.clone()),
         ];
         let mut out = String::new();
-        comparisons(&mut out, &events, Some(selected.profile.ccd()));
+        compare(&mut out, &events, selected.profile.ccd());
         assert!(
             out.contains("selected: clocks and temperature unknown"),
             "{out}"

@@ -537,6 +537,32 @@ fn ccd_projection(
     }
 }
 
+#[test]
+fn current_cap_calculation_is_distinct_from_the_committed_cap() {
+    let mut policy = projection(None);
+    let mut ccd = ccd_projection(0, &[0, 1], None);
+    ccd.evidence = Some(togi_tuner::policy::CapEvidence {
+        offset: TargetOffset::new(-2).unwrap(),
+        reason: togi_tuner::policy::CapReason::NoAdequateClass,
+        slope: togi_journal::Slope::Fallback {
+            beta: togi_journal::Finite::new(1.0).unwrap(),
+        },
+        budget: togi_tuner::cap::Rate::MACHINE_BUDGET,
+        cells: Vec::new(),
+        projected: Vec::new(),
+        uncovered: Vec::new(),
+        slope_inputs: Vec::new(),
+    });
+    policy.ccds.push(ccd);
+    let out = shown(&policy, UTC);
+    let flat = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains("CCD 0 current cap calculation: S -2; no adequate mapping class"),
+        "{out}"
+    );
+    assert!(flat.contains("0 0-1 -10 -1 fallback baseline"), "{out}");
+}
+
 /// Where each header of the CCD table starts on `line`, and where each value of a row starts.
 fn starts(line: &str) -> Vec<usize> {
     let mut out = Vec::new();

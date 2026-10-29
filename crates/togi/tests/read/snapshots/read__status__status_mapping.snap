@@ -14,10 +14,10 @@ Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
 CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 0   0-7   0   0   fallback baseline unknown      0         64      129
 1   8-15  0   0   fallback baseline unknown      0         64      128
-  CCD 0 cap evidence: unknown edge; 1.5 h eligible mapping witnesses; 129
-    coverage gaps
-  CCD 1 cap evidence: unknown edge; 1.5 h eligible mapping witnesses; 128
-    coverage gaps
+  CCD 0 current cap calculation: S 0; unknown edge; 1.5 h eligible mapping
+    witnesses; 129 coverage gaps
+  CCD 1 current cap calculation: S 0; unknown edge; 1.5 h eligible mapping
+    witnesses; 128 coverage gaps
   CCD 0 uncovered for the cap, no observations: R8
     ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 0 120s
     isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light

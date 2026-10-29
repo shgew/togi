@@ -56,7 +56,7 @@ The machine incremental hazard goal is 1 crash per 3,000 applied hours, divided
   among CCDs. Poisson bounds and log-linear projection are modeling assumptions,
   not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that
   stock meets the hazard goal.
-Exact applied day profile: CCD 0 0, CCD 1 0
+Exact baseline stock profile: CCD 0 0, CCD 1 0
 exact profile: 0.0h observed, 0 crashes
 stock (CO 0): 0.0h observed, 0 crashes
 0 unknown intervals across recorded day intervals; downtime and uncheckpointed

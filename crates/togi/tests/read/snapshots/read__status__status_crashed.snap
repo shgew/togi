@@ -16,10 +16,10 @@ CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
   bound by R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
            120s isolated
 1   8-15  0   0   fallback baseline unknown      0         80      135
-  CCD 0 cap evidence: mapping rate bound; 2 h eligible mapping witnesses; 129
-    coverage gaps
-  CCD 1 cap evidence: unknown edge; 2 h eligible mapping witnesses; 135 coverage
-    gaps
+  CCD 0 current cap calculation: S 0; mapping rate bound; 2 h eligible mapping
+    witnesses; 129 coverage gaps
+  CCD 1 current cap calculation: S 0; unknown edge; 2 h eligible mapping
+    witnesses; 135 coverage gaps
   CCD 0 uncovered for the cap, no observations: R8
     ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 0 120s
     isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3

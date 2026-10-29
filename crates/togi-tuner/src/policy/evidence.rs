@@ -20,6 +20,15 @@ pub(super) struct GroupKey {
     pub(super) contents: Vec<WorkloadContent>,
 }
 
+impl GroupKey {
+    /// Membership in this evidence context, independent of a trial's profile or purpose.
+    pub(super) fn matches(&self, observed: &ExposureObserved) -> bool {
+        self.firmware == observed.firmware
+            && self.epoch == observed.epoch
+            && self.contents == observed.class.workloads
+    }
+}
+
 /// One cap cell of a class, merged over the exposures that share its offset, purpose and adequacy.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct CapCell {

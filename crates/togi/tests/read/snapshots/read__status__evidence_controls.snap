@@ -14,10 +14,10 @@ Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
 CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 0   0-7   0   -   -        -        unknown      -         -       -
 1   8-15  0   -   -        -        unknown      -         -       -
-  CCD 0 cap evidence: no adequate mapping class; 0 h eligible mapping witnesses;
-    9 coverage gaps
-  CCD 1 cap evidence: no adequate mapping class; 0 h eligible mapping witnesses;
-    9 coverage gaps
+  CCD 0 current cap calculation: S 0; no adequate mapping class; 0 h eligible
+    mapping witnesses; 9 coverage gaps
+  CCD 1 current cap calculation: S 0; no adequate mapping class; 0 h eligible
+    mapping witnesses; 9 coverage gaps
   A CCD with no cap yet has S at offset 0.
 
 Day policy
@@ -47,7 +47,7 @@ The machine incremental hazard goal is 1 crash per 3,000 applied hours, divided
   among CCDs. Poisson bounds and log-linear projection are modeling assumptions,
   not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that
   stock meets the hazard goal.
-Exact applied day profile: CCD 0 0, CCD 1 0
+Exact baseline stock profile: CCD 0 0, CCD 1 0
 exact profile: 0.0h observed, 0 crashes
 stock (CO 0): 0.0h observed, 0 crashes
 0 unknown intervals across recorded day intervals; downtime and uncheckpointed
@@ -58,29 +58,45 @@ Cap calculation witnesses
 CCD 0: current read-only calculation S 0; no adequate mapping class; fallback
   beta=0.405465
 CCD share of incremental hazard goal: 0.00016667/h
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  0
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  1
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  2
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  3
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  4
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  5
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  6
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  7
 uncovered for the cap (no observations): R9 mprime-sse-4k-21k-all-threads serial
-  cpu 0 120s isolated
+  cpu 0 120s isolated cores 0-7
 CCD 1: current read-only calculation S 0; no adequate mapping class; fallback
   beta=0.405465
 CCD share of incremental hazard goal: 0.00016667/h
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
-uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  8
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  9
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  10
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  11
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  12
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  13
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  14
+uncovered for the cap (no observations): R1 mprime-sse-4k-21k 90s isolated cores
+  15
 uncovered for the cap (no observations): R9 mprime-sse-4k-21k-all-threads serial
-  cpu 8 120s isolated
+  cpu 8 120s isolated cores 8-15
 
 Qualification exposure
 none recorded

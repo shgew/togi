@@ -94,7 +94,12 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         }
     };
     if args.evidence {
-        evidence::write(&mut text, events, model.snapshot().policy);
+        evidence::write(
+            &mut text,
+            events,
+            model.snapshot().policy,
+            model.tuner_state(),
+        );
     }
     if let Err(error) = ctx
         .out
