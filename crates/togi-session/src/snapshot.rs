@@ -68,9 +68,32 @@ impl ReadState {
         directory: &StateDir,
         events: &[Event],
     ) -> Result<SnapshotStatus, SnapshotError> {
-        let Some((prefix, saved)) = directory.read_snapshot::<StateDocument>()? else {
+        let Some(saved) = directory.read_snapshot::<StateDocument>()? else {
             return Ok(SnapshotStatus::Missing);
         };
+        self.compare(saved, events)
+    }
+
+    /// [`Self::verify_snapshot`] of a `state.json` document the caller already read from `directory`, with the same
+    /// checks, so an auditor that inspects the raw document does not parse it twice.
+    ///
+    /// # Errors
+    ///
+    /// Returns a rejected snapshot or a journal tail that cannot be folded.
+    pub fn verify_document(
+        &self,
+        directory: &StateDir,
+        document: serde_json::Value,
+        events: &[Event],
+    ) -> Result<SnapshotStatus, SnapshotError> {
+        self.compare(directory.verify_snapshot_document(document)?, events)
+    }
+
+    fn compare(
+        &self,
+        (prefix, saved): (togi_journal::snapshot::Prefix, StateDocument),
+        events: &[Event],
+    ) -> Result<SnapshotStatus, SnapshotError> {
         if prefix.last_seq != saved.facts.last_seq {
             return Ok(SnapshotStatus::Different);
         }
