@@ -474,7 +474,7 @@ mod tests {
                 schema: togi_journal::SCHEMA, fixes: togi_journal::FixStamp::none(), evidence: 1 },
             cores: vec![togi_machine::CoreInfo {
                 core: togi_machine::CoreId::new(0).unwrap(),
-                ccd: togi_machine::CcdId::try_from(0).unwrap(),
+                ccd: togi_machine::CcdId::try_from(0_u8).unwrap(),
                 cpus: vec![togi_machine::CpuId::new(0).unwrap(), togi_machine::CpuId::new(1).unwrap()],
             }],
         };
