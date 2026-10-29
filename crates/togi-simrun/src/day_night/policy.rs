@@ -40,7 +40,7 @@ impl CoZero {
                 .iter()
                 .map(|info| {
                     let offset = machine.smu.offset(info.core)?.0;
-                    let depth = u8::try_from(-i64::from(offset))
+                    let depth = u8::try_from(-offset)
                         .map_err(|_| RunError::Calendar("stock readback depth"))?;
                     Ok((info.core, depth))
                 })

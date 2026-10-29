@@ -133,10 +133,11 @@ fn fixed_stock(record: &Record, rules: &Rules) -> bool {
                 && zero(&step.before)
                 && zero(&step.after)
         })
-        && record
-            .restorations
-            .iter()
-            .all(|restoration| matches!(restoration.outcome, RestorationOutcome::Blocked { .. }))
+        && record.restorations.iter().all(|restoration| {
+            matches!(restoration.outcome, RestorationOutcome::Blocked { .. })
+                && zero(&restoration.previous_profile)
+                && zero(&restoration.stock_readback)
+        })
 }
 
 struct Audit<'a> {

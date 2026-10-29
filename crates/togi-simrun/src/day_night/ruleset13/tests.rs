@@ -354,14 +354,16 @@ impl Policy for UnansweredEnd {
                 .unwrap()
                 .iter()
                 .rev()
-                .find_map(|event| match &event.payload {
-                    Payload::DayUncleanEnd(end) => Some(DayAnswer {
+                .find_map(|event| {
+                    let Payload::DayUncleanEnd(end) = &event.payload else {
+                        return None;
+                    };
+                    Some(DayAnswer {
                         boot: end.boot.clone(),
                         offsets: end.offsets,
                         answer,
                         uid: OPERATOR_UID,
-                    }),
-                    _ => None,
+                    })
                 })
                 .unwrap();
             self.inner.append(machine, answer.into(), &[])?;

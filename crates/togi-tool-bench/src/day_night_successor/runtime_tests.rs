@@ -730,6 +730,40 @@ fn stock_reports_each_decision_unit_finished_on_its_first_day(mode: UnitMode, un
 #[test_case::test_case(|record| record.policy.readback.as_mut().unwrap().set(CoreId::new(0).unwrap(), 1); "nonzero final readback")]
 #[test_case::test_case(|record| record.units[0].promotions = 1; "observed comparator promotion")]
 #[test_case::test_case(|record| record.units[0].finish.as_mut().unwrap().reason = FinishReason::Ceiling; "finish without a fixed-stock contract")]
+#[test_case::test_case(|record| {
+    let stock = record.policy.readback.unwrap();
+    record.steps.push(ProfileStep {
+        id: "stock-retreat".into(),
+        day: 1.0,
+        before: stock,
+        after: stock,
+        kind: StepKind::Retreat { event: None, units: vec![record.units[0].unit] },
+    });
+}; "non reset application")]
+#[test_case::test_case(|record| {
+    let stock = record.policy.readback.unwrap();
+    let mut nonzero = stock;
+    nonzero.set(CoreId::new(0).unwrap(), 1);
+    record.steps.push(ProfileStep {
+        id: "nonzero-reset-before".into(),
+        day: 1.0,
+        before: nonzero,
+        after: stock,
+        kind: StepKind::StockReset { epoch: record.epochs[0].id.clone() },
+    });
+}; "nonzero reset before")]
+#[test_case::test_case(|record| {
+    let stock = record.policy.readback.unwrap();
+    let mut nonzero = stock;
+    nonzero.set(CoreId::new(0).unwrap(), 1);
+    record.steps.push(ProfileStep {
+        id: "nonzero-reset-after".into(),
+        day: 1.0,
+        before: stock,
+        after: nonzero,
+        kind: StepKind::StockReset { epoch: record.epochs[0].id.clone() },
+    });
+}; "nonzero reset after")]
 #[test_case::test_case(|record| record.policy.events.push(LearningEvent {
     id: "charged-stock-event".into(),
     day: 1.0,
@@ -765,6 +799,48 @@ fn no_ledger_learning_audit_requires_fixed_stock_evidence(invalidate: fn(&mut su
     invalidate(&mut record);
     assert!(!learning::audit(&record, &rules).reported);
     assert!(record.policy.allowance.is_none());
+}
+
+#[test_case::test_case(true; "nonzero previous profile")]
+#[test_case::test_case(false; "nonzero stock readback")]
+fn fixed_stock_rejects_nonzero_blocked_restoration_history(previous: bool) {
+    let lab = Lab::new(&[SCENARIO], 1);
+    let mut record = super::score::fixture::Spec::new(SCENARIO, SEED, 2.0)
+        .stock()
+        .restore(super::score::fixture::Restore::Blocked)
+        .build(&lab);
+    record.policy.allowance = None;
+    for summary in &mut record.units {
+        let finish = summary.finish.as_mut().expect("stock finish");
+        finish.reason = FinishReason::FixedStock;
+        finish.day = 1.0;
+    }
+    record.policy.finishes = record
+        .units
+        .iter()
+        .filter_map(|unit| unit.finish.clone())
+        .collect();
+    record.validate().expect("structurally valid stock history");
+    let rules = Rules::new(&lab.registration);
+    assert!(learning::audit(&record, &rules).reported);
+    let restoration = record
+        .restorations
+        .first_mut()
+        .expect("blocked firmware restoration");
+    assert!(matches!(
+        restoration.outcome,
+        RestorationOutcome::Blocked { .. }
+    ));
+    let profile = if previous {
+        &mut restoration.previous_profile
+    } else {
+        &mut restoration.stock_readback
+    };
+    profile.set(CoreId::new(0).unwrap(), 1);
+    record
+        .validate()
+        .expect("representation alone cannot establish fixed-stock history");
+    assert!(!learning::audit(&record, &rules).reported);
 }
 
 #[test]

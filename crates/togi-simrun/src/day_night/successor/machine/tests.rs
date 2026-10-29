@@ -455,7 +455,7 @@ fn a_checkpointed_launch_reaches_the_delayed_onset_that_separate_launches_cannot
     let class = full_class(&scenario)
         .with_duration(Duration::from_mins(5))
         .unwrap();
-    let mut runtime = Runtime::new(scenario.clone(), SEED).unwrap();
+    let mut runtime = Runtime::new(scenario, SEED).unwrap();
     let mut machine = runtime.seams();
     set_all(&mut machine, 25);
     runtime.drain_observations();
@@ -560,7 +560,10 @@ fn non_cpu_day_reports_the_registered_answer_beside_its_metric_cause(
     assert_eq!(event.answer, answer);
     assert!(runtime.0.borrow().non_cpu_today);
     let observation = runtime.drain_observations().pop().unwrap();
-    assert_eq!(observation.after - observation.before, duration / 2);
+    assert_eq!(
+        observation.after.checked_sub(observation.before).unwrap(),
+        duration / 2
+    );
     let ObservationKind::Active {
         cause: ledger,
         intended,
@@ -583,7 +586,7 @@ fn a_non_cpu_interruption_happens_once_per_day(id: &str, day: u32) {
     let duration = class.duration();
     let first = runtime.active(&class, duration).unwrap();
     assert!(matches!(first.cause, Some(Cause::Graphics | Cause::Power)));
-    let remaining = duration - first.elapsed;
+    let remaining = duration.checked_sub(first.elapsed).unwrap();
     let scenario = runtime.scenario().clone();
     let stock = Profile::uniform(scenario.topology(), Depth::default());
     let history = TruthState::cold(scenario.topology()).unwrap();
