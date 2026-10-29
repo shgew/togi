@@ -2,15 +2,18 @@
 
 use std::fmt::Write as _;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use togi_journal::{Event, NightId, Payload};
-use togi_machine::BootId;
+use togi_machine::{BootId, object_only};
 
-/// The first observed day boot after the latest night. Socket data, not a journal payload.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Report {
-    pub boot: BootId,
-    pub text: String,
+object_only! {
+    /// The first observed day boot after the latest night. Socket data, not a journal payload.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Report {
+        pub boot: BootId,
+        pub text: String,
+    }
 }
 
 impl Report {

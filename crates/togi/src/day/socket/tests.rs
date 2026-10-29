@@ -195,6 +195,22 @@ fn the_morning_report_is_read_only_socket_data() {
     assert_eq!(morning, Some(report));
 }
 
+#[test_case(br#"{"questions":{"pending":[],"morning":["boot","text"]}}"#; "positional morning refused")]
+#[test_case(br#"{"questions":{"pending":[],"morning":{"boot":"boot","text":"text","extra":true}}}"#; "unknown morning field refused")]
+fn malformed_morning_reports_are_refused(bytes: &[u8]) {
+    assert!(read_reply(&mut Cursor::new(bytes)).is_err());
+}
+
+#[test]
+fn a_reply_without_a_morning_report_remains_compatible() {
+    let reply = read_reply(&mut Cursor::new(br#"{"questions":{"pending":[]}}"#)).unwrap();
+    let Reply::Questions { pending, morning } = reply else {
+        panic!("questions reply must decode without a morning field")
+    };
+    assert_eq!(pending, Vec::new());
+    assert_eq!(morning, None);
+}
+
 #[test]
 fn answers_are_durable_associated_with_profile_and_can_be_changed() {
     let mut journal = crate::day::tests::journal();

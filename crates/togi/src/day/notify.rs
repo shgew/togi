@@ -671,6 +671,54 @@ mod tests {
         );
     }
 
+    #[test_case(
+        Ok(Output {
+            status: ExitStatus::from_raw(1 << 8),
+            stdout: b"frozen\n".to_vec(),
+            stderr: Vec::new(),
+        }),
+        "notify-send failed";
+        "nonzero exit"
+    )]
+    #[test_case(
+        Err(togi_command::Error::Spawn {
+            program: "notify-send".into(),
+            source: std::io::Error::other("not installed"),
+        }),
+        "cannot start notify-send: not installed";
+        "command error"
+    )]
+    fn a_failed_morning_notification_stops_before_questions(
+        notification: Result<Output, togi_command::Error>,
+        message: &str,
+    ) {
+        let report = crate::morning::Report {
+            boot: boot("morning"),
+            text: "Day application is restricted to stock (CO 0).".into(),
+        };
+        let desktop = Desktop {
+            actions: true,
+            ..Desktop::new(
+                [Ok(Reply::Questions {
+                    pending: vec![end("crashed")],
+                    morning: Some(report.clone()),
+                })],
+                [notification],
+            )
+        };
+        let mut ticks = Ticks::new([]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!(
+            (exit, err),
+            (Exit::Error, format!("togi day notify: {message}\n")),
+        );
+        assert_eq!(*desktop.shown.borrow(), [morning_invocation(&report)]);
+        assert_eq!(*desktop.requests.borrow(), [Seen::Questions]);
+        assert!(ticks.slept.is_empty());
+    }
+
     #[test]
     fn a_failed_notify_send_ends_the_loop_without_an_answer() {
         let desktop = Desktop::new(
