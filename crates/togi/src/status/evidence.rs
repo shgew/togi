@@ -156,7 +156,7 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection) {
                 ),
             ),
             CapReason::Rate { class } => {
-                line(out, &format!("binding class: {}", class_word(class)))
+                line(out, &format!("binding class: {}", class_word(class)));
             }
             CapReason::NoAdequateClass | CapReason::UnknownEdge | CapReason::NoJustifiedDecay => {}
         }

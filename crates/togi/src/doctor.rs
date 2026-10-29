@@ -44,7 +44,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// it. On a platform other than
 /// Linux it reports that hardware runs need Linux and exits 1 before reading anything.
 ///
-/// With --day, check CPU/ryzen_smu identity, current offset readback, PID 1's armed hardware
+/// With --day, check CPU and `ryzen_smu` identity, current offset readback, PID 1's armed hardware
 /// watchdog (including the shared counting check where supported), this boot's entries in the
 /// persistent system journal, and the installed GRUB or systemd-boot setup. Also require a
 /// recorded, complete CO-0 baseline or restoration receipt citing this boot's zero readbacks.
