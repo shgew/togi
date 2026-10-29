@@ -12,10 +12,11 @@ use togi_journal::{
     QualificationPurpose, Queue, ReproductionState, Resolution, RetreatCause, Slope, StepKind,
     TaskId, UncoveredReason, VetoState,
 };
-use togi_machine::{CcdProfile, CoreId, CoreSet};
+use togi_machine::{CcdProfile, CoreId, CoreSet, TargetOffset};
 use togi_tuner::policy::{
-    CcdProjection, DayProjection, FirmwareValidity, NightProjection, Projection, QualificationStage,
+    DayProjection, FirmwareValidity, NightProjection, Projection, QualificationStage, UnitProjection,
 };
+use togi_tuner::unit::{UnitId, UnitProfile};
 
 use togi_watch::model::StopView;
 use togi_watch::words::age;
@@ -189,10 +190,20 @@ fn counted_words<'a>(classes: impl Iterator<Item = &'a ExposureClass>) -> String
         .join("; ")
 }
 
-fn profile_word(profile: &CcdProfile) -> String {
+fn profile_word(profile: &UnitProfile) -> String {
+    profile_words(profile.iter())
+}
+
+fn ccd_profile_word(profile: &CcdProfile) -> String {
+    profile_words(profile.iter().map(|(ccd, offset)| (UnitId::Ccd(ccd), offset)))
+}
+
+fn profile_words(profile: impl Iterator<Item = (UnitId, TargetOffset)>) -> String {
     let parts: Vec<String> = profile
-        .iter()
-        .map(|(ccd, offset)| format!("CCD {ccd} {}", offset.get()))
+        .map(|(unit, offset)| match unit {
+            UnitId::Ccd(ccd) => format!("CCD {ccd} {}", offset.get()),
+            UnitId::Core(core) => format!("core {core} {}", offset.get()),
+        })
         .collect();
     if parts.is_empty() {
         "none".to_owned()
@@ -241,12 +252,12 @@ const CCD_COLUMNS: [(&str, usize); 10] = [
 const CORES_WIDTH: usize = 9;
 
 pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
-    if policy.ccds.is_empty() {
+    if policy.units.is_empty() {
         return;
     }
     let header = CCD_COLUMNS.map(|(name, _)| name.to_owned());
     let rows: Vec<([String; 10], Option<String>, Option<String>)> =
-        policy.ccds.iter().map(ccd_row).collect();
+        policy.units.iter().map(ccd_row).collect();
     let widths: [usize; 10] = std::array::from_fn(|column| {
         rows.iter()
             .map(|(cells, _, _)| cells[column].chars().count())
@@ -262,8 +273,8 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
             wrap(out, "  bound by ", "           ", class);
         }
     }
-    for ccd in &policy.ccds {
-        let detail = match &ccd.evidence {
+    for unit in &policy.units {
+        let detail = match &unit.evidence {
             Some(evidence) => {
                 let seconds = evidence
                     .cells
@@ -271,7 +282,7 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
                     .fold(0_u64, |total, cell| total.saturating_add(cell.eligible_s));
                 format!(
                     "CCD {} current cap calculation: S {}; {}; {} h eligible mapping witnesses; {} coverage gaps",
-                    ccd.ccd,
+                    unit.unit,
                     evidence.offset.get(),
                     evidence.reason.label(),
                     hours(seconds),
@@ -280,13 +291,13 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
             }
             None => format!(
                 "CCD {} cap evidence: context unavailable; eligible hours and gaps unknown",
-                ccd.ccd
+                unit.unit
             ),
         };
         wrap(out, "  ", "    ", &detail);
     }
-    for ccd in &policy.ccds {
-        match &ccd.cap {
+    for unit in &policy.units {
+        match &unit.cap {
             Some(cap) if !cap.uncovered.is_empty() => {
                 for &reason in UncoveredReason::ALL {
                     let mut classes = cap
@@ -300,7 +311,7 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
                     }
                     let text = format!(
                         "CCD {} uncovered for the cap, {}: {}",
-                        ccd.ccd,
+                        unit.unit,
                         uncovered_reason_word(reason),
                         counted_words(classes)
                     );
@@ -310,8 +321,8 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
             Some(_) | None => {}
         }
     }
-    if policy.ccds.iter().any(|ccd| {
-        ccd.cap
+    if policy.units.iter().any(|unit| {
+        unit.cap
             .as_ref()
             .is_some_and(|cap| !cap.uncovered.is_empty())
     }) {
@@ -322,7 +333,7 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
             "A class is uncovered for the cap when mapping has not adequately exposed it or it lies outside the mapping projection; uncovered is never read as safe.",
         );
     }
-    if policy.ccds.iter().any(|ccd| ccd.cap.is_none()) {
+    if policy.units.iter().any(|unit| unit.cap.is_none()) {
         wrap(
             out,
             "  ",
@@ -347,8 +358,8 @@ fn ccd_line(out: &mut String, cells: &[String; 10], widths: &[usize; 10]) {
 
 /// A CCD's cells, in [`CCD_COLUMNS`] order; its full core list when the CORES cell had to count the cores instead;
 /// and the class its cap is bound by when a rate binds it.
-fn ccd_row(ccd: &CcdProjection) -> ([String; 10], Option<String>, Option<String>) {
-    let (cap, slope, binding, covered, uncovered) = match &ccd.cap {
+fn ccd_row(unit: &UnitProjection) -> ([String; 10], Option<String>, Option<String>) {
+    let (cap, slope, binding, covered, uncovered) = match &unit.cap {
         Some(cap) => (
             cap.offset.get().to_string(),
             slope_word(&cap.slope).to_owned(),
@@ -364,26 +375,26 @@ fn ccd_row(ccd: &CcdProjection) -> ([String; 10], Option<String>, Option<String>
             "-".to_owned(),
         ),
     };
-    let ranges = core_ranges(ccd.cores);
+    let ranges = core_ranges(unit.cores);
     let (cores, listed) = if ranges.chars().count() > CORES_WIDTH {
-        (format!("{} cores", ccd.cores.len()), Some(ranges))
+        (format!("{} cores", unit.cores.len()), Some(ranges))
     } else {
         (ranges, None)
     };
     let cells = [
-        ccd.ccd.to_string(),
+        unit.unit.to_string(),
         cores,
-        ccd.day.get().to_string(),
+        unit.day.get().to_string(),
         cap,
         slope,
         binding,
-        edge_word(ccd.edge.as_ref()),
-        ccd.remaining
+        edge_word(unit.edge.as_ref()),
+        unit.remaining
             .map_or("-".to_owned(), |left| left.to_string()),
         covered,
         uncovered,
     ];
-    let bound = match ccd.cap.as_ref().map(|cap| &cap.binding) {
+    let bound = match unit.cap.as_ref().map(|cap| &cap.binding) {
         Some(Binding::Rate { class }) => Some(class_word(class)),
         Some(Binding::EdgeMargin {} | Binding::Baseline {}) | None => None,
     };
@@ -423,7 +434,7 @@ fn hold_reason(reason: &HoldReason) -> String {
         HoldReason::Expired {} => "qualification expired".to_owned(),
         HoldReason::QualificationFailed { profile, .. } => format!(
             "{} failed qualification and stays blocked",
-            profile_word(profile.ccd())
+            ccd_profile_word(profile.ccd())
         ),
     }
 }
@@ -445,7 +456,7 @@ fn changed_word(changed: &[togi_machine::CcdId]) -> String {
 }
 
 fn step_lines(out: &mut String, seq: togi_journal::Seq, step: &DayStep) {
-    let proposed = profile_word(step.proposed.ccd());
+    let proposed = ccd_profile_word(step.proposed.ccd());
     let head = match &step.step {
         StepKind::Hold { blocked_by } => {
             let reasons: Vec<String> = blocked_by.iter().map(hold_reason).collect();
@@ -470,7 +481,7 @@ fn step_lines(out: &mut String, seq: togi_journal::Seq, step: &DayStep) {
                 let _ = write!(
                     head,
                     "; the wanted {} is not qualified, so it falls back to CO 0 until it is",
-                    profile_word(wanted.ccd())
+                    ccd_profile_word(wanted.ccd())
                 );
             }
             head
@@ -663,7 +674,7 @@ fn night_part(out: &mut String, night: &NightProjection, policy: &Projection, at
         None => out.push_str("current task: none\n"),
     }
     for mapping in &night.mapping {
-        let mut text = format!("mapping CCD {}:", mapping.ccd);
+        let mut text = format!("mapping CCD {}:", mapping.unit);
         match mapping.cursor {
             Some(cursor) => {
                 let _ = write!(text, " next offset {}", cursor.get());

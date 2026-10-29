@@ -9,6 +9,7 @@ use togi_tuner::policy::{
     DayProjection, FirmwareValidity, MappingProjection, NightProjection, Projection,
     QualificationProgress, ReproductionProjection,
 };
+use togi_tuner::unit::{UnitId, UnitProfile};
 
 use super::dead_end_label;
 use super::policy::{Where, activity, sections};
@@ -293,7 +294,7 @@ fn a_changed_answer_replaces_the_earlier_one() {
 fn projection(night: Option<NightProjection>) -> Projection {
     Projection {
         applied: None,
-        ccds: Vec::new(),
+        units: Vec::new(),
         day: DayProjection {
             hold: None,
             last_step: None,
@@ -332,7 +333,7 @@ fn night() -> NightProjection {
         tasks: Vec::new(),
         current: None,
         mapping: vec![MappingProjection {
-            ccd: CcdId::new(1).unwrap(),
+            unit: UnitId::Ccd(CcdId::new(1).unwrap()),
             cursor: Some(TargetOffset::new(-12).unwrap()),
             bracket: Some((
                 TargetOffset::new(-20).unwrap(),
@@ -340,7 +341,7 @@ fn night() -> NightProjection {
             )),
         }],
         qualification: Some(QualificationProgress {
-            profile: CcdProfile::zero([CcdId::new(0).unwrap()]).unwrap(),
+            profile: UnitProfile::of_ccd(&CcdProfile::zero([CcdId::new(0).unwrap()]).unwrap()),
             outstanding: Vec::new(),
             witnessed: 3,
             eligible_s: 900,
@@ -516,9 +517,9 @@ fn ccd_projection(
     ccd: i64,
     cores: &[i64],
     edge: Option<togi_journal::Edge>,
-) -> togi_tuner::policy::CcdProjection {
-    togi_tuner::policy::CcdProjection {
-        ccd: CcdId::new(ccd).unwrap(),
+) -> togi_tuner::policy::UnitProjection {
+    togi_tuner::policy::UnitProjection {
+        unit: UnitId::Ccd(CcdId::new(ccd).unwrap()),
         cores: cores.iter().map(|&id| core(id)).collect(),
         edge,
         evidence: None,
@@ -583,7 +584,7 @@ fn the_ccd_table_keeps_every_value_under_its_header_within_eighty_columns(
     edge: Option<togi_journal::Edge>,
 ) {
     let mut policy = projection(None);
-    policy.ccds = vec![
+    policy.units = vec![
         ccd_projection(0, &[0, 1, 2, 3, 4, 5, 6, 7], edge.clone()),
         ccd_projection(1, &[8, 9, 10, 11, 12, 13, 14, 15], edge),
     ];
@@ -614,7 +615,7 @@ fn the_ccd_table_keeps_every_value_under_its_header_within_eighty_columns(
 #[test]
 fn noncontiguous_cores_are_counted_in_the_ccd_table_and_listed_under_their_row() {
     let mut policy = projection(None);
-    policy.ccds = vec![
+    policy.units = vec![
         ccd_projection(0, &[0, 2, 4, 6, 8, 10, 12, 14], None),
         ccd_projection(1, &[1, 3, 5, 7, 9, 11, 13, 15], None),
     ];
