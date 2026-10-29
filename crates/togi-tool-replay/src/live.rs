@@ -104,6 +104,7 @@ pub(crate) fn play(
     run_with(
         feed,
         &Config {
+            day_controls: false,
             watch: None,
             tick: Some(TICK),
             stop: None,
@@ -149,6 +150,7 @@ mod tests {
 
     fn screen() -> Screen {
         Screen {
+            day_controls: false,
             view: togi_watch::screen::View::Log,
             keys: true,
             scroll: usize::MAX,

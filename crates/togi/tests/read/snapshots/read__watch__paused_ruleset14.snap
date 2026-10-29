@@ -1,0 +1,45 @@
+---
+source: crates/togi/tests/read/status.rs
+expression: text(&ran.stdout)
+---
+  togi   00:00:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+
+  ► DAY
+
+  ▌  DAY   No trial has run yet; the tuner records what it decides before the first one starts.
+
+
+  BETWEEN TRIALS ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  next trial: deciding
+
+
+
+
+
+
+
+
+
+
+  CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
+  D -5 · C unknown · U unknown                                                                                            D 0 · C unknown · U unknown
+  held: unknown U, unknown U, campaign history unavailable, paused · hold 0 / 50 h · no candidate                         held: unknown U, unknown U, campaign history unavailable, paused · hold 0 / 50 h · no candidate
+    00    ?            ▄▄▄▄▄                                                                                                08    ?
+    01    ?            ▄▄▄▄▄                                                                                                09    ?
+    02    ?            ▄▄▄▄▄                                                                                                10    ?
+    03    ?            ▄▄▄▄▄                                                                                                11    ?
+    04    ?            ▄▄▄▄▄                                                                                                12    ?
+    05    ?            ▄▄▄▄▄                                                                                                13    ?
+    06    ?            ▄▄▄▄▄                                                                                                14    ?
+    07    ?            ▄▄▄▄▄                                                                                                15    ?
+
+  DAY ─────────────────────────────── applied D 0:0 1:0 2:0 3:0 4:0 5:0 6:0 7:0 8:0 9:0 10:0 11:0 12:0 13:0 14:0 15:0     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+  permission: experimental hold + exact night qualification
+  allowance: history unavailable; new exploration blocked                                                                 00:00  day      day paused until the next cold boot by uid 1000
+  experimental: 0.000 clean hours; rate bound unavailable · 0 crashes / 0.000 observed h                                  00:00  apply    applied day profile CCD0 -5, CCD1 0
+  paused saved D, not readback: 0:-5 1:-5 2:-5 3:-5 4:-5 5:-5 6:-5 7:-5 8:0 9:0 10:0 11:0 12:0 13:0 14:0 15:0             00:00  start    session started on 16 cores
+  CCD 0: held/unfinished: unknown U, unknown U, campaign history unavailable, paused; hold 0.000 / 50.000 h at...
+  CCD 1: held/unfinished: unknown U, unknown U, campaign history unavailable, paused; hold 0.000 / 50.000 h at...
+  firmware    valid
+  all days    0.0h observed, 0 crashes · 0 unknown intervals
+  stock CO 0  0.0h observed, 0 crashes · observations, not a bound

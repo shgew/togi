@@ -109,6 +109,7 @@ impl TuningClock {
             | Payload::DayVeto(_)
             | Payload::DayHold(_)
             | Payload::DayFreeze(_)
+            | Payload::DayPause(_)
             | Payload::DayInterval(_)
             | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_) => {}

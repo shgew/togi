@@ -913,6 +913,13 @@ pub fn words(kind: EventKind) -> Words {
         }
         EventKind::DayHold => Words::said(Tag::Hold, of!(DayHold, |d| hold_line(d))),
         EventKind::DayFreeze => Words::said(Tag::Freeze, of!(DayFreeze, |d| Some(freeze_line(d)))),
+        EventKind::DayPause => Words::said(Tag::Day, |payload| {
+            if let Payload::DayPause(_) = payload {
+                Some(line(Tag::Day, Tone::Plain, payload.message()))
+            } else {
+                None
+            }
+        }),
         EventKind::SessionImported => {
             Words::said(Tag::Import, of!(SessionImported, |d| Some(import_line(d))))
         }

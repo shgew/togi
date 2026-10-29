@@ -495,6 +495,7 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
             | Payload::NightReproduction(_)
             | Payload::DayHold(_)
             | Payload::DayFreeze(_)
+            | Payload::DayPause(_)
             | Payload::DayInterval(_)
             | Payload::DayImported(_)
             | Payload::UnitMapping(_)
@@ -931,6 +932,7 @@ fn raw_kind(kind: EventKind) -> bool {
             | EventKind::DayAnswer
             | EventKind::DayRecord
             | EventKind::DayFault
+            | EventKind::DayPause
             | EventKind::Mce
     )
 }

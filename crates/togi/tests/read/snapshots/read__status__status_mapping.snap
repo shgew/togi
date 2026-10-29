@@ -6,7 +6,7 @@ night since 00:00, 11h55m elapsed: mapping (task mapping #2)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#2324] trial 0388 core 00 offset -5 R1 mprime SSE 4K-21K 90 s
+in flight: [#2325] trial 0388 core 00 offset -5 R1 mprime SSE 4K-21K 90 s
   together mapping task mapping #2 night #34 testing CCD0 at -5
 
 UNIT   CORES                  D  C        D-C  HOLD h  STATE
@@ -26,11 +26,11 @@ allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
   U: unknown
   state: held: unknown edge for CCD 0; unknown edge for CCD 1
-  diagnostic S (non-authorizing): 0 [#1917]
+  diagnostic S (non-authorizing): 0 [#2296]
 unit: CCD 1, phase coarse, parent none, inherited start 0
   U: unknown
   state: held: unknown edge for CCD 0; unknown edge for CCD 1
-  diagnostic S (non-authorizing): 0 [#2296]
+  diagnostic S (non-authorizing): 0 [#2297]
 current exact profile daily evidence: 0 h; 0 crashes []
 experimental: rate bound unavailable (95%, fixed-rate model)
 firmware restoration: none

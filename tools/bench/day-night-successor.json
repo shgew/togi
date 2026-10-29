@@ -1,0 +1,2676 @@
+{
+  "id": "day-night-successor",
+  "version": 1,
+  "lambda_per_hour": {
+    "numerator": 1,
+    "denominator": 3000
+  },
+  "slopes": [
+    1.5,
+    2.0
+  ],
+  "seeds": {
+    "dev": {
+      "first": 20001,
+      "count": 200
+    },
+    "holdout": {
+      "first": 30001,
+      "count": 200
+    }
+  },
+  "holdout": {
+    "authorized_by": "The repository owner only: unsealing requires the owner's explicit authorization recorded in issue #1483, and only the owner runs the confirmation.",
+    "procedure": "Holdout is refused by the pinned runner. The command field records refused invocations, not an executable confirmation procedure. A later reviewed implementation and the repository owner's explicit authorization in issue #1483 are required before any unsealing, after candidate/source/parameters are frozen and the registered development read is accepted; only the owner runs the confirmation. No execution or inspection of per-seed generated truth, partial tables or outcome-driven selection before then. Exactly one confirmation per candidate/slope; any executed confirmation is spent, including an interruption. A failed confirmation stays failed. Redesign requires a new registration and unused confirmation allocation. No resume. A command refused before execution does not unseal or spend holdout.",
+    "command": "just bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split holdout --policy successor --slope 1.5 --jobs 16 --out successor-registered-holdout-successor-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split holdout --policy successor --slope 2.0 --jobs 16 --out successor-registered-holdout-successor-2.0.jsonl",
+    "confirmations_per_slope": 1,
+    "spent_when_started": true,
+    "inspection_before_freeze": false
+  },
+  "calendar": {
+    "first_day": 1,
+    "days": 730,
+    "daily_active_hours": 8,
+    "night_hours": 8,
+    "night_weekdays": [
+      0,
+      2,
+      4
+    ],
+    "year_days": 365,
+    "firmware_change_day": 181,
+    "sleep": "Sixteen hours on days without a night; eight hours after an eight-hour night. Sleep cools thermal history and is not active exposure. Reference truth uses the same ordered eight-hour daily mix at periodic equilibrium with sixteen-hour sleep; actual trajectory includes preceding nights."
+  },
+  "scenarios": [
+    {
+      "name": "successor-edge-shallow",
+      "description": "Shallow edge with seeded nonnegative jitter.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 5
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": 0
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 2
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-edge-deep",
+      "description": "Deep edge; benign useful-depth criterion applies.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 48
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": true,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-no-write-limit-failure",
+      "description": "Zero CO-added hazard throughout physical depths 0–50; operational envelope remains 0–45 and every retained unit must reach at least 44.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 70
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": true,
+      "retention": false,
+      "unit_depth_floor": 44,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-slope-flat",
+      "description": "Pinned successor catalog family with exact physical-core curves, source allocation and workload identities.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 1.2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-slope-steep",
+      "description": "Pinned successor catalog family with exact physical-core curves, source allocation and workload identities.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 6
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-flattening-tail",
+      "description": "Pinned successor catalog family with exact physical-core curves, source allocation and workload identities.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 3
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        },
+        {
+          "name": "tail_growth",
+          "value": 1.2
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-flatter-dangerous-class",
+      "description": "R2 binds ten counts shallower with growth 1.2.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 3
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-delayed-onset",
+      "description": "CO-added onset follows 600 uninterrupted seconds of the exact class/profile.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 20
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "adversarial",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-thermal-history",
+      "description": "Pinned successor catalog family with exact physical-core curves, source allocation and workload identities.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 20
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "adversarial",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-hidden-daily",
+      "description": "R2 workload index 2 binds ten counts shallower and is absent at night.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "adversarial",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-partial-only",
+      "description": "Partial R7 load binds eight counts shallower; other placements are fifteen deeper.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "adversarial",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-single-core-binding",
+      "description": "First physical core of each CCD binds in R1 alone.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-jointly-binding",
+      "description": "Two-or-more loaded cores bind seven counts shallower; single-core classes are twelve deeper.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-r8-nonbinding",
+      "description": "R8 edge is eighteen counts deeper and cannot substitute for binding-class evidence.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-both-ccd-interaction",
+      "description": "Individual curves are fifteen counts deeper; one machine interaction joins physical cores 0 and 8 with edge seven shallower.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-stock-background",
+      "description": "Independent stock background competes at 1/3000 per hour; per-unit retention criterion applies.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0.0003333333333333333
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": true,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-single-ccd",
+      "description": "One eight-core CCD, with four ordered two-hour daily blocks.",
+      "topology": {
+        "ccds": 1,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-moving-cap",
+      "description": "Edge shallows one count before days 46, 91, 136, 181, 226, 271, 316, 361, 406 and 451; no further shifts.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        },
+        {
+          "id": "moving-1",
+          "start_day": 46,
+          "context": "ctx-initial",
+          "description": "Base edge minus 1 counts; firmware context unchanged."
+        },
+        {
+          "id": "moving-2",
+          "start_day": 91,
+          "context": "ctx-initial",
+          "description": "Base edge minus 2 counts; firmware context unchanged."
+        },
+        {
+          "id": "moving-3",
+          "start_day": 136,
+          "context": "ctx-initial",
+          "description": "Base edge minus 3 counts; firmware context unchanged."
+        },
+        {
+          "id": "moving-4",
+          "start_day": 181,
+          "context": "ctx-initial",
+          "description": "Base edge minus 4 counts; firmware context unchanged."
+        },
+        {
+          "id": "moving-5",
+          "start_day": 226,
+          "context": "ctx-initial",
+          "description": "Base edge minus 5 counts; firmware context unchanged."
+        },
+        {
+          "id": "moving-6",
+          "start_day": 271,
+          "context": "ctx-initial",
+          "description": "Base edge minus 6 counts; firmware context unchanged."
+        },
+        {
+          "id": "moving-7",
+          "start_day": 316,
+          "context": "ctx-initial",
+          "description": "Base edge minus 7 counts; firmware context unchanged."
+        },
+        {
+          "id": "moving-8",
+          "start_day": 361,
+          "context": "ctx-initial",
+          "description": "Base edge minus 8 counts; firmware context unchanged."
+        },
+        {
+          "id": "moving-9",
+          "start_day": 406,
+          "context": "ctx-initial",
+          "description": "Base edge minus 9 counts; firmware context unchanged."
+        },
+        {
+          "id": "moving-10",
+          "start_day": 451,
+          "context": "ctx-initial",
+          "description": "Base edge minus 10 counts; firmware context unchanged."
+        }
+      ],
+      "transition": "moving",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 24
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        },
+        {
+          "name": "shift_period_days",
+          "value": 45
+        },
+        {
+          "name": "maximum_edge_shift",
+          "value": 10
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-firmware-change",
+      "description": "New firmware before day 181 shallows the edge eight counts; reset, requalification and whole-profile restoration remain observed without grace.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        },
+        {
+          "id": "firmware-1",
+          "start_day": 181,
+          "context": "ctx-firmware-1",
+          "description": "Base edge minus eight counts before active use; no prior-context positive credit."
+        }
+      ],
+      "transition": "firmware",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 24
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        },
+        {
+          "name": "firmware_edge_shift",
+          "value": 8
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-non-cpu-correct",
+      "description": "Registered graphics/power interruptions answered non-CPU.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-non-cpu-wrong",
+      "description": "Registered graphics/power interruptions answered CPU-suspect.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-non-cpu-missing",
+      "description": "Registered graphics/power interruptions unanswered and provisionally CPU-suspect.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "base_edge",
+          "value": 22
+        },
+        {
+          "name": "growth",
+          "value": 2
+        },
+        {
+          "name": "edge_jitter_min",
+          "value": -1
+        },
+        {
+          "name": "edge_jitter_max",
+          "value": 1
+        },
+        {
+          "name": "stock_background_per_hour",
+          "value": 0
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-within-ccd-heterogeneous",
+      "description": "Four weak edge-20 and four strong edge-40 physical cores per CCD, independently seed-permuted; CCD objective 40 counts versus per-core objective 480 (physical mean 20 versus 30).",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "weak_edge",
+          "value": 20
+        },
+        {
+          "name": "strong_edge",
+          "value": 40
+        },
+        {
+          "name": "above_edge_rate_multiplier",
+          "value": 32
+        },
+        {
+          "name": "above_edge_growth",
+          "value": 2
+        },
+        {
+          "name": "weak_cores_per_ccd",
+          "value": 4
+        },
+        {
+          "name": "ccd_objective",
+          "value": 40
+        },
+        {
+          "name": "core_objective",
+          "value": 480
+        }
+      ],
+      "coverage": "covered",
+      "benign": true,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-weak-core-hidden",
+      "description": "One seed-permuted weak core per CCD binds at edge 20 on hidden R2 workload index 2; neighbors bind at 40.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "weak_edge",
+          "value": 20
+        },
+        {
+          "name": "strong_edge",
+          "value": 40
+        },
+        {
+          "name": "above_edge_rate_multiplier",
+          "value": 32
+        },
+        {
+          "name": "above_edge_growth",
+          "value": 2
+        },
+        {
+          "name": "weak_cores_per_ccd",
+          "value": 1
+        }
+      ],
+      "coverage": "adversarial",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-weak-core-delayed",
+      "description": "One seed-permuted weak core per CCD has edge 20 and delayed onset 600 seconds; neighbors bind at 40.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "weak_edge",
+          "value": 20
+        },
+        {
+          "name": "strong_edge",
+          "value": 40
+        },
+        {
+          "name": "above_edge_rate_multiplier",
+          "value": 32
+        },
+        {
+          "name": "above_edge_growth",
+          "value": 2
+        },
+        {
+          "name": "weak_cores_per_ccd",
+          "value": 1
+        }
+      ],
+      "coverage": "adversarial",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-combined-adversary",
+      "description": "Hidden weak cores, delayed onset and within/cross-CCD interactions combined; no benign depth demand.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "weak_edge",
+          "value": 20
+        },
+        {
+          "name": "strong_edge",
+          "value": 40
+        },
+        {
+          "name": "above_edge_rate_multiplier",
+          "value": 32
+        },
+        {
+          "name": "above_edge_growth",
+          "value": 2
+        },
+        {
+          "name": "weak_cores_per_ccd",
+          "value": 1
+        },
+        {
+          "name": "interaction_depth_threshold",
+          "value": 20
+        },
+        {
+          "name": "interaction_rate_per_hour",
+          "value": 0.0013333333333333333
+        }
+      ],
+      "coverage": "adversarial",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-core-interactions",
+      "description": "Edge-40 individual cores; pairs (0,1) and (0,8) each add 4/3000 per hour only when both endpoints are loaded deeper than 20. Each source counted once.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "weak_edge",
+          "value": 20
+        },
+        {
+          "name": "strong_edge",
+          "value": 40
+        },
+        {
+          "name": "above_edge_rate_multiplier",
+          "value": 32
+        },
+        {
+          "name": "above_edge_growth",
+          "value": 2
+        },
+        {
+          "name": "weak_cores_per_ccd",
+          "value": 0
+        },
+        {
+          "name": "interaction_depth_threshold",
+          "value": 20
+        },
+        {
+          "name": "interaction_rate_per_hour",
+          "value": 0.0013333333333333333
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    },
+    {
+      "name": "successor-core-refinement",
+      "description": "Readiness fixture supplies inherited CCD depth 35, per-core ceilings 36/40 and exact single-core candidates through those ceilings. This CCD score does not evaluate a per-core policy.",
+      "topology": {
+        "ccds": 2,
+        "cores_per_ccd": 8
+      },
+      "daily_mix": [
+        {
+          "class": "catalog-daily-0",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-1",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-2",
+          "seconds": 7200
+        },
+        {
+          "class": "catalog-daily-3",
+          "seconds": 7200
+        }
+      ],
+      "epochs": [
+        {
+          "id": "initial",
+          "start_day": 1,
+          "context": "ctx-initial",
+          "description": "Initial truth; exact seed-derived parameters from the pinned catalog."
+        }
+      ],
+      "transition": "fixed",
+      "parameters": [
+        {
+          "name": "ordinary_onset_seconds",
+          "value": 0
+        },
+        {
+          "name": "delayed_onset_seconds",
+          "value": 600
+        },
+        {
+          "name": "thermal_tau_seconds",
+          "value": 1800
+        },
+        {
+          "name": "thermal_threshold_seconds",
+          "value": 600
+        },
+        {
+          "name": "weak_edge",
+          "value": 40
+        },
+        {
+          "name": "strong_edge",
+          "value": 44
+        },
+        {
+          "name": "above_edge_rate_multiplier",
+          "value": 32
+        },
+        {
+          "name": "above_edge_growth",
+          "value": 2
+        },
+        {
+          "name": "weak_cores_per_ccd",
+          "value": 4
+        },
+        {
+          "name": "inherited_ccd_depth",
+          "value": 35
+        },
+        {
+          "name": "weak_ceiling",
+          "value": 36
+        },
+        {
+          "name": "strong_ceiling",
+          "value": 40
+        }
+      ],
+      "coverage": "covered",
+      "benign": false,
+      "retention": false,
+      "unit_depth_floor": null,
+      "modes": [
+        "ccd-uniform"
+      ]
+    }
+  ],
+  "criteria": {
+    "final_in_admissible_fraction": {
+      "numerator": 1,
+      "denominator": 1
+    },
+    "held_after_finish_fraction": {
+      "numerator": 95,
+      "denominator": 100
+    },
+    "safety_grace_days": 0,
+    "post_finish_rate_of_lambda": {
+      "numerator": 1,
+      "denominator": 1
+    },
+    "poisson_diagnostic_confidence": {
+      "numerator": 95,
+      "denominator": 100
+    },
+    "allowance_limit": 2,
+    "first_step_clean_stock_hours": 50,
+    "clean_hold_hours": 50,
+    "restoration_clean_stock_hours": 50,
+    "ceiling_margin": 5,
+    "operational_max_depth": 45,
+    "physical_max_depth": 50,
+    "useful_fraction": {
+      "numerator": 90,
+      "denominator": 100
+    },
+    "useful_depth_of_reference": {
+      "numerator": 80,
+      "denominator": 100
+    },
+    "min_unit_depth": 5,
+    "settled_fraction": {
+      "numerator": 90,
+      "denominator": 100
+    },
+    "settled_horizon_day": 730,
+    "benign_median_settled_day": 180,
+    "retention_fraction": {
+      "numerator": 90,
+      "denominator": 100
+    },
+    "retention_max_loss": 1
+  },
+  "run_profiles": [
+    {
+      "profile": "reduced-dev",
+      "splits": [
+        "dev"
+      ],
+      "seeds": {
+        "kind": "first",
+        "count": 10
+      },
+      "slopes_per_invocation": 1,
+      "gate_verdict": false,
+      "label": "EXPLORATORY REDUCED DEV — NOT A REGISTERED SCORE"
+    },
+    {
+      "profile": "registered",
+      "splits": [
+        "dev",
+        "holdout"
+      ],
+      "seeds": {
+        "kind": "all"
+      },
+      "slopes_per_invocation": 1,
+      "gate_verdict": true,
+      "label": null
+    }
+  ],
+  "budgets": {
+    "reduced_dev_seconds": 1800,
+    "registered_seconds": 43200,
+    "holdout_seconds": 43200,
+    "compilation_excluded": true
+  },
+  "resources": {
+    "jobs": 16,
+    "resource_class": "16 concurrent runs on a general-purpose x86-64 CPU with at least 16 hardware threads"
+  },
+  "tolerance": {
+    "admissibility": 1e-09,
+    "hours": 1e-09
+  },
+  "unit_modes": [
+    {
+      "mode": "ccd-uniform",
+      "grouping": "One tuning unit per CCD, uniform offsets within each CCD, complete physical-core truth/readbacks retained. Each unit receives lambda/unit_count; joint/package interactions count once against lambda. A per-core policy requires its own later registration; CCD-uniform results cannot establish per-core acceptance."
+    }
+  ],
+  "sources": {
+    "simulator_revision": "f1f7bd42288c96579189decb1e69b3e137efc5c6",
+    "runner_revision": "62a5ed4c4c2579790dd1a88a52a7298e285b994e",
+    "report_revision": "4ed8e3f177c3f7da11477a3d23bad05883506fb5",
+    "binary_sha256": null,
+    "input_sha256": null,
+    "policies": [
+      {
+        "name": "successor",
+        "identity": "two-ends-D-1458-settled-2026-10-29",
+        "role": "candidate",
+        "source": {
+          "kind": "pending"
+        },
+        "parameters_sha256": "3ebb42479a3fae680c1dc05f6cfa9366ae57d4699da07948caf522058b9a9298",
+        "parameters": [
+          {
+            "name": "first_step_clean_stock_hours",
+            "value": 50
+          },
+          {
+            "name": "clean_hold_hours",
+            "value": 50
+          },
+          {
+            "name": "step_maximum",
+            "value": 5
+          },
+          {
+            "name": "half_distance_rounding_ceiling",
+            "value": 1
+          },
+          {
+            "name": "step_minimum",
+            "value": 1
+          },
+          {
+            "name": "units_per_step",
+            "value": 1
+          },
+          {
+            "name": "ceiling_margin",
+            "value": 5
+          },
+          {
+            "name": "censored_write_edge",
+            "value": -50
+          },
+          {
+            "name": "censored_ceiling",
+            "value": -45
+          },
+          {
+            "name": "allowance_limit",
+            "value": 2
+          },
+          {
+            "name": "allowance_shared_across_phases",
+            "value": 1
+          },
+          {
+            "name": "allowance_refilled",
+            "value": 0
+          },
+          {
+            "name": "provisional_events_charged",
+            "value": 1
+          },
+          {
+            "name": "reclassification_refunds_charge",
+            "value": 0
+          },
+          {
+            "name": "reclassification_reopens_stop",
+            "value": 0
+          },
+          {
+            "name": "firmware_clean_stock_hours",
+            "value": 50
+          },
+          {
+            "name": "firmware_restore_whole_profile_one_learning_step",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "name": "co-zero",
+        "identity": "stock-forever-CO-zero",
+        "role": "comparator",
+        "source": {
+          "kind": "pinned",
+          "revision": "62a5ed4c4c2579790dd1a88a52a7298e285b994e",
+          "sha256": "b798411e30fe00423e0ac46aa94784f65eac259c9324a3bbfde1b5e17309ea5b"
+        },
+        "parameters_sha256": "df94fe9d3125ea4d7edfdeea7360fdfc68fe34accb4d70dcaf65d736e286d0ba",
+        "parameters": [
+          {
+            "name": "offset",
+            "value": 0
+          }
+        ]
+      },
+      {
+        "name": "ruleset13",
+        "identity": "shipped-A-ruleset-13",
+        "role": "comparator",
+        "source": {
+          "kind": "pinned",
+          "revision": "2bc7f131b8c9cd5e397ed4623f0896ae8d5107ce",
+          "sha256": "0b44f2e250c44bc96908afb49b00183f447d9be765cd82084e3a2c8aad3ecf4a"
+        },
+        "parameters_sha256": "cce0e775274e5352e921e4b516dd020011226208725cc160a00af13a5bd3985b",
+        "parameters": [
+          {
+            "name": "ruleset",
+            "value": 13
+          },
+          {
+            "name": "ceiling_margin",
+            "value": 5
+          }
+        ]
+      }
+    ]
+  },
+  "commands": {
+    "reduced_dev": "just bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy co-zero --slope 1.5 --jobs 16 --out successor-reduced-dev-dev-co-zero-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy co-zero --slope 2.0 --jobs 16 --out successor-reduced-dev-dev-co-zero-2.0.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy ruleset13 --slope 1.5 --jobs 16 --out successor-reduced-dev-dev-ruleset13-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile reduced-dev --split dev --policy ruleset13 --slope 2.0 --jobs 16 --out successor-reduced-dev-dev-ruleset13-2.0.jsonl",
+    "registered": "just bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy co-zero --slope 1.5 --jobs 16 --out successor-registered-dev-co-zero-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy co-zero --slope 2.0 --jobs 16 --out successor-registered-dev-co-zero-2.0.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy ruleset13 --slope 1.5 --jobs 16 --out successor-registered-dev-ruleset13-1.5.jsonl\njust bench-day-night --registration tools/bench/day-night-successor.json --run-profile registered --split dev --policy ruleset13 --slope 2.0 --jobs 16 --out successor-registered-dev-ruleset13-2.0.jsonl"
+  },
+  "streams": {
+    "domains": [
+      {
+        "name": "inherited-edge-jitter",
+        "tag": "Domain::Limits=[1,0]; key=[0x4441594e49474854]"
+      },
+      {
+        "name": "topology-permutation",
+        "tag": "Domain::Limits=[1,0]; key=[0x535543434553534f]"
+      },
+      {
+        "name": "core-failure",
+        "tag": "Domain::Core=[3,0]; key=[0x535543434553534f,trial_key,class_key,physical_core_id]"
+      },
+      {
+        "name": "interaction-failure",
+        "tag": "Domain::Joint=[7,(lower_core_id<<8)|higher_core_id]; key=[0x535543434553534f,trial_key,class_key,0]"
+      },
+      {
+        "name": "background-failure",
+        "tag": "Domain::Background=[8,0]; key=[0x535543434553534f,trial_key,class_key,0]"
+      }
+    ],
+    "topology_permutation": "Pinned random::stream splitmix64 fold plus Cargo.lock-pinned StdRng. In ascending CCD order shuffle physical-core ids independently using the run seed and successor Limits salt; choose the first four for heterogeneous/refinement, first one for hidden/delayed/combined, none otherwise. Inherited base-edge jitter uses its distinct original Limits salt: integer 0..=2 for edge-shallow, otherwise -1..=1. No per-seed holdout truth is inspected."
+  },
+  "continuation": {
+    "dev_rule": "No automatic continuation is registered. On budget expiry retain partial artifacts, return an interruption/error and no gate verdict, then return to the repository owner for an explicit decision. Never cut seeds, scenarios, exposure or horizon; any approved deterministic continuation requires a pre-scoring registration amendment.",
+    "holdout_resumable": false
+  },
+  "notes": [
+    "Separate successor registration frozen before any scoring against its criteria. No policy result is recorded. This registration does not authorize a research campaign, holdout execution, RULESET/SCHEMA switch or deployment.",
+    "D's source remains explicitly pending; a separate reviewed commit must pin it and register implemented candidate commands before any D scoring, including development scoring. The frozen commands execute the implemented comparators only. Holdout commands are refused by the pinned runner; a later reviewed implementation and the repository owner's explicit authorization in issue #1483 are required before confirmation, which only the owner runs.",
+    "Comparator source SHA-256s hash the raw UTF-8 bytes of crates/togi-simrun/src/day_night/policy.rs for co-zero and crates/togi-simrun/src/day_night/ruleset13.rs for ruleset13 at their pinned revisions, without normalization or concatenation. Parameters SHA-256 hashes serde_json::to_vec of each typed Vec<Parameter> in its registered order, including f64 serialization. Simulator, runner and report revisions identify the last source changes in the merged preparation history; the runner scope includes togi-simrun day_night and togi-tool-bench day_night_cli. Optional binary/input pins are null; the runner must still compute and record actual binary/input SHA-256s.",
+    "Each catalog-daily-i refers to the exact ith TrialClass returned by the pinned successor Scenario::daily_mix(), preserving order, workload/roles/placement/intended duration and seed-permuted weak-core identity. Four blocks each last 7200 seconds. Definitions and numeric family transformations are the pinned togi-sim catalog, original scenarios/curve and successor exposure implementation, never a generic workload alias.",
+    "All criteria are per scenario and slope with no cross-scenario or cross-mode rescue. Missing, duplicate, mismatched, harness-error or truncated cells are INCOMPLETE, never PASS. Complete-unconverged trajectories remain in descriptive safety denominators and fail applicable utility/convergence/retention.",
+    "The shipped Ruleset 13 comparator A has no successor finish witnesses: full-horizon records remain complete-unconverged. Preserve those outcomes and actual safety observations without inventing finish witnesses, excluding complete observations, or weakening any applicable criterion. A comparator cannot establish a candidate pass.",
+    "Final admissibility is required on every complete seed. At least 95% must hold every post-first-finish profile in A for its epoch, including retreats, stock transitions and restorations. Each complete seed requires post-finish T>0 and H/T<=lambda. Report exact K/T and one-sided 95% Poisson upper rate only as a model-based diagnostic, not adaptive-policy assurance.",
+    "Benign depth requires final A membership and sum depth>=ceil(0.8*M), plus every unit>=min(5,its independently feasible maximum in A intersect E); at least 90% of complete seeds. No-write-limit additionally requires every unit>=44. M is the certified objective over A intersect the fixed depth<=45 envelope; report physical optimum and margin cost separately.",
+    "Every scenario needs at least 90% finite final-interval joint settled days<=730; listed benign median<=180 uses every registered seed, infinity for unconverged/truncated, mean of the middle pair for even counts. A later invalidating profile/epoch removes an earlier settled day. At stock-background at least 90% retain every first-finish unit depth minus at most one and remain in A; never-finished fails.",
+    "Finished means a policy reason and event witnesses, not blocked/unqualified. Preserve the original all-unit first-finish boundary through firmware. Restoration is both learning and post-finish exposure where applicable, overlapping labels never summed twice. No safety grace after truth or firmware transitions.",
+    "D uses step=min(5,ceil((ceiling-current_depth)/2)) with minimum one for a positive gap, one unit per step, after 50 clean hours including before the first step. C=min(U+5,0), censored U=-50 gives C=-45. Exact-profile night qualification and all existing safety/activation/veto checks remain required.",
+    "The two-event machine allowance is shared across initial and later refinement phases, never refilled by reset, firmware or mode changes. Provisional CPU-suspect events charge; reclassification retains charge and stop. Consumption is uncapped, remaining=max(2-consumed,0), overspend separate. Unit stops and ceiling finishes are sticky; subdivision never reopens them. Later nonzero profile events remain charged.",
+    "Firmware resets to verified stock, requalifies the exact previous whole vector under the new context with current controls, then restores once after 50 clean verified stock hours and remaining allowance. No prior positive-context credit. Restoration is one learning step; CPU-suspect failure undoes it to stock and stops restored units without clearing prior stops or allowance.",
+    "Full 730-day trajectories continue collecting events, exposure and retreats after climbing finishes. Keep learning versus post-finish K/T/H, stock background, non-CPU interruptions, night/day failures and unique source/event identities separate. Actual thermal trajectory risk cannot be replaced by the periodic reference rate.",
+    "Budgets exclude compilation and apply per one-policy/one-slope invocation with exactly the fixed jobs. Overrun retains partial output and returns to the repository owner for a decision; it never reduces seeds or horizon. Reduced output always carries its exploratory label and cannot issue aggregate gate PASS.",
+    "Concurrency is fixed at resources.jobs; an explicit --jobs must match it. A concurrency change requires separately identified registration/input provenance and is not the same registered invocation. Runtime budgets can change completeness or truncation, so concurrency is not an unconditional wall-time-only difference.",
+    "Prominent limitation: zero simulated setup/teardown and omitted physical placement/repeat overhead do not establish real-night feasibility. Hardware acceptance remains separate. No RULESET/SCHEMA switch, per-core candidate acceptance, holdout execution or nonzero deployment is authorized."
+  ]
+}

@@ -47,6 +47,7 @@ impl Live {
         observer: &mut dyn Observer,
         clock: &dyn Clock,
         same_boot: bool,
+        pause: Pause,
     ) -> Result<(), Error> {
         let mut policy = replay(journal.events())?;
         let before = journal.events().len();
@@ -55,9 +56,7 @@ impl Live {
             invocation: if same_boot {
                 Invocation::SameBoot
             } else {
-                Invocation::ColdBoot {
-                    pause: Pause::Running,
-                }
+                Invocation::ColdBoot { pause }
             },
             now: clock.now(),
         };
@@ -200,7 +199,7 @@ impl Live {
             return Err(Error::Watchdog);
         }
         // Firmware invalidation is queried even on resume; SameBoot never promotes.
-        self.start(journal, observer, clock, true)
+        self.start(journal, observer, clock, true, Pause::Running)
     }
 
     pub(super) fn zero(

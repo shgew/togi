@@ -130,6 +130,9 @@ pub struct Host {
     pub day_records: RefCell<Vec<(togi_journal::SessionId, togi_journal::DayRecord)>>,
     /// What happens to the machine while a crash record is on its way to the day service, once.
     pub day_meanwhile: RefCell<Option<Box<dyn FnOnce()>>>,
+    /// Socket controls received from the rootless CLI, with a fixed authenticated test uid.
+    pub day_controls: RefCell<Vec<togi_cli::day::socket::Control>>,
+    pub day_status: RefCell<togi_cli::day::socket::ControlStatus>,
     /// Whether stdin and stderr are terminals, and the lines typed at them.
     pub terminal: Cell<bool>,
     pub typed: RefCell<std::collections::VecDeque<String>>,
@@ -179,6 +182,12 @@ impl Host {
             day_journal: RefCell::new(None),
             day_records: RefCell::default(),
             day_meanwhile: RefCell::new(None),
+            day_controls: RefCell::default(),
+            day_status: RefCell::new(togi_cli::day::socket::ControlStatus {
+                pause: togi_journal::PauseState::Running {},
+                frozen: false,
+                revision: None,
+            }),
             terminal: Cell::new(false),
             typed: RefCell::default(),
             lock_busy_in_diagnose: Cell::new(None),
@@ -321,6 +330,46 @@ impl System for Host {
                 pending: Vec::new(),
                 morning: None,
             }),
+            Request::State => Ok(Reply::State {
+                status: self.day_status.borrow().clone(),
+            }),
+            Request::Extend(_) => panic!("only the desktop notifier extends a pause"),
+            Request::Pause(togi_cli::day::socket::PauseRequest { state }) => {
+                self.day_controls
+                    .borrow_mut()
+                    .push(togi_cli::day::socket::Control::Pause {
+                        state: *state,
+                        uid: 1000,
+                    });
+                self.day_service.borrow_mut().take().unwrap_or_else(|| {
+                    Ok(Reply::Controlled {
+                        status: self.day_status.borrow().clone(),
+                    })
+                })
+            }
+            Request::Resume => {
+                self.day_controls
+                    .borrow_mut()
+                    .push(togi_cli::day::socket::Control::Resume { uid: 1000 });
+                self.day_service.borrow_mut().take().unwrap_or_else(|| {
+                    Ok(Reply::Controlled {
+                        status: self.day_status.borrow().clone(),
+                    })
+                })
+            }
+            Request::Freeze(togi_cli::day::socket::FreezeRequest { frozen }) => {
+                self.day_controls
+                    .borrow_mut()
+                    .push(togi_cli::day::socket::Control::Freeze {
+                        frozen: *frozen,
+                        uid: 1000,
+                    });
+                self.day_service.borrow_mut().take().unwrap_or_else(|| {
+                    Ok(Reply::Controlled {
+                        status: self.day_status.borrow().clone(),
+                    })
+                })
+            }
             Request::Answer { boot, answer } => {
                 self.day_answers.borrow_mut().push((boot.clone(), *answer));
                 Ok(Reply::Answered)
@@ -341,7 +390,7 @@ impl System for Host {
                             session: *session,
                             record: record.clone(),
                         },
-                        &mut |_, _| panic!("a crash record must not reapply"),
+                        &mut |_, _, _| panic!("a crash record must not control the day"),
                     )
                     .unwrap();
                     return match reply {
@@ -351,6 +400,8 @@ impl System for Host {
                         Reply::Questions { .. }
                         | Reply::Answered
                         | Reply::Recorded { .. }
+                        | Reply::State { .. }
+                        | Reply::Controlled { .. }
                         | Reply::Reapplied => Ok(reply),
                     };
                 }

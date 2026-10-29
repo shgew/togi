@@ -21,9 +21,9 @@ pub use config::{
 };
 pub use day::{
     CrashedBoot, DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayCrashes,
-    DayFault, DayIntervalBoot, DayIntervalCredit, DayIntervals, DayOffsetsChanged, DayQuestions,
-    DayRecord, DayUncleanEnd, EndClass, LiveFault, LoadMix, OffsetSource, OffsetsError,
-    RecordableEnd, RecordedOffsets, Running, Trap,
+    DayFault, DayIntervalBoot, DayIntervalCredit, DayIntervals, DayOffsetsChanged, DayPause,
+    DayQuestions, DayRecord, DayUncleanEnd, EndClass, LiveFault, LoadMix, OffsetSource,
+    OffsetsError, PauseSource, PauseState, RecordableEnd, RecordedOffsets, Running, Trap,
 };
 pub use domain::{
     Activity, Attribution, Certainty, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition,
@@ -214,6 +214,7 @@ payloads! {
     CampaignReclassified(CampaignReclassified) = "campaign.reclassified",
     FirmwareRestoration(FirmwareRestoration) = "firmware.restoration",
     SuccessorImported(SuccessorImported) = "successor.imported",
+    DayPause(DayPause) = "day.pause",
 }
 
 impl Payload {
@@ -302,7 +303,8 @@ impl Payload {
             | Self::CampaignReclassified(_)
             | Self::FirmwareRestoration(_)
             | Self::SuccessorImported(_)
-            | Self::DayImported(_) => None,
+            | Self::DayImported(_)
+            | Self::DayPause(_) => None,
         }
     }
 
@@ -407,7 +409,8 @@ impl Payload {
             | Self::CampaignStart(_)
             | Self::CampaignReclassified(_)
             | Self::SuccessorImported(_)
-            | Self::DayImported(_) => false,
+            | Self::DayImported(_)
+            | Self::DayPause(_) => false,
         }
     }
 }
@@ -444,6 +447,7 @@ impl EventKind {
                 | Self::CampaignCharge
                 | Self::CampaignReclassified
                 | Self::FirmwareRestoration
+                | Self::DayPause
         )
     }
 

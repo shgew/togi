@@ -6,7 +6,7 @@ night since 00:00, 11h55m elapsed: mapping (task mapping #2)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#2324] trial 0388 core 00 offset -5 R1 mprime SSE 4K-21K 90 s
+in flight: [#2325] trial 0388 core 00 offset -5 R1 mprime SSE 4K-21K 90 s
   together mapping task mapping #2 night #34 testing CCD0 at -5
 
 UNIT   CORES                  D  C        D-C  HOLD h  STATE
@@ -26,11 +26,11 @@ allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
   U: unknown
   state: held: unknown edge for CCD 0; unknown edge for CCD 1
-  diagnostic S (non-authorizing): 0 [#1917]
+  diagnostic S (non-authorizing): 0 [#2296]
 unit: CCD 1, phase coarse, parent none, inherited start 0
   U: unknown
   state: held: unknown edge for CCD 0; unknown edge for CCD 1
-  diagnostic S (non-authorizing): 0 [#2296]
+  diagnostic S (non-authorizing): 0 [#2297]
 current exact profile daily evidence: 0 h; 0 crashes []
 experimental: rate bound unavailable (95%, fixed-rate model)
 firmware restoration: none
@@ -74,7 +74,7 @@ stock (CO 0): 0.0h observed, 0 crashes
 Diagnostic cap calculation witnesses (S never authorizes or retreats D)
 CCD 0: current read-only calculation S 0; unknown edge; fallback beta=0.405465
 CCD share of incremental hazard goal: 0.00016667/h
-committed S 0 [#1917]; fallback beta=0.405465
+committed S 0 [#2296]; fallback beta=0.405465
 R1 mprime-sse-4k-21k 90s isolated cores 0 at CO 0: 85 eligible s (0 h), 0
   failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
 R1 mprime-sse-4k-21k 90s isolated cores 1 at CO 0: 85 eligible s (0 h), 0
@@ -857,7 +857,7 @@ uncovered for the cap (no observations): R9 ycruncher-snt-svt-all-threads serial
   cpu 2 120s isolated cores 0-7
 CCD 1: current read-only calculation S 0; unknown edge; fallback beta=0.405465
 CCD share of incremental hazard goal: 0.00016667/h
-committed S 0 [#2296]; fallback beta=0.405465
+committed S 0 [#2297]; fallback beta=0.405465
 R1 mprime-sse-4k-21k 90s isolated cores 8 at CO 0: 85 eligible s (0 h), 0
   failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
 R1 mprime-sse-4k-21k 90s isolated cores 9 at CO 0: 85 eligible s (0 h), 0
@@ -2463,150 +2463,150 @@ Night exposure provenance
   120s isolated cores 0-7
 [#1916] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
   20260101T000000Z #1913; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 8
-[#1923] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1920; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 9
-[#1929] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1926; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 10
-[#1935] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1932; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 11
-[#1941] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1938; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 12
-[#1947] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1944; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 13
-[#1953] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1950; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 14
-[#1959] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1956; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 15
-[#1965] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1962; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 8
-[#1971] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1968; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 9
-[#1977] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1974; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 10
-[#1983] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1980; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 11
-[#1989] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1986; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 12
-[#1995] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1992; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 13
-[#2001] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #1998; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 14
-[#2007] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2004; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 15
-[#2013] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2010; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 8
-[#2019] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2016; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 9
-[#2025] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2022; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 10
-[#2031] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2028; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 11
-[#2037] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2034; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 12
-[#2043] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2040; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 13
-[#2049] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2046; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 14
-[#2055] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2052; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 15
-[#2061] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2058; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 8
-[#2067] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2064; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 9
-[#2073] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2070; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 10
-[#2079] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2076; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 11
-[#2085] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2082; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 12
-[#2091] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2088; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 13
-[#2097] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2094; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 14
-[#2103] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2100; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 15
-[#2109] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2106; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#1922] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1919; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 9
+[#1928] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1925; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 10
+[#1934] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1931; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 11
+[#1940] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1937; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 12
+[#1946] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1943; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 13
+[#1952] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1949; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 14
+[#1958] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1955; epoch 1; R1 mprime-sse-4k-21k 90s isolated cores 15
+[#1964] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1961; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 8
+[#1970] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1967; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 9
+[#1976] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1973; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 10
+[#1982] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1979; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 11
+[#1988] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1985; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 12
+[#1994] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1991; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 13
+[#2000] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1997; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 14
+[#2006] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2003; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated cores 15
+[#2012] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2009; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 8
+[#2018] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2015; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 9
+[#2024] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2021; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 10
+[#2030] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2027; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 11
+[#2036] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2033; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 12
+[#2042] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2039; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 13
+[#2048] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2045; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 14
+[#2054] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2051; epoch 1; R1 ycruncher-snt-svt 90s isolated cores 15
+[#2060] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2057; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 8
+[#2066] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2063; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 9
+[#2072] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2069; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 10
+[#2078] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2075; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 11
+[#2084] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2081; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 12
+[#2090] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2087; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 13
+[#2096] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2093; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 14
+[#2102] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2099; epoch 1; R2 mprime-avx2-36k-248k 90s isolated cores 15
+[#2108] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2105; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   8
-[#2115] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2112; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2114] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2111; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   9
-[#2121] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2118; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2120] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2117; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   10
-[#2127] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2124; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2126] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2123; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   11
-[#2133] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2130; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2132] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2129; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   12
-[#2139] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2136; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2138] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2135; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   13
-[#2145] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2142; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2144] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2141; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   14
-[#2151] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2148; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
+[#2150] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2147; epoch 1; R2 mprime-avx512-36k-248k 90s isolated cores
   15
-[#2157] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2154; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2156] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2153; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   8
-[#2163] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2160; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2162] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2159; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   9
-[#2169] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2166; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2168] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2165; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   10
-[#2175] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2172; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2174] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2171; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   11
-[#2181] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2178; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2180] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2177; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   12
-[#2187] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2184; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2186] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2183; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   13
-[#2193] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2190; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2192] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2189; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   14
-[#2199] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
-  20260101T000000Z #2196; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
+[#2198] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2195; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated cores
   15
-[#2205] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2202; epoch 1; R8
+[#2204] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2201; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 8 120s
   isolated cores 8-15
-[#2211] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2208; epoch 1; R8
+[#2210] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2207; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 9 120s
   isolated cores 8-15
-[#2217] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2214; epoch 1; R8
+[#2216] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2213; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 10 120s
   isolated cores 8-15
-[#2223] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2220; epoch 1; R8
+[#2222] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2219; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 11 120s
   isolated cores 8-15
-[#2229] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2226; epoch 1; R8
+[#2228] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2225; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 12 120s
   isolated cores 8-15
-[#2235] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2232; epoch 1; R8
+[#2234] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2231; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 13 120s
   isolated cores 8-15
-[#2241] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2238; epoch 1; R8
+[#2240] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2237; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 14 120s
   isolated cores 8-15
-[#2247] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
-  20260101T000000Z #2244; epoch 1; R8
+[#2246] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2243; epoch 1; R8
   mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 15 120s
   isolated cores 8-15
-[#2253] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
-  20260101T000000Z #2250; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+[#2252] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2249; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
   isolated cores 8-15
 [#2259] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
   20260101T000000Z #2256; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s

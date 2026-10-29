@@ -20,9 +20,11 @@ use crate::exit::Exit;
 use crate::report::{current_build, exit_with};
 
 mod apply;
+mod control_cli;
 mod faults;
 mod load_mix;
 mod notify;
+mod pause;
 mod record;
 pub mod socket;
 
@@ -40,6 +42,11 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     crate::cli::examples(&[
         ("sudo togi day", "Apply stock and observe this boot"),
         ("togi events --kind day", "Read recorded day observations"),
+        ("togi day pause 3h", "Keep stock through a timed pause"),
+        (
+            "togi day resume",
+            "End the pause with verified stock reapplication",
+        ),
         (
             "togi day answer <boot> frozen",
             "Answer a pending question without root",
@@ -51,7 +58,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     ])
 });
 
-/// Apply stock, observe daily use, answer an unclean end, or record a crash togi missed
+/// Apply stock, observe daily use, pause or freeze, and report crashes
 ///
 /// With no subcommand, requires an all-core CO-0 baseline and PID1's armed, counting watchdog,
 /// then applies stock through durable intent, write and readback. It records active hours excluding
@@ -59,7 +66,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// checkpoint and clean marker. It requires root and an existing compatible session journal.
 /// The service holds the host and writer locks: stop it before tuning; status/watch stay lock-free.
 ///
-/// Answer and notify use the credential-checked day socket without root or journal access.
+/// Answer, notify, pause/resume and freeze/unfreeze use the credential-checked day socket without
+/// root or journal access. Pauses zero and verify; ending them still reapplies stock only.
 /// Record requires root and hands the record to the live writer, opening the writer itself only
 /// when no day service runs. Nonzero day offsets are not enabled.
 #[derive(ClapArgs, Debug)]
@@ -86,6 +94,14 @@ pub enum Command {
     #[command(hide = true)]
     Reapply,
     Record(record::Args),
+    /// Keep every core at stock until the next cold boot or a deadline.
+    Pause(control_cli::Args),
+    /// End the pause early and verify a stock-only reapplication.
+    Resume,
+    /// Keep the committed profile and prevent promotions, never safety retreats.
+    Freeze,
+    /// Lift the promotion freeze.
+    Unfreeze,
 }
 
 fn parse_answer(value: &str) -> Result<togi_journal::DayAnswerKind, String> {
@@ -103,6 +119,10 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             Command::Notify => notify::run(ctx),
             Command::Record(record) => record::run(record, ctx),
             Command::Reapply => reapply(ctx),
+            Command::Pause(args) => control_cli::pause(args, ctx),
+            Command::Resume => control_cli::resume(ctx),
+            Command::Freeze => control_cli::freeze(true, ctx),
+            Command::Unfreeze => control_cli::freeze(false, ctx),
         };
     }
     if let Err(error) = ctx.system.check_platform() {
@@ -186,6 +206,8 @@ fn answer_end(boot: &str, answer: togi_journal::DayAnswerKind, ctx: &mut Context
             socket::Reply::Questions { .. }
             | socket::Reply::Recorded { .. }
             | socket::Reply::Reapplied
+            | socket::Reply::State { .. }
+            | socket::Reply::Controlled { .. }
             | socket::Reply::Refused { .. },
         ) => exit_with(
             ctx,
@@ -209,6 +231,8 @@ fn reapply(ctx: &mut Context<'_>) -> Exit {
             socket::Reply::Questions { .. }
             | socket::Reply::Answered
             | socket::Reply::Recorded { .. }
+            | socket::Reply::State { .. }
+            | socket::Reply::Controlled { .. }
             | socket::Reply::Refused { .. },
         ) => exit_with(
             ctx,
@@ -260,6 +284,12 @@ pub enum Error {
     Apply(#[from] togi_session::DayWriteError),
     #[error("this observation has no applying capability")]
     NotApplying,
+    #[error("a pause needs an unexpired deadline or the next cold boot")]
+    PauseDeadline,
+    #[error("the pause changed before the extension reached the service")]
+    PauseChanged,
+    #[error("only a timed pause can be extended")]
+    PauseNotTimed,
     #[error("emergency zero failed after daily service error: {original}")]
     Emergency {
         original: Box<Error>,
@@ -383,8 +413,8 @@ fn observe_with_socket(
         .map_or(Duration::ZERO, |boot| Duration::from_secs(boot.seconds));
     let started = clock.monotonic()?;
     let bios = observer.bios_context()?;
-    let mut offsets = observer.offsets()?;
-    let mut watchdog = observer.watchdog();
+    let offsets = observer.offsets()?;
+    let watchdog = observer.watchdog();
     append(
         journal,
         clock,
@@ -395,13 +425,24 @@ fn observe_with_socket(
             watchdog: Some(watchdog.clone()),
         },
     )?;
+    let mut pause = pause::Pause::of(journal);
+    let starts_paused = pause.starts_paused(journal.boot(), clock);
+    let expired_at_start = pause.expired(journal.boot(), clock);
     if let Some(live) = live.as_deref_mut() {
         live.start(
             journal,
             observer,
             clock,
             ledger.boots.contains_key(journal.boot()),
+            if starts_paused {
+                togi_tuner::day::Pause::Paused
+            } else {
+                togi_tuner::day::Pause::Running
+            },
         )?;
+        if let Some(source) = expired_at_start {
+            pause.ended(journal, clock, source)?;
+        }
     }
     let mut sampler = Sampler::new(
         session_cores(journal.events())?,
@@ -413,16 +454,38 @@ fn observe_with_socket(
     sampler.record(started, observer.cpu_times()?)?;
     let mut faults = Faults::of(journal.events(), journal.boot());
     faults.poll(journal, observer, clock, offsets)?;
-    let mut checkpointed = started;
+    let mut progress = Progress {
+        started,
+        accumulated,
+        checkpointed: started,
+        offsets,
+        watchdog,
+    };
+    if expired_at_start.is_some() && live.is_some() {
+        progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
+    }
     let mut sampled = started;
     let mut polled = started;
     loop {
         if let Some(socket) = socket {
-            socket.poll(journal, clock, &mut |journal, clock| {
-                live.as_deref_mut()
-                    .ok_or(Error::NotApplying)?
-                    .reapply(journal, observer, clock)
+            let mut controls = Controls {
+                progress: &mut progress,
+                sampler: &sampler,
+                observer: &mut *observer,
+                pause: &mut pause,
+                live: live.as_deref_mut(),
+            };
+            socket.poll(journal, clock, &mut |journal, clock, control| {
+                controls.apply(journal, clock, control)
             })?;
+        }
+        if let Some(source) = pause.expired(journal.boot(), clock) {
+            progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
+            live.as_deref_mut()
+                .ok_or(Error::NotApplying)?
+                .reapply(journal, observer, clock)?;
+            pause.ended(journal, clock, source)?;
+            progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
         }
         let wait = if socket.is_some() {
             Duration::from_secs(1)
@@ -435,14 +498,17 @@ fn observe_with_socket(
         }
         let now = clock.monotonic()?;
         let stopping = cancel.is_cancelled();
-        let due = now.checked_sub(checkpointed).ok_or(Error::ClockReversed)? >= CHECKPOINT;
+        let due = now
+            .checked_sub(progress.checkpointed)
+            .ok_or(Error::ClockReversed)?
+            >= CHECKPOINT;
         let sample = now.checked_sub(sampled).ok_or(Error::ClockReversed)? >= SAMPLE;
         // The first scheduled sample after waking checks again too: active state alone can survive S3
         // while the timer loses its MMIO decoding. Changes get a checkpoint immediately.
         let watchdog_changed = if stopping || sample || due {
             let checked = observer.watchdog();
-            let changed = checked != watchdog;
-            watchdog = checked;
+            let changed = checked != progress.watchdog;
+            progress.watchdog = checked;
             changed
         } else {
             false
@@ -452,39 +518,106 @@ fn observe_with_socket(
             sampled = now;
         }
         if stopping || now.checked_sub(polled).ok_or(Error::ClockReversed)? >= FAULT_POLL {
-            faults.poll(journal, observer, clock, offsets)?;
+            faults.poll(journal, observer, clock, progress.offsets)?;
             polled = now;
         }
         if !stopping && !due && !watchdog_changed {
             continue;
         }
-        checkpointed = now;
-        let elapsed = now.checked_sub(started).ok_or(Error::ClockReversed)?;
-        let applied = accumulated
-            .checked_add(elapsed)
-            .ok_or(Error::DurationOverflow)?;
         let readback = if stopping && let Some(live) = live.as_deref_mut() {
             live.zero(journal, observer, clock)?
         } else {
             observer.offsets()?
         };
-        if readback != offsets {
-            append(journal, clock, DayOffsetsChanged { offsets: readback })?;
-            offsets = readback;
-        }
-        append(
-            journal,
-            clock,
-            DayCheckpoint {
-                applied_secs: applied.as_secs(),
-                load_mix: sampler.mix(),
-                watchdog: Some(watchdog.clone()),
-            },
-        )?;
+        progress.checkpoint(journal, clock, &sampler, readback)?;
         if stopping {
             append(journal, clock, DayCleanStop {})?;
             return Ok(());
         }
+    }
+}
+
+/// The live service's side of a socket control: every durable change is bracketed by checkpoints so the raw
+/// interval fold credits the running time before it and excludes the held time after it.
+struct Controls<'a> {
+    progress: &'a mut Progress,
+    sampler: &'a Sampler,
+    observer: &'a mut dyn Observer,
+    pause: &'a mut pause::Pause,
+    live: Option<&'a mut apply::Live>,
+}
+
+impl Controls<'_> {
+    fn apply(
+        &mut self,
+        journal: &mut Journal,
+        clock: &dyn Clock,
+        control: socket::Control,
+    ) -> Result<socket::ControlStatus, Error> {
+        let resuming = matches!(control, socket::Control::Resume { .. });
+        if !matches!(control, socket::Control::Status) {
+            self.progress
+                .checkpoint(journal, clock, self.sampler, self.observer.offsets()?)?;
+        }
+        let status = self.pause.control(
+            journal,
+            self.observer,
+            clock,
+            self.live.as_deref_mut().ok_or(Error::NotApplying)?,
+            control,
+        )?;
+        if resuming {
+            self.progress
+                .checkpoint(journal, clock, self.sampler, self.observer.offsets()?)?;
+        }
+        Ok(status)
+    }
+}
+
+/// Active observation accounting; the journal's pause fold supplies the existing hold exclusion.
+struct Progress {
+    started: Duration,
+    accumulated: Duration,
+    checkpointed: Duration,
+    offsets: PerCore<ObservedOffset>,
+    watchdog: WatchdogState,
+}
+
+impl Progress {
+    fn checkpoint(
+        &mut self,
+        journal: &mut Journal,
+        clock: &dyn Clock,
+        sampler: &Sampler,
+        readback: PerCore<ObservedOffset>,
+    ) -> Result<(), Error> {
+        let now = clock.monotonic()?;
+        now.checked_sub(self.checkpointed)
+            .ok_or(Error::ClockReversed)?;
+        let elapsed = now.checked_sub(self.started).ok_or(Error::ClockReversed)?;
+        let applied = self
+            .accumulated
+            .checked_add(elapsed)
+            .ok_or(Error::DurationOverflow)?;
+        if readback != self.offsets {
+            append(journal, clock, DayOffsetsChanged { offsets: readback })?;
+            self.offsets = readback;
+        }
+        journal.append(
+            Stamp {
+                time: clock.now(),
+                mono: Some(now),
+            },
+            DayCheckpoint {
+                applied_secs: applied.as_secs(),
+                load_mix: sampler.mix(),
+                watchdog: Some(self.watchdog.clone()),
+            }
+            .into(),
+            &[],
+        )?;
+        self.checkpointed = now;
+        Ok(())
     }
 }
 

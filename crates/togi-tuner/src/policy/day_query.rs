@@ -14,7 +14,7 @@ use super::State;
 use super::books::{Committed, Observed};
 use super::decision::{Decision, PolicyPayload};
 use super::night_query::NotReady;
-use crate::day::{CoreProfile, IntervalKind, Invocation, Readback};
+use crate::day::{CoreProfile, IntervalKind, Invocation, Pause, Readback};
 
 /// What a day invocation asks.
 #[derive(Clone, Debug)]
@@ -79,6 +79,21 @@ fn day_interval(commit: &Committed<DayInterval>) -> crate::day::DayInterval {
 }
 
 impl State {
+    /// A durable pause blocks the current query, and a boot that began paused stays ineligible
+    /// after resume. The journal's raw fold owns both facts, independently of caller hints.
+    pub(super) fn promotion_pause(&self, boot: &BootId) -> Pause {
+        if self
+            .days
+            .raw_intervals
+            .get(boot)
+            .is_some_and(|boot| boot.pause().is_some() || boot.started_paused())
+        {
+            Pause::Paused
+        } else {
+            Pause::Running
+        }
+    }
+
     /// The committed intervals as the day policy reads them. An interval sits at its last checkpoint, the
     /// raw record that proves it, so a late commitment of old time never counts toward a later hold.
     /// Typed incrementally: commitments only append, so each is typed once.
@@ -156,17 +171,31 @@ impl State {
                         at_ns = now_ns;
                         applied_before = 0;
                     }
-                    (Observed::Checkpoint { applied_secs }, Some(held)) => {
+                    (
+                        Observed::Checkpoint {
+                            applied_secs,
+                            paused,
+                        },
+                        Some(held),
+                    ) => {
                         let span = now_ns.saturating_sub(at_ns) / NS_PER_SEC;
                         let applied = applied_secs.saturating_sub(applied_before).min(span);
                         let split = at_ns.saturating_add(applied.saturating_mul(NS_PER_SEC));
                         emit(
                             at_ns,
                             split,
-                            IntervalState::Applied,
+                            if *paused {
+                                IntervalState::Paused
+                            } else {
+                                IntervalState::Applied
+                            },
                             held,
                             record.seq,
-                            "applied seconds the checkpoint accounted for",
+                            if *paused {
+                                "operator pause excludes applied exposure"
+                            } else {
+                                "applied seconds the checkpoint accounted for"
+                            },
                         );
                         emit(
                             split,

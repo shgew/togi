@@ -3,6 +3,7 @@
 mod machine;
 mod policy;
 mod ruleset13;
+pub mod successor;
 
 use std::time::Duration;
 
@@ -109,7 +110,7 @@ impl PolicyKind {
     /// Refuses parameters the policy cannot run with.
     pub fn build(self, calendar: &CalendarConfig) -> Result<Box<dyn Policy>, RunError> {
         Ok(match self {
-            Self::CoZero => Box::new(CoZero),
+            Self::CoZero => Box::new(CoZero::default()),
             Self::FixedMargin => {
                 Box::new(FixedMargin::new(calendar.fixed_margin, calendar.day_step)?)
             }
@@ -180,6 +181,8 @@ pub enum RunError {
     Profile(#[from] togi_machine::CcdProfileError),
     #[error("policy requested more trial time than the night's allocation")]
     NightOverrun,
+    #[error("the successor invocation execution budget expired")]
+    BudgetExpired,
 }
 
 /// What the operator answered, not the hidden cause of an interruption.
@@ -244,6 +247,18 @@ pub trait Policy {
         machine: &mut Machine<'_>,
     ) -> Result<DayClassification, RunError>;
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError>;
+
+    /// Observations owned by the policy, never simulator truth. A legacy policy does not
+    /// acquire a successor finish or machine learning allowance merely by being observed.
+    fn report(&self) -> successor::PolicyReport {
+        successor::PolicyReport::unavailable()
+    }
+
+    /// Policy-owned application and qualification witnesses; the successor runner checks
+    /// them against the actual machine trajectory rather than inventing permissions.
+    fn applications(&self) -> successor::PolicyApplications {
+        successor::PolicyApplications::default()
+    }
 
     /// Whether a caller-selected journal boundary ended this run during its last night.
     fn is_finished(&self) -> bool {

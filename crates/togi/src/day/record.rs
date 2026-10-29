@@ -666,7 +666,12 @@ fn hand_off(ctx: &mut Context<'_>, build: &Build, session: SessionId, record: Da
     match ctx.system.day_request(&request) {
         Ok(Reply::Recorded { seq }) => recorded(ctx, seq),
         Ok(
-            Reply::Questions { .. } | Reply::Answered | Reply::Reapplied | Reply::Refused { .. },
+            Reply::Questions { .. }
+            | Reply::State { .. }
+            | Reply::Controlled { .. }
+            | Reply::Answered
+            | Reply::Reapplied
+            | Reply::Refused { .. },
         ) => exit_with(ctx, COMMAND, "unexpected day service reply", Exit::Error),
         Err(SocketError::Absent(_)) => write_here(ctx, build, session, record),
         Err(

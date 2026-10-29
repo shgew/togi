@@ -40,6 +40,7 @@ pub fn draw(
     })?;
     let snapshot = model.snapshot();
     let screen = Screen {
+        day_controls: false,
         view: frame.view,
         keys: false,
         scroll: if frame.view == View::Log {

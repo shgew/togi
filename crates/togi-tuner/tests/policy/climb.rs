@@ -362,17 +362,15 @@ fn requalification_failed() -> Journal {
 fn a_requalification_failure_cut_before_its_derived_event_blocks_the_successor() {
     let source = requalification_failed();
     let failed = source.events.iter().position(|event| matches!(&event.payload, Payload::NightQualification(record) if record.purpose == togi_journal::QualificationPurpose::Requalification && matches!(record.state, togi_journal::QualificationState::Failed { .. }))).unwrap();
-    let derived = source.events.iter().position(|event| matches!(&event.payload, Payload::DayEvent(_))).unwrap();
+    let derived = source
+        .events
+        .iter()
+        .position(|event| matches!(&event.payload, Payload::DayEvent(_)))
+        .unwrap();
     assert!(failed < derived);
     // The session was reset after the failure and before anything derived from it landed.
     let successor = successor_of(&source.events[..derived]);
-    let history = successor
-        .state
-        .project()
-        .climb
-        .campaign
-        .unwrap()
-        .history;
+    let history = successor.state.project().climb.campaign.unwrap().history;
     assert!(
         matches!(history, CampaignHistory::Unreconstructible { .. }),
         "{history:?}"
@@ -382,7 +380,12 @@ fn a_requalification_failure_cut_before_its_derived_event_blocks_the_successor()
 #[test]
 fn a_requalification_failure_with_its_derived_event_charges_the_successor() {
     let source = requalification_failed();
-    assert!(source.events.iter().any(|event| matches!(&event.payload, Payload::DayEvent(_))));
+    assert!(
+        source
+            .events
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::DayEvent(_)))
+    );
     let successor = successor_of(&source.events);
     let campaign = successor.state.project().climb.campaign.unwrap();
     assert!(
@@ -441,8 +444,7 @@ fn a_predecessor_stop_without_a_unit_stop_record_is_rederived_and_never_repromot
             togi_tuner::ClimbUnitState::Finished {
                 reason, last_clean, ..
             } => Some((reason, *last_clean)),
-            togi_tuner::ClimbUnitState::Climbing
-            | togi_tuner::ClimbUnitState::Held { .. } => None,
+            togi_tuner::ClimbUnitState::Climbing | togi_tuner::ClimbUnitState::Held { .. } => None,
         })
         .collect();
     assert_eq!(stopped.len(), 1, "{stopped:?}");
@@ -667,10 +669,7 @@ fn an_imported_veto_without_a_raw_witness_forbids_its_profile_and_deeper(
         promotes
     );
     assert_eq!(replay(&journal.events).project(), journal.state.project());
-    assert_eq!(
-        snapshot(&journal.state).project(),
-        journal.state.project()
-    );
+    assert_eq!(snapshot(&journal.state).project(), journal.state.project());
 }
 
 /// A successor of `source`: its records imported under their original identities, then the
@@ -818,4 +817,190 @@ fn the_successor_import_deduplicates_after_a_crash() {
     );
     assert!(!committed.iter().any(|payload| matches!(payload, Payload::ClimbDecision(decision) if matches!(decision.decision, ClimbAction::Promote { .. }))));
     assert_eq!(replay(&successor.events).project(), projection);
+}
+
+fn pause(journal: &mut Journal, state: togi_journal::PauseState) {
+    journal.append(
+        togi_journal::DayPause {
+            state,
+            source: togi_journal::PauseSource::Command { uid: 1000 },
+        }
+        .into(),
+        &[],
+    );
+}
+
+fn checkpoint(journal: &mut Journal, seconds: u64) {
+    journal.append(
+        togi_journal::DayCheckpoint {
+            applied_secs: seconds,
+            load_mix: togi_journal::LoadMix::default(),
+            watchdog: None,
+        }
+        .into(),
+        &[],
+    );
+}
+
+#[test]
+fn paused_hours_and_the_resume_boundary_never_earn_a_climb_hold() {
+    let mut journal = Journal::ready();
+    journal.observe_stock_in("1", 0);
+    pause(&mut journal, togi_journal::PauseState::UntilBoot {});
+    journal.advance(50 * 3600);
+    checkpoint(&mut journal, 50 * 3600);
+    pause(&mut journal, togi_journal::PauseState::Running {});
+    journal.advance(3600);
+    checkpoint(&mut journal, 51 * 3600);
+    journal.advance(3600);
+    checkpoint(&mut journal, 52 * 3600);
+    let boot = journal.events.last().unwrap().boot.clone();
+    let mut query = cold_boot("", 0);
+    query.boot = boot;
+    query.now = journal.now();
+    let committed = journal.settle_day(&query);
+    assert_eq!(journal.state.project().climb.units[0].hold.credited_s, 3600);
+    assert_eq!(
+        committed
+            .iter()
+            .filter_map(|payload| match payload {
+                Payload::DayInterval(interval)
+                    if matches!(
+                        interval.state,
+                        togi_journal::IntervalState::Applied | togi_journal::IntervalState::Paused
+                    ) =>
+                {
+                    Some(interval.state)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            togi_journal::IntervalState::Paused,
+            togi_journal::IntervalState::Paused,
+            togi_journal::IntervalState::Applied,
+        ]
+    );
+    assert_eq!(replay(&journal.events).project(), journal.state.project());
+}
+
+#[test]
+fn a_paused_cold_boot_cannot_promote_even_after_resume_or_snapshot_replay() {
+    let (mut journal, _) = Journal::qualified_compact_after(|_| {});
+    pause(
+        &mut journal,
+        togi_journal::PauseState::Until {
+            deadline: journal_deadline(),
+        },
+    );
+    journal.boot_start("paused");
+    let mut query = cold_boot("paused", 0);
+    query.now = journal.now();
+    let committed = journal.settle_day(&query);
+    assert!(steps(&committed).iter().any(|step| matches!(
+        &step.decision,
+        ClimbAction::Hold { blocked_by } if blocked_by.contains(&ClimbBlocker::Paused {})
+    )));
+    assert!(!steps(&committed).iter().any(|step| matches!(
+        step.decision,
+        ClimbAction::Promote { .. } | ClimbAction::Restore { .. }
+    )));
+    let projection = journal.state.project();
+    assert!(projection.climb.profiles.paused_saved.is_some());
+    assert!(projection.climb.units.iter().all(|unit| matches!(
+        &unit.state,
+        togi_tuner::ClimbUnitState::Held { reason } if reason.contains(&ClimbBlocker::Paused {})
+    )));
+    pause(&mut journal, togi_journal::PauseState::Running {});
+    journal.state = snapshot(&replay(&journal.events));
+    query.now = journal.now();
+    let resumed = journal.settle_day(&query);
+    assert!(!steps(&resumed).iter().any(|step| matches!(
+        step.decision,
+        ClimbAction::Promote { .. } | ClimbAction::Restore { .. }
+    )));
+    journal.boot_start("running-next-boot");
+    query = cold_boot("running-next-boot", 0);
+    query.now = journal.now();
+    let next = journal.settle_day(&query);
+    assert!(
+        steps(&next)
+            .iter()
+            .any(|step| matches!(step.decision, ClimbAction::Promote { .. }))
+    );
+}
+
+fn journal_deadline() -> jiff::Timestamp {
+    crate::fixture::at(1_000_000)
+}
+
+#[test]
+fn a_crash_at_paused_stock_neither_charges_the_saved_step_nor_stops_a_unit() {
+    let (mut journal, saved) = Journal::promoted_compact();
+    pause(&mut journal, togi_journal::PauseState::UntilBoot {});
+    let before_zero = journal.state.project().climb.profiles;
+    assert_eq!(before_zero.applied, before_zero.paused_saved);
+    assert_eq!(before_zero.read_back, Some(offsets_of(&saved)));
+    journal.append(
+        togi_journal::DayOffsetsChanged {
+            offsets: offsets_of(&zero()),
+        }
+        .into(),
+        &[],
+    );
+    checkpoint(&mut journal, 0);
+    let paused = journal.state.project();
+    assert_eq!(
+        paused.climb.profiles.paused_saved.as_ref().unwrap().cores,
+        togi_journal::CcdVector::expand(saved, &crate::fixture::cores())
+            .unwrap()
+            .cores()
+            .clone()
+    );
+    assert_eq!(paused.climb.profiles.read_back, Some(offsets_of(&zero())));
+    assert!(
+        paused
+            .climb
+            .profiles
+            .applied
+            .as_ref()
+            .unwrap()
+            .cores
+            .iter()
+            .all(|(_, offset)| offset.get() == 0)
+    );
+    journal.boot_start("after-paused-crash");
+    journal.append(
+        DayUncleanEnd {
+            boot: BootId::from("day1".to_owned()),
+            last_checkpoint: None,
+            offsets: offsets_of(&zero()),
+            reset_reason: ResetReason {
+                kind: None,
+                raw: Vec::new(),
+                supported: false,
+            },
+            evidence: EndEvidence::unknown(),
+        }
+        .into(),
+        &[],
+    );
+    let mut query = cold_boot("after-paused-crash", 0);
+    query.now = journal.now();
+    let committed = journal.settle_day(&query);
+    assert!(
+        !committed
+            .iter()
+            .any(|payload| matches!(payload, Payload::CampaignCharge(_) | Payload::UnitStop(_)))
+    );
+    let projection = journal.state.project();
+    assert_eq!(projection.climb.campaign.as_ref().unwrap().consumed, 0);
+    assert!(
+        projection
+            .climb
+            .units
+            .iter()
+            .all(|unit| !matches!(unit.state, togi_tuner::ClimbUnitState::Finished { .. }))
+    );
+    assert_eq!(replay(&journal.events).project(), projection);
 }

@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     climb,
-    day::{EventId, Invocation, QuestionState},
+    day::{EventId, Invocation, Pause, QuestionState},
 };
 use togi_journal::{self as journal, Seq};
 
@@ -494,7 +494,18 @@ impl State {
         let Some(history) = self.climb.history.as_ref() else {
             return Ok(None);
         };
-        let plan = self.climb_decision(view, query.now, query.invocation)?;
+        let invocation = match query.invocation {
+            Invocation::ColdBoot {
+                pause: Pause::Running,
+            } => Invocation::ColdBoot {
+                pause: self.promotion_pause(&query.boot),
+            },
+            invocation @ (Invocation::SameBoot
+            | Invocation::ColdBoot {
+                pause: Pause::Paused,
+            }) => invocation,
+        };
+        let plan = self.climb_decision(view, query.now, invocation)?;
         let issued = self
             .climb
             .decisions

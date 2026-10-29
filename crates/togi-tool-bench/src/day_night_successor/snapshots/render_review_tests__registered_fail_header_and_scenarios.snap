@@ -1,0 +1,21 @@
+---
+source: crates/togi-tool-bench/src/day_night_successor/render_review_tests.rs
+expression: "rendered(|out| { header(out, &result); scenarios(out, &result); })"
+---
+# Successor day/night score
+
+- Verdict: **FAIL**
+- Registration: `successor-review` (SHA-256 `sha-review`)
+- Policy: `successor-candidate`, resolved identity `identity-1`, role Candidate
+- Split: Dev; run profile: Registered
+- Slopes scored: 1.5 of registered 1.5, 2
+- Complete cells: 2/2
+
+## Scenarios
+
+Safety and usefulness are separate columns; each row is one scenario, unit mode and slope, with no averaging across rows.
+
+| Scenario | Mode | Slope | Complete seeds | Safety | Usefulness | Status |
+|---|---|---|---|---|---|---|
+| successor-ccd-fail | ccd-uniform | 1.5 | 1/1 | not met | met | FAIL |
+| successor-per-core-pass | per-core | 2 | 1/1 | met | met | PASS |

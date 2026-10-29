@@ -30,8 +30,17 @@ impl State {
             .next_back()
             .map(|commit| commit.time)
             .into_iter()
-            .chain(self.days.applications.last().map(|application| application.time))
-            .chain(self.qualification_records().iter().map(|record| record.latest.time))
+            .chain(
+                self.days
+                    .applications
+                    .last()
+                    .map(|application| application.time),
+            )
+            .chain(
+                self.qualification_records()
+                    .iter()
+                    .map(|record| record.latest.time),
+            )
             .max()
             .unwrap_or(jiff::Timestamp::MIN);
         let plan = self
@@ -39,7 +48,11 @@ impl State {
                 &view,
                 now,
                 Invocation::ColdBoot {
-                    pause: Pause::Running,
+                    pause: self
+                        .days
+                        .raw_intervals
+                        .current()
+                        .map_or(Pause::Running, |boot| self.promotion_pause(&boot.boot)),
                 },
             )
             .ok()?;
@@ -72,8 +85,46 @@ impl State {
             })
         });
         let latest = self.climb.decisions.values().next_back();
-        let blockers = self.current_climb_blockers();
+        let mut blockers = self.current_climb_blockers();
         let applied = vector(history.current(), history.units()).ok();
+        let paused = self
+            .days
+            .raw_intervals
+            .current()
+            .filter(|boot| boot.pause().is_some());
+        if paused.is_some() {
+            let reasons = blockers.get_or_insert_with(Vec::new);
+            if !reasons.contains(&journal::ClimbBlocker::Paused {}) {
+                reasons.push(journal::ClimbBlocker::Paused {});
+            }
+        }
+        let paused_saved = paused.and_then(|_| applied.clone());
+        let paused_readback = paused.map(|boot| {
+            let observed = self.days.boots.get(&boot.boot).and_then(|records| {
+                records
+                    .records
+                    .iter()
+                    .rev()
+                    .find(|record| !matches!(record.what, super::books::Observed::CleanStop))
+            });
+            // Recording a pause precedes zeroing. A later successful application is a newer
+            // readback than the observer's boot-start profile, not proof that zeroing happened.
+            self.days
+                .applications
+                .last()
+                .filter(|application| {
+                    application.payload.boot == boot.boot
+                        && observed.is_none_or(|record| application.seq > record.seq)
+                })
+                .map_or(boot.offsets, |application| application.payload.readbacks)
+        });
+        let observed = paused_readback.and_then(|offsets| {
+            Self::observed_vector(
+                &crate::day::CoreProfile::new(offsets).ok()?,
+                history.units(),
+            )
+            .ok()
+        });
         let units = history
             .units()
             .iter()
@@ -194,13 +245,15 @@ impl State {
             .applications
             .last()
             .map(|application| application.payload.readbacks);
+        let read_back = paused_readback.or(read_back);
+        let applied = observed.or(applied);
         ClimbProjection {
             permission: ClimbPermissionMode::ExperimentalHoldExactNightQualification,
             profiles: ClimbProfiles {
                 applied: applied.clone(),
                 read_back,
                 proposed: latest.map(|commit| commit.payload.proposed.clone()),
-                paused_saved: None,
+                paused_saved,
             },
             units,
             campaign: self.climb_campaign_projection(),

@@ -766,6 +766,7 @@ let
         import base64
         import json
         import shlex
+        from datetime import timedelta
 
         bootctl = "bootctl --esp-path=/boot"
         guid = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
@@ -810,6 +811,17 @@ let
 
         def current_system():
             return machine.succeed("readlink -f /run/current-system").strip()
+
+        def power_button_shutdown():
+            # multi-user.target can precede logind opening the hotplugged power
+            # input. A one-shot ACPI event sent before that point is lost.
+            machine.wait_until_succeeds(
+                "journalctl -b -u systemd-logind --no-pager -o cat | "
+                "grep -F 'Watching system buttons' | grep -F '(Power Button)'",
+                timeout=timedelta(seconds=30),
+            )
+            machine.send_monitor_command("system_powerdown")
+            machine.wait_for_shutdown(timeout=timedelta(seconds=120))
 
 
         def enter_night(path=""):
@@ -882,8 +894,7 @@ let
 
         with subtest("the power button ends the night through the shipped leave hook"):
             enter_night()
-            machine.send_monitor_command("system_powerdown")
-            machine.wait_for_shutdown()
+            power_button_shutdown()
             machine.start(allow_reboot=True)
             machine.wait_for_unit("multi-user.target")
             assert current_system() == normal_system
@@ -893,8 +904,7 @@ let
             machine.succeed(f'{bootctl} set-default ""')
             assert efi("LoaderEntryDefault") is None
             enter_night()
-            machine.send_monitor_command("system_powerdown")
-            machine.wait_for_shutdown()
+            power_button_shutdown()
             machine.start(allow_reboot=True)
             machine.wait_for_unit("multi-user.target")
             assert current_system() == normal_system

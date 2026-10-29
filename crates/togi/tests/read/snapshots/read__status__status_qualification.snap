@@ -6,8 +6,8 @@ night since 08:00, 4h52m elapsed: qualification (task qualification #0)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#7311] trial night-trial-1605 core 00 offset -5 R1 mprime SSE 4K-21K
-  90 s together qualification task qualification #0 night #6407
+in flight: [#7299] trial night-trial-1605 core 00 offset -5 R1 mprime SSE 4K-21K
+  90 s together qualification task qualification #0 night #6394
 
 UNIT   CORES                  D  C        D-C  HOLD h  STATE
 CCD 0  0,1,2,3,4,5,6,7        0  -45      45   88/50   held
@@ -28,12 +28,12 @@ proposed profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
 paused-saved profile: none
 allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
-  U: censored -50 [#6989 #6995 #7000 #7005 #7010 #7015 #7020 #7025 #7030 #7035
-  #7040 #7045 #7050 #7055 #7060 #7065 #7070 #7075 #7080 #7085 #7090 #7095 #7100
-  #7105 #7110 #7115 #7120 #7125 #7130 #7135 #7140 #7145 #7150 #7155 #7160 #7165
-  #7170 #7175 #7180 #7185 #7190 #7195 #7200 #7205 #7210 #7215 #7220 #7225 #7230
-  #7235 #7240 #7245 #7250 #7255 #7260 #7265 #7270 #7275 #7280 #7285 #7290 #7295
-  #7300 #7305]
+  U: censored -50 [#6977 #6982 #6987 #6992 #6997 #7002 #7007 #7012 #7017 #7022
+  #7027 #7032 #7037 #7042 #7047 #7052 #7057 #7062 #7067 #7072 #7077 #7082 #7087
+  #7092 #7097 #7102 #7107 #7112 #7117 #7122 #7127 #7132 #7137 #7142 #7147 #7152
+  #7157 #7162 #7167 #7172 #7177 #7182 #7187 #7192 #7197 #7202 #7207 #7212 #7217
+  #7222 #7227 #7232 #7237 #7242 #7247 #7252 #7257 #7262 #7267 #7272 #7277 #7282
+  #7287 #7292]
   state: held: exact-profile qualification required
   next proposal: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
   -5, core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
@@ -332,16 +332,16 @@ unit: CCD 0, phase coarse, parent none, inherited start 0
   0-15
     outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 0 600s exact cores
   0-15
-  diagnostic S (non-authorizing): 0 [#7308]
+  diagnostic S (non-authorizing): 0 [#7295]
 unit: CCD 1, phase coarse, parent none, inherited start 0
   U: unknown
   state: held: exact-profile qualification required
-  diagnostic S (non-authorizing): 0 [#6992]
+  diagnostic S (non-authorizing): 0 [#7296]
 current exact profile daily evidence: 88 h; 0 crashes [#1020 #1021 #1022 #1023
-  #1033 #1034 #1035 #1036 #2383 #2384 #2385 #2386 #2396 #2397 #2398 #2399 #3636
-  #3637 #3638 #3639 #3649 #3650 #3651 #3652 #3663 #3664 #3665 #3666 #4893 #4894
-  #4895 #4896 #4906 #4907 #4908 #4909 #6380 #6381 #6382 #6383 #6393 #6394 #6395
-  #6396]
+  #1033 #1034 #1035 #1036 #2379 #2380 #2381 #2382 #2392 #2393 #2394 #2395 #3628
+  #3629 #3630 #3631 #3641 #3642 #3643 #3644 #3655 #3656 #3657 #3658 #4880 #4881
+  #4882 #4883 #4893 #4894 #4895 #4896 #6367 #6368 #6369 #6370 #6380 #6381 #6382
+  #6383]
 experimental: 88 clean hours; at most 1 crash per 29.4 h (95%, fixed-rate model)
 firmware restoration: none
 

@@ -73,6 +73,8 @@ pub struct Screen {
     pub view: View,
     /// Whether the reader can press keys, so the frames show key hints.
     pub keys: bool,
+    /// Whether live day control keys are offered; replay and read-only feeds leave this off.
+    pub day_controls: bool,
     /// Lines scrolled down from the top of the view. `usize::MAX` means following the end; the frames clamp any
     /// scroll at or past the extent to the end.
     pub scroll: usize,

@@ -1115,4 +1115,93 @@ fn real_fs_generate_status_snapshots() {
     let morning = morning_state();
     emit("status_morning", text(&togi(&morning, &["status"]).stdout));
     emit("evidence_morning", &evidence_in(&morning, true));
+    let paused = paused_ruleset14();
+    emit("paused_ruleset14", &status_of(&paused));
+    let watch = togi(&paused, &["watch", "--width", "240", "--height", "67"]);
+    assert_eq!(watch.status.code(), Some(0), "{}", text(&watch.stderr));
+    std::fs::write(
+        directory.join("read__watch__paused_ruleset14.snap"),
+        format!(
+            "---\nsource: crates/togi/tests/read/status.rs\nexpression: text(&ran.stdout)\n---\n{}",
+            text(&watch.stdout)
+        ),
+    )
+    .unwrap();
+}
+
+fn paused_ruleset14() -> Session {
+    let saved = profile(-5, 0);
+    let stock = profile(0, 0);
+    let base = base();
+    let Payload::SessionContext(context) = &base[2].payload else {
+        unreachable!();
+    };
+    let events = append(
+        &base,
+        vec![
+            DayBootStart {
+                build: build(),
+                bios: context.bios_context(),
+                offsets: saved
+                    .cores()
+                    .iter()
+                    .map(|(core, offset)| (core, offset.observed()))
+                    .collect(),
+                watchdog: None,
+            }
+            .into(),
+            DayApplied {
+                application: ApplicationId(1),
+                cause: ApplyCause::Reapplication {},
+                target: saved.clone(),
+                readbacks: saved
+                    .cores()
+                    .iter()
+                    .map(|(core, offset)| (core, offset.observed()))
+                    .collect(),
+                transactions: Vec::new(),
+                boot: "boot-1".to_owned().into(),
+                mono_ns: 1,
+            }
+            .into(),
+            togi_journal::DayPause {
+                state: togi_journal::PauseState::UntilBoot {},
+                source: togi_journal::PauseSource::Command { uid: 1000 },
+            }
+            .into(),
+            togi_journal::DayOffsetsChanged {
+                offsets: stock
+                    .cores()
+                    .iter()
+                    .map(|(core, offset)| (core, offset.observed()))
+                    .collect(),
+            }
+            .into(),
+        ],
+    );
+    installed(&events)
+}
+
+#[test]
+fn ruleset14_pause_keeps_saved_d_separate_from_verified_stock_on_status_and_watch() {
+    let dir = paused_ruleset14();
+    let status = status_of(&dir);
+    let compact = flat(&status);
+    assert!(compact.contains("paused"), "{status}");
+    assert!(compact.contains("applied profile: core 0 0"), "{status}");
+    assert!(
+        compact.contains("paused-saved profile: core 0 -5"),
+        "{status}"
+    );
+    assert!(compact.contains("state: held:"), "{status}");
+    assert!(compact.contains("; paused"), "{status}");
+    assert_fits(&status);
+    super::support::snapshot("status__paused_ruleset14", &status);
+    let watch = togi(&dir, &["watch", "--width", "240", "--height", "67"]);
+    assert_eq!(watch.status.code(), Some(0), "{}", text(&watch.stderr));
+    assert_eq!(text(&watch.stderr), "");
+    let watch = text(&watch.stdout);
+    assert!(watch.contains(", paused"), "{watch}");
+    assert!(watch.contains("saved"), "{watch}");
+    super::support::snapshot("watch__paused_ruleset14", watch);
 }

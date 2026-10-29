@@ -762,3 +762,214 @@ fn day_interval_state_round_trips_with_a_pending_change() {
         })
     );
 }
+
+fn paused(index: u64, boot: &str, state: PauseState) -> Event {
+    at(
+        index,
+        boot,
+        0,
+        &[],
+        DayPause {
+            state,
+            source: PauseSource::Command { uid: 1000 },
+        }
+        .into(),
+    )
+}
+
+fn timed() -> PauseState {
+    PauseState::Until {
+        deadline: "2026-10-02T03:00:00Z".parse().unwrap(),
+    }
+}
+
+/// Whether the closed interval was credited to a profile, and its seconds.
+fn closed(credit: Option<DayIntervalCredit<'_>>) -> Option<(bool, u64)> {
+    credit.map(|credit| match credit {
+        DayIntervalCredit::Credited { seconds, .. } => (true, seconds),
+        DayIntervalCredit::Excluded { seconds, .. } => (false, seconds),
+    })
+}
+
+#[test]
+fn a_pause_excludes_every_checkpoint_interval_it_touches_and_keeps_cumulative_seconds() {
+    let mut intervals = DayIntervals::of(&[started(1, A, 0), checkpointed(2, A, 600)]);
+    assert_eq!(
+        intervals.apply(&paused(3, A, PauseState::UntilBoot {})),
+        None
+    );
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(4, A, 1200))),
+        Some((false, 600))
+    );
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(5, A, 1800))),
+        Some((false, 600))
+    );
+    assert_eq!(intervals.apply(&paused(6, A, PauseState::Running {})), None);
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(7, A, 2400))),
+        Some((false, 600))
+    );
+    assert_eq!(
+        intervals.apply(&checkpointed(8, A, 3000)),
+        Some(DayIntervalCredit::Credited {
+            boot: &id(A),
+            offsets: &offsets(0),
+            seconds: 600,
+        })
+    );
+    assert_eq!(intervals.get(&id(A)).unwrap().seconds, 3000);
+}
+
+#[test]
+fn a_timed_pause_is_inherited_by_the_next_boot_until_it_ends() {
+    let mut intervals = DayIntervals::of(&[
+        started(1, A, 0),
+        paused(2, A, timed()),
+        checkpointed(3, A, 600),
+        started(4, B, 0),
+    ]);
+    assert_eq!(intervals.current().unwrap().pause(), Some(timed()));
+    assert!(intervals.current().unwrap().started_paused());
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(5, B, 600))),
+        Some((false, 600))
+    );
+    assert_eq!(intervals.apply(&paused(6, B, PauseState::Running {})), None);
+    assert_eq!(intervals.current().unwrap().pause(), None);
+    assert!(intervals.current().unwrap().started_paused());
+    intervals.apply(&started(7, B, 0));
+    let restored: DayIntervals =
+        serde_json::from_value(serde_json::to_value(&intervals).unwrap()).unwrap();
+    assert!(restored.current().unwrap().started_paused());
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(8, B, 1200))),
+        Some((false, 600))
+    );
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(9, B, 1800))),
+        Some((true, 600))
+    );
+}
+
+#[test]
+fn an_until_boot_pause_ends_with_its_boot() {
+    let mut intervals = DayIntervals::of(&[
+        started(1, A, 0),
+        paused(2, A, PauseState::UntilBoot {}),
+        checkpointed(3, A, 600),
+        started(4, B, 0),
+    ]);
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(5, B, 600))),
+        Some((true, 600))
+    );
+}
+
+#[test_case(-1, true; "before deadline")]
+#[test_case(0, false; "at deadline")]
+#[test_case(1, false; "after deadline")]
+fn cold_boot_pause_eligibility_uses_the_first_observation_time(seconds: i64, expected: bool) {
+    let PauseState::Until { deadline } = timed() else {
+        unreachable!();
+    };
+    let mut boot = started(3, B, 0);
+    boot.time = deadline
+        .checked_add(jiff::SignedDuration::from_secs(seconds))
+        .unwrap();
+    let intervals = DayIntervals::of(&[started(1, A, 0), paused(2, A, timed()), boot]);
+    assert_eq!(intervals.current().unwrap().started_paused(), expected);
+}
+
+#[test_case(timed(); "timed")]
+#[test_case(PauseState::UntilBoot {}; "until boot")]
+fn a_pause_survives_a_same_boot_restart(state: PauseState) {
+    let mut intervals = DayIntervals::of(&[
+        started(1, A, 0),
+        paused(2, A, state),
+        checkpointed(3, A, 600),
+        started(4, A, 9000),
+    ]);
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(5, A, 1200))),
+        Some((false, 600))
+    );
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(6, A, 1800))),
+        Some((false, 600))
+    );
+}
+
+#[test]
+fn a_pause_of_an_unknown_boot_is_ignored() {
+    let mut intervals = DayIntervals::default();
+    assert_eq!(intervals.apply(&paused(1, A, timed())), None);
+    assert!(intervals.is_empty());
+    intervals.apply(&started(2, A, 0));
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(3, A, 600))),
+        Some((true, 600))
+    );
+}
+
+#[test]
+fn a_paused_day_interval_is_not_a_pause() {
+    let Payload::DayInterval(mut interval) = super::fixtures::sample(EventKind::DayInterval) else {
+        unreachable!();
+    };
+    interval.boot = id(A);
+    interval.state = IntervalState::Paused;
+    let mut intervals = DayIntervals::of(&[started(1, A, 0), at(2, A, 0, &[], interval.into())]);
+    assert_eq!(
+        closed(intervals.apply(&checkpointed(3, A, 600))),
+        Some((true, 600))
+    );
+}
+
+#[test]
+fn a_pause_round_trips_through_the_serialized_fold() {
+    let intervals = DayIntervals::of(&[started(1, A, 0), paused(2, A, timed())]);
+    let mut restored: DayIntervals =
+        serde_json::from_value(serde_json::to_value(&intervals).unwrap()).unwrap();
+    assert_eq!(restored, intervals);
+    assert_eq!(
+        closed(restored.apply(&checkpointed(3, A, 600))),
+        Some((false, 600))
+    );
+    assert_eq!(
+        closed(restored.apply(&checkpointed(4, A, 1200))),
+        Some((false, 600))
+    );
+}
+
+#[test_case(PauseState::UntilBoot {}, serde_json::json!({"kind": "until_boot"}); "until boot")]
+#[test_case(PauseState::Running {}, serde_json::json!({"kind": "running"}); "running")]
+#[test_case(
+    PauseState::Until { deadline: "2026-10-02T03:00:00Z".parse().unwrap() },
+    serde_json::json!({"kind": "until", "deadline": "2026-10-02T03:00:00Z"});
+    "until a deadline"
+)]
+fn a_pause_state_has_its_pinned_wire_shape(state: PauseState, wire: serde_json::Value) {
+    assert_eq!(serde_json::to_value(state).unwrap(), wire);
+    assert_eq!(serde_json::from_value::<PauseState>(wire).unwrap(), state);
+}
+
+#[test_case(PauseSource::Command { uid: 1000 }, serde_json::json!({"kind": "command", "uid": 1000}); "command")]
+#[test_case(PauseSource::Deadline {}, serde_json::json!({"kind": "deadline"}); "deadline")]
+#[test_case(PauseSource::ColdBoot {}, serde_json::json!({"kind": "cold_boot"}); "cold boot")]
+fn a_pause_source_has_its_pinned_wire_shape(source: PauseSource, wire: serde_json::Value) {
+    assert_eq!(serde_json::to_value(source).unwrap(), wire);
+    assert_eq!(serde_json::from_value::<PauseSource>(wire).unwrap(), source);
+}
+
+#[test_case(serde_json::json!({"state": {"kind": "running", "extra": 1}, "source": {"kind": "deadline"}}); "an unknown state field")]
+#[test_case(serde_json::json!({"state": {"kind": "running"}, "source": {"kind": "deadline", "extra": 1}}); "an unknown source field")]
+#[test_case(serde_json::json!({"state": {"kind": "running"}, "source": {"kind": "deadline"}, "extra": 1}); "an unknown payload field")]
+#[test_case(serde_json::json!({"state": {"kind": "paused"}, "source": {"kind": "deadline"}}); "an unknown state word")]
+#[test_case(serde_json::json!({"state": {"kind": "until"}, "source": {"kind": "deadline"}}); "a timed pause without a deadline")]
+#[test_case(serde_json::json!({"state": ["running"], "source": {"kind": "deadline"}}); "a positional state")]
+#[test_case(serde_json::json!({"state": {"kind": "running"}}); "a missing source")]
+fn a_day_pause_refuses_what_its_types_cannot_hold(data: serde_json::Value) {
+    assert!(serde_json::from_value::<DayPause>(data).is_err());
+}

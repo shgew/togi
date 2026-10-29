@@ -444,12 +444,15 @@ pub fn help_body(
     scroll: usize,
     colours: Colours,
     quit: Quit,
+    day_controls: bool,
 ) -> (Vec<Line<'static>>, usize) {
     let top_items: Vec<_> = TOP
         .items
         .iter()
         .copied()
         .chain((quit == Quit::Keys).then_some(EXIT))
+        .chain((day_controls && quit == Quit::Keys).then_some(("p (main view)", "pause at stock until cold boot, or resume with verified stock reapplied; delegates to togi day pause/resume without root")))
+        .chain((day_controls && quit == Quit::Keys).then_some(("f (main view)", "freeze or unfreeze without changing the pause lifetime; delegates to togi day freeze/unfreeze without root; f still pages down in help and log")))
         .collect();
     let top = Section {
         title: TOP.title,
@@ -547,7 +550,7 @@ mod tests {
 
     #[test]
     fn wide_help_uses_three_columns() {
-        let (body, scroll) = help_body(235, 61, 0, C, Quit::Keys);
+        let (body, scroll) = help_body(235, 61, 0, C, Quit::Keys, false);
         assert_eq!(scroll, 0, "wide help unexpectedly needs scrolling");
         let rows = plain_rows(&body);
         for title in ["READING THE SCREEN", "WHAT TOGI DOES", "WORDS"] {
@@ -588,9 +591,9 @@ mod tests {
     #[test_case(195; "195 columns")]
     #[test_case(235; "235 columns")]
     fn short_wide_help_scrolls_and_keeps_its_scrollbar(width: usize) {
-        let (top, scroll) = help_body(width, 19, 0, C, Quit::Keys);
-        let (end, end_scroll) = help_body(width, 19, usize::MAX, C, Quit::Keys);
-        let (clamped, _) = help_body(width, 19, scroll + 100, C, Quit::Keys);
+        let (top, scroll) = help_body(width, 19, 0, C, Quit::Keys, false);
+        let (end, end_scroll) = help_body(width, 19, usize::MAX, C, Quit::Keys, false);
+        let (clamped, _) = help_body(width, 19, scroll + 100, C, Quit::Keys, false);
         assert!(
             scroll != 0 && end_scroll == scroll,
             "short wide help must scroll: top={scroll} end={end_scroll}"
@@ -641,7 +644,7 @@ mod tests {
 
     #[test]
     fn help_glosses_no_record_only_trial() {
-        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys);
+        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys, false);
         let words = plain_rows(&help)
             .join("\n")
             .split_whitespace()
@@ -658,7 +661,7 @@ mod tests {
 
     #[test]
     fn help_words_claim_no_more_than_the_journal_shows() {
-        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys);
+        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys, false);
         let words = plain_rows(&help)
             .join("\n")
             .split_whitespace()
@@ -693,7 +696,7 @@ mod tests {
 
     #[test]
     fn help_links_the_tuner_spec_and_states_no_rule() {
-        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys);
+        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys, false);
         let words = plain_rows(&help)
             .join("\n")
             .split_whitespace()
@@ -743,7 +746,7 @@ mod tests {
     #[test_case(115; "115 columns")]
     #[test_case(235; "235 columns")]
     fn full_help_renders_whole_and_explains_the_words(width: usize) {
-        let (body, scroll) = help_body(width, 1000, 0, C, Quit::Keys);
+        let (body, scroll) = help_body(width, 1000, 0, C, Quit::Keys, false);
         assert!(
             scroll == 0 && !body.is_empty(),
             "{width} columns: full help was not rendered"
@@ -794,9 +797,9 @@ mod tests {
 
     #[test]
     fn narrow_help_scrolls_one_column() {
-        let (top, scroll) = help_body(77, 19, 0, C, Quit::Keys);
-        let (end, end_scroll) = help_body(77, 19, usize::MAX, C, Quit::Keys);
-        let (clamped, _) = help_body(77, 19, scroll + 100, C, Quit::Keys);
+        let (top, scroll) = help_body(77, 19, 0, C, Quit::Keys, false);
+        let (end, end_scroll) = help_body(77, 19, usize::MAX, C, Quit::Keys, false);
+        let (clamped, _) = help_body(77, 19, scroll + 100, C, Quit::Keys, false);
         assert!(
             scroll != 0 && end_scroll == scroll,
             "narrow help must scroll: top={scroll} end={end_scroll}"
@@ -971,7 +974,7 @@ mod tests {
     #[test_case::test_case(235, 61, 7; "w235 h61 scroll1")]
     #[test_case::test_case(235, 61, usize::MAX; "w235 h61 scroll2")]
     fn help_bodies_fit_small_rectangles(width: usize, height: usize, scroll: usize) {
-        let (body, _) = help_body(width, height, scroll, C, Quit::Keys);
+        let (body, _) = help_body(width, height, scroll, C, Quit::Keys, false);
         assert!(
             body.len() <= height,
             "{width}x{height}: body has {} rows",
@@ -1095,6 +1098,7 @@ mod tests {
             0,
             C,
             Quit::Keys,
+            false,
         );
         assert_eq!(
             drawn,
@@ -1112,7 +1116,7 @@ mod tests {
     #[test]
     fn help_labels_the_quit_key_exit_dashboard_and_the_tuning_boot_drops_it() {
         let words = |quit| {
-            plain_rows(&help_body(115, 1000, 0, C, quit).0)
+            plain_rows(&help_body(115, 1000, 0, C, quit, false).0)
                 .join("\n")
                 .split_whitespace()
                 .collect::<Vec<_>>()
@@ -1141,7 +1145,7 @@ mod tests {
     #[test_case::test_case(235, 19; "235x19")]
     #[test_case::test_case(235, 1000; "235x1000")]
     fn tuning_boot_help_fits_its_body(width: usize, height: usize) {
-        let (body, _) = help_body(width, height, usize::MAX, C, Quit::Ignored);
+        let (body, _) = help_body(width, height, usize::MAX, C, Quit::Ignored, false);
         assert!(body.len() <= height);
     }
 
@@ -1314,7 +1318,7 @@ mod tests {
         edge: &str,
         censored: &str,
     ) {
-        let (help, _) = help_body(115, 1000, 0, colours, Quit::Keys);
+        let (help, _) = help_body(115, 1000, 0, colours, Quit::Keys, false);
         let rows = plain_rows_in(&help, colours);
         let row_of = |label: &str| {
             rows.iter()
@@ -1358,5 +1362,18 @@ mod tests {
         let censored = gauge_of("11");
         assert!(censored[..30].iter().all(|&c| c == '·'));
         assert_eq!(censored[49], marks.edge, "-50 is the 50th cell");
+    }
+
+    #[test_case::test_case(Quit::Keys, true, true; "normal dashboard")]
+    #[test_case::test_case(Quit::Ignored, true, false; "unattended tuning boot")]
+    #[test_case::test_case(Quit::Keys, false, false; "read-only replay")]
+    fn day_action_help_matches_the_dashboard_policy(quit: Quit, controls: bool, shown: bool) {
+        let (body, _) = help_body(115, 1000, 0, C, quit, controls);
+        let text = plain_rows(&body).join("\\n");
+        assert_eq!(text.contains("p (main view)"), shown, "{text}");
+        assert_eq!(text.contains("f (main view)"), shown, "{text}");
+        if shown {
+            assert!(text.contains("without root"), "{text}");
+        }
     }
 }

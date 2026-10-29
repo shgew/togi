@@ -725,3 +725,39 @@ mod record {
         assert!(matches!(record.source, OffsetSource::ReadBack { .. }));
     }
 }
+
+#[test_case::test_case(&["pause"], togi_cli::day::socket::Control::Pause { state: togi_journal::PauseState::UntilBoot {}, uid: 1000 }; "pause until cold boot")]
+#[test_case::test_case(&["pause", "30m"], togi_cli::day::socket::Control::Pause { state: togi_journal::PauseState::Until { deadline: "2026-01-01T00:30:00Z".parse().unwrap() }, uid: 1000 }; "duration")]
+#[test_case::test_case(&["pause", "--until", "01:30"], togi_cli::day::socket::Control::Pause { state: togi_journal::PauseState::Until { deadline: "2026-01-01T01:30:00Z".parse().unwrap() }, uid: 1000 }; "local time")]
+#[test_case::test_case(&["resume"], togi_cli::day::socket::Control::Resume { uid: 1000 }; "resume")]
+#[test_case::test_case(&["freeze"], togi_cli::day::socket::Control::Freeze { frozen: true, uid: 1000 }; "freeze")]
+#[test_case::test_case(&["unfreeze"], togi_cli::day::socket::Control::Freeze { frozen: false, uid: 1000 }; "unfreeze")]
+fn controls_are_rootless_and_never_acquire_a_writer_or_hardware(
+    args: &[&str],
+    expected: togi_cli::day::socket::Control,
+) {
+    let mut host = support::Host::new();
+    host.root = false;
+    let command: Vec<_> = std::iter::once("day").chain(args.iter().copied()).collect();
+    let ran = host.run(Path::new("/state"), &command);
+    assert_eq!((ran.exit, ran.err.as_str()), (Exit::Ok, ""));
+    assert_eq!(*host.day_controls.borrow(), [expected]);
+    assert_eq!(host.lock_acquisitions.get(), 0);
+    assert_eq!(host.calls.get(), 0);
+    assert!(!host.exists("/state"));
+}
+
+#[test]
+fn a_refused_control_does_not_claim_success() {
+    let mut host = support::Host::new();
+    host.root = false;
+    *host.day_service.borrow_mut() = Some(Err(togi_cli::day::socket::Error::Refused(
+        "not available".into(),
+    )));
+    let ran = host.run(Path::new("/state"), &["day", "resume"]);
+    assert_eq!(ran.exit, Exit::Error);
+    assert_eq!(ran.out, "");
+    assert!(ran.err.contains("not available"), "{}", ran.err);
+    assert_eq!(host.lock_acquisitions.get(), 0);
+    assert!(!host.exists("/state"));
+}

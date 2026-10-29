@@ -106,12 +106,13 @@ const RULESET13: &[(EventKind, Tag)] = &[
     (EventKind::DayApplied, Tag::Apply),
     (EventKind::DayHold, Tag::Hold),
     (EventKind::DayFreeze, Tag::Freeze),
+    (EventKind::DayPause, Tag::Day),
     (EventKind::SessionImported, Tag::Import),
 ];
 
 #[test]
 fn every_kind_has_its_words_or_says_it_is_silent() {
-    assert_eq!(EventKind::ALL.len(), 83);
+    assert_eq!(EventKind::ALL.len(), 84);
     for &kind in EventKind::ALL {
         let table = words(kind);
         let silent = SILENT.contains(&kind) || UNLISTED.contains(&kind);
@@ -671,6 +672,18 @@ fn a_freeze_says_which_way_it_went(choice: FreezeChoice, text: &str) {
     }
     .into();
     assert_eq!(said(&freeze), (Tag::Freeze, Tone::Plain, text.to_owned()));
+}
+
+#[test_case(togi_journal::PauseState::UntilBoot {}; "until cold boot")]
+#[test_case(togi_journal::PauseState::Until { deadline: Timestamp::UNIX_EPOCH }; "until deadline")]
+#[test_case(togi_journal::PauseState::Running {}; "resumed")]
+fn pause_history_uses_the_durable_journal_description(state: togi_journal::PauseState) {
+    let payload: Payload = togi_journal::DayPause {
+        state,
+        source: togi_journal::PauseSource::Command { uid: 1000 },
+    }
+    .into();
+    assert_eq!(said(&payload), (Tag::Day, Tone::Plain, payload.message()));
 }
 
 #[test]

@@ -41,6 +41,7 @@ pub mod compare;
 pub mod day_night;
 pub mod day_night_gate;
 pub mod day_night_report;
+pub mod day_night_successor;
 #[cfg(test)]
 mod day_night_tests;
 mod error;

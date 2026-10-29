@@ -60,6 +60,8 @@ impl State {
 
     fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
         let seq = event.seq;
+        let paused = self.days.raw_intervals.checkpoint_paused(&event.boot);
+        self.days.raw_intervals.apply(event);
         match &event.payload {
             Payload::SessionStart(p) => {
                 // A new session starts afresh: no night carries across sessions.
@@ -128,6 +130,7 @@ impl State {
                 event,
                 Observed::Checkpoint {
                     applied_secs: p.applied_secs,
+                    paused,
                 },
             ),
             Payload::DayOffsetsChanged(p) => {
@@ -267,6 +270,7 @@ impl State {
             // detection (its recovered `trial.end` carries the exposure), the historical per-core
             // decisions and every `*.carried` kind (Ruleset 13 starts fresh), and shutdown records.
             Payload::SessionNotice(_)
+            | Payload::DayPause(_)
             | Payload::SessionWarning(_)
             | Payload::SessionArchived(_)
             | Payload::SessionCarried(_)
