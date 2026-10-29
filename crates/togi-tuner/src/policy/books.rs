@@ -351,6 +351,8 @@ impl Default for Days {
 pub(super) struct Climb {
     pub(super) history: Option<crate::climb::ClimbHistory>,
     pub(super) campaign: crate::climb::Campaign,
+    /// Missing history blocks permission without erasing the charges that are known.
+    pub(super) history_error: Option<String>,
     pub(super) start: Option<Committed<togi_journal::CampaignStart>>,
     pub(super) mapping: Option<Committed<togi_journal::UnitMapping>>,
     #[serde(with = "super::wire::pairs")]
@@ -361,8 +363,14 @@ pub(super) struct Climb {
     pub(super) stops: BTreeMap<crate::UnitId, Committed<togi_journal::UnitStop>>,
     pub(super) charges: Vec<Committed<togi_journal::CampaignCharge>>,
     pub(super) reclassifications: Vec<Committed<togi_journal::CampaignReclassified>>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) imported_observations: BTreeMap<crate::day::EventId, Committed<togi_journal::UnitVector>>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) imported_stop_witnesses: BTreeMap<crate::UnitId, Seq>,
     pub(super) restoration: Option<Committed<togi_journal::FirmwareRestoration>>,
     pub(super) imports: Vec<togi_journal::DayImported>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) import_sequences: BTreeMap<Provenance, Seq>,
     pub(super) import_summary: Option<togi_journal::SessionImported>,
     pub(super) successor: Option<Committed<togi_journal::SuccessorImported>>,
 }
@@ -374,6 +382,7 @@ impl Default for Climb {
             // Accumulate observations before enrollment without granting permission.
             // The decision input remains unreconstructible until campaign.start is durable.
             campaign: crate::climb::Campaign::approved_fresh(),
+            history_error: None,
             start: None,
             mapping: None,
             decisions: BTreeMap::new(),
@@ -381,8 +390,11 @@ impl Default for Climb {
             stops: BTreeMap::new(),
             charges: Vec::new(),
             reclassifications: Vec::new(),
+            imported_observations: BTreeMap::new(),
+            imported_stop_witnesses: BTreeMap::new(),
             restoration: None,
             imports: Vec::new(),
+            import_sequences: BTreeMap::new(),
             import_summary: None,
             successor: None,
         }

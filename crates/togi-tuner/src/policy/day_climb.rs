@@ -22,17 +22,16 @@ impl State {
             return Ok(Some(Decision::new(PolicyPayload::UnitMapping(current_mapping), Vec::new())));
         }
         if self.climb.start.is_none() {
+            // Successor enrollment owns its final campaign.start marker. Until that marker
+            // arrives, an interrupted import has no permission and cannot mint a fresh allowance.
+            if !self.climb.imports.is_empty() || self.climb.import_summary.is_some() || self.climb.successor.is_some() { return Ok(None); }
             let session = self.machine.session.ok_or(NotReady::NoSession)?;
             let seq = self.last.and_then(|seq| Seq::new(seq.get().checked_add(1)?)).ok_or(NotReady::SeqExhausted)?;
-            let imported = !self.climb.imports.is_empty() || self.climb.import_summary.is_some();
-            let history = if imported {
-                journal::CampaignHistory::Unreconstructible { reason: "predecessor campaign history has not been reconstructed".into() }
-            } else { journal::CampaignHistory::Complete {} };
             return Ok(Some(Decision::new(PolicyPayload::CampaignStart(journal::CampaignStart {
                 campaign: journal::CampaignId(journal::Provenance { session, seq }),
                 allowance: 2,
                 origin: journal::CampaignOrigin::Fresh {},
-                history,
+                history: journal::CampaignHistory::Complete {},
             }), Vec::new())));
         }
         if let Some(charge) = self.owed_campaign_charge()? { return Ok(Some(charge)); }
@@ -43,6 +42,7 @@ impl State {
             let same = self.climb.stops.get(&unit).is_some_and(|commit| commit.payload.reason == reason);
             if !same {
                 let mut witnesses = self.nights.unit_edges.get(&unit).map(|commit| commit.seq).into_iter().collect::<Vec<_>>();
+                witnesses.extend(self.climb.imported_stop_witnesses.get(&unit).copied());
                 if let climb::FinishReason::Stopped(climb::StopReason::FirstBackstep { event, .. }
                     | climb::StopReason::RestorationBackstep { event, .. }) = &finish.reason
                     && let Some(id) = self.journal_event_id(event)
@@ -123,24 +123,31 @@ impl State {
             let kept = self.climb.charges.iter().find(|commit| commit.payload.event == event);
             if let Some(kept) = kept {
                 let latest = self.days.events.get(&event).map(|book| &book.latest);
-                if let Some(latest) = latest {
+                let imported = self.climb.imported_observations.get(&charge.event);
+                let to = latest.map(|latest| latest.payload.classification).or_else(|| charge.reclassified.then_some(journal::Classification::NonCpu {}));
+                if let Some(to) = to {
                     let from = self.climb.reclassifications.iter().rev().find(|commit| commit.payload.event == event)
                         .map_or(journal::Classification::CpuSuspect { certainty: if charge.provisional { journal::Certainty::Provisional } else { journal::Certainty::Definite } }, |commit| commit.payload.to);
-                    let to = latest.payload.classification;
                     if from != to {
+                        let mut causes = vec![kept.seq];
+                        causes.extend(latest.map(|latest| latest.seq));
+                        causes.extend(imported.into_iter().flat_map(|record| record.causes.iter().copied()));
                         return Ok(Some(Decision::new(PolicyPayload::CampaignReclassified(journal::CampaignReclassified {
                             campaign: start.payload.campaign, event, from, to,
-                        }), vec![kept.seq, latest.seq])));
+                        }), causes)));
                     }
                 }
                 continue;
             }
-            let Some(observed) = view.events.iter().find(|event| event.id == charge.event) else { continue; };
-            let history = self.climb.history.as_ref().ok_or(NotReady::NoBaseline)?;
-            let profile = Self::observed_vector(&observed.profile, history.units())?;
+            let imported = self.climb.imported_observations.get(&charge.event);
+            let profile = if let Some(observed) = view.events.iter().find(|observed| charge.aliases.contains(&observed.id)) {
+                let history = self.climb.history.as_ref().ok_or(NotReady::NoBaseline)?;
+                Self::observed_vector(&observed.profile, history.units())?
+            } else if let Some(imported) = imported { imported.payload.clone() } else { continue; };
             let consumed = u32::try_from(index + 1).map_err(|_| NotReady::SeqExhausted)?;
             let aliases = charge.aliases.iter().filter_map(|id| self.journal_event_id(id)).collect();
-            let causes = self.days.events.get(&event).map(|book| book.latest.seq).into_iter().collect();
+            let mut causes = self.days.events.get(&event).map(|book| book.latest.seq).into_iter().collect::<Vec<_>>();
+            causes.extend(imported.into_iter().flat_map(|record| record.causes.iter().copied()));
             return Ok(Some(Decision::new(PolicyPayload::CampaignCharge(journal::CampaignCharge {
                 campaign: start.payload.campaign, event, aliases,
                 profile,

@@ -40,7 +40,9 @@ fn vector(values: &[i64]) -> UnitVector {
                 .map(|(id, _)| UnitMembership {
                     unit: togi_journal::UnitId::Core(core(i64::try_from(id).unwrap())),
                     cores: [core(i64::try_from(id).unwrap())].into_iter().collect(),
-                    parent: Some(togi_journal::UnitId::Ccd(CcdId::new(0).unwrap())),
+                    parent: Some(togi_journal::UnitId::Ccd(
+                        CcdId::new(i64::try_from(id / 8).unwrap()).unwrap(),
+                    )),
                 })
                 .collect(),
         },
@@ -146,13 +148,17 @@ fn shown(policy: &ClimbProjection, color: bool) -> String {
         },
     );
     // Status intentionally uses plain text in both terminal-color modes.
-    Renderer::new(OutputFacts {
+    let renderer = Renderer::new(OutputFacts {
         is_terminal: color,
         no_color: !color,
         journald: false,
-    })
-    .text(Style::Plain, &text)
-    .to_string()
+    });
+    use std::fmt::Write as _;
+    let mut shown = String::new();
+    for line in text.lines() {
+        writeln!(shown, "{}", renderer.text(Style::Plain, line)).unwrap();
+    }
+    shown
 }
 
 fn case_fixture(case: Case) -> ClimbProjection {
@@ -291,6 +297,7 @@ fn sixteen_nonuniform_core_units_are_presented_without_ccd_averaging() {
     policy.units = (0..16)
         .map(|id| ClimbUnitProjection {
             unit: UnitId::Core(core(id)),
+            parent: Some(UnitId::Ccd(CcdId::new(id / 8).unwrap())),
             cores: [core(id)].into_iter().collect(),
             applied: offset(-id),
             ..template.clone()
@@ -409,6 +416,7 @@ fn full_profile_projection_data_round_trips_without_losing_any_unit() {
     policy.units = (0..16)
         .map(|id| ClimbUnitProjection {
             unit: UnitId::Core(core(id)),
+            parent: Some(UnitId::Ccd(CcdId::new(id / 8).unwrap())),
             cores: [core(id)].into_iter().collect(),
             ..template.clone()
         })

@@ -1,9 +1,8 @@
-//! The composed Ruleset 13 tuner state (`docs/spec/tuner.md`, `docs/spec/runtime.md`, Ruleset 13 policy
-//! boundary).
+//! The composed Ruleset 14 tuner state (`docs/spec/tuner-ruleset14.md`).
 //!
 //! [`State`] folds the journal: raw facts (session, trial, day observer and answer records) and the
-//! policy's own commitments (exposure, edge, cap, night plan, qualification, reproduction, day event,
-//! veto, interval, hold, step and application). Its queries are pure: [`State::next`] decides what the
+//! policy's own commitments (exposure, unit edge, night plan, qualification, reproduction, day event,
+//! veto, interval, hold, climb decision, campaign charge, stop and successful application). Its queries are pure: [`State::next`] decides what the
 //! night does next, [`State::day`] what a day invocation must commit, and [`State::project`] what
 //! status shows. A query reads nothing but the state and its arguments. The state's only interior
 //! mutability is its memoized query caches (`cache.rs`), which are never state, so cloning it, folding
@@ -19,6 +18,7 @@ mod cache;
 mod climb_projection;
 mod controls;
 mod climb_fold;
+mod climb_import;
 mod climb_view;
 mod day_climb;
 mod day_events;

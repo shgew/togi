@@ -8,10 +8,10 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_journal::{
     Activity, DayEventId, ExposureClass, Position, QualificationPurpose, Queue, ReproductionState,
-    TaskId,
+    Resolution, TaskId, VetoState,
 };
 use togi_machine::TargetOffset;
-use togi_tuner::policy::{NightProjection, Projection, QualificationStage};
+use togi_tuner::policy::{FirmwareValidity, NightProjection, Projection, QualificationStage};
 use togi_tuner::unit::{UnitId, UnitProfile};
 
 use togi_watch::model::StopView;
@@ -319,9 +319,66 @@ fn night_part(out: &mut String, night: &NightProjection, policy: &Projection, at
     }
 }
 
+/// Runtime safety remains visible independently of exploration progress or campaign reconstruction.
+fn safety_part(out: &mut String, policy: &Projection) {
+    out.push_str("\nDaily safety\n");
+    let day = &policy.day;
+    let _ = writeln!(out, "freeze: {}", if day.freeze { "on" } else { "off" });
+    let firmware = match day.firmware {
+        FirmwareValidity::Valid => "valid".to_owned(),
+        FirmwareValidity::Unknown => "unknown".to_owned(),
+        FirmwareValidity::Invalidated { since } => {
+            format!("invalidated since [#{since}]; stock until new-context restoration")
+        }
+    };
+    wrap(out, "firmware: ", "  ", &firmware);
+    for boot in &day.pending_questions {
+        wrap(out, "question pending for boot ", "  ", &esc(boot.as_str()));
+    }
+    for event in &policy.events {
+        let classification = match event.classification {
+            togi_journal::Classification::CpuSuspect {
+                certainty: togi_journal::Certainty::Definite,
+            } => "CPU-suspect",
+            togi_journal::Classification::CpuSuspect {
+                certainty: togi_journal::Certainty::Provisional,
+            } => "provisionally CPU-suspect",
+            togi_journal::Classification::NonCpu {} => "not CPU",
+            togi_journal::Classification::Unexplained {} => "unexplained",
+        };
+        let resolution = match event.resolution {
+            Resolution::Unresolved {} => "unresolved",
+            Resolution::Resolved { .. } => "resolved",
+        };
+        wrap(
+            out,
+            "safety event: ",
+            "  ",
+            &format!(
+                "{}: {classification}, {resolution}, {}",
+                event_word(&event.event),
+                reproduction_word(event.reproduction)
+            ),
+        );
+    }
+    for veto in &policy.vetoes {
+        let state = match veto.state {
+            VetoState::Active => "active",
+            VetoState::Cleared => "cleared",
+        };
+        wrap(
+            out,
+            "veto: ",
+            "  ",
+            &format!("{}: {state}", event_word(&veto.event)),
+        );
+    }
+}
+
 /// The unit table and experimental day policy, followed by the latest night.
 pub(super) fn sections(out: &mut String, policy: &Projection, at: Where<'_>) {
     super::climb::sections(out, &policy.climb, at);
+    safety_part(out, policy);
     if let Some(night) = &policy.night {
         night_part(out, night, policy, at);
     }

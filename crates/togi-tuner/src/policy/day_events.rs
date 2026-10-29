@@ -516,7 +516,7 @@ impl State {
             .map(|application| application.at)
     }
 
-    fn journal_classification(class: Classification) -> JournalClassification {
+    pub(super) fn journal_classification(class: Classification) -> JournalClassification {
         match class {
             Classification::CpuSuspect(_) => JournalClassification::CpuSuspect {
                 certainty: Certainty::Definite,

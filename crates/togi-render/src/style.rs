@@ -40,6 +40,9 @@ impl Style {
 /// event except `session.warning`. Ruleset 13 kinds are plain except a `ccd.edge` with an observed failure, a failed
 /// qualification and a CPU-suspect `day.event` (red), a shallower `ccd.cap`, a retreat or firmware-zero
 /// `day.step` and an active `day.veto` (yellow), and a complete qualification and promoting step (green).
+/// Climb payloads distinguish adverse evidence (red), safety retreat/stopping/exhaustion
+/// (yellow), and applied-direction proposals or ceiling completion (green). Green is
+/// progress in an experiment, never statistical certification.
 /// A new kind lands here by naming its arm.
 #[must_use]
 pub fn style_for(payload: &Payload) -> Style {

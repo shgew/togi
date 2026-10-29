@@ -2,11 +2,7 @@
 
 use togi_journal::{self as journal, Event, Seq};
 use crate::{UnitProfile, Units, climb, day::{self, ApplicationKind, DailyEvent}};
-use super::{State, FoldError, books::Committed, permission::{ceiling, mapping}};
-
-fn committed<T>(event: &Event, payload: T) -> Committed<T> {
-    Committed { seq: event.seq, time: event.time, causes: event.cause.clone(), payload }
-}
+use super::{State, FoldError, fold::committed, permission::{ceiling, mapping}};
 
 impl State {
     pub(super) fn units_for(&self, recorded: &journal::UnitMapping) -> Result<Units, FoldError> {
@@ -92,17 +88,21 @@ impl State {
         Ok(())
     }
 
-    pub(super) fn fold_campaign_start(&mut self, event: &Event, start: &journal::CampaignStart) {
-        // An existing campaign is never replaced by another session's fresh allowance.
-        if self.climb.start.is_some() { return; }
-        if start.allowance != 2 || !matches!(start.history, journal::CampaignHistory::Complete {}) {
-            self.climb.campaign = climb::Campaign::Unreconstructible;
+    pub(super) fn fold_campaign_start(&mut self, event: &Event, start: &journal::CampaignStart) -> Result<(), FoldError> {
+        // The first enrollment fixes identity and completeness, never renewing known charges.
+        if self.climb.start.is_some() { return Ok(()); }
+        if start.allowance != 2 {
+            self.climb.history_error.get_or_insert_with(|| "The campaign allowance is not the two-event lifetime allowance.".into());
+        }
+        if let journal::CampaignHistory::Unreconstructible { reason } = &start.history {
+            self.climb.history_error.get_or_insert_with(|| reason.clone());
         }
         self.climb.start = Some(committed(event, start.clone()));
-        let mut events = self.days.event_commits.iter().map(|(&seq, payload)| (seq, payload.clone())).collect::<Vec<_>>();
-        events.sort_by_key(|(seq, _)| *seq);
-        for (_, payload) in events { self.observe_campaign_event(&payload); }
+        self.reconstruct_campaign(event.time)?;
+        let events = self.days.event_commits.values().cloned().collect::<Vec<_>>();
+        for payload in events { self.observe_campaign_event(&payload); }
         self.observe_finishes(event.time);
+        Ok(())
     }
 
     /// Capture classifications at raw prefixes, including provisional events whose derived
@@ -147,9 +147,8 @@ impl State {
         }
     }
 
-    pub(super) fn fold_unit_stop(&mut self, event: &Event, stop: &journal::UnitStop) -> Result<(), FoldError> {
-        let profile = self.unit_profile(&stop.profile)?;
-        let reason = match &stop.reason {
+    pub(super) fn finish_reason(&self, reason: &journal::UnitStopReason, seq: Seq) -> Result<climb::FinishReason, FoldError> {
+        Ok(match reason {
             journal::UnitStopReason::Ceiling {} => climb::FinishReason::Ceiling,
             journal::UnitStopReason::AllowanceExhausted {} => climb::FinishReason::AllowanceExhausted,
             journal::UnitStopReason::AdverseCeiling {} => climb::FinishReason::Stopped(climb::StopReason::AdverseCeiling),
@@ -161,12 +160,15 @@ impl State {
             }),
             journal::UnitStopReason::RestorationBackstep { event: id } => climb::FinishReason::Stopped(climb::StopReason::RestorationBackstep {
                 event: self.policy_event_id(id).ok_or(FoldError::ClimbRecord("missing event identity"))?,
-                application: climb::ApplicationId::new(event.seq.get()).ok_or(FoldError::ClimbRecord("invalid application identity"))?,
+                application: climb::ApplicationId::new(seq.get()).ok_or(FoldError::ClimbRecord("invalid application identity"))?,
             }),
-        };
-        if let Some(history) = &mut self.climb.history
-            && history.finishes().get(stop.unit).is_none()
-        {
+        })
+    }
+
+    pub(super) fn fold_unit_stop(&mut self, event: &Event, stop: &journal::UnitStop) -> Result<(), FoldError> {
+        let profile = self.unit_profile(&stop.profile)?;
+        let reason = self.finish_reason(&stop.reason, event.seq)?;
+        if let Some(history) = &mut self.climb.history {
             history.finishes_mut().stop(stop.unit, climb::FinishWitness {
                 reason, at: event.time, profile, last_clean: stop.last_clean,
                 ceiling: self.nights.unit_edges.get(&stop.unit).map(|edge| ceiling(&edge.payload.new)),
@@ -206,7 +208,7 @@ impl State {
                 if plan.target() != Some(&target) { return Err(FoldError::ClimbRecord("readback differs from decision")); }
                 history.apply(application, event.time, &plan)?;
             } else if target != *history.current() {
-                if !target.is_zero() { self.climb.campaign = climb::Campaign::Unreconstructible; }
+                if !target.is_zero() { self.climb.history_error.get_or_insert_with(|| "A nonzero application has no reconstructible climb decision.".into()); }
                 history.observe_application(application, target)?;
             }
         }

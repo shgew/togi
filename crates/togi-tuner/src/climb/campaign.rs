@@ -86,7 +86,7 @@ impl Campaign {
             if charges[index].aliases.is_disjoint(&identities) {
                 index += 1;
             } else {
-                first.get_or_insert(index);
+                first = Some(first.map_or(index, |first: usize| first.min(index)));
                 let charge = charges.remove(index);
                 identities.extend(charge.aliases.iter().cloned());
                 if found.is_none() {
@@ -109,5 +109,26 @@ impl Campaign {
                 reclassified: false,
             });
         }
+    }
+
+    /// Restore an immutable charge receipt without granting a fresh campaign allowance.
+    pub(crate) fn commit_charge(&mut self, mut charge: Charge) {
+        let Self::Known { charges } = self else { return; };
+        charge.aliases.insert(charge.event.clone());
+        let mut first = None;
+        let mut index = 0;
+        while index < charges.len() {
+            if charges[index].aliases.is_disjoint(&charge.aliases) {
+                index += 1;
+            } else {
+                first = Some(first.map_or(index, |first: usize| first.min(index)));
+                let kept = charges.remove(index);
+                charge.aliases.extend(kept.aliases);
+                charge.reclassified |= kept.reclassified;
+                index = 0;
+            }
+        }
+        let index = first.unwrap_or(charges.len());
+        charges.insert(index, charge);
     }
 }
