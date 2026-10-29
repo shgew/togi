@@ -212,6 +212,33 @@ Actual-history expected failures are integrated over the trajectory's real therm
 
 The calendar idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat, so these records omit that overhead, as the [Ruleset 13 gate](#daynight-gate) does. The hardware's actual overhead must be measured and the [production workload rules](spec/workloads.md#durations-and-checking-schedule) still charge it. The Poisson upper rate is a model-based diagnostic, not an adaptive-policy guarantee. Synthetic trajectories and their hazard are not hardware evidence, establish no real-night feasibility and authorize no nonzero deployment.
 
+#### Successor registration
+
+[`tools/bench/day-night-successor.json`](../tools/bench/day-night-successor.json)
+owns the numbers, applicability, source pins, commands, profiles and execution
+limits for [#1483](https://github.com/shgew/togi/issues/1483), separately from the
+frozen Ruleset 13 record. It registers CCD-uniform evaluation against all
+successor physical-core truths, not per-core-policy acceptance.
+
+D's source is explicitly `{"kind":"pending"}`. A separate reviewed commit must
+pin it and register implemented candidate commands before any D scoring.
+The registered development commands name the implemented comparators only.
+Comparator A's complete-unconverged outcomes and observed safety remain as
+reported; unavailable finish evidence is not fabricated convergence.
+
+The holdout remains sealed and is refused by the pinned runner: its command
+field records refused invocations, not executable confirmations. A later
+reviewed implementation and the repository owner's explicit authorization in
+the issue are required, and only the owner runs the confirmation. Any executed
+confirmation is spent, interrupted included; failure
+stays failed. Registration does not authorize scoring, a campaign, a
+compatibility switch or deployment.
+
+Concurrency is fixed by the registration. Changing it requires separately
+identified registration/input provenance; the execution budget can affect
+completeness, so a different job count is not the same registered invocation.
+
+
 ### Historical gates
 
 The Ruleset 9 gate is defined by [ADR 0038](adr/0038-self-sufficient-cores.md) and [#105](https://github.com/shgew/togi/issues/105); [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate. The [Ruleset 11 archive](../tools/bench/gates/ruleset-11/) holds its suite, baseline, candidate and scored report. These are historical records, not current-anchor measurements. The bench no longer judges any session-suite gate, and the archive is pinned by hash in the bench's tests.

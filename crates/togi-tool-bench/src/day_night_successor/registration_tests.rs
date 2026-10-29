@@ -132,6 +132,35 @@ fn explicit_scenario_modes_narrow_the_applicable_modes() {
 }
 
 #[test]
+fn committed_registration_loads_and_matches_the_truth_catalog() {
+    let bytes = include_bytes!("../../../../tools/bench/day-night-successor.json");
+    let registration = Registration::parse(bytes).expect("committed registration validates");
+    assert_eq!(
+        registration
+            .scenarios
+            .iter()
+            .map(|scenario| scenario.name.as_str())
+            .collect::<Vec<_>>(),
+        togi_sim::day_night::successor::SCENARIO_IDS
+    );
+    assert!(
+        registration
+            .policy("successor")
+            .expect("candidate")
+            .source
+            .is_pending()
+    );
+    for policy in &registration.sources.policies {
+        assert_eq!(
+            policy.parameters_sha256,
+            sha256_hex(&serde_json::to_vec(&policy.parameters).expect("typed parameters")),
+            "{} parameter hash",
+            policy.name
+        );
+    }
+}
+
+#[test]
 fn fractions_are_exact() {
     let ninety = Fraction {
         numerator: 90,

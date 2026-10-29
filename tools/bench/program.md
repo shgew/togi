@@ -4,6 +4,19 @@
 
 This program is a versioned historical record of the original Ruleset 13 experiment, not authorization for a new campaign; see [the day/night gate](../../docs/benchmarking.md#daynight-gate) for the read's scope, provenance and reproduction.
 
+## Successor registration
+
+[`day-night-successor.json`](day-night-successor.json) owns the separate
+successor experiment's numbers and implemented comparator commands; see
+[its registration status](../../docs/benchmarking.md#successor-registration).
+D's source stays explicitly pending until a separate reviewed pinning commit
+registers implemented candidate commands; no D scoring is permitted before it.
+Holdout is refused by the pinned runner and requires a later reviewed
+implementation and the repository owner's explicit authorization; only the
+owner runs the confirmation. This registration neither
+changes the historical program below nor authorizes a campaign, confirmation,
+compatibility switch or deployment.
+
 ## Original Ruleset 13 program
 
 Rules for the **production policy experiment** mode of a [research campaign](../../docs/benchmarking.md#research-campaigns). The objective is the Ruleset 13 [day/night gate's registered metrics](../../docs/benchmarking.md#daynight-gate) on development seeds, not a session's time to conclusion. [`day-night.json`](day-night.json) owns the scenarios, seeds, calendar, hazard budget, thresholds and tail treatment. The campaign's limits, prohibitions, record and end state are in [Research campaigns](../../docs/benchmarking.md#research-campaigns).
