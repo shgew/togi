@@ -201,7 +201,7 @@ impl UnitProfile {
             let offset = self
                 .get(unit.id)
                 .ok_or(UnitProfileError::Missing(unit.id))?;
-            for core in unit.cores.iter() {
+            for core in unit.cores {
                 cores.set(core, offset);
             }
         }
@@ -357,7 +357,7 @@ mod tests {
         );
         let expanded = profile.expand(&units).unwrap();
         assert_eq!(expanded.len(), 16);
-        for core in topology.all().iter() {
+        for core in topology.all() {
             assert_eq!(
                 expanded.get(core),
                 Some(TargetOffset::new(if core.get() < 8 { 0 } else { -17 }).unwrap())
