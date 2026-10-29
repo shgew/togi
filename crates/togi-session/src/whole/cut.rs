@@ -46,7 +46,6 @@ use togi_sim::faults::SmuOperation;
 use togi_sim::{MachineDefinition, Model, Persisted, Simulator};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, Params, Projection, State};
-use togi_tuner::{Topology, unit::Units};
 
 use super::compare::Names;
 use crate::Stop;
@@ -783,10 +782,9 @@ fn assert_settled(bench: &Bench, phase: Phase, events: &[Event]) {
     let offsets = read_offsets(&mut machine, &state).unwrap();
     let target = if matches!(phase, Phase::Day { .. }) {
         let applied = state.project().applied.unwrap();
-        let topology = Topology::new(&machine.host.topology().unwrap()).unwrap();
         Some(
             applied
-                .expand(&Units::for_profile(&topology, &applied))
+                .expand_topology(&machine.host.topology().unwrap())
                 .unwrap(),
         )
     } else {
@@ -1374,7 +1372,11 @@ fn caps_citing_one_event_instead_of_two_change_the_projection() {
     );
     let mut changed = projection.clone();
     let first = witnesses[0];
-    for cap in changed.units.iter_mut().filter_map(|unit| unit.cap.as_mut()) {
+    for cap in changed
+        .units
+        .iter_mut()
+        .filter_map(|unit| unit.cap.as_mut())
+    {
         cap.witness = first;
     }
     assert_ne!(
