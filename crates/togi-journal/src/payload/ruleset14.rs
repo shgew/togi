@@ -123,6 +123,11 @@ object_only! {
         AllowanceExhausted {},
         UnknownEdge { unit: UnitId },
         Finished { unit: UnitId },
+        CampaignHistory {},
+        SameBoot {},
+        HoldProfile {},
+        SafeApply {},
+        ActivationClosed {},
     }
 
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -181,6 +186,8 @@ object_only! {
         FirstBackstep { event: DayEventId, application: ApplicationId },
         AllowanceExhausted {},
         RestorationBackstep { event: DayEventId },
+        AdverseCeiling {},
+        Veto {},
     }
 
     /// Sticky completion: the envelope records time; witnesses retain the edge/application history.
