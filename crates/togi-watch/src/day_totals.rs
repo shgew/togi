@@ -136,20 +136,17 @@ impl DayTotals {
             let offsets = *offsets;
             let stock = is_stock(&offsets);
             self.credit(stock, imported, seconds);
-            match self
+            if let Some((_, seconds_by_origin)) = self
                 .profiles
                 .iter_mut()
                 .find(|(known, _)| *known == offsets)
             {
-                Some((_, seconds_by_origin)) => {
-                    let slot = usize::from(imported);
-                    seconds_by_origin[slot] = seconds_by_origin[slot].saturating_add(seconds);
-                }
-                None => {
-                    let mut seconds_by_origin = [0; 2];
-                    seconds_by_origin[usize::from(imported)] = seconds;
-                    self.profiles.push((offsets, seconds_by_origin));
-                }
+                let slot = usize::from(imported);
+                seconds_by_origin[slot] = seconds_by_origin[slot].saturating_add(seconds);
+            } else {
+                let mut seconds_by_origin = [0; 2];
+                seconds_by_origin[usize::from(imported)] = seconds;
+                self.profiles.push((offsets, seconds_by_origin));
             }
         }
         if let Payload::DayUncleanEnd(end) = &event.payload {

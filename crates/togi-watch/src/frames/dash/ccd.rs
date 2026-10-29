@@ -182,42 +182,39 @@ pub(super) fn facts_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -
             scene.paint(Paint::White, offset_text(ccd.day)),
         ]),
     )];
-    match &ccd.cap {
-        Some(cap) => {
-            let (full, short) = cap_words(cap);
-            clauses.push(Clause::new(
-                sep(),
-                vec![
-                    Form::new(text(Paint::Text, full), 3),
-                    Form::new(text(Paint::Text, short), 0),
-                ],
-            ));
-            let bound = ccd.evidence.as_ref().map_or_else(
-                || binding_words(&cap.binding),
-                |evidence| evidence.reason.label().to_owned(),
-            );
-            clauses.push(Clause::new(
-                sep(),
-                vec![
-                    Form::new(text(Paint::Grey, format!("bound by {bound}")), 4),
-                    Form::new(text(Paint::Grey, bound), 2),
-                    Form::empty(),
-                ],
-            ));
-        }
-        None => {
-            let reason = ccd
-                .evidence
-                .as_ref()
-                .map_or("no cap yet", |evidence| evidence.reason.label());
-            clauses.push(Clause::new(
-                sep(),
-                vec![
-                    Form::new(text(Paint::Grey, format!("S 0 · {reason}")), 2),
-                    Form::new(text(Paint::Grey, reason.to_owned()), 0),
-                ],
-            ));
-        }
+    if let Some(cap) = &ccd.cap {
+        let (full, short) = cap_words(cap);
+        clauses.push(Clause::new(
+            sep(),
+            vec![
+                Form::new(text(Paint::Text, full), 3),
+                Form::new(text(Paint::Text, short), 0),
+            ],
+        ));
+        let bound = ccd.evidence.as_ref().map_or_else(
+            || binding_words(&cap.binding),
+            |evidence| evidence.reason.label().to_owned(),
+        );
+        clauses.push(Clause::new(
+            sep(),
+            vec![
+                Form::new(text(Paint::Grey, format!("bound by {bound}")), 4),
+                Form::new(text(Paint::Grey, bound), 2),
+                Form::empty(),
+            ],
+        ));
+    } else {
+        let reason = ccd
+            .evidence
+            .as_ref()
+            .map_or("no cap yet", |evidence| evidence.reason.label());
+        clauses.push(Clause::new(
+            sep(),
+            vec![
+                Form::new(text(Paint::Grey, format!("S 0 · {reason}")), 2),
+                Form::new(text(Paint::Grey, reason.to_owned()), 0),
+            ],
+        ));
     }
     let (edge_full, edge_short) = edge_words(ccd.edge.as_ref());
     let edge_paint = match ccd.edge {
