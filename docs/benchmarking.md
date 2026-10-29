@@ -324,7 +324,7 @@ An issue without a brief has no campaign; #428's brief waits for #427's paramete
 
 ### Limits
 
-By default a campaign runs at most 8 hours of wall time and 12 substantive candidates, and evaluates with 4 workers (`--jobs 4`). It stops at the first exhausted limit. A substantive candidate is one entry of the brief's queue evaluated against the reference; reference runs and a confirmation belong to the candidate they serve. The owner may override any limit at launch. A monetary or API spending cap is a launch parameter of the agent runner, never chosen by a brief; without one, a paid agent does not continue unattended.
+By default a campaign runs at most 8 hours of wall time and 12 substantive candidates. It stops at the first exhausted limit. A substantive candidate is one entry of the brief's queue evaluated against the reference; reference runs and a confirmation belong to the candidate they serve. The owner may override any limit at launch. A monetary or API spending cap is a launch parameter of the agent runner, never chosen by a brief; without one, a paid agent does not continue unattended.
 
 The bench's per-simulator `--timeout` and `--max-boots` bound one simulated session. They are not campaign limits, and a campaign keeps them.
 
@@ -387,7 +387,7 @@ A manifest is JSON. Hashes are SHA-256 in lowercase hex; a gzip input is pinned 
   "frozen": [{"path": "Cargo.lock", "sha256": "…"}, {"path": "flake.lock", "sha256": "…"},
              {"path": "rust-toolchain.toml", "sha256": "…"}, {"path": "tools/fit/research/427.md", "sha256": "…"}],
   "writable": ["crates/togi-sim/src"],
-  "limits": {"wall_minutes": 480, "candidates": 12, "jobs": 4},
+  "limits": {"wall_minutes": 480, "candidates": 12},
   "output": "/absolute/path/outside/the/checkout/run-1",
   "confirmations": 1
 }
@@ -399,7 +399,7 @@ Before `exec` and `outcome` record anything, the dispatcher checks that the camp
 
 If the current wall time precedes the campaign's recorded start, the dispatcher refuses the action with an elapsed-time error and records nothing. It does not treat an inverted interval as zero or restore the full wall-time budget.
 
-`exec` allows only its mode's evaluators. Model development's `forward` evaluator invokes `just fit --forward-only` (`--facts`, `--seal`, `--jobs`, `--records`); `fit` finalizes a confirmed candidate (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`), alongside the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the committed extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation runs only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`), and `--jobs` defaults to the worker limit and may not exceed it. Each run makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
+`exec` allows only its mode's evaluators. Model development's `forward` evaluator invokes `just fit --forward-only` (`--facts`, `--seal`, `--jobs`, `--records`); `fit` finalizes a confirmed candidate (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`), alongside the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the committed extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation runs only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`). The campaign neither sets nor bounds evaluator worker counts: `--jobs` passes through like any other allowed flag, and the evaluator's own default applies when it is absent. Each run makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
 
 An evaluator that ignores that termination gets 5 seconds to exit before the dispatcher kills its process group, so a campaign can run at most that long past its wall limit.
 

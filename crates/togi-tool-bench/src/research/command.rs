@@ -52,8 +52,7 @@ fn inside_run(path: &str, run: &str) -> bool {
         && components.all(|component| matches!(component, Component::Normal(_)))
 }
 
-/// Checks a run's arguments against the manifest and the run's role, and returns them with `--jobs` set to the
-/// campaign's worker limit when they name none.
+/// Checks a run's arguments against the manifest and the run's role, and returns them unchanged.
 pub(super) fn arguments(
     manifest: &Manifest,
     recipe: Recipe,
@@ -212,21 +211,7 @@ pub(super) fn arguments(
             }
         },
     }
-    let mut args = args.to_vec();
-    match value("--jobs") {
-        None => args.extend(["--jobs".to_owned(), manifest.limits.jobs.to_string()]),
-        Some(Some(jobs)) => match jobs.parse::<u32>() {
-            Ok(jobs) if (1..=manifest.limits.jobs).contains(&jobs) => {}
-            _ => {
-                return Err(refuse(format!(
-                    "--jobs {jobs} is outside 1..={}",
-                    manifest.limits.jobs
-                )));
-            }
-        },
-        Some(None) => return Err(refuse("--jobs needs a value".to_owned())),
-    }
-    Ok(args)
+    Ok(args.to_vec())
 }
 
 /// Splits `--flag value`, `--flag=value` and bare `--flag` arguments. Values never start with `--`.

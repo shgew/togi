@@ -203,7 +203,6 @@ object_only! {
     pub struct Limits {
         pub wall_minutes: u32,
         pub candidates: u32,
-        pub jobs: u32,
     }
 }
 
@@ -230,7 +229,6 @@ impl Default for Limits {
         Self {
             wall_minutes: 8 * 60,
             candidates: 12,
-            jobs: 4,
         }
     }
 }
@@ -329,7 +327,7 @@ impl Manifest {
                 ));
             }
         }
-        if self.limits.wall_minutes == 0 || self.limits.candidates == 0 || self.limits.jobs == 0 {
+        if self.limits.wall_minutes == 0 || self.limits.candidates == 0 {
             return invalid("every limit must be positive".to_owned());
         }
         if self.confirmations > issue.max_confirmations() {

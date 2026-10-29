@@ -43,10 +43,9 @@ pub fn render(campaign: &Campaign, notes: &str) -> String {
     );
     let _ = writeln!(
         out,
-        "- Candidates: {} of {}; workers: {}",
+        "- Candidates: {} of {}",
         ledger.candidates().len(),
-        manifest.limits.candidates,
-        manifest.limits.jobs
+        manifest.limits.candidates
     );
     let confirmations = ledger.confirmations();
     let _ = writeln!(
