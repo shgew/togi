@@ -313,7 +313,8 @@ impl State {
                     .filter_map(|event| match &event.id {
                         crate::day::EventId::Boot(boot) => Some(boot.clone()),
                         crate::day::EventId::Unobserved(_)
-                        | crate::day::EventId::Requalification(_) => None,
+                        | crate::day::EventId::Requalification(_)
+                        | crate::day::EventId::Imported(_) => None,
                     })
                     .collect()
             })
