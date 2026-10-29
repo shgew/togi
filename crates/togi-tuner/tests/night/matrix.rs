@@ -462,6 +462,30 @@ fn mapping_selections_are_frozen_by_the_mapping_ordinal() {
 }
 
 #[test]
+fn a_core_unit_maps_its_own_positions_under_its_whole_ccds_package_loads() {
+    let machine = two_ccds();
+    let layout = machine.layout();
+    let unit = togi_tuner::UnitId::Core(core(9));
+    let matrix = mapping_cells(&layout, unit, offset(-15), 0).unwrap();
+    let coarse = mapping_cells(&layout, crate::fixture::unit(1), offset(-15), 0).unwrap();
+    assert_eq!(matrix.profile.get(unit), Some(offset(-15)));
+    assert!(
+        matrix
+            .cells
+            .iter()
+            .filter_map(|planned| planned.cell.position())
+            .all(|position| position == core(9))
+    );
+    assert_eq!(
+        regime_cells(&matrix, Regime::R7),
+        regime_cells(&coarse, Regime::R7)
+    );
+    assert_eq!(matrix.uncovered, coarse.uncovered);
+    let all_threads = regime_cells(&matrix, Regime::R9)[0];
+    assert_eq!(all_threads.loaded, set(&[8, 9, 10, 11, 12, 13, 14, 15]));
+}
+
+#[test]
 fn reproduction_tests_the_exact_profile_then_each_nonzero_ccd_alone() {
     let machine = two_ccds();
     let attempts = reproduction_cells(&machine.layout(), &profile(&[-10, -5]), 0).unwrap();

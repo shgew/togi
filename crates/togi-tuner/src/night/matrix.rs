@@ -254,21 +254,29 @@ impl Layout<'_> {
         Ok(&info.cpus)
     }
 
-    fn unit_cores(&self, unit: UnitId) -> Result<(CcdId, CoreSet), MatrixError> {
-        match unit {
-            UnitId::Ccd(ccd) => self
-                .topology
-                .ccds()
-                .iter()
-                .find(|(id, _)| *id == ccd)
-                .map(|&(ccd, cores)| (ccd, cores))
-                .ok_or(MatrixError::UnknownUnit(unit)),
+    /// The physical CCD of `unit`, all that CCD's cores, and the unit's own positions: a coarse
+    /// unit's positions are its whole CCD, a core unit's only that core. Package and interaction
+    /// loads stay on the whole physical CCD either way.
+    fn unit_cores(&self, unit: UnitId) -> Result<(CcdId, CoreSet, CoreSet), MatrixError> {
+        let ccd = match unit {
+            UnitId::Ccd(ccd) => ccd,
             UnitId::Core(core) => self
                 .topology
                 .ccd_of(core)
-                .map(|ccd| (ccd, [core].into_iter().collect()))
-                .ok_or(MatrixError::UnknownUnit(unit)),
-        }
+                .ok_or(MatrixError::UnknownUnit(unit))?,
+        };
+        let cores = self
+            .topology
+            .ccds()
+            .iter()
+            .find(|(id, _)| *id == ccd)
+            .map(|(_, cores)| *cores)
+            .ok_or(MatrixError::UnknownUnit(unit))?;
+        let positions = match unit {
+            UnitId::Ccd(_) => cores,
+            UnitId::Core(core) => core_set(core),
+        };
+        Ok((ccd, cores, positions))
     }
 
     fn ccd_cores(&self, ccd: CcdId) -> Result<CoreSet, MatrixError> {
@@ -304,16 +312,24 @@ impl Layout<'_> {
     }
 }
 
-/// CCDs a matrix covers, their cores, and the rotation ordinal.
+/// The physical CCDs a matrix covers with all their cores, the tuning positions its per-core rows
+/// visit, and the rotation ordinal. Positions are every covered core except in a core unit's
+/// isolated scope, whose package and interaction loads still span its whole CCD.
 struct Scope<'a> {
     layout: &'a Layout<'a>,
     ccds: Vec<(CcdId, CoreSet)>,
+    positions: CoreSet,
     purpose: Purpose,
     ordinal: u32,
 }
 
 impl Scope<'_> {
     fn positions(&self) -> CoreSet {
+        self.positions
+    }
+
+    /// Every core of the covered physical CCDs.
+    fn loaded(&self) -> CoreSet {
         self.ccds
             .iter()
             .flat_map(|(_, cores)| cores.iter())
@@ -444,7 +460,7 @@ impl Scope<'_> {
         if with_all_ccds && self.ccds.len() > 1 {
             cells.push(self.cell(
                 one,
-                self.positions(),
+                self.loaded(),
                 Roles::Package(PackageLoad::AllCcds),
                 SHORT_DURATION,
                 false,
@@ -462,7 +478,7 @@ impl Scope<'_> {
         };
         self.cell(
             Workloads::One { workload },
-            self.positions(),
+            self.loaded(),
             Roles::Package(roles),
             SUSTAINED_DURATION,
             true,
@@ -523,7 +539,7 @@ impl Scope<'_> {
         let workload = pick_workload(Regime::R9, index(self.ordinal)).id();
         Ok(self.cell(
             Workloads::One { workload },
-            self.positions(),
+            self.loaded(),
             Roles::AllThreads {
                 core,
                 serial: self.serial(core)?,
@@ -557,12 +573,30 @@ fn scope<'a>(
     purpose: Purpose,
     ordinal: u32,
 ) -> Scope<'a> {
+    let positions = ccds.iter().flat_map(|(_, cores)| cores.iter()).collect();
     Scope {
         layout,
         ccds,
+        positions,
         purpose,
         ordinal,
     }
+}
+
+/// The isolated scope of one tuning unit: its positions inside its whole physical CCD.
+fn unit_scope<'a>(
+    layout: &'a Layout<'a>,
+    unit: UnitId,
+    ordinal: u32,
+) -> Result<Scope<'a>, MatrixError> {
+    let (ccd, cores, positions) = layout.unit_cores(unit)?;
+    Ok(Scope {
+        layout,
+        ccds: vec![(ccd, cores)],
+        positions,
+        purpose: Purpose::Isolated,
+        ordinal,
+    })
 }
 
 fn machine_ccds(layout: &Layout<'_>) -> Vec<(CcdId, CoreSet)> {
@@ -667,18 +701,17 @@ pub fn control_cells(
     qualification_cells(layout, &zeroed(profile), ordinal, &Reuse::AllFresh)
 }
 
-/// One mapping step of `ccd` at `offset`, other CCDs at zero: R1, R2, the rotating R8 pair at every
-/// light position, R7 full and honest partials, and the selected R9 serial position, in that
-/// order. `ordinal` is the mapping-step ordinal. Mapping has no sustained blocks and never
-/// qualifies a day profile.
+/// One mapping step of `unit` at `offset`, other units at zero: R1, R2, the rotating R8 pair at
+/// every light position, R7 full and honest partials of the unit's CCD, and the selected R9 serial
+/// position, in that order. `ordinal` is the mapping-step ordinal. Mapping has no sustained blocks
+/// and never qualifies a day profile.
 pub fn mapping_cells(
     layout: &Layout<'_>,
     unit: UnitId,
     offset: TargetOffset,
     ordinal: u32,
 ) -> Result<Matrix, MatrixError> {
-    let (ccd, cores) = layout.unit_cores(unit)?;
-    let scope = scope(layout, vec![(ccd, cores)], Purpose::Isolated, ordinal);
+    let scope = unit_scope(layout, unit, ordinal)?;
     let mut uncovered = Vec::new();
     let mut cells: Vec<PlannedCell> = Vec::new();
     cells.extend(fresh(scope.single_core(Regime::R1, BREADTH_ENTRIES)));
@@ -700,7 +733,7 @@ pub fn mapping_cells(
 }
 
 /// A reproduction night's attempts for the failed `profile`, in order: the exact profile, then each
-/// CCD alone at its failed offset in ascending CCD order (a CCD at CO 0 has nothing to isolate).
+/// unit alone at its failed offset in ascending unit order (a unit at CO 0 has nothing to isolate).
 /// Every attempt lists the qualification matrix's classes in qualification order, all fresh; the
 /// caller stops an attempt at its first conclusive failure.
 pub fn reproduction_cells(
@@ -716,8 +749,7 @@ pub fn reproduction_cells(
         .iter()
         .filter(|(_, offset)| *offset != TargetOffset::ZERO)
     {
-        let (ccd, cores) = layout.unit_cores(unit)?;
-        let isolated = scope(layout, vec![(ccd, cores)], Purpose::Isolated, ordinal);
+        let isolated = unit_scope(layout, unit, ordinal)?;
         let (cells, uncovered) = qualification_rows(&isolated, &Reuse::AllFresh)?;
         attempts.push(Attempt {
             scope: AttemptScope::Unit { unit },
