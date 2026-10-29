@@ -200,6 +200,23 @@ fn all_reverted_units_are_restored_together() {
 }
 
 #[test]
+fn retreat_cannot_hide_a_physically_reverted_unit() {
+    let (lab, mut record) = fixture();
+    if let StepKind::Retreat { units, .. } = &mut record.steps[2].kind {
+        units.pop();
+    }
+    for core in &record.provenance.membership[1].cores {
+        record.steps[3].after.set(*core, 0);
+    }
+    let restored = record.steps[3].after;
+    if let StepKind::ReclassifiedRestoration { units, qualification, .. } = kind(&mut record) {
+        units.pop();
+        qualification.as_mut().expect("certificate").profile = restored;
+    }
+    assert_rule(&lab, &record, "reclassified-retreat-units");
+}
+
+#[test]
 fn restoration_never_adds_depth() {
     let (lab, mut record) = fixture();
     for core in &record.provenance.membership[0].cores {

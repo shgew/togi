@@ -64,10 +64,21 @@ impl Audit<'_> {
                 else {
                     return false;
                 };
+                let mut reverted_count = 0;
+                let physical_match = record.provenance.membership.iter().all(|member| {
+                    let fell = member.cores.iter().any(|core| {
+                        matches!((reverted.before.get(*core), reverted.after.get(*core)),
+                            (Some(before), Some(after)) if after < before)
+                    });
+                    reverted_count += usize::from(fell);
+                    units.contains(&member.unit) == fell
+                        && reverted_units.contains(&member.unit) == fell
+                });
                 *cause == *event
-                    && units.len() == reverted_units.len()
-                    && !units.is_empty()
-                    && units.iter().all(|unit| reverted_units.contains(unit))
+                    && physical_match
+                    && units.len() == reverted_count
+                    && reverted_units.len() == reverted_count
+                    && reverted_count > 0
                     && source
                         .is_some_and(|source| reverted.day + tolerance >= source.policy_event.day)
                     && reverted.day <= *reclassified_day + tolerance
