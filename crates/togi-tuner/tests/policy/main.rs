@@ -5,6 +5,7 @@
     reason = "integration test fixtures and assertions panic on invalid evidence"
 )]
 
+mod climb;
 mod day;
 mod fixture;
 mod flow;
