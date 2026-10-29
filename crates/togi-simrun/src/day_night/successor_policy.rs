@@ -164,10 +164,10 @@ impl JournalFold {
                     for witness in witnesses {
                         match witness.evidence {
                             journal::CellEvidence::Fresh { exposure } => {
-                                fresh.push(seq_id(exposure))
+                                fresh.push(seq_id(exposure));
                             }
                             journal::CellEvidence::Reused { exposure } => {
-                                reused.push(seq_id(exposure))
+                                reused.push(seq_id(exposure));
                             }
                         }
                     }
@@ -342,8 +342,80 @@ impl JournalFold {
                 }
                 self.update_counts();
             }
-            Payload::FirmwareRestoration(restoration) => self.restoration(event, restoration)?,
-            _ => {}
+            Payload::FirmwareRestoration(restoration) => self.restoration(event, restoration),
+            Payload::UnitMapping(mapping) => self.mapping(mapping)?,
+            Payload::SessionStart(_)
+            | Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionImported(_)
+            | Payload::SessionCarried(_)
+            | Payload::ConfigLoaded(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileChange(_)
+            | Payload::ProfileRestored(_)
+            | Payload::TrialIntent(_)
+            | Payload::TrialStart(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialEnd(_)
+            | Payload::TrialCarried(_)
+            | Payload::Failure(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::CrashDetected(_)
+            | Payload::TunerDecision(_)
+            | Payload::CorePhase(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntStart(_)
+            | Payload::HuntGroup(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::Combination(_)
+            | Payload::DeepeningRound(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::CommandReset(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
+            | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
+            | Payload::DayFault(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::TaskStart(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
+            | Payload::SuccessorImported(_) => {}
         }
         Ok(())
     }
@@ -456,7 +528,9 @@ impl JournalFold {
                     ceiling_depth: *self.ceilings.get(unit).ok_or(RunError::Calendar(
                         "applied promotion has no journaled ceiling",
                     ))?,
-                    clean_hold_hours: proposal.hold.eligible_s as f64 / 3600.0,
+                    clean_hold_hours: std::time::Duration::from_secs(proposal.hold.eligible_s)
+                        .as_secs_f64()
+                        / 3600.0,
                     qualification: self.certificate(&proposal)?,
                 }
             }
@@ -487,7 +561,11 @@ impl JournalFold {
                         item.outcome = records::RestorationOutcome::Applied {
                             day,
                             qualification,
-                            clean_stock_hours: proposal.hold.eligible_s as f64 / 3600.0,
+                            clean_stock_hours: std::time::Duration::from_secs(
+                                proposal.hold.eligible_s,
+                            )
+                            .as_secs_f64()
+                                / 3600.0,
                             result: records::RestorationResult::Retained {},
                         };
                         item.id.clone()
@@ -517,16 +595,12 @@ impl JournalFold {
         Ok(())
     }
 
-    fn restoration(
-        &mut self,
-        event: &Event,
-        restoration: &journal::FirmwareRestoration,
-    ) -> Result<(), RunError> {
+    fn restoration(&mut self, event: &Event, restoration: &journal::FirmwareRestoration) {
         let day = self.day(event.time);
         match &restoration.state {
             journal::FirmwareRestorationState::Saved {} => {
                 if self.restoration.is_none() && self.saved_restoration.is_none() {
-                    self.epoch = "firmware-1".to_owned();
+                    "firmware-1".clone_into(&mut self.epoch);
                     self.stock_controls.clear();
                     self.saved_restoration = Some((event.seq, day, restoration.saved.clone()));
                 }
@@ -553,7 +627,6 @@ impl JournalFold {
             | journal::FirmwareRestorationState::Held { .. }
             | journal::FirmwareRestorationState::Restored { .. } => {}
         }
-        Ok(())
     }
 }
 
