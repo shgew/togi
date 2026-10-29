@@ -589,13 +589,13 @@ fn isolated_profile(
     layout: &Layout<'_>,
     unit: UnitId,
     offset: TargetOffset,
-) -> Result<UnitProfile, MatrixError> {
+) -> UnitProfile {
     let units = match unit {
         UnitId::Ccd(_) => Units::coarse(layout.topology),
         UnitId::Core(_) => Units::cores(layout.topology),
     };
     let zero = UnitProfile::zero(&units);
-    Ok(zero.with(unit, offset))
+    zero.with(unit, offset)
 }
 
 /// The whole qualification matrix in R1..R9 order: R1–R5 for every core, then the package and
@@ -697,7 +697,7 @@ pub fn mapping_cells(
         )?]));
     }
     Ok(Matrix {
-        profile: isolated_profile(layout, unit, offset)?,
+        profile: isolated_profile(layout, unit, offset),
         cells,
         uncovered,
     })
@@ -726,7 +726,7 @@ pub fn reproduction_cells(
         attempts.push(Attempt {
             scope: AttemptScope::Unit { unit },
             matrix: Matrix {
-                profile: isolated_profile(layout, unit, offset)?,
+                profile: isolated_profile(layout, unit, offset),
                 cells,
                 uncovered,
             },
