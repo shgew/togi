@@ -238,7 +238,7 @@ fn a_nonzero_proposal_commits_only_stock_as_a_reset_without_consuming_the_promot
     }
     assert_eq!(
         policy.project().applied,
-        Some(target(&journal, 0).ccd().clone())
+        Some(togi_tuner::UnitProfile::of_ccd(target(&journal, 0).ccd()))
     );
     assert_eq!(
         policy.project().day.last_step.unwrap().1.proposed,
