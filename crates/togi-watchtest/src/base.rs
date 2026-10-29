@@ -48,7 +48,7 @@ pub enum Base {
     /// The same long night, stopped once its first filler trial has ended, after mapping has nothing left to do
     /// (about fifty hours in).
     Filler,
-    /// Ruleset 13 days and nights up to the first reproduction trial start on `edge-deep`, seed 1: the real policy
+    /// Bounded-exploration days and nights up to the first reproduction trial start on `edge-deep`, seed 1: the real policy
     /// decides every night trial and day step, the trial runner runs them on a simulated machine, and the day
     /// observer's boots, checkpoints and clean stops are the calendar's. Its nights qualify an exact profile, which a
     /// later cold boot promotes. The one scripted fact is the operator's: the first day after the promotion ends in
