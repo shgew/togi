@@ -124,6 +124,7 @@ impl Writes {
                 | Payload::DayHold(_)
                 | Payload::DayFreeze(_)
                 | Payload::DayInterval(_)
+                | Payload::DayPause(_)
                 | Payload::DayImported(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => {}
@@ -207,6 +208,7 @@ impl Writes {
             | Payload::DayHold(_)
             | Payload::DayFreeze(_)
             | Payload::DayInterval(_)
+            | Payload::DayPause(_)
             | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}

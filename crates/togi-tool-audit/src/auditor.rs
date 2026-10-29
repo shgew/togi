@@ -196,6 +196,7 @@ impl<'a> Auditor<'a> {
             | Payload::DayHold(_)
             | Payload::DayFreeze(_)
             | Payload::DayInterval(_)
+            | Payload::DayPause(_)
             | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_) => {
                 conclusion.stopped = previous;
@@ -332,6 +333,7 @@ impl<'a> Auditor<'a> {
             | Payload::DayHold(_)
             | Payload::DayFreeze(_)
             | Payload::DayInterval(_)
+            | Payload::DayPause(_)
             | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_) => {}
         }

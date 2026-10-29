@@ -183,6 +183,7 @@ impl<'a> Scan<'a> {
                 | Payload::DayHold(_)
                 | Payload::DayFreeze(_)
                 | Payload::DayInterval(_)
+                | Payload::DayPause(_)
                 | Payload::DayImported(_)
                 | Payload::SessionContext(_)
                 | Payload::SessionBaseline(_)
