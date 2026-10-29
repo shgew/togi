@@ -286,7 +286,7 @@ impl State {
     }
 
     /// Whether the trial ran under the current firmware and workload contents.
-    fn is_current_trial(&self, trial: &Trial) -> bool {
+    pub(super) fn is_current_trial(&self, trial: &Trial) -> bool {
         trial.firmware == self.machine.firmware
             && trial.intent.content.iter().all(|entry| {
                 self.machine.contents.get(&entry.workload.runs()) == Some(&entry.content)
