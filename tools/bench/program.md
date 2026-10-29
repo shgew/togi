@@ -12,7 +12,8 @@ successor experiment's numbers and implemented comparator commands; see
 D's source stays explicitly pending until a separate reviewed pinning commit
 registers implemented candidate commands; no D scoring is permitted before it.
 Holdout is refused by the pinned runner and requires a later reviewed
-implementation and explicit repository authorization. This registration neither
+implementation and the repository owner's explicit authorization; only the
+owner runs the confirmation. This registration neither
 changes the historical program below nor authorizes a campaign, confirmation,
 compatibility switch or deployment.
 

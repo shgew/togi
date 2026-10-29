@@ -228,8 +228,9 @@ reported; unavailable finish evidence is not fabricated convergence.
 
 The holdout remains sealed and is refused by the pinned runner: its command
 field records refused invocations, not executable confirmations. A later
-reviewed implementation and explicit repository authorization in the issue are
-required. Any executed confirmation is spent, interrupted included; failure
+reviewed implementation and the repository owner's explicit authorization in
+the issue are required, and only the owner runs the confirmation. Any executed
+confirmation is spent, interrupted included; failure
 stays failed. Registration does not authorize scoring, a campaign, a
 compatibility switch or deployment.
 
