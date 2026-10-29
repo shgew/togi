@@ -568,7 +568,13 @@ impl<'events> Names<'events> {
                             | ClimbBlocker::Paused {}
                             | ClimbBlocker::AllowanceExhausted {}
                             | ClimbBlocker::UnknownEdge { .. }
-                            | ClimbBlocker::Finished { .. } => format!("{blocker:?}"),
+                            | ClimbBlocker::CampaignHistory {}
+                            | ClimbBlocker::SameBoot {}
+                            | ClimbBlocker::HoldProfile {}
+                            | ClimbBlocker::SafeApply {}
+                            | ClimbBlocker::ActivationClosed {}
+                            | ClimbBlocker::Finished { .. }
+                            | ClimbBlocker::Ceiling { .. } => format!("{blocker:?}"),
                         }
                     })
                     .collect();
@@ -607,6 +613,9 @@ impl<'events> Names<'events> {
         match reason {
             UnitStopReason::Ceiling {} => "ceiling".to_owned(),
             UnitStopReason::AllowanceExhausted {} => "allowance_exhausted".to_owned(),
+            UnitStopReason::AdverseCeiling {} => "adverse_ceiling".to_owned(),
+            UnitStopReason::Veto {} => "veto".to_owned(),
+            UnitStopReason::Predecessor { original } => format!("predecessor {}", self.provenance(original)),
             UnitStopReason::FirstBackstep { event, application } => {
                 format!("first_backstep {} {application:?}", self.event_id(event))
             }
@@ -744,8 +753,8 @@ impl<'events> Names<'events> {
                 )
             }
             Payload::FirmwareRestoration(restoration) => {
-                let togi_journal::FirmwareRestoration { saved, state } = restoration;
                 use togi_journal::FirmwareRestorationState;
+                let togi_journal::FirmwareRestoration { saved, state } = restoration;
                 let state = match state {
                     FirmwareRestorationState::Saved {} => "saved".to_owned(),
                     FirmwareRestorationState::Qualified { certificate } => {
@@ -1004,7 +1013,41 @@ impl<'events> Names<'events> {
             None => "night None".to_owned(),
         });
         lines.push(format!("stopped {stopped}"));
-        lines.push(format!("climb {climb:?}"));
+        let mut value = serde_json::to_value(climb).unwrap();
+        self.climb_citations(&mut value);
+        lines.push(format!("climb {value}"));
         lines
+    }
+
+    /// Preserve every projection field while naming local evidence by the same bounded anchors.
+    fn climb_citations(&mut self, value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                for (key, value) in fields {
+                    if key == "witness" || key == "certificate" {
+                        if let Some(seq) = value.as_u64().and_then(Seq::new) {
+                            *value = serde_json::Value::String(self.seq(seq));
+                        }
+                    } else if key == "witnesses" {
+                        if let Some(values) = value.as_array_mut() {
+                            for value in values {
+                                if let Some(seq) = value.as_u64().and_then(Seq::new) {
+                                    *value = serde_json::Value::String(self.seq(seq));
+                                } else {
+                                    self.climb_citations(value);
+                                }
+                            }
+                        }
+                    } else {
+                        self.climb_citations(value);
+                    }
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values { self.climb_citations(value); }
+            }
+            serde_json::Value::Null | serde_json::Value::Bool(_) |
+            serde_json::Value::Number(_) | serde_json::Value::String(_) => {}
+        }
     }
 }
