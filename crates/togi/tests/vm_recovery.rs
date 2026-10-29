@@ -17,8 +17,7 @@
 //! - `mode`: what `togi run` does. `kill` starts a trial and waits, restoring the baseline on SIGTERM; `fail` starts
 //!   a trial and exits 1; `deadend` writes trial offsets, restores the baseline and exits 15; `clean` restores the
 //!   baseline and exits 0.
-//! - `fault`: `validation` refuses the SMU validation, `sweep` fails the sweep, `readback` makes core 1 read -7 after
-//!   whatever was written.
+//! - `fault`: `validation` refuses the SMU validation.
 //! - `trial`: written once a trial runs.
 
 #[cfg(test)]
@@ -191,11 +190,7 @@ mod vm_recovery {
 
     impl Smu for FileSmu {
         fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, Error> {
-            let value = if text("fault") == "readback" && core.index() == 1 {
-                -7
-            } else {
-                Self::offsets()[core.index()]
-            };
+            let value = Self::offsets()[core.index()];
             log(&format!("read core {:02} {value}", core.get()));
             Ok(ObservedOffset(value))
         }
@@ -419,7 +414,7 @@ mod vm_recovery {
         0
     }
 
-    /// The shipped trial runner, with a sweep that fails when the test asks.
+    /// The shipped trial runner with a stable controller identity for the VM fixture's journal.
     struct VmTrials(Runner);
 
     impl Trials for VmTrials {
@@ -435,9 +430,6 @@ mod vm_recovery {
         }
 
         fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
-            if text("fault") == "sweep" {
-                return Err(other("the trial-scope sweep is failed by the test"));
-            }
             self.0.sweep(cancel)
         }
 
