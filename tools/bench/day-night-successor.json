@@ -2498,7 +2498,7 @@
   "sources": {
     "simulator_revision": "f1f7bd42288c96579189decb1e69b3e137efc5c6",
     "runner_revision": "5e9a93c3a98da7b5f11a60a9cc276fcc6b5c2661",
-    "report_revision": "5e9a93c3a98da7b5f11a60a9cc276fcc6b5c2661",
+    "report_revision": "582e27cfe35e5b0a5de6a25a84270023139214a1",
     "binary_sha256": null,
     "input_sha256": null,
     "policies": [
