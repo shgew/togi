@@ -1,6 +1,6 @@
 Status: see [the index](README.md).
 
-Note (2026-10-10): this ADR keeps its ruleset-4 vocabulary. [ADR 0020 terms today](README.md#adr-0020-terms-today) maps Bronze, mark, mask, refinement and the rest to today's rules.
+Note (2026-10-10): this ADR keeps its ruleset-4 vocabulary. [Terms today](#terms-today) maps Bronze, mark, mask, refinement and the rest to today's rules.
 
 # Hunt the core behind every failure and refine every core to its mark
 
@@ -34,3 +34,21 @@ This supersedes [ADR 0011](0011-blame-by-load-and-automatic-regain.md)'s blame a
 - Short breadth coverage catches frequent failure; rare failures need guard exposure. Carried passes can satisfy coverage after a backoff but cannot make the tier clock's zero-failure bound optimistic.
 - A search or refinement move may deepen a core, but a mark-aware checked profile writer prevents even a transient intermediate SMU profile from reaching a recorded mark. Interrupted hunts and rounds need idempotent recorded commitments.
 - Ruleset-3 journals transition once to ruleset 4. A changed BIOS transitions with edges only. Operators can still use `reset --core` to clear a mistaken mark or `reset --all` to discard all carry.
+
+## Terms today
+
+This table is historical (pre-Ruleset 13): it maps this ADR's vocabulary to the pre-Ruleset-13 policy, and its tuner links name retirement sections, not live per-core rules. [The index](README.md) gives each decision's current status.
+
+| ADR 0020 term or rule | Today's term or rule | Decision sources |
+|---|---|---|
+| Start, unit of pass evidence | [Trial](../../GLOSSARY.md#testing) | [0037](0037-cycles-and-trials.md) |
+| Edge; candidate edge | Solo limit; candidate solo limit ([Search](../spec/tuner.md#search)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames them |
+| Failed mark; joint mark | Failure point; combination ([Failure points and combinations](../spec/tuner.md#failure-points-and-combinations)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames them |
+| Mask; masked trial; anchor offsets; edge probe | Group; parked trial; parked offsets; member probe ([Hunt](../spec/tuner.md#hunt)) | 0020; [0023](0023-hunts-that-converge-on-shared-voltage.md) changes parked offsets and combination backoff; [0024](0024-schedule-from-uncontradicted-evidence.md) changes planning; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames them |
+| Refinement; refine; yield | Phase 2 rounds; yield ([Phase 2](../spec/tuner.md#phase-2)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames refinement; [0054](0054-two-phases-replace-the-deepening-loop.md) replaces the loop toward the global optimum with bounded one-count rounds |
+| Resident core; done core | Has room; at its limit, now descriptive core phases only: neither decides when tuning stops ([Failure points and combinations](../spec/tuner.md#failure-points-and-combinations), [Phase 2](../spec/tuner.md#phase-2)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames them; [0054](0054-two-phases-replace-the-deepening-loop.md) |
+| Resident condition; guard; rotation | Together; checking; cycle ([Checking](../spec/tuner.md#checking)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0037](0037-cycles-and-trials.md) rename them |
+| Qualifying rotation; qualified rotation; clean rotation | Full cycle; clean cycle; passed cycle ([Checking](../spec/tuner.md#checking)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0037](0037-cycles-and-trials.md) rename them; a clean cycle is a passed full cycle at or after phase 2's conclusion, and [0054](0054-two-phases-replace-the-deepening-loop.md) removes [0024](0024-schedule-from-uncontradicted-evidence.md)'s earlier credit |
+| Bronze, Silver, Gold; tier clock and clean-hour bounds | Removed, not renamed. Clean-cycle evidence and `run --cycles N` remain ([Checking](../spec/tuner.md#checking)) | [0028](0028-remove-tiers.md) |
+| Hunt every unattributed together failure | Hunts remain outside multi-core R7. Multi-core R7 uses request attribution and voltage-targeted backoff, with located hunts on escalation ([R7 request order and attribution](../spec/tuner.md#r7-request-order-and-attribution), [Hunt](../spec/tuner.md#hunt)) | [0038](0038-self-sufficient-cores.md); [0040](0040-located-hunts.md); [0053](0053-escalation-only-located-hunts.md) |
+| Prove candidate limits, hunt groups, reruns and deepening checks | Eligible carried facts can answer them; cycle coverage stays live ([Evidence](../spec/tuner.md#evidence)) | [0027](0027-carry-trial-facts.md) |
