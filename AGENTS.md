@@ -78,7 +78,7 @@ Idiom, required in pull requests and checked by `/review-pr`:
 
 ## Testing
 
-- **In memory** ([ADR 0073](docs/adr/0073-tests-and-simulations-run-in-memory.md)): ordinary tests and simulations run on `MemFs` and in-memory fakes of the `togi-machine` seams, with time from the injected `Clock` or Tokio's paused clock, and never call `fsync`. The ADR says when a test or run may touch disk and which I/O gets an interface.
+- **In memory:** [Development, Tests and simulations in memory](docs/development.md#tests-and-simulations-in-memory) owns the in-memory seams, permitted disk categories and I/O interfaces.
 - **Simulator first:** behavior is proven on `togi-sim` with fixed seeds, never by waiting for hardware.
 - Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Parametric cases are `#[test_case]` attributes or separate named tests, never a hand-written case list looped inside one test; a loop stays only for a generated or exhaustive sweep, and its assert names the failing input. Seeded `proptest` with failure persistence disabled for invariants, compile-time snapshot fixtures for rendered output, a fuzz target for the journal reader (`just fuzz`), whose properties and seeds live in `togi-journal`'s `tests/reader_fuzz`, where every test run replays the seeds. Compare values with `assert_eq!`.
 - Tests reach the tuner and the session through their public API, never through private fields or test-only mutators.
