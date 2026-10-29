@@ -846,15 +846,16 @@ fn seed_section(out: &mut String, group: &Group, seed: &SeedMetrics) {
     if !seed.learning.reclassified_restorations.is_empty() {
         put(
             out,
-            "| Reclassified restoration | Answer day | Retreat | Event | Units | Before | After | Hold h | Qualification | Consumed before | Consumed after | Violations |",
+            "| Reclassified restoration | Answer day | Application day | Retreat | Event | Units | Before | After | Hold h | Qualification | Consumed before | Consumed after | Violations |",
         );
-        put(out, "|---|---|---|---|---|---|---|---|---|---|---|---|");
+        put(out, "|---|---|---|---|---|---|---|---|---|---|---|---|---|");
         for item in &seed.learning.reclassified_restorations {
             put(
                 out,
                 format!(
-                    "| {} | {} | {} | {} | [{}] | [{}] | [{}] | {} | {} | {} | {} | {} |",
+                    "| {} | {} | {} | {} | {} | [{}] | [{}] | [{}] | {} | {} | {} | {} | {} |",
                     cell(&item.id),
+                    num(item.reclassified_day),
                     num(item.day),
                     cell(&item.retreat),
                     cell(&item.event),

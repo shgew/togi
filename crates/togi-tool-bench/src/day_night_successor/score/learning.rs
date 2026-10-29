@@ -81,7 +81,10 @@ pub struct PromotionView {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ReclassifiedRestorationView {
     pub id: String,
+    /// Day the guarded restoration was applied.
     pub day: f64,
+    /// Day of the non-CPU answer that reclassified the source event.
+    pub reclassified_day: f64,
     pub retreat: String,
     pub event: String,
     pub units: Vec<UnitId>,

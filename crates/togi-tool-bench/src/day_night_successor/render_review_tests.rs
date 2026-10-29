@@ -661,6 +661,7 @@ fn a_seed_lists_reclassified_restorations_with_units_depths_hold_and_allowance()
             ReclassifiedRestorationView {
                 id: "reclass-1".into(),
                 day: 40.25,
+                reclassified_day: 38.5,
                 retreat: "retreat-1".into(),
                 event: "event-3".into(),
                 units: vec![uid(0), uid(1)],
@@ -675,6 +676,7 @@ fn a_seed_lists_reclassified_restorations_with_units_depths_hold_and_allowance()
             ReclassifiedRestorationView {
                 id: "reclass-2".into(),
                 day: 90.0,
+                reclassified_day: 85.75,
                 retreat: "retreat-2".into(),
                 event: "event-5 | late".into(),
                 units: vec![uid(1)],
