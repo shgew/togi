@@ -75,12 +75,19 @@ impl Policy for SuccessorPolicy {
     }
 }
 
+#[derive(Clone)]
+struct RecordedDecision {
+    proposal: journal::ClimbDecision,
+    causes: Vec<Seq>,
+    consumed: u64,
+}
+
 /// Retains journal witness identities and report facts, never raw trial sample histories.
 pub(super) struct JournalFold {
     pub(super) report: PolicyReport,
     pub(super) applications: PolicyApplications,
     origin: Option<Timestamp>,
-    decisions: BTreeMap<Seq, journal::ClimbDecision>,
+    decisions: BTreeMap<Seq, RecordedDecision>,
     certificates: BTreeMap<Seq, records::Qualification>,
     exposures: BTreeMap<Seq, String>,
     failure_events: BTreeMap<Seq, String>,
@@ -92,6 +99,9 @@ pub(super) struct JournalFold {
     restoration: Option<usize>,
     saved_restoration: Option<(Seq, f64, journal::UnitVector)>,
     restoration_backstep: Option<journal::DayEventId>,
+    reclassified: BTreeMap<String, f64>,
+    retreat_receipts: BTreeMap<Seq, usize>,
+    application_days: BTreeMap<journal::ApplicationId, f64>,
 }
 
 impl JournalFold {
@@ -112,6 +122,9 @@ impl JournalFold {
             restoration: None,
             saved_restoration: None,
             restoration_backstep: None,
+            reclassified: BTreeMap::new(),
+            retreat_receipts: BTreeMap::new(),
+            application_days: BTreeMap::new(),
         }
     }
 
@@ -155,7 +168,18 @@ impl JournalFold {
             Payload::ClimbDecision(decision) => {
                 self.mapping(&decision.before.mapping)?;
                 if !matches!(decision.decision, journal::ClimbAction::Hold { .. }) {
-                    self.decisions.insert(event.seq, decision.clone());
+                    self.decisions.insert(
+                        event.seq,
+                        RecordedDecision {
+                            proposal: decision.clone(),
+                            causes: event.cause.clone(),
+                            consumed: self
+                                .report
+                                .allowance
+                                .as_ref()
+                                .map_or(0, |ledger| ledger.consumed),
+                        },
+                    );
                 }
             }
             Payload::ExposureObserved(exposure) => {
@@ -403,6 +427,16 @@ impl JournalFold {
             }
             Payload::CampaignReclassified(reclassified) => {
                 let id = self.canonical_event(&reclassified.event);
+                if matches!(reclassified.to, journal::Classification::NonCpu {})
+                    && matches!(
+                        reclassified.from,
+                        journal::Classification::CpuSuspect { .. }
+                    )
+                {
+                    self.reclassified.insert(id.clone(), day);
+                } else {
+                    self.reclassified.remove(&id);
+                }
                 if let Some(item) = self.report.events.iter_mut().find(|item| item.id == id) {
                     item.reclassified_from = Some(classification(reclassified.from));
                     item.classification = classification(reclassified.to);
@@ -412,6 +446,7 @@ impl JournalFold {
             }
             Payload::FirmwareRestoration(restoration) => self.restoration(event, restoration),
             Payload::UnitMapping(mapping) => self.mapping(mapping)?,
+            Payload::DayVeto(veto) => self.veto(veto)?,
             Payload::SessionStart(_)
             | Payload::SessionContext(_)
             | Payload::SessionBaseline(_)
@@ -464,6 +499,7 @@ impl JournalFold {
             | Payload::StateRebuilt(_)
             | Payload::DayBootStart(_)
             | Payload::DayCheckpoint(_)
+            | Payload::DayPause(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayUncleanEnd(_)
@@ -476,7 +512,6 @@ impl JournalFold {
             | Payload::TaskStart(_)
             | Payload::NightReproduction(_)
             | Payload::DayStep(_)
-            | Payload::DayVeto(_)
             | Payload::DayHold(_)
             | Payload::DayFreeze(_)
             | Payload::DayInterval(_)
@@ -534,6 +569,7 @@ impl JournalFold {
         let after = observed_depths(&applied.readbacks)?;
         self.report.readback = Some(after);
         let day = self.day(event.time);
+        self.application_days.insert(applied.application, day);
         if after.iter().all(|(_, depth)| depth == 0) {
             if let Some((seq, transition_day, saved)) = self.saved_restoration.take() {
                 self.applications
@@ -576,9 +612,10 @@ impl JournalFold {
         };
         let seq =
             Seq::new(decision.0).ok_or(RunError::Calendar("application decision sequence"))?;
-        let proposal = self.decisions.get(&seq).cloned().ok_or(RunError::Calendar(
+        let recorded = self.decisions.get(&seq).cloned().ok_or(RunError::Calendar(
             "application has no journaled climb decision",
         ))?;
+        let proposal = &recorded.proposal;
         self.mapping(&proposal.proposed.mapping)?;
         let day = self.day(event.time);
         let id = seq_id(seq);
@@ -601,10 +638,10 @@ impl JournalFold {
                     clean_hold_hours: std::time::Duration::from_secs(proposal.hold.eligible_s)
                         .as_secs_f64()
                         / 3600.0,
-                    qualification: self.certificate(&proposal)?,
+                    qualification: self.certificate(proposal)?,
                 }
             }
-            journal::ClimbAction::Retreat { units, cause, .. } => records::StepKind::Retreat {
+            journal::ClimbAction::Retreat { cause, .. } => records::StepKind::Retreat {
                 event: match cause {
                     journal::ClimbRetreatCause::Event { event }
                     | journal::ClimbRetreatCause::Veto { event } => {
@@ -613,50 +650,61 @@ impl JournalFold {
                     journal::ClimbRetreatCause::AdverseCeiling { .. }
                     | journal::ClimbRetreatCause::Completion {} => None,
                 },
-                units: units
+                units: self
+                    .report
+                    .unit_membership
                     .iter()
-                    .copied()
-                    .map(unit_id)
-                    .collect::<Result<_, _>>()?,
+                    .filter(|unit| {
+                        unit.cores.iter().any(|core| {
+                            after
+                                .get(*core)
+                                .zip(before.get(*core))
+                                .is_some_and(|(after, before)| after < before)
+                        })
+                    })
+                    .map(|unit| unit.unit)
+                    .collect(),
             },
             journal::ClimbAction::FirmwareZero {} => records::StepKind::StockReset {
                 epoch: self.epoch.clone(),
             },
-            journal::ClimbAction::Restore { restoration, units } => {
-                let restoration_id = match restoration {
-                    journal::RestorationKind::Firmware => {
-                        let index = self.restoration.ok_or(RunError::Calendar(
-                            "firmware application has no saved journal profile",
-                        ))?;
-                        let qualification = self.certificate(&proposal)?;
-                        let item = &mut self.applications.restorations[index];
-                        item.outcome = records::RestorationOutcome::Applied {
-                            day,
-                            qualification,
-                            clean_stock_hours: std::time::Duration::from_secs(
-                                proposal.hold.eligible_s,
-                            )
-                            .as_secs_f64()
-                                / 3600.0,
-                            result: records::RestorationResult::Retained {},
-                        };
-                        item.id.clone()
-                    }
-                    journal::RestorationKind::Reclassified => return Ok(()),
+            journal::ClimbAction::Restore {
+                restoration: journal::RestorationKind::Firmware,
+                units,
+            } => {
+                let index = self.restoration.ok_or(RunError::Calendar(
+                    "firmware application has no saved journal profile",
+                ))?;
+                let qualification = self.certificate(proposal)?;
+                let item = &mut self.applications.restorations[index];
+                item.outcome = records::RestorationOutcome::Applied {
+                    day,
+                    qualification,
+                    clean_stock_hours: std::time::Duration::from_secs(proposal.hold.eligible_s)
+                        .as_secs_f64()
+                        / 3600.0,
+                    result: records::RestorationResult::Retained {},
                 };
+                let restoration = item.id.clone();
                 self.report.newest_step = Some(records::StepIdentity::Restoration {
-                    restoration: restoration_id.clone(),
+                    restoration: restoration.clone(),
                     units: units
                         .iter()
                         .copied()
                         .map(unit_id)
                         .collect::<Result<_, _>>()?,
                 });
-                records::StepKind::Restoration {
-                    restoration: restoration_id,
-                }
+                records::StepKind::Restoration { restoration }
             }
+            journal::ClimbAction::Restore {
+                restoration: journal::RestorationKind::Reclassified,
+                ..
+            } => self.reclassified_restoration(&recorded, seq, before, after)?,
         };
+        if matches!(kind, records::StepKind::Retreat { .. }) {
+            self.retreat_receipts
+                .insert(event.seq, self.applications.steps.len());
+        }
         self.applications.steps.push(records::ProfileStep {
             id,
             day,
@@ -664,6 +712,100 @@ impl JournalFold {
             after,
             kind,
         });
+        Ok(())
+    }
+
+    fn reclassified_restoration(
+        &mut self,
+        recorded: &RecordedDecision,
+        seq: Seq,
+        before: PerCore<u8>,
+        after: PerCore<u8>,
+    ) -> Result<records::StepKind, RunError> {
+        let (retreat, event, units, reclassified_day) = recorded
+            .causes
+            .iter()
+            .rev()
+            .filter_map(|seq| self.retreat_receipts.get(seq))
+            .filter_map(|&index| self.applications.steps.get(index))
+            .find_map(|retreat| {
+                let records::StepKind::Retreat {
+                    event: Some(event),
+                    units,
+                } = &retreat.kind
+                else {
+                    return None;
+                };
+                self.reclassified
+                    .get(event)
+                    .map(|&day| (retreat.id.clone(), event.clone(), units.clone(), day))
+            })
+            .ok_or(RunError::Calendar(
+                "reclassified restoration lacks its journaled retreat and classification",
+            ))?;
+        self.report.newest_step = Some(records::StepIdentity::Restoration {
+            restoration: seq_id(seq),
+            units: units.clone(),
+        });
+        let proposal = &recorded.proposal;
+        Ok(records::StepKind::ReclassifiedRestoration {
+            retreat,
+            event,
+            units,
+            reclassified_day,
+            hold: self
+                .application_days
+                .get(&proposal.hold.application)
+                .filter(|_| !proposal.hold.credited.is_empty())
+                .map(|&start_day| records::RestorationHold {
+                    start_day,
+                    profile: before,
+                    clean_hours: std::time::Duration::from_secs(proposal.hold.eligible_s)
+                        .as_secs_f64()
+                        / 3600.0,
+                    witnesses: proposal.hold.credited.iter().copied().map(seq_id).collect(),
+                }),
+            qualification: proposal
+                .certificate
+                .and_then(|seq| self.certificates.get(&seq))
+                .filter(|certificate| certificate.profile == after)
+                .cloned(),
+            consumed_before: recorded.consumed,
+            consumed_after: self
+                .report
+                .allowance
+                .as_ref()
+                .map_or(0, |ledger| ledger.consumed),
+            crash_vetoes: Vec::new(),
+        })
+    }
+
+    fn veto(&mut self, veto: &journal::DayVeto) -> Result<(), RunError> {
+        if veto.state != journal::VetoState::Active {
+            return Ok(());
+        }
+        let cores = match &veto.profile {
+            journal::ObservedProfile::Ccd { cores, .. }
+            | journal::ObservedProfile::PerCore { cores } => cores,
+        };
+        let profile = observed_depths(cores)?;
+        let event = self.canonical_event(&veto.event);
+        for step in self
+            .applications
+            .steps
+            .iter_mut()
+            .rev()
+            .take_while(|step| step.after == profile)
+        {
+            if let records::StepKind::ReclassifiedRestoration { crash_vetoes, .. } = &mut step.kind
+                && !crash_vetoes.iter().any(|veto| veto.event == event)
+            {
+                crash_vetoes.push(records::ProfileVeto {
+                    event: event.clone(),
+                    profile,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -963,5 +1105,133 @@ mod tests {
                 }
             }
         }
+        assert_reclassified_restoration(events, replay);
+    }
+
+    fn assert_reclassified_restoration(events: &[Event], mut fold: JournalFold) {
+        // Extend the real run with an explicit journal fixture: an operator correction and a
+        // causally linked restoration. Missing hold evidence must remain absent, not fabricated.
+        let (retreat_receipt, retreat) = events
+            .iter()
+            .rev()
+            .find_map(|event| {
+                let Payload::DayApplied(applied) = &event.payload else {
+                    return None;
+                };
+                let journal::ApplyCause::Step { decision } = applied.cause else {
+                    return None;
+                };
+                events.iter().find_map(|proposal| {
+                    let Payload::ClimbDecision(step) = &proposal.payload else {
+                        return None;
+                    };
+                    (proposal.seq.get() == decision.0
+                        && matches!(step.decision, journal::ClimbAction::Retreat { .. }))
+                    .then_some((event, step))
+                })
+            })
+            .expect("applied retreat");
+        let promotion = events
+            .iter()
+            .find_map(|event| {
+                let Payload::ClimbDecision(step) = &event.payload else {
+                    return None;
+                };
+                matches!(step.decision, journal::ClimbAction::Promote { .. })
+                    .then_some((event.seq, step))
+            })
+            .expect("applied promotion proposal");
+        let mut receipt = events.iter().find_map(|event| {
+            let Payload::DayApplied(applied) = &event.payload else { return None; };
+            matches!(applied.cause, journal::ApplyCause::Step { decision } if decision.0 == promotion.0.get())
+                .then_some(applied.clone())
+        }).expect("promotion receipt");
+        let charge = events
+            .iter()
+            .find_map(|event| {
+                if let Payload::CampaignCharge(charge) = &event.payload {
+                    Some(charge)
+                } else {
+                    None
+                }
+            })
+            .expect("charge");
+        let original = events
+            .iter()
+            .find_map(|event| {
+                if let Payload::DayEvent(observed) = &event.payload
+                    && observed.event == charge.event
+                {
+                    Some(observed.classification)
+                } else {
+                    None
+                }
+            })
+            .expect("classified event");
+        let mut event = events.last().unwrap().clone();
+        event.seq = Seq::new(event.seq.get() + 1).unwrap();
+        event.payload = Payload::CampaignReclassified(journal::CampaignReclassified {
+            campaign: charge.campaign,
+            event: charge.event.clone(),
+            from: original,
+            to: journal::Classification::NonCpu {},
+        });
+        fold.fold(&event).unwrap();
+        let mut proposal = promotion.1.clone();
+        proposal.before = retreat.proposed.clone();
+        proposal.proposed = retreat.before.clone();
+        proposal.decision = journal::ClimbAction::Restore {
+            restoration: journal::RestorationKind::Reclassified,
+            units: proposal
+                .proposed
+                .mapping
+                .units
+                .iter()
+                .map(|unit| unit.unit)
+                .collect(),
+        };
+        proposal.hold.credited.clear();
+        event.seq = Seq::new(event.seq.get() + 1).unwrap();
+        let decision = event.seq;
+        event.cause = vec![retreat_receipt.seq];
+        event.payload = Payload::ClimbDecision(proposal);
+        fold.fold(&event).unwrap();
+        event.seq = Seq::new(event.seq.get() + 1).unwrap();
+        receipt.application = journal::ApplicationId(event.seq.get());
+        receipt.cause = journal::ApplyCause::Step {
+            decision: journal::DecisionId(decision.get()),
+        };
+        event.payload = Payload::DayApplied(receipt);
+        fold.fold(&event).unwrap();
+        let restored = fold.applications.steps.last().unwrap();
+        let records::StepKind::ReclassifiedRestoration {
+            retreat: linked,
+            units,
+            hold,
+            qualification,
+            consumed_before,
+            consumed_after,
+            ..
+        } = &restored.kind
+        else {
+            panic!("distinct reclassified restoration");
+        };
+        let original = fold
+            .applications
+            .steps
+            .iter()
+            .find(|step| &step.id == linked)
+            .unwrap();
+        let records::StepKind::Retreat {
+            units: reverted, ..
+        } = &original.kind
+        else {
+            panic!("retreat link");
+        };
+        assert_eq!(units, reverted);
+        assert!(hold.is_none());
+        assert!(qualification.is_some());
+        assert_eq!((*consumed_before, *consumed_after), (1, 1));
+        assert_eq!(fold.report.allowance.unwrap().consumed, 1);
     }
 }
