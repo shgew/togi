@@ -5,7 +5,6 @@
 
 use std::ffi::OsStr;
 
-use jiff::Timestamp;
 use ratatui::buffer::Buffer;
 use ratatui::style::Color;
 use togi_render::OutputFacts;
@@ -128,18 +127,23 @@ fn screen_of(
     }
 }
 
-fn text(name: &str, journal: &Journal<'_>, now: Timestamp, sc: &Screen) -> Buffer {
-    let (buf, _) = render_checked(journal, sc, now);
-    assert_glyphs_drawable(&buf, name);
-    check(name, &text_snapshot(&buf));
-    buf
+/// How a snapshot writes a frame: its rows alone, or its rows with the tone letters of a colour profile.
+#[derive(Clone, Copy)]
+enum Form {
+    Text,
+    Styled(Colours),
 }
 
-fn styled(name: &str, journal: &Journal<'_>, now: Timestamp, sc: &Screen) -> Buffer {
-    let (buf, _) = render_checked(journal, sc, now);
-    assert_glyphs_drawable(&buf, name);
-    check(name, &styled_snapshot(&buf, sc.colours));
-    buf
+fn body_of(buf: &Buffer, form: Form) -> String {
+    match form {
+        Form::Text => text_snapshot(buf),
+        Form::Styled(colours) => styled_snapshot(buf, colours),
+    }
+}
+
+fn checked(name: &str, buf: &Buffer, form: Form) {
+    assert_glyphs_drawable(buf, name);
+    check(name, &body_of(buf, form));
 }
 
 fn has_no_attribute(buf: &Buffer) -> bool {
@@ -208,20 +212,19 @@ fn shapes_without_colour(staged: Staged, buf: &Buffer) {
     }
 }
 
-fn main_views(staged: Staged, sizes: &[(u16, u16)]) {
+fn main_frames(staged: Staged, mut visit: impl FnMut(&str, &Buffer, Form)) {
+    let sizes = MAIN_CASES
+        .iter()
+        .find(|(listed, _)| *listed == staged)
+        .map(|&(_, sizes)| sizes)
+        .expect("the frame is listed in MAIN_CASES");
     let hand = staged.hand();
     let journal = hand.journal();
     for &size in sizes {
+        let sc = screen_of(View::Main, size, Colours::None, 0, false);
+        let (buf, _) = render_checked(&journal, &sc, hand.now);
         let name = format!("main-{}-{}x{}", staged.name(), size.0, size.1);
-        let buf = text(
-            &name,
-            &journal,
-            hand.now,
-            &screen_of(View::Main, size, Colours::None, 0, false),
-        );
-        if size == WIDE {
-            shapes_without_colour(staged, &buf);
-        }
+        visit(&name, &buf, Form::Text);
     }
 }
 
@@ -248,12 +251,12 @@ macro_rules! main_view_tests {
         $(
             #[test]
             fn $test() {
-                let sizes = MAIN_CASES
-                    .iter()
-                    .find(|(staged, _)| *staged == Staged::$staged)
-                    .map(|&(_, sizes)| sizes)
-                    .expect("the frame is listed in MAIN_CASES");
-                main_views(Staged::$staged, sizes);
+                main_frames(Staged::$staged, |name, buf, form| {
+                    checked(name, buf, form);
+                    if (buf.area.width, buf.area.height) == WIDE {
+                        shapes_without_colour(Staged::$staged, buf);
+                    }
+                });
             }
         )*
     };
@@ -304,9 +307,36 @@ fn no_color_and_journald_map_to_one_profile_and_the_console_to_its_own() {
     assert_eq!(colours_for(journald, linux, None), Colours::None);
 }
 
-fn profiles(staged: Staged) {
+const PROFILED: [Staged; 3] = [Staged::Mapping, Staged::Qualifying, Staged::Idle];
+
+fn profile_frames(staged: Staged, mut visit: impl FnMut(&str, &Buffer, Form)) {
     let xterm = Some(OsStr::new("xterm-256color"));
     let linux = Some(OsStr::new("linux"));
+    let no_color = OutputFacts {
+        no_color: true,
+        ..terminal()
+    };
+    let hand = staged.hand();
+    let journal = hand.journal();
+    for (profile, colours) in [
+        ("full", colours_for(terminal(), xterm, None)),
+        ("console", colours_for(terminal(), linux, None)),
+        ("none", colours_for(no_color, xterm, None)),
+    ] {
+        let sc = screen_of(View::Main, WIDE, colours, 0, false);
+        let (buf, _) = render_checked(&journal, &sc, hand.now);
+        let name = format!("main-{}-{}x{}-{profile}", staged.name(), WIDE.0, WIDE.1);
+        visit(&name, &buf, Form::Styled(colours));
+    }
+}
+
+fn profiles(staged: Staged) {
+    assert!(
+        PROFILED.contains(&staged),
+        "{} is not in PROFILED",
+        staged.name()
+    );
+    let xterm = Some(OsStr::new("xterm-256color"));
     let no_color = OutputFacts {
         no_color: true,
         ..terminal()
@@ -315,24 +345,18 @@ fn profiles(staged: Staged) {
         journald: true,
         ..terminal()
     };
-    let hand = staged.hand();
-    let journal = hand.journal();
-    let now = hand.now;
-    let full = colours_for(terminal(), xterm, None);
-    let console = colours_for(terminal(), linux, None);
-    let none = colours_for(no_color, xterm, None);
-    assert_eq!(none, colours_for(journald, xterm, None));
-    for (profile, colours) in [("full", full), ("console", console), ("none", none)] {
-        let name = format!("main-{}-{}x{}-{profile}", staged.name(), WIDE.0, WIDE.1);
-        let buf = styled(
-            &name,
-            &journal,
-            now,
-            &screen_of(View::Main, WIDE, colours, 0, false),
-        );
-        assert!(has_no_attribute(&buf), "{name} draws an attribute");
-        assert_eq!(has_no_styling(&buf), colours == Colours::None, "{name}");
-    }
+    assert_eq!(
+        colours_for(no_color, xterm, None),
+        colours_for(journald, xterm, None)
+    );
+    profile_frames(staged, |name, buf, form| {
+        checked(name, buf, form);
+        let Form::Styled(colours) = form else {
+            panic!("{name} is a styled snapshot");
+        };
+        assert!(has_no_attribute(buf), "{name} draws an attribute");
+        assert_eq!(has_no_styling(buf), colours == Colours::None, "{name}");
+    });
 }
 
 #[test]
@@ -350,112 +374,97 @@ fn idle_in_each_colour_profile() {
     profiles(Staged::Idle);
 }
 
-#[test]
-fn journal_states_at_the_main_sizes() {
+fn journal_state_frames(mut visit: impl FnMut(&str, &Buffer, Form)) {
     let unreadable = std::io::Error::other("events.jsonl: unexpected end of file");
     for size in MAIN_SIZES {
         let (width, height) = size;
         let live = screen_of(View::Main, size, Colours::None, 0, false);
         let once = screen_of(View::Main, size, Colours::None, 0, true);
-        text(
-            &format!("missing-{width}x{height}"),
-            &Journal::Missing,
-            FIXED_NOW,
-            &live,
-        );
-        text(
-            &format!("starting-{width}x{height}"),
-            &Journal::Starting,
-            FIXED_NOW,
-            &live,
-        );
-        text(
-            &format!("problem-{width}x{height}"),
-            &Journal::Problem(&unreadable),
-            FIXED_NOW,
-            &live,
-        );
-        text(
-            &format!("problem-once-{width}x{height}"),
-            &Journal::Problem(&unreadable),
-            FIXED_NOW,
-            &once,
-        );
+        for (state, journal, sc) in [
+            ("missing", Journal::Missing, &live),
+            ("starting", Journal::Starting, &live),
+            ("problem", Journal::Problem(&unreadable), &live),
+            ("problem-once", Journal::Problem(&unreadable), &once),
+        ] {
+            let (buf, _) = render_checked(&journal, sc, FIXED_NOW);
+            visit(&format!("{state}-{width}x{height}"), &buf, Form::Text);
+        }
+    }
+}
+
+#[test]
+fn journal_states_at_the_main_sizes() {
+    journal_state_frames(checked);
+}
+
+fn help_frames(mut visit: impl FnMut(&str, &Buffer, Form)) {
+    let hand = Staged::Mapping.hand();
+    let journal = hand.journal();
+    for (width, height) in VIEW_SIZES {
+        for (what, scroll) in [("help", 0), ("help-end", usize::MAX)] {
+            let sc = screen_of(View::Help, (width, height), Colours::None, scroll, false);
+            let (buf, _) = render_checked(&journal, &sc, hand.now);
+            visit(&format!("{what}-{width}x{height}"), &buf, Form::Text);
+        }
+    }
+    for (what, scroll) in [("help", 0), ("help-end", usize::MAX)] {
+        let sc = screen_of(View::Help, WIDE, Colours::Full, scroll, false);
+        let (buf, _) = render_checked(&journal, &sc, hand.now);
+        let name = format!("{what}-{}x{}-full", WIDE.0, WIDE.1);
+        visit(&name, &buf, Form::Styled(Colours::Full));
     }
 }
 
 #[test]
 fn help_at_the_view_sizes() {
-    let hand = Staged::Mapping.hand();
+    help_frames(checked);
+}
+
+fn log_frames(mut visit: impl FnMut(&str, &Buffer, Form)) {
+    let hand = Staged::Stopped.hand();
     let journal = hand.journal();
-    let now = hand.now;
-    for size in VIEW_SIZES {
-        let (width, height) = size;
-        text(
-            &format!("help-{width}x{height}"),
-            &journal,
-            now,
-            &screen_of(View::Help, size, Colours::None, 0, false),
-        );
-        text(
-            &format!("help-end-{width}x{height}"),
-            &journal,
-            now,
-            &screen_of(View::Help, size, Colours::None, usize::MAX, false),
-        );
+    for (width, height) in VIEW_SIZES {
+        let sc = screen_of(View::Log, (width, height), Colours::None, usize::MAX, false);
+        let (buf, _) = render_checked(&journal, &sc, hand.now);
+        visit(&format!("log-{width}x{height}"), &buf, Form::Text);
     }
-    for (what, scroll) in [("help", 0), ("help-end", usize::MAX)] {
-        let name = format!("{what}-{}x{}-full", WIDE.0, WIDE.1);
-        let sc = screen_of(View::Help, WIDE, Colours::Full, scroll, false);
-        styled(&name, &journal, now, &sc);
-    }
+    let sc = screen_of(View::Log, (160, 45), Colours::None, 0, false);
+    let (buf, _) = render_checked(&journal, &sc, hand.now);
+    visit("log-top-160x45", &buf, Form::Text);
+    let sc = screen_of(View::Log, WIDE, Colours::Full, usize::MAX, false);
+    let (buf, _) = render_checked(&journal, &sc, hand.now);
+    let name = format!("log-{}x{}-full", WIDE.0, WIDE.1);
+    visit(&name, &buf, Form::Styled(Colours::Full));
 }
 
 #[test]
 fn the_journal_view_at_the_view_sizes() {
-    let hand = Staged::Stopped.hand();
+    log_frames(checked);
+}
+
+const ONE_FRAME_SIZES: [(u16, u16); 2] = [WIDE, (120, 33)];
+
+fn one_frame_prints(mut visit: impl FnMut(&str, &Buffer, Form)) {
+    let hand = Staged::Mapping.hand();
     let journal = hand.journal();
-    let now = hand.now;
-    for size in VIEW_SIZES {
-        let (width, height) = size;
-        text(
-            &format!("log-{width}x{height}"),
-            &journal,
-            now,
-            &screen_of(View::Log, size, Colours::None, usize::MAX, false),
-        );
+    for size in ONE_FRAME_SIZES {
+        let sc = screen_of(View::Main, size, Colours::None, 0, true);
+        assert!(!sc.keys && sc.one_frame);
+        let (buf, _) = render_checked(&journal, &sc, hand.now);
+        let name = format!("one-frame-mapping-{}x{}", size.0, size.1);
+        visit(&name, &buf, Form::Text);
     }
-    text(
-        "log-top-160x45",
-        &journal,
-        now,
-        &screen_of(View::Log, (160, 45), Colours::None, 0, false),
-    );
-    let sc = screen_of(View::Log, WIDE, Colours::Full, usize::MAX, false);
-    styled(
-        &format!("log-{}x{}-full", WIDE.0, WIDE.1),
-        &journal,
-        now,
-        &sc,
-    );
 }
 
 #[test]
 fn one_frame_prints_the_live_text_without_the_key_footer() {
     let hand = Staged::Mapping.hand();
     let journal = hand.journal();
-    let now = hand.now;
-    for size in [WIDE, (120, 33)] {
-        let (width, height) = size;
-        let once = screen_of(View::Main, size, Colours::None, 0, true);
-        assert!(!once.keys && once.one_frame);
-        let buf = text(
-            &format!("one-frame-mapping-{width}x{height}"),
-            &journal,
-            now,
-            &once,
-        );
-        let said = rows_of(&buf).join("\n");
+    let mut sizes = ONE_FRAME_SIZES.into_iter();
+    one_frame_prints(|name, buf, form| {
+        checked(name, buf, form);
+        let size = sizes.next().expect("a size for every one-frame snapshot");
+        let said = rows_of(buf).join("\n");
         assert!(
             !said.contains("exit dashboard") && !said.contains("help"),
             "a one-frame print shows the key footer:\n{said}"
@@ -464,9 +473,9 @@ fn one_frame_prints_the_live_text_without_the_key_footer() {
             keys: false,
             ..screen_of(View::Main, size, Colours::None, 0, false)
         };
-        let (live_buf, _) = render_checked(&journal, &live, now);
-        assert_eq!(rows_of(&buf), rows_of(&live_buf));
-    }
+        let (live_buf, _) = render_checked(&journal, &live, hand.now);
+        assert_eq!(rows_of(buf), rows_of(&live_buf), "{name}");
+    });
 }
 
 fn rich_frames(mut visit: impl FnMut(&str, &Buffer)) {
@@ -517,72 +526,15 @@ fn real_fs_generate_snapshots() {
         .unwrap();
     };
     rich_frames(|name, buf| emit(name, styled_snapshot(buf, Colours::Rich)));
-    for &(staged, sizes) in MAIN_CASES {
-        let hand = staged.hand();
-        for &size in sizes {
-            let sc = screen_of(View::Main, size, Colours::None, 0, false);
-            let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
-            emit(
-                &format!("main-{}-{}x{}", staged.name(), size.0, size.1),
-                text_snapshot(&buf),
-            );
-        }
+    let mut frame = |name: &str, buf: &Buffer, form: Form| emit(name, body_of(buf, form));
+    for &(staged, _) in MAIN_CASES {
+        main_frames(staged, &mut frame);
     }
-    for staged in [Staged::Mapping, Staged::Qualifying, Staged::Idle] {
-        let hand = staged.hand();
-        for (profile, colours) in [
-            ("full", Colours::Full),
-            ("console", Colours::Console),
-            ("none", Colours::None),
-        ] {
-            let sc = screen_of(View::Main, WIDE, colours, 0, false);
-            let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
-            emit(
-                &format!("main-{}-{}x{}-{profile}", staged.name(), WIDE.0, WIDE.1),
-                styled_snapshot(&buf, colours),
-            );
-        }
+    for staged in PROFILED {
+        profile_frames(staged, &mut frame);
     }
-    let hand = Staged::Mapping.hand();
-    for size in VIEW_SIZES {
-        for (prefix, scroll) in [("help", 0), ("help-end", usize::MAX)] {
-            let sc = screen_of(View::Help, size, Colours::None, scroll, false);
-            let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
-            emit(
-                &format!("{prefix}-{}x{}", size.0, size.1),
-                text_snapshot(&buf),
-            );
-            if size == WIDE {
-                let sc = screen_of(View::Help, size, Colours::Full, scroll, false);
-                let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
-                emit(
-                    &format!("{prefix}-{}x{}-full", size.0, size.1),
-                    styled_snapshot(&buf, Colours::Full),
-                );
-            }
-        }
-    }
-    for size in [WIDE, (120, 33)] {
-        let sc = screen_of(View::Main, size, Colours::None, 0, true);
-        let (buf, _) = render_checked(&hand.journal(), &sc, hand.now);
-        emit(
-            &format!("one-frame-mapping-{}x{}", size.0, size.1),
-            text_snapshot(&buf),
-        );
-    }
-    let stopped = Staged::Stopped.hand();
-    for size in VIEW_SIZES {
-        let sc = screen_of(View::Log, size, Colours::None, usize::MAX, false);
-        let (buf, _) = render_checked(&stopped.journal(), &sc, stopped.now);
-        emit(&format!("log-{}x{}", size.0, size.1), text_snapshot(&buf));
-    }
-    let sc = screen_of(View::Log, (160, 45), Colours::None, 0, false);
-    let (buf, _) = render_checked(&stopped.journal(), &sc, stopped.now);
-    emit("log-top-160x45", text_snapshot(&buf));
-    let sc = screen_of(View::Log, WIDE, Colours::Full, usize::MAX, false);
-    let (buf, _) = render_checked(&stopped.journal(), &sc, stopped.now);
-    emit(
-        &format!("log-{}x{}-full", WIDE.0, WIDE.1),
-        styled_snapshot(&buf, Colours::Full),
-    );
+    journal_state_frames(&mut frame);
+    help_frames(&mut frame);
+    log_frames(&mut frame);
+    one_frame_prints(&mut frame);
 }
