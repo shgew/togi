@@ -230,7 +230,6 @@ fn restoration_never_adds_depth() {
 }
 
 #[test_case(|record| { if let StepKind::ReclassifiedRestoration { hold, .. } = kind(record) { *hold = None; } }; "missing hold")]
-#[test_case(|record| { if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind(record) { hold.clean_hours = 49.0; } }; "short hold")]
 #[test_case(|record| { let profile = record.steps[3].after; if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind(record) { hold.profile = profile; } }; "wrong profile")]
 #[test_case(|record| { if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind(record) { hold.start_day = 19.0; } }; "stale hold")]
 #[test_case(|record| record.intervals.iter_mut().filter(|interval| interval.start_day >= 20.0 && interval.end_day <= 30.0).for_each(|interval| interval.verified_daily_active_hours = 0.0); "unverified hold")]
@@ -238,6 +237,23 @@ fn restoration_requires_fresh_current_profile_hold(edit: fn(&mut Record)) {
     let (lab, mut record) = fixture();
     edit(&mut record);
     assert_rule(&lab, &record, "reclassified-hold");
+}
+
+#[test_case(49.0 + 59.0 / 60.0, false; "49 hours 59 minutes is short")]
+#[test_case(50.0, true; "exactly 50 hours qualifies")]
+fn restoration_hold_boundary_uses_verified_current_profile_hours(hours: f64, accepted: bool) {
+    let (lab, mut record) = fixture();
+    if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind(&mut record) {
+        hold.clean_hours = hours;
+    }
+    record.intervals.iter_mut()
+        .find(|interval| interval.start_day == 20.0 && interval.end_day == 30.0)
+        .expect("current-profile hold interval").verified_daily_active_hours = hours;
+    resync(&mut record);
+    record.validate().expect("coherent witnessed hold");
+    let result = judged(&lab, &record);
+    assert_eq!(result.violations.iter().any(|violation| violation.rule == "reclassified-hold"), !accepted);
+    if accepted { assert_eq!(result.violations, vec![]); }
 }
 
 #[test]
