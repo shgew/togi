@@ -642,7 +642,7 @@ fn night_failures_stay_out_of_the_daily_accounts() {
         ),
         (1, 1, 0)
     );
-    assert_eq!(ledger(&night).consumed, 0);
+    assert_eq!(ledger(night).consumed, 0);
     // Zero total interruptions and zero true CO crashes are separate counts.
     assert_eq!(
         item.diagnostics.zero_total_daily_interruptions,
@@ -1102,18 +1102,18 @@ fn the_poisson_upper_mean_matches_the_chi_square_table_at_larger_counts(k: u64, 
 
 #[test_case::test_case(100; "a hundred events")]
 #[test_case::test_case(300; "three hundred events")]
-fn the_poisson_upper_mean_puts_exactly_five_percent_in_the_lower_tail(k: u64) {
+fn the_poisson_upper_mean_puts_exactly_five_percent_in_the_lower_tail(k: u32) {
     // Independent reference: ascending terms of the cumulative distribution, no log-space sum.
-    let mean = poisson_upper_mean(k, CONFIDENCE);
+    let mean = poisson_upper_mean(u64::from(k), CONFIDENCE);
     let mut term = (-mean).exp();
     assert!(term > 0.0, "the reference sum must not underflow at k={k}");
     let mut cumulative = term;
     for index in 1..=k {
-        term *= mean / index as f64;
+        term *= mean / f64::from(index);
         cumulative += term;
     }
     assert!((cumulative - 0.05).abs() < 1e-9, "k={k}: {cumulative}");
-    assert!(mean > k as f64);
+    assert!(mean > f64::from(k));
 }
 
 #[test_case::test_case(1, 1.0, &[8, 9, 10, 11, 12, 13, 14, 15]; "a stop at the start closes every core of its CCD and no other")]

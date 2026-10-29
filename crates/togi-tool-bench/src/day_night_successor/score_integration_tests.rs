@@ -111,7 +111,7 @@ fn a_complete_single_slope_reduced_invocation_is_exploratory() {
     let records: Vec<_> = lab
         .records(Split::Dev, RunProfile::ReducedDev, |spec| spec)
         .into_iter()
-        .filter(|record| record.provenance.slope == 1.5)
+        .filter(|record| record.provenance.slope.total_cmp(&1.5).is_eq())
         .collect();
     let mut selection = lab.selection(Split::Dev, RunProfile::ReducedDev);
     selection.slopes = Some(vec![1.5]);

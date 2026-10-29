@@ -361,72 +361,80 @@ fn a_per_core_seed_states_every_finish_reason_ledger_and_event_classification() 
         inherited_stops: vec![],
         newest_step: Some("step-3".into()),
     };
-    let mut a = view(
+    let mut suspect = view(
         "crash-a",
         3.5,
         Period::Day,
         Phase::Learning,
         Classification::CpuSuspect,
     );
-    a.implicated = vec![uid(1)];
-    a.newest_step = Some("step-1".into());
-    let mut b = view(
+    suspect.implicated = vec![uid(1)];
+    suspect.newest_step = Some("step-1".into());
+    let mut unanswered = view(
         "crash-b",
         4.25,
         Period::Day,
         Phase::Learning,
         Classification::Unanswered,
     );
-    b.provisional = true;
-    b.implicated = vec![uid(0), uid(2)];
-    let mut c = view(
+    unanswered.provisional = true;
+    unanswered.implicated = vec![uid(0), uid(2)];
+    let mut background = view(
         "bg-c",
         6.0,
         Period::Day,
         Phase::Learning,
         Classification::NonCpu,
     );
-    c.charged = false;
-    c.truth = "background".into();
-    let mut d = view(
+    background.charged = false;
+    background.truth = "background".into();
+    let mut unexplained = view(
         "crash-d",
         11.0,
         Period::Day,
         Phase::PostFinish,
         Classification::Unexplained,
     );
-    d.restoration_learning = Some("fw-1".into());
-    d.implicated = vec![uid(3)];
-    d.newest_step = Some("step-3".into());
-    let mut e = view(
+    unexplained.restoration_learning = Some("fw-1".into());
+    unexplained.implicated = vec![uid(3)];
+    unexplained.newest_step = Some("step-3".into());
+    let mut reclassified = view(
         "flip-e",
         12.5,
         Period::Day,
         Phase::PostFinish,
         Classification::NonCpu,
     );
-    e.reclassified_from = Some(Classification::CpuSuspect);
-    e.truth = "non-cpu".into();
-    let mut f = view(
+    reclassified.reclassified_from = Some(Classification::CpuSuspect);
+    reclassified.truth = "non-cpu".into();
+    let mut night = view(
         "night-f",
         20.0,
         Period::Night,
         Phase::PostFinish,
         Classification::Unanswered,
     );
-    f.reclassified_from = Some(Classification::Unexplained);
-    f.charged = false;
-    f.implicated = vec![uid(1)];
-    let mut g = view(
+    night.reclassified_from = Some(Classification::Unexplained);
+    night.charged = false;
+    night.implicated = vec![uid(1)];
+    let mut unreported = view(
         "silent-g",
         21.0,
         Period::Day,
         Phase::PostFinish,
         Classification::Unreported,
     );
-    g.charged = false;
-    g.implicated = vec![uid(0)];
-    item.event_views = vec![a, b, c, d, e, f, g];
+    unreported.charged = false;
+    unreported.implicated = vec![uid(0)];
+    item.event_views = vec![
+        suspect,
+        unanswered,
+        background,
+        unexplained,
+        reclassified,
+        night,
+        unreported,
+    ];
     item.epochs = vec![epoch(None)];
     let group = group(
         "successor-per-core-events",

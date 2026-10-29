@@ -795,7 +795,7 @@ impl Spec {
                 binary_sha256: registration.sources.binary_sha256.clone(),
                 input_sha256: registration.sources.input_sha256.clone(),
                 policy_identity: policy.identity.clone(),
-                policy_source_sha256: source_sha256.clone(),
+                policy_source_sha256: source_sha256,
                 parameters_sha256: policy.parameters_sha256.clone(),
                 slope: self.slope,
                 split: self.split,

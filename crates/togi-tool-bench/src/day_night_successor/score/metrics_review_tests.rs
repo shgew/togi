@@ -727,8 +727,8 @@ fn night_probe(record: &mut Record, from: f64, to: f64) {
         .iter()
         .position(|interval| {
             interval.phase == Phase::PostFinish
-                && interval.start_day == from
-                && interval.end_day == to
+                && interval.start_day.total_cmp(&from).is_eq()
+                && interval.end_day.total_cmp(&to).is_eq()
         })
         .expect("interval to turn into a probe");
     let units = record.units.len();
