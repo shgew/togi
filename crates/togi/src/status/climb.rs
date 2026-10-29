@@ -77,6 +77,11 @@ fn blocker(reason: &ClimbBlocker) -> String {
             format!("unknown edge for {}", journal_unit_name(*unit))
         }
         ClimbBlocker::Finished { unit } => format!("{} already finished", journal_unit_name(*unit)),
+        ClimbBlocker::CampaignHistory {} => "campaign history unavailable".to_owned(),
+        ClimbBlocker::SameBoot {} => "cold boot required; restart or resume cannot promote".to_owned(),
+        ClimbBlocker::HoldProfile {} => "exact applied profile hold required".to_owned(),
+        ClimbBlocker::SafeApply {} => "safe-apply prerequisites incomplete".to_owned(),
+        ClimbBlocker::ActivationClosed {} => "nonzero activation closed; stock only".to_owned(),
     }
 }
 
@@ -84,6 +89,8 @@ fn finish(reason: &UnitStopReason) -> String {
     match reason {
         UnitStopReason::Ceiling {} => "ceiling".to_owned(),
         UnitStopReason::AllowanceExhausted {} => "allowance exhausted".to_owned(),
+        UnitStopReason::AdverseCeiling {} => "stopped: adverse ceiling".to_owned(),
+        UnitStopReason::Veto {} => "stopped: whole-profile veto".to_owned(),
         UnitStopReason::FirstBackstep {
             event: id,
             application,
@@ -241,7 +248,7 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
             .map_or("unavailable".to_owned(), |cores| {
                 cores
                     .iter()
-                    .map(|(core, offset)| format!("core {core} {}", offset.get()))
+                    .map(|(core, offset)| format!("core {core} {}", offset.0))
                     .collect::<Vec<_>>()
                     .join(", ")
             }),
