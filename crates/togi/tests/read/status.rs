@@ -82,7 +82,7 @@ fn snapshot_plus_tail_renders_the_same_status_without_writes(base: Base) {
         }
         // Installation encoded the journal once. Walk its line boundaries once too,
         // rather than encoding the overlapping snapshot prefixes again.
-        let bytes = dir.fs.read(&crate::support::journal(&dir)).unwrap();
+        let bytes = dir.fs.read(&super::support::journal(&dir)).unwrap();
         let mut lines = bytes.split_inclusive(|byte| *byte == b'\n');
         let mut previous_cut = 0;
         let mut byte_end = 0;
