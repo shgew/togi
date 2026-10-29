@@ -181,13 +181,17 @@ fn clean_multi_unit_restoration_preserves_depth_stops_and_raw_charge() {
     assert_eq!(record.policy.stopped_units, vec![uid(0), uid(1)]);
 }
 
-#[test_case(|record| record.events[0].policy_event.classification = Classification::CpuSuspect; "not non cpu")]
-#[test_case(|record| record.events[0].policy_event.reclassified_from = None; "no suspect origin")]
-#[test_case(|record| { if let StepKind::ReclassifiedRestoration { reclassified_day, .. } = kind(record) { *reclassified_day = 31.0; } }; "answer after restoration")]
-fn classification_must_precede_restoration(edit: fn(&mut Record)) {
+#[test_case(|record| record.events[0].policy_event.classification = Classification::CpuSuspect, "reclassified-event"; "not non cpu")]
+#[test_case(|record| record.events[0].policy_event.reclassified_from = None, "reclassified-event"; "no suspect origin")]
+#[test_case(|record| { if let StepKind::ReclassifiedRestoration { reclassified_day, .. } = kind(record) { *reclassified_day = 31.0; } }, "reclassified-event"; "answer after restoration")]
+#[test_case(|record| {
+    record.events[0].policy_event.day = 19.0;
+    if let StepKind::ReclassifiedRestoration { reclassified_day, .. } = kind(record) { *reclassified_day = 19.5; }
+}, "reclassified-retreat-units"; "answer strictly before retreat")]
+fn classification_must_precede_restoration(edit: fn(&mut Record), rule: &str) {
     let (lab, mut record) = fixture();
     edit(&mut record);
-    assert_rule(&lab, &record, "reclassified-event");
+    assert_rule(&lab, &record, rule);
 }
 
 #[test]
