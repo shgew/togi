@@ -15,6 +15,10 @@
 //! Source-allocation consistency scales the recorded numerical tolerance to ratio magnitude,
 //! including rejected profiles; this never relaxes exact admissibility membership.
 
+mod assemble;
+mod machine;
+mod run;
+pub use run::{PolicyApplications, RunConfig, run};
 mod policy;
 mod profile;
 #[cfg(test)]

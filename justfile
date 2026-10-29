@@ -204,10 +204,29 @@ sql dir="/var/lib/togi" *args: _dev-shell
 bench *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- "$@"
 
-# Run the preregistered two-year day/night experiment and print its gate verdict (`just bench-day-night --split dev --policy fixed-margin --jobs 32`)
+# Run frozen Ruleset 13 unchanged, or explicit successor profiles with per-criterion tables; combine every slope's JSONL with repeated --score-from for a registered read
 [group('run')]
 bench-day-night *args: _dev-shell
-    cargo run --release --locked -p togi-tool-bench -- day-night "$@"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    registration=tools/bench/day-night.json
+    next_registration=false
+    for arg in "$@"; do
+        if $next_registration; then registration=$arg; next_registration=false; continue; fi
+        case "$arg" in
+            --registration) next_registration=true ;;
+            --registration=*) registration=${arg#--registration=} ;;
+        esac
+    done
+    # Read JSON with the development shell's parser, not filename or flag heuristics.
+    identity=$(TOGI_BENCH_REGISTRATION="$registration" nu --no-config-file -c 'open --raw $env.TOGI_BENCH_REGISTRATION | from json | get id') || identity=
+    if [[ "$identity" == day-night-successor ]]; then
+        SECONDS=0
+        cargo build --release --locked -p togi-tool-bench
+        compilation_seconds=$SECONDS
+        exec cargo run --release --locked -p togi-tool-bench -- day-night "$@" --compilation-seconds "$compilation_seconds"
+    fi
+    exec cargo run --release --locked -p togi-tool-bench -- day-night "$@"
 
 # Audit the current and archived journals of state directories; `just bench` audits its own runs (`just audit COPY-OF-STATE-DIR`)
 [group('run')]

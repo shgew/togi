@@ -307,6 +307,12 @@ fn a_cpu_suspect_answer_leads_to_a_retreat() {
         }
     });
     assert_eq!(policy.frozen, Some(DayClassification::CpuSuspect));
+    let report = policy.inner.report();
+    assert_eq!(report.allowance, None);
+    assert_eq!(report.finishes, Vec::new());
+    assert!(report.events.iter().any(|event|
+        event.classification == crate::day_night::successor::Classification::CpuSuspect));
+    assert!(report.events.iter().all(|event| !event.charged));
 }
 
 #[test]

@@ -40,5 +40,7 @@
 pub mod registration;
 pub mod render;
 pub mod score;
+#[cfg(test)]
+mod runtime_tests;
 
 pub use registration::Registration;

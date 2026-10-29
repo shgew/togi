@@ -120,6 +120,94 @@ The calendar gate idealizes zero trial setup and teardown and applies no control
 
 The registration is authoritative: covered-class climb is crash-free in at least 90% of seeds; hidden-class first-year crashes are at most two per CCD in at least 90%; maximum overshoot is at most one count in at least 95% and never more than three; median days within one count of true safe is at most 90; after two years on the stock-background scenario at least 90% keep converged depth minus one; fixed caps need at most seven promotions per CCD. Each criterion is evaluated per scenario using each seed's worst CCD, never pooled. Every censored or nonconverged run stays in the denominator, with infinite convergence time; partial counts cannot earn a pass. The committed registration describes applicable scenarios and exact empirical fractions. A failed score is an owner decision, not a reason to relax thresholds.
 
+### Successor day/night run path
+
+This section is separate from the frozen [Ruleset 13 gate](#daynight-gate) above, whose registration, commands and rules it does not change. It documents the run path of the successor registration for [#1457](https://github.com/shgew/togi/issues/1457), implemented by [#1481](https://github.com/shgew/togi/issues/1481). The runner records physical-core trajectories; it does not score a candidate. No successor policy score, feasibility result or hardware reliability result exists, and none follows from running these commands.
+
+```text
+just bench-day-night --registration tools/bench/day-night-successor.json
+  --run-profile (reduced-dev | registered) --split dev --policy (co-zero | ruleset13)
+  [--slope (1.5 | 2.0)] [--mode ccd-uniform] [--jobs N] --out FILE
+just bench-day-night --registration tools/bench/day-night-successor.json
+  --run-profile (reduced-dev | registered) --split dev --policy (co-zero | ruleset13)
+  [--slope (1.5 | 2.0)] --score-from FILE [--score-from FILE ...]
+```
+
+The first form runs and then renders the scorer's tables; the second scores records written by earlier invocations without running anything. Concrete forms, shown as the intended commands and not as runs that have been made:
+
+```sh
+# Exploratory reduced read of the stock comparator at the first registered slope
+just bench-day-night --registration tools/bench/day-night-successor.json \
+  --run-profile reduced-dev --split dev --policy co-zero --slope 1.5 \
+  --out reduced-co-zero-1.5.jsonl
+
+# Registered development read of the shipped comparator at each slope
+just bench-day-night --registration tools/bench/day-night-successor.json \
+  --run-profile registered --split dev --policy ruleset13 --slope 1.5 \
+  --out dev-ruleset13-1.5.jsonl
+just bench-day-night --registration tools/bench/day-night-successor.json \
+  --run-profile registered --split dev --policy ruleset13 --slope 2.0 \
+  --out dev-ruleset13-2.0.jsonl
+
+# Score both retained slopes together, with no run
+just bench-day-night --registration tools/bench/day-night-successor.json \
+  --run-profile registered --split dev --policy ruleset13 \
+  --score-from dev-ruleset13-1.5.jsonl --score-from dev-ruleset13-2.0.jsonl
+```
+
+`--jobs` is omitted above, so each run uses the registration's pinned job count.
+
+`--registration` selects the successor registration; without it the command keeps its Ruleset 13 behavior. The registration is strictly parsed before anything runs, so a file that alters a settled threshold, seed range, run profile, budget or calendar constant is refused as not this experiment. The command prints the resolved registration and policy identity, including the registration's id, version and SHA-256 and the policy source identity, and refuses an incompatible slope or mode. The profile, split and policy are explicit selectors, and `--out` is required. The scored unit mode is CCD-uniform (`--mode ccd-uniform` is optional); a per-core mode needs its own registration and is refused. `--jobs` must equal the registration's pinned job count when given and defaults to it. The run writes `FILE.manifest.json` beside the records, described below.
+
+Every record also carries three hashes. The registration's raw-bytes SHA-256 is recorded as computed; the registration has no pin for it. The input hash is the SHA-256 of the deterministic serialization of the resolved registration with only `sources.input_sha256` set to null, so it does not refer to itself. The executing binary's SHA-256 is the third. The run compares the input and binary hashes against the registration's optional pins, refuses a mismatch and records the actual values.
+
+The comparators are `co-zero`, stock forever, and `ruleset13`, the shipped policy as the successor's comparator `A`. `ruleset13` takes `--slope 1.5` or `2.0` as its policy parameter. `co-zero` has no policy parameter; on the successor path `--slope` only selects which registered evaluation cell to run (default the first registered slope), whereas the frozen Ruleset 13 path still refuses a slope for it. The successor candidate policy is not available on this layer: a later layer plugs it into the same policy report seam, and until then a candidate name is refused. The fixed-margin comparator does not exist in the successor registration.
+
+Each invocation runs one policy at one slope:
+
+|Run profile|Seeds and horizon|Budget (elapsed, excluding compilation)|Output|
+|---|---|---|---|
+|`reduced-dev`|first 10 dev seeds (20001–20010), every registered scenario, full 730 days|30 minutes|records, then the scorer's tables with per-criterion values, labelled **EXPLORATORY REDUCED DEV — NOT A REGISTERED SCORE**; no gate verdict or PASS|
+|`registered`, `--split dev`|all 200 dev seeds (20001–20200), every scenario, full horizon|12 hours|records, then the scorer's tables; a PASS or FAIL verdict needs records for every registered slope|
+
+These budgets are settled operational limits, not measured runtimes, and no completion time is forecast. The manifest records `--jobs` and the registration's resource class, compilation time apart from run time, total wall time, summed and maximum run wall time and the completion count. `just bench-day-night` measures its own build as compilation time; a direct run of an already built binary records zero compilation seconds, which is not a measurement of any build. A reduced read supplies no validated runtime estimate for a registered one.
+
+**Scoring.** After an invocation completes, both profiles render the scorer's tables against the registration's criteria. The comparators are the only policies run, so no candidate is scored. Whether a registered run can reach a verdict depends on its slopes: a single-slope invocation prints that the other slope's records are needed and issues no gate verdict, because a scenario passes only at every registered slope. A comparator's table never reads as a candidate PASS. `--score-from` re-renders the same tables from retained JSON Lines (repeat it to combine the records of several invocations) with no run, no manifest and no `--out` or `--jobs`; omitting `--slope` scores every registered slope. Records whose pinned source identity does not match, or that are pending a pin, are refused. Scoring-only exits non-zero on a FAIL, INCOMPLETE or any error; exploratory and diagnostic output that is complete exits zero. An invocation that expires its budget or hits a harness error skips the scorer, retains its manifest and records, and issues no verdict.
+
+**Budget expiry** is an interruption, not a result. The run persists its JSON Lines records and manifest, with the unfinished trajectory as a `truncated` record, and issues no verdict. The seed set, horizon and exposure are never reduced, and an unfinished trajectory is never marked crash-free. A truncated or missing record makes the experiment INCOMPLETE. The registration allows a development run to continue only under its deterministic continuation rule, and the holdout never; this run path does not implement resuming, so an expired run is not continued.
+
+**The holdout is refused.** The run path accepts `--split dev` only; `--split holdout` fails with an explicit error. The holdout has one confirmation per candidate and slope, spent when started, and only the registration's named once-only procedure and authority may run it. That procedure is not part of this recipe, and an interrupted confirmation stays spent. Neither the reduced profile nor any exploratory sweep authorizes it.
+
+#### Outcome statuses
+
+Run completeness is separate from utility and from observed crashes. Each record carries one status:
+
+- `complete-converged`: the full horizon was observed and a final qualifying settled interval exists.
+- `complete-unconverged-crash-free`: the full horizon was observed with no settled interval and no true CO-caused daily crash. Suspect and background events print beside it; zero CO-added crashes is not zero interruptions.
+- `complete-unconverged-with-co-crashes`: the full horizon was observed with no settled interval and at least one true CO-caused daily crash.
+- `truncated`: the trajectory stopped before its horizon, with the observed-until day, reason and lower-bound counts and exposure. A runner that actually stops may not claim completion.
+- `harness-error`: invalid execution, not a stochastic policy outcome; the error and provenance are retained.
+
+Any truncated, missing, duplicate, errored or incompatible record makes the overall experiment INCOMPLETE, never PASS. Partial counts print separately and are never zeros. Nonconvergence is not censoring: a complete unconverged run contributes its observed safety and fails convergence, retention and depth as applicable.
+
+#### Risk and learning accounts
+
+The learning allowance is a machine account, two CPU-suspect events per machine, shared across unit modes and never replenished by reset, firmware or mode change. Consumption is an uncapped count; remaining is `max(limit − consumed, 0)`; overspend is separate. Reclassifying an event neither refunds its charge nor reopens a stopped unit. Each event counts once, by its unique identity.
+
+The allowance bounds permission to keep climbing. It is not post-finish risk: a later crash is neither prevented nor excused by finishing, and an event at a nonzero profile remains charged after its phase ends. Learning and post-finish events, expected failures, true CO crashes and active hours therefore stay in separate accounts. A firmware restoration after the first-finish boundary is tagged both **restoration learning** and **post-finish exposure**. These overlapping labels are not disjoint counts, so do not sum them; each machine event still counts once in the totals.
+
+Actual-history expected failures are integrated over the trajectory's real thermal history, daily exposure, interruptions and preceding nights. The reference rate repeats the registered daily mix at periodic equilibrium and excludes policy-dependent night heating. The two are reported side by side and never substituted for each other.
+
+**Firmware restoration** records the previous whole profile and the stock reset with its exact per-core readback. The new-context stock controls, exact-profile qualification witnesses, 50 clean verified daily stock hours and the single whole-profile restoration step appear only when the policy's report supplies them; the runtime never invents them. A restoration the policy does not report is recorded as blocked with its reason. A CPU-suspect crash on a restoration charges the unchanged account, steps back to stock and stops the restored units. No grace interval or exclusion applies to the transition: a restored profile that is physically unsafe fails despite valid qualification.
+
+**Exact per-core readbacks.** The successor path keeps the whole physical-core vector at every readback and application; it never collapses to a CCD minimum or average as the Ruleset 13 path does. Readbacks that omit or add a core are refused.
+
+**Stock and the shipped comparator.** Neither `co-zero` nor `ruleset13` reports a successor-style first finish, a shared learning allowance, a step permission or qualification, or a ceiling witness at the successor's retained margin, and the runner does not invent them: completion, finish, allowance and ceiling stay unavailable, never zero and never completed. The shipped policy's own stop and ceiling notions are not the successor's. `ruleset13` reports classified learning events and reclassifications taken from its actual daily observations, with the exact readback; stock reports none, and its unavailable events are classified `Unreported`. Promotions and retreat costs are still observed from the trajectory, and the safety and exposure accounts still come from the truth side.
+
+#### Limitations
+
+The calendar idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat, so these records omit that overhead, as the [Ruleset 13 gate](#daynight-gate) does. The hardware's actual overhead must be measured and the [production workload rules](spec/workloads.md#durations-and-checking-schedule) still charge it. The Poisson upper rate is a model-based diagnostic, not an adaptive-policy guarantee. Synthetic trajectories and their hazard are not hardware evidence, establish no real-night feasibility and authorize no nonzero deployment.
+
 ### Historical gates
 
 The Ruleset 9 gate is defined by [ADR 0038](adr/0038-self-sufficient-cores.md) and [#105](https://github.com/shgew/togi/issues/105); [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate. The [Ruleset 11 archive](../tools/bench/gates/ruleset-11/) holds its suite, baseline, candidate and scored report. These are historical records, not current-anchor measurements. The bench no longer judges any session-suite gate, and the archive is pinned by hash in the bench's tests.

@@ -11,6 +11,11 @@ use super::{DayClassification, DayObservation, Night, Policy, RunError};
 pub struct CoZero;
 
 impl Policy for CoZero {
+    fn report(&self) -> super::successor::PolicyReport {
+        // Stock never attempts a climb: it has no finish witness or learning allowance.
+        super::successor::PolicyReport::unavailable()
+    }
+
     #[expect(
         clippy::disallowed_methods,
         reason = "the stock diagnostic comparator writes only simulated registers"
