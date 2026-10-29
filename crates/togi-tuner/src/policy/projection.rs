@@ -229,7 +229,7 @@ impl State {
                 .qualification_records()
                 .iter()
                 .map(|record| QualificationProjection {
-                    profile: record.start.payload.profile.ccd.clone(),
+                    profile: record.start.payload.profile.ccd().clone(),
                     purpose: record.start.payload.purpose,
                     state: match record.latest.payload.state {
                         QualificationState::Start { .. } => QualificationStage::Start,
@@ -377,7 +377,7 @@ impl State {
                             outstanding,
                             ..
                         } => Some(QualificationProgress {
-                            profile: record.start.payload.profile.ccd.clone(),
+                            profile: record.start.payload.profile.ccd().clone(),
                             outstanding: outstanding.clone(),
                             witnessed: witnesses.len(),
                         }),

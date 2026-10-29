@@ -7,8 +7,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
 use togi_machine::{
-    Backend, BiosContext, BootId, CcdId, CcdProfile, ContentId, CoreId, CoreSet, CpuId, Digest,
-    ObservedOffset, PerCore, Regime, Signal, TargetOffset, WorkloadId,
+    Backend, BiosContext, BootId, CcdId, CcdProfile, CcdProfileError, ContentId, CoreId, CoreInfo,
+    CoreSet, CpuId, Digest, ObservedOffset, PerCore, Regime, Signal, TargetOffset, WorkloadId,
 };
 
 use super::domain::{
@@ -174,14 +174,31 @@ object_only! {
 }
 
 object_only! {
-    /// The complete CCD vector and its expansion to every physical core.
+    /// The complete CCD vector and its expansion to every physical core. Only [`CcdVector::expand`] builds one in
+    /// code, so the two agree there; decoding keeps whatever a journal recorded.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct CcdVector {
         #[serde(deserialize_with = "keyed::ccd_profile")]
-        pub ccd: CcdProfile,
+        ccd: CcdProfile,
         #[serde(deserialize_with = "keyed::per_core")]
-        pub cores: PerCore<TargetOffset>,
+        cores: PerCore<TargetOffset>,
+    }
+}
+
+impl CcdVector {
+    /// `ccd` with every core of `topology` at its CCD's offset.
+    pub fn expand(ccd: CcdProfile, topology: &[CoreInfo]) -> Result<Self, CcdProfileError> {
+        let cores = ccd.expand(topology)?;
+        Ok(Self { ccd, cores })
+    }
+
+    pub const fn ccd(&self) -> &CcdProfile {
+        &self.ccd
+    }
+
+    pub const fn cores(&self) -> &PerCore<TargetOffset> {
+        &self.cores
     }
 }
 

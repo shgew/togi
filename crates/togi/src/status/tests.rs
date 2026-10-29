@@ -457,18 +457,22 @@ fn an_open_night_leads_the_header_with_its_start_elapsed_time_and_task() {
 }
 
 fn ccd_vector(offsets: &[(i64, i64)]) -> togi_journal::CcdVector {
-    togi_journal::CcdVector {
-        ccd: CcdProfile::try_from(
-            offsets
-                .iter()
-                .map(|&(ccd, offset)| {
-                    (CcdId::new(ccd).unwrap(), TargetOffset::new(offset).unwrap())
-                })
-                .collect::<std::collections::BTreeMap<_, _>>(),
-        )
-        .unwrap(),
-        cores: PerCore::default(),
-    }
+    let profile = CcdProfile::try_from(
+        offsets
+            .iter()
+            .map(|&(ccd, offset)| (CcdId::new(ccd).unwrap(), TargetOffset::new(offset).unwrap()))
+            .collect::<std::collections::BTreeMap<_, _>>(),
+    )
+    .unwrap();
+    let topology: Vec<_> = offsets
+        .iter()
+        .map(|&(ccd, _)| togi_machine::CoreInfo {
+            core: core(ccd),
+            ccd: CcdId::new(ccd).unwrap(),
+            cpus: Vec::new(),
+        })
+        .collect();
+    togi_journal::CcdVector::expand(profile, &topology).unwrap()
 }
 
 #[test]

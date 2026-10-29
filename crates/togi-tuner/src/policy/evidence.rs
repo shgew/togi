@@ -95,7 +95,7 @@ pub(super) fn cap_scope(
                         .any(|info| info.core == core && info.ccd == ccd)
                 });
             if confined {
-                observed.profile.ccd.get(ccd)
+                observed.profile.ccd().get(ccd)
             } else {
                 None
             }
@@ -132,7 +132,7 @@ impl Group {
     ) {
         let sig = Sig::of_class(&observed.class);
         let adequate = is_adequate(observed, cores);
-        let zero = observed.profile.ccd.is_zero();
+        let zero = observed.profile.ccd().is_zero();
         if let Tested::Isolated { ccd, offset } = observed.tested {
             if observed.activity == Activity::Mapping && adequate {
                 self.mapping_covered
@@ -173,7 +173,7 @@ impl Group {
                     cores
                         .iter()
                         .find(|info| info.core == core)
-                        .and_then(|info| observed.profile.ccd.get(info.ccd))
+                        .and_then(|info| observed.profile.ccd().get(info.ccd))
                         .is_some_and(|offset| offset == TargetOffset::ZERO)
                 })
             })

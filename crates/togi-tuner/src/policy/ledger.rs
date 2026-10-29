@@ -391,10 +391,7 @@ impl State {
                 duration_s: intent.duration_s,
                 placement,
             },
-            profile: togi_journal::CcdVector {
-                ccd,
-                cores: intent.profile,
-            },
+            profile: togi_journal::CcdVector::expand(ccd, &self.machine.cores).ok()?,
             tested,
             activity,
             outcome: ended.end.outcome,

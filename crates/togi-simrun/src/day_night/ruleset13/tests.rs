@@ -150,7 +150,7 @@ fn is_new_firmware(version: &str) -> bool {
 
 fn applied(event: &Event) -> Option<CcdProfile> {
     if let Payload::DayApplied(applied) = &event.payload {
-        Some(applied.target.ccd.clone())
+        Some(applied.target.ccd().clone())
     } else {
         None
     }
@@ -169,7 +169,7 @@ fn requalified(profile: &CcdProfile, events: &[Event]) -> bool {
     events.iter().any(|event| {
         matches!(&event.payload, Payload::NightQualification(q)
             if is_new_firmware(&q.firmware.bios_version)
-                && q.profile.ccd == *profile
+                && q.profile.ccd() == profile
                 && matches!(q.state, QualificationState::Complete { .. }))
     })
 }

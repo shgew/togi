@@ -566,7 +566,7 @@ impl State {
         let qualification_of = |work: &QualWork, reason: Reason| match work {
             QualWork::Open { record, remaining } => runnable_work(
                 Some(Work {
-                    profile: record.start.payload.profile.ccd.clone(),
+                    profile: record.start.payload.profile.ccd().clone(),
                     cells: remaining.clone(),
                     reason,
                 }),

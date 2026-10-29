@@ -562,7 +562,7 @@ impl State {
         if let Some(history) = &mut self.days.history {
             history.push(DayApplication {
                 at: event.seq,
-                profile: applied.target.ccd.clone(),
+                profile: applied.target.ccd().clone(),
                 kind,
             })?;
         }
@@ -597,7 +597,7 @@ impl State {
                     (_, Some(wanted)) => ApplicationKind::Fallback {
                         events,
                         reverted,
-                        wanted: wanted.ccd.clone(),
+                        wanted: wanted.ccd().clone(),
                     },
                     (RetreatCause::Event { .. } | RetreatCause::Completion {}, None) => {
                         ApplicationKind::Retreat { events, reverted }

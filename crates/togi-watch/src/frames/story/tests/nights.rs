@@ -441,10 +441,7 @@ fn a_held_step_names_every_blocker() {
             HoldReason::Paused {},
             HoldReason::Expired {},
             HoldReason::QualificationFailed {
-                profile: togi_journal::CcdVector {
-                    ccd: profile(&[(0, -15), (1, -5)]),
-                    cores: togi_machine::PerCore::default(),
-                },
+                profile: crate::tests::kit::expanded(profile(&[(0, -15), (1, -5)])),
                 witnesses: vec![togi_journal::Seq::new(9).expect("a seq")],
             },
         ],

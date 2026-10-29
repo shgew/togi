@@ -395,7 +395,7 @@ fn hold_reason(reason: &HoldReason) -> String {
         HoldReason::Expired {} => "qualification expired".to_owned(),
         HoldReason::QualificationFailed { profile, .. } => format!(
             "{} failed qualification and stays blocked",
-            profile_word(&profile.ccd)
+            profile_word(profile.ccd())
         ),
     }
 }
@@ -417,7 +417,7 @@ fn changed_word(changed: &[togi_machine::CcdId]) -> String {
 }
 
 fn step_lines(out: &mut String, seq: togi_journal::Seq, step: &DayStep) {
-    let proposed = profile_word(&step.proposed.ccd);
+    let proposed = profile_word(step.proposed.ccd());
     let head = match &step.step {
         StepKind::Hold { blocked_by } => {
             let reasons: Vec<String> = blocked_by.iter().map(hold_reason).collect();
@@ -442,7 +442,7 @@ fn step_lines(out: &mut String, seq: togi_journal::Seq, step: &DayStep) {
                 let _ = write!(
                     head,
                     "; the wanted {} is not qualified, so it falls back to CO 0 until it is",
-                    profile_word(&wanted.ccd)
+                    profile_word(wanted.ccd())
                 );
             }
             head

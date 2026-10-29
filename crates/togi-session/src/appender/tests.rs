@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use jiff::tz::TimeZone;
 use togi_journal::{ApplicationId, ApplyCause, CcdVector, DayApplied, Payload, SessionBaseline};
-use togi_machine::{BootId, CcdId, CcdProfile, ObservedOffset, PerCore};
+use togi_machine::{BootId, CcdId, CcdProfile, CoreInfo, ObservedOffset, PerCore};
 use togi_render::Renderer;
 
 use super::Appender;
@@ -12,13 +12,16 @@ use crate::testing::{Rig, assert_fold_consistent, core};
 
 /// A day application naming other CCDs than the baseline: the policy cannot fold it.
 fn unscheduled() -> Payload {
+    let ccd = CcdId::new(9).unwrap();
+    let topology = [CoreInfo {
+        core: core(0),
+        ccd,
+        cpus: Vec::new(),
+    }];
     Payload::DayApplied(DayApplied {
         application: ApplicationId(1),
         cause: ApplyCause::Reapplication {},
-        target: CcdVector {
-            ccd: CcdProfile::zero([CcdId::new(9).unwrap()]).unwrap(),
-            cores: PerCore::default(),
-        },
+        target: CcdVector::expand(CcdProfile::zero([ccd]).unwrap(), &topology).unwrap(),
         readbacks: PerCore::default(),
         transactions: Vec::new(),
         boot: BootId::from("boot".to_owned()),

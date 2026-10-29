@@ -34,7 +34,7 @@ fn a_firmware_change_later_in_the_boot_still_zeroes_d_on_a_same_boot_query() {
         matches!(step.step, StepKind::FirmwareZero { .. }),
         "{step:?}"
     );
-    assert!(step.proposed.ccd.is_zero());
+    assert!(step.proposed.ccd().is_zero());
     // The reset is issued once: asking again owes nothing.
     assert!(journal.settle_day(&same_boot("day1", 60_200)).is_empty());
 }
@@ -142,7 +142,7 @@ fn failed_qualification(journal: &mut Journal) -> CcdProfile {
             record.purpose == QualificationPurpose::NextStep
                 && matches!(record.state, QualificationState::Failed { .. })
         }) {
-            return failed.profile.ccd.clone();
+            return failed.profile.ccd().clone();
         }
         let ending = if plan.activity == Activity::Qualification {
             Ending::Fail(None)
@@ -170,7 +170,7 @@ fn a_proposal_that_failed_qualification_holds_with_its_witnesses_and_no_daily_ev
         .iter()
         .find_map(|reason| {
             if let HoldReason::QualificationFailed { profile, witnesses } = reason
-                && profile.ccd == failed
+                && *profile.ccd() == failed
             {
                 Some(witnesses)
             } else {

@@ -8,14 +8,12 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use ratatui::buffer::Buffer;
 use togi_journal::{
-    Activity, Binding, Budget, CcdVector, Classification, DayEventId, DayStep, DeadEndCondition,
-    DecisionId, Edge, ExposureClass, Finite, LowerEndpoint, NightId, Outcome, Placement,
-    PlannedTask, QualificationPurpose, Queue, ReproductionState, Resolution, ShutdownReason, Slope,
-    StepCauses, StepKind, TaskId, TaskStatus, Tested, UncoveredClass, UncoveredReason,
+    Activity, Binding, Budget, Classification, DayEventId, DayStep, DeadEndCondition, DecisionId,
+    Edge, ExposureClass, Finite, LowerEndpoint, NightId, Outcome, Placement, PlannedTask,
+    QualificationPurpose, Queue, ReproductionState, Resolution, ShutdownReason, Slope, StepCauses,
+    StepKind, TaskId, TaskStatus, Tested, UncoveredClass, UncoveredReason,
 };
-use togi_machine::{
-    BootId, CcdId, CcdProfile, ObservedOffset, PerCore, Regime, ResetKind, TargetOffset,
-};
+use togi_machine::{BootId, CcdId, CcdProfile, ObservedOffset, Regime, ResetKind, TargetOffset};
 use togi_tuner::policy::{
     CapProjection, CcdProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
     MappingProjection, NightProjection, Projection, QualificationProgress, QualificationProjection,
@@ -31,7 +29,7 @@ use crate::model::{
 };
 use crate::screen::{Drawn, Journal, Screen};
 use crate::tests::fixtures;
-use crate::tests::kit::{off, seq, set};
+use crate::tests::kit::{expanded, off, seq, set};
 use crate::words::{Tag, Tone};
 
 /// A snapshot of an empty model with a session, cores, a trial in flight and a policy set by hand.
@@ -346,10 +344,7 @@ pub(crate) fn night(current: Option<(Queue, u32, Activity)>) -> NightProjection 
 
 /// A day step of `kind` over CCD 0 at CO 0 with no causes.
 pub(crate) fn step(kind: StepKind) -> DayStep {
-    let vector = CcdVector {
-        ccd: profile_of(&[(0, 0)]),
-        cores: PerCore::default(),
-    };
+    let vector = expanded(profile_of(&[(0, 0)]));
     DayStep {
         decision: DecisionId(1),
         cold_boot: BootId::from("boot-1".to_owned()),

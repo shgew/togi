@@ -7,12 +7,13 @@ use std::num::NonZeroU32;
 use jiff::Timestamp;
 use togi_config::Config;
 use togi_journal::{
-    Activity, Build, ConfigLoaded, CoreTransition, Event, FixStamp, Outcome, Payload, SCHEMA, Seq,
-    SessionStart, SessionWarning, Stamp, State as JournalState, TrialEnd, TrialId, TrialIntent,
+    Activity, Build, CcdVector, ConfigLoaded, CoreTransition, Event, FixStamp, Outcome, Payload,
+    SCHEMA, Seq, SessionStart, SessionWarning, Stamp, State as JournalState, TrialEnd, TrialId,
+    TrialIntent,
 };
 use togi_machine::{
-    BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, ObservedOffset, PerCore, Regime, Signal,
-    TargetOffset, workloads,
+    BootId, CcdId, CcdProfile, Condition, CoreId, CoreInfo, CoreSet, ObservedOffset, PerCore,
+    Regime, Signal, TargetOffset, workloads,
 };
 
 use crate::facts::Facts;
@@ -58,6 +59,12 @@ pub(crate) fn infos(cores: &[(u8, u8)]) -> Vec<CoreInfo> {
             cpus: Vec::new(),
         })
         .collect()
+}
+
+/// `ccd` over a topology of one core per CCD, each core numbered as its CCD.
+pub(crate) fn expanded(ccd: CcdProfile) -> CcdVector {
+    let cores: Vec<(u8, u8)> = ccd.ccds().map(|id| (id.get(), id.get())).collect();
+    CcdVector::expand(ccd, &infos(&cores)).unwrap()
 }
 
 pub(crate) fn session_start(cores: &[(u8, u8)]) -> Payload {

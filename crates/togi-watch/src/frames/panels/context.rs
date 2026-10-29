@@ -395,7 +395,7 @@ fn reason_words(reason: &HoldReason) -> String {
         HoldReason::Paused {} => "paused".to_owned(),
         HoldReason::Expired {} => "expired".to_owned(),
         HoldReason::QualificationFailed { profile, .. } => {
-            format!("{} failed qualification", profile_text(&profile.ccd))
+            format!("{} failed qualification", profile_text(profile.ccd()))
         }
     }
 }

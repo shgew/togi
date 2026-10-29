@@ -903,14 +903,7 @@ pub(crate) fn samples() -> Vec<Payload> {
             event: DayEventId::Boot {
                 boot: BootId::from("7a1b2c3d-0000-0000-0000-000000000000".to_owned()),
             },
-            profile: ObservedProfile::Ccd {
-                ccd: CcdProfile::try_from(BTreeMap::from([
-                    (ccd(0), target(-15)),
-                    (ccd(1), target(-10)),
-                ]))
-                .unwrap(),
-                cores: day_offsets(-15),
-            },
+            profile: observed_ccd(&ccd_vector(&[-15, -10])),
             boot: Some(BootId::from(
                 "7a1b2c3d-0000-0000-0000-000000000000".to_owned(),
             )),
@@ -1038,7 +1031,7 @@ fn night() -> NightId {
     NightId(Seq::new(1).unwrap())
 }
 
-fn ccd_vector(offsets: &[i64]) -> CcdVector {
+pub(crate) fn ccd_vector(offsets: &[i64]) -> CcdVector {
     let topology: Vec<_> = (0..u8::try_from(offsets.len()).unwrap())
         .map(|id| CoreInfo {
             core: core(id),
@@ -1054,9 +1047,18 @@ fn ccd_vector(offsets: &[i64]) -> CcdVector {
             .collect::<BTreeMap<_, _>>(),
     )
     .unwrap();
-    CcdVector {
-        cores: profile.expand(&topology).unwrap(),
-        ccd: profile,
+    CcdVector::expand(profile, &topology).unwrap()
+}
+
+/// The day observer's record of `vector` applied exactly.
+fn observed_ccd(vector: &CcdVector) -> ObservedProfile {
+    ObservedProfile::Ccd {
+        ccd: vector.ccd().clone(),
+        cores: vector
+            .cores()
+            .iter()
+            .map(|(core, offset)| (core, offset.observed()))
+            .collect(),
     }
 }
 

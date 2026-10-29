@@ -263,7 +263,7 @@ impl State {
                 continue;
             };
             let profile =
-                CoreProfile::of_ccd(&record.start.payload.profile.ccd, &self.machine.cores)?;
+                CoreProfile::of_ccd(record.start.payload.profile.ccd(), &self.machine.cores)?;
             let id = EventId::Requalification(night.0);
             observations.push(Observation {
                 id: id.clone(),
@@ -296,7 +296,8 @@ impl State {
             ) else {
                 continue;
             };
-            let profile = CoreProfile::of_ccd(&exposure.observed.profile.ccd, &self.machine.cores)?;
+            let profile =
+                CoreProfile::of_ccd(exposure.observed.profile.ccd(), &self.machine.cores)?;
             let id = EventId::Requalification(night.0);
             observations.push(Observation {
                 id: id.clone(),

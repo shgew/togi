@@ -93,7 +93,7 @@ impl State {
             });
             if !rerun {
                 let cell = self.exposure_cell(record)?;
-                return Ok(Some(Work::co_zero_rerun(&cell, &observed.profile.ccd)));
+                return Ok(Some(Work::co_zero_rerun(&cell, observed.profile.ccd())));
             }
         }
         Ok(None)

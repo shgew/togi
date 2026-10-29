@@ -3,16 +3,16 @@
 
 use test_case::test_case;
 use togi_journal::{
-    CcdVector, Classification, DayEventId, HoldReason, Queue, ReproductionState, Resolution,
-    SessionId, StepKind, TaskId,
+    Classification, DayEventId, HoldReason, Queue, ReproductionState, Resolution, SessionId,
+    StepKind, TaskId,
 };
-use togi_machine::{BootId, PerCore};
+use togi_machine::BootId;
 use togi_tuner::policy::{EventProjection, FirmwareValidity, ReproductionProjection};
 
 use super::text;
 use crate::frames::hand::{Hand, Staged, ccd, profile_of, step};
 use crate::frames::testing::FIXED_NOW;
-use crate::tests::kit::seq;
+use crate::tests::kit::{expanded, seq};
 
 fn record() -> DayEventId {
     DayEventId::Record {
@@ -24,10 +24,7 @@ fn record() -> DayEventId {
 /// The reason a hold names when CCD 0 -15, CCD 1 -5 failed qualification.
 fn failed_qualification() -> HoldReason {
     HoldReason::QualificationFailed {
-        profile: CcdVector {
-            ccd: profile_of(&[(0, -15), (1, -5)]),
-            cores: PerCore::default(),
-        },
+        profile: expanded(profile_of(&[(0, -15), (1, -5)])),
         witnesses: vec![seq(9)],
     }
 }

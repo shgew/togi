@@ -5,9 +5,9 @@
 use std::collections::BTreeMap;
 
 use togi_journal::{
-    Activity, ApplicationId, ApplyCause, CellEvidence, Classification, DayApplied, DayCheckpoint,
-    DayCleanStop, DayOffsetsChanged, DayStep, DayUncleanEnd, Edge, ExposureClass, LoadMix,
-    NightQualification, Payload, QualificationPurpose, QualificationState, Queue,
+    Activity, ApplicationId, ApplyCause, CcdVector, CellEvidence, Classification, DayApplied,
+    DayCheckpoint, DayCleanStop, DayOffsetsChanged, DayStep, DayUncleanEnd, Edge, ExposureClass,
+    LoadMix, NightQualification, Payload, QualificationPurpose, QualificationState, Queue,
     ReproductionState, RetreatCause, Seq, StepKind, Tested, UncoveredReason, WarningKind,
 };
 use togi_machine::{BootId, CcdProfile, EndEvidence, Regime, ResetReason};
@@ -68,7 +68,7 @@ pub(crate) fn apply(journal: &mut Journal, step: &DayStep, application: u64, boo
                 decision: step.decision,
             },
             target: step.proposed.clone(),
-            readbacks: offsets_of(&step.proposed.ccd),
+            readbacks: offsets_of(step.proposed.ccd()),
             transactions: Vec::new(),
             boot: BootId::from(boot.to_owned()),
             mono_ns: 1,
@@ -110,7 +110,7 @@ fn promoted_with(params: Params) -> (Journal, CcdProfile) {
             record.purpose == QualificationPurpose::NextStep
                 && matches!(record.state, QualificationState::Complete { .. })
         })
-        .map(|record| record.profile.ccd.clone())
+        .map(|record| record.profile.ccd().clone())
         .unwrap_or_else(|| panic!("the night qualified no proposal"));
     journal.boot_start("day1");
     let committed = journal.settle_day(&cold_boot("day1", 60_000));
@@ -119,7 +119,7 @@ fn promoted_with(params: Params) -> (Journal, CcdProfile) {
         .find(|step| matches!(step.step, StepKind::Promote { .. }))
         .cloned()
         .unwrap_or_else(|| panic!("no promotion in {committed:?}"));
-    assert_eq!(step.proposed.ccd, qualified);
+    assert_eq!(*step.proposed.ccd(), qualified);
     apply(&mut journal, &step, 1, "day1");
     (journal, qualified)
 }
@@ -142,7 +142,7 @@ fn a_firmware_change_zeroes_a_nonzero_d_and_the_next_night_requalifies_it_after_
         .find(|step| matches!(step.step, StepKind::FirmwareZero { .. }))
         .cloned()
         .unwrap_or_else(|| panic!("no firmware zero in {committed:?}"));
-    assert!(step.proposed.ccd.is_zero());
+    assert!(step.proposed.ccd().is_zero());
     apply(&mut journal, &step, 2, "day2");
     assert_eq!(journal.state.project().applied, Some(zero()));
     // The tuning night runs the stock controls first, then re-qualifies the retained D exactly.
@@ -154,7 +154,7 @@ fn a_firmware_change_zeroes_a_nonzero_d_and_the_next_night_requalifies_it_after_
             assert_eq!(plan.activity, Activity::Control, "{plan:?}");
         }
         if qualifications(&journal).iter().any(|record| {
-            record.purpose == QualificationPurpose::Firmware && record.profile.ccd == d
+            record.purpose == QualificationPurpose::Firmware && *record.profile.ccd() == d
         }) {
             assert_eq!(plan.tested, Tested::Exact {});
             return;
@@ -217,7 +217,7 @@ fn an_unexplained_end_at_d_vetoes_and_retreats_provisionally_until_an_answer_rec
         unreachable!();
     };
     assert!(matches!(cause, RetreatCause::Event { .. }), "{cause:?}");
-    assert!(retreat.proposed.ccd.is_zero());
+    assert!(retreat.proposed.ccd().is_zero());
     // The user answers that they turned the machine off: the end is no CPU evidence, and the veto lifts.
     journal.append(
         togi_journal::DayAnswer {
@@ -376,7 +376,7 @@ fn a_monthly_requalification_of_d_runs_every_cell_afresh() {
         .rev()
         .find(|record| {
             record.purpose == QualificationPurpose::Requalification
-                && record.profile.ccd == d
+                && *record.profile.ccd() == d
                 && matches!(record.state, QualificationState::Complete { .. })
         })
         .unwrap_or_else(|| panic!("D was never re-qualified"));
@@ -541,7 +541,7 @@ fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores
     let wanted_ccd0 = first.get(ccd(0)).unwrap().get();
     assert!((deep..wanted_ccd0).contains(&pulled), "{pulled}");
     // An unexplained end at the second D steps back to the first, which unqualified is held at CO 0.
-    unexplained_end_of(&mut journal, "day2", "day3", &second.proposed.ccd);
+    unexplained_end_of(&mut journal, "day2", "day3", second.proposed.ccd());
     let committed = journal.settle_day(&cold_boot_at("day3", journal.now()));
     let fallback = steps(&committed)
         .into_iter()
@@ -551,8 +551,8 @@ fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores
     let StepKind::Retreat { wanted, .. } = &fallback.step else {
         unreachable!();
     };
-    assert_eq!(wanted.as_ref().map(|wanted| &wanted.ccd), Some(&first));
-    assert!(fallback.proposed.ccd.is_zero());
+    assert_eq!(wanted.as_ref().map(CcdVector::ccd), Some(&first));
+    assert!(fallback.proposed.ccd().is_zero());
     apply(&mut journal, &fallback, 3, "day3");
     // The next night qualifies the wanted profile, not the ordinary proposal from CO 0.
     let plans = night_until_filler(&mut journal, "tuning3");
@@ -567,7 +567,7 @@ fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores
     let committed = journal.settle_day(&cold_boot_at("day4", journal.now()));
     let restored = steps(&committed)
         .into_iter()
-        .find(|step| step.proposed.ccd == first)
+        .find(|step| *step.proposed.ccd() == first)
         .unwrap_or_else(|| panic!("the wanted profile was never restored: {committed:?}"));
     assert!(
         matches!(
@@ -624,10 +624,10 @@ fn a_reclassified_step_back_commits_a_restoration_citing_its_answer_event_promot
     let promoted_at = journal.events.last().unwrap().seq;
 
     // An unexplained end at the second D steps back to the qualified, nonzero first D.
-    unexplained_end_of(&mut journal, "day2", "day3", &promotion.proposed.ccd);
+    unexplained_end_of(&mut journal, "day2", "day3", promotion.proposed.ccd());
     let committed = journal.settle_day(&cold_boot_at("day3", journal.now()));
     let retreat = step_of(&committed, |step| matches!(step, StepKind::Retreat { .. }));
-    assert_eq!(retreat.proposed.ccd, first, "{retreat:?}");
+    assert_eq!(*retreat.proposed.ccd(), first, "{retreat:?}");
     apply(&mut journal, &retreat, 3, "day3");
     let retreated_at = journal.events.last().unwrap().seq;
     held_at(&mut journal, &first);
@@ -636,7 +636,7 @@ fn a_reclassified_step_back_commits_a_restoration_citing_its_answer_event_promot
     let answered_at = journal.append(
         togi_journal::DayAnswer {
             boot: BootId::from("day2".to_owned()),
-            offsets: offsets_of(&promotion.proposed.ccd),
+            offsets: offsets_of(promotion.proposed.ccd()),
             answer: togi_journal::DayAnswerKind::Graphics,
             uid: 1000,
         }

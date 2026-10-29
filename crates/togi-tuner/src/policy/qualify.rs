@@ -178,10 +178,7 @@ fn group_commit(records: &mut Vec<QualRecord>, commit: &Committed<NightQualifica
 
 impl State {
     pub(super) fn ccd_vector(&self, profile: &CcdProfile) -> Result<CcdVector, NotReady> {
-        Ok(CcdVector {
-            ccd: profile.clone(),
-            cores: profile.expand(&self.machine.cores)?,
-        })
+        Ok(CcdVector::expand(profile.clone(), &self.machine.cores)?)
     }
 
     /// Every qualification commitment grouped into records, in order of start. Grouped incrementally:
@@ -325,7 +322,7 @@ impl State {
                 let Some(ccd) = self.single_ccd(witness.cell.cores) else {
                     continue;
                 };
-                let Some(offset) = record.start.payload.profile.ccd.get(ccd) else {
+                let Some(offset) = record.start.payload.profile.ccd().get(ccd) else {
                     continue;
                 };
                 let (CellEvidence::Fresh { exposure } | CellEvidence::Reused { exposure }) =
@@ -364,7 +361,7 @@ impl State {
         let start = &record.start;
         let cutoff = start.causes.iter().copied().max().unwrap_or(start.seq);
         let (matrix, reused) = self.matrix_at(
-            &start.payload.profile.ccd,
+            start.payload.profile.ccd(),
             start.payload.purpose,
             record.index,
             cutoff,
@@ -434,7 +431,7 @@ impl State {
                 settled: None,
             },
         };
-        let profile = &record.start.payload.profile.ccd;
+        let profile = record.start.payload.profile.ccd();
         for exposure in task
             .get(entry.read..)
             .unwrap_or_default()
@@ -443,7 +440,7 @@ impl State {
             .filter(|exposure| {
                 self.is_current(&exposure.observed)
                     && exposure.observed.tested == Tested::Exact {}
-                    && &exposure.observed.profile.ccd == profile
+                    && exposure.observed.profile.ccd() == profile
             })
         {
             match exposure.observed.outcome {
@@ -595,7 +592,7 @@ impl State {
         profile: &'a CcdProfile,
     ) -> impl Iterator<Item = &'a QualRecord> {
         records.iter().filter(move |record| {
-            &record.start.payload.profile.ccd == profile && self.is_current_record(record)
+            record.start.payload.profile.ccd() == profile && self.is_current_record(record)
         })
     }
 
@@ -611,7 +608,7 @@ impl State {
                 ) && self.is_current_record(record)
                     && !Self::elapsed(record, now)
             })
-            .map(|record| record.start.payload.profile.ccd.clone())
+            .map(|record| record.start.payload.profile.ccd().clone())
             .collect()
     }
 
@@ -643,7 +640,7 @@ impl State {
         let mut blocked = Vec::new();
         for record in self.qualification_records().iter().filter(|record| {
             record.queue() == Queue::Qualification
-                && &record.start.payload.profile.ccd == profile
+                && record.start.payload.profile.ccd() == profile
                 && &record.start.payload.firmware == firmware
                 && record.start.payload.epoch == EVIDENCE_EPOCH
         }) {
@@ -662,7 +659,7 @@ impl State {
                         observed.outcome == Outcome::Failure
                             && observed.activity == Activity::Qualification
                             && observed.tested == Tested::Exact {}
-                            && &observed.profile.ccd == profile
+                            && observed.profile.ccd() == profile
                             && &observed.firmware == firmware
                             && observed.epoch == EVIDENCE_EPOCH
                             && observed.source.session == session
