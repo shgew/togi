@@ -1,7 +1,8 @@
 ---
 source: crates/togi/tests/cli/mod.rs
 expression: "completion(\"fish\")"
----function __togi_kinds
+---
+function __togi_kinds
     set -l token (commandline -ct)
     set token (string replace -r -- '^--?[^=]*=' '' "$token")
     set -l prefix (string replace -r -- '[^,]*$' '' "$token")

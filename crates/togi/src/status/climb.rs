@@ -16,10 +16,14 @@ use super::policy::{Where, class_word, hours};
 use crate::table::{Row, table, wrap};
 
 fn witnesses(seqs: &[togi_journal::Seq]) -> String {
-    seqs.iter()
-        .map(|seq| format!("#{seq}"))
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut text = String::new();
+    for seq in seqs {
+        if !text.is_empty() {
+            text.push(' ');
+        }
+        let _ = write!(text, "#{seq}");
+    }
+    text
 }
 
 fn event(id: &DayEventId) -> String {
@@ -31,12 +35,34 @@ fn event(id: &DayEventId) -> String {
 }
 
 fn vector(profile: &UnitVector) -> String {
-    profile
-        .cores
-        .iter()
-        .map(|(core, offset)| format!("core {core} {}", offset.get()))
-        .collect::<Vec<_>>()
-        .join(", ")
+    core_vector(
+        profile
+            .cores
+            .iter()
+            .map(|(core, offset)| (core, offset.get())),
+    )
+}
+
+fn core_vector(values: impl Iterator<Item = (togi_machine::CoreId, i64)>) -> String {
+    let mut text = String::new();
+    for (core, offset) in values {
+        if !text.is_empty() {
+            text.push_str(", ");
+        }
+        let _ = write!(text, "core {core} {offset}");
+    }
+    text
+}
+
+fn core_names(cores: togi_machine::CoreSet) -> String {
+    let mut text = String::new();
+    for core in cores {
+        if !text.is_empty() {
+            text.push(',');
+        }
+        let _ = write!(text, "{core}");
+    }
+    text
 }
 
 fn line(out: &mut String, label: &str, text: &str) {
@@ -198,11 +224,7 @@ pub(super) fn unit_table(out: &mut String, policy: &ClimbProjection) {
     for unit in &policy.units {
         rows.push(Row::new([
             unit_name(unit.unit),
-            unit.cores
-                .iter()
-                .map(|core| core.to_string())
-                .collect::<Vec<_>>()
-                .join(","),
+            core_names(unit.cores),
             unit.applied.get().to_string(),
             unit.ceiling
                 .map_or("unknown".to_owned(), |c| c.get().to_string()),
@@ -248,11 +270,7 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
             .read_back
             .as_ref()
             .map_or("unavailable".to_owned(), |cores| {
-                cores
-                    .iter()
-                    .map(|(core, offset)| format!("core {core} {}", offset.0))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                core_vector(cores.iter().map(|(core, offset)| (core, offset.0)))
             }),
     );
     line(

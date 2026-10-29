@@ -1,7 +1,8 @@
 ---
 source: crates/togi/tests/cli/mod.rs
 expression: "completion(\"zsh\")"
----#compdef togi
+---
+#compdef togi
 
 autoload -U is-at-least
 

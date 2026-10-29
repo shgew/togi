@@ -1,7 +1,8 @@
 ---
 source: crates/togi/tests/cli/mod.rs
 expression: "completion(\"nushell\")"
----module completions {
+---
+module completions {
 
   # Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs
   export extern togi [

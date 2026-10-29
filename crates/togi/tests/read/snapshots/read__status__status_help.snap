@@ -1,7 +1,8 @@
 ---
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
----Show the session at a glance
+---
+Show the session at a glance
 
 The activity (the open night with its start, elapsed observed time and the task it runs, the day, a stop or a dead end); session and BIOS context; then one table row per tuning unit with its physical cores, applied D, hard ceiling C, remaining D-C, hold hours and climbing/held/finished state. Tagged U retains observed-failure or censored write-limit witnesses. Statistical S is diagnostic and never authorizes a step. Day policy shows experimental hold + exact night qualification, applied/read-back versus proposed and paused-saved profiles, machine allowance and every classified event, finish/held reasons and current exact profile daily evidence under the 95% fixed-rate model. A Night part shows elapsed observed time, queue shares, mapping, outstanding qualification and reproductions. Status shows policy facts; it computes no ceiling or eligibility itself. A defect names its recorded decisions and the `togi reset --all` that starts fresh. After daily observations exist, a Day section lists boots, checkpointed hours per read-back profile, clean/unclean ends and the last unclean boot's reset reason. Each unclean end of a day-observed boot becomes a question until answered: what togi saw, the four answers and the `togi day answer` command that records each; an answered one shows the current answer. Read-only, rendered from the journal. A different ruleset warns before rendering; a different schema is refused.
 
