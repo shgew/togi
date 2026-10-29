@@ -215,15 +215,21 @@ fn report_execution(
     execution: &Execution,
     output: &mut dyn Write,
 ) -> Result<bool, Error> {
-    report_execution_with_score(args, registration, execution, output, |selection, output| {
-        render_score(
-            registration,
-            &execution.manifest.registration_sha256,
-            selection,
-            &execution.records,
-            output,
-        )
-    })
+    report_execution_with_score(
+        args,
+        registration,
+        execution,
+        output,
+        |selection, output| {
+            render_score(
+                registration,
+                &execution.manifest.registration_sha256,
+                selection,
+                &execution.records,
+                output,
+            )
+        },
+    )
 }
 
 fn report_execution_with_score(

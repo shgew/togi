@@ -582,10 +582,7 @@ fn a_non_cpu_interruption_happens_once_per_day(id: &str, day: u32) {
     let (mut runtime, class) = day_runtime(id, &fixture, day);
     let duration = class.duration();
     let first = runtime.active(&class, duration).unwrap();
-    assert!(matches!(
-        first.cause,
-        Some(Cause::Graphics | Cause::Power)
-    ));
+    assert!(matches!(first.cause, Some(Cause::Graphics | Cause::Power)));
     let remaining = duration - first.elapsed;
     let scenario = runtime.scenario().clone();
     let stock = Profile::uniform(scenario.topology(), Depth::default());
@@ -612,13 +609,18 @@ fn an_earlier_truth_failure_beats_the_non_cpu_interruption(id: &str, day: u32) {
     });
     let (mut runtime, class) = day_runtime(id, &fixture, day);
     let scenario = runtime.scenario().clone();
-    let profile = Profile::uniform(
-        scenario.topology(),
-        Depth::new(fixture.depth).unwrap(),
-    );
+    let profile = Profile::uniform(scenario.topology(), Depth::new(fixture.depth).unwrap());
     let history = TruthState::cold(scenario.topology()).unwrap();
     let expected = scenario
-        .draw(&class, &profile, &history, class.duration(), day, fixture.seed, 0)
+        .draw(
+            &class,
+            &profile,
+            &history,
+            class.duration(),
+            day,
+            fixture.seed,
+            0,
+        )
         .unwrap()
         .unwrap();
     let event = runtime.active(&class, class.duration()).unwrap();

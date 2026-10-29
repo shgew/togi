@@ -541,8 +541,12 @@ fn real_stock_runner_matches_stock_fixture_safety_and_non_benign_rows_without_a_
         scenario.epochs[0].id = "initial".into();
         scenario.epochs[0].context = "ctx-initial".into();
     }
-    let comparator = lab.registration.policy("shipped").expect("comparator metadata");
-    let super::registration::SourceIdentity::Pinned { revision, sha256 } = &comparator.source else {
+    let comparator = lab
+        .registration
+        .policy("shipped")
+        .expect("comparator metadata");
+    let super::registration::SourceIdentity::Pinned { revision, sha256 } = &comparator.source
+    else {
         panic!("synthetic comparator source is pinned");
     };
     let records: Vec<_> = lab
@@ -553,14 +557,19 @@ fn real_stock_runner_matches_stock_fixture_safety_and_non_benign_rows_without_a_
             provenance.policy_identity.clone_from(&comparator.identity);
             provenance.source_revision.clone_from(revision);
             provenance.policy_source_sha256.clone_from(sha256);
-            provenance.parameters_sha256.clone_from(&comparator.parameters_sha256);
+            provenance
+                .parameters_sha256
+                .clone_from(&comparator.parameters_sha256);
             provenance.scenario.clone_from(&cell.scenario);
             provenance.seed = cell.seed;
             provenance.slope = cell.slope;
             provenance.unit_mode = cell.unit_mode;
             provenance.run_profile = RunProfile::Registered;
             let mut policy = togi_simrun::day_night::CoZero::new(cell.unit_mode);
-            assert!(policy.report().finishes.is_empty(), "no day has started yet");
+            assert!(
+                policy.report().finishes.is_empty(),
+                "no day has started yet"
+            );
             let record = successor::run(
                 RunConfig {
                     calendar: CalendarConfig::default(),
@@ -605,19 +614,35 @@ fn real_stock_runner_matches_stock_fixture_safety_and_non_benign_rows_without_a_
         &lab.registration,
         &lab.sha,
         &lab.selection(Split::Dev, RunProfile::Registered),
-        &lab.records(Split::Dev, RunProfile::Registered, super::score::fixture::Spec::stock),
+        &lab.records(
+            Split::Dev,
+            RunProfile::Registered,
+            super::score::fixture::Spec::stock,
+        ),
     )
     .expect("score stock fixtures");
     assert!(actual.complete(), "{:?} {:?}", actual.faults, actual.issues);
     assert_eq!(actual.complete_cells, 4);
     for group in &actual.groups {
-        let reference = fixture.groups.iter().find(|reference| {
-            reference.scenario == group.scenario
-                && (reference.slope - group.slope).abs() < f64::EPSILON
-        }).expect("matching fixture group");
+        let reference = fixture
+            .groups
+            .iter()
+            .find(|reference| {
+                reference.scenario == group.scenario
+                    && (reference.slope - group.slope).abs() < f64::EPSILON
+            })
+            .expect("matching fixture group");
         assert_eq!(
-            group.criteria.iter().map(|row| (row.name, row.passed)).collect::<Vec<_>>(),
-            reference.criteria.iter().map(|row| (row.name, row.passed)).collect::<Vec<_>>(),
+            group
+                .criteria
+                .iter()
+                .map(|row| (row.name, row.passed))
+                .collect::<Vec<_>>(),
+            reference
+                .criteria
+                .iter()
+                .map(|row| (row.name, row.passed))
+                .collect::<Vec<_>>(),
             "{}",
             group.scenario,
         );
@@ -630,9 +655,18 @@ fn real_stock_runner_matches_stock_fixture_safety_and_non_benign_rows_without_a_
         }));
         if group.scenario == "successor-edge-deep" {
             assert!(!group.usefulness_met);
-            assert!(group.criteria.iter().filter(|row| {
-                matches!(row.name, "benign-depth" | "convergence" | "benign-median-settled-day")
-            }).all(|row| !row.passed));
+            assert!(
+                group
+                    .criteria
+                    .iter()
+                    .filter(|row| {
+                        matches!(
+                            row.name,
+                            "benign-depth" | "convergence" | "benign-median-settled-day"
+                        )
+                    })
+                    .all(|row| !row.passed)
+            );
             assert_eq!(group.status, super::score::GroupStatus::NotMet);
         } else {
             assert!(group.usefulness_met);
@@ -665,16 +699,30 @@ fn stock_reports_each_decision_unit_finished_on_its_first_day(mode: UnitMode, un
             deadline: None,
         },
         &mut policy,
-    ).expect("one synthetic stock day");
+    )
+    .expect("one synthetic stock day");
     record.validate().expect("valid stock membership");
     assert_eq!(record.units.len(), units);
     assert_eq!(record.policy.finishes.len(), units);
     assert_eq!(record.policy.unit_membership, record.provenance.membership);
     assert!(record.policy.allowance.is_none());
-    assert!(record.units.iter().all(|unit| unit.finish.as_ref().is_some_and(|finish| {
-        finish.reason == FinishReason::FixedStock && (finish.day - 1.0).abs() < f64::EPSILON
-    })));
-    assert!(record.policy.readback.as_ref().unwrap().iter().all(|(_, depth)| depth == 0));
+    assert!(
+        record
+            .units
+            .iter()
+            .all(|unit| unit.finish.as_ref().is_some_and(|finish| {
+                finish.reason == FinishReason::FixedStock && (finish.day - 1.0).abs() < f64::EPSILON
+            }))
+    );
+    assert!(
+        record
+            .policy
+            .readback
+            .as_ref()
+            .unwrap()
+            .iter()
+            .all(|(_, depth)| depth == 0)
+    );
 }
 
 #[test_case::test_case(|record| record.units[0].finish = None; "missing fixed-stock finish")]
@@ -709,7 +757,9 @@ fn no_ledger_learning_audit_requires_fixed_stock_evidence(invalidate: fn(&mut su
         .iter()
         .filter_map(|unit| unit.finish.clone())
         .collect();
-    record.validate().expect("valid synthetic fixed-stock evidence");
+    record
+        .validate()
+        .expect("valid synthetic fixed-stock evidence");
     let rules = Rules::new(&lab.registration);
     assert!(learning::audit(&record, &rules).reported);
     invalidate(&mut record);
@@ -720,8 +770,7 @@ fn no_ledger_learning_audit_requires_fixed_stock_evidence(invalidate: fn(&mut su
 #[test]
 fn fixed_stock_label_cannot_hide_climb_applications_without_a_ledger() {
     let lab = Lab::new(&["successor-edge-deep"], 1);
-    let mut record = super::score::fixture::Spec::new("successor-edge-deep", SEED, 2.0)
-        .build(&lab);
+    let mut record = super::score::fixture::Spec::new("successor-edge-deep", SEED, 2.0).build(&lab);
     assert!(!record.steps.is_empty(), "the fixture applied a climb");
     record.policy.allowance = None;
     record.policy.newest_step = None;
@@ -735,7 +784,12 @@ fn fixed_stock_label_cannot_hide_climb_applications_without_a_ledger() {
         interval.profile = interval.profile.iter().map(|(core, _)| (core, 0)).collect();
     }
     record.policy.readback = Some(
-        record.provenance.topology.iter().map(|info| (info.core, 0)).collect(),
+        record
+            .provenance
+            .topology
+            .iter()
+            .map(|info| (info.core, 0))
+            .collect(),
     );
     let stock = record.policy.readback.unwrap();
     for step in &mut record.steps {

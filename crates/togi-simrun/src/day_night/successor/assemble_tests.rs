@@ -538,8 +538,7 @@ fn no_write_limit_failure_convergence_requires_depth_forty_four(first_depth: u8,
         &[first_depth, 44],
     );
     assert!(
-        u32::from(first_depth) + 44
-            >= (4 * record.epochs[0].reference.operational_max).div_ceil(5)
+        u32::from(first_depth) + 44 >= (4 * record.epochs[0].reference.operational_max).div_ceil(5)
     );
     assert_eq!(
         matches!(record.outcome, Outcome::CompleteConverged { .. }),

@@ -72,15 +72,14 @@ impl CoZero {
             let unit = id(index)?;
             let parent = match self.mode {
                 UnitMode::CcdUniform => None,
-                UnitMode::PerCore => Some(id(
-                    ccds.iter()
-                        .position(|ccd| {
-                            topology
-                                .iter()
-                                .any(|info| info.core == cores[0] && info.ccd == *ccd)
-                        })
-                        .ok_or(RunError::Calendar("stock parent CCD"))?,
-                )?),
+                UnitMode::PerCore => Some(id(ccds
+                    .iter()
+                    .position(|ccd| {
+                        topology
+                            .iter()
+                            .any(|info| info.core == cores[0] && info.ccd == *ccd)
+                    })
+                    .ok_or(RunError::Calendar("stock parent CCD"))?)?),
             };
             self.report.unit_membership.push(PolicyUnit {
                 unit,

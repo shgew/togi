@@ -481,10 +481,7 @@ fn complete_reduced_report_succeeds_without_a_gate_subset_issue() {
             result.faults.clear();
             result.complete_cells = result.expected_cells;
             result.verdict = super::Verdict::ExploratoryReduced;
-            std::io::Write::write_all(
-                output,
-                super::render::render_seeds(&result).as_bytes(),
-            )?;
+            std::io::Write::write_all(output, super::render::render_seeds(&result).as_bytes())?;
             Ok(result)
         },
     )
@@ -507,9 +504,8 @@ fn only_a_gate_profile_expects_the_slope_subset_issue() {
         args.slope = Some(1.5);
         args.run_profile = Some(profile);
         let selection = super::score_selection(&args, &registration).expect("single slope");
-        let mut result =
-            super::render_score(&registration, &sha, &selection, &[], &mut Vec::new())
-                .expect("synthetic missing-record score");
+        let mut result = super::render_score(&registration, &sha, &selection, &[], &mut Vec::new())
+            .expect("synthetic missing-record score");
         assert_eq!(result.selected_slopes, vec![1.5]);
         assert!(result.registered_slopes.len() > 1);
         assert_eq!(result.issues.len(), scorer_issues);

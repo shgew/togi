@@ -117,12 +117,14 @@ fn fixed_stock(record: &Record, rules: &Rules) -> bool {
             unit.finish.as_ref().is_some_and(|finish| {
                 finish.reason == FinishReason::FixedStock
                     && (finish.day - 1.0).abs() <= rules.day_tolerance
-            })
-                && unit.promotions == 0
+            }) && unit.promotions == 0
                 && unit.retreats.steps == 0
         })
         && !record.intervals.is_empty()
-        && record.intervals.iter().all(|interval| zero(&interval.profile))
+        && record
+            .intervals
+            .iter()
+            .all(|interval| zero(&interval.profile))
         && record.policy.readback.as_ref().is_some_and(zero)
         && record.policy.newest_step.is_none()
         && record.policy.events.iter().all(|event| !event.charged)
@@ -131,9 +133,10 @@ fn fixed_stock(record: &Record, rules: &Rules) -> bool {
                 && zero(&step.before)
                 && zero(&step.after)
         })
-        && record.restorations.iter().all(|restoration| {
-            matches!(restoration.outcome, RestorationOutcome::Blocked { .. })
-        })
+        && record
+            .restorations
+            .iter()
+            .all(|restoration| matches!(restoration.outcome, RestorationOutcome::Blocked { .. }))
 }
 
 struct Audit<'a> {
