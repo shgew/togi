@@ -32,10 +32,11 @@ fn measured(session: &Session, definition: &MachineDefinition, seed: u64) -> Mea
 #[test]
 fn a_boot_capped_session_is_censored_with_its_crashes_and_time_so_far() {
     let definition = crate::session::hunting();
-    let capped = session(&definition, 1, None, 4);
+    // Cap before the final recovery boot, with the first crash already recorded.
+    let capped = session(&definition, 1, None, 2);
     assert!(matches!(capped.outcome, SimOutcome::Capped { .. }));
     let m = measured(&capped, &definition, 1);
-    assert_eq!(m.crashes, 3);
+    assert_eq!(m.crashes, 1);
     assert!(m.sim_hours > 0.0);
     assert_eq!(
         Status::of(3, !capped.events.is_empty(), false, false),

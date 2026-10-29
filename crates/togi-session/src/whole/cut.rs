@@ -87,7 +87,8 @@ fn reproduced(night: &[Event]) -> bool {
 }
 
 /// Map at stock, earn the initial fifty-hour hold, qualify −5, then apply it on a cold boot.
-/// An unexplained end at that profile forces a retreat and the next night reproduces the event.
+/// An unexplained end consumes one campaign event and forces a retreat with a sticky unit stop;
+/// the next night reproduces the event.
 const SCENARIO: &[Step] = &[
     Step::Night {
         until: qualified,
@@ -736,6 +737,32 @@ fn scenario() -> (Model, Vec<Played>, usize) {
         reproduced(&last.events[played[from].start..]),
         "the swept phases reproduce nothing"
     );
+    let charges: Vec<_> = last
+        .events
+        .iter()
+        .filter_map(|event| {
+            if let Payload::CampaignCharge(charge) = &event.payload {
+                Some(charge)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(charges.len(), 1, "one daily event consumes one allowance");
+    let charge = charges[0];
+    assert_eq!(charge.phase, togi_journal::CampaignEventPhase::Learning);
+    assert_eq!(
+        (charge.consumed, charge.remaining, charge.exhausted),
+        (1, 1, false)
+    );
+    assert!(
+        last.events.iter().any(|event| {
+            matches!(&event.payload, Payload::UnitStop(stop)
+                if matches!(&stop.reason, togi_journal::UnitStopReason::FirstBackstep { event, .. }
+                    if *event == charge.event))
+        }),
+        "the charged daily event must stop the unit at its first backstep"
+    );
     (bench.sim.model(), played, from)
 }
 
@@ -1208,13 +1235,16 @@ fn commitments(events: &[Event], from: usize, observations: bool) -> Vec<String>
         .collect()
 }
 
-/// The kinds the kill sweep must cut after at least once.
+/// Current D commitments and retained diagnostic/raw kinds the sweep must cut after at least once.
+/// The campaign is created before this window; its later charge and permanent unit stop are swept here.
 const KINDS: &[&str] = &[
     "task.start",
     "night.plan",
     "exposure.observed",
-    "ccd.edge",
     "unit.edge",
+    "unit.mapping",
+    "campaign.charge",
+    "unit.stop",
     "ccd.cap",
     "night.qualification",
     "night.reproduction",
@@ -1359,6 +1389,31 @@ fn a_changed_hold_or_event_count_changes_the_commitments(events_added: u32, elig
     assert_ne!(
         commitments(&changed, 0, true),
         commitments(&events, 0, true)
+    );
+}
+
+#[test_case("unit.edge"; "hard ceiling margin")]
+#[test_case("campaign.charge"; "remaining allowance")]
+#[test_case("unit.stop"; "stop witnesses")]
+fn a_changed_unit_commitment_changes_the_commitments(kind: &str) {
+    let events = scenario_events();
+    let mut changed = events.clone();
+    let event = changed
+        .iter_mut()
+        .find(|event| event.kind().as_str() == kind)
+        .expect("the scenario commits the required D record");
+    match &mut event.payload {
+        Payload::UnitEdge(edge) => edge.margin += 1,
+        Payload::CampaignCharge(charge) => charge.remaining -= 1,
+        Payload::UnitStop(stop) => {
+            stop.witnesses.pop().expect("the stop cites its history");
+        }
+        _ => unreachable!(),
+    }
+    assert_ne!(
+        commitments(&changed, 0, true),
+        commitments(&events, 0, true),
+        "{kind} payload must participate in resume comparisons"
     );
 }
 

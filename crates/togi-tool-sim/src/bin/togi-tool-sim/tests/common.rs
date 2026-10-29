@@ -59,8 +59,8 @@ impl Source for Texts {
     }
 }
 
-/// Four cores that crash once a trial pushes them past their limits at -10, so a night crashes four times (a Ruleset
-/// 13 night needs a neighbour on every CCD, hence four cores). Where it is put, `/hunt.json`.
+/// Four cores that crash beyond -10, exercising both events of a bounded campaign.
+/// Where it is put, `/hunt.json`.
 pub(crate) const HUNT: &str = r#"{
   "cores": 4,
   "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
