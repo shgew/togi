@@ -37,7 +37,7 @@ impl State {
         if let Some(charge) = self.owed_campaign_charge()? { return Ok(Some(charge)); }
         for (unit, _) in history.current().iter() {
             let Some(finish) = history.finishes().get(unit) else { continue; };
-            let reason = self.stop_reason(&finish.reason)?;
+            let reason = self.stop_reason(unit, &finish.reason)?;
             let profile = vector(&finish.profile, units)?;
             let same = self.climb.stops.get(&unit).is_some_and(|commit| commit.payload.reason == reason);
             if !same {
@@ -93,7 +93,10 @@ impl State {
         Ok(None)
     }
 
-    pub(super) fn stop_reason(&self, reason: &climb::FinishReason) -> Result<journal::UnitStopReason, NotReady> {
+    pub(super) fn stop_reason(&self, unit: crate::UnitId, reason: &climb::FinishReason) -> Result<journal::UnitStopReason, NotReady> {
+        if let Some((imported, wire)) = self.climb.imported_stop_reasons.get(&unit)
+            && imported == reason
+        { return Ok(wire.clone()); }
         Ok(match reason {
             climb::FinishReason::Ceiling => journal::UnitStopReason::Ceiling {},
             climb::FinishReason::AllowanceExhausted => journal::UnitStopReason::AllowanceExhausted {},

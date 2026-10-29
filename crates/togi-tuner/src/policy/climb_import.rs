@@ -89,7 +89,9 @@ impl State {
             let original = self.climb.imports.iter().find(|record| record.original == stop.witness);
             let decoded = original.and_then(|record| successor::decode(record).ok());
             let (reason, profile) = if let Some(Event { payload: Payload::UnitStop(record), .. }) = decoded {
-                (self.finish_reason(&record.reason, stop.witness.seq)?, self.unit_profile(&record.profile)?)
+                let reason = self.finish_reason(&record.reason, stop.witness.seq)?;
+                self.climb.imported_stop_reasons.insert(stop.unit, (reason.clone(), record.reason));
+                (reason, self.unit_profile(&record.profile)?)
             } else {
                 let Some(history) = &self.climb.history else { continue; };
                 let Some(charge) = reconstructed.charges.iter().find(|charge| charge.witnesses.contains(&stop.witness)) else {

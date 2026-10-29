@@ -28,7 +28,7 @@ impl State {
                 .map_or(journal::Edge::Unknown {}, |commit| commit.payload.new.clone());
             let state = if let Some(finish) = history.finishes().get(unit.id) {
                 ClimbUnitState::Finished {
-                    reason: self.stop_reason(&finish.reason).ok()?, at: finish.at,
+                    reason: self.stop_reason(unit.id, &finish.reason).ok()?, at: finish.at,
                     profile: vector(&finish.profile, history.units()).ok()?, last_clean: finish.last_clean,
                     witnesses: self.climb.stops.get(&unit.id).map_or_else(Vec::new, |stop| stop.payload.witnesses.clone()),
                 }

@@ -367,6 +367,9 @@ pub(super) struct Climb {
     pub(super) imported_observations: BTreeMap<crate::day::EventId, Committed<togi_journal::UnitVector>>,
     #[serde(with = "super::wire::pairs")]
     pub(super) imported_stop_witnesses: BTreeMap<crate::UnitId, Seq>,
+    /// Exact predecessor reasons retain their original application/event namespace.
+    #[serde(with = "super::wire::pairs")]
+    pub(super) imported_stop_reasons: BTreeMap<crate::UnitId, (crate::climb::FinishReason, togi_journal::UnitStopReason)>,
     pub(super) restoration: Option<Committed<togi_journal::FirmwareRestoration>>,
     pub(super) imports: Vec<togi_journal::DayImported>,
     #[serde(with = "super::wire::pairs")]
@@ -392,6 +395,7 @@ impl Default for Climb {
             reclassifications: Vec::new(),
             imported_observations: BTreeMap::new(),
             imported_stop_witnesses: BTreeMap::new(),
+            imported_stop_reasons: BTreeMap::new(),
             restoration: None,
             imports: Vec::new(),
             import_sequences: BTreeMap::new(),
