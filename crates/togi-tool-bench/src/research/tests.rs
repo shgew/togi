@@ -579,7 +579,8 @@ fn evaluator_arguments_pass_through_unchanged(jobs: Option<&str>) {
         .map(str::to_owned)
         .to_vec();
     if let Some(jobs) = jobs {
-        command.push_str(&format!(" --jobs {jobs}"));
+        command.push_str(" --jobs ");
+        command.push_str(jobs);
         expected.extend(["--jobs".to_owned(), jobs.to_owned()]);
     }
     let planned = live.begin(&fake, "h1", Role::Reference, &command).unwrap();
