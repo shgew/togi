@@ -552,7 +552,7 @@ fn r1_trial(
     night: togi_journal::NightId,
     task: TaskId,
     core: u8,
-    profile: CcdProfile,
+    profile: &CcdProfile,
     tested: Tested,
     causes: Vec<Seq>,
 ) -> TrialPlan {
@@ -575,7 +575,7 @@ fn r1_trial(
             purpose,
             sustained: false,
         },
-        profile: togi_tuner::UnitProfile::of_ccd(&profile),
+        profile: togi_tuner::UnitProfile::of_ccd(profile),
         tested,
         retry: false,
         causes,
@@ -646,7 +646,7 @@ impl Journal {
                 night,
                 task,
                 2 * ccd_id,
-                zero().with(ccd(ccd_id), limit),
+                &zero().with(ccd(ccd_id), limit),
                 tested,
                 Vec::new(),
             );
@@ -694,7 +694,7 @@ impl Journal {
             night,
             task,
             0,
-            proposal.clone(),
+            &proposal,
             Tested::Exact {},
             vec![started],
         );
