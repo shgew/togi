@@ -54,9 +54,13 @@ pub enum Reply {
         morning: Option<crate::morning::Report>,
     },
     Answered,
-    Recorded { seq: Seq },
+    Recorded {
+        seq: Seq,
+    },
     Reapplied,
-    Refused { reason: String },
+    Refused {
+        reason: String,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
