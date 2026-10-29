@@ -1,13 +1,13 @@
 //! The coordinate search: each step fits one group of parameters with the others held.
 //!
 //! There is one fitting path. Every sample, whether all facts, a bootstrap draw or a forward-check prefix,
-//! is fitted with the shared-voltage model for multi-core R7 and per-core limits for everything else,
+//! is fitted with the shared-voltage model for eligible rail loads and per-core limits for everything else,
 //! and every step of it minimizes the same augmented objective.
 
 use std::collections::BTreeSet;
 
-use togi_machine::{LEGACY_REGIMES, Regime, WorkloadId};
-use togi_sim::{MachineDefinition, Model};
+use togi_machine::{LEGACY_REGIMES, WorkloadId};
+use togi_sim::{MachineDefinition, Model, limit_index, shared_voltage_applies};
 use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::TrialFact;
 
@@ -85,10 +85,9 @@ pub(crate) fn fit_from(
     Ok((l.cfg, loss))
 }
 
-/// Whether per-core limits, rather than the shared-voltage model, explain `o`: a multi-core R7 load on a
-/// machine with the rail is explained by the rail alone.
-fn limit_driven(rail: bool, o: &Observation) -> bool {
-    !(rail && o.regime() == Regime::R7 && o.class.loaded.len() > 1)
+/// Whether per-core limits, rather than the shared-voltage model, explain `o`.
+pub(crate) fn limit_driven(rail: bool, o: &Observation) -> bool {
+    !shared_voltage_applies(o.regime(), o.class.loaded.len(), rail)
 }
 
 fn offset_of(o: &Observation, core: usize) -> i64 {
@@ -102,13 +101,13 @@ impl Likelihood<'_> {
     pub(crate) fn fit_regime_limits(&mut self) {
         let rail = self.cfg.shared_voltage.is_some();
         for (core, id) in self.core_ids().enumerate() {
-            for (r, regime) in LEGACY_REGIMES.into_iter().enumerate() {
+            for r in 0..LEGACY_REGIMES.len() {
                 for alone in [true, false] {
                     if alone && r >= 5 {
                         continue;
                     }
                     let indices = self.select(|o| {
-                        if !limit_driven(rail, o) || o.regime() != regime || !o.loads(id) {
+                        if !limit_driven(rail, o) || limit_index(o.regime()) != r || !o.loads(id) {
                             return false;
                         }
                         let only = r < 5

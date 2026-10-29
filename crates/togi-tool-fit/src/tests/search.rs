@@ -38,6 +38,26 @@ fn observation(
     }
 }
 
+#[test_case::test_case(true, false; "with a rail")]
+#[test_case::test_case(false, true; "without a rail")]
+fn r9_multi_core_rail_loads_are_not_limit_driven(rail: bool, expected: bool) {
+    let o = observation(&[-20, -20], Regime::R9, &[0, 1], 60, 1, 0);
+    assert_eq!(crate::search::limit_driven(rail, &o), expected);
+}
+
+#[test]
+fn r8_observations_use_the_r2_limit_slot() {
+    let o = observation(&[-20], Regime::R8, &[0], 60, 1, 0);
+    assert_eq!(
+        crate::search::limit_driven(true, &o),
+        crate::search::limit_driven(true, &observation(&[-20], Regime::R2, &[0], 60, 1, 0))
+    );
+    assert_eq!(
+        togi_sim::limit_index(o.regime()),
+        togi_sim::limit_index(Regime::R2)
+    );
+}
+
 fn seed_fact() -> TrialFact {
     fact(&[0, 0], Regime::R1, &[0], 60, Decisive::Pass)
 }

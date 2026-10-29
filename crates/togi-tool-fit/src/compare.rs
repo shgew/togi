@@ -51,8 +51,8 @@ impl Subset {
         match self {
             Self::All => true,
             Self::SingleCore => loaded == 1,
-            Self::NonR7 => workload.regime() != Regime::R7,
-            Self::R7 => workload.regime() == Regime::R7,
+            Self::NonR7 => togi_sim::modeled_as(workload.regime()) != Regime::R7,
+            Self::R7 => togi_sim::modeled_as(workload.regime()) == Regime::R7,
         }
     }
 }
