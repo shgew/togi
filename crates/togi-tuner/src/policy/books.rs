@@ -196,6 +196,8 @@ pub(super) struct Nights {
     pub(super) edges: BTreeMap<CcdId, Committed<CcdEdge>>,
     #[serde(with = "super::wire::pairs")]
     pub(super) caps: BTreeMap<CcdId, Committed<CcdCap>>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) unit_edges: BTreeMap<crate::UnitId, Committed<togi_journal::UnitEdge>>,
     pub(super) qualifications: Vec<Committed<NightQualification>>,
     pub(super) reproductions: Vec<Committed<NightReproduction>>,
 }

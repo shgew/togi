@@ -134,6 +134,9 @@ impl State {
             Payload::CcdCap(p) => {
                 self.nights.caps.insert(p.ccd, committed(event, p.clone()));
             }
+            Payload::UnitEdge(p) => {
+                self.nights.unit_edges.insert(p.unit, committed(event, p.clone()));
+            }
             // A completed stop is the durable record that tuning was left: the operator's (signal,
             // F10, the power button) or the dead end's (`docs/spec/runtime.md`, Night declaration).
             Payload::Shutdown(p) => {
@@ -253,7 +256,6 @@ impl State {
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
             | Payload::UnitMapping(_)
-            | Payload::UnitEdge(_)
             | Payload::ClimbDecision(_)
             | Payload::UnitStop(_)
             | Payload::CampaignStart(_)
