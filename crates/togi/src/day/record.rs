@@ -668,7 +668,7 @@ fn hand_off(ctx: &mut Context<'_>, build: &Build, session: SessionId, record: Da
         Ok(
             Reply::Questions { .. } | Reply::Answered | Reply::Reapplied | Reply::Refused { .. },
         ) => exit_with(ctx, COMMAND, "unexpected day service reply", Exit::Error),
-        Err(SocketError::Absent(_)) => write_here(ctx, build, record),
+        Err(SocketError::Absent(_)) => write_here(ctx, build, session, record),
         Err(
             error @ (SocketError::Io(_)
             | SocketError::TooLarge { .. }
@@ -682,8 +682,9 @@ fn recorded(ctx: &mut Context<'_>, seq: Seq) -> Exit {
     emit(ctx, format_args!("crash recorded as event {seq}")).map_or_else(|exit| exit, |()| Exit::Ok)
 }
 
-/// Appends under the state directory's writer lock, which no day service holds.
-fn write_here(ctx: &mut Context<'_>, build: &Build, record: DayRecord) -> Exit {
+/// Appends under the state directory's writer lock, which no day service holds, only while the directory still
+/// holds the session the record was drafted from: it may have been reset and restarted since.
+fn write_here(ctx: &mut Context<'_>, build: &Build, session: SessionId, record: DayRecord) -> Exit {
     let boot = match ctx.system.boot_id() {
         Ok(boot) => boot,
         Err(error) => {
@@ -694,14 +695,27 @@ fn write_here(ctx: &mut Context<'_>, build: &Build, record: DayRecord) -> Exit {
         Ok(journal) => journal,
         Err(exit) => return exit,
     };
-    let exit = append_here(ctx, &mut journal, record);
+    let exit = append_here(ctx, &mut journal, session, record);
     match journal.close() {
         Ok(_dir) => exit,
         Err(error) => exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error),
     }
 }
 
-fn append_here(ctx: &mut Context<'_>, journal: &mut Journal, record: DayRecord) -> Exit {
+fn append_here(
+    ctx: &mut Context<'_>,
+    journal: &mut Journal,
+    session: SessionId,
+    record: DayRecord,
+) -> Exit {
+    let live = journal.session();
+    if live != Some(session) {
+        let reason = live.map_or_else(
+            || format!("the journal has no session now, not session {session}"),
+            |live| format!("the journal now records session {live}, not session {session}"),
+        );
+        return exit_with(ctx, COMMAND, reason, Exit::Error);
+    }
     if let Err(error) = check(journal.events(), &record) {
         return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
     }

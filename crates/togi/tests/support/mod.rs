@@ -128,6 +128,8 @@ pub struct Host {
     pub day_journal: RefCell<Option<togi_journal::Journal>>,
     /// The crash records handed to the day service, with the session each was drafted from.
     pub day_records: RefCell<Vec<(togi_journal::SessionId, togi_journal::DayRecord)>>,
+    /// What happens to the machine while a crash record is on its way to the day service, once.
+    pub day_meanwhile: RefCell<Option<Box<dyn FnOnce()>>>,
     /// Whether stdin and stderr are terminals, and the lines typed at them.
     pub terminal: Cell<bool>,
     pub typed: RefCell<std::collections::VecDeque<String>>,
@@ -176,6 +178,7 @@ impl Host {
             day_service: RefCell::new(None),
             day_journal: RefCell::new(None),
             day_records: RefCell::default(),
+            day_meanwhile: RefCell::new(None),
             terminal: Cell::new(false),
             typed: RefCell::default(),
             lock_busy_in_diagnose: Cell::new(None),
@@ -326,6 +329,9 @@ impl System for Host {
                 self.day_records
                     .borrow_mut()
                     .push((*session, record.clone()));
+                if let Some(meanwhile) = self.day_meanwhile.borrow_mut().take() {
+                    meanwhile();
+                }
                 if let Some(journal) = self.day_journal.borrow_mut().as_mut() {
                     let reply = togi_cli::day::socket::respond(
                         journal,

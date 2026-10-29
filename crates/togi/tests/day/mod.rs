@@ -630,6 +630,31 @@ mod record {
     }
 
     #[test]
+    fn a_session_replaced_before_the_direct_write_refuses_the_record_and_appends_nothing() {
+        let host = host();
+        let drafted = SessionId::new(Timestamp::UNIX_EPOCH, None).unwrap();
+        other_session(&host);
+        // While the record is on its way and no service runs, `reset --all` and a new session leave the state
+        // directory holding a later session's journal with the same cores.
+        let replaced = text(&host, OTHER);
+        let (fs, journal, written) = (
+            host.fs.clone(),
+            Path::new(STATE).join("events.jsonl"),
+            replaced.clone(),
+        );
+        *host.day_meanwhile.borrow_mut() =
+            Some(Box::new(move || fs.put(journal, written.into_bytes())));
+        let ran = record(&host, &UNOBSERVED);
+        assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+        assert!(
+            ran.err.contains(&format!("not session {drafted}")),
+            "{}",
+            ran.err
+        );
+        assert_eq!(text(&host, STATE), replaced);
+    }
+
+    #[test]
     fn the_terminal_and_the_flags_journal_the_same_record() {
         let by_flags = host();
         assert_eq!(
