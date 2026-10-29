@@ -19,10 +19,14 @@ fn family(name: &str) -> &str {
 
 pub(crate) fn scenario(name: &str) -> Value {
     let family = family(name);
+    // A moving-limit epoch is invisible to a policy and keeps the context; a firmware change opens a new one.
     let (transition, epochs) = match family {
-        "moving-cap" => ("moving", vec![(1, "before"), (400, "after")]),
-        "firmware-change" => ("firmware", vec![(1, "before"), (181, "after")]),
-        _ => ("fixed", vec![(1, "only")]),
+        "moving-cap" => ("moving", vec![(1, "before", "ctx"), (400, "after", "ctx")]),
+        "firmware-change" => (
+            "firmware",
+            vec![(1, "before", "ctx-before"), (181, "after", "ctx-after")],
+        ),
+        _ => ("fixed", vec![(1, "only", "ctx")]),
     };
     let adversarial = matches!(
         family,
@@ -39,8 +43,8 @@ pub(crate) fn scenario(name: &str) -> Value {
         "description": "synthetic fixture scenario",
         "topology": {"ccds": 2, "cores_per_ccd": 8},
         "daily_mix": [{"class": "compute", "seconds": 14400}, {"class": "idle-heavy", "seconds": 14400}],
-        "epochs": epochs.iter().map(|(day, id)| json!({
-            "id": id, "start_day": day, "context": "ctx", "description": "synthetic epoch",
+        "epochs": epochs.iter().map(|(day, id, context)| json!({
+            "id": id, "start_day": day, "context": context, "description": "synthetic epoch",
         })).collect::<Vec<_>>(),
         "transition": transition,
         "parameters": [{"name": "edge", "value": 30.0}],
