@@ -1,0 +1,20 @@
+UNIT    CORES  D   C    D-C  HOLD h  STATE
+core 0  0      -5  -25  20   50/50   climbing
+
+Day policy
+permission: experimental hold + exact night qualification
+S: diagnostic, non-authorizing; finishing is not a safety certificate
+applied profile: core 0 -5
+read-back profile: core 0 -5
+proposed profile: core 0 -10
+paused-saved profile: none
+allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
+unit: core 0, phase core, parent CCD 0, inherited start 0
+  U: observed -30 [#4]
+  state: climbing
+  next proposal: core 0 -10
+  qualification: complete [#8]; 0 outstanding [#8]
+  diagnostic S (non-authorizing): 0 [#3]
+current exact profile daily evidence: 50 h; 0 crashes [#7]
+experimental: 50 clean hours; at most 1 crash per 16.7 h (95%, fixed-rate model)
+firmware restoration: none

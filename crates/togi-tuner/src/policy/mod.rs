@@ -18,6 +18,8 @@ mod books;
 mod cache;
 mod climb_projection;
 mod controls;
+mod climb_fold;
+mod day_climb;
 mod day_events;
 mod day_query;
 mod decision;
@@ -105,6 +107,7 @@ pub struct State {
     ledger: Ledger,
     nights: Nights,
     days: Days,
+    climb: books::Climb,
     stop: Option<Stop>,
     #[serde(skip)]
     caches: Caches,
@@ -153,6 +156,7 @@ impl State {
             ledger: Ledger::default(),
             nights: Nights::default(),
             days: Days::default(),
+            climb: books::Climb::default(),
             stop: None,
             caches: Caches::default(),
         }
