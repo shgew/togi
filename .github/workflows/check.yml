@@ -15,6 +15,12 @@ name: check
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      efi_runs:
+        description: Additional uncached EFI lifecycle executions
+        type: choice
+        default: "0"
+        options: ["0", "5", "10"]
 
 permissions:
   contents: read
@@ -40,6 +46,7 @@ jobs:
         name: Select checks missing from Cachix
         env:
           EVENT_NAME: ${{ github.event_name }}
+          EFI_RUNS: ${{ inputs.efi_runs || '0' }}
         run: |
           info=$(nix eval --json .#checks.x86_64-linux --apply '
             checks: let all = builtins.attrNames checks; in {
@@ -54,6 +61,11 @@ jobs:
           while IFS=$'\t' read -r name out_path; do
             store_name=${out_path##*/}
             hash=${store_name:0:32}
+            if [[ "$name" == vm-efi && "$EFI_RUNS" != 0 ]]; then
+              printf '%-24s %s\n' "$name" 'repeat requested'
+              matrix_checks+=("$name")
+              continue
+            fi
             if curl -sfI --retry 2 --connect-timeout 5 --max-time 15 "https://togi.cachix.org/$hash.narinfo" > /dev/null; then
               printf '%-24s %s\n' "$name" yes
               continue
@@ -104,6 +116,24 @@ jobs:
         env:
           CHECK: ${{ matrix.check }}
         run: nix build --no-link --print-build-logs --print-out-paths ".#checks.x86_64-linux.$CHECK" > "$RUNNER_TEMP/out-paths"
+      - name: Repeat EFI lifecycle without cached results
+        if: matrix.check == 'vm-efi' && github.event_name == 'workflow_dispatch' && inputs.efi_runs != '0'
+        env:
+          EFI_RUNS: ${{ inputs.efi_runs }}
+        run: |
+          case "$EFI_RUNS" in 5|10) ;; *) echo 'efi_runs must be 5 or 10' >&2; exit 1 ;; esac
+          nproc
+          free -m
+          df -h /nix/store
+          driver=$(nix build --no-link --print-build-logs --print-out-paths .#checks.x86_64-linux.vm-efi.driver)
+          for ((run = 1; run <= EFI_RUNS; run++)); do
+            echo "::group::EFI lifecycle $run/$EFI_RUNS"
+            date -u +'%Y-%m-%dT%H:%M:%SZ'
+            out="$RUNNER_TEMP/efi-$run"
+            mkdir -p "$out"
+            "$driver/bin/nixos-test-driver" --no-interactive -o "$out"
+            echo "::endgroup::"
+          done
       - name: Push the check's output to Cachix
         if: env.CACHIX_AUTH_TOKEN != ''
         continue-on-error: true
