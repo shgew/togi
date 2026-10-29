@@ -2,7 +2,7 @@
 //!
 //! Nothing here reads a simulator, a verdict or the recorded `member` flags beyond the validated
 //! ones: `settled_at`, the post-finish safety and risk accounts, depths, retention, per-unit costs and
-//! the event identities are all recomputed from the ordered intervals, events, steps and accounts.
+//! the event identities are recomputed from intervals, events, steps, accounts and observed costs.
 //!
 //! Safety, settling, final depth, the K/T/H accounts and epoch recovery read the day intervals only: a
 //! night interval is a physical probe with no verified daily hours, so an unsafe night probe never
@@ -138,7 +138,7 @@ pub struct UnitMetrics {
     pub finish_depth: Option<u8>,
     pub final_depth: u8,
     pub promotions: u64,
-    /// Retreat steps naming this unit, derived from the steps, not the recorded summary.
+    /// Derived from explicit applications, or observed summaries when their ledger is unavailable.
     pub retreat_steps: u64,
     pub hold_hours: f64,
     pub qualification_launches: u64,
@@ -637,10 +637,30 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
                 Phase::PostFinish => post_finish_h += h,
             }
         }
-        let promotions = tally(record.steps.iter().filter(
-            |step| matches!(&step.kind, StepKind::Climb { unit, .. } if *unit == summary.unit),
-        ));
-        let retreat_steps = tally(record.steps.iter().filter(|step| matches!(&step.kind, StepKind::Retreat { units, .. } if units.contains(&summary.unit))));
+        let (promotions, retreat_steps, losses) = if record.policy.allowance.is_none() {
+            // Comparators report physical application costs without inventing successor
+            // qualifications or permission. Their summaries retain the observed truth causes;
+            // a retreat with no identified event is conservatively unattributed, not history.
+            (
+                summary.promotions,
+                summary.retreats.steps,
+                Losses {
+                    co: summary.retreats.co_counts,
+                    background: summary.retreats.background_counts,
+                    non_cpu: summary.retreats.non_cpu_counts,
+                    unattributed: summary.retreats.unattributed_counts,
+                    history: 0,
+                },
+            )
+        } else {
+            (
+                tally(record.steps.iter().filter(
+                    |step| matches!(&step.kind, StepKind::Climb { unit, .. } if *unit == summary.unit),
+                )),
+                tally(record.steps.iter().filter(|step| matches!(&step.kind, StepKind::Retreat { units, .. } if units.contains(&summary.unit)))),
+                Losses::default(),
+            )
+        };
         units.push(UnitMetrics {
             unit: summary.unit,
             finish,
@@ -655,39 +675,41 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
             qualification_launches: summary.qualification_launches,
             qualification_hours: summary.qualification_hours,
             night_hours: summary.night_hours,
-            losses: Losses::default(),
+            losses,
             co_attributions: co_attributions.get(&summary.unit).copied().unwrap_or(0),
             learning_h,
             post_finish_h,
         });
     }
-    for step in &record.steps {
-        let StepKind::Retreat {
-            event,
-            units: retreated,
-        } = &step.kind
-        else {
-            continue;
-        };
-        let (Ok(before), Ok(after)) = (
-            record.unit_depths(&step.before),
-            record.unit_depths(&step.after),
-        ) else {
-            continue;
-        };
-        let cause = event
-            .as_deref()
-            .and_then(|id| by_id.get(id))
-            .map(|event| &event.truth);
-        for unit in retreated {
-            let lost = u64::from(before[unit.index()].saturating_sub(after[unit.index()]));
-            let losses = &mut units[unit.index()].losses;
-            match cause {
-                Some(TruthCause::Co { .. }) => losses.co += lost,
-                Some(TruthCause::Background {}) => losses.background += lost,
-                Some(TruthCause::NonCpu {}) => losses.non_cpu += lost,
-                Some(TruthCause::Unattributed {}) => losses.unattributed += lost,
-                None => losses.history += lost,
+    if record.policy.allowance.is_some() {
+        for step in &record.steps {
+            let StepKind::Retreat {
+                event,
+                units: retreated,
+            } = &step.kind
+            else {
+                continue;
+            };
+            let (Ok(before), Ok(after)) = (
+                record.unit_depths(&step.before),
+                record.unit_depths(&step.after),
+            ) else {
+                continue;
+            };
+            let cause = event
+                .as_deref()
+                .and_then(|id| by_id.get(id))
+                .map(|event| &event.truth);
+            for unit in retreated {
+                let lost = u64::from(before[unit.index()].saturating_sub(after[unit.index()]));
+                let losses = &mut units[unit.index()].losses;
+                match cause {
+                    Some(TruthCause::Co { .. }) => losses.co += lost,
+                    Some(TruthCause::Background {}) => losses.background += lost,
+                    Some(TruthCause::NonCpu {}) => losses.non_cpu += lost,
+                    Some(TruthCause::Unattributed {}) => losses.unattributed += lost,
+                    None => losses.history += lost,
+                }
             }
         }
     }
