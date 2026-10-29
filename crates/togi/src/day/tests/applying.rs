@@ -188,6 +188,63 @@ fn applications(journal: &Journal) -> Vec<&DayApplied> {
         .collect()
 }
 
+fn proposed_climb(journal: &mut Journal) -> Seq {
+    use togi_journal::{
+        ClimbAction, ClimbDecision, ClimbHold, UnitId, UnitMapping, UnitMembership, UnitPhase,
+        UnitVector,
+    };
+
+    let topology = session_cores(journal.events()).unwrap();
+    let unit = UnitId::Ccd(CcdId::new(0).unwrap());
+    let mapping = UnitMapping {
+        phase: UnitPhase::Coarse,
+        units: vec![UnitMembership {
+            unit,
+            cores: topology.iter().map(|info| info.core).collect(),
+            parent: None,
+        }],
+    };
+    let before = UnitVector {
+        cores: *target(journal, 0).cores(),
+        mapping: mapping.clone(),
+    };
+    let proposed = UnitVector {
+        cores: *target(journal, -5).cores(),
+        mapping,
+    };
+    let baseline = journal.events().last().unwrap().seq;
+    journal
+        .append(
+            Stamp {
+                time: Timestamp::UNIX_EPOCH,
+                mono: Some(Duration::ZERO),
+            },
+            ClimbDecision {
+                decision: ClimbAction::Promote {
+                    unit,
+                    from: TargetOffset::ZERO,
+                    to: TargetOffset::new(-5).unwrap(),
+                    step: 5,
+                },
+                cold_boot: journal.boot().clone(),
+                before,
+                proposed,
+                hold: ClimbHold {
+                    application: ApplicationId(baseline.get()),
+                    credited: Vec::new(),
+                    eligible_s: 50 * 3600,
+                },
+                certificate: None,
+                ceilings: Vec::new(),
+                events: Vec::new(),
+            }
+            .into(),
+            &[],
+        )
+        .unwrap()
+        .seq
+}
+
 #[test]
 fn cold_boot_applies_only_stock_and_stop_verifies_before_clean_marker() {
     let mut journal = seed();
@@ -218,7 +275,7 @@ fn cold_boot_applies_only_stock_and_stop_verifies_before_clean_marker() {
 #[test]
 fn a_nonzero_proposal_commits_only_stock_as_a_reset_without_consuming_the_promotion() {
     let mut journal = seed();
-    let proposal = proposed(&mut journal);
+    let proposal = proposed_climb(&mut journal);
     let mut hardware = Hardware::stock();
     serve(
         &mut journal,
@@ -232,6 +289,7 @@ fn a_nonzero_proposal_commits_only_stock_as_a_reset_without_consuming_the_promot
     assert_eq!(applied.cause, ApplyCause::Reset { cause: proposal });
     assert_eq!(applied.target, target(&journal, 0));
     assert_eq!(applied.readbacks, offsets(0));
+    assert_eq!(hardware.writes, [TargetOffset::ZERO, TargetOffset::ZERO]);
     let mut policy = togi_tuner::policy::State::new(togi_tuner::policy::Params::SPEC);
     for event in journal.events() {
         policy.fold(event).unwrap();
@@ -240,9 +298,17 @@ fn a_nonzero_proposal_commits_only_stock_as_a_reset_without_consuming_the_promot
         policy.project().applied,
         Some(togi_tuner::UnitProfile::of_ccd(target(&journal, 0).ccd()))
     );
+    let projected = policy.project();
     assert_eq!(
-        policy.project().day.last_step.unwrap().1.proposed,
-        target(&journal, -5)
+        projected.climb.profiles.proposed.unwrap().cores,
+        *target(&journal, -5).cores()
+    );
+    assert!(
+        projected
+            .climb
+            .units
+            .iter()
+            .all(|unit| unit.latest_step.is_none())
     );
     let event = journal
         .events()
@@ -303,7 +369,7 @@ fn an_unarmed_or_noncounting_watchdog_refuses_without_a_write(detail: &str) {
 #[test]
 fn a_defect_stop_refuses_a_nonzero_proposal_and_takes_only_emergency_zero() {
     let mut journal = seed();
-    proposed(&mut journal);
+    proposed_climb(&mut journal);
     append(
         &mut journal,
         &ActiveClock::one(),

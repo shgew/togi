@@ -138,6 +138,8 @@ enum Case {
 }
 
 fn shown(policy: &ClimbProjection, color: bool) -> String {
+    use std::fmt::Write as _;
+
     let mut text = String::new();
     super::climb::sections(
         &mut text,
@@ -153,7 +155,6 @@ fn shown(policy: &ClimbProjection, color: bool) -> String {
         no_color: !color,
         journald: false,
     });
-    use std::fmt::Write as _;
     let mut shown = String::new();
     for line in text.lines() {
         writeln!(shown, "{}", renderer.text(Style::Plain, line)).unwrap();

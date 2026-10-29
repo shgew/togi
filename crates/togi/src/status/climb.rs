@@ -257,7 +257,7 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
     out.push_str("\nDay policy\n");
     match policy.permission {
         ClimbPermissionMode::ExperimentalHoldExactNightQualification => {
-            out.push_str("permission: experimental hold + exact night qualification\n")
+            out.push_str("permission: experimental hold + exact night qualification\n");
         }
     }
     out.push_str("S: diagnostic, non-authorizing; finishing is not a safety certificate\n");
@@ -316,7 +316,7 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
             match &campaign.history {
                 CampaignHistory::Complete {} => {}
                 CampaignHistory::Unreconstructible { reason } => {
-                    line(out, "campaign history unavailable: ", &esc(reason))
+                    line(out, "campaign history unavailable: ", &esc(reason));
                 }
             }
             for observed in &campaign.events {
@@ -453,7 +453,7 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
                     }
                 }
                 Some(_) | None => {
-                    out.push_str("experimental: rate bound unavailable (95%, fixed-rate model)\n")
+                    out.push_str("experimental: rate bound unavailable (95%, fixed-rate model)\n");
                 }
             }
         }
