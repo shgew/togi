@@ -9,7 +9,8 @@ use togi_journal::{
     Activity, Budget, DeadEndCondition, NightId, Outcome, PlannedTask, Queue, ShutdownReason,
     TaskId, TaskStatus, Tested,
 };
-use togi_machine::{CcdId, CcdProfile, Regime, ResetKind, Signal};
+use togi_machine::{CcdId, Regime, ResetKind, Signal};
+use togi_tuner::unit::{UnitId, UnitProfile};
 use togi_tuner::policy::{
     DayProjection, FirmwareValidity, NightProjection, Params, Projection, QualificationProgress,
     State,
@@ -163,11 +164,11 @@ fn night(tasks: Vec<PlannedTask>) -> NightProjection {
     }
 }
 
-fn profile(offsets: &[(u8, i64)]) -> CcdProfile {
-    CcdProfile::try_from(
+fn profile(offsets: &[(u8, i64)]) -> UnitProfile {
+    UnitProfile::try_from(
         offsets
             .iter()
-            .map(|&(ccd, offset)| (ccd_id(ccd), off(offset)))
+            .map(|&(ccd, offset)| (UnitId::Ccd(ccd_id(ccd)), off(offset)))
             .collect::<std::collections::BTreeMap<_, _>>(),
     )
     .expect("a CCD profile")

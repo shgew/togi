@@ -13,9 +13,10 @@ use togi_journal::{
     QualificationPurpose, Queue, ReproductionState, Resolution, ShutdownReason, Slope, StepCauses,
     StepKind, TaskId, TaskStatus, Tested, UncoveredClass, UncoveredReason,
 };
-use togi_machine::{BootId, CcdId, CcdProfile, ObservedOffset, Regime, ResetKind, TargetOffset};
+use togi_machine::{BootId, CcdId, ObservedOffset, Regime, ResetKind, TargetOffset};
+use togi_tuner::unit::{UnitId, UnitProfile};
 use togi_tuner::policy::{
-    CapProjection, CcdProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
+    CapProjection, UnitProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
     MappingProjection, NightProjection, Projection, QualificationProgress, QualificationProjection,
     QualificationStage, ReproductionProjection,
 };
@@ -156,10 +157,10 @@ pub(crate) fn mapping_trial(ordinal: u32, ccd_id: u8, offset: i64, cores: &[u8])
 }
 
 /// The projection of a machine with no committed edge, cap, day or night.
-pub(crate) fn bare(ccds: Vec<CcdProjection>) -> Projection {
+pub(crate) fn bare(ccds: Vec<UnitProjection>) -> Projection {
     Projection {
         applied: None,
-        ccds,
+        units: ccds,
         day: DayProjection {
             hold: None,
             last_step: None,
@@ -176,9 +177,9 @@ pub(crate) fn bare(ccds: Vec<CcdProjection>) -> Projection {
 }
 
 /// CCD `id` over `cores` at day offset `day`, with no edge and no cap.
-pub(crate) fn ccd_row(id: u8, cores: &[u8], day: i64) -> CcdProjection {
-    CcdProjection {
-        ccd: ccd(id),
+pub(crate) fn ccd_row(id: u8, cores: &[u8], day: i64) -> UnitProjection {
+    UnitProjection {
+        unit: UnitId::Ccd(ccd(id)),
         cores: set(cores),
         edge: None,
         cap: None,
@@ -258,11 +259,11 @@ pub(crate) fn rate_bound() -> Binding {
 
 /// `ccd` with its cap, edge and remaining distance set.
 pub(crate) fn with_cap(
-    mut ccd: CcdProjection,
+    mut ccd: UnitProjection,
     cap: CapProjection,
     edge: Option<Edge>,
     remaining: u32,
-) -> CcdProjection {
+) -> UnitProjection {
     ccd.cap = Some(cap);
     ccd.edge = edge;
     ccd.remaining = Some(remaining);
@@ -279,11 +280,11 @@ pub(crate) fn hold(profile: &[(u8, i64)], eligible_s: u64, required_s: u64) -> H
     }
 }
 
-pub(crate) fn profile_of(profile: &[(u8, i64)]) -> CcdProfile {
-    CcdProfile::try_from(
+pub(crate) fn profile_of(profile: &[(u8, i64)]) -> UnitProfile {
+    UnitProfile::try_from(
         profile
             .iter()
-            .map(|&(id, value)| (ccd(id), TargetOffset::clamped(value)))
+            .map(|&(id, value)| (UnitId::Ccd(ccd(id)), TargetOffset::clamped(value)))
             .collect::<BTreeMap<_, _>>(),
     )
     .expect("a CCD profile")
@@ -345,7 +346,7 @@ pub(crate) fn night(current: Option<(Queue, u32, Activity)>) -> NightProjection 
 
 /// A day step of `kind` over CCD 0 at CO 0 with no causes.
 pub(crate) fn step(kind: StepKind) -> DayStep {
-    let vector = expanded(profile_of(&[(0, 0)]));
+    let vector = expanded(profile_of(&[(0, 0)]).to_ccd().unwrap());
     DayStep {
         decision: DecisionId(1),
         cold_boot: BootId::from("boot-1".to_owned()),
@@ -478,7 +479,7 @@ impl Staged {
                 policy.night = Some(night(Some((Queue::Mapping, 2, Activity::Mapping))));
                 if let Some(night) = policy.night.as_mut() {
                     night.mapping = vec![MappingProjection {
-                        ccd: ccd(1),
+                        unit: UnitId::Ccd(ccd(1)),
                         cursor: Some(off(-20)),
                         bracket: None,
                     }];

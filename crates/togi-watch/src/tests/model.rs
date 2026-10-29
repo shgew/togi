@@ -1061,9 +1061,9 @@ fn a_core_shows_the_day_offset_of_its_ccd(applied: &[(i64, i64)], want: (i64, i6
     assert_eq!(profiles, [off(want.0), off(want.0), off(want.1)]);
     let days: Vec<_> = snap
         .policy
-        .ccds
+        .units
         .iter()
-        .map(|ccd| (ccd.ccd, ccd.day))
+        .map(|unit| (unit.unit.ccd().unwrap(), unit.day))
         .collect();
     assert_eq!(
         days,

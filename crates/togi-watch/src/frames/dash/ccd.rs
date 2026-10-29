@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 use ratatui::text::{Line, Span};
 use togi_journal::{Binding, Edge, Slope};
 use togi_machine::TargetOffset;
-use togi_tuner::policy::{CapProjection, CcdProjection};
+use togi_tuner::policy::{CapProjection, UnitProjection};
 
 use crate::frames::colours::Paint;
 use crate::frames::draw::{put, put_cells};
@@ -62,7 +62,7 @@ pub(crate) const fn marks(colours: Colours) -> Marks {
 }
 
 /// The count a gauge marks as the CCD's edge, and whether it is an observed failure or a censored limit.
-fn edge_mark(ccd: Option<&CcdProjection>) -> Option<(i64, Paint)> {
+fn edge_mark(ccd: Option<&UnitProjection>) -> Option<(i64, Paint)> {
     match ccd?.edge.as_ref()? {
         Edge::Observed { offset, .. } => Some((offset.get(), Paint::Bad)),
         Edge::Censored { limit, .. } => Some((limit.get(), Paint::Warn)),
@@ -75,7 +75,7 @@ fn edge_mark(ccd: Option<&CcdProjection>) -> Option<(i64, Paint)> {
 pub(super) fn gauge(
     scene: &Scene<'_>,
     core: &CoreView,
-    ccd: Option<&CcdProjection>,
+    ccd: Option<&UnitProjection>,
     applied: Option<i64>,
     cells: usize,
 ) -> Line<'static> {
@@ -172,7 +172,7 @@ pub(crate) fn cap_words(cap: &CapProjection) -> (String, String) {
 }
 
 /// The distance row: committed D/S/binding, the separate current calculation, U and distance.
-pub(super) fn facts_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -> Line<'static> {
+pub(super) fn facts_line(scene: &Scene<'_>, ccd: &UnitProjection, width: usize) -> Line<'static> {
     let sep = || scene.paint(Paint::Track, " · ");
     let text = |paint: Paint, value: String| Line::from(scene.paint(paint, value));
     let mut clauses = vec![Clause::whole(
@@ -264,7 +264,7 @@ pub(super) fn facts_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -
 }
 
 /// The cap owner's eligible mapping witness hours and gaps; non-mapping exposure is not coverage.
-pub(super) fn coverage_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -> Line<'static> {
+pub(super) fn coverage_line(scene: &Scene<'_>, ccd: &UnitProjection, width: usize) -> Line<'static> {
     let text = |value: String| Line::from(scene.paint(Paint::Grey, value));
     let (full, short) = match &ccd.evidence {
         Some(evidence) => {
@@ -380,7 +380,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             colours,
         );
     }
-    let projection = scene.s.policy.ccds.iter().find(|p| p.ccd == id);
+    let projection = scene.s.policy.units.iter().find(|p| p.unit == togi_tuner::unit::UnitId::Ccd(id));
     match projection {
         Some(projection) => {
             put(buf, r, 0, 1, &facts_line(scene, projection, width), colours);
