@@ -1210,9 +1210,10 @@ fn charged_kill_control(
             None
         }
     })?;
-    if prefix[at..].iter().any(|event| {
-        matches!(&event.payload, Payload::TrialEnd(end) if end.trial == intent.trial)
-    }) {
+    if prefix[at..]
+        .iter()
+        .any(|event| matches!(&event.payload, Payload::TrialEnd(end) if end.trial == intent.trial))
+    {
         return None;
     }
     let ends: Vec<_> = resumed[after..]
@@ -1249,9 +1250,9 @@ fn charged_kill_control(
             None
         }
     });
-    let duration = start.zip(last).map_or(Duration::ZERO, |(start, last)| {
-        last.saturating_sub(start)
-    });
+    let duration = start
+        .zip(last)
+        .map_or(Duration::ZERO, |(start, last)| last.saturating_sub(start));
     assert_eq!(u64::from(end.duration_s), duration.as_secs());
     assert_eq!(end.outcome, Outcome::Inconclusive);
     assert!(end.interrupted);
@@ -1589,13 +1590,14 @@ fn a_changed_unit_commitment_changes_the_commitments(kind: &str) {
         .iter_mut()
         .find(|event| event.kind().as_str() == kind)
         .expect("the scenario commits the required D record");
-    match &mut event.payload {
-        Payload::UnitEdge(edge) => edge.margin += 1,
-        Payload::CampaignCharge(charge) => charge.remaining -= 1,
-        Payload::UnitStop(stop) => {
-            stop.witnesses.pop().expect("the stop cites its history");
-        }
-        _ => unreachable!(),
+    if let Payload::UnitEdge(edge) = &mut event.payload {
+        edge.margin += 1;
+    } else if let Payload::CampaignCharge(charge) = &mut event.payload {
+        charge.remaining -= 1;
+    } else if let Payload::UnitStop(stop) = &mut event.payload {
+        stop.witnesses.pop().expect("the stop cites its history");
+    } else {
+        unreachable!();
     }
     assert_ne!(
         commitments(&changed, 0, true),

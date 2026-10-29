@@ -56,7 +56,10 @@ fn a_night_that_maps_the_edges_after_a_hold_replaces_its_unknown_edge_blockers()
     journal.until_filler(|_| Ending::Pass);
     let projection = journal.state.project();
     let shown = held_reasons(&projection);
-    assert!(!shown.is_empty(), "status shows no held unit after the night");
+    assert!(
+        !shown.is_empty(),
+        "status shows no held unit after the night"
+    );
     for reason in &shown {
         assert!(
             !reason
@@ -171,19 +174,20 @@ fn aged_certificate(age_s: i64) -> Journal {
             &[],
         );
     });
-    let completed = journal
-        .events
-        .iter()
-        .rev()
-        .find_map(|event| match &event.payload {
-            Payload::NightQualification(record)
-                if matches!(record.state, togi_journal::QualificationState::Complete { .. }) =>
-            {
-                Some(event.time)
-            }
-            _ => None,
-        })
-        .expect("the candidate was certified");
+    let Some(completed) = journal.events.iter().rev().find_map(|event| {
+        if let Payload::NightQualification(record) = &event.payload
+            && matches!(
+                record.state,
+                togi_journal::QualificationState::Complete { .. }
+            )
+        {
+            Some(event.time)
+        } else {
+            None
+        }
+    }) else {
+        panic!("the candidate was certified");
+    };
     let mut first = cold_boot("day1", 60_000);
     first.now = journal.now();
     journal.settle_day(&first);
@@ -209,7 +213,7 @@ fn a_boot_after_the_certificates_month_holds_its_unit_though_no_decision_followe
         .climb
         .units
         .iter()
-        .map(|unit| (unit.unit.clone(), unit.state.clone()))
+        .map(|unit| (unit.unit, unit.state.clone()))
         .collect();
     let shown = journal.state.project().climb.units.iter().any(|unit| {
         matches!(unit.state, ClimbUnitState::Held { .. })
@@ -222,6 +226,9 @@ fn a_boot_after_the_certificates_month_holds_its_unit_though_no_decision_followe
     let promoted = committed.iter().any(|payload| {
         matches!(payload, Payload::ClimbDecision(record) if matches!(record.decision, ClimbAction::Promote { .. }))
     });
-    assert!(!(held && promoted), "an expired certificate promoted: {committed:?}");
+    assert!(
+        !(held && promoted),
+        "an expired certificate promoted: {committed:?}"
+    );
     assert_eq!(shown, held, "{states:?}");
 }

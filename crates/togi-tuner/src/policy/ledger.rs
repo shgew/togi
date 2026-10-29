@@ -418,11 +418,7 @@ impl State {
             outcome: ended.end.outcome,
             failures,
             eligible_s: eligible,
-            uninterrupted_s: if ended.end.interrupted {
-                0
-            } else {
-                eligible
-            },
+            uninterrupted_s: if ended.end.interrupted { 0 } else { eligible },
             exclusions,
         })
     }

@@ -1044,16 +1044,19 @@ fn charged_predecessor(bench: &Bench) -> togi_journal::CampaignId {
     let mut journal = simulated(&bench.mem)
         .open_at(boot.clone(), bench.sim.now())
         .unwrap();
-    let topology = match &journal.events()[0].payload {
-        Payload::SessionStart(start) => start.cores.clone(),
-        payload => panic!("{payload:?}"),
+    let Payload::SessionStart(start) = &journal.events()[0].payload else {
+        panic!("{:?}", journal.events()[0].payload);
     };
+    let topology = start.cores.clone();
     let campaign = journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::CampaignStart(start) => Some(start.campaign),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::CampaignStart(start) = &event.payload {
+                Some(start.campaign)
+            } else {
+                None
+            }
         })
         .unwrap();
     let changed = CcdId::new(0).unwrap();
@@ -1158,7 +1161,10 @@ enum CampaignCut {
 #[test_case(true, CampaignCut::Reclassified; "reset after reclassification")]
 #[test_case(false, CampaignCut::SuccessorImported; "transition before campaign start")]
 #[test_case(true, CampaignCut::SuccessorImported; "reset before campaign start")]
-fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: bool, cut: CampaignCut) {
+fn reconstructed_campaign_charges_survive_transition_reset_and_resume(
+    reset: bool,
+    cut: CampaignCut,
+) {
     use togi_journal::{CampaignHistory, Certainty, Classification, DayEventId};
     use togi_tuner::policy::successor::Reconstruction;
 
@@ -1178,7 +1184,8 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: boo
         drop(dir);
     }
     let ready = prepared(&bench, &successor_build());
-    let Reconstruction::Complete(expected) = ready.import.as_ref().unwrap().manifest().reconstruction()
+    let Reconstruction::Complete(expected) =
+        ready.import.as_ref().unwrap().manifest().reconstruction()
     else {
         panic!("predecessor history must reconstruct");
     };
@@ -1206,7 +1213,9 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: boo
                 matches!(&event.payload, Payload::CampaignCharge(charge) if charge.consumed == 2)
             }
             CampaignCut::Reclassified => matches!(event.payload, Payload::CampaignReclassified(_)),
-            CampaignCut::SuccessorImported => matches!(event.payload, Payload::SuccessorImported(_)),
+            CampaignCut::SuccessorImported => {
+                matches!(event.payload, Payload::SuccessorImported(_))
+            }
         };
         assert!(!reached, "interrupted campaign enrollment after {cut:?}");
     }));
@@ -1216,10 +1225,13 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: boo
         !matches!(cut, CampaignCut::Uninterrupted)
     );
     if !matches!(cut, CampaignCut::Uninterrupted) {
-        assert!(!first.journal.events().iter().any(|event| matches!(
-            event.payload,
-            Payload::CampaignStart(_)
-        )));
+        assert!(
+            !first
+                .journal
+                .events()
+                .iter()
+                .any(|event| matches!(event.payload, Payload::CampaignStart(_)))
+        );
     }
     let resumed = if matches!(cut, CampaignCut::Uninterrupted) {
         first
@@ -1231,9 +1243,12 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: boo
     let events = resumed.journal.events();
     let starts: Vec<_> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CampaignStart(start) => Some(start),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CampaignStart(start) = &event.payload {
+                Some(start)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(starts.len(), 1);
@@ -1241,9 +1256,12 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: boo
     assert_eq!(starts[0].history, CampaignHistory::Complete {});
     let charges: Vec<_> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CampaignCharge(charge) => Some(charge),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CampaignCharge(charge) = &event.payload {
+                Some(charge)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(charges.len(), 2);
@@ -1265,14 +1283,20 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: boo
                 DayEventId::Boot {
                     boot: "provisional-crash".to_owned().into()
                 },
-                true, 1, 1, false
+                true,
+                1,
+                1,
+                false
             ),
             (
                 campaign,
                 DayEventId::Boot {
                     boot: "definite-crash".to_owned().into()
                 },
-                false, 2, 0, true
+                false,
+                2,
+                0,
+                true
             ),
         ]
     );
@@ -1285,9 +1309,12 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: boo
     }));
     let revisions: Vec<_> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CampaignReclassified(revision) => Some(revision),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CampaignReclassified(revision) = &event.payload {
+                Some(revision)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(revisions.len(), 1);
@@ -1322,7 +1349,8 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(reset: boo
         ..build()
     };
     let reopened = prepared(&bench, &next);
-    let Reconstruction::Complete(history) = reopened.import.unwrap().manifest().reconstruction() else {
+    let Reconstruction::Complete(history) = reopened.import.unwrap().manifest().reconstruction()
+    else {
         panic!("enrolled history must remain reconstructible");
     };
     assert_eq!(history.campaign, Some(campaign));

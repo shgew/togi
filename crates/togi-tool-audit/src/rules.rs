@@ -103,7 +103,9 @@ impl Rules {
         let verb = match decision.decision {
             ClimbAction::Promote { .. } => "promote",
             ClimbAction::Restore { .. } => "restore",
-            ClimbAction::Hold { .. } | ClimbAction::Retreat { .. } | ClimbAction::FirmwareZero {} => {
+            ClimbAction::Hold { .. }
+            | ClimbAction::Retreat { .. }
+            | ClimbAction::FirmwareZero {} => {
                 return;
             }
         };

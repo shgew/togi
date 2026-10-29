@@ -989,7 +989,9 @@ fn uncharged_current_failure(records: &[(Provenance, Event)]) -> Option<&'static
             && applied.get(&original.session) == Some(&exposure.profile.cores())
             && !failure_is_charged(records, *original, exposure)
         {
-            return Some("a conclusive failure of the current profile has no derived campaign event");
+            return Some(
+                "a conclusive failure of the current profile has no derived campaign event",
+            );
         }
     }
     None
@@ -1018,7 +1020,8 @@ fn failure_is_charged(
         .map(|(other, _)| other.seq)
         .min();
     let within = |seq: Seq| seq >= original.seq && next.is_none_or(|next| seq < next);
-    let same_profile = |profile: &togi_journal::CcdVector| profile.cores() == exposure.profile.cores();
+    let same_profile =
+        |profile: &togi_journal::CcdVector| profile.cores() == exposure.profile.cores();
     let began = records.iter().any(|(began, start)| {
         began.session == original.session
             && began.seq < original.seq

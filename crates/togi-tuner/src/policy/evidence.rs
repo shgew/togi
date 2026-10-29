@@ -141,7 +141,8 @@ impl Group {
     ) {
         let sig = Sig::of_class(&observed.class);
         let adequate = is_adequate(observed, cores);
-        let eligible_s = eligible_seconds(observed.outcome, &observed.exclusions, observed.eligible_s);
+        let eligible_s =
+            eligible_seconds(observed.outcome, &observed.exclusions, observed.eligible_s);
         let zero = observed.profile.ccd().is_zero();
         if let Tested::Isolated { ccd, offset } = observed.tested {
             if observed.activity == Activity::Mapping && adequate {

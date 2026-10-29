@@ -383,7 +383,9 @@ fn contents_of(built: &ContentId) -> Contents {
 pub(crate) enum Ending {
     Pass,
     Interrupted,
-    Inconclusive { interrupted: bool },
+    Inconclusive {
+        interrupted: bool,
+    },
     Withheld,
     /// A conclusive failure, on `core` when it names one.
     Fail(Option<u8>),

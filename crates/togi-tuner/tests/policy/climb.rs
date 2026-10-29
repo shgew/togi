@@ -428,10 +428,18 @@ fn filler_failed() -> Journal {
 #[test]
 fn a_charged_filler_failure_stays_reconstructible_under_the_importers_exposure_identity() {
     let source = filler_failed();
-    assert!(source.events.iter().any(|event| matches!(&event.payload, Payload::DayEvent(_))));
+    assert!(
+        source
+            .events
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::DayEvent(_)))
+    );
     let successor = successor_of(&source.events);
     let history = successor.state.project().climb.campaign.unwrap().history;
-    assert!(matches!(history, CampaignHistory::Complete {}), "{history:?}");
+    assert!(
+        matches!(history, CampaignHistory::Complete {}),
+        "{history:?}"
+    );
 }
 
 #[test]
@@ -972,16 +980,17 @@ fn paused_hours_and_the_resume_boundary_never_earn_a_climb_hold() {
     assert_eq!(
         committed
             .iter()
-            .filter_map(|payload| match payload {
-                Payload::DayInterval(interval)
-                    if matches!(
+            .filter_map(|payload| {
+                if let Payload::DayInterval(interval) = payload
+                    && matches!(
                         interval.state,
                         togi_journal::IntervalState::Applied | togi_journal::IntervalState::Paused
-                    ) =>
+                    )
                 {
                     Some(interval.state)
+                } else {
+                    None
                 }
-                _ => None,
             })
             .collect::<Vec<_>>(),
         vec![

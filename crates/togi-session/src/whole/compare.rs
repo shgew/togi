@@ -1001,7 +1001,10 @@ impl<'events> Names<'events> {
                 state,
                 source,
             } = entry;
-            lines.push(format!("veto {} {state:?} {source:?}", self.event_id(event)));
+            lines.push(format!(
+                "veto {} {state:?} {source:?}",
+                self.event_id(event)
+            ));
         }
         for entry in qualifications {
             let QualificationProjection {

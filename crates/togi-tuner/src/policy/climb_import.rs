@@ -236,7 +236,9 @@ impl State {
         }
         for veto in &reconstructed.vetoes {
             let event = self.imported_identity(&veto.event);
-            self.climb.imported_vetoes.insert(event, veto.profile.clone());
+            self.climb
+                .imported_vetoes
+                .insert(event, veto.profile.clone());
         }
         for stop in reconstructed.stops.values() {
             if let Some(&seq) = self.climb.import_sequences.get(&stop.witness) {
