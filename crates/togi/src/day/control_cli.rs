@@ -68,7 +68,7 @@ fn parse_until(value: &str) -> Result<Time, String> {
         .map_err(|_| "expected local time HH:MM in 00:00..23:59".into())
 }
 
-fn state(args: &Args, now: Timestamp, zone: TimeZone) -> Result<PauseState, jiff::Error> {
+fn state(args: &Args, now: Timestamp, zone: &TimeZone) -> Result<PauseState, jiff::Error> {
     if let Some(duration) = args.duration {
         return Ok(PauseState::Until {
             deadline: now.checked_add(duration)?,
@@ -94,7 +94,7 @@ fn state(args: &Args, now: Timestamp, zone: TimeZone) -> Result<PauseState, jiff
 }
 
 pub(super) fn pause(args: &Args, ctx: &mut Context<'_>) -> Exit {
-    let state = match state(args, ctx.system.now(), ctx.system.zone()) {
+    let state = match state(args, ctx.system.now(), &ctx.system.zone()) {
         Ok(state) => state,
         Err(error) => {
             return exit_with(
@@ -202,7 +202,7 @@ mod tests {
             until: Some(parse_until(until).unwrap()),
         };
         assert_eq!(
-            state(&args, now.parse().unwrap(), TimeZone::UTC).unwrap(),
+            state(&args, now.parse().unwrap(), &TimeZone::UTC).unwrap(),
             PauseState::Until {
                 deadline: expected.parse().unwrap()
             }
@@ -216,7 +216,7 @@ mod tests {
             until: None,
         };
         assert_eq!(
-            state(&args, Timestamp::UNIX_EPOCH, TimeZone::UTC).unwrap(),
+            state(&args, Timestamp::UNIX_EPOCH, &TimeZone::UTC).unwrap(),
             PauseState::UntilBoot {}
         );
     }
@@ -231,7 +231,7 @@ mod tests {
             state(
                 &args,
                 "2026-10-29T10:00:00Z".parse().unwrap(),
-                TimeZone::fixed(jiff::tz::offset(2))
+                &TimeZone::fixed(jiff::tz::offset(2))
             )
             .unwrap(),
             PauseState::Until {
@@ -249,7 +249,7 @@ mod tests {
         };
         let zone = TimeZone::posix("EST5EDT,M3.2.0,M11.1.0").unwrap();
         assert_eq!(
-            state(&args, now.parse().unwrap(), zone).unwrap(),
+            state(&args, now.parse().unwrap(), &zone).unwrap(),
             PauseState::Until {
                 deadline: expected.parse().unwrap()
             }

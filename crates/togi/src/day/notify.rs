@@ -628,7 +628,7 @@ mod tests {
                     .states
                     .borrow_mut()
                     .pop_front()
-                    .unwrap_or_else(|| {
+                    .unwrap_or({
                         Ok(ControlStatus {
                             pause: PauseState::Running {},
                             frozen: false,

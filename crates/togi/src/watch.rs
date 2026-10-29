@@ -43,7 +43,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// and counts new events until End. It is rendered from the journal, which it reloads only when
 /// it changes.
 /// On the normal main view, `p` toggles a stock-only pause until cold boot and `f` toggles freeze.
-/// These controls use the installed `togi day` command without root; `f` still scrolls help and log.
+/// These controls use the credential-checked day socket without root; `f` still scrolls help and log.
 ///
 /// The screen's words are explained by `?` on the screen itself; the rules behind them are in
 /// docs/spec/tuner.md.
@@ -121,9 +121,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         return match result {
             Ok(Outcome::Ended) => Exit::Ok,
             Ok(Outcome::Control(action)) => {
-                if let Err(exit) = day_control(action, ctx, |invocation| {
-                    togi_command::run_blocking(invocation, std::time::Duration::from_secs(10))
-                }) {
+                if let Err(exit) = day_control(action, ctx) {
                     return exit;
                 }
                 continue;
@@ -140,33 +138,27 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     }
 }
 
-fn day_invocation(
+fn control_request(
     action: terminal::DayControl,
     status: &crate::day::socket::ControlStatus,
-) -> togi_command::Invocation {
-    let command = match action {
+) -> crate::day::socket::Request {
+    use crate::day::socket::Request;
+    match action {
         terminal::DayControl::Pause => match status.pause {
-            togi_journal::PauseState::Running {} => "pause",
+            togi_journal::PauseState::Running {} => Request::Pause {
+                state: togi_journal::PauseState::UntilBoot {},
+            },
             togi_journal::PauseState::UntilBoot {} | togi_journal::PauseState::Until { .. } => {
-                "resume"
+                Request::Resume
             }
         },
-        terminal::DayControl::Freeze => {
-            if status.frozen {
-                "unfreeze"
-            } else {
-                "freeze"
-            }
-        }
-    };
-    togi_command::Invocation::new("togi").args(["day", command])
+        terminal::DayControl::Freeze => Request::Freeze {
+            frozen: !status.frozen,
+        },
+    }
 }
 
-fn day_control(
-    action: terminal::DayControl,
-    ctx: &mut Context<'_>,
-    run: impl FnOnce(&togi_command::Invocation) -> Result<togi_command::Output, togi_command::Error>,
-) -> Result<(), Exit> {
+fn day_control(action: terminal::DayControl, ctx: &mut Context<'_>) -> Result<(), Exit> {
     use crate::day::socket::{Reply, Request};
     let status = match ctx.system.day_request(&Request::State) {
         Ok(Reply::State { status }) => status,
@@ -180,16 +172,16 @@ fn day_control(
         ) => return Err(fail(ctx, "watch", "unexpected day service reply")),
         Err(error) => return Err(fail(ctx, "watch", togi_render::error_chain(&error))),
     };
-    match run(&day_invocation(action, &status)) {
-        Ok(output) if output.status.success() => Ok(()),
-        Ok(output) => Err(fail(
-            ctx,
-            "watch",
-            format!(
-                "day control failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ),
-        )),
+    match ctx.system.day_request(&control_request(action, &status)) {
+        Ok(Reply::Controlled { .. }) => Ok(()),
+        Ok(
+            Reply::Questions { .. }
+            | Reply::State { .. }
+            | Reply::Answered
+            | Reply::Recorded { .. }
+            | Reply::Reapplied
+            | Reply::Refused { .. },
+        ) => Err(fail(ctx, "watch", "unexpected day service reply")),
         Err(error) => Err(fail(ctx, "watch", togi_render::error_chain(&error))),
     }
 }
@@ -256,16 +248,16 @@ mod tests {
         assert!(parse(args).is_err(), "{args:?}");
     }
 
-    #[test_case::test_case(togi_watch::terminal::DayControl::Pause, togi_journal::PauseState::Running {}, false, "pause"; "start untimed pause")]
-    #[test_case::test_case(togi_watch::terminal::DayControl::Pause, togi_journal::PauseState::UntilBoot {}, false, "resume"; "end untimed pause")]
-    #[test_case::test_case(togi_watch::terminal::DayControl::Pause, togi_journal::PauseState::Until { deadline: jiff::Timestamp::UNIX_EPOCH }, false, "resume"; "end timed pause")]
-    #[test_case::test_case(togi_watch::terminal::DayControl::Freeze, togi_journal::PauseState::UntilBoot {}, false, "freeze"; "freeze keeps pause")]
-    #[test_case::test_case(togi_watch::terminal::DayControl::Freeze, togi_journal::PauseState::UntilBoot {}, true, "unfreeze"; "unfreeze keeps pause")]
-    fn day_keys_delegate_to_the_installed_command(
+    #[test_case::test_case(togi_watch::terminal::DayControl::Pause, togi_journal::PauseState::Running {}, false, r#"{"pause":{"state":{"kind":"until_boot"}}}"#; "start untimed pause")]
+    #[test_case::test_case(togi_watch::terminal::DayControl::Pause, togi_journal::PauseState::UntilBoot {}, false, r#""resume""#; "end untimed pause")]
+    #[test_case::test_case(togi_watch::terminal::DayControl::Pause, togi_journal::PauseState::Until { deadline: jiff::Timestamp::UNIX_EPOCH }, false, r#""resume""#; "end timed pause")]
+    #[test_case::test_case(togi_watch::terminal::DayControl::Freeze, togi_journal::PauseState::UntilBoot {}, false, r#"{"freeze":{"frozen":true}}"#; "freeze keeps pause")]
+    #[test_case::test_case(togi_watch::terminal::DayControl::Freeze, togi_journal::PauseState::UntilBoot {}, true, r#"{"freeze":{"frozen":false}}"#; "unfreeze keeps pause")]
+    fn day_keys_delegate_to_the_day_socket(
         action: togi_watch::terminal::DayControl,
         pause: togi_journal::PauseState,
         frozen: bool,
-        command: &str,
+        expected: &str,
     ) {
         let status = crate::day::socket::ControlStatus {
             pause,
@@ -273,8 +265,8 @@ mod tests {
             revision: None,
         };
         assert_eq!(
-            super::day_invocation(action, &status),
-            togi_command::Invocation::new("togi").args(["day", command])
+            serde_json::to_value(super::control_request(action, &status)).unwrap(),
+            serde_json::from_str::<serde_json::Value>(expected).unwrap()
         );
     }
 }

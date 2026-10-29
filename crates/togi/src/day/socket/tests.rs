@@ -551,7 +551,13 @@ fn group_controls_use_kernel_identity_and_return_verified_status(
     let actual = match reply {
         Reply::State { status } if state => status,
         Reply::Controlled { status } if !state => status,
-        other => panic!("unexpected control reply: {other:?}"),
+        other @ (Reply::Questions { .. }
+        | Reply::State { .. }
+        | Reply::Controlled { .. }
+        | Reply::Answered
+        | Reply::Recorded { .. }
+        | Reply::Reapplied
+        | Reply::Refused { .. }) => panic!("unexpected control reply: {other:?}"),
     };
     assert_eq!(actual, status());
 }

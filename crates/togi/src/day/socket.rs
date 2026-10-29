@@ -16,7 +16,7 @@ use togi_machine::{BootId, Clock};
 use togi_session::{AppendRecordError, append_record};
 
 /// An authenticated control operation. Identity always comes from the socket credentials.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Control {
     Status,
     Pause { state: PauseState, uid: u32 },

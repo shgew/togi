@@ -689,19 +689,16 @@ impl DayIntervals {
     pub fn apply(&mut self, event: &Event) -> Option<DayIntervalCredit<'_>> {
         if let Payload::DayBootStart(start) = &event.payload {
             let previous = self.boots.iter().rposition(|boot| boot.boot == event.boot);
-            let (seconds, pause, paused) = match previous {
-                Some(at) => {
-                    let boot = self.boots.remove(at);
-                    (boot.seconds, boot.pause, boot.paused)
-                }
-                None => {
-                    let pause = self
-                        .boots
-                        .last()
-                        .and_then(|boot| boot.pause)
-                        .filter(|pause| matches!(pause, PauseState::Until { .. }));
-                    (0, pause, pause.is_some())
-                }
+            let (seconds, pause, paused) = if let Some(at) = previous {
+                let boot = self.boots.remove(at);
+                (boot.seconds, boot.pause, boot.paused)
+            } else {
+                let pause = self
+                    .boots
+                    .last()
+                    .and_then(|boot| boot.pause)
+                    .filter(|pause| matches!(pause, PauseState::Until { .. }));
+                (0, pause, pause.is_some())
             };
             self.boots.push(DayIntervalBoot {
                 boot: event.boot.clone(),
