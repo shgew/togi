@@ -19,19 +19,12 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0019](0019-a-ruleset-change-starts-a-seeded-session.md) A ruleset change starts a seeded session — partly superseded by [0084](0084-a-fresh-ruleset-transition.md) (Ruleset 13), earlier by [0020](0020-hunt-and-refine.md) and [0027](0027-carry-trial-facts.md).
 - [0020](0020-hunt-and-refine.md) Hunt the core behind every failure and refine every core to its mark — partly superseded by [0079](0079-day-observer-night-tester.md) and [0080](0080-per-ccd-first.md) (Ruleset 13), earlier by 0023, 0024, 0028, 0038, 0054 and 0070.
 - [0024](0024-schedule-from-uncontradicted-evidence.md) Schedule from uncontradicted evidence — partly superseded by [0079](0079-day-observer-night-tester.md) (Ruleset 13), earlier by 0027, 0028 and 0054.
-- [0025](0025-recorded-agent-review.md) Recorded agent review — partly superseded by [0026](0026-review-only-what-changed.md), [0031](0031-pull-requests-under-the-owners-account.md), [0039](0039-remind-only-the-main-session.md) and [0041](0041-coordinator-reviews-small-pull-requests.md).
-- [0026](0026-review-only-what-changed.md) Review only what changed — partly superseded by [0030](0030-coverage-is-a-review-signal.md) (record format).
 - [0027](0027-carry-trial-facts.md) Carry trial facts across ruleset changes — partly superseded by [0084](0084-a-fresh-ruleset-transition.md) (Ruleset 13), earlier by 0038.
 - [0028](0028-remove-tiers.md) Report qualified rotations instead of durability tiers — partly superseded by [0054](0054-two-phases-replace-the-deepening-loop.md); its opaque-event clause gave way to [#877](https://github.com/shgew/togi/issues/877).
 - [0029](0029-bench-verdicts-rest-on-fitted-machines.md) Bench verdicts rest on fitted machines — amended by [0044](0044-write-flagged-target-fits.md).
-- [0030](0030-coverage-is-a-review-signal.md) Coverage is a review signal, not a target — partly superseded by [0032](0032-coverage-lists-uncovered-changed-lines.md).
-- [0031](0031-pull-requests-under-the-owners-account.md) Pull requests under the owner's account — in force.
-- [0032](0032-coverage-lists-uncovered-changed-lines.md) Coverage lists uncovered changed lines — in force.
 - [0034](0034-one-vocabulary-from-screen-to-journal.md) One vocabulary from screen to journal — in force; [0037](0037-cycles-and-trials.md) renames the checking schedule and pass-evidence unit.
 - [0035](0035-gpl-3.0-or-later.md) License togi under GPL-3.0-or-later — in force.
 - [0037](0037-cycles-and-trials.md) Cycles and trials — in force.
-- [0039](0039-remind-only-the-main-session.md) Remind only the main session — in force.
-- [0041](0041-coordinator-reviews-small-pull-requests.md) The coordinator reviews small pull requests — amended by [0051](0051-light-checks-for-review-fixes.md).
 - [0043](0043-record-work-that-waits-on-the-target-machine.md) Record work that waits on the target machine — in force.
 - [0044](0044-write-flagged-target-fits.md) Write flagged target fits — in force.
 - [0048](0048-rust.md) Rust as the implementation language — partly superseded by [0058](0058-native-rust-rewrite.md) (compatibility contract) and [0071](0071-no-go-in-the-repository.md) (tool languages).
@@ -52,7 +45,6 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0082](0082-bios-stays-at-zero.md) Keep BIOS Curve Optimizer at zero — in force.
 - [0083](0083-ask-after-unclean-ends.md) Ask after unclean daily ends — in force.
 - [0084](0084-a-fresh-ruleset-transition.md) Start Ruleset 13 fresh, retaining raw daily observations — in force.
-- [0091](0091-tests-cost-what-they-prove-and-merge-units-are-planned.md) Tests cost what they prove, and merge units are planned before code — in force.
 
 ## Historical
 
@@ -69,10 +61,17 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0021](0021-cache-check-outputs-on-cachix.md) Cache check outputs on Cachix — historical: [Development, Check cache](../development.md#check-cache).
 - [0022](0022-run-the-race-detector-in-ci.md) Run the race detector in CI — historical: [Development, Rust test execution](../development.md#rust-test-execution).
 - [0023](0023-hunts-that-converge-on-shared-voltage.md) Hunts that converge on shared voltage — superseded by [0080](0080-per-ccd-first.md) (Ruleset 13), earlier by 0038.
+- [0025](0025-recorded-agent-review.md) Recorded agent review — historical: [Review record, Records and gate](../review-record.md#records-and-gate) and [Review command, Review trigger](../../.omp/commands/review-pr.md#review-trigger).
+- [0026](0026-review-only-what-changed.md) Review only what changed — historical: [Review command, Coordinator: re-review a changed head](../../.omp/commands/review-pr.md#coordinator-re-review-a-changed-head) and [Review record, Records and gate](../review-record.md#records-and-gate).
+- [0030](0030-coverage-is-a-review-signal.md) Coverage is a review signal, not a target — historical: [REVIEW.md, Coverage](../../REVIEW.md#coverage).
+- [0031](0031-pull-requests-under-the-owners-account.md) Pull requests under the owner's account — historical: [Review command, GitHub identity](../../.omp/commands/review-pr.md#github-identity).
+- [0032](0032-coverage-lists-uncovered-changed-lines.md) Coverage lists uncovered changed lines — historical: [REVIEW.md, Coverage](../../REVIEW.md#coverage).
 - [0033](0033-changelog-fragments.md) Changelog entries are per-pull-request fragments — historical: [Development, Releases and changelog](../development.md#releases-and-changelog) and [Changes, Pending changelog entries](../../changes/README.md#pending-changelog-entries).
 - [0036](0036-flake-checks-stay-hermetic.md) Flake checks stay hermetic — historical: [Development, Check cache](../development.md#check-cache).
 - [0038](0038-self-sufficient-cores.md) Self-sufficient cores under shared voltage — superseded by [0080](0080-per-ccd-first.md) and [0081](0081-margin-from-measured-slope.md) (Ruleset 13); honest partial-load generation remains.
+- [0039](0039-remind-only-the-main-session.md) Remind only the main session — historical: [Review command, Review trigger](../../.omp/commands/review-pr.md#review-trigger).
 - [0040](0040-located-hunts.md) Locate multi-core R7 failures before charging the loaded cores — superseded by [0080](0080-per-ccd-first.md) (Ruleset 13), earlier in part by 0053.
+- [0041](0041-coordinator-reviews-small-pull-requests.md) The coordinator reviews small pull requests — historical: [Review command, Coordinator review](../../.omp/commands/review-pr.md#coordinator-review).
 - [0042](0042-opt-in-to-the-check-cache-locally.md) Opt in to the check cache locally — historical: [Development, Check cache](../development.md#check-cache).
 - [0045](0045-the-tight-loop-reuses-cached-test-results.md) The tight loop reuses cached test results — historical: [Development, Rust test execution](../development.md#rust-test-execution).
 - [0046](0046-macos-checks-the-package-on-main.md) macOS checks only the package, on `main` — historical: [Development, CI and release gates](../development.md#ci-and-release-gates).
@@ -102,3 +101,4 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0088](0088-the-repository-bounds-its-own-build-and-test-parallelism.md) The repository bounds its own build and test parallelism — withdrawn: host scheduling is outside the repository.
 - [0089](0089-heavy-checks-run-on-ci-runners-not-on-the-contributors-machine.md) Heavy checks run on CI runners, not on the contributor's machine — historical: [Development, Shell and checks](../development.md#shell-and-checks) and [Development, Safety-evidence ledger](../development.md#safety-evidence-ledger).
 - [0090](0090-nextest-runs-by-concern.md) Nextest runs by concern — historical: [Development, Nextest by concern](../development.md#nextest-by-concern).
+- [0091](0091-tests-cost-what-they-prove-and-merge-units-are-planned.md) Tests cost what they prove, and merge units are planned before code — historical: [REVIEW.md, Test cost and survivors](../../REVIEW.md#test-cost-and-survivors) and [REVIEW.md, Merge units](../../REVIEW.md#merge-units).

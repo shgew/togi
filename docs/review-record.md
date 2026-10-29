@@ -1,10 +1,24 @@
 # Review record
 
+## Records and gate
+
 The review coordinator writes this record for each reviewed head; `.omp/commands/review-pr.md` says when. Reviewers apply the criteria in [`REVIEW.md`](../REVIEW.md) and do not need this document.
 
-The author posts one robotogi comment for each reviewed head commit, after fix commits have also been reviewed. A pull request's first record covers its whole diff. Each later record covers only what changed since the previous record, as `.omp/commands/review-pr.md` defines that delta, and links it; it does not repeat earlier files, reviewers or findings. A pull request's review is the chain of its records. Nothing per pull request is committed to the repository.
+The GitHub App robotogi posts one review record comment for each reviewed head commit, after fix commits have also been reviewed; the coordinator prepares it. A pull request's first record covers its whole diff. Each later record covers only what changed since the previous record, as `.omp/commands/review-pr.md` defines that delta, and links it; it does not repeat earlier files, reviewers or findings. A pull request's review is the chain of its records. Nothing per pull request is committed to the repository.
 
 Exception: when a version-1 record's historical base cannot be recovered, the next record links it but covers the whole current layer conservatively, and states why a minimal delta could not be established. It may repeat files and reviewers for that coverage; prior findings are still inherited through the chain.
+
+Passing builds and tests do not establish that anyone read the diff. The public record names the exact head, coverage, reviewers and every finding's priority and outcome; the App's `review` check links it on that head. Merge requires CI, this check from robotogi and resolved review threads. Success needs an outcome for every finding accumulated through the chain and no open P0/P1; deferring one does not clear the gate. The record is evidence of independent review, not a guarantee of no defects.
+
+Rejected:
+
+- **Committed records:** the record commit would change the commit it certifies and add per-pull-request repository churn.
+- **Editing previous records or restating all earlier coverage:** each old check must keep describing its own head; linked delta records expose new changes without losing accumulated findings.
+- **GitHub approvals as the gate:** authorship uses the owner's account, which cannot approve its own pull requests; the separate App's check certifies the reviewed head.
+- **Hosted model review in GitHub Actions:** independent review before the owner merges needs no hosted model credentials or added per-pull-request API cost.
+- **CodeRabbit:** a paid seat for bot-authored pull requests, low-signal warnings and repeated review rounds add cost; the repository keeps concrete recurring defect lessons in `REVIEW.md`.
+
+## Record format
 
 A record is written for a human first: the verdict leads, findings follow, and data kept for agents is collapsed. Write commit SHAs, `#N` references and URLs bare, never in code spans or code blocks, so GitHub links them. Use this order:
 
@@ -72,7 +86,7 @@ JSON version 3 has these fields, all required:
 - `files`: array of paths covered by this record.
 - `reviewers`: array of objects with `name` (string), `model` (string or null) and `files` (covered paths).
 - `findings`: this record's findings, as in the table: objects with `source` (reviewer name), `priority` (`P0` through `P3`), `finding` (description), `location` (path and line, or null), `url` (source comment URL or null), and `outcome` (object). An outcome has exactly one of these forms: `{"status":"fixed","sha":"<full sha>"}`, `{"status":"fixed","body":"<what the pull request body edit changed>"}`, `{"status":"rejected","reason":"<reason>"}`, `{"status":"deferred","issue":123}`.
-- `coverage`: `null` when this record's diff changes no Go or Rust code; otherwise an object with `uncovered` (integer: ranges `just cover` reported for this record's diff; records before [ADR 0032](adr/0032-coverage-lists-uncovered-changed-lines.md) counted blocks inside the diff) and `judgment` (string: how they were judged, naming any that became findings).
+- `coverage`: `null` when this record's diff changes no Go or Rust code; otherwise an object with `uncovered` (integer: ranges `just cover` reported for this record's diff; older records counted blocks inside the diff) and `judgment` (string: how they were judged by the [coverage policy](../REVIEW.md#coverage), naming any that became findings).
 - `verdict`: `success` or `blocked`.
 
 Human text and JSON carry the same data. Version 1 lacked `base_sha` and `previous`; read a version-1 record as a first record. Version 2 lacked `coverage`; read it as unknown. A successful check named `review` from robotogi points to this record on exactly `head_sha`. A pure rebase or a clean merge of `main` can carry it forward only after `git range-diff` proves the layer's own changes unchanged and every new merge commit has an empty remerge diff; the new head gets a new check linking the earlier record, not a new record claiming a fresh review.

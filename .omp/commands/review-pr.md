@@ -3,7 +3,19 @@ description: Review pull requests in parallel and record their merge gates
 argument-hint: "[PR numbers or URLs… | all]"
 ---
 
-Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first; a coordinator also reads `docs/review-record.md`. Use `gh` for GitHub actions, which act as the owner; only the review record and the `review` check go through `just bot` or `just as-bot`, which act as robotogi. Keep temporary payloads outside the repository. Never merge; the owner merges.
+Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first; a coordinator also reads `docs/review-record.md`. Keep temporary payloads outside the repository. Never merge; the owner merges.
+
+## GitHub identity
+
+Use the owner's account through `gh` for every GitHub action except publishing the review record and the `review` check: opening pull requests, submitting and syncing stacks, pushing, commenting, replying to and resolving threads, filing issues and any merge the owner explicitly authorizes. Only the record and check use robotogi through `just bot` or `just as-bot`. This separates the owner's authorship and conversation from the App's review certification.
+
+Rejected: using the App for all agent actions puts pull requests and discussion under an identity the owner does not want for authorship. GitHub approval is not the gate: the owner cannot approve pull requests authored under the same account; the App's check certifies the reviewed commit instead.
+
+## Review trigger
+
+Start independent review immediately after opening a pull request, before reporting done. The main session starts review for pull requests its subagents open. `.omp/rules/review-after-open.md` watches `gh pr create` and `gh stack submit` only in the main, top-level session (`agents: main`); coordinators and other subagents get no reminder. `.omp/config.yml` sets reminder repetition to `after-gap` with a zero gap so each opening call is eligible.
+
+Rejected: reminding every agent except `reviewer` also interrupts coordinators submitting fix stacks with another review request. Excluding definitions by name misses new definitions and unnamed `sub` agents; reserved `main` matches only the top-level session.
 
 ## Resolve and fan out
 
@@ -29,11 +41,19 @@ Keep coverage test diagnostics on stderr, separate from the report imported with
 
 The manifest carries the reviewer count (`included_lines` L, `included_files` F, `reviewers`) on INCLUDED files: L is added plus removed lines and F the file count. No included files means no reviewer tasks and explicit exclusion evidence, not an invented review. Otherwise use one reviewer if L < 100 or F <= 2; two for L < 500; max(2, min(4, ceil(F / 3))) for L < 5000; and min(8, ceil(F / 2)) beyond that. The count never falls as L grows for a fixed F: the 500-line step once dropped it (F = 3 went from 2 reviewers to 1), and the floor of two at 500 repairs that. Fewer, larger reviewers on big diffs repeat less setup context than omp's bundled `/review` sizing; that is the aim, not a guaranteed lower total quota cost.
 
-The recipe runs `cargo llvm-cov nextest`, prints the changed lines no test reached, and names as `path: not built for <platform>` each changed file the coverage build leaves out and each file with changed lines inside an item whose `cfg` predicate the host does not satisfy or cannot decide (`cfg(target_os = "linux")` on macOS, a Cargo feature), when the trace measures none of that item's lines. Code only the VM tests, the hardware tests or the target machine reach shows as uncovered or not built; judge it by reading. Coverage is evidence for the reviewers' judgment, never a target (ADRs 0030, 0032).
+The recipe runs `cargo llvm-cov nextest`, prints the changed lines no test reached, and names as `path: not built for <platform>` each changed file the coverage build leaves out and each file with changed lines inside an item whose `cfg` predicate the host does not satisfy or cannot decide (`cfg(target_os = "linux")` on macOS, a Cargo feature), when the trace measures none of that item's lines. Code only the VM tests, the hardware tests or the target machine reach shows as uncovered or not built; judge it by reading. Coverage is evidence for the reviewers' judgment, never a target ([coverage policy](../../REVIEW.md#coverage)).
+
+### Coordinator review
 
 A small PR is reviewed by the coordinator itself instead of reviewers. Small means the PR's whole diff against its current base changes at most 2 files and fewer than 100 lines, added plus removed, counting every changed file and line, excluded ones included, with no changed file under `crates/togi-smu`, `crates/togi-trial`, `crates/togi-session`, `crates/togi-journal` or `nix/`. These counts are not the included-only F and L above, which still size and assign reviewers, and a small PR with no included files still gets no review, only exclusion evidence. Measure it on the PR's whole diff against its current base, also when a round reviews only a delta; the manifest's `small` does. The coordinator is not the PR's author, so the review stays independent: it reads the frozen hunks as a reviewer would, by `REVIEW.md` and the linked issue Acceptance, judges the `just cover` ranges itself, and names itself with its model as the record's reviewer of those files. Its findings go through triage, fixes, the record and the `review` check below like any reviewer's. Later rounds of a PR that is still small come back to the coordinator; once the PR has grown past small, its delta gets reviewers as for files no earlier reviewer covered.
 
+The coordinator already reads a small diff to size and triage it; an extra reviewer would repeat the same few lines. The same reasoning applies to a small fix diff even in a large pull request. This keeps independent review but accepts one reader and triager for those diffs.
+
+Rejected: spawning reviewers for every small PR or fix diff adds no separate judgment worth the repeated setup. Author self-review loses independence. Size alone is insufficient: offset writes, containment, the session loop, journal and NixOS module need a separate reviewer even for a few lines.
+
 Otherwise group by locality: same directory/module, related functionality, tests beside implementation. Spawn ALL `agent: "reviewer"` tasks for the PR in ONE parallel task call. Each gets only its assigned files as the paths of their hunk files in the snapshot directory, not pasted hunks, the PR title/body, linked issue Acceptance and the root `REVIEW.md`. Reviewers must read those hunk files, not rerun `git diff` or fetch a newer PR diff. They may read surrounding context at the frozen SHA. Collect findings, priorities, files covered and verdicts from every reviewer. Keep each reviewer's agent id and files: later rounds send it the changes to those files. Do not define a project agent named `reviewer`, which replaces the bundled reviewer whole.
+
+Rejected: replacing omp's bundled `reviewer` with a project agent silently replaces it whole and loses upstream improvements. `.omp/rules/review.md` scopes repository criteria to that reviewer without replacement.
 
 If the coordinator cannot spawn all reviewer seats required by the sizing above (spawn refused, recursion limit, or no reviewer available), stop and report that blocker for the PR instead of reviewing the diff itself as a substitute; the small-PR self-review rule above is unchanged.
 
@@ -56,6 +76,10 @@ Find the latest record's comment URL and run `just reviews snapshot --previous <
 Only a previous record with verdict `success` carries forward; which version the record has does not matter, but one whose verdict is not an explicit `success` never does, and a version-1 record also needs its base recovered first: an all-unchanged delta then gets an empty delta and a normal new record, no check-only publish. If the manifest says `carry_forward`, every patch is unchanged with none added or removed: carry the record forward with `just as-bot just reviews publish <snapshot dir>`, which posts a new `review` check on the new head whose summary links the earlier record and names the old/new ranges and range-diff evidence. It posts no comment and claims no fresh review.
 
 Otherwise the delta includes every added commit, the new version of every patch range-diff marks changed (`!`), the effects of removed patches, not just their names, and the `git show --remerge-diff` of every new merge commit that resolved a conflict or changed code beyond merging its parents. `snapshot` froze these hunks once in `delta.diff` and the hunk files, with the same exclusions. For removed patches they include the reversed old-patch hunks and trace their effect in the current layer against its current base, so inherited changes from lower stack layers are not treated as this layer's removals. Review it as fix diffs are reviewed above: resumable earlier reviewers get the hunks for their files; new reviewers only for uncovered files, or sized on the delta when the earlier ones are missing or terminal. Give new reviewers the latest record too. Triage and fix as above, freezing each fix head with the same `--previous <URL>`, then post an incremental record for the new head.
+
+Reviewing only the delta keeps the change visible while findings accumulate through the record chain. Resume earlier reviewers while they remain available: they hold the surrounding code and their findings. Frozen deltas and current-head checks still guard against carrying an earlier misreading forward.
+
+Rejected: restating the whole review on each head buries the new changes. Editing an earlier record would make the check on its old head describe a different commit. Fresh reviewers for every delta unnecessarily reload context; use them when earlier reviewers cannot resume or never covered a file.
 
 Check that current threads are resolved before success.
 
