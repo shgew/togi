@@ -51,7 +51,7 @@ At each eligible cold boot, perform safety decisions first. A restart, resume or
 4. Apply P only after the 50-hour hold, its exact qualification, no pending question, no unresolved event/safety work, no active veto violation, valid firmware, freeze off, available machine allowance, the nonzero hardware activation gate, and the existing safe-apply prerequisites all hold. A boot starting paused cannot promote later in that boot.
 5. Commit the step/history/hold reset only after successful full-profile application and readback. A planned or failed application is not an earned or consumed step. Recompute P if C, vetoes or context change; an old certificate for another vector cannot qualify it.
 
-Example with C = −25: `0 → −5 → −10 → −15 → −20 → −22 → −24 → −25`. Seven promotions per unit, fourteen for two units, with fourteen preceding 50-hour holds: approximately **700 applied daily hours**, or 87.5 eight-hour days. **[INFERENCE: no faults, vetoes, mapping delay, qualification delay, firmware changes or lost observation.]** Completion is not waiting for a new crash and does not require a crash to discover a result.
+Example with C = −25: `0 → −5 → −10 → −15 → −20 → −23 → −24 → −25` (the last five counts round up to steps of 3, 1 and 1). Seven promotions per unit, fourteen for two units, with fourteen preceding 50-hour holds: approximately **700 applied daily hours**, or 87.5 eight-hour days. **[INFERENCE: no faults, vetoes, mapping delay, qualification delay, firmware changes or lost observation.]** Completion is not waiting for a new crash and does not require a crash to discover a result.
 
 ## 5. Newest-step blame, stop and the machine allowance
 
