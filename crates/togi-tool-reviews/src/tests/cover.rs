@@ -1,10 +1,10 @@
-use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use test_case::test_case;
 
 use super::{add_cover, intersect_cover};
-use crate::diff::Span;
+use crate::diff::{FileDiff, Span, parse_diff};
+use crate::headlines::{HeadLines, from_head_diff};
 use crate::manifest::{CoverRange, NotBuilt, read_manifest, write_manifest};
 use crate::render::tests::{dir_text, first_manifest, included, range, reviewer};
 use crate::render::{FindingsInput, build_record};
@@ -26,11 +26,10 @@ fn cover_snapshot(sections: &[String]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("temporary directory");
     std::fs::create_dir_all(dir.path().join("files")).expect("mkdir");
     std::fs::write(dir.path().join("files/001.diff"), sections.concat()).expect("write hunks");
-    write_manifest(
-        &dir_text(dir.path()),
-        &first_manifest(vec![included("a.go", 0, 0)]),
-    )
-    .expect("write manifest");
+    let mut m = first_manifest(vec![included("a.go", 0, 0)]);
+    let files = parse_diff(sections.concat().as_bytes()).expect("parse head diff");
+    m.head_lines = from_head_diff(files.iter());
+    write_manifest(&dir_text(dir.path()), &m).expect("write manifest");
     dir
 }
 
@@ -75,18 +74,19 @@ fn cover_merges_overlapping_delta_hunks() {
     );
 }
 
-fn hunks(spans: &[(&str, &[(i64, i64)])]) -> HashMap<String, Vec<Span>> {
-    spans
+fn hunks(spans: &[(&str, &[(i64, i64)])]) -> HeadLines {
+    let files: Vec<FileDiff> = spans
         .iter()
-        .map(|&(path, s)| {
-            (
-                path.to_owned(),
-                s.iter()
-                    .map(|&(first, last)| Span { first, last })
-                    .collect(),
-            )
+        .map(|&(path, spans)| FileDiff {
+            path: path.to_owned(),
+            changed: spans
+                .iter()
+                .map(|&(first, last)| Span { first, last })
+                .collect(),
+            ..FileDiff::default()
         })
-        .collect()
+        .collect();
+    from_head_diff(files.iter())
 }
 
 #[test_case(&[("a.go", &[(10, 20), (15, 25)])], &[range("a.go", 10, 25)], &[range("a.go", 10, 25)], 1; "overlapping hunks from two patches")]
@@ -115,4 +115,18 @@ fn intersect_cover_merges_per_path(
     assert_eq!(want, got.ranges);
     assert_eq!(reported, got.reported);
     assert_eq!(vec![not_built("a.go")], got.not_built);
+}
+
+#[test]
+fn refuses_snapshot_before_head_coordinates() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    std::fs::write(dir.path().join("manifest.json"), r#"{"version":1}"#)
+        .expect("write old manifest");
+    let path = dir_text(dir.path());
+    assert_eq!(
+        format!("manifest in {path} has version 1; this tool reads version 2"),
+        add_cover(&path, "a.go:1\n")
+            .expect_err("old snapshot accepted")
+            .to_string(),
+    );
 }

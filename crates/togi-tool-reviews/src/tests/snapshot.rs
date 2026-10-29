@@ -1134,6 +1134,9 @@ impl ReReview {
                         .unwrap_or_default())
                 }
                 "diff" => {
+                    if args.iter().any(|a| a == "--name-status") {
+                        return Ok(Vec::new());
+                    }
                     let n = args.len();
                     if let Some(at) = args.iter().position(|a| a == "--") {
                         let target = match args[at - 1].as_str() {
@@ -1553,10 +1556,19 @@ b_linux.go: not built for darwin/arm64
 #[test]
 fn intersect_cover_clips_to_hunks() {
     let span = |first, last| Span { first, last };
-    let hunks: HashMap<String, Vec<Span>> = HashMap::from([
-        ("a.go".to_owned(), vec![span(10, 20), span(40, 45)]),
-        ("b.go".to_owned(), vec![span(1, 2)]),
-    ]);
+    let files = [
+        FileDiff {
+            path: "a.go".to_owned(),
+            changed: vec![span(10, 20), span(40, 45)],
+            ..FileDiff::default()
+        },
+        FileDiff {
+            path: "b.go".to_owned(),
+            changed: vec![span(1, 2)],
+            ..FileDiff::default()
+        },
+    ];
+    let hunks = crate::headlines::from_head_diff(files.iter());
     let ranges = [
         range("a.go", 5, 12),  // clipped at the start of a hunk
         range("a.go", 15, 16), // inside
