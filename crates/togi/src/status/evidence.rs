@@ -280,12 +280,12 @@ fn day_provenance(out: &mut String, events: &[Event]) {
             line(
                 out,
                 &format!(
-                    "[#{}] imported {:?}; original session {} #{}; {:?}; {} missing facts",
+                    "[#{}] imported {}; original session {} #{}; {}; {} missing facts",
                     event.seq,
-                    imported.original_kind,
+                    imported.original_kind.as_str(),
                     imported.original.session,
                     imported.original.seq,
-                    imported.class,
+                    imported.class.as_str(),
                     imported.missing.len()
                 ),
             );
@@ -618,6 +618,99 @@ mod tests {
             "{out}"
         );
         assert!(!out.contains("5500"), "{out}");
+    }
+
+    #[test]
+    fn day_provenance_names_imported_manual_and_unclean_records() {
+        use togi_journal::{
+            CrashedBoot, DayImported, DayRecord, DayUncleanEnd, EventKind, ImportClass,
+            MissingFact, OffsetSource, Provenance, RecordedOffsets, Running,
+        };
+        let offsets: PerCore<_> = [(CoreId::new(0).unwrap(), ObservedOffset(-10))]
+            .into_iter()
+            .collect();
+        let events = [
+            event(
+                1,
+                DayImported {
+                    original: Provenance {
+                        session: "20231114T221320Z".parse().unwrap(),
+                        seq: Seq::new(25).unwrap(),
+                    },
+                    original_kind: EventKind::DayOffsetsChanged,
+                    raw: "{}".to_owned(),
+                    time: jiff::Timestamp::UNIX_EPOCH,
+                    boot: "original".to_owned().into(),
+                    build: None,
+                    firmware: None,
+                    profile: None,
+                    class: ImportClass::ProfileChange,
+                    missing: vec![MissingFact::Build, MissingFact::Firmware],
+                },
+            ),
+            event(
+                2,
+                DayRecord {
+                    boot: CrashedBoot::UncleanEnd {
+                        boot: "crashed".to_owned().into(),
+                    },
+                    offsets: RecordedOffsets::new(offsets).unwrap(),
+                    source: OffsetSource::ReadBack {
+                        at: jiff::Timestamp::UNIX_EPOCH,
+                    },
+                    running: Running::Idle,
+                    note: None,
+                },
+            ),
+            event(
+                3,
+                DayUncleanEnd {
+                    boot: "crashed".to_owned().into(),
+                    last_checkpoint: None,
+                    offsets,
+                    reset_reason: togi_machine::ResetReason {
+                        kind: None,
+                        raw: Vec::new(),
+                        supported: false,
+                    },
+                    evidence: togi_machine::EndEvidence::unknown(),
+                },
+            ),
+        ];
+        let mut out = String::new();
+        day_provenance(&mut out, &events);
+        let records = out.split_once("credit.\n").unwrap().1;
+        assert_eq!(
+            records.split_whitespace().collect::<Vec<_>>().join(" "),
+            "[#1] imported day.offsets_changed; original session 20231114T221320Z #25; profile_change; 2 missing facts [#2] manually recorded crash [#3] observed unclean end; answers determine crash totals"
+        );
+    }
+
+    #[test]
+    fn an_unbounded_rate_is_not_rendered_as_zero() {
+        assert_eq!(bound_word(RateBound::Unbounded {}), "unbounded");
+    }
+
+    #[test_case::test_case(
+        Slope::Measured {
+            lower: togi_journal::LowerEndpoint::Bounded {
+                beta: togi_journal::Finite::new(0.25).unwrap()
+            },
+            historical_min: Some(togi_journal::Finite::new(0.125).unwrap()),
+        },
+        "measured beta lower endpoint=0.250000; earlier minimum=0.125000";
+        "bounded endpoint with history"
+    )]
+    #[test_case::test_case(
+        Slope::Measured {
+            lower: togi_journal::LowerEndpoint::Unbounded {},
+            historical_min: None,
+        },
+        "measured beta lower endpoint=unbounded; earlier minimum=none";
+        "unbounded endpoint without history"
+    )]
+    fn measured_slope_preserves_its_endpoint_and_history(slope: Slope, expected: &str) {
+        assert_eq!(slope_word(slope), expected);
     }
 
     #[test]
