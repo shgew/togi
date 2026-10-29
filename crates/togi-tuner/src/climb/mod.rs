@@ -21,8 +21,8 @@ pub use history::{
     AncestryLink, ApplicationId, ClimbError, ClimbHistory, Cursor, LearningStep, RetreatRecord,
     StepKind, TransitionId,
 };
+pub use restore::candidate as restoration_candidate;
 pub use restore::{RestorationKind, RestorationProposal, SavedProfile};
 pub use retreat::Retreat;
-pub use restore::candidate as restoration_candidate;
 pub use retreat::plan as retreat_plan;
 pub use step::{Proposal, propose};

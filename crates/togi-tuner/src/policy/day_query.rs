@@ -348,8 +348,6 @@ impl State {
         )))
     }
 
-
-
     /// What the day invocation owes, in the order the journal needs it: first what the night this boot
     /// ended owes at its close, one commitment at a time; then the observed intervals, events and vetoes,
     /// which are independent of one another; once those are journaled, the hold; and once that is, the one
@@ -381,6 +379,9 @@ impl State {
             return Ok(vec![commitment]);
         }
         let view = self.day_view()?;
-        Ok(self.owed_climb_decision(query, &view)?.into_iter().collect())
+        Ok(self
+            .owed_climb_decision(query, &view)?
+            .into_iter()
+            .collect())
     }
 }

@@ -10,20 +10,19 @@ mod day {
     use test_case::test_case;
     use togi_journal::{DayAnswerKind, EndClass, Seq};
     use togi_machine::{BootId, CcdId, CoreId, CoreInfo, ObservedOffset, PerCore, TargetOffset};
+    use togi_tuner::Topology;
     use togi_tuner::climb::{
-        self, ApplicationId, ApplyPrerequisites, Blocker, Campaign, Ceiling, Ceilings,
-        ClimbAction, ClimbDecision, ClimbHistory, ClimbInputs, EdgeState, EventPhase,
-        EvidenceId, HoldInput,
+        self, ApplicationId, ApplyPrerequisites, Blocker, Campaign, Ceiling, Ceilings, ClimbAction,
+        ClimbDecision, ClimbHistory, ClimbInputs, EdgeState, EventPhase, EvidenceId, HoldInput,
     };
     use togi_tuner::day::{
-        Answer, ApplicationKind, Classification, CoreProfile, CpuCause, DailyEvent,
-        DayApplication, DayHistory, DayInterval, EventId, Firmware, Freeze, HistoryError,
-        IntervalKind, Invocation, MceKind, Observation, Pause, ProvisionalCause,
-        QuestionState, Readback, ReproductionOutcome, RetreatState, Witness, classify,
-        credited_secs, daily_events, event_statuses, vetoes,
+        Answer, ApplicationKind, Classification, CoreProfile, CpuCause, DailyEvent, DayApplication,
+        DayHistory, DayInterval, EventId, Firmware, Freeze, HistoryError, IntervalKind, Invocation,
+        MceKind, Observation, Pause, ProvisionalCause, QuestionState, Readback,
+        ReproductionOutcome, RetreatState, Witness, classify, credited_secs, daily_events,
+        event_statuses, vetoes,
     };
     use togi_tuner::unit::{UnitId, UnitProfile, Units};
-    use togi_tuner::Topology;
 
     const HOURS_50: u64 = 50 * 3600;
 
@@ -99,9 +98,18 @@ mod day {
             let units = Units::coarse(&Topology::new(&topology()).unwrap());
             Self {
                 history: DayHistory::baseline(seq(1), profile([0, 0])),
-                ceilings: units.iter().map(|unit| (unit.id, Ceiling::new(EdgeState::Observed {
-                    offset: offset(-30), witness: EvidenceId::new(1).unwrap(),
-                }))).collect(),
+                ceilings: units
+                    .iter()
+                    .map(|unit| {
+                        (
+                            unit.id,
+                            Ceiling::new(EdgeState::Observed {
+                                offset: offset(-30),
+                                witness: EvidenceId::new(1).unwrap(),
+                            }),
+                        )
+                    })
+                    .collect(),
                 climb: ClimbHistory::stock(units),
                 campaign: Campaign::approved_fresh(),
                 observations: Vec::new(),
@@ -121,13 +129,23 @@ mod day {
 
         fn push(&mut self, values: [i64; 2], kind: ApplicationKind) {
             let at = self.tick();
-            self.history.push(DayApplication { at, profile: profile(values), kind }).unwrap();
+            self.history
+                .push(DayApplication {
+                    at,
+                    profile: profile(values),
+                    kind,
+                })
+                .unwrap();
         }
 
         fn run(&mut self, secs: u64) {
-            self.interval(IntervalKind::Applied {
-                profile: self.history.current().profile.clone(), readback: Readback::Verified,
-            }, secs);
+            self.interval(
+                IntervalKind::Applied {
+                    profile: self.history.current().profile.clone(),
+                    readback: Readback::Verified,
+                },
+                secs,
+            );
         }
 
         fn interval(&mut self, kind: IntervalKind, secs: u64) {
@@ -136,11 +154,19 @@ mod day {
         }
 
         fn credit(&self) -> u64 {
-            credited_secs(&self.intervals, &self.history.current().profile, self.history.hold_origin())
+            credited_secs(
+                &self.intervals,
+                &self.history.current().profile,
+                self.history.hold_origin(),
+            )
         }
 
         fn observe(&mut self, id: EventId, profile: CoreProfile, witness: Witness) {
-            self.observations.push(Observation { id, profile, witness });
+            self.observations.push(Observation {
+                id,
+                profile,
+                witness,
+            });
         }
 
         fn crash(&mut self, name: &str, values: [i64; 2], class: EndClass) {
@@ -148,7 +174,10 @@ mod day {
         }
 
         fn answer(&mut self, name: &str, kind: DayAnswerKind) {
-            self.answers.push(Answer { boot: boot(name), kind });
+            self.answers.push(Answer {
+                boot: boot(name),
+                kind,
+            });
         }
 
         fn events(&self) -> Vec<DailyEvent> {
@@ -156,7 +185,8 @@ mod day {
         }
 
         fn close(&mut self, id: EventId) {
-            self.reproductions.insert(id, ReproductionOutcome::Unreproduced);
+            self.reproductions
+                .insert(id, ReproductionOutcome::Unreproduced);
         }
 
         fn decide(&self) -> ClimbDecision {
@@ -170,43 +200,89 @@ mod day {
                 vetoes: &vetoes,
                 qualified: &self.qualified,
                 failed: &self.failed,
-                hold: HoldInput { profile: self.climb.current(), credited_secs: self.credit() },
+                hold: HoldInput {
+                    profile: self.climb.current(),
+                    credited_secs: self.credit(),
+                },
                 firmware: Firmware::Current,
                 freeze: Freeze::Off,
-                invocation: Invocation::ColdBoot { pause: Pause::Running },
-                pending_question: events.iter().any(|event| event.question == QuestionState::Pending),
-                unresolved_event: event_statuses(&topology(), &self.history, &events, &self.reproductions)
-                    .unwrap().iter().any(|event| event.class.is_cpu_suspect() && !event.is_resolved()),
-                apply: ApplyPrerequisites { firmware_valid: true, activation_open: true, safe_apply: true },
-            }).unwrap()
+                invocation: Invocation::ColdBoot {
+                    pause: Pause::Running,
+                },
+                pending_question: events
+                    .iter()
+                    .any(|event| event.question == QuestionState::Pending),
+                unresolved_event: event_statuses(
+                    &topology(),
+                    &self.history,
+                    &events,
+                    &self.reproductions,
+                )
+                .unwrap()
+                .iter()
+                .any(|event| event.class.is_cpu_suspect() && !event.is_resolved()),
+                apply: ApplyPrerequisites {
+                    firmware_valid: true,
+                    activation_open: true,
+                    safe_apply: true,
+                },
+            })
+            .unwrap()
         }
 
         fn apply(&mut self, decision: &ClimbDecision) {
             for event in self.events() {
-                self.campaign.observe(&event, &[], EventPhase::Learning, self.climb.units().phase());
+                self.campaign.observe(
+                    &event,
+                    &[],
+                    EventPhase::Learning,
+                    self.climb.units().phase(),
+                );
             }
             let at = self.tick();
-            self.climb.apply(ApplicationId::new(at.get()).unwrap(), instant(i64::try_from(at.get()).unwrap()), decision).unwrap();
+            self.climb
+                .apply(
+                    ApplicationId::new(at.get()).unwrap(),
+                    instant(i64::try_from(at.get()).unwrap()),
+                    decision,
+                )
+                .unwrap();
             let kind = match &decision.action {
                 ClimbAction::Promote(_) | ClimbAction::Restore(_) => ApplicationKind::Promotion,
-                ClimbAction::Retreat(retreat) if retreat.profile != retreat.wanted => ApplicationKind::Fallback {
-                    events: retreat.events.clone(), reverted: Vec::new(), wanted: retreat.wanted.clone(),
-                },
+                ClimbAction::Retreat(retreat) if retreat.profile != retreat.wanted => {
+                    ApplicationKind::Fallback {
+                        events: retreat.events.clone(),
+                        reverted: Vec::new(),
+                        wanted: retreat.wanted.clone(),
+                    }
+                }
                 ClimbAction::Retreat(retreat) => ApplicationKind::Retreat {
-                    events: retreat.events.clone(), reverted: Vec::new(),
+                    events: retreat.events.clone(),
+                    reverted: Vec::new(),
                 },
                 ClimbAction::FirmwareZero { .. } => ApplicationKind::FirmwareZero,
                 ClimbAction::Hold { .. } => panic!("cannot apply a hold"),
             };
-            self.history.push(DayApplication { at, profile: self.climb.current().clone(), kind }).unwrap();
+            self.history
+                .push(DayApplication {
+                    at,
+                    profile: self.climb.current().clone(),
+                    kind,
+                })
+                .unwrap();
         }
 
         fn advance(&mut self) {
             self.run(HOURS_50);
-            let candidate = climb::propose(self.climb.current(), &self.ceilings, self.climb.finishes()).unwrap();
+            let candidate =
+                climb::propose(self.climb.current(), &self.ceilings, self.climb.finishes())
+                    .unwrap();
             self.qualified.insert(candidate.profile);
             let decision = self.decide();
-            assert!(matches!(decision.action, ClimbAction::Promote(_)), "{decision:?}");
+            assert!(
+                matches!(decision.action, ClimbAction::Promote(_)),
+                "{decision:?}"
+            );
             self.apply(&decision);
         }
     }
@@ -394,7 +470,6 @@ mod day {
         );
     }
 
-
     #[test]
     fn the_last_answer_wins_and_an_answer_needs_an_unclean_end() {
         let mut day = Day::new();
@@ -499,9 +574,13 @@ mod day {
             assert_eq!(day.decide().target(), Some(&profile([-5, -5])));
             assert!(matches!(day.decide().action, ClimbAction::Promote(_)));
         } else {
-            assert_eq!(blockers(day.decide()), [Blocker::Hold {
-                credited_secs: secs, required_secs: HOURS_50,
-            }]);
+            assert_eq!(
+                blockers(day.decide()),
+                [Blocker::Hold {
+                    credited_secs: secs,
+                    required_secs: HOURS_50,
+                }]
+            );
         }
     }
 
@@ -530,7 +609,11 @@ mod day {
         day.push([-10, -10], ApplicationKind::Promotion);
         assert_eq!(day.credit(), 0, "the earlier profile's hours belong to it");
         day.push([-10, 0], ApplicationKind::SafetyCap);
-        assert_eq!(day.credit(), 0, "revisiting a historical profile reuses no hours");
+        assert_eq!(
+            day.credit(),
+            0,
+            "revisiting a historical profile reuses no hours"
+        );
     }
 
     #[test]
@@ -569,7 +652,11 @@ mod day {
     fn a_proposal_shallower_than_a_veto_in_some_ccd_is_allowed() {
         let mut day = Day::new();
         day.run(HOURS_50);
-        day.observe(EventId::Unobserved(instant(1)), core_profile([-5, -5]), Witness::Manual);
+        day.observe(
+            EventId::Unobserved(instant(1)),
+            core_profile([-5, -5]),
+            Witness::Manual,
+        );
         day.close(EventId::Unobserved(instant(1)));
         day.qualified.insert(profile([-5, 0]));
         assert!(matches!(day.decide().action, ClimbAction::Promote(_)));
@@ -606,7 +693,11 @@ mod day {
     fn a_clean_boot_with_a_core_local_machine_check_is_cpu_suspect() {
         let mut day = Day::new();
         day.advance();
-        day.observe(EventId::Boot(boot("clean")), core_profile([-5, 0]), Witness::CleanBootMce(MceKind::CoreLocal));
+        day.observe(
+            EventId::Boot(boot("clean")),
+            core_profile([-5, 0]),
+            Witness::CleanBootMce(MceKind::CoreLocal),
+        );
         let events = day.events();
         assert_eq!(events[0].class, cpu(CpuCause::Mce(MceKind::CoreLocal)));
         assert_eq!(events[0].question, QuestionState::NotAsked);
@@ -617,20 +708,32 @@ mod day {
     fn an_answer_never_erases_independent_machine_check_evidence_in_the_decision() {
         let mut day = Day::new();
         day.advance();
-        day.observe(EventId::Boot(boot("a")), core_profile([-5, 0]), Witness::UncleanEnd {
-            class: EndClass::Unknown, mce: Some(MceKind::CoreLocal),
-        });
+        day.observe(
+            EventId::Boot(boot("a")),
+            core_profile([-5, 0]),
+            Witness::UncleanEnd {
+                class: EndClass::Unknown,
+                mce: Some(MceKind::CoreLocal),
+            },
+        );
         day.answer("a", DayAnswerKind::PowerOff);
         let retreat = retreat(day.decide());
         assert!(retreat.profile.is_zero());
         assert_eq!(retreat.events, [EventId::Boot(boot("a"))]);
-        assert_eq!(vetoes(&day.events())[0].certainty, togi_tuner::day::Certainty::Definite);
+        assert_eq!(
+            vetoes(&day.events())[0].certainty,
+            togi_tuner::day::Certainty::Definite
+        );
     }
 
     #[test]
     fn a_co_zero_event_creates_no_veto_and_charges_no_ccd() {
         let mut day = Day::new();
-        day.observe(EventId::Unobserved(instant(7)), core_profile([0, 0]), Witness::Manual);
+        day.observe(
+            EventId::Unobserved(instant(7)),
+            core_profile([0, 0]),
+            Witness::Manual,
+        );
         assert_eq!(day.events()[0].class, Classification::Platform);
         assert!(vetoes(&day.events()).is_empty());
         day.advance();
@@ -641,7 +744,11 @@ mod day {
     fn a_failed_requalification_enters_the_same_event_path() {
         let mut day = Day::new();
         day.advance();
-        day.observe(EventId::Requalification(seq(9)), core_profile([-5, 0]), Witness::FailedRequalification);
+        day.observe(
+            EventId::Requalification(seq(9)),
+            core_profile([-5, 0]),
+            Witness::FailedRequalification,
+        );
         assert_eq!(day.events()[0].class, cpu(CpuCause::FailedRequalification));
         let retreat = retreat(day.decide());
         assert!(retreat.profile.is_zero());
@@ -654,13 +761,21 @@ mod day {
         day.advance();
         day.crash("a", [-5, 0], EndClass::CpuFault);
         day.crash("a", [-5, 0], EndClass::CpuFault);
-        day.observe(EventId::Boot(boot("a")), core_profile([-5, 0]), Witness::Manual);
+        day.observe(
+            EventId::Boot(boot("a")),
+            core_profile([-5, 0]),
+            Witness::Manual,
+        );
         assert_eq!(day.events().len(), 1);
         let decision = day.decide();
         assert!(retreat(decision.clone()).profile.is_zero());
         assert_eq!(retreat(decision.clone()).events, [EventId::Boot(boot("a"))]);
         day.apply(&decision);
-        day.observe(EventId::Boot(boot("a")), core_profile([-5, 0]), Witness::Manual);
+        day.observe(
+            EventId::Boot(boot("a")),
+            core_profile([-5, 0]),
+            Witness::Manual,
+        );
         assert!(!matches!(day.decide().action, ClimbAction::Retreat(_)));
         assert_eq!(day.campaign.consumed(), Some(1));
     }
@@ -684,7 +799,11 @@ mod day {
         let mut day = Day::new();
         day.advance();
         day.crash("a", [-5, 0], EndClass::Unknown);
-        assert!(vetoes(&day.events())[0].profile.forbids(&core_profile([-5, 0])));
+        assert!(
+            vetoes(&day.events())[0]
+                .profile
+                .forbids(&core_profile([-5, 0]))
+        );
         day.answer("a", DayAnswerKind::PowerOff);
         assert!(vetoes(&day.events()).is_empty());
     }
@@ -725,7 +844,10 @@ mod day {
         assert_eq!(events[0].class, provisional(cause));
         assert_eq!(events[0].question, question);
         assert_eq!(vetoes(&events).len(), 1);
-        assert_eq!(vetoes(&events)[0].certainty, togi_tuner::day::Certainty::Provisional);
+        assert_eq!(
+            vetoes(&events)[0].certainty,
+            togi_tuner::day::Certainty::Provisional
+        );
         let decision = day.decide();
         assert!(retreat(decision.clone()).profile.is_zero());
         day.apply(&decision);
@@ -733,10 +855,15 @@ mod day {
         day.qualified.insert(profile([0, -5]));
         assert_eq!(blockers(day.decide()), [Blocker::UnresolvedEvent]);
         day.close(EventId::Boot(boot("a")));
-        let status = event_statuses(&topology(), &day.history, &day.events(), &day.reproductions).unwrap();
+        let status =
+            event_statuses(&topology(), &day.history, &day.events(), &day.reproductions).unwrap();
         assert!(status[0].is_resolved());
         assert_eq!(status[0].retreat, RetreatState::Applied);
-        assert!(vetoes(&day.events())[0].profile.forbids(&core_profile([-5, 0])));
+        assert!(
+            vetoes(&day.events())[0]
+                .profile
+                .forbids(&core_profile([-5, 0]))
+        );
         assert!(day.climb.finishes().is_finished(unit(0)));
         assert_eq!(day.campaign.consumed(), Some(1));
     }
@@ -753,9 +880,18 @@ mod day {
         assert_eq!(retreat(fallback.clone()).wanted, profile([-5, 0]));
         day.apply(&fallback);
         day.close(EventId::Boot(boot("a")));
-        let status = event_statuses(&topology(), &day.history, &day.events(), &day.reproductions).unwrap();
-        assert_eq!(status[0].retreat, RetreatState::AwaitingQualification { wanted: profile([-5, 0]) });
-        assert!(!status[0].is_resolved(), "closing reproduction cannot qualify the retreat target");
+        let status =
+            event_statuses(&topology(), &day.history, &day.events(), &day.reproductions).unwrap();
+        assert_eq!(
+            status[0].retreat,
+            RetreatState::AwaitingQualification {
+                wanted: profile([-5, 0])
+            }
+        );
+        assert!(
+            !status[0].is_resolved(),
+            "closing reproduction cannot qualify the retreat target"
+        );
         assert!(matches!(day.decide().action, ClimbAction::Hold { .. }));
         day.qualified.insert(profile([-5, 0]));
         let completion = day.decide();
@@ -814,11 +950,16 @@ mod day {
     #[test]
     fn a_restoration_beyond_its_ceiling_holds_instead_of_moving_another_ccd() {
         let mut day = stepped_back_provisionally(false);
-        day.ceilings.insert(unit(0), Ceiling::new(EdgeState::Observed {
-            offset: offset(-10), witness: EvidenceId::new(2).unwrap(),
-        }));
+        day.ceilings.insert(
+            unit(0),
+            Ceiling::new(EdgeState::Observed {
+                offset: offset(-10),
+                witness: EvidenceId::new(2).unwrap(),
+            }),
+        );
         day.answer("a", DayAnswerKind::Graphics);
-        let ordinary = climb::propose(day.climb.current(), &day.ceilings, day.climb.finishes()).unwrap();
+        let ordinary =
+            climb::propose(day.climb.current(), &day.ceilings, day.climb.finishes()).unwrap();
         assert_eq!(ordinary.unit, unit(1));
         day.qualified.extend([profile([-10, -5]), ordinary.profile]);
         assert_eq!(blockers(day.decide()), [Blocker::Ceiling { unit: unit(0) }]);
@@ -876,9 +1017,14 @@ mod day {
         day.answer("b", DayAnswerKind::Graphics);
         assert!(day.events()[0].class.is_cpu_suspect());
         assert_eq!(day.events()[1].class, Classification::NonCpu);
-        assert_eq!(climb::restoration_candidate(&day.climb, &day.events()).unwrap(), None);
+        assert_eq!(
+            climb::restoration_candidate(&day.climb, &day.events()).unwrap(),
+            None
+        );
         day.answer("a", DayAnswerKind::Graphics);
-        let restoration = climb::restoration_candidate(&day.climb, &day.events()).unwrap().unwrap();
+        let restoration = climb::restoration_candidate(&day.climb, &day.events())
+            .unwrap()
+            .unwrap();
         assert_eq!(restoration.profile, profile([-10, -5]));
         day.run(HOURS_50);
         day.qualified.insert(restoration.profile);
@@ -888,16 +1034,27 @@ mod day {
     #[test]
     fn a_retreat_target_a_veto_still_forbids_steps_back_further() {
         let mut day = Day::new();
-        day.ceilings.insert(unit(1), Ceiling::new(EdgeState::Observed {
-            offset: offset(-5), witness: EvidenceId::new(2).unwrap(),
-        }));
+        day.ceilings.insert(
+            unit(1),
+            Ceiling::new(EdgeState::Observed {
+                offset: offset(-5),
+                witness: EvidenceId::new(2).unwrap(),
+            }),
+        );
         day.advance();
         day.advance();
         assert_eq!(day.climb.current(), &profile([-10, 0]));
         day.qualified.insert(profile([-5, 0]));
-        day.observe(EventId::Unobserved(instant(3)), core_profile([-5, 0]), Witness::Manual);
+        day.observe(
+            EventId::Unobserved(instant(3)),
+            core_profile([-5, 0]),
+            Witness::Manual,
+        );
         let retreat = retreat(day.decide());
         assert!(retreat.profile.is_zero());
-        assert!(retreat.wanted.is_zero(), "veto requires further backsteps, not qualification fallback");
+        assert!(
+            retreat.wanted.is_zero(),
+            "veto requires further backsteps, not qualification fallback"
+        );
     }
 }

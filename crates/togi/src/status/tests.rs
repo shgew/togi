@@ -461,4 +461,3 @@ fn an_open_night_leads_the_header_with_its_start_elapsed_time_and_task() {
         "night since 00:00, 2h30m elapsed: filler (task filler #1)"
     );
 }
-

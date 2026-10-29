@@ -124,5 +124,3 @@ pub fn event_statuses(
         })
         .collect())
 }
-
-

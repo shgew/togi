@@ -22,10 +22,10 @@ use crate::read;
 use crate::report::fail;
 use crate::table::wrap;
 
-mod evidence;
 mod climb;
 #[cfg(test)]
 mod climb_tests;
+mod evidence;
 mod policy;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {

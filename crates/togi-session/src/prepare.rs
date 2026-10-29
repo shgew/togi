@@ -136,31 +136,53 @@ pub fn prepare_kept(
 fn import_into(journal: Journal, boot: BootId, now: Timestamp) -> Result<Prepared, PrepareError> {
     let marker = journal.dir().pending_import()?;
     let boundary = journal.dir().reset_boundary()?;
-    let committed = journal.events().iter()
+    let committed = journal
+        .events()
+        .iter()
         .any(|event| matches!(event.payload, Payload::CampaignStart(_)));
     if committed {
         if marker.is_some() {
             let mut dir = journal.close()?;
             dir.clear_pending(Marker::ImportPending)?;
-            return Ok(Prepared { journal: dir.open_at(boot, now)?, import: None });
+            return Ok(Prepared {
+                journal: dir.open_at(boot, now)?,
+                import: None,
+            });
         }
-        return Ok(Prepared { journal, import: None });
+        return Ok(Prepared {
+            journal,
+            import: None,
+        });
     }
-    let source = if let Some(marker) = marker { marker.source } else {
+    let source = if let Some(marker) = marker {
+        marker.source
+    } else {
         let Some(source) = journal.dir().archives()?.last().copied() else {
-            return Ok(Prepared { journal, import: None });
+            return Ok(Prepared {
+                journal,
+                import: None,
+            });
         };
         source
     };
     let destination = match journal.session() {
         Some(session) => session,
         None => match marker {
-            Some(marker) if boundary.is_none_or(|boundary| marker.destination > boundary) => marker.destination,
+            Some(marker) if boundary.is_none_or(|boundary| marker.destination > boundary) => {
+                marker.destination
+            }
             Some(_) | None => journal.dir().import_destination(&source, now)?,
         },
     };
     let manifest = manifest(journal.dir(), boundary, &destination)?;
-    Ok(Prepared { journal, import: Some(PendingImport { source, destination, manifest }) })
+    Ok(Prepared {
+        journal,
+        import: Some(PendingImport {
+            source,
+            destination,
+            manifest,
+        }),
+    })
 }
 
 /// All campaign history survives reset and import commitments. Raw tuning observations are selected
@@ -189,11 +211,17 @@ fn manifest(
 
 /// A caller that opened a new journal directly still cannot renew an archived campaign.
 pub(crate) fn inherit(journal: &Journal) -> Result<Option<PendingImport>, DirError> {
-    let Some(destination) = journal.session() else { return Ok(None); };
-    let Some(source) = journal.dir().archives()?.last().copied() else { return Ok(None); };
+    let Some(destination) = journal.session() else {
+        return Ok(None);
+    };
+    let Some(source) = journal.dir().archives()?.last().copied() else {
+        return Ok(None);
+    };
     let boundary = journal.dir().reset_boundary()?;
     Ok(Some(PendingImport {
-        source, destination, manifest: manifest(journal.dir(), boundary, &destination)?,
+        source,
+        destination,
+        manifest: manifest(journal.dir(), boundary, &destination)?,
     }))
 }
 

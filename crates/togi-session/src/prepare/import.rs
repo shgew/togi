@@ -35,9 +35,17 @@ const DAY_KINDS: [(&str, ImportClass); 8] = [
 /// Campaign facts cross reset boundaries; raw tuning observations do not.
 const HISTORY_KINDS: &[&str] = &[
     "session.start",
-    "day.applied", "day.step", "day.event", "day.veto", "climb.decision",
-    "unit.mapping", "unit.stop", "campaign.start", "campaign.charge",
-    "campaign.reclassified", "successor.imported",
+    "day.applied",
+    "day.step",
+    "day.event",
+    "day.veto",
+    "climb.decision",
+    "unit.mapping",
+    "unit.stop",
+    "campaign.start",
+    "campaign.charge",
+    "campaign.reclassified",
+    "successor.imported",
 ];
 
 const IMPORTED_KIND: &str = "day.imported";
@@ -120,7 +128,6 @@ pub(crate) struct Source {
     pub(crate) carry_raw: bool,
 }
 
-
 /// The manifest of `sources`, newest archive first: each original identity is kept once, from the newest archive
 /// that holds it.
 pub(crate) fn manifest(sources: &[Source]) -> Manifest {
@@ -132,10 +139,14 @@ pub(crate) fn manifest(sources: &[Source]) -> Manifest {
     manifest.campaign_records.clone_from(&manifest.records);
     manifest.records.retain(|record| {
         HISTORY_KINDS.contains(&record.original_kind.as_str())
-            || sources.iter().find(|source| source.session == record.original.session)
+            || sources
+                .iter()
+                .find(|source| source.session == record.original.session)
                 .is_none_or(|source| source.carry_raw)
     });
-    manifest.records.sort_by_key(|record| (record.original.session, record.original.seq));
+    manifest
+        .records
+        .sort_by_key(|record| (record.original.session, record.original.seq));
     manifest.sources.sort_by_key(|source| source.session);
     manifest
 }
@@ -192,7 +203,10 @@ fn read(source: &Source, manifest: &mut Manifest, seen: &mut HashSet<Provenance>
     let topology = start_of(&parsed, &mut manifest.sources, source.session);
     if topology.is_none() {
         manifest.unknown.push(ImportedRecordRef {
-            original: Provenance { session: source.session, seq: Seq::FIRST },
+            original: Provenance {
+                session: source.session,
+                seq: Seq::FIRST,
+            },
             kind: START_KIND.to_owned(),
         });
     }
@@ -319,7 +333,10 @@ fn classify(
         return Class::Copy(Box::new(record));
     }
     if HISTORY_KINDS.contains(&light.kind.as_str()) || light.kind == "exposure.observed" {
-        return Class::Day { class: ImportClass::Manual, event: Box::new(event) };
+        return Class::Day {
+            class: ImportClass::Manual,
+            event: Box::new(event),
+        };
     }
     match DAY_KINDS.iter().find(|(kind, _)| *kind == light.kind) {
         Some((_, class)) => Class::Day {
@@ -362,7 +379,10 @@ fn day_record(
     topology: Option<&[CoreInfo]>,
 ) -> DayImported {
     let original = if let Payload::ExposureObserved(observed) = &event.payload {
-        Provenance { session: observed.source.session, seq: observed.source.seq }
+        Provenance {
+            session: observed.source.session,
+            seq: observed.source.seq,
+        }
     } else {
         original
     };

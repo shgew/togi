@@ -479,25 +479,28 @@ fn firmware_change_resets_a_historical_nonzero_profile_before_applying_stock() {
         &current_build(),
     )
     .unwrap();
-    let reset = journal
+    let (reset_seq, reset) = journal
         .events()
         .iter()
         .rev()
         .find_map(|event| {
-            if let Payload::DayStep(step) = &event.payload {
-                Some(step)
+            if let Payload::ClimbDecision(step) = &event.payload {
+                Some((event.seq, step))
             } else {
                 None
             }
         })
         .unwrap();
-    assert!(matches!(reset.step, StepKind::FirmwareZero { .. }));
+    assert!(matches!(
+        reset.decision,
+        togi_journal::ClimbAction::FirmwareZero {}
+    ));
     let actual = applications(&journal).last().copied().unwrap();
     assert_eq!(actual.target, target(&journal, 0));
     assert_eq!(
         actual.cause,
         ApplyCause::Step {
-            decision: reset.decision
+            decision: DecisionId(reset_seq.get())
         }
     );
     assert_eq!(hardware.writes, [TargetOffset::ZERO, TargetOffset::ZERO]);
@@ -660,8 +663,8 @@ fn stock_applied_hours_exclude_suspended_wall_time() {
             policy.fold(event).unwrap();
         }
     }
-    assert!(
-        policy.project().day.hold.is_none(),
-        "stock has no nonzero hold; its raw exposure above is still only the 720 active seconds"
-    );
+    let hold = policy.project().day.hold.unwrap();
+    assert!(hold.profile.is_zero());
+    assert_eq!(hold.eligible_s, 720);
+    assert_eq!(hold.required_s, 50 * 3600);
 }

@@ -615,7 +615,9 @@ impl<'events> Names<'events> {
             UnitStopReason::AllowanceExhausted {} => "allowance_exhausted".to_owned(),
             UnitStopReason::AdverseCeiling {} => "adverse_ceiling".to_owned(),
             UnitStopReason::Veto {} => "veto".to_owned(),
-            UnitStopReason::Predecessor { original } => format!("predecessor {}", self.provenance(original)),
+            UnitStopReason::Predecessor { original } => {
+                format!("predecessor {}", self.provenance(original))
+            }
             UnitStopReason::FirstBackstep { event, application } => {
                 format!("first_backstep {} {application:?}", self.event_id(event))
             }
@@ -1044,10 +1046,14 @@ impl<'events> Names<'events> {
                 }
             }
             serde_json::Value::Array(values) => {
-                for value in values { self.climb_citations(value); }
+                for value in values {
+                    self.climb_citations(value);
+                }
             }
-            serde_json::Value::Null | serde_json::Value::Bool(_) |
-            serde_json::Value::Number(_) | serde_json::Value::String(_) => {}
+            serde_json::Value::Null
+            | serde_json::Value::Bool(_)
+            | serde_json::Value::Number(_)
+            | serde_json::Value::String(_) => {}
         }
     }
 }

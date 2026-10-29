@@ -124,8 +124,7 @@ fn finish(reason: &UnitStopReason) -> String {
         UnitStopReason::Veto {} => "stopped: whole-profile veto".to_owned(),
         UnitStopReason::Predecessor { original } => format!(
             "stopped: predecessor event {}:{}",
-            original.session,
-            original.seq
+            original.session, original.seq
         ),
         UnitStopReason::FirstBackstep {
             event: id,

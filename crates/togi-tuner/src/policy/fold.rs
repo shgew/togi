@@ -41,10 +41,16 @@ impl State {
             return Ok(());
         }
         self.apply(event)?;
-        if matches!(event.payload,
-            Payload::DayUncleanEnd(_) | Payload::DayAnswer(_) | Payload::DayRecord(_)
-            | Payload::DayFault(_) | Payload::Mce(_) | Payload::ExposureObserved(_)
-            | Payload::NightQualification(_) | Payload::DayImported(_)
+        if matches!(
+            event.payload,
+            Payload::DayUncleanEnd(_)
+                | Payload::DayAnswer(_)
+                | Payload::DayRecord(_)
+                | Payload::DayFault(_)
+                | Payload::Mce(_)
+                | Payload::ExposureObserved(_)
+                | Payload::NightQualification(_)
+                | Payload::DayImported(_)
         ) {
             self.observe_raw_campaign(event.time)?;
         }
@@ -146,7 +152,9 @@ impl State {
                 self.nights.caps.insert(p.ccd, committed(event, p.clone()));
             }
             Payload::UnitEdge(p) => {
-                self.nights.unit_edges.insert(p.unit, committed(event, p.clone()));
+                self.nights
+                    .unit_edges
+                    .insert(p.unit, committed(event, p.clone()));
                 self.observe_finishes(event.time);
             }
             Payload::UnitMapping(p) => self.fold_mapping(event, p)?,
@@ -237,7 +245,12 @@ impl State {
             Payload::DayApplied(p) => self.applied(event, p)?,
             Payload::DayFreeze(p) => self.freeze(p),
             Payload::DayImported(p) => {
-                if !self.climb.imports.iter().any(|known| known.original == p.original) {
+                if !self
+                    .climb
+                    .imports
+                    .iter()
+                    .any(|known| known.original == p.original)
+                {
                     self.climb.imports.push(p.clone());
                     self.climb.import_sequences.insert(p.original, seq);
                 }
@@ -304,7 +317,9 @@ impl State {
         let zero = CcdProfile::zero(topology.ccds().iter().map(|&(ccd, _)| ccd))?;
         self.days.history = Some(DayHistory::baseline(seq, UnitProfile::of_ccd(&zero)));
         if self.climb.history.is_none() {
-            self.climb.history = Some(crate::climb::ClimbHistory::stock(crate::Units::coarse(topology)));
+            self.climb.history = Some(crate::climb::ClimbHistory::stock(crate::Units::coarse(
+                topology,
+            )));
         }
         self.machine.anchor.clone_from(&self.machine.firmware);
         Ok(())
@@ -728,7 +743,10 @@ impl State {
             EventId::Requalification(at) => Some(DayEventId::Requalification {
                 night: togi_journal::NightId(*at),
             }),
-            EventId::Imported(origin) => Some(DayEventId::Record { session: origin.session, seq: origin.seq }),
+            EventId::Imported(origin) => Some(DayEventId::Record {
+                session: origin.session,
+                seq: origin.seq,
+            }),
             EventId::Unobserved(at) => self
                 .days
                 .manual

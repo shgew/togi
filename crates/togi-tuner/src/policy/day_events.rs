@@ -17,8 +17,8 @@ use super::decision::{Decision, PolicyPayload};
 use super::night_query::NotReady;
 use crate::day::{
     Answer, ApplicationKind, Certainty as DayCertainty, Classification, CoreProfile, DailyEvent,
-    EventId, EventStatus, Invocation, MceKind, Observation,
-    ReproductionOutcome, Witness, daily_events, event_statuses, vetoes,
+    EventId, EventStatus, Invocation, MceKind, Observation, ReproductionOutcome, Witness,
+    daily_events, event_statuses, vetoes,
 };
 
 /// Where an event's raw evidence came from.
@@ -450,13 +450,15 @@ impl State {
         if self.climb.history.is_none() {
             return Ok(None);
         }
-        Ok(match self.climb_decision(view, now, Invocation::SameBoot)?.action {
-            crate::climb::ClimbAction::Retreat(retreat) => Some(retreat),
-            crate::climb::ClimbAction::Hold { .. }
-            | crate::climb::ClimbAction::Promote(_)
-            | crate::climb::ClimbAction::Restore(_)
-            | crate::climb::ClimbAction::FirmwareZero { .. } => None,
-        })
+        Ok(
+            match self.climb_decision(view, now, Invocation::SameBoot)?.action {
+                crate::climb::ClimbAction::Retreat(retreat) => Some(retreat),
+                crate::climb::ClimbAction::Hold { .. }
+                | crate::climb::ClimbAction::Promote(_)
+                | crate::climb::ClimbAction::Restore(_)
+                | crate::climb::ClimbAction::FirmwareZero { .. } => None,
+            },
+        )
     }
 
     /// The decision that applied the promotion with this application seq.
@@ -477,25 +479,55 @@ impl State {
         &self,
         plan: &crate::climb::Retreat,
     ) -> HashMap<EventId, (Escalation, Vec<DecisionId>, Vec<CcdCursor>)> {
-        let mut consumed: Vec<_> = plan.cursors.iter()
+        let mut consumed: Vec<_> = plan
+            .cursors
+            .iter()
             .filter_map(|cursor| Seq::new(cursor.transition.application.get()))
             .filter_map(|application| self.decision_of_application(application))
             .collect();
         consumed.sort_by_key(|decision| decision.0);
         consumed.dedup();
-        let cursors = self.ccds().into_iter().map(|ccd| CcdCursor {
-            ccd,
-            depth: super::ledger::saturating_u32(
-                u64::try_from(plan.cursors.iter().filter(|cursor| cursor.unit == UnitId::Ccd(ccd)).count()).unwrap_or(u64::MAX)
-            ),
-        }).collect::<Vec<_>>();
-        let strike = self.climb.history.as_ref().map_or(0, |history| history.retreats().len());
+        let cursors = self
+            .ccds()
+            .into_iter()
+            .map(|ccd| CcdCursor {
+                ccd,
+                depth: super::ledger::saturating_u32(
+                    u64::try_from(
+                        plan.cursors
+                            .iter()
+                            .filter(|cursor| cursor.unit == UnitId::Ccd(ccd))
+                            .count(),
+                    )
+                    .unwrap_or(u64::MAX),
+                ),
+            })
+            .collect::<Vec<_>>();
+        let strike = self
+            .climb
+            .history
+            .as_ref()
+            .map_or(0, |history| history.retreats().len());
         let escalation = if strike == 0 {
-            consumed.first().map_or(Escalation::EveryCcd { strike: 0 }, |&reverted| Escalation::RevertNewest { reverted })
+            consumed
+                .first()
+                .map_or(Escalation::EveryCcd { strike: 0 }, |&reverted| {
+                    Escalation::RevertNewest { reverted }
+                })
         } else {
-            Escalation::EveryCcd { strike: super::ledger::saturating_u32(u64::try_from(strike).unwrap_or(u64::MAX)) }
+            Escalation::EveryCcd {
+                strike: super::ledger::saturating_u32(u64::try_from(strike).unwrap_or(u64::MAX)),
+            }
         };
-        plan.events.iter().map(|event| (event.clone(), (escalation, consumed.clone(), cursors.clone()))).collect()
+        plan.events
+            .iter()
+            .map(|event| {
+                (
+                    event.clone(),
+                    (escalation, consumed.clone(), cursors.clone()),
+                )
+            })
+            .collect()
     }
 
     /// The application seq of the retreat that answered an event.

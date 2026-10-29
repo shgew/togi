@@ -5,7 +5,9 @@ use togi_machine::TargetOffset;
 use crate::unit::UnitId;
 
 /// Original evidence identity, supplied by the evidence layer rather than a journal type.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub struct EvidenceId(u64);
 
 impl EvidenceId {

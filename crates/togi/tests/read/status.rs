@@ -1025,7 +1025,7 @@ fn evidence_is_read_only_and_identical_under_no_color(scenario: Scenario) {
     let shown = evidence_output(scenario, false);
     assert_eq!(shown, evidence_output(scenario, true));
     assert!(!shown.contains('\u{1b}'));
-    assert!(shown.contains("Ruleset 13 (compatibility RULESET 3)"));
+    assert!(shown.contains("Statistical S is diagnostic only and never authorizes a step."));
     assert!(shown.contains("Cap calculation witnesses"));
     assert!(shown.contains("Qualification exposure"));
     assert!(shown.contains("Applied-step history"));

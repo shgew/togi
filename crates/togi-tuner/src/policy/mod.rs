@@ -15,11 +15,11 @@
 
 mod books;
 mod cache;
-mod climb_projection;
-mod controls;
 mod climb_fold;
 mod climb_import;
+mod climb_projection;
 mod climb_view;
+mod controls;
 mod day_climb;
 mod day_events;
 mod day_query;

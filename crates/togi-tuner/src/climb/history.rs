@@ -11,7 +11,9 @@ use super::{
     SavedProfile, StopReason,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub struct ApplicationId(u64);
 
 impl ApplicationId {
@@ -24,7 +26,9 @@ impl ApplicationId {
 }
 
 /// One actual successful transition, referenced rather than copied when units subdivide.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub struct TransitionId {
     pub application: ApplicationId,
     pub source: UnitId,
@@ -39,7 +43,9 @@ pub struct AncestryLink {
 
 /// A current unit's consumed reference to a real transition. Siblings can reference one parent
 /// transition without creating extra learning steps or event charges.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub struct Cursor {
     pub unit: UnitId,
     pub transition: TransitionId,

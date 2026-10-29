@@ -113,7 +113,9 @@ impl Campaign {
 
     /// Restore an immutable charge receipt without granting a fresh campaign allowance.
     pub(crate) fn commit_charge(&mut self, mut charge: Charge) {
-        let Self::Known { charges } = self else { return; };
+        let Self::Known { charges } = self else {
+            return;
+        };
         charge.aliases.insert(charge.event.clone());
         let mut first = None;
         let mut index = 0;

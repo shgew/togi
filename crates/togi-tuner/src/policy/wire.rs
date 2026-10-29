@@ -4,10 +4,7 @@
 pub(crate) mod pairs {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub(crate) fn serialize<'a, M, K, V, S>(
-        map: &'a M,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    pub(crate) fn serialize<'a, M, K, V, S>(map: &'a M, serializer: S) -> Result<S::Ok, S::Error>
     where
         &'a M: IntoIterator<Item = (&'a K, &'a V)>,
         K: Serialize + 'a,

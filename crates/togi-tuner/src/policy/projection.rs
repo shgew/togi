@@ -1,9 +1,9 @@
 //! What status and watch show of the policy, and the `tuner` key of `state.json`: the committed edges and
 //! caps, the applied profile and its hold, the events and vetoes, the qualifications and the latest night.
 
-use std::collections::HashMap;
 use crate::{UnitId, UnitProfile};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use togi_journal::{
     Activity, Binding, Budget, Classification, DayEventId, DayStep, Edge, ExposureClass, NightId,
     PlannedTask, QualificationPurpose, QualificationState, ReproductionState, Resolution, Seq,
@@ -408,9 +408,18 @@ impl State {
                         .edges
                         .get(&ccd)
                         .map(|edge| edge.payload.edge.clone()),
-                    remaining: self.ceilings().get(&UnitId::Ccd(ccd)).and_then(|ceiling| ceiling.c).map(|ceiling| {
-                        saturating_u32(day.get().saturating_sub(ceiling.get()).max(0).unsigned_abs())
-                    }),
+                    remaining: self
+                        .ceilings()
+                        .get(&UnitId::Ccd(ccd))
+                        .and_then(|ceiling| ceiling.c)
+                        .map(|ceiling| {
+                            saturating_u32(
+                                day.get()
+                                    .saturating_sub(ceiling.get())
+                                    .max(0)
+                                    .unsigned_abs(),
+                            )
+                        }),
                     cap: cap.map(|cap| CapProjection {
                         offset: cap.payload.new,
                         binding: cap.payload.binding.clone(),

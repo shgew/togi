@@ -1,4 +1,3 @@
-
 /// Whether the firmware context changed since the committed D.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Firmware {

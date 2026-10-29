@@ -327,7 +327,10 @@ pub fn daily_events(observations: &[Observation], answers: &[Answer]) -> Vec<Dai
                     .rev()
                     .find(|answer| &answer.boot == boot)
                     .map(|answer| answer.kind),
-                EventId::Boot(_) | EventId::Unobserved(_) | EventId::Requalification(_) | EventId::Imported(_) => None,
+                EventId::Boot(_)
+                | EventId::Unobserved(_)
+                | EventId::Requalification(_)
+                | EventId::Imported(_) => None,
             };
             let class = classify(&event.profile, event.first, &event.rest, answer);
             let question = match (event.has_end(), answer) {

@@ -19,9 +19,7 @@ pub use events::{
 pub use history::{ApplicationKind, DayApplication, DayHistory, HistoryError, Promotion, Reverted};
 pub use hold::{DayInterval, IntervalKind, Readback, credited_secs, hold_accounting};
 pub use profile::{CoreProfile, CoreProfileError};
-pub use retreat::{
-    EventStatus, ReproductionOutcome, RetreatState, Veto, event_statuses, vetoes,
-};
+pub use retreat::{EventStatus, ReproductionOutcome, RetreatState, Veto, event_statuses, vetoes};
 pub use step::{Firmware, Freeze, Invocation, Pause};
 
 /// Applied daily seconds at the exact current D a promotion needs: 50 hours (`docs/spec/tuner.md`,

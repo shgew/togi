@@ -16,7 +16,9 @@ pub enum StopReason {
     },
     AdverseCeiling,
     Veto,
-    Predecessor { original: togi_journal::Provenance },
+    Predecessor {
+        original: togi_journal::Provenance,
+    },
     RestorationBackstep {
         event: EventId,
         application: ApplicationId,
@@ -47,7 +49,9 @@ pub enum UnitState {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct FinishBook(#[serde(with = "crate::policy::wire::pairs")] BTreeMap<UnitId, FinishWitness>);
+pub struct FinishBook(
+    #[serde(with = "crate::policy::wire::pairs")] BTreeMap<UnitId, FinishWitness>,
+);
 
 impl FinishBook {
     pub fn get(&self, unit: UnitId) -> Option<&FinishWitness> {

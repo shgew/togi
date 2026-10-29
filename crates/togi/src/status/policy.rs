@@ -156,7 +156,6 @@ fn profile_word(profile: &UnitProfile) -> String {
     profile_words(profile.iter())
 }
 
-
 fn profile_words(profile: impl Iterator<Item = (UnitId, TargetOffset)>) -> String {
     let parts: Vec<String> = profile
         .map(|(unit, offset)| match unit {
@@ -189,7 +188,6 @@ fn event_word(id: &DayEventId) -> String {
     }
 }
 
-
 const fn reproduction_word(state: ReproductionState) -> &'static str {
     match state {
         ReproductionState::Pending => "reproduction pending",
@@ -198,7 +196,6 @@ const fn reproduction_word(state: ReproductionState) -> &'static str {
         ReproductionState::Untestable => "untestable",
     }
 }
-
 
 const fn queue_word(queue: Queue) -> &'static str {
     queue.as_str()

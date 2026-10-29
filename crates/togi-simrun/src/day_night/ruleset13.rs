@@ -284,11 +284,16 @@ impl Ruleset13 {
                     && !matches!(proposal.decision, togi_journal::ClimbAction::Hold { .. })
                 {
                     if proposal.proposed.mapping.phase != togi_journal::UnitPhase::Coarse {
-                        return Err(RunError::Calendar("the calendar applier requires coarse units"));
+                        return Err(RunError::Calendar(
+                            "the calendar applier requires coarse units",
+                        ));
                     }
                     let cores = self.cores()?;
-                    let profile = togi_machine::CcdProfile::of_cores(&proposal.proposed.cores, &cores)
-                        .ok_or(RunError::Calendar("a day profile must be uniform within each CCD"))?;
+                    let profile =
+                        togi_machine::CcdProfile::of_cores(&proposal.proposed.cores, &cores)
+                            .ok_or(RunError::Calendar(
+                                "a day profile must be uniform within each CCD",
+                            ))?;
                     Some(CcdVector::expand(profile, &cores)?)
                 } else {
                     None

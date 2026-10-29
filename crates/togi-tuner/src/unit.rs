@@ -3,9 +3,9 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use togi_machine::{CcdProfile, CoreId, CoreInfo, CoreSet, PerCore, TargetOffset};
 #[cfg(test)]
 use togi_machine::CcdId;
+use togi_machine::{CcdProfile, CoreId, CoreInfo, CoreSet, PerCore, TargetOffset};
 
 use crate::Topology;
 

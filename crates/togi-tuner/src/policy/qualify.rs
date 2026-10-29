@@ -731,8 +731,10 @@ impl State {
             return Ok(None);
         };
         let wanted = crate::climb::SavedProfile {
-            units: record.units.clone(), profile: record.wanted.clone(),
-        }.for_units(history.units())?;
+            units: record.units.clone(),
+            profile: record.wanted.clone(),
+        }
+        .for_units(history.units())?;
         let target = self.permission()?.clip(&wanted)?;
         Ok((!target.is_zero()).then_some(target))
     }
@@ -758,7 +760,13 @@ impl State {
         };
         // After a firmware change the profile D held before is re-qualified exactly, in the new context,
         // before it is restored; until that qualification stands or fails the ordinary proposal waits.
-        let retained = match self.climb.history.as_ref().and_then(|history| history.saved()).map(|saved| saved.profile.clone()) {
+        let retained = match self
+            .climb
+            .history
+            .as_ref()
+            .and_then(|history| history.saved())
+            .map(|saved| saved.profile.clone())
+        {
             Some(profile) if matches!(fallback, QualWork::None) => {
                 self.work_for(&records, profile, QualificationPurpose::Firmware, now)?
             }
@@ -799,8 +807,6 @@ impl State {
         };
         Ok((next, requal, due))
     }
-
-
 
     fn work_for(
         &self,

@@ -305,15 +305,30 @@ fn day(
                     && step.cold_boot == boot
                     && !matches!(step.decision, togi_journal::ClimbAction::Hold { .. })
                 {
-                    let ccds = step.proposed.mapping.units.iter().map(|unit| {
-                        let togi_journal::UnitId::Ccd(ccd) = unit.unit else { panic!("coarse fixture") };
-                        let offset = step.proposed.cores.get(unit.cores.first().unwrap()).unwrap();
-                        (ccd, offset)
-                    }).collect::<BTreeMap<_, _>>();
+                    let ccds = step
+                        .proposed
+                        .mapping
+                        .units
+                        .iter()
+                        .map(|unit| {
+                            let togi_journal::UnitId::Ccd(ccd) = unit.unit else {
+                                panic!("coarse fixture")
+                            };
+                            let offset = step
+                                .proposed
+                                .cores
+                                .get(unit.cores.first().unwrap())
+                                .unwrap();
+                            (ccd, offset)
+                        })
+                        .collect::<BTreeMap<_, _>>();
                     let profile = togi_machine::CcdProfile::try_from(ccds).unwrap();
-                    let target = CcdVector::expand(profile, &machine.host.topology().unwrap()).unwrap();
+                    let target =
+                        CcdVector::expand(profile, &machine.host.topology().unwrap()).unwrap();
                     Some((togi_journal::DecisionId(event.seq.get()), target))
-                } else { None }
+                } else {
+                    None
+                }
             });
             let (cause, target) = if let Some((decision, proposed)) = step {
                 (ApplyCause::Step { decision }, proposed)
@@ -1329,13 +1344,22 @@ fn scenario_events() -> Vec<Event> {
 fn a_changed_hold_or_event_count_changes_the_commitments(events_added: u32, eligible_s: u64) {
     let events = scenario_events();
     let mut changed = events.clone();
-    let event = changed.iter_mut().find(|event| matches!(event.payload, Payload::ClimbDecision(_)))
+    let event = changed
+        .iter_mut()
+        .find(|event| matches!(event.payload, Payload::ClimbDecision(_)))
         .expect("the scenario commits a D decision");
     let seq = event.seq;
-    let Payload::ClimbDecision(decision) = &mut event.payload else { unreachable!() };
+    let Payload::ClimbDecision(decision) = &mut event.payload else {
+        unreachable!()
+    };
     decision.hold.eligible_s += eligible_s;
-    for _ in 0..events_added { decision.events.push(seq); }
-    assert_ne!(commitments(&changed, 0, true), commitments(&events, 0, true));
+    for _ in 0..events_added {
+        decision.events.push(seq);
+    }
+    assert_ne!(
+        commitments(&changed, 0, true),
+        commitments(&events, 0, true)
+    );
 }
 
 #[test]
@@ -1343,8 +1367,16 @@ fn a_changed_count_of_cited_events_changes_the_projection() {
     let events = scenario_events();
     let projection = folded(&events).project();
     let mut changed = projection.clone();
-    let unit = changed.climb.units.first_mut().expect("the scenario has a tuning unit");
-    let seq = events.iter().find(|event| matches!(event.payload, Payload::DayCheckpoint(_))).unwrap().seq;
+    let unit = changed
+        .climb
+        .units
+        .first_mut()
+        .expect("the scenario has a tuning unit");
+    let seq = events
+        .iter()
+        .find(|event| matches!(event.payload, Payload::DayCheckpoint(_)))
+        .unwrap()
+        .seq;
     unit.hold.witnesses.push(seq);
     assert_ne!(
         compared_projection(&events, &changed),
@@ -1356,17 +1388,27 @@ fn a_changed_count_of_cited_events_changes_the_projection() {
 fn unit_edges_citing_one_event_instead_of_two_change_the_projection() {
     let events = scenario_events();
     let projection = folded(&events).project();
-    let witnesses: Vec<_> = projection.climb.units.iter().filter_map(|unit| match &unit.edge {
-        togi_journal::Edge::Observed { witness, .. } => Some(*witness),
-        togi_journal::Edge::Censored { witnesses, .. } => witnesses.first().copied(),
-        togi_journal::Edge::Unknown {} => None,
-    }).collect();
-    assert!(witnesses.len() >= 2 && witnesses[0] != witnesses[1], "two distinct mapped edges required");
+    let witnesses: Vec<_> = projection
+        .climb
+        .units
+        .iter()
+        .filter_map(|unit| match &unit.edge {
+            togi_journal::Edge::Observed { witness, .. } => Some(*witness),
+            togi_journal::Edge::Censored { witnesses, .. } => witnesses.first().copied(),
+            togi_journal::Edge::Unknown {} => None,
+        })
+        .collect();
+    assert!(
+        witnesses.len() >= 2 && witnesses[0] != witnesses[1],
+        "two distinct mapped edges required"
+    );
     let mut changed = projection.clone();
     for unit in &mut changed.climb.units {
         match &mut unit.edge {
             togi_journal::Edge::Observed { witness, .. } => *witness = witnesses[0],
-            togi_journal::Edge::Censored { witnesses: held, .. } => *held = vec![witnesses[0]],
+            togi_journal::Edge::Censored {
+                witnesses: held, ..
+            } => *held = vec![witnesses[0]],
             togi_journal::Edge::Unknown {} => panic!("mapped unit expected"),
         }
     }
@@ -1428,22 +1470,36 @@ fn a_qualification_citing_a_different_exposure_changes_the_commitments() {
 #[test]
 fn a_unit_edge_citing_a_different_event_changes_the_projection() {
     let events = scenario_events();
-    let at = events.iter().position(|event| matches!(&event.payload, Payload::UnitEdge(edge)
-        if !matches!(edge.new, togi_journal::Edge::Unknown {})))
+    let at = events
+        .iter()
+        .position(|event| {
+            matches!(&event.payload, Payload::UnitEdge(edge)
+        if !matches!(edge.new, togi_journal::Edge::Unknown {}))
+        })
         .expect("the scenario commits a unit edge");
     let events = &events[..=at];
     let projection = folded(events).project();
     let mut changed = projection.clone();
-    let replacement = events.iter().find(|event| matches!(event.payload, Payload::TrialIntent(_)))
-        .expect("the scenario runs a trial").seq;
-    let unit = changed.climb.units.iter_mut().find(|unit| !matches!(unit.edge, togi_journal::Edge::Unknown {}))
+    let replacement = events
+        .iter()
+        .find(|event| matches!(event.payload, Payload::TrialIntent(_)))
+        .expect("the scenario runs a trial")
+        .seq;
+    let unit = changed
+        .climb
+        .units
+        .iter_mut()
+        .find(|unit| !matches!(unit.edge, togi_journal::Edge::Unknown {}))
         .expect("the scenario has a mapped edge");
     match &mut unit.edge {
         togi_journal::Edge::Observed { witness, .. } => *witness = replacement,
         togi_journal::Edge::Censored { witnesses, .. } => *witnesses = vec![replacement],
         togi_journal::Edge::Unknown {} => unreachable!(),
     }
-    assert_ne!(compared_projection(events, &changed), compared_projection(events, &projection));
+    assert_ne!(
+        compared_projection(events, &changed),
+        compared_projection(events, &projection)
+    );
 }
 
 #[test]
@@ -1451,13 +1507,19 @@ fn a_kill_between_observation_and_derived_commitment_resumes_to_the_same_state()
     let (model, played, _) = scenario();
     let mut checked = BTreeSet::new();
     for phase in &played {
-        if let Some(at) = phase.own().iter().position(|event|
-            matches!(event.payload, Payload::ExposureObserved(_) | Payload::DayUncleanEnd(_)))
-        {
+        if let Some(at) = phase.own().iter().position(|event| {
+            matches!(
+                event.payload,
+                Payload::ExposureObserved(_) | Payload::DayUncleanEnd(_)
+            )
+        }) {
             let after = phase.start + at + 1;
             let resumed = resume(phase, &model, after, Fate::Killed);
             assert_eq!(projection(&resumed), projection(&phase.events));
-            assert_eq!(commitments(&resumed, after, true), commitments(&phase.events, after, true));
+            assert_eq!(
+                commitments(&resumed, after, true),
+                commitments(&phase.events, after, true)
+            );
             checked.insert(phase.own()[at].kind().as_str());
         }
     }
@@ -1468,20 +1530,30 @@ fn a_kill_between_observation_and_derived_commitment_resumes_to_the_same_state()
 fn a_lost_qualification_or_retreat_commitment_is_recomputed() {
     let (model, played, _) = scenario();
     for qualification in [true, false] {
-        let (phase, at) = played.iter().find_map(|phase| {
-            phase.own().iter().position(|event| {
-                if qualification {
-                    matches!(&event.payload, Payload::NightQualification(record)
+        let (phase, at) = played
+            .iter()
+            .find_map(|phase| {
+                phase
+                    .own()
+                    .iter()
+                    .position(|event| {
+                        if qualification {
+                            matches!(&event.payload, Payload::NightQualification(record)
                         if matches!(record.state, QualificationState::Complete { .. }))
-                } else {
-                    matches!(&event.payload, Payload::ClimbDecision(record)
+                        } else {
+                            matches!(&event.payload, Payload::ClimbDecision(record)
                         if matches!(record.decision, togi_journal::ClimbAction::Retreat { .. }))
-                }
-            }).map(|at| (phase, at))
-        }).expect("the scenario must qualify a step and retreat after a CPU-suspect event");
+                        }
+                    })
+                    .map(|at| (phase, at))
+            })
+            .expect("the scenario must qualify a step and retreat after a CPU-suspect event");
         let after = phase.start + at;
         let resumed = resume(phase, &model, after, Fate::Killed);
         assert_eq!(projection(&resumed), projection(&phase.events));
-        assert_eq!(commitments(&resumed, after, true), commitments(&phase.events, after, true));
+        assert_eq!(
+            commitments(&resumed, after, true),
+            commitments(&phase.events, after, true)
+        );
     }
 }

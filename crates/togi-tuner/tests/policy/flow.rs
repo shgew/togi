@@ -817,7 +817,10 @@ fn measured() -> Journal {
         plan.task.queue = Queue::Mapping;
         plan.task.ordinal = u32::try_from(50_000 + depth).unwrap();
         plan.activity = Activity::Mapping;
-        plan.tested = Tested::Isolated { ccd: ccd(0), offset };
+        plan.tested = Tested::Isolated {
+            ccd: ccd(0),
+            offset,
+        };
         plan.profile = togi_tuner::UnitProfile::of_ccd(&zero().with(ccd(0), offset));
         journal.run(&plan, Ending::Fail(None));
     }
