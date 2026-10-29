@@ -753,8 +753,8 @@ impl<'events> Names<'events> {
                 )
             }
             Payload::FirmwareRestoration(restoration) => {
-                let togi_journal::FirmwareRestoration { saved, state } = restoration;
                 use togi_journal::FirmwareRestorationState;
+                let togi_journal::FirmwareRestoration { saved, state } = restoration;
                 let state = match state {
                     FirmwareRestorationState::Saved {} => "saved".to_owned(),
                     FirmwareRestorationState::Qualified { certificate } => {

@@ -117,9 +117,10 @@ impl Session<'_> {
             } else { None }
         });
         let mut held: HashMap<Provenance, Seq> = self.appender.journal().events().iter()
-            .filter_map(|event| match &event.payload {
-                Payload::DayImported(record) => Some((record.original, event.seq)),
-                _ => None,
+            .filter_map(|event| {
+                if let Payload::DayImported(record) = &event.payload {
+                    Some((record.original, event.seq))
+                } else { None }
             }).collect();
         let mut causes = Vec::new();
         let mut night_observations = Vec::new();

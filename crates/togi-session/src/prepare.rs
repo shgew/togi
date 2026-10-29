@@ -146,19 +146,16 @@ fn import_into(journal: Journal, boot: BootId, now: Timestamp) -> Result<Prepare
         }
         return Ok(Prepared { journal, import: None });
     }
-    let source = match marker {
-        Some(marker) => marker.source,
-        None => {
-            let Some(source) = journal.dir().archives()?.last().copied() else {
-                return Ok(Prepared { journal, import: None });
-            };
-            source
-        }
+    let source = if let Some(marker) = marker { marker.source } else {
+        let Some(source) = journal.dir().archives()?.last().copied() else {
+            return Ok(Prepared { journal, import: None });
+        };
+        source
     };
     let destination = match journal.session() {
         Some(session) => session,
         None => match marker {
-            Some(marker) if !boundary.is_some_and(|boundary| marker.destination <= boundary) => marker.destination,
+            Some(marker) if boundary.is_none_or(|boundary| marker.destination > boundary) => marker.destination,
             Some(_) | None => journal.dir().import_destination(&source, now)?,
         },
     };
@@ -184,7 +181,7 @@ fn manifest(
         sources.push(import::Source {
             session,
             bytes,
-            carry_raw: !boundary.is_some_and(|boundary| session <= boundary),
+            carry_raw: boundary.is_none_or(|boundary| session > boundary),
         });
     }
     Ok(import::manifest(&sources))
