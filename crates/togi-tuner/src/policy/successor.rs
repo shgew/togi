@@ -230,15 +230,6 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                         if &step.proposed.cores != applied.target.cores() {
                             return Err("successful application disagrees with its climb decision".into());
                         }
-                        if let togi_journal::ClimbAction::Retreat { units, .. } = &step.decision {
-                            for unit in units {
-                                let membership = step.proposed.mapping.units.iter().find(|member| member.unit == *unit)
-                                    .ok_or_else(|| "backstep is missing its unit membership".to_owned())?;
-                                let last_clean = membership.cores.first().and_then(|core| step.proposed.cores.get(core))
-                                    .ok_or_else(|| "backstep is missing its resulting unit depth".to_owned())?;
-                                history.stops.entry(*unit).or_insert(Stop { unit: *unit, witness: *original, last_clean });
-                            }
-                        }
                     } else {
                         return Err("successful application is missing its decision history".into());
                     }
@@ -356,6 +347,15 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
     }
     history.vetoes.retain(|veto| !matches!(latest.get(&veto.event), Some(Classification::NonCpu {})));
     reconstruct_stops(&mut history, &decoded)?;
+    for (original, applied) in &history.applications {
+        if let ApplyCause::Step { decision } = applied.cause
+            && let Some(step) = climbs.get(&(original.session, decision))
+            && let togi_journal::ClimbAction::Retreat { units, .. } = &step.decision
+            && units.iter().any(|unit| !history.stops.contains_key(unit))
+        {
+            return Err("successful predecessor retreat is missing its permanent-stop evidence".into());
+        }
+    }
     Ok(history)
 }
 
