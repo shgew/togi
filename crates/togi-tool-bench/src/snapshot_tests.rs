@@ -10,7 +10,7 @@ use togi_machine::CancellationToken;
 use togi_render::Renderer;
 use togi_session::{ConfigSource, ReadState, SnapshotStatus};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
-use togi_simrun::{Persistence, SimInput, events, simulate};
+use togi_simrun::{Observe, Observer, Persistence, SimInput, events, simulate};
 use togi_watch::model::Model as Watch;
 
 use super::{measure, measure_with};
@@ -46,13 +46,14 @@ fn generated(
             ..MachineDefinition::default()
         }
     };
-    generated_from(definition, seed, SignedDuration::from_mins(minutes))
+    generated_from(definition, seed, SignedDuration::from_mins(minutes), None)
 }
 
 fn generated_from(
     definition: MachineDefinition,
     seed: u64,
     duration: SignedDuration,
+    observer: Option<Observer>,
 ) -> (Vec<Event>, MachineDefinition) {
     let simulator = Simulator::new(
         Model::new(&definition, seed).unwrap(),
@@ -87,7 +88,7 @@ fn generated_from(
         renderer: Renderer::default(),
         zone: TimeZone::UTC,
         cancel: CancellationToken::new(),
-        observer: None,
+        observer,
         dump_to: None,
     })
     .unwrap();
@@ -159,7 +160,17 @@ proptest! {
 #[test_case::test_case(false; "shutdown")]
 #[test_case::test_case(true; "detected crash")]
 fn snapshot_then_config_reload_has_the_same_cleared_trial_end_as_full_replay(crash: bool) {
-    let (events, _) = generated_from(hunting(), 1, SignedDuration::from_hours(8));
+    // Detect the crash through the durable journal hook rather than finishing the night.
+    let observer: Option<Observer> = crash.then(|| {
+        Box::new(|event: &Event| {
+            if matches!(event.payload, togi_journal::Payload::CrashDetected(_)) {
+                Observe::Stop
+            } else {
+                Observe::Continue
+            }
+        }) as Observer
+    });
+    let (events, _) = generated_from(hunting(), 1, SignedDuration::from_hours(8), observer);
     let cut = events
         .iter()
         .rposition(|event| {
@@ -169,7 +180,7 @@ fn snapshot_then_config_reload_has_the_same_cleared_trial_end_as_full_replay(cra
                 matches!(event.payload, togi_journal::Payload::Shutdown(_))
             }
         })
-        .unwrap()
+        .expect("the simulation must reach the requested snapshot boundary")
         + 1;
     let config = events
         .iter()
@@ -178,8 +189,15 @@ fn snapshot_then_config_reload_has_the_same_cleared_trial_end_as_full_replay(cra
                 .then(|| event.payload.clone())
         })
         .unwrap();
+    // A stopped simulation still appends cancellation cleanup after the crash boundary.
     let mut events = events[..cut].to_vec();
     let last = events.last().unwrap();
+    if crash {
+        assert!(matches!(
+            last.payload,
+            togi_journal::Payload::CrashDetected(_)
+        ));
+    }
     let reload = Event::new(
         last.seq.next().unwrap(),
         togi_journal::Stamp {
