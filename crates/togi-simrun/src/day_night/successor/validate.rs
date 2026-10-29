@@ -384,11 +384,12 @@ impl Record {
             let allocated_ratio = a.unit_ratios.iter().sum::<f64>() / f64::from(count);
             // Ratios for rejected profiles can be much larger than one. Scale representation
             // roundoff here only; membership below still compares each ratio exactly with one.
-            let allocation_tolerance =
-                epoch.reference.tolerance * a.joint_ratio.max(allocated_ratio).max(1.0);
+            let allocation_scale = a.joint_ratio.max(allocated_ratio).max(1.0);
             require(
-                a.joint_ratio >= allocated_ratio
-                    || allocated_ratio - a.joint_ratio <= allocation_tolerance,
+                allocated_ratio.is_finite()
+                    && (a.joint_ratio >= allocated_ratio
+                        || (allocated_ratio - a.joint_ratio) / allocation_scale
+                            <= epoch.reference.tolerance),
                 "joint hazard source allocation",
             )?;
             require(

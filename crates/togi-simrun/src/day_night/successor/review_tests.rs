@@ -267,6 +267,7 @@ fn a_complete_observation_does_not_include_an_event_at_the_unobserved_endpoint()
 #[test_case(26_111.999_977_111_795, 26_111.999_977_111_813, true; "firmware rejected profile roundoff")]
 #[test_case(26_111.999_977_111_795, 26_111.999_978_111_795, false; "materially missing allocation")]
 #[test_case(1.0, 1.000_000_000_000_000_2, true; "allocation roundoff never grants membership")]
+#[test_case(1.0, f64::MAX, false; "overflowing source sums cannot become roundoff")]
 fn source_allocation_roundoff_is_relative_without_relaxing_membership(
     joint: f64,
     allocated: f64,

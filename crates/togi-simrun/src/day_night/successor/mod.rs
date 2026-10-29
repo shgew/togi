@@ -12,6 +12,8 @@
 //! exact tested profiles and truth-side risk remain recorded. Missing policy allowance or
 //! classification is explicit absence, never a synthetic zero account or suspect decision.
 //! `Record::validate` checks representation and accounting; the benchmark owns acceptance.
+//! Source-allocation consistency scales the recorded numerical tolerance to ratio magnitude,
+//! including rejected profiles; this never relaxes exact admissibility membership.
 
 mod policy;
 mod profile;
