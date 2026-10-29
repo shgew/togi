@@ -40,9 +40,9 @@ pub use fold::FoldError;
 pub use night_query::{Action, Contents, EndReason, NightQuery, NotReady};
 pub use plan::{PlanError, TrialPlan};
 pub use projection::{
-    CapProjection, CcdProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
+    CapProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
     MappingProjection, NightProjection, Projection, QualificationProgress, QualificationProjection,
-    QualificationStage, ReproductionProjection, VetoProjection,
+    QualificationStage, ReproductionProjection, UnitProjection, VetoProjection,
 };
 
 use crate::cap::{Beta, Rate};

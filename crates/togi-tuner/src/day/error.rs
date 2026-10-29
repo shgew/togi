@@ -1,4 +1,5 @@
-use togi_machine::{CcdId, InvalidTarget};
+use crate::UnitId;
+use togi_machine::InvalidTarget;
 
 use super::profile::CoreProfileError;
 
@@ -9,6 +10,6 @@ pub enum DayStepError {
     Profile(#[from] CoreProfileError),
     #[error("moving an offset left the valid range")]
     Offset(#[from] InvalidTarget),
-    #[error("CCD {0} is missing from a profile the decision compares")]
-    Ccd(CcdId),
+    #[error("unit {0:?} is missing from a profile the decision compares")]
+    Unit(UnitId),
 }

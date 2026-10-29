@@ -2,12 +2,13 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use crate::{UnitId, UnitProfile};
 use togi_journal::{
     Activity, Budget, DeadEnd, DeadEndCondition, Event, NightId, NightPlan, NightQualification,
     PlannedTask, QualificationState, Queue as JournalQueue, Seq, Stamp, TaskId, TaskStatus, Tested,
     UnavailableBackend,
 };
-use togi_machine::{BootId, CcdId, CcdProfile, ContentId, TargetOffset, WorkloadId};
+use togi_machine::{BootId, CcdId, ContentId, TargetOffset, WorkloadId};
 
 use super::State;
 use super::decision::{Decision, PolicyPayload};
@@ -117,7 +118,7 @@ struct Chosen {
     task: TaskId,
     activity: Activity,
     cell: Cell,
-    profile: CcdProfile,
+    profile: UnitProfile,
     tested: Tested,
     retry: bool,
 }
@@ -461,7 +462,7 @@ impl State {
             queue: JournalQueue::Mapping,
             ordinal,
         };
-        let matrix = mapping_cells(layout, target.ccd, target.offset, ordinal)?;
+        let matrix = mapping_cells(layout, target.unit, target.offset, ordinal)?;
         let done: HashSet<Sig> = self
             .task_exposures(task)
             .filter(|record| {
@@ -566,7 +567,7 @@ impl State {
         let qualification_of = |work: &QualWork, reason: Reason| match work {
             QualWork::Open { record, remaining } => runnable_work(
                 Some(Work {
-                    profile: record.start.payload.profile.ccd().clone(),
+                    profile: UnitProfile::of_ccd(record.start.payload.profile.ccd()),
                     cells: remaining.clone(),
                     reason,
                 }),
@@ -626,9 +627,9 @@ impl State {
                         },
                         match attempt {
                             AttemptScope::Exact => Tested::Exact {},
-                            AttemptScope::Ccd { ccd } => Tested::Isolated {
-                                ccd,
-                                offset: profile.get(ccd).ok_or(NotReady::UnmatchedCell)?,
+                            AttemptScope::Unit { unit } => Tested::Isolated {
+                                ccd: unit.ccd().ok_or(NotReady::NonCoarse)?,
+                                offset: profile.get(unit).ok_or(NotReady::UnmatchedCell)?,
                             },
                         },
                     ),
@@ -638,7 +639,7 @@ impl State {
                             .map(|(_, task)| *task)
                             .ok_or(NotReady::UnmatchedCell)?,
                         Tested::Isolated {
-                            ccd: target.ccd,
+                            ccd: target.unit.ccd().ok_or(NotReady::NonCoarse)?,
                             offset: target.offset,
                         },
                     ),
@@ -755,7 +756,7 @@ impl State {
             let Some(edge) = mapping.edges.get(&ccd).and_then(EdgeU::offset) else {
                 continue;
             };
-            let Some(cap) = caps.get(ccd) else {
+            let Some(cap) = caps.get(UnitId::Ccd(ccd)) else {
                 continue;
             };
             let Ok(deeper) = TargetOffset::new(cap.get() - 1) else {
@@ -770,7 +771,7 @@ impl State {
             }
         }
         if let Some((ccd, offset, _)) = probe {
-            let matrix = mapping_cells(layout, ccd, offset, cursor)?;
+            let matrix = mapping_cells(layout, UnitId::Ccd(ccd), offset, cursor)?;
             if let Some(cell) = rotated(&matrix, cursor, unavailable) {
                 return Ok(Some(Chosen {
                     task,

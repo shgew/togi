@@ -2,8 +2,8 @@
 //! seconds each queue consumed in the open night and the work each queue holds. A night has no deadline and
 //! no budget: the shares are soft shares of its elapsed observed time.
 
+use crate::UnitProfile;
 use togi_journal::Seq;
-use togi_machine::CcdProfile;
 
 use super::edge::MappingTarget;
 use super::matrix::{AttemptScope, Cell, zeroed};
@@ -203,7 +203,7 @@ pub enum Reason {
 /// One queue's outstanding work: the cells still to launch, in order, at one whole CCD profile.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Work {
-    pub profile: CcdProfile,
+    pub profile: UnitProfile,
     pub cells: Vec<Cell>,
     pub reason: Reason,
 }
@@ -212,7 +212,7 @@ impl Work {
     /// The single all-zero rerun of `failed`'s class and duration that a nonzero-profile failure
     /// naming a CO-0 core requires. A passing rerun is not proof of causation.
     #[must_use]
-    pub fn co_zero_rerun(failed: &Cell, failed_profile: &CcdProfile) -> Self {
+    pub fn co_zero_rerun(failed: &Cell, failed_profile: &UnitProfile) -> Self {
         Self {
             profile: zeroed(failed_profile),
             cells: vec![*failed],
@@ -269,7 +269,7 @@ pub enum NightTask {
     Run {
         queue: Queue,
         cell: Cell,
-        profile: CcdProfile,
+        profile: UnitProfile,
         reason: Reason,
     },
     /// Close the event's reproduction as unreproduced; no trial runs.

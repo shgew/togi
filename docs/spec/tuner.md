@@ -23,6 +23,14 @@ For each CCD retain its exposure ledger, mapping cursor/bracket, night edge U, c
 
 A profile is the complete ordered vector of CCD offsets and its expansion to all physical cores. Sparse readbacks, nonuniform offsets within a CCD and missing identity data are observations, not eligible Ruleset 13 profiles.
 
+The Rust decision and reporting interfaces express this vector as a `UnitProfile` over ordered
+`UnitId::Ccd` tuning groups from `Units::coarse`. Their order is exactly ascending CCD order;
+expansion assigns each group's offset to all its member cores. `UnitId::Core` and `Units::cores`
+represent physical-core groups without enabling per-core refinement in this ruleset. Physical CCD
+workload coverage and reuse remain CCD-scoped. Released journal profiles, changed-CCD fields and
+cursors retain their CCD shapes and meanings; folding and commitment explicitly convert between
+those profiles and the coarse unit view.
+
 ## Evidence
 
 The exposure ledger is raw observations keyed by `(evidence epoch, firmware context, CCD, trial class, tested offset)`, retaining the full applied profile as provenance and as a joint-class discriminator. Per-CCD aggregation never merges distinct package/interaction profiles. It retains source session/sequence, trial/boot, live or imported origin, outcome, failure signal/location, eligible post-warm-up seconds, pre-warm-up failures and longest uninterrupted eligible duration. A successful trial adds measured eligible seconds; a failure adds only durable measured time and one failure. Early failures still reject qualification and move an eligible mapping edge, but cannot supply positive-time rate estimates alone. An inconclusive trial or failed placement adds no passing exposure. Deduplicate by original identity: copies add no second observation.

@@ -4,9 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
+use crate::{UnitId, UnitProfile, UnitProfileError, Units};
 use togi_machine::{
-    CcdId, CcdProfile, CcdProfileError, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Purpose, Regime,
-    TargetOffset, WorkloadId, pick_workload,
+    CcdId, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Purpose, Regime, TargetOffset, WorkloadId,
+    pick_workload,
 };
 
 use crate::numbers::index;
@@ -159,7 +160,7 @@ pub struct Uncovered {
 /// An ordered list of cells and the whole CCD profile they run at.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Matrix {
-    pub profile: CcdProfile,
+    pub profile: UnitProfile,
     pub cells: Vec<PlannedCell>,
     /// R7 partials the topology cannot supply, listed instead of silently dropped.
     pub uncovered: Vec<Uncovered>,
@@ -207,7 +208,7 @@ pub enum AttemptScope {
     /// The exact failed profile.
     Exact,
     /// One CCD alone at its failed offset, the others at CO 0.
-    Ccd { ccd: CcdId },
+    Unit { unit: UnitId },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -224,8 +225,10 @@ pub enum MatrixError {
     NoCpu(CoreId),
     #[error("CCD {0} is not in the topology")]
     UnknownCcd(CcdId),
+    #[error("unit {0:?} is not in the topology")]
+    UnknownUnit(UnitId),
     #[error("a CCD profile could not be built")]
-    Profile(#[from] CcdProfileError),
+    Profile(#[from] UnitProfileError),
 }
 
 /// The machine a matrix is generated for.
@@ -249,6 +252,23 @@ impl Layout<'_> {
             return Err(MatrixError::NoCpu(core));
         }
         Ok(&info.cpus)
+    }
+
+    fn unit_cores(&self, unit: UnitId) -> Result<(CcdId, CoreSet), MatrixError> {
+        match unit {
+            UnitId::Ccd(ccd) => self
+                .topology
+                .ccds()
+                .iter()
+                .find(|(id, _)| *id == ccd)
+                .map(|&(ccd, cores)| (ccd, cores))
+                .ok_or(MatrixError::UnknownUnit(unit)),
+            UnitId::Core(core) => self
+                .topology
+                .ccd_of(core)
+                .map(|ccd| (ccd, [core].into_iter().collect()))
+                .ok_or(MatrixError::UnknownUnit(unit)),
+        }
     }
 
     fn ccd_cores(&self, ccd: CcdId) -> Result<CoreSet, MatrixError> {
@@ -558,7 +578,7 @@ fn fresh(cells: impl IntoIterator<Item = Cell>) -> impl Iterator<Item = PlannedC
 
 /// `profile` with every CCD at CO 0.
 #[must_use]
-pub fn zeroed(profile: &CcdProfile) -> CcdProfile {
+pub fn zeroed(profile: &UnitProfile) -> UnitProfile {
     profile.iter().fold(profile.clone(), |zero, (ccd, _)| {
         zero.with(ccd, TargetOffset::ZERO)
     })
@@ -567,11 +587,15 @@ pub fn zeroed(profile: &CcdProfile) -> CcdProfile {
 /// `profile` zeroed except `ccd` at `offset`.
 fn isolated_profile(
     layout: &Layout<'_>,
-    ccd: CcdId,
+    unit: UnitId,
     offset: TargetOffset,
-) -> Result<CcdProfile, MatrixError> {
-    let zero = CcdProfile::zero(layout.topology.ccds().iter().map(|(id, _)| *id))?;
-    Ok(zero.with(ccd, offset))
+) -> Result<UnitProfile, MatrixError> {
+    let units = match unit {
+        UnitId::Ccd(_) => Units::coarse(layout.topology),
+        UnitId::Core(_) => Units::cores(layout.topology),
+    };
+    let zero = UnitProfile::zero(&units);
+    Ok(zero.with(unit, offset))
 }
 
 /// The whole qualification matrix in R1..R9 order: R1–R5 for every core, then the package and
@@ -624,7 +648,7 @@ fn qualification_rows(
 /// qualification ordinal that rotates the selected entries and positions.
 pub fn qualification_cells(
     layout: &Layout<'_>,
-    profile: &CcdProfile,
+    profile: &UnitProfile,
     ordinal: u32,
     reuse: &Reuse<'_>,
 ) -> Result<Matrix, MatrixError> {
@@ -641,7 +665,7 @@ pub fn qualification_cells(
 /// fresh, no reuse.
 pub fn control_cells(
     layout: &Layout<'_>,
-    profile: &CcdProfile,
+    profile: &UnitProfile,
     ordinal: u32,
 ) -> Result<Matrix, MatrixError> {
     qualification_cells(layout, &zeroed(profile), ordinal, &Reuse::AllFresh)
@@ -653,11 +677,11 @@ pub fn control_cells(
 /// qualifies a day profile.
 pub fn mapping_cells(
     layout: &Layout<'_>,
-    ccd: CcdId,
+    unit: UnitId,
     offset: TargetOffset,
     ordinal: u32,
 ) -> Result<Matrix, MatrixError> {
-    let cores = layout.ccd_cores(ccd)?;
+    let (ccd, cores) = layout.unit_cores(unit)?;
     let scope = scope(layout, vec![(ccd, cores)], Purpose::Isolated, ordinal);
     let mut uncovered = Vec::new();
     let mut cells: Vec<PlannedCell> = Vec::new();
@@ -673,7 +697,7 @@ pub fn mapping_cells(
         )?]));
     }
     Ok(Matrix {
-        profile: isolated_profile(layout, ccd, offset)?,
+        profile: isolated_profile(layout, unit, offset)?,
         cells,
         uncovered,
     })
@@ -685,24 +709,24 @@ pub fn mapping_cells(
 /// caller stops an attempt at its first conclusive failure.
 pub fn reproduction_cells(
     layout: &Layout<'_>,
-    profile: &CcdProfile,
+    profile: &UnitProfile,
     ordinal: u32,
 ) -> Result<Vec<Attempt>, MatrixError> {
     let mut attempts = vec![Attempt {
         scope: AttemptScope::Exact,
         matrix: qualification_cells(layout, profile, ordinal, &Reuse::AllFresh)?,
     }];
-    for (ccd, offset) in profile
+    for (unit, offset) in profile
         .iter()
         .filter(|(_, offset)| *offset != TargetOffset::ZERO)
     {
-        let cores = layout.ccd_cores(ccd)?;
+        let (ccd, cores) = layout.unit_cores(unit)?;
         let isolated = scope(layout, vec![(ccd, cores)], Purpose::Isolated, ordinal);
         let (cells, uncovered) = qualification_rows(&isolated, &Reuse::AllFresh)?;
         attempts.push(Attempt {
-            scope: AttemptScope::Ccd { ccd },
+            scope: AttemptScope::Unit { unit },
             matrix: Matrix {
-                profile: isolated_profile(layout, ccd, offset)?,
+                profile: isolated_profile(layout, unit, offset)?,
                 cells,
                 uncovered,
             },

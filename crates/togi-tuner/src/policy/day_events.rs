@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use crate::UnitId;
 use jiff::Timestamp;
 use togi_journal::{
     CcdCursor, Certainty, Classification as JournalClassification, CrashedBoot, DayEvent, DayVeto,
@@ -525,8 +526,13 @@ impl State {
                 .map(|ccd| CcdCursor {
                     ccd,
                     depth: super::ledger::saturating_u32(
-                        u64::try_from(reverted.iter().filter(|r| r.ccd == ccd).count())
-                            .unwrap_or(u64::MAX),
+                        u64::try_from(
+                            reverted
+                                .iter()
+                                .filter(|r| r.unit == UnitId::Ccd(ccd))
+                                .count(),
+                        )
+                        .unwrap_or(u64::MAX),
                     ),
                 })
                 .collect();

@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use togi_machine::{CcdId, CcdProfile, CoreInfo, TargetOffset};
+use crate::{UnitId, UnitProfile};
+use togi_machine::{CoreInfo, TargetOffset};
 
 use super::error::DayStepError;
 use super::events::{Certainty, Classification, DailyEvent, EventId};
@@ -27,7 +28,7 @@ pub enum RetreatState {
     /// D is inside the event's veto and no retreat was applied.
     Required,
     /// CO 0 was applied until `wanted`, the retreat profile, qualifies.
-    AwaitingQualification { wanted: CcdProfile },
+    AwaitingQualification { wanted: UnitProfile },
 }
 
 /// A CPU-suspect event's whole-profile veto: no day profile may be at or deeper than `profile` on
@@ -90,7 +91,7 @@ pub fn event_statuses(
     events: &[DailyEvent],
     reproductions: &BTreeMap<EventId, ReproductionOutcome>,
 ) -> Result<Vec<EventStatus>, DayStepError> {
-    let applied = CoreProfile::of_ccd(&history.current().profile, topology)?;
+    let applied = CoreProfile::of_units(&history.current().profile, topology)?;
     Ok(events
         .iter()
         .map(|event| {
@@ -139,23 +140,23 @@ pub enum RetreatCause {
         events: Vec<RetreatEvent>,
         reverted: Vec<Reverted>,
     },
-    /// A further event at the stepped-back profile reverts every CCD's own newest remaining step.
+    /// A further event at the stepped-back profile reverts every unit's own newest remaining step.
     Escalation {
         events: Vec<RetreatEvent>,
         reverted: Vec<Reverted>,
     },
     /// A cap shallower than D: the profile is cut to the cap componentwise, with no hold.
-    SafetyCap { caps: CcdProfile },
+    SafetyCap { caps: UnitProfile },
     /// CO 0 held the retreat profile `wanted` until it qualified; it now does.
     Completion {
         events: Vec<RetreatEvent>,
-        wanted: CcdProfile,
+        wanted: UnitProfile,
     },
 }
 
 /// The event-driven retreat: its target profile and the causes that make it.
 pub(crate) struct EventRetreat {
-    pub to: CcdProfile,
+    pub to: UnitProfile,
     pub causes: Vec<RetreatCause>,
 }
 
@@ -165,18 +166,18 @@ struct Group {
     reverted: Vec<Reverted>,
 }
 
-/// The value a CCD returns to when its newest step is reverted: the step's previous day value,
-/// never deeper than the CCD already is.
-fn previous_value(promotion: &Promotion<'_>, ccd: CcdId, now: TargetOffset) -> TargetOffset {
+/// The value a unit returns to when its newest step is reverted: the step's previous day value,
+/// never deeper than the unit already is.
+fn previous_value(promotion: &Promotion<'_>, unit: UnitId, now: TargetOffset) -> TargetOffset {
     promotion
         .from
-        .get(ccd)
+        .get(unit)
         .map_or(TargetOffset::ZERO, |before| before.max(now))
 }
 
-pub(crate) fn zero_like(profile: &CcdProfile) -> CcdProfile {
-    profile.iter().fold(profile.clone(), |zero, (ccd, _)| {
-        zero.with(ccd, TargetOffset::ZERO)
+pub(crate) fn zero_like(profile: &UnitProfile) -> UnitProfile {
+    profile.iter().fold(profile.clone(), |zero, (unit, _)| {
+        zero.with(unit, TargetOffset::ZERO)
     })
 }
 
@@ -184,14 +185,14 @@ pub(crate) fn zero_like(profile: &CcdProfile) -> CcdProfile {
 fn revert_newest(
     promotions: &[Promotion<'_>],
     consumed: &mut BTreeSet<Reverted>,
-    current: &CcdProfile,
-) -> (CcdProfile, Vec<Reverted>) {
+    current: &UnitProfile,
+) -> (UnitProfile, Vec<Reverted>) {
     for promotion in promotions.iter().rev() {
         let open: Vec<Reverted> = promotion
             .changed()
-            .map(|ccd| Reverted {
+            .map(|unit| Reverted {
                 step: promotion.at,
-                ccd,
+                unit,
             })
             .filter(|reverted| !consumed.contains(reverted))
             .collect();
@@ -200,8 +201,8 @@ fn revert_newest(
         }
         let mut next = current.clone();
         for reverted in &open {
-            let now = current.get(reverted.ccd).unwrap_or(TargetOffset::ZERO);
-            next = next.with(reverted.ccd, previous_value(promotion, reverted.ccd, now));
+            let now = current.get(reverted.unit).unwrap_or(TargetOffset::ZERO);
+            next = next.with(reverted.unit, previous_value(promotion, reverted.unit, now));
             consumed.insert(*reverted);
         }
         return (next, open);
@@ -209,53 +210,53 @@ fn revert_newest(
     (zero_like(current), Vec::new())
 }
 
-/// Further event: every CCD goes back to its previous day value, CO 0 where it has no remaining
+/// Further event: every unit goes back to its previous day value, CO 0 where it has no remaining
 /// step.
 fn revert_all(
     promotions: &[Promotion<'_>],
     consumed: &mut BTreeSet<Reverted>,
-    current: &CcdProfile,
-) -> (CcdProfile, Vec<Reverted>) {
+    current: &UnitProfile,
+) -> (UnitProfile, Vec<Reverted>) {
     let mut next = current.clone();
     let mut reverted = Vec::new();
-    for (ccd, now) in current.iter() {
+    for (unit, now) in current.iter() {
         let newest = promotions.iter().rev().find(|promotion| {
-            promotion.changed().any(|changed| changed == ccd)
+            promotion.changed().any(|changed| changed == unit)
                 && !consumed.contains(&Reverted {
                     step: promotion.at,
-                    ccd,
+                    unit,
                 })
         });
         let value = match newest {
             Some(promotion) => {
                 let step = Reverted {
                     step: promotion.at,
-                    ccd,
+                    unit,
                 };
                 consumed.insert(step);
                 reverted.push(step);
-                previous_value(promotion, ccd, now)
+                previous_value(promotion, unit, now)
             }
             None => TargetOffset::ZERO,
         };
-        next = next.with(ccd, value);
+        next = next.with(unit, value);
     }
     (next, reverted)
 }
 
-/// The profile at the shallower of `a` and `b` on every CCD: how a retreat is cut to a cap and how
+/// The profile at the shallower of `a` and `b` on every unit: how a retreat is cut to a cap and how
 /// retreat profiles combine without deepening anything.
-pub(crate) fn shallower(a: &CcdProfile, b: &CcdProfile) -> Result<CcdProfile, DayStepError> {
-    a.iter().try_fold(a.clone(), |cut, (ccd, offset)| {
-        let other = b.get(ccd).ok_or(DayStepError::Ccd(ccd))?;
-        Ok(cut.with(ccd, offset.max(other)))
+pub(crate) fn shallower(a: &UnitProfile, b: &UnitProfile) -> Result<UnitProfile, DayStepError> {
+    a.iter().try_fold(a.clone(), |cut, (unit, offset)| {
+        let other = b.get(unit).ok_or(DayStepError::Unit(unit))?;
+        Ok(cut.with(unit, offset.max(other)))
     })
 }
 
 /// Plans the step back every required event asks for, in event order, from the committed D and
 /// the escalation chain the active events and their applied retreats define. The first event at a
 /// profile reverts the newest remaining promotion; an event at a profile an earlier retreat of the
-/// chain stepped back to reverts every CCD's own newest remaining step. A target some veto still
+/// chain stepped back to reverts every unit's own newest remaining step. A target some veto still
 /// forbids steps back further the same way, down to CO 0.
 pub(crate) fn plan(
     topology: &[CoreInfo],
@@ -278,7 +279,7 @@ pub(crate) fn plan(
     {
         consumed.extend(record.reverted.iter().copied());
         if matches!(record.outcome, RetreatOutcome::Reached) {
-            tails.push(CoreProfile::of_ccd(record.profile, topology)?);
+            tails.push(CoreProfile::of_units(record.profile, topology)?);
         }
     }
 
@@ -297,7 +298,7 @@ pub(crate) fn plan(
         };
         if !event
             .profile
-            .forbids(&CoreProfile::of_ccd(&current, topology)?)
+            .forbids(&CoreProfile::of_units(&current, topology)?)
         {
             // An earlier event's retreat already left this event's veto: one step back answers both.
             if let Some(group) = groups.last_mut() {
@@ -311,7 +312,7 @@ pub(crate) fn plan(
         } else {
             revert_newest(&promotions, &mut consumed, &current)
         };
-        tails.push(CoreProfile::of_ccd(&next, topology)?);
+        tails.push(CoreProfile::of_units(&next, topology)?);
         current = next;
         groups.push(Group {
             further,
@@ -323,7 +324,7 @@ pub(crate) fn plan(
         return Ok(None);
     }
     while !current.is_zero() {
-        let core = CoreProfile::of_ccd(&current, topology)?;
+        let core = CoreProfile::of_units(&current, topology)?;
         if !vetoes.iter().any(|veto| veto.profile.forbids(&core)) {
             break;
         }
@@ -363,9 +364,9 @@ pub(crate) fn plan(
 /// profiles and the events waiting for it.
 pub(crate) fn awaiting(
     events: &[EventStatus],
-) -> Result<Option<(Vec<RetreatEvent>, CcdProfile)>, DayStepError> {
+) -> Result<Option<(Vec<RetreatEvent>, UnitProfile)>, DayStepError> {
     let mut witnesses = Vec::new();
-    let mut combined: Option<CcdProfile> = None;
+    let mut combined: Option<UnitProfile> = None;
     for status in events {
         if let RetreatState::AwaitingQualification { wanted } = &status.retreat
             && let Some(certainty) = status.class.certainty()
