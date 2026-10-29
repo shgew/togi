@@ -8,7 +8,7 @@ use crate::unit::{UnitId, UnitProfile, Units};
 
 use super::{ApplicationId, Blocker, Ceiling, Ceilings};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum StopReason {
     FirstBackstep {
         event: EventId,
@@ -22,14 +22,14 @@ pub enum StopReason {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FinishReason {
     Ceiling,
     Stopped(StopReason),
     AllowanceExhausted,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FinishWitness {
     pub reason: FinishReason,
     pub at: Timestamp,
@@ -38,15 +38,15 @@ pub struct FinishWitness {
     pub ceiling: Option<Ceiling>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UnitState {
     Climbing,
     Held { reason: Blocker },
     Finished(FinishWitness),
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct FinishBook(BTreeMap<UnitId, FinishWitness>);
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FinishBook(#[serde(with = "crate::policy::wire::pairs")] BTreeMap<UnitId, FinishWitness>);
 
 impl FinishBook {
     pub fn get(&self, unit: UnitId) -> Option<&FinishWitness> {
@@ -67,7 +67,7 @@ impl FinishBook {
         }
     }
 
-    pub(super) fn stop(&mut self, unit: UnitId, witness: FinishWitness) {
+    pub(crate) fn stop(&mut self, unit: UnitId, witness: FinishWitness) {
         // Adverse evidence may replace a ceiling finish, never an earlier permanent stop.
         if self
             .get(unit)

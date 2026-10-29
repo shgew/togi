@@ -5,7 +5,7 @@ use togi_machine::TargetOffset;
 use crate::unit::UnitId;
 
 /// Original evidence identity, supplied by the evidence layer rather than a journal type.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct EvidenceId(u64);
 
 impl EvidenceId {
@@ -19,7 +19,7 @@ impl EvidenceId {
 }
 
 /// Current-context isolated evidence. A completed descent is not a failure.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EdgeState {
     Unknown,
     Observed {
@@ -31,7 +31,7 @@ pub enum EdgeState {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Ceiling {
     pub edge: EdgeState,
     pub c: Option<TargetOffset>,

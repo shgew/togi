@@ -8,7 +8,7 @@ use super::{
     Retreat, SavedProfile, propose, restore, retreat,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Blocker {
     Hold {
         credited_secs: u64,
@@ -72,7 +72,7 @@ pub struct ClimbInputs<'a> {
     pub apply: ApplyPrerequisites,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ClimbAction {
     FirmwareZero {
         saved: SavedProfile,
@@ -86,9 +86,10 @@ pub enum ClimbAction {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ClimbDecision {
     pub before: UnitProfile,
+    #[serde(with = "crate::policy::wire::pairs")]
     pub ceilings: Ceilings,
     pub action: ClimbAction,
 }

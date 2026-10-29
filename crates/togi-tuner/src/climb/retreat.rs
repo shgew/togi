@@ -7,7 +7,7 @@ use crate::unit::{UnitId, UnitProfile};
 
 use super::{Ceilings, ClimbError, ClimbHistory, Cursor};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Retreat {
     /// Exact qualified safety target, or stock while `wanted` is unqualified.
     pub profile: UnitProfile,
@@ -68,7 +68,7 @@ fn backstep(
 }
 
 /// Compute safety from actual applications and durable cursors, never from plans or current charges.
-pub(super) fn plan(
+pub fn plan(
     history: &ClimbHistory,
     events: &[DailyEvent],
     vetoes: &[Veto],

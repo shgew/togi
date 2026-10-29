@@ -5,13 +5,13 @@ use crate::unit::Phase;
 
 pub const LEARNING_ALLOWANCE: usize = 2;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EventPhase {
     Learning,
     PostFinish,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Charge {
     pub event: EventId,
     pub aliases: BTreeSet<EventId>,
@@ -22,7 +22,7 @@ pub struct Charge {
 }
 
 /// A campaign outlives sessions, firmware and phase changes. It has no renewal operation.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Campaign {
     Unreconstructible,
     Known { charges: Vec<Charge> },
