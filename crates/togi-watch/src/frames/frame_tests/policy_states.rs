@@ -24,7 +24,7 @@ fn record() -> DayEventId {
 /// The reason a hold names when CCD 0 -15, CCD 1 -5 failed qualification.
 fn failed_qualification() -> HoldReason {
     HoldReason::QualificationFailed {
-        profile: expanded(profile_of(&[(0, -15), (1, -5)])),
+        profile: expanded(profile_of(&[(0, -15), (1, -5)]).to_ccd().unwrap()),
         witnesses: vec![seq(9)],
     }
 }
