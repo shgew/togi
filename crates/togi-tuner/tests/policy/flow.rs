@@ -399,7 +399,7 @@ fn a_monthly_requalification_of_d_runs_every_cell_afresh() {
 }
 
 /// The projection after an unexplained end's provisional retreat, pinned except for the cap's class lists
-/// and the night's task detail: the CCDs, the day, its event and veto, and the night that closed. It starts
+/// and the night's task detail: the units, the day, its event and veto, and the night that closed. It starts
 /// from the compact promoted day, so every sequence it pins is one of that scenario's own events.
 #[test]
 fn the_projection_after_a_provisional_retreat_matches_its_snapshot() {
@@ -409,18 +409,18 @@ fn the_projection_after_a_provisional_retreat_matches_its_snapshot() {
     let projection = serde_json::to_value(journal.state.project()).unwrap();
     let pinned = serde_json::json!({
         "applied": projection["applied"],
-        "ccds": projection["ccds"]
+        "units": projection["units"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|ccd| serde_json::json!({
-                "ccd": ccd["ccd"],
-                "cores": ccd["cores"],
-                "edge": ccd["edge"],
-                "cap": ccd["cap"]["offset"],
-                "binding": ccd["cap"]["binding"]["kind"],
-                "day": ccd["day"],
-                "remaining": ccd["remaining"],
+            .map(|unit| serde_json::json!({
+                "unit": unit["unit"],
+                "cores": unit["cores"],
+                "edge": unit["edge"],
+                "cap": unit["cap"]["offset"],
+                "binding": unit["cap"]["binding"]["kind"],
+                "day": unit["day"],
+                "remaining": unit["remaining"],
             }))
             .collect::<Vec<_>>(),
         "day": projection["day"],
@@ -481,7 +481,7 @@ fn night_until_filler(journal: &mut Journal, boot: &str) -> Vec<TrialPlan> {
 
 /// The committed cap's offset on `ccd`.
 fn cap_of(journal: &Journal, ccd: usize) -> i64 {
-    serde_json::to_value(journal.state.project()).unwrap()["ccds"][ccd]["cap"]["offset"]
+    serde_json::to_value(journal.state.project()).unwrap()["units"][ccd]["cap"]["offset"]
         .as_i64()
         .unwrap()
 }
@@ -699,7 +699,7 @@ fn deep() -> Params {
 
 /// The committed slope's kind on `ccd`.
 fn slope_kind(journal: &Journal, ccd: usize) -> String {
-    serde_json::to_value(journal.state.project()).unwrap()["ccds"][ccd]["cap"]["slope"]["kind"]
+    serde_json::to_value(journal.state.project()).unwrap()["units"][ccd]["cap"]["slope"]["kind"]
         .as_str()
         .unwrap()
         .to_owned()

@@ -1,13 +1,13 @@
 {
-  "applied": {
-    "0": -1,
-    "1": 0
-  },
-  "ccds": [
+  "applied": [
+    [{"Ccd": 0}, -1],
+    [{"Ccd": 1}, 0]
+  ],
+  "units": [
     {
       "binding": "rate",
       "cap": -1,
-      "ccd": 0,
+      "unit": {"Ccd": 0},
       "cores": [
         0,
         1
@@ -25,7 +25,7 @@
     {
       "binding": "rate",
       "cap": -1,
-      "ccd": 1,
+      "unit": {"Ccd": 1},
       "cores": [
         2,
         3
@@ -48,10 +48,10 @@
     "freeze": false,
     "hold": {
       "eligible_s": 0,
-      "profile": {
-        "0": -1,
-        "1": 0
-      },
+      "profile": [
+        [{"Ccd": 0}, -1],
+        [{"Ccd": 1}, 0]
+      ],
       "required_s": 180000,
       "witness": 31
     },

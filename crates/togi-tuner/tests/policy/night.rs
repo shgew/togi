@@ -271,7 +271,7 @@ fn an_excluded_backend_leaves_the_night_running_on_the_other() {
 /// The committed cap S of `ccd`, from the projection.
 fn cap_of(journal: &Journal, ccd: u8) -> Option<i64> {
     let json = serde_json::to_value(journal.state.project()).unwrap();
-    json["ccds"][usize::from(ccd)]["cap"]["offset"].as_i64()
+    json["units"][usize::from(ccd)]["cap"]["offset"].as_i64()
 }
 
 #[test]
@@ -343,10 +343,10 @@ fn with_no_admissible_cap_probe_the_filler_reruns_ds_exact_cells_round_robin() {
     let mut plan = journal.until_filler(mapping_fails);
     let projection = serde_json::to_value(journal.state.project()).unwrap();
     for ccd in 0..2 {
-        let edge = &projection["ccds"][ccd]["edge"];
+        let edge = &projection["units"][ccd]["edge"];
         assert_eq!(edge["kind"], "observed", "{edge}");
         let u = edge["offset"].as_i64().unwrap();
-        let s = projection["ccds"][ccd]["cap"]["offset"].as_i64().unwrap();
+        let s = projection["units"][ccd]["cap"]["offset"].as_i64().unwrap();
         // S − 1 would cross the edge margin: no cap probe is admissible.
         assert!(s - 1 < u + 5, "S {s}, U {u}");
     }
@@ -506,7 +506,7 @@ fn a_failure_on_a_co_zero_core_owes_an_all_zero_rerun_that_charges_no_ccd() {
     // Neither CCD was charged with the failure.
     let projection = serde_json::to_value(journal.state.project()).unwrap();
     for ccd in 0..2 {
-        let edge = &projection["ccds"][ccd]["edge"];
+        let edge = &projection["units"][ccd]["edge"];
         assert_ne!(edge["kind"], "observed", "CCD{ccd}: {edge}");
     }
 }
