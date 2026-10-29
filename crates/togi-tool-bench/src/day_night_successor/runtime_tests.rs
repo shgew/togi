@@ -550,7 +550,7 @@ fn firmware_restoration_records_real_full_vector_crash_and_recomputes_without_gr
             epochs: Vec::new(),
             daily: Vec::new(),
             jobs: 1,
-            tolerance: 0.0,
+            tolerance: lab.registration.tolerance.admissibility,
             resource_class: "synthetic-runtime-correctness".into(),
             compilation_seconds: 0.0,
             deadline: None,
