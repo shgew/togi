@@ -14,6 +14,7 @@ thiserror.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true
 togi-session.workspace = true
+togi-tuner.workspace = true
 togi-version.workspace = true
 
 [dev-dependencies]

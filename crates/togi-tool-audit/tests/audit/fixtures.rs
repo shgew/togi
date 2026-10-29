@@ -240,6 +240,51 @@ pub(crate) fn day_step(seq: u64, old: [i64; 2], proposed: [i64; 2], promote: boo
     )
 }
 
+/// A coarse `unit.vector` of `pair` over the two-CCD header topology.
+pub(crate) fn unit_vector(pair: [i64; 2]) -> Value {
+    json!({
+        "cores": {"0": pair[0], "8": pair[1]},
+        "mapping": {
+            "phase": "coarse",
+            "units": [{"unit": {"ccd": 0}, "cores": [0]}, {"unit": {"ccd": 1}, "cores": [8]}],
+        },
+    })
+}
+
+/// A `climb.decision` from `before` to `proposed`: `action` is `"promote"` (of CCD 0), `"restore"` (a firmware
+/// restoration of both CCDs) or `"hold"`.
+pub(crate) fn climb(seq: u64, before: [i64; 2], proposed: [i64; 2], action: &str) -> Event {
+    let decision = match action {
+        "promote" => json!({
+            "kind": "promote",
+            "unit": {"ccd": 0},
+            "from": before[0],
+            "to": proposed[0],
+            "step": before[0] - proposed[0],
+        }),
+        "restore" => json!({
+            "kind": "restore",
+            "restoration": "firmware",
+            "units": [{"ccd": 0}, {"ccd": 1}],
+        }),
+        "hold" => json!({"kind": "hold", "blocked_by": []}),
+        other => panic!("no climb.decision fixture for {other}"),
+    };
+    event(
+        seq,
+        "climb.decision",
+        json!({
+            "decision": decision,
+            "cold_boot": "b",
+            "before": unit_vector(before),
+            "proposed": unit_vector(proposed),
+            "hold": {"application": 1, "credited": [], "eligible_s": 180_000},
+            "ceilings": [],
+            "events": [],
+        }),
+    )
+}
+
 /// A `day.veto` of the whole profile `pair` for the record at `source`; `state` is `"active"` or `"cleared"`.
 pub(crate) fn veto(seq: u64, source: u64, pair: [i64; 2], state: &str) -> Event {
     event(

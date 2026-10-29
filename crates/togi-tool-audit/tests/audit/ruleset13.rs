@@ -140,6 +140,50 @@ fn a_promotion_respects_every_active_veto(case: Case) {
 }
 
 #[test_case::test_case(case(
+            "a climb promotion to the vetoed profile",
+            vec![veto(2, 12, [-10, -10], "active"), climb(3, [-5, -10], [-10, -10], "promote")],
+            InProgress,
+            &[(3, Avoidance)],
+        ); "a climb promotion to the vetoed profile")]
+#[test_case::test_case(case(
+            "a climb promotion deeper than the vetoed profile",
+            vec![veto(2, 12, [-10, -10], "active"), climb(3, [-10, -10], [-15, -10], "promote")],
+            InProgress,
+            &[(3, Avoidance)],
+        ); "a climb promotion deeper than the vetoed profile")]
+#[test_case::test_case(case(
+            "a climb promotion that keeps one CCD shallower than the veto",
+            vec![veto(2, 12, [-10, -10], "active"), climb(3, [0, -10], [-5, -10], "promote")],
+            InProgress,
+            &[],
+        ); "a climb promotion that keeps one CCD shallower than the veto")]
+#[test_case::test_case(case(
+            "a climb hold at the vetoed profile proposes no promotion",
+            vec![veto(2, 12, [-10, -10], "active"), climb(3, [-10, -10], [-10, -10], "hold")],
+            InProgress,
+            &[],
+        ); "a climb hold at the vetoed profile proposes no promotion")]
+#[test_case::test_case(case(
+            "a firmware restoration into the vetoed profile",
+            vec![veto(2, 12, [-10, -10], "active"), climb(3, [0, 0], [-10, -10], "restore")],
+            InProgress,
+            &[(3, Avoidance)],
+        ); "a firmware restoration into the vetoed profile")]
+#[test_case::test_case(case(
+            "a cleared veto forbids no climb promotion",
+            vec![
+                veto(2, 12, [-10, -10], "active"),
+                veto(3, 12, [-10, -10], "cleared"),
+                climb(4, [-5, -10], [-10, -10], "promote"),
+            ],
+            InProgress,
+            &[],
+        ); "a cleared veto forbids no climb promotion")]
+fn a_climb_decision_respects_every_active_veto(case: Case) {
+    run(case);
+}
+
+#[test_case::test_case(case(
             "an exposure citing its intent and end",
             vec![
                 trial_intent(2, "0001", "R8", "alone", &[0]),

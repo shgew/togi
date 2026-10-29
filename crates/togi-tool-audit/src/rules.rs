@@ -1,9 +1,10 @@
 use togi_journal::{
-    CcdVector, DayApplied, DayStep, DayVeto, Event, ExposureObserved, ExposureOrigin,
-    NightQualification, ObservedProfile, Payload, QualificationState, Seq, StepKind, TrialId,
-    VetoState,
+    CcdVector, ClimbAction, ClimbDecision, DayApplied, DayStep, DayVeto, Event, ExposureObserved,
+    ExposureOrigin, NightQualification, ObservedProfile, Payload, QualificationState, Seq,
+    StepKind, TrialId, VetoState,
 };
-use togi_machine::{BiosContext, CcdProfile};
+use togi_machine::{BiosContext, CcdProfile, PerCore};
+use togi_tuner::day::CoreProfile;
 
 use crate::auditor::Seen;
 use crate::violation::{Check, Findings};
@@ -32,6 +33,8 @@ impl Rules {
             }
         } else if let Payload::DayStep(step) = &event.payload {
             self.step(event.seq, step, findings);
+        } else if let Payload::ClimbDecision(decision) = &event.payload {
+            self.climb(event.seq, decision, findings);
         } else if let Payload::DayApplied(applied) = &event.payload {
             self.applied(event.seq, applied, findings);
         } else if let Payload::ExposureObserved(exposure) = &event.payload {
@@ -93,6 +96,45 @@ impl Rules {
             }
         }
     }
+
+    /// A Ruleset 14 promotion or firmware restoration proposes a profile at or deeper than no active veto's
+    /// profile. The comparison is the tuner's own whole-profile rule, over every physical core.
+    fn climb(&self, seq: Seq, decision: &ClimbDecision, findings: &mut Findings) {
+        let verb = match decision.decision {
+            ClimbAction::Promote { .. } => "promote",
+            ClimbAction::Restore { .. } => "restore",
+            ClimbAction::Hold { .. } | ClimbAction::Retreat { .. } | ClimbAction::FirmwareZero {} => {
+                return;
+            }
+        };
+        let proposed: PerCore<_> = decision
+            .proposed
+            .cores
+            .iter()
+            .map(|(core, offset)| (core, offset.observed()))
+            .collect();
+        let Ok(proposed) = CoreProfile::new(proposed) else {
+            return;
+        };
+        for veto in &self.vetoes {
+            let event = &veto.event;
+            let (ObservedProfile::Ccd { cores, .. } | ObservedProfile::PerCore { cores }) =
+                &veto.profile;
+            let Ok(vetoed) = CoreProfile::new(*cores) else {
+                continue;
+            };
+            if veto.state == VetoState::Active && vetoed.forbids(&proposed) {
+                findings.add(
+                    seq,
+                    Check::Avoidance,
+                    format!(
+                        "climb.decision {verb} to {} while the active veto of {event:?} forbids it",
+                        describe_cores(&proposed)
+                    ),
+                );
+            }
+        }
+    }
 }
 
 /// Whether a whole-profile veto forbids `proposed`: every CCD, or for a nonuniform profile every physical core,
@@ -117,6 +159,15 @@ fn describe(vector: &CcdVector) -> String {
         .ccd()
         .iter()
         .map(|(ccd, offset)| format!("CCD{ccd}={}", offset.get()))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn describe_cores(profile: &CoreProfile) -> String {
+    profile
+        .offsets()
+        .iter()
+        .map(|(core, offset)| format!("core{core}={}", offset.0))
         .collect::<Vec<_>>()
         .join(",")
 }
