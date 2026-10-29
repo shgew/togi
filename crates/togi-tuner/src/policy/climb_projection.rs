@@ -98,7 +98,9 @@ pub enum ClimbQualificationState {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ClimbUnitState {
     Climbing,
-    Held { reason: Vec<ClimbBlocker> },
+    Held {
+        reason: Vec<ClimbBlocker>,
+    },
     Finished {
         reason: UnitStopReason,
         at: Timestamp,
