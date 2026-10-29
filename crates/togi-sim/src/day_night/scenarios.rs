@@ -5,7 +5,10 @@ use togi_machine::{
     CcdId, Condition, CoreId, CoreInfo, CpuId, PerCore, Regime, TrialRole, TrialSpec, WorkloadId,
 };
 
-use super::{DailyBlock, FailureCurve, Family, REFERENCE_LAMBDA, Scenario, TrialClass, TruthError};
+use super::{
+    DailyBlock, FailureCurve, Family, NonCpuAnswer, NonCpuSchedule, REFERENCE_LAMBDA, Scenario,
+    TrialClass, TruthError,
+};
 use crate::random::{self, Domain};
 
 /// Frozen scenario names used by the day/night registration.
@@ -69,6 +72,13 @@ pub(super) fn builtin(name: &str, seed: u64) -> Result<Scenario, TruthError> {
         }
         _ => return Err(TruthError::UnknownScenario(name.to_owned())),
     };
+    let non_cpu = match id {
+        "non-cpu-correct" => Some(NonCpuAnswer::NotCpu),
+        "non-cpu-wrong" => Some(NonCpuAnswer::Cpu),
+        "non-cpu-missing" => Some(NonCpuAnswer::Missing),
+        _ => None,
+    }
+    .map(|answer| NonCpuSchedule { answer });
     let mut rng = random::stream(seed, Domain::Limits, &[0x4441_594e_4947_4854]);
     // Registered seeds describe different chips, independently of all failure clocks.
     let jitter = if id == "edge-shallow" {
@@ -189,6 +199,7 @@ pub(super) fn builtin(name: &str, seed: u64) -> Result<Scenario, TruthError> {
         background,
         daily,
         nights,
+        non_cpu,
     };
     // Validate all materialized class/CCD curves, including the final moving-cap epoch.
     for block in &scenario.daily {
