@@ -807,6 +807,7 @@ fn fixed_stock_rejects_nonzero_blocked_restoration_history(previous: bool) {
     let lab = Lab::new(&[SCENARIO], 1);
     let mut record = super::score::fixture::Spec::new(SCENARIO, SEED, 2.0)
         .stock()
+        .mode(UnitMode::PerCore)
         .restore(super::score::fixture::Restore::Blocked)
         .build(&lab);
     record.policy.allowance = None;
