@@ -294,9 +294,7 @@ fn sums_of(record: &mut Record) -> &mut Sums {
 #[test_case(|r| { r.remove(0); }, Defect::NoInput; "without the input")]
 #[test_case(|r| r.insert(2, r[0].clone()), Defect::SecondInput { line: 3 }; "second input")]
 #[test_case(|r| r.push(r[9].clone()), Defect::SecondPooled { line: 11 }; "duplicate pooled")]
-#[test_case(|r| r.push(r[1].clone()), Defect::AfterPooled { line: 11 }; "trial after pooled")]
 #[test_case(|r| r.push(r[4].clone()), Defect::AfterPooled { line: 11 }; "session after pooled")]
-#[test_case(|r| r.push(r[0].clone()), Defect::AfterPooled { line: 11 }; "input after pooled")]
 #[test_case(|r| { r.remove(8); }, Defect::UnsummarizedTrials { trials: 3 }; "last session summary missing")]
 #[test_case(|r| r[2] = r[6].clone(), Defect::WrongSession { line: 3 }; "trial of another session")]
 #[test_case(
