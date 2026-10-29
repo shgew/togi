@@ -217,9 +217,10 @@ The calendar idealizes zero trial setup and teardown and applies no controller-p
 owns the successor's numbers, applicability, policy identities, source pins,
 commands, run profiles and execution limits for
 [#1483](https://github.com/shgew/togi/issues/1483). **It is a draft, not a frozen
-registration or authorization to score.** Pending source identities and command
-availability must be resolved after the runner and candidate layers land, before
-any successor-criteria scoring, including development scoring.
+registration or authorization to score.** Required simulator, runner, scorer and
+comparator source pins and command availability must be resolved after the runner
+lands. D's source remains explicitly `{"kind":"pending"}`; pinning it requires a
+separate reviewed commit before any D scoring, including development scoring.
 
 The separate [physical-core truth catalog](simulating.md#successor-physical-core-truth)
 preserves complete readbacks and joint admissibility while this registration
@@ -227,6 +228,16 @@ evaluates CCD-uniform policies only. Safety, usefulness and completeness are
 separate verdicts; complete unconverged trajectories are not crashes or missing
 observations. Learning allowance and post-finish risk remain separate accounts,
 including firmware restoration without a safety grace interval.
+
+The shipped Ruleset 13 comparator A supplies no successor finish witnesses:
+its full-horizon runs remain complete-unconverged, not fabricated convergence.
+Keep those outcomes and their safety observations unchanged; comparator status
+cannot pass D's gate or weaken an applicable criterion.
+
+Concurrency is fixed by the registration. Changing it requires separately
+identified registration/input provenance; the execution budget can affect
+completeness. A different job count is not the same registered invocation, even
+when its complete cell trajectories agree.
 
 Use the registration's `commands` only after finalization. Reduced development
 output is **EXPLORATORY REDUCED DEV — NOT A REGISTERED SCORE**; it cannot pass the
