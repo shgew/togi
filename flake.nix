@@ -56,6 +56,7 @@
                 (bench + "/machines")
                 (bench + "/facts")
                 (bench + "/suite.json")
+                (bench + "/day-night.json")
                 (bench + "/baseline.jsonl")
                 (bench + "/gates")
               ];

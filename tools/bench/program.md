@@ -2,13 +2,7 @@
 
 **Ruleset 13: implemented and shipped in v0.12.0; registered gate not met; superseded by the successor design.**
 
-This program is a versioned historical record of the original Ruleset 13 experiment; the rules and method below remain readable as registered, not authorization for a new campaign. [`day-night.json`](day-night.json) is frozen at SHA-256 `c3a5c447cb245d973951c03f34d97f25aa19dff7970e1b8e31d3a7de883f6918`, pinned in the bench's archive tests.
-
-The [2026-10-25 reduced development read](https://github.com/shgew/togi/issues/1217#issuecomment-6403197212) covered seeds 1–10, 22 scenarios and 730 days at slopes 1.5 and 2.0: the shipped policy passed 0/22 scenarios at each slope. This was not the registered 200-seed score; no full registered pass was obtained, and holdout was never run. The −50/−45 contradiction ([#1457, defect 1](https://github.com/shgew/togi/issues/1457)) independently rejects the old acceptance: depth 50 is the no-write-limit truth reference, but the censored-edge margin caps policy depth at 45. See the [B′ research note](../../docs/research/bprime-research-note.md) for the exploratory comparator and its provenance limitations, and [#1459](https://github.com/shgew/togi/issues/1459) for outstanding hardware acceptance.
-
-The historical evaluator revision is release tag `v0.12.0`, commit `db742596a05511713eb503324fad826fb1124f34`. Its bench evaluator sources (`crates/togi-tool-bench/src/day_night*.rs`) are identical at `origin/main` revision `361e1bf1618259e21ba761a477cac2f66c3e4994`; the calendar runner/adapter sources have changed, so historical reproduction uses the release checkout. The old scoring commands remain in [Method](#method) below.
-
-Successor registration is tracked in [#1457](https://github.com/shgew/togi/issues/1457).
+This program is a versioned historical record of the original Ruleset 13 experiment, not authorization for a new campaign; see [the day/night gate](../../docs/benchmarking.md#daynight-gate) for the read's scope, provenance and reproduction.
 
 ## Original Ruleset 13 program
 
