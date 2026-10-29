@@ -368,14 +368,13 @@ fn reconstruct_stops(history: &mut History, records: &[(Provenance, Event)]) -> 
         let witness = charged.witnesses.first().copied().ok_or("campaign charge has no witness")?;
         let (_, witnessed) = records.iter().find(|(original, _)| *original == witness)
             .ok_or("campaign event witness is missing")?;
-        let at = match &witnessed.payload {
-            Payload::DayRecord(record) => match record.boot {
+        let at = if let Payload::DayRecord(record) = &witnessed.payload {
+            match record.boot {
                 togi_journal::CrashedBoot::Unobserved { at } => at,
                 togi_journal::CrashedBoot::UncleanEnd { .. } => witnessed.time,
-            },
-            Payload::DayEvent(event) => event.from,
-            _ => witnessed.time,
-        };
+            }
+        } else if let Payload::DayEvent(event) = &witnessed.payload { event.from }
+            else { witnessed.time };
         let (ObservedProfile::Ccd { cores, .. } | ObservedProfile::PerCore { cores }) = &charged.profile;
         let (last, _) = records.iter().rev().find(|(original, event)| {
             original.session == witness.session && original.seq < witness.seq && event.time <= at
@@ -435,11 +434,9 @@ fn applied_history(records: &[(Provenance, Event)], last: Provenance) -> Result<
         let step = if let ApplyCause::Step { decision } = applied.cause {
             Some(records.iter().find_map(|(source, event)| {
                 if source.session != last.session || source.seq >= original.seq { return None; }
-                match &event.payload {
-                    Payload::DayStep(step) if step.decision == decision => Some(&event.payload),
-                    Payload::ClimbDecision(_) if source.seq.get() == decision.0 => Some(&event.payload),
-                    _ => None,
-                }
+                if matches!(&event.payload, Payload::DayStep(step) if step.decision == decision)
+                    || matches!(&event.payload, Payload::ClimbDecision(_) if source.seq.get() == decision.0)
+                { Some(&event.payload) } else { None }
             }).ok_or("missing successful applied-step decision")?)
         } else { None };
         if let Some(Payload::ClimbDecision(step)) = step {
@@ -474,11 +471,12 @@ fn applied_history(records: &[(Provenance, Event)], last: Provenance) -> Result<
         let promotion = match step {
             Some(Payload::DayStep(step)) => match step.step {
                 StepKind::Promote { changed } => Some(UnitId::Ccd(changed)),
-                _ => None,
+                StepKind::Hold { .. } | StepKind::Retreat { .. } | StepKind::FirmwareZero { .. } => None,
             },
             Some(Payload::ClimbDecision(step)) => match step.decision {
                 togi_journal::ClimbAction::Promote { unit, .. } => Some(unit),
-                _ => None,
+                togi_journal::ClimbAction::Hold { .. } | togi_journal::ClimbAction::Retreat { .. } |
+                togi_journal::ClimbAction::Restore { .. } | togi_journal::ClimbAction::FirmwareZero {} => None,
             },
             _ => None,
         };
