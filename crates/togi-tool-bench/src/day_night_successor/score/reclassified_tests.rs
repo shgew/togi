@@ -164,11 +164,10 @@ fn assert_rule(lab: &Lab, record: &Record, rule: &str) {
 fn clean_multi_unit_restoration_preserves_depth_stops_and_raw_charge() {
     let (lab, record) = fixture();
     record.validate().expect("coherent restoration record");
-    assert_eq!(judged(&lab, &record).violations, vec![]);
-    assert_eq!(
-        audit(&record, &Rules::new(&lab.registration)).violations,
-        vec![]
-    );
+    let result = judged(&lab, &record);
+    assert_eq!(result.violations, vec![]);
+    assert_eq!(result.reclassified_restorations[0].day, 30.0);
+    assert_eq!(result.reclassified_restorations[0].reclassified_day, 21.0);
     assert_eq!(record.policy.allowance.as_ref().unwrap().consumed, 1);
     assert_eq!(record.policy.allowance.as_ref().unwrap().reclassified, 1);
     assert_eq!(record.policy.stopped_units, vec![uid(0), uid(1)]);

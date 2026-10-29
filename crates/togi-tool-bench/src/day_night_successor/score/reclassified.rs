@@ -168,6 +168,7 @@ impl Audit<'_> {
                 .push(ReclassifiedRestorationView {
                     id: step.id.clone(),
                     day: step.day,
+                    reclassified_day: *reclassified_day,
                     retreat: retreat.clone(),
                     event: event.clone(),
                     units: units.clone(),
