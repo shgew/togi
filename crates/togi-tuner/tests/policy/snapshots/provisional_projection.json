@@ -364,7 +364,53 @@
         "phase": "Coarse",
         "remaining": 40,
         "state": {
-          "kind": "climbing"
+          "at": "2023-11-17T00:14:00Z",
+          "kind": "finished",
+          "last_clean": 0,
+          "profile": {
+            "cores": {
+              "0": 0,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "mapping": {
+              "phase": "coarse",
+              "units": [
+                {
+                  "cores": [
+                    0,
+                    1
+                  ],
+                  "unit": {
+                    "ccd": 0
+                  }
+                },
+                {
+                  "cores": [
+                    2,
+                    3
+                  ],
+                  "unit": {
+                    "ccd": 1
+                  }
+                }
+              ]
+            }
+          },
+          "reason": {
+            "application": 1,
+            "event": {
+              "boot": "day1",
+              "kind": "boot"
+            },
+            "kind": "first_backstep"
+          },
+          "witnesses": [
+            15,
+            41,
+            38
+          ]
         },
         "unit": {
           "ccd": 0
