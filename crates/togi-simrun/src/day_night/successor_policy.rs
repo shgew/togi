@@ -116,6 +116,9 @@ impl JournalFold {
     }
 
     fn mapping(&mut self, mapping: &journal::UnitMapping) -> Result<(), RunError> {
+        if self.mapping.as_ref() == Some(mapping) {
+            return Ok(());
+        }
         self.report.unit_membership = membership(mapping)?;
         self.mapping = Some(mapping.clone());
         Ok(())
@@ -138,7 +141,9 @@ impl JournalFold {
             }
             Payload::ClimbDecision(decision) => {
                 self.mapping(&decision.before.mapping)?;
-                self.decisions.insert(event.seq, decision.clone());
+                if !matches!(decision.decision, journal::ClimbAction::Hold { .. }) {
+                    self.decisions.insert(event.seq, decision.clone());
+                }
             }
             Payload::ExposureObserved(exposure)
                 if exposure.activity == journal::Activity::Control
