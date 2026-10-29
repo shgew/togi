@@ -235,7 +235,7 @@ pub struct Snapshot<'a> {
     pub day_totals: &'a crate::day_totals::DayTotals,
     /// The day steps a `day.applied` carried out. The policy projection holds the latest proposal, applied or not.
     pub applied_steps: &'a BTreeSet<togi_journal::DecisionId>,
-    /// The Ruleset 13 policy: per-CCD day, cap and edge, the day, the night and the qualifications.
+    /// Policy facts, including unit-generic bounded exploration and retained diagnostic evidence.
     pub policy: &'a PolicyProjection,
     /// What the lenient read of the journal skipped or ignored, in one line; shown whatever else is on screen.
     pub skipped: Option<&'a str>,

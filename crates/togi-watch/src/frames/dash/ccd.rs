@@ -68,7 +68,7 @@ fn edge_mark(unit: Option<&ClimbUnitProjection>) -> Option<(i64, Paint)> {
     }
 }
 
-/// Applied/read-back depth, the hard ceiling's dotted track and tagged edge.
+/// Committed day D, the hard ceiling's dotted track and tagged edge, independent of a trial's readback.
 pub(super) fn gauge(
     scene: &Scene<'_>,
     core: &CoreView,
@@ -453,7 +453,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             r,
             saturating_cells(col.gauge),
             y,
-            &gauge(scene, core, projection, applied, col.cells),
+            &gauge(scene, core, projection, projection.map(|unit| unit.applied.get()), col.cells),
             colours,
         );
     }

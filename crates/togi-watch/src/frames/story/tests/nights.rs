@@ -467,3 +467,81 @@ fn unresolved_day_events_are_counted_as_blocking_promotion() {
     let said = story(&fx.scene(ts(2000)));
     assert_eq!(said.lines[2], "2 day events still block promotion.");
 }
+
+#[test_case::test_case(togi_journal::ClimbBlocker::CampaignHistory {}, "campaign history unavailable"; "missing campaign history")]
+#[test_case::test_case(togi_journal::ClimbBlocker::SameBoot {}, "promotion requires an eligible cold boot"; "same boot")]
+#[test_case::test_case(togi_journal::ClimbBlocker::HoldProfile {}, "hold belongs to a different exact profile"; "wrong hold profile")]
+#[test_case::test_case(togi_journal::ClimbBlocker::SafeApply {}, "safe application prerequisites missing"; "safe apply")]
+#[test_case::test_case(togi_journal::ClimbBlocker::ActivationClosed {}, "nonzero activation closed"; "activation closed")]
+fn d_permission_blockers_name_the_missing_prerequisite(
+    reason: togi_journal::ClimbBlocker,
+    expected: &str,
+) {
+    assert_eq!(super::super::night::blocker_words(&reason), expected);
+}
+
+#[test_case::test_case(togi_journal::UnitStopReason::AdverseCeiling {}, "adverse night ceiling; permanently stopped"; "adverse ceiling")]
+#[test_case::test_case(togi_journal::UnitStopReason::Veto {}, "whole-profile veto; permanently stopped"; "veto")]
+fn safety_stops_are_not_reported_as_successful_ceiling_completion(
+    reason: togi_journal::UnitStopReason,
+    expected: &str,
+) {
+    assert_eq!(super::super::night::finish_words(&reason), expected);
+}
+
+#[test]
+fn a_nonuniform_trial_never_borrows_one_cores_offset_for_its_ccd() {
+    let mut fx = Fx::new();
+    filler_night(&mut fx);
+    fx.cores = vec![fixtures::core_view(0, 0), fixtures::core_view(1, 0)];
+    let mut trial = filler(Activity::Qualification, Tested::Exact {});
+    trial.profile = [(core(0), off(-20)), (core(1), off(-15))]
+        .into_iter()
+        .collect();
+    let said = running(&mut fx, trial);
+    assert!(
+        said.lines[0].contains("core 0 at -20, core 1 at -15"),
+        "{:?}",
+        said.lines
+    );
+    assert!(!said.lines[0].contains("CCD 0 at"));
+}
+
+#[test_case::test_case(togi_journal::ClimbAction::Retreat { units: vec![], cause: togi_journal::ClimbRetreatCause::AdverseCeiling { edges: vec![] }, wanted: None }, "retreat: adverse night ceiling"; "adverse retreat")]
+#[test_case::test_case(togi_journal::ClimbAction::Restore { restoration: togi_journal::RestorationKind::Firmware, units: vec![] }, "firmware restoration"; "firmware restore")]
+#[test_case::test_case(togi_journal::ClimbAction::Restore { restoration: togi_journal::RestorationKind::Reclassified, units: vec![] }, "guarded reclassification restoration; climb stays stopped"; "guarded restore")]
+#[test_case::test_case(togi_journal::ClimbAction::FirmwareZero {}, "firmware reset to stock"; "firmware zero")]
+fn d_applied_history_names_the_action_without_reopening_exploration(
+    action: togi_journal::ClimbAction,
+    expected: &str,
+) {
+    let mut hand = crate::frames::hand::Staged::Day.hand();
+    hand.policy.climb.units[0]
+        .latest_step
+        .as_mut()
+        .unwrap()
+        .action = action;
+    let words = super::super::night::climb_lines(&hand.policy).join("\n");
+    assert!(words.contains(expected), "{words}");
+    assert!(words.contains("application ApplicationId(2)"), "{words}");
+}
+
+#[test]
+fn missing_campaign_and_daily_evidence_never_look_like_unused_allowance_or_a_zero_rate() {
+    let mut hand = crate::frames::hand::Staged::Day.hand();
+    hand.policy.climb.campaign = None;
+    hand.policy.climb.daily = None;
+    let words = super::super::night::climb_lines(&hand.policy).join("\n");
+    assert!(
+        words.contains("history unavailable; new exploration blocked"),
+        "{words}"
+    );
+    assert!(
+        words.contains("daily evidence unavailable; no rate bound"),
+        "{words}"
+    );
+    assert!(
+        !words.contains("0 consumed") && !words.contains("0 crashes"),
+        "{words}"
+    );
+}

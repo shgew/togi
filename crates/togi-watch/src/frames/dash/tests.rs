@@ -845,6 +845,13 @@ fn a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core() {
 }
 
 #[test]
+fn numeric_trial_readback_does_not_replace_committed_day_d_in_the_gauge() {
+    let rows = table(&two_cores(), 115, 5, Colours::None);
+    assert!(rows[4].contains("-4"), "numeric readback: {:?}", rows[4]);
+    assert!(rows[4].contains(&format!("{}{}", "▄".repeat(10), "·".repeat(5))), "D -10, C -15: {:?}", rows[4]);
+}
+
+#[test]
 fn a_core_with_no_readback_shows_a_question_mark_not_zero() {
     let hand = Hand::new(
         vec![core_row(0, 0, None, false)],

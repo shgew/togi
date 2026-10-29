@@ -242,10 +242,6 @@ pub(crate) fn unit_vector(
         .iter()
         .flat_map(|unit| unit.cores.iter().map(|core| (core, unit.applied)))
         .collect();
-    let unit_id = |unit| match unit {
-        UnitId::Ccd(id) => togi_journal::UnitId::Ccd(id),
-        UnitId::Core(id) => togi_journal::UnitId::Core(id),
-    };
     togi_journal::UnitVector {
         cores,
         mapping: UnitMapping {
@@ -260,9 +256,9 @@ pub(crate) fn unit_vector(
             units: units
                 .iter()
                 .map(|unit| UnitMembership {
-                    unit: unit_id(unit.unit),
+                    unit: unit.unit,
                     cores: unit.cores,
-                    parent: unit.parent.map(unit_id),
+                    parent: unit.parent,
                 })
                 .collect(),
         },

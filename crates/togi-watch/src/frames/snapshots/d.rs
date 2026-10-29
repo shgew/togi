@@ -119,6 +119,7 @@ impl Case {
             Self::ZeroS => {
                 climb.units[0].diagnostic_s.as_mut().unwrap().cap.offset = off(0);
                 climb.units[0].ceiling = Some(off(-25));
+                climb.units[0].edge = hand::observed(-30);
                 climb.units[0].remaining = Some(15);
                 let mut candidate = climb.units.clone();
                 candidate[0].applied = off(-15);
@@ -136,14 +137,18 @@ impl Case {
                 });
             }
             Self::Blocked => {
+                let mut candidate = climb.units.clone();
+                candidate[0].applied = off(-15);
+                let candidate = hand::unit_vector(&candidate);
+                climb.profiles.proposed = Some(candidate.clone());
                 climb.units[0].state = ClimbUnitState::Held {
                     reason: vec![ClimbBlocker::CertificateFailed {
-                        profile: profile.clone(),
+                        profile: candidate.clone(),
                         witnesses: vec![],
                     }],
                 };
                 climb.units[0].next = Some(ClimbProposalProjection {
-                    profile: profile.clone(),
+                    profile: candidate,
                     qualification: ClimbQualificationProjection {
                         state: ClimbQualificationState::Failed { witnesses: vec![] },
                         outstanding: vec![hand::class(togi_machine::Regime::R1, &[0])],
@@ -158,7 +163,17 @@ impl Case {
             }
             Self::Finished => {
                 for unit in &mut climb.units {
-                    unit.ceiling = Some(unit.applied);
+                    unit.applied = unit.ceiling.unwrap();
+                    unit.latest_step = None;
+                }
+                let profile = hand::unit_vector(&climb.units);
+                climb.profiles.applied = Some(profile.clone());
+                climb.daily.as_mut().unwrap().profile = profile.clone();
+                for core in &mut hand.cores {
+                    core.profile = profile.cores.get(core.id).unwrap();
+                    core.applied = Some(core.profile.observed());
+                }
+                for unit in &mut climb.units {
                     unit.remaining = Some(0);
                     unit.state = ClimbUnitState::Finished {
                         reason: UnitStopReason::Ceiling {},
@@ -182,11 +197,13 @@ impl Case {
                         unit.cores = [core.id].into_iter().collect();
                         unit.applied = core.profile;
                         unit.inherited_start = core.profile;
+                        unit.remaining = Some(u32::try_from(core.profile.get() + 26).unwrap());
                         unit.latest_step = None;
                         unit
                     })
                     .collect();
                 climb.profiles.applied = Some(hand::unit_vector(&climb.units));
+                climb.daily.as_mut().unwrap().profile = hand::unit_vector(&climb.units);
             }
         }
         hand
