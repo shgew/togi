@@ -25,6 +25,7 @@ togi-trialfiles.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 
 [dev-dependencies]
+rustix = { workspace = true, features = ["time"] }
 tempfile.workspace = true
 test-case.workspace = true
 togi-config.workspace = true
