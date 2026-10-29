@@ -205,7 +205,12 @@ fn retreat_cannot_hide_a_physically_reverted_unit() {
         record.steps[3].after.set(*core, 0);
     }
     let restored = record.steps[3].after;
-    if let StepKind::ReclassifiedRestoration { units, qualification, .. } = kind(&mut record) {
+    if let StepKind::ReclassifiedRestoration {
+        units,
+        qualification,
+        ..
+    } = kind(&mut record)
+    {
         units.pop();
         qualification.as_mut().expect("certificate").profile = restored;
     }
@@ -235,17 +240,31 @@ fn restoration_requires_fresh_current_profile_hold(edit: fn(&mut Record)) {
 #[test_case(50.0, true; "exactly 50 hours qualifies")]
 fn restoration_hold_boundary_uses_verified_current_profile_hours(hours: f64, accepted: bool) {
     let (lab, mut record) = fixture();
-    if let StepKind::ReclassifiedRestoration { hold: Some(hold), .. } = kind(&mut record) {
+    if let StepKind::ReclassifiedRestoration {
+        hold: Some(hold), ..
+    } = kind(&mut record)
+    {
         hold.clean_hours = hours;
     }
-    record.intervals.iter_mut()
+    record
+        .intervals
+        .iter_mut()
         .find(|interval| interval.start_day == 20.0 && interval.end_day == 30.0)
-        .expect("current-profile hold interval").verified_daily_active_hours = hours;
+        .expect("current-profile hold interval")
+        .verified_daily_active_hours = hours;
     resync(&mut record);
     record.validate().expect("coherent witnessed hold");
     let result = judged(&lab, &record);
-    assert_eq!(result.violations.iter().any(|violation| violation.rule == "reclassified-hold"), !accepted);
-    if accepted { assert_eq!(result.violations, vec![]); }
+    assert_eq!(
+        result
+            .violations
+            .iter()
+            .any(|violation| violation.rule == "reclassified-hold"),
+        !accepted
+    );
+    if accepted {
+        assert_eq!(result.violations, vec![]);
+    }
 }
 
 #[test]

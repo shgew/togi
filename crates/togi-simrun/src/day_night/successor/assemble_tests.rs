@@ -1027,14 +1027,7 @@ fn reclassified_restoration_witnesses_qualify_only_restored_units_without_promot
         None,
     );
     let unwitnessed = active(
-        &scenario,
-        &mut state,
-        class,
-        duration,
-        duration,
-        deployed,
-        true,
-        None,
+        &scenario, &mut state, class, duration, duration, deployed, true, None,
     );
     let (witness, witnessed_seconds) = match &witnessed.kind {
         ObservationKind::Active {
