@@ -330,6 +330,28 @@ fn pinned_candidate_builds_the_production_successor_adapter() {
         policy.report().allowance.is_none(),
         "an unopened journal supplies no campaign receipt"
     );
+    let mut output = Vec::new();
+    let execution = execute_plan(
+        plan,
+        &registration,
+        &togi_simrun::day_night::successor::run,
+        &Instant::now,
+        &mut output,
+    )
+    .expect("candidate executes through the CLI");
+    assert_eq!(execution.manifest.completion_count, 1);
+    let record = togi_simrun::day_night::successor::Record::parse(&output)
+        .expect("candidate retains a valid record");
+    assert_eq!(
+        record
+            .policy
+            .allowance
+            .as_ref()
+            .expect("journaled campaign")
+            .limit,
+        2
+    );
+    assert_eq!(record.policy.allowance.as_ref().unwrap().consumed, 0);
 }
 
 #[test]

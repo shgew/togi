@@ -787,6 +787,28 @@ mod tests {
                 .iter()
                 .any(|finish| finish.reason == records::FinishReason::CpuSuspectStop)
         );
+        let (stop_event, stop) = events
+            .iter()
+            .find_map(|event| {
+                if let Payload::UnitStop(stop) = &event.payload
+                    && matches!(stop.reason, journal::UnitStopReason::FirstBackstep { .. })
+                {
+                    Some((event, stop))
+                } else {
+                    None
+                }
+            })
+            .expect("journaled first backstep");
+        let finish = report
+            .finishes
+            .iter()
+            .find(|finish| finish.unit == unit_id(stop.unit).unwrap())
+            .expect("finish for the stopped unit");
+        assert_eq!(finish.reason, records::FinishReason::CpuSuspectStop);
+        assert_eq!(
+            finish.day,
+            1.0 + stop_event.time.duration_since(events[0].time).as_secs_f64() / 86_400.0
+        );
         let stops = events
             .iter()
             .filter_map(|event| {
