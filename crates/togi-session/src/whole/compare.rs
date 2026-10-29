@@ -574,6 +574,7 @@ impl<'events> Names<'events> {
                             | ClimbBlocker::SafeApply {}
                             | ClimbBlocker::ActivationClosed {}
                             | ClimbBlocker::Finished { .. } => format!("{blocker:?}"),
+                            ClimbBlocker::Ceiling { .. } => format!("{blocker:?}"),
                         }
                     })
                     .collect();
@@ -614,6 +615,7 @@ impl<'events> Names<'events> {
             UnitStopReason::AllowanceExhausted {} => "allowance_exhausted".to_owned(),
             UnitStopReason::AdverseCeiling {} => "adverse_ceiling".to_owned(),
             UnitStopReason::Veto {} => "veto".to_owned(),
+            UnitStopReason::Predecessor { original } => format!("predecessor {}", self.provenance(original)),
             UnitStopReason::FirstBackstep { event, application } => {
                 format!("first_backstep {} {application:?}", self.event_id(event))
             }
