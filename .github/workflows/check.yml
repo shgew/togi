@@ -20,7 +20,7 @@ on:
         description: Additional uncached EFI lifecycle executions
         type: choice
         default: "0"
-        options: ["0", "5", "10"]
+        options: ["0", "5"]
 
 permissions:
   contents: read
@@ -121,7 +121,7 @@ jobs:
         env:
           EFI_RUNS: ${{ inputs.efi_runs }}
         run: |
-          case "$EFI_RUNS" in 5|10) ;; *) echo 'efi_runs must be 5 or 10' >&2; exit 1 ;; esac
+          case "$EFI_RUNS" in 5) ;; *) echo 'efi_runs must be 5' >&2; exit 1 ;; esac
           nproc
           free -m
           df -h /nix/store
