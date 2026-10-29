@@ -697,7 +697,7 @@ fn stock_draws_fail_only_from_background() {
             assert_eq!(failure.cause, FailureCause::Background, "key {key}");
         }
     }
-    assert_eq!(observed > 0, true);
+    assert!(observed > 0);
 }
 
 #[test]
@@ -813,7 +813,7 @@ fn history_profile_and_class_must_cover_the_scenario_topology() {
             .unwrap_err(),
         TruthError::Invalid("profile topology")
     );
-    let mut state = small.clone();
+    let mut state = small;
     assert_eq!(
         state.advance(Some(&class), secs(60)).unwrap_err(),
         TruthError::Invalid("class topology")

@@ -29,6 +29,10 @@ fn step(first: usize, rate: f64) -> Table {
 }
 
 /// Synthetic tables: `tables[u]` is carried by the first core of unit `u`, the others are zero.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "the fixture transfers its root table into the owned reference"
+)]
 fn assembled(
     grouping: &UnitGrouping,
     tables: &[Table],
@@ -648,11 +652,11 @@ fn interaction_objective_and_two_asymmetric_profiles_are_not_tie_broken() {
     let first = make(&[0]);
     let second = make(&[1, 8]);
     assert_ne!(first, second);
-    assert_eq!(reference.admissibility(&first).unwrap().member, true);
-    assert_eq!(reference.admissibility(&second).unwrap().member, true);
+    assert!(reference.admissibility(&first).unwrap().member);
+    assert!(reference.admissibility(&second).unwrap().member);
     let unsafe_profile = make(&[]);
     let verdict = reference.admissibility(&unsafe_profile).unwrap();
-    assert_eq!(verdict.member, false);
+    assert!(!verdict.member);
     assert_eq!(verdict.interactions.len(), 2);
     assert_eq!(
         verdict.joint,

@@ -5,8 +5,8 @@ use test_case::test_case;
 fn successor_catalog_is_disjoint_and_stable() {
     assert_eq!(SCENARIO_IDS.len(), 28);
     for (index, id) in SCENARIO_IDS.iter().enumerate() {
-        assert_eq!(SCENARIO_IDS[..index].contains(id), false, "{id}");
-        assert_eq!(crate::day_night::SCENARIO_IDS.contains(id), false, "{id}");
+        assert!(!SCENARIO_IDS[..index].contains(id), "{id}");
+        assert!(!crate::day_night::SCENARIO_IDS.contains(id), "{id}");
         let scenario = Scenario::builtin(id, 20001).unwrap();
         assert_eq!(scenario.id(), *id);
         assert_eq!(
@@ -81,7 +81,7 @@ fn changing_one_readback_cannot_be_hidden_by_the_ccd_minimum() {
         .evaluate(class, &changed, &state, class.duration(), 1)
         .unwrap();
     assert_eq!(original.co_total(), 0.0);
-    assert_eq!(changed.co_total() > 0.0, true);
+    assert!(changed.co_total() > 0.0);
 }
 
 #[test]
@@ -89,13 +89,10 @@ fn physical_profile_refuses_missing_and_extra_readbacks() {
     let scenario = Scenario::builtin("successor-single-ccd", 20001).unwrap();
     let profile = Profile::uniform(scenario.topology(), Depth::new(20).unwrap());
     assert_eq!(profile.depths().len(), 8);
-    assert_eq!(
-        Profile::new(PerCore::default(), scenario.topology()).is_err(),
-        true
-    );
+    assert!(Profile::new(PerCore::default(), scenario.topology()).is_err());
     let mut extra = *profile.depths();
     extra.set(CoreId::new(8).unwrap(), Depth::new(20).unwrap());
-    assert_eq!(Profile::new(extra, scenario.topology()).is_err(), true);
+    assert!(Profile::new(extra, scenario.topology()).is_err());
     assert_eq!(
         Depth::new(51),
         Err(TruthError::Invalid("physical-core depth"))
@@ -132,10 +129,7 @@ fn refinement_preserves_inherited_depth_and_offers_the_full_ceiling_range() {
                 .unwrap(),
             0.0
         );
-        assert_eq!(
-            scenario.core_rate(class, info.core, edge, 1).unwrap() > 0.0,
-            true
-        );
+        assert!(scenario.core_rate(class, info.core, edge, 1).unwrap() > 0.0);
         let candidates = refinement
             .candidates
             .iter()
@@ -196,9 +190,8 @@ fn inherited_uniform_sources_preserve_all_original_families() {
                     )
                     .unwrap();
                 let difference = (old_exposure.co_total() - new_exposure.co_total()).abs();
-                assert_eq!(
+                assert!(
                     difference <= old_exposure.co_total().max(1.0) * 1e-12,
-                    true,
                     "{old_id}, depth {}",
                     depth.get()
                 );
