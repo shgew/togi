@@ -614,9 +614,9 @@ impl State {
     fn cap_evidence(
         &self,
         ccd: CcdId,
-        outcome: &super::mapping::CapOutcome,
+        outcome: &super::statistical::CapOutcome,
     ) -> Result<CapEvidence, super::NotReady> {
-        use super::mapping::{rate_bound, usize_of};
+        use super::statistical::{rate_bound, usize_of};
         use crate::cap;
         let cap = &outcome.cap;
         let class = |id| outcome.classes[usize_of(id)].clone();
@@ -656,7 +656,7 @@ impl State {
             })
             .transpose()?
             .unwrap_or_default();
-        let slope = super::mapping::journal_slope(cap.slope, None)?;
+        let slope = super::statistical::journal_slope(cap.slope, None)?;
         let uncovered = cap
             .uncovered
             .iter()
