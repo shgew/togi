@@ -7,6 +7,7 @@
 
 pub mod cap;
 mod class;
+pub mod climb;
 mod crash;
 pub mod day;
 pub mod night;
