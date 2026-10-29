@@ -305,7 +305,11 @@ fn firmware(
     Ok(())
 }
 
-fn restoration_at(restorations: &[FirmwareRestoration], at: f64) -> Option<String> {
+fn restoration_at(
+    restorations: &[FirmwareRestoration],
+    at: f64,
+    closing_event: Option<&str>,
+) -> Option<String> {
     restorations
         .iter()
         .rev()
@@ -322,9 +326,14 @@ fn restoration_at(restorations: &[FirmwareRestoration], at: f64) -> Option<Strin
                     match result {
                         RestorationResult::Retained {} => true,
                         RestorationResult::Crashed {
+                            event,
                             stock_step_back_day,
                             ..
-                        } => at <= *stock_step_back_day,
+                        } => {
+                            at < *stock_step_back_day
+                                || (at == *stock_step_back_day
+                                    && closing_event == Some(event.as_str()))
+                        }
                     }
                 }
             }
@@ -464,6 +473,7 @@ fn events(
         } else {
             Phase::Learning
         };
+        let restoration_learning = restoration_at(restorations, at, Some(&event.id));
         result.push(MachineEvent {
             phase: event.phase,
             policy_event: event,
@@ -473,7 +483,7 @@ fn events(
                 Period::Day
             },
             truth: truth_cause(cause, membership)?,
-            restoration_learning: restoration_at(restorations, at),
+            restoration_learning,
             profile: observation.profile,
         });
     }
@@ -607,7 +617,7 @@ fn intervals(
             } else {
                 Phase::Learning
             },
-            restoration_learning: restoration_at(restorations, start),
+            restoration_learning: restoration_at(restorations, start, None),
             admissibility: Admissibility {
                 joint_ratio: admissibility.joint_ratio,
                 unit_ratios: admissibility.per_unit_ratios,
@@ -769,74 +779,163 @@ fn summaries(
     restorations: &[FirmwareRestoration],
     stock: PerCore<u8>,
 ) -> Result<Vec<UnitSummary>, RunError> {
-    membership.iter().map(|unit| {
-        let mut summary = UnitSummary {
-            unit: unit.unit, finish: report.finishes.iter().find(|finish| finish.unit == unit.unit).cloned(),
-            promotions: 0, retreats: Retreats { co_counts: 0, background_counts: 0,
-                non_cpu_counts: 0, unattributed_counts: 0, steps: 0 },
-            hold_hours: intervals.iter().map(|interval| interval.verified_daily_active_hours).sum(),
-            qualification_launches: 0, qualification_hours: 0.0, night_hours: 0.0,
-            ceiling_evidence: Vec::new(),
-        };
-        let mut previous = stock;
-        for observation in observations {
-            if (!observation.night || report.allowance.is_some())
-                && matches!(observation.kind, ObservationKind::ProfileChange) {
-                let before = unit_depth(&previous, unit)?;
-                let after = unit_depth(&observation.profile, unit)?;
-                let witnessed = steps.iter().find(|step| step.day == day(observation.before)
-                    && step.before == previous && step.after == observation.profile);
-                let promotion = report.allowance.is_none() || witnessed.is_some_and(|step|
-                    matches!(step.kind, StepKind::Climb { unit: owner, .. } if owner == unit.unit));
-                let retreat = report.allowance.is_none() || witnessed.is_some_and(|step|
-                    matches!(&step.kind, StepKind::Retreat { units, .. } if units.contains(&unit.unit)));
-                if after > before && promotion { summary.promotions += 1; }
-                if after < before && retreat {
-                    summary.retreats.steps += 1;
-                    let counts = u64::from(before - after);
-                    let named_event = witnessed.and_then(|step| match &step.kind {
-                        StepKind::Retreat { event, .. } => event.as_deref(),
-                        StepKind::Climb { .. } | StepKind::Restoration { .. } | StepKind::StockReset { .. } => None,
-                    });
-                    let cause = events.iter().rev().find(|event| named_event.map_or_else(
-                        || event.policy_event.day == day(observation.before),
-                        |id| event.policy_event.id == id)).map(|event| &event.truth);
-                    match cause {
-                        Some(TruthCause::Co { .. }) => summary.retreats.co_counts += counts,
-                        Some(TruthCause::Background {}) => summary.retreats.background_counts += counts,
-                        Some(TruthCause::NonCpu {}) => summary.retreats.non_cpu_counts += counts,
-                        Some(TruthCause::Unattributed {}) | None => summary.retreats.unattributed_counts += counts,
+    membership
+        .iter()
+        .map(|unit| {
+            let mut summary = UnitSummary {
+                unit: unit.unit,
+                finish: report
+                    .finishes
+                    .iter()
+                    .find(|finish| finish.unit == unit.unit)
+                    .cloned(),
+                promotions: 0,
+                retreats: Retreats {
+                    co_counts: 0,
+                    background_counts: 0,
+                    non_cpu_counts: 0,
+                    unattributed_counts: 0,
+                    steps: 0,
+                },
+                hold_hours: intervals
+                    .iter()
+                    .map(|interval| interval.verified_daily_active_hours)
+                    .sum(),
+                qualification_launches: 0,
+                qualification_hours: 0.0,
+                night_hours: 0.0,
+                ceiling_evidence: Vec::new(),
+            };
+            if report.allowance.is_some() {
+                // A whole-profile application can produce many zero-time per-core writes.
+                // Count the policy's application once, not one matching intermediate vector.
+                for step in steps {
+                    match &step.kind {
+                        StepKind::Climb { unit: owner, .. } if owner == &unit.unit => {
+                            summary.promotions += 1;
+                        }
+                        StepKind::Retreat { units, event, .. } if units.contains(&unit.unit) => {
+                            record_retreat(
+                                &mut summary,
+                                events,
+                                event.as_deref(),
+                                step.day,
+                                unit_depth(&step.before, unit)?,
+                                unit_depth(&step.after, unit)?,
+                            );
+                        }
+                        StepKind::Climb { .. }
+                        | StepKind::Retreat { .. }
+                        | StepKind::Restoration { .. }
+                        | StepKind::StockReset { .. } => {}
                     }
                 }
             }
-            if !observation.night || report.allowance.is_some() { previous = observation.profile; }
-            if observation.night && let ObservationKind::Active { class, seconds, trial_id, launch, .. } = &observation.kind {
-                let loaded = class.loaded();
-                if !unit.cores.iter().any(|core| loaded.contains(*core)) { continue; }
-                summary.night_hours += seconds.observed.as_secs_f64() / 3600.0;
-                let qualified = trial_id.as_ref().is_some_and(|id| steps.iter().any(|step| {
-                    let qualification = match &step.kind {
-                        StepKind::Climb { unit: owner, qualification, .. } if owner == &unit.unit => Some(qualification),
-                        StepKind::Climb { .. } | StepKind::Restoration { .. } | StepKind::Retreat { .. }
-                        | StepKind::StockReset { .. } => None,
-                    };
-                    qualification.is_some_and(|qualification| qualification.fresh_witnesses.contains(id)
-                        || qualification.reused_witnesses.contains(id) || qualification.stock_controls.contains(id))
-                }) || restorations.iter().any(|restoration| match &restoration.outcome {
-                    RestorationOutcome::Blocked { .. } => false,
-                    RestorationOutcome::Applied { qualification, .. } =>
-                        qualification.fresh_witnesses.contains(id)
-                            || qualification.reused_witnesses.contains(id)
-                            || qualification.stock_controls.contains(id),
-                }));
-                if qualified {
-                    summary.qualification_launches += u64::from(*launch);
-                    summary.qualification_hours += seconds.observed.as_secs_f64() / 3600.0;
+            let mut previous = stock;
+            for observation in observations {
+                if report.allowance.is_none()
+                    && !observation.night
+                    && matches!(observation.kind, ObservationKind::ProfileChange)
+                {
+                    let before = unit_depth(&previous, unit)?;
+                    let after = unit_depth(&observation.profile, unit)?;
+                    if after > before {
+                        summary.promotions += 1;
+                    }
+                    if after < before {
+                        record_retreat(
+                            &mut summary,
+                            events,
+                            None,
+                            day(observation.before),
+                            before,
+                            after,
+                        );
+                    }
+                }
+                if !observation.night || report.allowance.is_some() {
+                    previous = observation.profile;
+                }
+                if observation.night
+                    && let ObservationKind::Active {
+                        class,
+                        seconds,
+                        trial_id,
+                        launch,
+                        ..
+                    } = &observation.kind
+                {
+                    let loaded = class.loaded();
+                    if !unit.cores.iter().any(|core| loaded.contains(*core)) {
+                        continue;
+                    }
+                    summary.night_hours += seconds.observed.as_secs_f64() / 3600.0;
+                    let qualified = trial_id.as_ref().is_some_and(|id| {
+                        steps.iter().any(|step| {
+                            let qualification = match &step.kind {
+                                StepKind::Climb {
+                                    unit: owner,
+                                    qualification,
+                                    ..
+                                } if owner == &unit.unit => Some(qualification),
+                                StepKind::Climb { .. }
+                                | StepKind::Restoration { .. }
+                                | StepKind::Retreat { .. }
+                                | StepKind::StockReset { .. } => None,
+                            };
+                            qualification.is_some_and(|qualification| {
+                                qualification.fresh_witnesses.contains(id)
+                                    || qualification.reused_witnesses.contains(id)
+                                    || qualification.stock_controls.contains(id)
+                            })
+                        }) || restorations
+                            .iter()
+                            .any(|restoration| match &restoration.outcome {
+                                RestorationOutcome::Blocked { .. } => false,
+                                RestorationOutcome::Applied { qualification, .. } => {
+                                    qualification.fresh_witnesses.contains(id)
+                                        || qualification.reused_witnesses.contains(id)
+                                        || qualification.stock_controls.contains(id)
+                                }
+                            })
+                    });
+                    if qualified {
+                        summary.qualification_launches += u64::from(*launch);
+                        summary.qualification_hours += seconds.observed.as_secs_f64() / 3600.0;
+                    }
                 }
             }
-        }
-        Ok(summary)
-    }).collect()
+            Ok(summary)
+        })
+        .collect()
+}
+
+fn record_retreat(
+    summary: &mut UnitSummary,
+    events: &[MachineEvent],
+    named_event: Option<&str>,
+    at: f64,
+    before: u8,
+    after: u8,
+) {
+    summary.retreats.steps += 1;
+    let counts = u64::from(before.saturating_sub(after));
+    let cause = events
+        .iter()
+        .rev()
+        .find(|event| {
+            named_event.map_or_else(
+                || event.policy_event.day == at,
+                |id| event.policy_event.id == id,
+            )
+        })
+        .map(|event| &event.truth);
+    match cause {
+        Some(TruthCause::Co { .. }) => summary.retreats.co_counts += counts,
+        Some(TruthCause::Background {}) => summary.retreats.background_counts += counts,
+        Some(TruthCause::NonCpu {}) => summary.retreats.non_cpu_counts += counts,
+        Some(TruthCause::Unattributed {}) | None => summary.retreats.unattributed_counts += counts,
+    }
 }
 
 fn converged(
