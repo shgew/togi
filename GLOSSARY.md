@@ -2,7 +2,7 @@
 
 togi finds the deepest per-CCD Curve Optimizer offsets a Zen 5 desktop CPU sustains, tests them on whole profiles at night and observes them by day: it reports evidence, not a durability grade.
 
-The glossary governs prose and display. Wire names are frozen: a vocabulary change renames messages, help and docs, never an event kind or field ([journal.md](docs/spec/journal.md#event-format)) or a configuration key ([runtime.md](docs/spec/runtime.md#configuration)), so it never bumps `journal.Schema` on its own.
+The glossary governs prose and display. Wire names are frozen: a vocabulary change renames messages, help and docs, never an event kind or field ([journal.md](docs/spec/journal.md#event-format)) or a configuration key ([runtime.md](docs/spec/runtime.md#configuration)), so it never bumps `togi_journal::SCHEMA` on its own.
 
 ## Language
 ### Hardware
@@ -32,7 +32,7 @@ One offset per CCD, expanded to every core of that CCD.
 _Avoid_: config, preset, vector, resident profile
 
 **Baseline**:
-The profile the SMU reported when a session started, normally the BIOS values.
+The verified all-zero profile at session start ([Session start](docs/spec/tuner.md#session-start)).
 _Avoid_: stock, default
 
 **BIOS context**:

@@ -1,6 +1,6 @@
 # togi
 
-Rust CLI that finds and keeps testing per-core Curve Optimizer offsets on Zen 5 desktop CPUs. Runs on NixOS; development also supports macOS.
+Rust CLI that finds and keeps testing per-CCD Curve Optimizer offsets on Zen 5 desktop CPUs, with per-core tuning as the later goal. Runs on NixOS; development also supports macOS.
 
 ## Docs
 
@@ -32,7 +32,7 @@ Every change, docs included, lands through a pull request against `main` on `git
 
 Update descriptions of the old state in the same pull request: changed commands' `--help`, README Status/Usage, specs and comments; `docs/how-togi-tunes.md` for tuner behavior and `docs/howto.md` for operator steps.
 
-User-visible command, flag, behavior, output or config changes get `changes/<PR>.md` after opening: one period-ended effect per line under `### Added`, `### Changed`, `### Removed` or `### Fixed`. Release adds links (ADR 0033). `**BREAKING**` lines lead with operator action/effect, then mechanism. Edit the original fragment for unreleased changes. No fragment for behavior-preserving refactors, tests or docs.
+For changes an operator of the shipped `togi` binary notices, follow [the changelog fragment rules](changes/README.md).
 
 ## Writing
 
@@ -45,7 +45,7 @@ User-visible command, flag, behavior, output or config changes get `changes/<PR>
 
 ## Commands
 
-Use the dev shell and a distinct `CARGO_TARGET_DIR` per worktree; never share targets. Follow the [check ladder](docs/development.md#shell-and-checks) before pushing and the [cross-lint setup](docs/development.md#platform-gated-code-and-cross-lint) for platform changes. A command needed twice gets a recipe in that pull request; discover recipes with `just --list`.
+Use the dev shell; each worktree builds in its own `target/` (Cargo's default). Follow the [check ladder](docs/development.md#shell-and-checks) before pushing and the [cross-lint setup](docs/development.md#platform-gated-code-and-cross-lint) for platform changes. A command needed twice gets a recipe in that pull request; discover recipes with `just --list`.
 
 ## Rust
 
@@ -84,6 +84,6 @@ Idiom, required in pull requests and checked by `/review-pr`:
 - Tests reach the tuner and the session through their public API, never through private fields or test-only mutators.
 - Ordinary integration tests share one binary per crate. `togi` groups command tests in `commands`; `run` stays separate for its re-executed panic and terminal helpers, and `vm_recovery` is installed and invoked by the VM checks. Keep module prefixes when filtering tests.
 - Concurrent code is tested on real threads.
-- Tests that need the real world are named: `real_fs_<name>` checks kernel filesystem behavior (locks, modes, symlinks, publication, inotify), never content parsing; `real_process_<name>` starts real processes (a helper program the test builds, never mprime or y-cruncher). Both run in `just test`, `just gate` and CI at nextest's default concurrency, with files confined to each test's temporary directory and sync disabled. Only shared-hardware checks are serialized ([ADR 0063](docs/adr/0063-only-shared-hardware-tests-are-serialized.md)). `just hardware` runs tests behind the `hardware` Cargo feature on the target machine, restoring every offset they change; VM tests exercise the shipped binary's real durability.
+- Tests that need the real world are named: `real_fs_<name>` checks kernel filesystem behavior (locks, modes, symlinks, publication, inotify), never content parsing; `real_process_<name>` starts real processes (a helper program the test builds, never mprime or y-cruncher). Product tests run in `just test`, `just gate` and CI's `nextest`; tool-crate tests run in the CI-tier `nextest-tools` check ([ADR 0090](docs/adr/0090-nextest-runs-by-concern.md)), locally via `just focus <crate>` or `just check-one nextest-tools`. Both run at nextest's default concurrency, with files confined to each test's temporary directory and sync disabled. Only shared-hardware checks are serialized ([ADR 0063](docs/adr/0063-only-shared-hardware-tests-are-serialized.md)). `just hardware` runs tests behind the `hardware` Cargo feature on the target machine, restoring every offset they change; VM tests exercise the shipped binary's real durability.
 - **Coverage is evidence, not a target** (ADRs 0030, 0032): no threshold, ratchet or tracked percentage. `just cover BASE` shows reviewers changed lines no test reaches. A test exists to pin behavior, never only to reach a line.
 - **Test cost** ([ADR 0091](docs/adr/0091-tests-cost-what-they-prove-and-merge-units-are-planned.md)): safety tests are only made faster; a behavior is pinned once, at the lowest layer that observes it; tables keep boundary rows plus one per branch; one snapshot per distinct layout or state; slow shared fixtures are committed compile-time fixtures; one `real_process_*` test per distinct process behavior; a test over 1 s in CI states its reason in the pull request. A change that deletes, shortens or narrows a test maps every assertion it no longer reaches to the surviving test, or cites the decision retiring it.

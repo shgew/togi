@@ -228,7 +228,7 @@ Backend accounting follows every distinct backend in `trial.intent.content`, fal
 
 `run` needs Linux. On any other platform it prints `togi run: hardware runs need Linux: unsupported operation` and exits 1 first, before it reads the journal, the configuration or the boot id, takes the journal or host lock, or makes any check. On Linux the order is then: what reading alone decides, with no lock held (the journal's compatibility, judged from its first line, so a newer schema, ruleset or evidence epoch, or an unknown event kind in a current journal, exits 16 before the configuration is read and appends nothing, taking the host lock first only in a tuning boot, where the refusal clears the boot entry; then the configuration, exit 2), the process's signal listener, the host lock (exit 3), the journal's lock (exit 3), in that order, as `reset` takes them, the journal's compatibility again under both locks, which is the verdict that counts if another writer changed the journal in between, the boot id, the hardware, the fresh transition's raw-day imports, a new session's topology (exit 15, see [Preflight](#preflight)) and the session. Every exit before the session returns before any offset is written.
 
-Simulation is not part of `togi`: development programs live in `tools/` and are not installed ([ADR 0010](../adr/0010-development-programs-in-tools.md)). [Simulating](../simulating.md) describes `tools/sim`.
+Simulation is not part of `togi`: development programs live in tool crates under `crates/` and are not installed. [Simulating](../simulating.md) describes `crates/togi-tool-sim`, run with `just sim`.
 
 ### Shared flags
 
