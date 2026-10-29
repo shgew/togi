@@ -452,42 +452,41 @@ fn an_unanswered_end_at_stock_reports_a_non_cpu_event_without_an_allowance() {
 /// The adapter's own unclean ends carry no readable evidence, so its journal never classifies one as
 /// unexplained; the mapping still reports that class, and an event the journal has not committed, as
 /// unexplained and not provisional.
-#[test]
-fn every_journal_classification_maps_to_its_reported_class() {
-    let cases = [
-        (
-            Some(togi_journal::Classification::CpuSuspect {
-                certainty: Certainty::Definite,
-            }),
-            Classification::CpuSuspect,
-            false,
-        ),
-        (
-            Some(togi_journal::Classification::CpuSuspect {
-                certainty: Certainty::Provisional,
-            }),
-            Classification::Unanswered,
-            true,
-        ),
-        (
-            Some(togi_journal::Classification::NonCpu {}),
-            Classification::NonCpu,
-            false,
-        ),
-        (
-            Some(togi_journal::Classification::Unexplained {}),
-            Classification::Unexplained,
-            false,
-        ),
-        (None, Classification::Unexplained, false),
-    ];
-    for (journal, reported, provisional) in cases {
-        assert_eq!(
-            reported_classification(journal),
-            (reported, provisional),
-            "{journal:?}"
-        );
-    }
+#[test_case::test_case(
+    Some(togi_journal::Classification::CpuSuspect { certainty: Certainty::Definite }),
+    Classification::CpuSuspect,
+    false;
+    "definite CPU suspect"
+)]
+#[test_case::test_case(
+    Some(togi_journal::Classification::CpuSuspect { certainty: Certainty::Provisional }),
+    Classification::Unanswered,
+    true;
+    "provisional CPU suspect"
+)]
+#[test_case::test_case(
+    Some(togi_journal::Classification::NonCpu {}),
+    Classification::NonCpu,
+    false;
+    "non CPU"
+)]
+#[test_case::test_case(
+    Some(togi_journal::Classification::Unexplained {}),
+    Classification::Unexplained,
+    false;
+    "unexplained"
+)]
+#[test_case::test_case(None, Classification::Unexplained, false; "not committed")]
+fn every_journal_classification_maps_to_its_reported_class(
+    journal: Option<togi_journal::Classification>,
+    reported: Classification,
+    provisional: bool,
+) {
+    assert_eq!(
+        reported_classification(journal),
+        (reported, provisional),
+        "{journal:?}"
+    );
 }
 
 #[test]

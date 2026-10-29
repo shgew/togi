@@ -493,36 +493,35 @@ fn complete_reduced_report_succeeds_without_a_gate_subset_issue() {
     assert!(!output.contains("PASS"));
 }
 
-#[test]
-fn only_a_gate_profile_expects_the_slope_subset_issue() {
+#[test_case::test_case(Profile::ReducedDev, 0; "reduced profile has no subset issue")]
+#[test_case::test_case(Profile::Registered, 1; "gate profile needs the other slope")]
+fn only_a_gate_profile_expects_the_slope_subset_issue(profile: Profile, scorer_issues: usize) {
     let (_, bytes) = fixture();
     let registration = Registration::parse(&bytes).expect("full registration");
     let sha = registration::sha256_hex(&bytes);
     // The scorer adds the slope-subset issue only for a registered gate profile.
-    for (profile, scorer_issues) in [(Profile::ReducedDev, 0), (Profile::Registered, 1)] {
-        let mut args = args("co-zero");
-        args.slope = Some(1.5);
-        args.run_profile = Some(profile);
-        let selection = super::score_selection(&args, &registration).expect("single slope");
-        let mut result = super::render_score(&registration, &sha, &selection, &[], &mut Vec::new())
-            .expect("synthetic missing-record score");
-        assert_eq!(result.selected_slopes, vec![1.5]);
-        assert!(result.registered_slopes.len() > 1);
-        assert_eq!(result.issues.len(), scorer_issues);
-        // Exit-disposition fixture: only cell completeness is supplied directly.
-        result.faults.clear();
-        result.complete_cells = result.expected_cells;
-        assert!(!super::invocation_failed(&registration, &result));
-        // A reduced run must not tolerate the gate issue, and a gate run must still demand it.
-        let subset = "slope selection covers 1 of 2 registered slopes".to_owned();
-        let mut changed = result.clone();
-        if scorer_issues == 0 {
-            changed.issues.push(subset);
-        } else {
-            changed.issues.clear();
-        }
-        assert!(super::invocation_failed(&registration, &changed));
+    let mut args = args("co-zero");
+    args.slope = Some(1.5);
+    args.run_profile = Some(profile);
+    let selection = super::score_selection(&args, &registration).expect("single slope");
+    let mut result = super::render_score(&registration, &sha, &selection, &[], &mut Vec::new())
+        .expect("synthetic missing-record score");
+    assert_eq!(result.selected_slopes, vec![1.5]);
+    assert!(result.registered_slopes.len() > 1);
+    assert_eq!(result.issues.len(), scorer_issues);
+    // Exit-disposition fixture: only cell completeness is supplied directly.
+    result.faults.clear();
+    result.complete_cells = result.expected_cells;
+    assert!(!super::invocation_failed(&registration, &result));
+    // A reduced run must not tolerate the gate issue, and a gate run must still demand it.
+    let subset = "slope selection covers 1 of 2 registered slopes".to_owned();
+    let mut changed = result.clone();
+    if scorer_issues == 0 {
+        changed.issues.push(subset);
+    } else {
+        changed.issues.clear();
     }
+    assert!(super::invocation_failed(&registration, &changed));
 }
 
 /// One real stock run of the synthetic edge-deep scenario over the registered horizon: valid and
