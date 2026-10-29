@@ -3,7 +3,7 @@
 //! Inputs retain their original sequence namespace. Applications are history only: callers must
 //! start the successor at verified stock, and recompute edges and qualification from observations.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use jiff::Timestamp;
 use togi_journal::{
@@ -34,9 +34,14 @@ pub struct Charge {
     pub provisional: bool,
     pub reclassified: bool,
     pub witnesses: Vec<Provenance>,
+    pub phase: togi_journal::CampaignEventPhase,
+    pub unit_phase: togi_journal::UnitPhase,
+    /// Explicit receipts retain campaign phase and the exact original unit mapping.
+    pub receipt: Option<togi_journal::CampaignCharge>,
+    pub mapping: Option<togi_journal::UnitMapping>,
 }
 
-/// A permanent stop, either explicitly journaled or recovered from a successful backstep.
+/// A permanent stop, explicitly journaled or rederived from CPU evidence and applied ancestry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Stop {
     pub unit: UnitId,
@@ -221,14 +226,6 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                         if step.proposed != applied.target {
                             return Err("successful application disagrees with its decision".into());
                         }
-                        if let StepKind::Retreat { changed, .. } = &step.step {
-                            for ccd in changed {
-                                let unit = UnitId::Ccd(*ccd);
-                                let last_clean = applied.target.ccd().get(*ccd)
-                                    .ok_or_else(|| "backstep is missing its resulting unit depth".to_owned())?;
-                                history.stops.entry(unit).or_insert(Stop { unit, witness: *original, last_clean });
-                            }
-                        }
                     } else if let Some(step) = climbs.get(&(original.session, decision)) {
                         if &step.proposed.cores != applied.target.cores() {
                             return Err("successful application disagrees with its climb decision".into());
@@ -270,7 +267,15 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                 let id = identity(&charged.event, original.session, &identities);
                 let aliases = charged.aliases.iter().map(|alias| identity(alias, original.session, &identities)).collect();
                 let profile = ObservedProfile::PerCore { cores: charged.profile.cores.iter().map(|(core, offset)| (core, offset.observed())).collect() };
-                if nonzero(&profile) { charge(&mut history, id, aliases, profile, charged.provisional, *original); }
+                if nonzero(&profile) {
+                    charge(&mut history, id.clone(), aliases, profile, charged.provisional, *original);
+                    if let Some(entry) = history.charges.iter_mut().find(|entry| entry.event == id || entry.aliases.contains(&id)) {
+                        entry.phase = charged.phase;
+                        entry.unit_phase = charged.unit_phase;
+                        entry.receipt = Some(charged.clone());
+                        entry.mapping = Some(charged.profile.mapping.clone());
+                    }
+                }
             }
             Payload::CampaignReclassified(revised) => {
                 latest.insert(identity(&revised.event, original.session, &identities), revised.to);
@@ -350,6 +355,150 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
         }
     }
     history.vetoes.retain(|veto| !matches!(latest.get(&veto.event), Some(Classification::NonCpu {})));
+    reconstruct_stops(&mut history, &decoded)?;
+    Ok(history)
+}
+
+/// Statistical retreats are application history, never permanent successor stops.
+fn reconstruct_stops(history: &mut History, records: &[(Provenance, Event)]) -> Result<(), String> {
+    use crate::climb::Cursor;
+    let mut consumed = BTreeSet::<Cursor>::new();
+    let mut tails = Vec::<togi_machine::PerCore<togi_machine::ObservedOffset>>::new();
+    for charged in &mut history.charges {
+        let witness = charged.witnesses.first().copied().ok_or("campaign charge has no witness")?;
+        let (_, witnessed) = records.iter().find(|(original, _)| *original == witness)
+            .ok_or("campaign event witness is missing")?;
+        let at = match &witnessed.payload {
+            Payload::DayRecord(record) => match record.boot {
+                togi_journal::CrashedBoot::Unobserved { at } => at,
+                togi_journal::CrashedBoot::UncleanEnd { .. } => witnessed.time,
+            },
+            Payload::DayEvent(event) => event.from,
+            _ => witnessed.time,
+        };
+        let (ObservedProfile::Ccd { cores, .. } | ObservedProfile::PerCore { cores }) = &charged.profile;
+        let (last, _) = records.iter().rev().find(|(original, event)| {
+            original.session == witness.session && original.seq < witness.seq && event.time <= at
+                && matches!(&event.payload, Payload::DayApplied(applied)
+                    if applied.target.cores().iter().all(|(core, offset)| cores.get(core) == Some(offset.observed())))
+        }).ok_or("CPU-suspect event is missing successful applied-step ancestry")?;
+        let applied = applied_history(records, *last)?;
+        if charged.mapping.is_none() {
+            charged.unit_phase = match applied.units().phase() {
+                crate::unit::Phase::Coarse => togi_journal::UnitPhase::Coarse,
+                crate::unit::Phase::Core => togi_journal::UnitPhase::Core,
+            };
+            charged.mapping = Some(togi_journal::UnitMapping {
+                phase: charged.unit_phase,
+                units: applied.units().iter().map(|unit| togi_journal::UnitMembership {
+                    unit: unit.id, cores: unit.cores, parent: unit.parent,
+                }).collect(),
+            });
+        }
+        let all = tails.iter().any(|tail| tail == cores);
+        let choices: Vec<_> = applied.current().iter().filter_map(|(unit, now)| {
+            applied.newest(unit, now, &consumed).map(|link| (unit, now, link))
+        }).collect();
+        let newest = choices.iter().map(|(_, _, link)| link.transition.application).max();
+        let mut target = applied.current().clone();
+        for (unit, now, link) in choices {
+            if all || Some(link.transition.application) == newest {
+                consumed.insert(Cursor { unit, transition: link.transition });
+                let clean = now.max(link.before);
+                target = target.with(unit, clean);
+                history.stops.entry(unit).or_insert(Stop { unit, witness, last_clean: clean });
+            }
+        }
+        let tail = target.expand(applied.units()).map_err(|error| error.to_string())?
+            .iter().map(|(core, offset)| (core, offset.observed())).collect();
+        tails.push(tail);
+    }
+    Ok(())
+}
+
+fn applied_history(records: &[(Provenance, Event)], last: Provenance) -> Result<crate::climb::ClimbHistory, String> {
+    use crate::climb::{
+        ApplicationId, Ceilings, ClimbAction, ClimbDecision, ClimbHistory, Proposal, RestorationKind,
+        RestorationProposal, Retreat, SavedProfile,
+    };
+    use crate::unit::{UnitProfile, Units};
+    let start = records.iter().find_map(|(original, event)| {
+        if original.session == last.session && let Payload::SessionStart(start) = &event.payload {
+            Some(start)
+        } else { None }
+    }).ok_or("missing applied-step topology")?;
+    let topology = crate::Topology::new(&start.cores).map_err(|error| error.to_string())?;
+    let mut history = ClimbHistory::stock(Units::coarse(&topology));
+    for (index, (original, event)) in records.iter().enumerate() {
+        if original.session != last.session || original.seq > last.seq { continue; }
+        let Payload::DayApplied(applied) = &event.payload else { continue };
+        let step = if let ApplyCause::Step { decision } = applied.cause {
+            Some(records.iter().find_map(|(source, event)| {
+                if source.session != last.session || source.seq >= original.seq { return None; }
+                match &event.payload {
+                    Payload::DayStep(step) if step.decision == decision => Some(&event.payload),
+                    Payload::ClimbDecision(_) if source.seq.get() == decision.0 => Some(&event.payload),
+                    _ => None,
+                }
+            }).ok_or("missing successful applied-step decision")?)
+        } else { None };
+        if let Some(Payload::ClimbDecision(step)) = step {
+            let units = match step.proposed.mapping.phase {
+                togi_journal::UnitPhase::Coarse => Units::coarse(&topology),
+                togi_journal::UnitPhase::Core => Units::cores(&topology),
+            };
+            if &units != history.units() {
+                let profile = SavedProfile { units: history.units().clone(), profile: history.current().clone() }
+                    .for_units(&units).map_err(|error| error.to_string())?;
+                history.refine(units, profile).map_err(|error| error.to_string())?;
+            }
+        }
+        let physical = history.current().expand(history.units()).map_err(|error| error.to_string())?;
+        let expected = match step {
+            Some(Payload::DayStep(step)) => Some(step.old.cores()),
+            Some(Payload::ClimbDecision(step)) => Some(&step.before.cores),
+            _ => None,
+        };
+        if expected.is_some_and(|expected| expected != &physical) {
+            return Err("successful application has missing predecessor step ancestry".into());
+        }
+        let target = UnitProfile::try_from(history.units().iter().map(|unit| {
+            let first = unit.cores.first().and_then(|core| applied.target.cores().get(core))
+                .ok_or("applied history is missing a unit")?;
+            if unit.cores.iter().any(|core| applied.target.cores().get(core) != Some(first)) {
+                return Err("applied history disagrees with its unit mapping");
+            }
+            Ok((unit.id, first))
+        }).collect::<Result<Vec<_>, _>>()?).map_err(|error| error.to_string())?;
+        if target == *history.current() { continue; }
+        let promotion = match step {
+            Some(Payload::DayStep(step)) => match step.step {
+                StepKind::Promote { changed } => Some(UnitId::Ccd(changed)),
+                _ => None,
+            },
+            Some(Payload::ClimbDecision(step)) => match step.decision {
+                togi_journal::ClimbAction::Promote { unit, .. } => Some(unit),
+                _ => None,
+            },
+            _ => None,
+        };
+        let action = if let Some(unit) = promotion {
+            let from = history.current().get(unit).ok_or("promotion has no old unit depth")?;
+            let to = target.get(unit).ok_or("promotion has no new unit depth")?;
+            if to >= from || target.iter().any(|(other, value)| other != unit && history.current().get(other) != Some(value)) {
+                return Err("successful promotion does not match its changed unit".into());
+            }
+            ClimbAction::Promote(Proposal { unit, from, to, step: from.get() - to.get(), remaining: from.get() - to.get(), profile: target })
+        } else if matches!(step, Some(Payload::ClimbDecision(step)) if matches!(step.decision, togi_journal::ClimbAction::Restore { .. })) {
+            ClimbAction::Restore(RestorationProposal { kind: RestorationKind::Firmware, profile: target })
+        } else {
+            ClimbAction::Retreat(Retreat { profile: target.clone(), wanted: target, events: Vec::new(), cursors: Vec::new(), stopped: Vec::new(), adverse_units: Vec::new() })
+        };
+        let decision = ClimbDecision { before: history.current().clone(), ceilings: Ceilings::default(), action };
+        let id = ApplicationId::new(u64::try_from(index).map_err(|_| "too many applications")?.checked_add(1).ok_or("too many applications")?)
+            .ok_or("invalid application identity")?;
+        history.apply(id, event.time, &decision).map_err(|error| error.to_string())?;
+    }
     Ok(history)
 }
 
@@ -423,7 +572,13 @@ fn charge(history: &mut History, event: Identity, aliases: Vec<Identity>, profil
             if alias != held.event && !held.aliases.contains(&alias) { held.aliases.push(alias); }
         }
     } else {
-        history.charges.push(Charge { event, aliases, profile, provisional, reclassified: false, witnesses: vec![witness] });
+        history.charges.push(Charge {
+            event, aliases, profile, provisional, reclassified: false, witnesses: vec![witness],
+            phase: togi_journal::CampaignEventPhase::Learning,
+            unit_phase: togi_journal::UnitPhase::Coarse,
+            receipt: None,
+            mapping: None,
+        });
     }
 }
 
@@ -441,6 +596,12 @@ fn merge_aliases(charges: &mut Vec<Charge>) {
                 }
                 charges[index].provisional |= merged.provisional;
                 charges[index].witnesses.extend(merged.witnesses);
+                if let Some(receipt) = merged.receipt {
+                    charges[index].phase = receipt.phase;
+                    charges[index].unit_phase = receipt.unit_phase;
+                    charges[index].mapping = Some(receipt.profile.mapping.clone());
+                    charges[index].receipt = Some(receipt);
+                }
                 // A bridge can connect a previously disjoint record.
                 other = index + 1;
             } else { other += 1; }
@@ -458,9 +619,9 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn record(kind: &str, seq: u64, data: serde_json::Value) -> DayImported {
+    fn record(kind: &str, seq: u64, data: &serde_json::Value) -> DayImported {
         DayImported {
-            original: Provenance { session: "20261001T000000Z".parse().unwrap(), seq: Seq::new(seq + 1).unwrap() },
+            original: Provenance { session: "20261001T000000Z".parse().unwrap(), seq: Seq::new(seq + 10).unwrap() },
             original_kind: kind.parse().unwrap(), raw: data.to_string(),
             time: "2026-10-01T00:00:00Z".parse().unwrap(), boot: BootId::from("boot".to_owned()),
             build: None, firmware: None, profile: None, class: togi_journal::ImportClass::Manual, missing: Vec::new(),
@@ -478,11 +639,13 @@ mod tests {
                 cpus: vec![togi_machine::CpuId::new(0).unwrap(), togi_machine::CpuId::new(1).unwrap()],
             }],
         };
-        record("session.start", 0, serde_json::to_value(start).unwrap())
+        let mut header = record("session.start", 0, &serde_json::to_value(start).unwrap());
+        header.original.seq = Seq::FIRST;
+        header
     }
 
-    fn classified(seq: u64, classification: serde_json::Value) -> DayImported {
-        record("day.event", seq, json!({
+    fn classified(seq: u64, classification: &serde_json::Value) -> DayImported {
+        record("day.event", seq, &json!({
             "event": {"kind":"boot","boot":"crashed"},
             "profile":{"kind":"per_core","cores":{"0":-5}},
             "from":"2026-10-01T00:00:00Z","to":"2026-10-01T00:00:00Z",
@@ -493,17 +656,36 @@ mod tests {
     }
 
     fn complete(records: &[DayImported]) -> History {
-        let records: Vec<_> = std::iter::once(header()).chain(records.iter().cloned()).collect();
+        let records: Vec<_> = initial_application().into_iter().chain(records.iter().cloned()).collect();
         match reconstruct(&records, &[]) {
             Reconstruction::Complete(history) => history,
-            other => panic!("{other:?}"),
+            Reconstruction::Unreconstructible { reason } => panic!("{reason}"),
         }
+    }
+
+    fn initial_application() -> Vec<DayImported> {
+        let mut step = record("day.step", 0, &json!({
+            "decision":100,"cold_boot":"boot","old":{"ccd":{"0":0},"cores":{"0":0}},
+            "proposed":{"ccd":{"0":-5},"cores":{"0":-5}},
+            "step":{"kind":"promote","changed":0},
+            "hours":[],"hold_s":0,"causes":{},"reason":"actual promotion"
+        }));
+        let mut applied = record("day.applied", 0, &json!({
+            "application":1,"cause":{"kind":"step","decision":100},
+            "target":{"ccd":{"0":-5},"cores":{"0":-5}},
+            "readbacks":{"0":-5},"transactions":[1],"boot":"boot","mono_ns":0
+        }));
+        step.original.seq = Seq::new(2).unwrap();
+        applied.original.seq = Seq::new(3).unwrap();
+        step.time = "2026-09-01T00:00:00Z".parse().unwrap();
+        applied.time = step.time;
+        vec![header(), step, applied]
     }
 
     #[test]
     fn provisional_charges_survive_reclassification_and_import_copies() {
-        let provisional = classified(1, json!({"kind":"cpu_suspect","certainty":"provisional"}));
-        let revised = classified(2, json!({"kind":"non_cpu"}));
+        let provisional = classified(1, &json!({"kind":"cpu_suspect","certainty":"provisional"}));
+        let revised = classified(2, &json!({"kind":"non_cpu"}));
         let history = complete(&[provisional.clone(), revised, provisional]);
         assert_eq!(history.charges.len(), 1);
         assert!(history.charges[0].provisional);
@@ -513,13 +695,13 @@ mod tests {
 
     #[test]
     fn copied_manual_witnesses_of_one_crash_consume_one_event_without_a_derived_commitment() {
-        let first = record("day.record", 1, json!({
+        let first = record("day.record", 1, &json!({
             "boot":{"kind":"unobserved","at":"2026-09-30T23:00:00Z"},
             "offsets":{"0":-5},"source":{"kind":"entered","at":"2026-10-01T00:00:00Z"},
             "running":"idle"
         }));
         let mut second = first.clone();
-        second.original.seq = Seq::new(3).unwrap();
+        second.original.seq = Seq::new(13).unwrap();
         let history = complete(&[second, first.clone(), first]);
         assert_eq!(history.charges.len(), 1);
         assert_eq!(history.vetoes.len(), 1);
@@ -527,7 +709,7 @@ mod tests {
 
     #[test]
     fn events_at_stock_do_not_consume_the_campaign_allowance() {
-        let mut event = classified(1, json!({"kind":"cpu_suspect","certainty":"definite"}));
+        let mut event = classified(1, &json!({"kind":"cpu_suspect","certainty":"definite"}));
         let mut data: serde_json::Value = serde_json::from_str(&event.raw).unwrap();
         data["profile"]["cores"]["0"] = json!(0);
         event.raw = data.to_string();
@@ -536,13 +718,13 @@ mod tests {
 
     #[test]
     fn undecodable_required_campaign_history_is_not_zero_consumption() {
-        let malformed = record("day.applied", 1, json!({}));
+        let malformed = record("day.applied", 1, &json!({}));
         assert!(matches!(reconstruct(&[malformed], &[]), Reconstruction::Unreconstructible { .. }));
     }
 
     #[test]
     fn missing_successful_application_ancestry_is_unreconstructible() {
-        let applied = record("day.applied", 1, json!({
+        let applied = record("day.applied", 1, &json!({
             "application":1,"cause":{"kind":"step","decision":1},
             "target":{"ccd":{"0":-5},"cores":{"0":-5}},
             "readbacks":{"0":-5},"transactions":[1],"boot":"boot","mono_ns":0
@@ -551,30 +733,29 @@ mod tests {
     }
 
     #[test]
-    fn successful_backsteps_reconstruct_permanent_stops() {
-        let step = record("day.step", 1, json!({
+    fn a_statistical_cap_or_completion_retreat_does_not_become_a_successor_stop() {
+        let step = record("day.step", 1, &json!({
             "decision":1,"cold_boot":"boot","old":{"ccd":{"0":-5},"cores":{"0":-5}},
             "proposed":{"ccd":{"0":0},"cores":{"0":0}},
             "step":{"kind":"retreat","changed":[0],"cause":{"kind":"completion"}},
             "hours":[],"hold_s":0,"causes":{},"reason":"backstep"
         }));
-        let applied = record("day.applied", 2, json!({
-            "application":1,"cause":{"kind":"step","decision":1},
+        let applied = record("day.applied", 2, &json!({
+            "application":2,"cause":{"kind":"step","decision":1},
             "target":{"ccd":{"0":0},"cores":{"0":0}},
             "readbacks":{"0":0},"transactions":[1],"boot":"boot","mono_ns":0
         }));
         let history = complete(&[applied, step]);
-        assert_eq!(history.stops.len(), 1);
-        assert_eq!(history.stops.values().next().unwrap().last_clean, TargetOffset::ZERO);
-        assert_eq!(history.applications.len(), 1);
+        assert!(history.stops.is_empty());
+        assert_eq!(history.applications.len(), 2);
     }
 
     #[test]
     fn a_raw_provisional_end_is_charged_even_when_its_derived_commitment_was_lost() {
-        let end = record("day.unclean_end", 1, json!({
+        let end = record("day.unclean_end", 1, &json!({
             "boot":"crashed","offsets":{"0":-5},"reset_reason":{"raw":[],"supported":true}
         }));
-        let answer = record("day.answer", 2, json!({
+        let answer = record("day.answer", 2, &json!({
             "boot":"crashed","offsets":{"0":-5},"answer":"power_off","uid":1000
         }));
         let history = complete(&[end, answer]);
@@ -586,7 +767,24 @@ mod tests {
 
     #[test]
     fn missing_campaign_topology_is_unreconstructible() {
-        let event = classified(1, json!({"kind":"cpu_suspect","certainty":"definite"}));
+        let event = classified(1, &json!({"kind":"cpu_suspect","certainty":"definite"}));
         assert!(matches!(reconstruct(&[event], &[]), Reconstruction::Unreconstructible { reason } if reason.contains("topology")));
+    }
+
+    #[test]
+    fn a_cpu_event_reconstructs_a_stop_without_a_successful_retreat() {
+        let event = classified(1, &json!({"kind":"cpu_suspect","certainty":"provisional"}));
+        let witness = event.original;
+        let history = complete(&[event]);
+        let stop = history.stops.values().next().unwrap();
+        assert_eq!(stop.witness, witness);
+        assert_eq!(stop.last_clean, TargetOffset::ZERO);
+    }
+
+    #[test]
+    fn a_nonzero_event_without_successful_step_history_is_unreconstructible() {
+        let event = classified(1, &json!({"kind":"cpu_suspect","certainty":"definite"}));
+        assert!(matches!(reconstruct(&[header(), event], &[]),
+            Reconstruction::Unreconstructible { reason } if reason.contains("applied-step ancestry")));
     }
 }
