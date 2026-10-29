@@ -11,7 +11,7 @@ use togi_journal::{
 use togi_machine::{Backend, BootId, CoreId, CoreSet, PerCore, Regime};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::night::{PackageLoad, Roles};
-use togi_tuner::policy::{Action, DayQuery, EndReason, Params, TrialPlan};
+use togi_tuner::policy::{DayQuery, EndReason, Params, TrialPlan};
 
 use crate::fixture::{Ending, Journal, at, cores, cores_per_ccd};
 
@@ -268,26 +268,138 @@ fn an_excluded_backend_leaves_the_night_running_on_the_other() {
     assert!(recorded, "no plan recorded the excluded backend");
 }
 
-/// The committed cap S of `ccd`, from the projection.
-fn cap_of(journal: &Journal, ccd: u8) -> Option<i64> {
-    let json = serde_json::to_value(journal.state.project()).unwrap();
-    json["units"][usize::from(ccd)]["cap"]["offset"].as_i64()
+#[test]
+fn the_filler_repeats_exact_current_cells_and_never_probes_below_the_cap() {
+    let mut journal = Journal::ready();
+    let mut plan = journal.until_filler(|_| Ending::Pass);
+    let current = journal.state.project().applied.unwrap();
+    for step in 0..6_i64 {
+        assert!(!plan.retry);
+        assert_eq!(plan.task.queue, Queue::Filler);
+        assert_eq!(plan.activity, Activity::Qualification);
+        assert_eq!(plan.tested, Tested::Exact {});
+        assert_eq!(plan.profile, current);
+        journal.run(&plan, Ending::Pass);
+        plan = journal.until_trial(at(10_000 + step));
+    }
+    for ccd in 0..2_u8 {
+        let edge = journal
+            .events
+            .iter()
+            .rev()
+            .find_map(|event| match &event.payload {
+                Payload::UnitEdge(edge)
+                    if edge.unit == togi_journal::UnitId::Ccd(crate::fixture::ccd(ccd)) =>
+                {
+                    Some(edge)
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            matches!(&edge.new, togi_journal::Edge::Censored { limit, witnesses }
+            if limit.get() == -50 && !witnesses.is_empty())
+        );
+        assert_eq!(edge.ceiling.map(togi_machine::TargetOffset::get), Some(-45));
+        assert_eq!(edge.margin, 5);
+    }
+    let sweep: Vec<_> = journal
+        .events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::TrialIntent(intent)
+                if intent.task.is_some_and(|task| task.queue == Queue::Mapping) =>
+            {
+                match intent.tested {
+                    Some(Tested::Isolated { offset, .. }) if offset.get() % 5 != 0 => {
+                        Some(offset.get())
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(!sweep.is_empty());
+    assert!(sweep.iter().all(|&offset| offset <= -45), "{sweep:?}");
+    assert!(
+        !journal
+            .events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::CcdEdge(_)))
+    );
 }
 
 #[test]
-fn a_passing_night_never_ends_and_falls_back_to_a_cap_probe_one_count_deeper() {
+fn unknown_edges_are_committed_without_a_ceiling_before_the_descent_completes() {
     let mut journal = Journal::ready();
-    let plan = journal.until_filler(|_| Ending::Pass);
-    assert!(!plan.retry);
-    // Every CCD's S is far from its censored edge: the probe runs S − 1 on one CCD alone.
-    assert_eq!(plan.activity, Activity::Mapping);
-    let Tested::Isolated { ccd, offset } = plan.tested else {
-        panic!("expected a cap probe, got {plan:?}");
-    };
-    assert_eq!(
-        Some(offset.get()),
-        cap_of(&journal, ccd.get()).map(|cap| cap - 1)
-    );
+    journal.until_trial(at(100));
+    let edges: Vec<_> = journal
+        .events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::UnitEdge(edge) => Some(edge),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(edges.len(), 2);
+    for edge in edges {
+        assert_eq!(edge.new, togi_journal::Edge::Unknown {});
+        assert_eq!(edge.ceiling, None);
+        assert_eq!(edge.margin, 5);
+        assert_eq!(edge.epoch, togi_tuner::EVIDENCE_EPOCH);
+    }
+}
+
+#[test]
+fn a_backend_change_invalidates_edges_without_repeating_unknown_commitments() {
+    let mut journal = Journal::ready();
+    journal.until_filler(|_| Ending::Pass);
+    let from = journal.events.len();
+    journal.rebuild(crate::fixture::rebuilt());
+    let plan = journal.until_trial(journal.now());
+    assert_eq!(plan.activity, Activity::Control);
+    let edges: Vec<_> = journal.events[from..]
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::UnitEdge(edge) => Some(edge),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(edges.len(), 2);
+    for edge in edges {
+        assert_eq!(edge.new, togi_journal::Edge::Unknown {});
+        assert_eq!(edge.ceiling, None);
+    }
+}
+
+#[test_case(-30, -25; "observed_deep_edge")]
+#[test_case(-4, 0; "observed_near_stock_edge")]
+fn isolated_failures_commit_the_observed_unit_edge_and_its_ceiling(u: i64, c: i64) {
+    let mut journal = Journal::ready();
+    journal.until_filler(|plan| match plan.tested {
+        Tested::Isolated { offset, .. }
+            if plan.task.queue == Queue::Mapping && offset.get() <= u =>
+        {
+            Ending::Fail(None)
+        }
+        Tested::Isolated { .. } | Tested::Exact {} => Ending::Pass,
+    });
+    for ccd in 0..2_u8 {
+        let event = journal.events.iter().rev().find(|event| matches!(&event.payload,
+            Payload::UnitEdge(edge) if edge.unit == togi_journal::UnitId::Ccd(crate::fixture::ccd(ccd))
+        )).unwrap();
+        let Payload::UnitEdge(edge) = &event.payload else {
+            unreachable!()
+        };
+        let togi_journal::Edge::Observed { offset, witness } = edge.new else {
+            panic!("expected observed U: {edge:?}");
+        };
+        assert_eq!(offset.get(), u);
+        assert_eq!(edge.ceiling.map(togi_machine::TargetOffset::get), Some(c));
+        assert_eq!(edge.margin, 5);
+        assert!(event.cause.contains(&witness));
+    }
 }
 
 #[test]
@@ -328,10 +440,9 @@ fn each_filler_trial_advances_the_durable_rotation_across_nights() {
 }
 
 #[test]
-fn with_no_admissible_cap_probe_the_filler_reruns_ds_exact_cells_round_robin() {
+fn observed_edges_leave_the_filler_repeating_ds_exact_cells_round_robin() {
     let mut journal = Journal::ready();
-    // Every mapping trial at -5 or deeper fails on its tested CCD, so U is observed at -5 and S can be no
-    // deeper than U + 5 = 0: S − 1 would cross the margin.
+    // Isolated mapping failures bracket U; filler still repeats exact D, not a probe.
     let mapping_fails = |plan: &TrialPlan| match plan.tested {
         Tested::Isolated { offset, .. }
             if plan.task.queue == Queue::Mapping && offset.get() <= -5 =>
@@ -341,20 +452,12 @@ fn with_no_admissible_cap_probe_the_filler_reruns_ds_exact_cells_round_robin() {
         Tested::Isolated { .. } | Tested::Exact {} => Ending::Pass,
     };
     let mut plan = journal.until_filler(mapping_fails);
-    let projection = serde_json::to_value(journal.state.project()).unwrap();
-    for ccd in 0..2 {
-        let edge = &projection["units"][ccd]["edge"];
-        assert_eq!(edge["kind"], "observed", "{edge}");
-        let u = edge["offset"].as_i64().unwrap();
-        let s = projection["units"][ccd]["cap"]["offset"].as_i64().unwrap();
-        // S − 1 would cross the edge margin: no cap probe is admissible.
-        assert!(s - 1 < u + 5, "S {s}, U {u}");
-    }
-    // The journal committed each edge from a mapping failure and each cap from its edge.
     for ccd in 0..2_u8 {
         assert!(journal.events.iter().any(|event| matches!(&event.payload,
-            Payload::CcdEdge(change) if change.ccd.get() == ccd
-                && matches!(change.edge, togi_journal::Edge::Observed { .. }))));
+            Payload::UnitEdge(change) if change.unit == togi_journal::UnitId::Ccd(crate::fixture::ccd(ccd))
+                && matches!(change.new, togi_journal::Edge::Observed { .. })
+                && change.ceiling == Some(togi_machine::TargetOffset::ZERO)
+                && change.margin == 5)));
         assert!(journal.events.iter().any(|event| matches!(&event.payload,
             Payload::CcdCap(cap) if cap.ccd.get() == ccd
                 && matches!(cap.edge, togi_journal::Edge::Observed { .. }))));
@@ -415,14 +518,11 @@ fn switching_away_from_a_qualification_task_commits_its_progress_first() {
 
 #[test]
 fn no_query_before_a_night_owes_a_closure() {
-    let journal = Journal::ready();
-    let Ok(Action::Decide(decision)) = journal.next(at(100)) else {
-        panic!("expected the opening plan");
-    };
-    let Payload::NightPlan(plan) = Payload::from(decision.payload) else {
-        panic!("expected a night.plan");
-    };
-    assert_eq!(plan.night, None);
+    let mut journal = Journal::ready();
+    journal.until_trial(at(100));
+    let plans = plans_since(&journal, 0);
+    assert_eq!(plans.first().map(|(night, _)| *night), Some(None));
+    assert_eq!(journal.state.project().night.unwrap().closed_by, None);
 }
 
 #[test]

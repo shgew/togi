@@ -1,4 +1,4 @@
-//! Statistical cap computation and commitments, independent of mapping replay.
+//! Non-authorizing statistical diagnostics and `ccd.cap` commitments, independent of scheduling.
 
 use super::decision::{Decision, PolicyPayload};
 use super::evidence::ClassCap;
@@ -22,7 +22,7 @@ use togi_machine::{CcdId, ContentId, TargetOffset, WorkloadId};
 /// A class of the interned cap input; the cap's classes must be ordered, an exposure class is not.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct ClassId(u32);
-/// The cap S of one CCD and what produced it.
+/// The diagnostic S of one CCD and what produced it; never a scheduling or target permission.
 #[derive(Clone, Debug)]
 pub(super) struct CapOutcome {
     pub(super) cap: cap::Cap<ClassId>,

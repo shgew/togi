@@ -96,6 +96,10 @@ pub enum ClimbQualificationState {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "finish witnesses and the exact vector stay inline rather than allocating each finish separately"
+)]
 pub enum ClimbUnitState {
     Climbing,
     Held {
