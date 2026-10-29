@@ -30,35 +30,35 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │  core tuning · physical CCD topology                                             core tuning · physical CCD topology
 ~  ggggggggggggggggggggggggggggggggggg                                             ggggggggggggggggggggggggggggggggggg
 │
-│  core 0 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 8 · D -8 · C -26 · U observed at -31 · 16 counts to C
+│  core 0 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 8 · D -8 · C -26 · U observed at -31 · 18 counts to C
 ~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │    00  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               08   -8           ▆▆▆▆▆▆▆▆··················    ▆
 ~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
-│  core 1 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 9 · D -8 · C -26 · U observed at -31 · 16 counts to C
+│  core 1 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 9 · D -8 · C -26 · U observed at -31 · 18 counts to C
 ~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │    01  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               09   -8           ▆▆▆▆▆▆▆▆··················    ▆
 ~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
-│  core 2 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 10 · D -8 · C -26 · U observed at -31 · 16 counts to C
+│  core 2 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 10 · D -8 · C -26 · U observed at -31 · 18 counts to C
 ~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │    02  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               10   -8           ▆▆▆▆▆▆▆▆··················    ▆
 ~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
-│  core 3 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 11 · D -8 · C -26 · U observed at -31 · 16 counts to C
+│  core 3 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 11 · D -8 · C -26 · U observed at -31 · 18 counts to C
 ~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │    03  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               11   -8           ▆▆▆▆▆▆▆▆··················    ▆
 ~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
-│  core 4 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 12 · D -8 · C -26 · U observed at -31 · 16 counts to C
+│  core 4 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 12 · D -8 · C -26 · U observed at -31 · 18 counts to C
 ~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │    04  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               12   -8           ▆▆▆▆▆▆▆▆··················    ▆
 ~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
-│  core 5 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 13 · D -8 · C -26 · U observed at -31 · 16 counts to C
+│  core 5 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 13 · D -8 · C -26 · U observed at -31 · 18 counts to C
 ~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │    05  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               13   -8           ▆▆▆▆▆▆▆▆··················    ▆
 ~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
-│  core 6 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 14 · D -8 · C -26 · U observed at -31 · 16 counts to C
+│  core 6 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 14 · D -8 · C -26 · U observed at -31 · 18 counts to C
 ~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │    06  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               14   -8           ▆▆▆▆▆▆▆▆··················    ▆
 ~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
-│  core 7 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 15 · D -8 · C -26 · U observed at -31 · 16 counts to C
+│  core 7 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 15 · D -8 · C -26 · U observed at -31 · 18 counts to C
 ~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │    07  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               15   -8           ▆▆▆▆▆▆▆▆··················    ▆
 ~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f

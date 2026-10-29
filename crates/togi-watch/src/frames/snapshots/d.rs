@@ -53,7 +53,7 @@ impl Case {
         let profile = hand::unit_vector(&climb.units);
         climb.daily = Some(ClimbDailyEvidence {
             profile: profile.clone(),
-            firmware: Default::default(),
+            firmware: togi_machine::BiosContext::default(),
             epoch: 1,
             observed_s: 50 * 3600,
             clean_s: 50 * 3600,
@@ -73,11 +73,7 @@ impl Case {
                 } else {
                     1
                 };
-                campaign.remaining = if matches!(self, Self::Exhausted) {
-                    0
-                } else {
-                    1
-                };
+                campaign.remaining = u32::from(!matches!(self, Self::Exhausted));
                 campaign.exhausted = matches!(self, Self::Exhausted);
                 campaign.provisional = 1;
                 campaign.reclassified = u32::from(campaign.exhausted);
@@ -117,12 +113,24 @@ impl Case {
                 }
             }
             Self::ZeroS => {
+                for unit in &mut climb.units {
+                    unit.applied = off(0);
+                    unit.latest_step = None;
+                }
+                for core in &mut hand.cores {
+                    core.profile = off(0);
+                    core.applied = Some(off(0).observed());
+                }
+                let applied = hand::unit_vector(&climb.units);
+                climb.profiles.applied = Some(applied.clone());
+                climb.daily.as_mut().unwrap().profile = applied;
                 climb.units[0].diagnostic_s.as_mut().unwrap().cap.offset = off(0);
                 climb.units[0].ceiling = Some(off(-25));
                 climb.units[0].edge = hand::observed(-30);
-                climb.units[0].remaining = Some(15);
+                climb.units[0].remaining = Some(25);
+                climb.units[1].remaining = Some(45);
                 let mut candidate = climb.units.clone();
-                candidate[0].applied = off(-15);
+                candidate[0].applied = off(-5);
                 let candidate = hand::unit_vector(&candidate);
                 climb.profiles.proposed = Some(candidate.clone());
                 climb.units[0].next = Some(ClimbProposalProjection {
@@ -282,7 +290,7 @@ fn d_state_snapshots(case: Case) {
     assert!(!text.contains("stable") && !text.contains("meets your goal"));
     match case {
         Case::Provisional => {
-            assert!(text.contains("1 consumed / 2 limit; 1 remaining · 1 provisional"))
+            assert!(text.contains("1 consumed / 2 limit; 1 remaining · 1 provisional"));
         }
         Case::Exhausted => {
             assert!(text.contains("3 consumed / 2 limit; 0 remaining"));
@@ -292,9 +300,9 @@ fn d_state_snapshots(case: Case) {
             );
             assert!(text.contains("finished: allowance exhausted"));
         }
-        Case::ZeroS => assert!(text.contains("proposed, not applied: 0:-15")),
+        Case::ZeroS => assert!(text.contains("proposed, not applied: 0:-5")),
         Case::Blocked => {
-            assert!(text.contains("held/unfinished: exact candidate qualification blocked"))
+            assert!(text.contains("held/unfinished: exact candidate qualification blocked"));
         }
         Case::Finished => assert!(
             text.contains("finished: night ceiling reached")

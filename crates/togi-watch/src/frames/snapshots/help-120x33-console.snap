@@ -32,8 +32,8 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~ g
 │ │ ►         the core carries load in this trial
 ~ g w         ttttttttttttttttttttttttttttttttttt
-│ │ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial loads the core
-~ g www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ ▄▄▄       committed day offset D, distinct from the numeric hardware readback; white when this trial loads the core
+~ g www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ │ ?         no hardware offset has been read back for this core
 ~ g w         ttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ │ grey ▄▄▄  the same depth, grey when the core is not loaded

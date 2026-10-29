@@ -848,7 +848,11 @@ fn a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core() {
 fn numeric_trial_readback_does_not_replace_committed_day_d_in_the_gauge() {
     let rows = table(&two_cores(), 115, 5, Colours::None);
     assert!(rows[4].contains("-4"), "numeric readback: {:?}", rows[4]);
-    assert!(rows[4].contains(&format!("{}{}", "▄".repeat(10), "·".repeat(5))), "D -10, C -15: {:?}", rows[4]);
+    assert!(
+        rows[4].contains(&format!("{}{}", "▄".repeat(10), "·".repeat(5))),
+        "D -10, C -15: {:?}",
+        rows[4]
+    );
 }
 
 #[test]
@@ -918,7 +922,7 @@ fn a_ccd_the_tuner_has_no_state_for_says_so() {
     let hand = Hand::new(vec![core_row(0, 0, Some(0), false)], bare(vec![]));
     let rows = table(&hand, 115, 4, Colours::None);
     assert!(
-        rows[1].starts_with("no tuner state for this CCD yet"),
+        rows[1].starts_with("unit state unavailable; no ordinary permission"),
         "{:?}",
         rows[1]
     );
@@ -1091,7 +1095,7 @@ fn foreground(buf: &Buffer, x: usize, y: usize) -> ratatui::style::Color {
 
 fn edge_hand(applied: i64, edge: i64) -> Hand {
     let projection = with_cap(
-        ccd_row(0, &[0], 0),
+        ccd_row(0, &[0], applied),
         cap(-50, rate_bound(), fallback(), 1, 0),
         Some(observed(edge)),
         3,
@@ -1101,6 +1105,12 @@ fn edge_hand(applied: i64, edge: i64) -> Hand {
         bare(vec![projection, ccd_row(1, &[8], 0)]),
     );
     hand.cores.push(core_row(8, 1, Some(0), false));
+    hand.policy.climb.units = hand
+        .policy
+        .units
+        .iter()
+        .map(crate::frames::hand::climb_row)
+        .collect();
     hand
 }
 

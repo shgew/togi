@@ -20,26 +20,26 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │
 │ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
 ~ wwwww gggg       g  kkkkkkkkkkkkk       ggg                 wwwww gggg       g  kkkkkkkkkkkkk       ggg
-│ D -10 · C -25 · U observed at -31 · 15 counts to C          D -8 · C -45 · U censored at -50 · 37 counts to C
-~ ttttt   ttttt   ttttttttttttttttt   tttttttttttttt          tttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│ D 0 · C -25 · U observed at -30 · 25 counts to C            D 0 · C -45 · U censored at -50 · 45 counts to C
+~ ttt   ttttt   ttttttttttttttttt   tttttttttttttt            ttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │ climbing · hold 50 / 50 h                                   climbing · hold 50 / 50 h · no candidate
 ~ tttttttt   tttttttttttttt                                   tttttttt   tttttttttttttt   tttttttttttt
-│   00 -10          ▄▄▄▄▄········  ▄                            08  -8          ▄▄▄▄··················· ▄
-~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggggggggggggg a
-│   01 -10          ▄▄▄▄▄········  ▄                            09  -8          ▄▄▄▄··················· ▄
-~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggggggggggggg a
-│   02 -10          ▄▄▄▄▄········  ▄                            10  -8          ▄▄▄▄··················· ▄
-~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggggggggggggg a
-│   03 -10          ▄▄▄▄▄········  ▄                            11  -8          ▄▄▄▄··················· ▄
-~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggggggggggggg a
-│   04 -10          ▄▄▄▄▄········  ▄                            12  -8          ▄▄▄▄··················· ▄
-~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggggggggggggg a
-│   05 -10          ▄▄▄▄▄········  ▄                            13  -8          ▄▄▄▄··················· ▄
-~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggggggggggggg a
-│   06 -10          ▄▄▄▄▄········  ▄                            14  -8          ▄▄▄▄··················· ▄
-~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggggggggggggg a
-│   07 -10          ▄▄▄▄▄········  ▄                            15  -8          ▄▄▄▄··················· ▄
-~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggggggggggggg a
+│   00   0          ············· ▄                             08   0          ······················· ▄
+~   tt ttt          ggggggggggggg f                             tt ttt          ggggggggggggggggggggggg a
+│   01   0          ············· ▄                             09   0          ······················· ▄
+~   tt ttt          ggggggggggggg f                             tt ttt          ggggggggggggggggggggggg a
+│   02   0          ············· ▄                             10   0          ······················· ▄
+~   tt ttt          ggggggggggggg f                             tt ttt          ggggggggggggggggggggggg a
+│   03   0          ············· ▄                             11   0          ······················· ▄
+~   tt ttt          ggggggggggggg f                             tt ttt          ggggggggggggggggggggggg a
+│   04   0          ············· ▄                             12   0          ······················· ▄
+~   tt ttt          ggggggggggggg f                             tt ttt          ggggggggggggggggggggggg a
+│   05   0          ············· ▄                             13   0          ······················· ▄
+~   tt ttt          ggggggggggggg f                             tt ttt          ggggggggggggggggggggggg a
+│   06   0          ············· ▄                             14   0          ······················· ▄
+~   tt ttt          ggggggggggggg f                             tt ttt          ggggggggggggggggggggggg a
+│   07   0          ············· ▄                             15   0          ······················· ▄
+~   tt ttt          ggggggggggggg f                             tt ttt          ggggggggggggggggggggggg a
 │
 │ DAY ─────────────────────────────────────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
 ~ www kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk   ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggg
@@ -49,13 +49,13 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~ ttttttttttttttttttttttttttttttttttttttttttttttttttt         ggggg  tttttttt ttttttttttttttttttttttttttt
 │ experimental: 50.000 clean hours; at most 1 crash per...
 ~ tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│ proposed, not applied: 0:-15 1:-15 2:-15 3:-15 4:-15...
+│ proposed, not applied: 0:-5 1:-5 2:-5 3:-5 4:-5 5:-5...
 ~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ CCD 0: climbing; hold 50.000 / 50.000 h at exact D
 ~ tttttttttttttttttttttttttttttttttttttttttttttttttt
-│ CCD 0: applied step -5 → -10 (5 counts); application...
-~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│ +5 more
+│ CCD 1: climbing; hold 50.000 / 50.000 h at exact D
+~ tttttttttttttttttttttttttttttttttttttttttttttttttt
+│ +4 more
 ~ ggggggg
 │
 │  ?  help    l  log    esc  back    q  exit dashboard

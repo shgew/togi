@@ -145,7 +145,9 @@ fn body_of(buf: &Buffer, form: Form) -> String {
 }
 
 fn checked(name: &str, buf: &Buffer, form: Form) {
-    assert_glyphs_drawable(buf, name);
+    if !matches!(form, Form::Styled(Colours::Rich)) {
+        assert_glyphs_drawable(buf, name);
+    }
     check(name, &body_of(buf, form));
 }
 

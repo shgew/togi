@@ -583,11 +583,22 @@ mod tests {
             "a blank row separates the sections"
         );
         assert!(
-            rows[day].trim_end().ends_with("applied CO 0"),
+            rows[day]
+                .trim_end()
+                .ends_with("applied profile unavailable"),
             "{:?}",
             rows[day]
         );
-        assert!(rows[day + 1].contains("holding -10"), "{:?}", rows[day + 1]);
+        assert_eq!(
+            rows[day + 1],
+            "permission: experimental hold + exact night qualification"
+        );
+        assert!(
+            rows[day..]
+                .iter()
+                .any(|row| row.starts_with("hold ") && row.contains("holding -10")),
+            "{rows:#?}"
+        );
         assert!(
             rows.iter()
                 .any(|row| row

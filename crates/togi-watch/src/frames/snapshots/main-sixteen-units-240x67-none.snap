@@ -25,21 +25,21 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │  CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
 │  core tuning · physical CCD topology                                                                                     core tuning · physical CCD topology
 │
-│  core 0 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 8 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+│  core 0 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 8 · D -8 · C -26 · U observed at -31 · 18 counts to C · S -26 diagnostic only
 │    00  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      08   -8            ▄▄▄▄▄▄▄▄··················    ▄
-│  core 1 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 9 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+│  core 1 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 9 · D -8 · C -26 · U observed at -31 · 18 counts to C · S -26 diagnostic only
 │    01  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      09   -8            ▄▄▄▄▄▄▄▄··················    ▄
-│  core 2 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 10 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+│  core 2 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 10 · D -8 · C -26 · U observed at -31 · 18 counts to C · S -26 diagnostic only
 │    02  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      10   -8            ▄▄▄▄▄▄▄▄··················    ▄
-│  core 3 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 11 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+│  core 3 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 11 · D -8 · C -26 · U observed at -31 · 18 counts to C · S -26 diagnostic only
 │    03  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      11   -8            ▄▄▄▄▄▄▄▄··················    ▄
-│  core 4 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 12 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+│  core 4 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 12 · D -8 · C -26 · U observed at -31 · 18 counts to C · S -26 diagnostic only
 │    04  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      12   -8            ▄▄▄▄▄▄▄▄··················    ▄
-│  core 5 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 13 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+│  core 5 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 13 · D -8 · C -26 · U observed at -31 · 18 counts to C · S -26 diagnostic only
 │    05  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      13   -8            ▄▄▄▄▄▄▄▄··················    ▄
-│  core 6 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 14 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+│  core 6 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 14 · D -8 · C -26 · U observed at -31 · 18 counts to C · S -26 diagnostic only
 │    06  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      14   -8            ▄▄▄▄▄▄▄▄··················    ▄
-│  core 7 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 15 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+│  core 7 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 15 · D -8 · C -26 · U observed at -31 · 18 counts to C · S -26 diagnostic only
 │    07  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      15   -8            ▄▄▄▄▄▄▄▄··················    ▄
 │
 │  DAY ─────── applied D 0:-10 1:-10 2:-10 3:-10 4:-10 5:-10 6:-10 7:-10 8:-8 9:-8 10:-8 11:-8 12:-8 13:-8 14:-8 15:-8     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events

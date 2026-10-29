@@ -111,7 +111,7 @@ const RULESET13: &[(EventKind, Tag)] = &[
 
 #[test]
 fn every_kind_has_its_words_or_says_it_is_silent() {
-    assert_eq!(EventKind::ALL.len(), 74);
+    assert_eq!(EventKind::ALL.len(), 83);
     for &kind in EventKind::ALL {
         let table = words(kind);
         let silent = SILENT.contains(&kind) || UNLISTED.contains(&kind);
@@ -134,6 +134,24 @@ fn every_kind_has_its_words_or_says_it_is_silent() {
     for kind in SILENT.iter().chain(UNLISTED) {
         assert!(matches!(words(*kind).history, History::Silent), "{kind}");
     }
+}
+
+#[test_case(EventKind::UnitMapping, Tag::Note; "unit mapping")]
+#[test_case(EventKind::CampaignStart, Tag::Note; "campaign start")]
+#[test_case(EventKind::SuccessorImported, Tag::Note; "successor import")]
+#[test_case(EventKind::UnitEdge, Tag::Edge; "unit edge")]
+#[test_case(EventKind::ClimbDecision, Tag::Step; "climb decision")]
+#[test_case(EventKind::UnitStop, Tag::Stop; "unit stop")]
+#[test_case(EventKind::CampaignCharge, Tag::Day; "irreversible charge")]
+#[test_case(EventKind::CampaignReclassified, Tag::Day; "reclassified charge")]
+#[test_case(EventKind::FirmwareRestoration, Tag::Step; "firmware restoration")]
+fn bounded_exploration_history_keeps_its_recorded_message_and_semantic_tag(
+    kind: EventKind,
+    expected: Tag,
+) {
+    let table = words(kind);
+    assert!(matches!(table.history, History::Recorded(tag, _) if tag == expected));
+    assert!(table.listed);
 }
 
 #[test]
@@ -390,15 +408,19 @@ fn edges_read_as_the_dashboard_says_them() {
     assert_eq!(edge_words(&observed_edge(-23)), "fails at -23");
 }
 
-#[test_case(Binding::Rate { class: class(Regime::R2) }, Slope::Fallback { beta: Finite::new(0.2).unwrap() }, "CCD0 cap 0 → -15 · rate of R2 heavy vector · fallback slope"; "rate and fallback")]
+#[test_case(Binding::Rate { class: class(Regime::R2) }, Slope::Fallback { beta: Finite::new(0.2).unwrap() }, "CCD0 S 0 → -15 · diagnostic only, not permission · rate of R2 heavy vector · fallback slope"; "rate and fallback")]
 #[test_case(
     Binding::EdgeMargin {},
     Slope::Measured { lower: togi_journal::LowerEndpoint::Unbounded {}, historical_min: None },
-    "CCD0 cap 0 → -15 · edge margin · measured slope";
+    "CCD0 S 0 → -15 · diagnostic only, not permission · edge margin · measured slope";
     "edge margin and measured"
 )]
-#[test_case(Binding::Baseline {}, Slope::Fallback { beta: Finite::new(0.2).unwrap() }, "CCD0 cap 0 → -15 · no cap yet · fallback slope"; "baseline")]
-fn a_cap_names_what_fixed_it_and_its_slope(binding: Binding, slope: Slope, text: &str) {
+#[test_case(Binding::Baseline {}, Slope::Fallback { beta: Finite::new(0.2).unwrap() }, "CCD0 S 0 → -15 · diagnostic only, not permission · baseline diagnostic · fallback slope"; "baseline")]
+fn a_statistical_diagnostic_names_its_binding_without_authorizing_d(
+    binding: Binding,
+    slope: Slope,
+    text: &str,
+) {
     assert_eq!(
         said(&cap_event(binding, slope)),
         (Tag::Cap, Tone::Plain, text.to_owned())

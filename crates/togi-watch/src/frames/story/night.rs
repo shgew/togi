@@ -433,6 +433,7 @@ pub(crate) fn blocker_words(reason: &togi_journal::ClimbBlocker) -> &'static str
         ClimbBlocker::AllowanceExhausted {} => "allowance exhausted",
         ClimbBlocker::UnknownEdge { .. } => "unknown U",
         ClimbBlocker::Finished { .. } => "exploration finished",
+        ClimbBlocker::Ceiling { .. } => "hard night ceiling blocks the target",
         ClimbBlocker::CampaignHistory {} => "campaign history unavailable",
         ClimbBlocker::SameBoot {} => "promotion requires an eligible cold boot",
         ClimbBlocker::HoldProfile {} => "hold belongs to a different exact profile",
@@ -450,6 +451,7 @@ pub(crate) fn finish_words(reason: &togi_journal::UnitStopReason) -> &'static st
         UnitStopReason::RestorationBackstep { .. } => "restoration backstep; permanently stopped",
         UnitStopReason::AdverseCeiling {} => "adverse night ceiling; permanently stopped",
         UnitStopReason::Veto {} => "whole-profile veto; permanently stopped",
+        UnitStopReason::Predecessor { .. } => "predecessor event; permanently stopped",
     }
 }
 

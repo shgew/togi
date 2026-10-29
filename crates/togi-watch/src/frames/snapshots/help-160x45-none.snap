@@ -19,7 +19,7 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │  █                     no readback yet; U censored at -50 gives hard ceiling C at -45, not physical -50
 │  █
 │  █ ►         the core carries load in this trial
-│  █ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial loads the core
+│  █ ▄▄▄       committed day offset D, distinct from the numeric hardware readback; white when this trial loads the core
 │  █ ?         no hardware offset has been read back for this core
 │  █ grey ▄▄▄  the same depth, grey when the core is not loaded
 │  █ ···       the hard night ceiling C for this tuning unit, not statistical permission

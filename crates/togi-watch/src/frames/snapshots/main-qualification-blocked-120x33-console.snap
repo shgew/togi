@@ -49,13 +49,13 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~ ttttttttttttttttttttttttttttttttttttttttttttttttttt         ggggg  tttttttt ttttttttttttttttttttttttttt
 │ experimental: 50.000 clean hours; at most 1 crash per...
 ~ tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ proposed, not applied: 0:-15 1:-15 2:-15 3:-15 4:-15...
+~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ CCD 0: held/unfinished: exact candidate qualification...
 ~ tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ CCD 0: applied step -5 → -10 (5 counts); application...
 ~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│ CCD 1: climbing; hold 50.000 / 50.000 h at exact D
-~ tttttttttttttttttttttttttttttttttttttttttttttttttt
-│ +4 more
+│ +5 more
 ~ ggggggg
 │
 │  ?  help    l  log    esc  back    q  exit dashboard

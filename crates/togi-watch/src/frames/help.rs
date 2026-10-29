@@ -731,7 +731,6 @@ mod tests {
             "by offset when offsets",
             "stand in for requests",
             "not a guarantee",
-            "evidence, not",
             "until every core has one",
         ] {
             assert!(

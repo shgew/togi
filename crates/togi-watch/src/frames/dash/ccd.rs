@@ -81,7 +81,7 @@ pub(super) fn gauge(
     }
     let cap = ccd
         .and_then(|unit| unit.ceiling)
-        .map_or(0, |ceiling| ceiling.get());
+        .map_or(0, togi_machine::TargetOffset::get);
     let edge = edge_mark(ccd);
     let marks = marks(scene.colours);
     let total = i64::from(saturating_cells(cells));
@@ -159,6 +159,7 @@ pub(super) fn facts_line(
             vec![
                 Form::new(text(edge_full), 1),
                 Form::new(text(edge_short), 0),
+                Form::empty(),
             ],
         ),
     ];
@@ -453,7 +454,13 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             r,
             saturating_cells(col.gauge),
             y,
-            &gauge(scene, core, projection, projection.map(|unit| unit.applied.get()), col.cells),
+            &gauge(
+                scene,
+                core,
+                projection,
+                projection.map(|unit| unit.applied.get()),
+                col.cells,
+            ),
             colours,
         );
     }

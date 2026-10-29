@@ -159,7 +159,7 @@ pub(crate) fn mapping_trial(ordinal: u32, ccd_id: u8, offset: i64, cores: &[u8])
 /// The projection of a machine with no committed edge, cap, day or night.
 pub(crate) fn bare(ccds: Vec<UnitProjection>) -> Projection {
     Projection {
-        climb: Default::default(),
+        climb: togi_tuner::policy::ClimbProjection::default(),
         applied: None,
         units: ccds,
         day: DayProjection {
@@ -174,7 +174,6 @@ pub(crate) fn bare(ccds: Vec<UnitProjection>) -> Projection {
         qualifications: Vec::new(),
         night: None,
         stopped: false,
-        climb: Default::default(),
     }
 }
 

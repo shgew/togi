@@ -14,24 +14,24 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │
 │
 │ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
-│ D -10 · C -25 · U observed at -31 · 15 counts to C          D -8 · C -45 · U censored at -50 · 37 counts to C
+│ D 0 · C -25 · U observed at -30 · 25 counts to C            D 0 · C -45 · U censored at -50 · 45 counts to C
 │ climbing · hold 50 / 50 h                                   climbing · hold 50 / 50 h · no candidate
-│   00 -10          ▄▄▄▄▄········  ▄                            08  -8          ▄▄▄▄··················· ▄
-│   01 -10          ▄▄▄▄▄········  ▄                            09  -8          ▄▄▄▄··················· ▄
-│   02 -10          ▄▄▄▄▄········  ▄                            10  -8          ▄▄▄▄··················· ▄
-│   03 -10          ▄▄▄▄▄········  ▄                            11  -8          ▄▄▄▄··················· ▄
-│   04 -10          ▄▄▄▄▄········  ▄                            12  -8          ▄▄▄▄··················· ▄
-│   05 -10          ▄▄▄▄▄········  ▄                            13  -8          ▄▄▄▄··················· ▄
-│   06 -10          ▄▄▄▄▄········  ▄                            14  -8          ▄▄▄▄··················· ▄
-│   07 -10          ▄▄▄▄▄········  ▄                            15  -8          ▄▄▄▄··················· ▄
+│   00   0          ············· ▄                             08   0          ······················· ▄
+│   01   0          ············· ▄                             09   0          ······················· ▄
+│   02   0          ············· ▄                             10   0          ······················· ▄
+│   03   0          ············· ▄                             11   0          ······················· ▄
+│   04   0          ············· ▄                             12   0          ······················· ▄
+│   05   0          ············· ▄                             13   0          ······················· ▄
+│   06   0          ············· ▄                             14   0          ······················· ▄
+│   07   0          ············· ▄                             15   0          ······················· ▄
 │
 │ DAY ─────────────────────────────────────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
 │ permission: experimental hold + exact night qualification
 │ allowance: 0 consumed / 2 limit; 2 remaining · 0...         22:13  start    session started on 16 cores
 │ experimental: 50.000 clean hours; at most 1 crash per...
-│ proposed, not applied: 0:-15 1:-15 2:-15 3:-15 4:-15...
+│ proposed, not applied: 0:-5 1:-5 2:-5 3:-5 4:-5 5:-5...
 │ CCD 0: climbing; hold 50.000 / 50.000 h at exact D
-│ CCD 0: applied step -5 → -10 (5 counts); application...
-│ +5 more
+│ CCD 1: climbing; hold 50.000 / 50.000 h at exact D
+│ +4 more
 │
 │  ?  help    l  log    esc  back    q  exit dashboard

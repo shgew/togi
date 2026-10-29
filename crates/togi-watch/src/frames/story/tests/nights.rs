@@ -468,25 +468,27 @@ fn unresolved_day_events_are_counted_as_blocking_promotion() {
     assert_eq!(said.lines[2], "2 day events still block promotion.");
 }
 
-#[test_case::test_case(togi_journal::ClimbBlocker::CampaignHistory {}, "campaign history unavailable"; "missing campaign history")]
-#[test_case::test_case(togi_journal::ClimbBlocker::SameBoot {}, "promotion requires an eligible cold boot"; "same boot")]
-#[test_case::test_case(togi_journal::ClimbBlocker::HoldProfile {}, "hold belongs to a different exact profile"; "wrong hold profile")]
-#[test_case::test_case(togi_journal::ClimbBlocker::SafeApply {}, "safe application prerequisites missing"; "safe apply")]
-#[test_case::test_case(togi_journal::ClimbBlocker::ActivationClosed {}, "nonzero activation closed"; "activation closed")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::CampaignHistory {}, "campaign history unavailable"; "missing campaign history")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::SameBoot {}, "promotion requires an eligible cold boot"; "same boot")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::HoldProfile {}, "hold belongs to a different exact profile"; "wrong hold profile")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::SafeApply {}, "safe application prerequisites missing"; "safe apply")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::ActivationClosed {}, "nonzero activation closed"; "activation closed")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::Ceiling { unit: togi_tuner::UnitId::Core(core(0)) }, "hard night ceiling blocks the target"; "target past the hard ceiling")]
 fn d_permission_blockers_name_the_missing_prerequisite(
-    reason: togi_journal::ClimbBlocker,
+    reason: &togi_journal::ClimbBlocker,
     expected: &str,
 ) {
-    assert_eq!(super::super::night::blocker_words(&reason), expected);
+    assert_eq!(super::super::night::blocker_words(reason), expected);
 }
 
-#[test_case::test_case(togi_journal::UnitStopReason::AdverseCeiling {}, "adverse night ceiling; permanently stopped"; "adverse ceiling")]
-#[test_case::test_case(togi_journal::UnitStopReason::Veto {}, "whole-profile veto; permanently stopped"; "veto")]
+#[test_case::test_case(&togi_journal::UnitStopReason::AdverseCeiling {}, "adverse night ceiling; permanently stopped"; "adverse ceiling")]
+#[test_case::test_case(&togi_journal::UnitStopReason::Veto {}, "whole-profile veto; permanently stopped"; "veto")]
+#[test_case::test_case(&togi_journal::UnitStopReason::Predecessor { original: togi_journal::Provenance { session: togi_journal::SessionId::new(ts(1000), None).unwrap(), seq: togi_journal::Seq::new(1).unwrap() } }, "predecessor event; permanently stopped"; "predecessor stop persists")]
 fn safety_stops_are_not_reported_as_successful_ceiling_completion(
-    reason: togi_journal::UnitStopReason,
+    reason: &togi_journal::UnitStopReason,
     expected: &str,
 ) {
-    assert_eq!(super::super::night::finish_words(&reason), expected);
+    assert_eq!(super::super::night::finish_words(reason), expected);
 }
 
 #[test]
