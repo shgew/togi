@@ -572,3 +572,44 @@ fn a_daily_event_carries_the_tag_exactly_inside_the_restoration_span(
         result.violations
     );
 }
+
+// ---- Qualification context (observable context, not hidden truth epoch id) --------------------------
+
+fn first_climb_qualification(record: &mut Record) -> &mut Qualification {
+    match &mut record.steps[0].kind {
+        StepKind::Climb { qualification, .. } => qualification,
+        StepKind::Restoration { .. } | StepKind::Retreat { .. } | StepKind::StockReset { .. } => {
+            unreachable!("the first application is a promotion")
+        }
+    }
+}
+
+/// A moving-limit epoch keeps the observable context, so citing the other truth epoch is clean.
+#[test]
+fn a_qualification_citing_another_truth_epoch_of_the_same_context_is_clean() {
+    let lab = lab("successor-moving-cap");
+    let mut record = Spec::new("successor-moving-cap", 20_001, SLOPE).build(&lab);
+    assert_eq!(record.epochs[0].context, record.epochs[1].context);
+    let other = record.epochs[1].id.clone();
+    first_climb_qualification(&mut record).epoch = other;
+    assert_eq!(rules(&judged(&lab, &record)), Vec::<&str>::new());
+}
+
+/// A firmware change opens a new context, so citing the other side's epoch fails.
+#[test]
+fn a_qualification_citing_the_other_firmware_context_is_refused() {
+    let lab = lab(FIRMWARE);
+    let mut record = firmware(&lab, Restore::Retained, vec![]);
+    assert_ne!(record.epochs[0].context, record.epochs[1].context);
+    let other = record.epochs[1].id.clone();
+    first_climb_qualification(&mut record).epoch = other;
+    assert!(rules(&judged(&lab, &record)).contains(&"qualification-context"));
+}
+
+#[test]
+fn a_qualification_citing_an_unknown_epoch_is_refused() {
+    let lab = lab(EDGE);
+    let mut record = edge(&lab, vec![]);
+    first_climb_qualification(&mut record).epoch = "unknown".into();
+    assert!(rules(&judged(&lab, &record)).contains(&"qualification-context"));
+}
