@@ -1,7 +1,7 @@
 //! Daily events and vetoes: the raw observer records classified by the day policy, and the `day.event`
 //! and `day.veto` commitments that carry them.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use crate::UnitId;
 use jiff::Timestamp;

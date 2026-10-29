@@ -46,7 +46,7 @@ pub(super) fn vector(profile: &UnitProfile, units: &crate::Units) -> Result<Unit
 
 pub(super) fn ceiling(edge: &Edge) -> climb::Ceiling {
     let state = match edge {
-        Edge::Unknown => climb::EdgeState::Unknown,
+        Edge::Unknown {} => climb::EdgeState::Unknown,
         Edge::Observed { offset, witness } => match climb::EvidenceId::new(witness.get()) {
             Some(witness) => climb::EdgeState::Observed { offset: *offset, witness },
             None => climb::EdgeState::Unknown,

@@ -12,7 +12,6 @@ use togi_machine::{BootId, ObservedOffset, PerCore};
 
 use super::State;
 use super::books::{Committed, Observed};
-use super::day_events::DayView;
 use super::decision::{Decision, PolicyPayload};
 use super::night_query::NotReady;
 use crate::day::{CoreProfile, IntervalKind, Invocation, Readback};
