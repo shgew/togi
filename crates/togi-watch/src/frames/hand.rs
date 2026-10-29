@@ -174,6 +174,7 @@ pub(crate) fn bare(ccds: Vec<UnitProjection>) -> Projection {
         qualifications: Vec::new(),
         night: None,
         stopped: false,
+        climb: Default::default(),
     }
 }
 

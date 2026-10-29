@@ -212,6 +212,15 @@ impl HiddenClosing {
             | EventKind::DayRecord
             | EventKind::DayFault
             | EventKind::DayUncleanEnd
+            | EventKind::UnitMapping
+            | EventKind::UnitEdge
+            | EventKind::ClimbDecision
+            | EventKind::UnitStop
+            | EventKind::CampaignStart
+            | EventKind::CampaignCharge
+            | EventKind::CampaignReclassified
+            | EventKind::FirmwareRestoration
+            | EventKind::SuccessorImported
             | EventKind::StateRebuilt => self.0.clear(),
         }
     }
