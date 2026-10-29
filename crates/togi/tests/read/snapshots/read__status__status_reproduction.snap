@@ -9,11 +9,17 @@ BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
 in flight: [#15051] trial night-trial-3396 core 00 offset -3 R1 mprime SSE
   4K-21K 90 s together reproduction task reproduction #0 night #15048
 
+Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
+  prove the hazard goal. Coverage gaps remain unknown.
 CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 0   0-7   0   -6  fallback rate     censored -50 6         114     153
   bound by R9 ycruncher-bkt-sftv4-all-threads serial cpu 0 120s isolated
 1   8-15  0   -6  fallback rate     censored -50 6         114     142
   bound by R9 ycruncher-snt-svt-all-threads serial cpu 25 120s isolated
+  CCD 0 current cap calculation: S -6; mapping rate bound; 2.9 h eligible
+    mapping witnesses; 153 coverage gaps
+  CCD 1 current cap calculation: S -6; mapping rate bound; 2.9 h eligible
+    mapping witnesses; 142 coverage gaps
   CCD 0 uncovered for the cap, no observations: R8
     mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 0 120s
     isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
@@ -116,8 +122,10 @@ requalification  10%    0%    0s
 current task: reproduction (task reproduction #0)
 mapping CCD 0: next offset -39
 mapping CCD 1: next offset -39
-qualification: CCD 0 -1, CCD 1 0 (next step) complete
-qualification: CCD 0 -3, CCD 1 0 (next step) complete
+qualification: CCD 0 -1, CCD 1 0 (next step) complete, 7.8 h eligible witnessed
+  exposure
+qualification: CCD 0 -3, CCD 1 0 (next step) complete, 7.9 h eligible witnessed
+  exposure
 reproduction: boot calendar-boot-39: reproduction pending, 0 h consumed, 390
   classes remaining
 

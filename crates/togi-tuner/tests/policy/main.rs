@@ -289,10 +289,35 @@ fn the_projection_names_the_ccds_the_day_and_the_running_task() {
     assert_eq!(
         json["ccds"],
         serde_json::json!([
-            {"ccd": 0, "cores": json["ccds"][0]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null},
-            {"ccd": 1, "cores": json["ccds"][1]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null},
+            {"ccd": 0, "cores": json["ccds"][0]["cores"], "edge": null, "cap": null, "evidence": json["ccds"][0]["evidence"], "day": 0, "remaining": null},
+            {"ccd": 1, "cores": json["ccds"][1]["cores"], "edge": null, "cap": null, "evidence": json["ccds"][1]["evidence"], "day": 0, "remaining": null},
         ])
     );
+    for ccd in json["ccds"].as_array().unwrap() {
+        let evidence = &ccd["evidence"];
+        let uncovered = evidence["uncovered"].as_array().unwrap();
+        assert!(!uncovered.is_empty(), "{evidence}");
+        for gap in uncovered {
+            assert_eq!(gap["reason"], serde_json::json!("no_observations"));
+            assert!(!gap["class"]["cores"].as_array().unwrap().is_empty());
+        }
+        assert_eq!(
+            evidence,
+            &serde_json::json!({
+                "offset": 0,
+                "reason": {"kind": "no_adequate_class"},
+                "budget": Params::SPEC.machine_budget.get() / 2.0,
+                "cells": [],
+                "projected": [],
+                "slope": {
+                    "kind": "fallback",
+                    "beta": Params::SPEC.fallback_slope.get(),
+                },
+                "slope_inputs": [],
+                "uncovered": uncovered,
+            })
+        );
+    }
     assert_eq!(
         json["day"]["firmware"],
         serde_json::json!({"kind": "valid"})
@@ -340,4 +365,55 @@ fn the_incremental_state_equals_a_full_refold_and_a_resumed_capsule() {
     assert_eq!(format!("{:?}", refolded.next(&query).unwrap()), expected);
     assert_eq!(format!("{:?}", resumed.next(&query).unwrap()), expected);
     assert_eq!(resumed.project(), journal.state.project());
+}
+
+#[test]
+fn comparable_exposures_use_the_latest_distinct_stock_witness() {
+    let mut journal = Journal::ready();
+    let plan = journal.until_trial(journal.now());
+    journal.run(&plan, Ending::Pass);
+    journal.until_trial(journal.now());
+    let (first, stock) = journal
+        .events
+        .iter()
+        .find_map(|event| {
+            if let Payload::ExposureObserved(observed) = &event.payload {
+                Some((event.seq, observed.clone()))
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let profile = fixture::zero().with(
+        fixture::ccd(0),
+        togi_machine::TargetOffset::new(-10).unwrap(),
+    );
+    let selected = togi_journal::ExposureObserved {
+        source: togi_journal::OriginalSource {
+            seq: togi_journal::Seq::new(1000).unwrap(),
+            ..stock.source.clone()
+        },
+        profile: togi_journal::CcdVector::expand(profile.clone(), &fixture::cores()).unwrap(),
+        ..stock.clone()
+    };
+    let selected_seq = journal.append(selected.into(), &[]);
+    let newer = togi_journal::ExposureObserved {
+        source: togi_journal::OriginalSource {
+            seq: togi_journal::Seq::new(1001).unwrap(),
+            ..stock.source.clone()
+        },
+        ..stock.clone()
+    };
+    let newer_seq = journal.append(newer.into(), &[]);
+    // A later copy cannot displace either original witness.
+    journal.append(stock.into(), &[]);
+    assert_ne!(first, newer_seq);
+    assert_eq!(
+        journal.state.comparable_exposures(&profile),
+        vec![(selected_seq, newer_seq)]
+    );
+    assert_eq!(
+        journal.state.comparable_exposures(&fixture::zero()),
+        Vec::new()
+    );
 }

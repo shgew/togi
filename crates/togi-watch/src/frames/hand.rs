@@ -182,6 +182,7 @@ pub(crate) fn ccd_row(id: u8, cores: &[u8], day: i64) -> CcdProjection {
         cores: set(cores),
         edge: None,
         cap: None,
+        evidence: None,
         day: off(day),
         remaining: None,
     }
@@ -491,6 +492,7 @@ impl Staged {
                     profile: profile_of(&[(0, -10), (1, -8)]),
                     outstanding: vec![class(Regime::R1, &[0]), class(Regime::R2, &[8])],
                     witnessed: 3,
+                    eligible_s: 900,
                 });
                 policy.night = Some(night);
                 policy.qualifications = vec![QualificationProjection {
@@ -498,6 +500,7 @@ impl Staged {
                     purpose: QualificationPurpose::NextStep,
                     state: QualificationStage::Progress,
                     current: true,
+                    eligible_s: 900,
                 }];
                 trial = Some(TrialView {
                     task: Some(TaskId {

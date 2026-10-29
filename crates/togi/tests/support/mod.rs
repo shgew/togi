@@ -116,6 +116,7 @@ pub struct Host {
     pub marker_at_reboot: Cell<Option<bool>>,
     pub reboot_error: RefCell<Option<RebootError>>,
     pub diagnosis: RefCell<Option<Result<Diagnosis, togi_hardware::Error>>>,
+    pub day_diagnosis: RefCell<Option<Result<Diagnosis, togi_hardware::Error>>>,
     pub diagnoses: RefCell<Vec<(Option<BiosContext>, bool)>>,
     pub calls: Cell<usize>,
     pub day_answers: RefCell<Vec<(togi_machine::BootId, togi_journal::DayAnswerKind)>>,
@@ -160,6 +161,7 @@ impl Host {
             marker_at_reboot: Cell::new(None),
             reboot_error: RefCell::new(None),
             diagnosis: RefCell::new(None),
+            day_diagnosis: RefCell::new(None),
             diagnoses: RefCell::default(),
             calls: Cell::new(0),
             day_answers: RefCell::default(),
@@ -303,6 +305,7 @@ impl System for Host {
         match request {
             Request::Questions => Ok(Reply::Questions {
                 pending: Vec::new(),
+                morning: None,
             }),
             Request::Answer { boot, answer } => {
                 self.day_answers.borrow_mut().push((boot.clone(), *answer));
@@ -427,6 +430,19 @@ impl System for Host {
             self.lock_busy_in_diagnose.set(Some(busy));
         }
         self.diagnosis.borrow_mut().take().unwrap()
+    }
+
+    fn diagnose_day(
+        &self,
+        _: &Config,
+        lock: Option<&HostLock>,
+    ) -> Result<Diagnosis, togi_hardware::Error> {
+        self.calls.set(self.calls.get() + 1);
+        if lock.is_some() {
+            let busy = matches!(self.acquire_host_lock(), Err(LockError::Busy { .. }));
+            self.lock_busy_in_diagnose.set(Some(busy));
+        }
+        self.day_diagnosis.borrow_mut().take().unwrap()
     }
 
     /// Like the real host's: the night setup file is read and decoded before a loader opens, so an unreadable or

@@ -35,8 +35,8 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~  wwwww gggg          g       ggg       ggg       ggg       ggg       ggg                                                 wwwww gggggggggg    g       ggg       ggg       ggg       ggg       ggg
 │  D -10 · S -26 fallback slope · bound by rate R1 · U fails at -31 · 16 counts to S                                       D -8 · S -15 measured slope · bound by rate R1 · U censored at -50 · 7 counts to S
 ~  ggwwwkkkttttttttttttttttttttkkkggggggggggggggggkkkffffffffffffffkkktttttttttttttt                                       ggwwkkkttttttttttttttttttttkkkggggggggggggggggkkkaaaaaaaaaaaaaaaaakkkttttttttttttt
-│  3 covered for the cap · 1 uncovered for the cap                                                                         4 covered for the cap · 0 uncovered for the cap
-~  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa                                                                         ppppppppppppppppppppppppppppppppppppppppppppppp
+│  Ruleset 13 mapping: eligible hours/gaps unknown                                                                         Ruleset 13 mapping: eligible hours/gaps unknown
+~  ggggggggggggggggggggggggggggggggggggggggggggggg                                                                         ggggggggggggggggggggggggggggggggggggggggggggggg
 │    00  -10            ▆▆▆▆▆▆▆▆▆▆················    ▆                                                                    ► 08   -8  LOADED    ▆▆▆▆▆▆▆▆·······                                  ▆
 ~    tt  ttt            gggggggggggggggggggggggggg    f                                                                    c ww  www  tttttt    wwwwwwwwggggggg                                  a
 │    01  -10            ▆▆▆▆▆▆▆▆▆▆················    ▆                                                                    ► 09   -8  LOADED    ▆▆▆▆▆▆▆▆·······                                  ▆
@@ -65,11 +65,12 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │
 │  DAY ──────────────────────────────────────────────────────────────────────────────────────────────── applied -10/-8
 ~  www kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggggggg
+│  Ruleset 13  mapping-only cap; CO 0 is not hazard-goal proof
+~  ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │  hold        3h00m of 8h00m · holding -10/-8
 ~  ggggggggggggwwwwwwwwwwwwwwggggggggggggggggg
 │  firmware    valid
 ~  ggggggggggggppppp
-│
 │
 │
 │

@@ -14,7 +14,7 @@ expression: body
 │
 │ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
 │ D -10 · S -26 · rate R1 · U fails at -31 · 16 counts to S   D -8 · S -15 · rate R1 · U censored at -50 · 7 to S
-│ 3 covered for the cap · 1 uncovered for the cap             4 covered for the cap · 0 uncovered for the cap
+│ Ruleset 13 mapping: eligible hours/gaps unknown             Ruleset 13 mapping: eligible hours/gaps unknown
 │   00 -10          ▄▄▄▄▄········  ▄                            08  -8          ▄▄▄▄····                ▄
 │   01 -10          ▄▄▄▄▄········  ▄                            09  -8          ▄▄▄▄····                ▄
 │   02 -10          ▄▄▄▄▄········  ▄                            10  -8          ▄▄▄▄····                ▄
@@ -28,9 +28,9 @@ expression: body
 │ task        none running · 1 of 2 planned tasks done
 │ shares      mapping 66%/10% · qualification 33%/75%...      22:13  start    session started on 16 cores
 │ DAY ────────────────────────────────────── applied -10/-8
+│ Ruleset 13  mapping-only cap; CO 0 is not hazard-goal...
 │ hold        3h00m of 8h00m · holding -10/-8
 │ firmware    valid
-│
 │
 │
 │  ?  help    l  log    esc  back    q  exit dashboard

@@ -34,7 +34,7 @@ module completions {
     answer: string            # What happened: frozen, graphics, power-off or unsure
   ]
 
-  # Send pending questions to this graphical session's notification daemon
+  # Send pending questions and the morning evidence report to this graphical session
   export extern "togi day notify" [
     --state-dir: directory    # State directory
     --help(-h)                # Print help
@@ -61,7 +61,7 @@ module completions {
   export extern "togi day help answer" [
   ]
 
-  # Send pending questions to this graphical session's notification daemon
+  # Send pending questions and the morning evidence report to this graphical session
   export extern "togi day help notify" [
   ]
 
@@ -87,6 +87,7 @@ module completions {
   # Check whether this machine is ready for a run
   export extern "togi doctor" [
     --config: path            # JSON configuration file [default: /etc/togi/config.json]
+    --day                     # Check day-observation prerequisites instead of night-run preflight
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
   ]
@@ -141,6 +142,7 @@ module completions {
 
   # Show the session at a glance
   export extern "togi status" [
+    --evidence                # Show exact-profile observations, cap witnesses and recorded night comparisons
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
   ]
@@ -170,7 +172,7 @@ module completions {
   export extern "togi help day answer" [
   ]
 
-  # Send pending questions to this graphical session's notification daemon
+  # Send pending questions and the morning evidence report to this graphical session
   export extern "togi help day notify" [
   ]
 

@@ -171,7 +171,7 @@ pub(crate) fn cap_words(cap: &CapProjection) -> (String, String) {
     )
 }
 
-/// The distance row: D, S with its slope and binding, U and the remaining distance.
+/// The distance row: committed D/S/binding, the separate current calculation, U and distance.
 pub(super) fn facts_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -> Line<'static> {
     let sep = || scene.paint(Paint::Track, " · ");
     let text = |paint: Paint, value: String| Line::from(scene.paint(paint, value));
@@ -182,33 +182,52 @@ pub(super) fn facts_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -
             scene.paint(Paint::White, offset_text(ccd.day)),
         ]),
     )];
-    match &ccd.cap {
-        Some(cap) => {
-            let (full, short) = cap_words(cap);
+    if let Some(cap) = &ccd.cap {
+        let (full, short) = cap_words(cap);
+        clauses.push(Clause::new(
+            sep(),
+            vec![
+                Form::new(text(Paint::Text, full), 3),
+                Form::new(text(Paint::Text, short), 0),
+            ],
+        ));
+        let bound = binding_words(&cap.binding);
+        clauses.push(Clause::new(
+            sep(),
+            vec![
+                Form::new(text(Paint::Grey, format!("bound by {bound}")), 4),
+                Form::new(text(Paint::Grey, bound), 2),
+                Form::empty(),
+            ],
+        ));
+        if let Some(evidence) = &ccd.evidence {
+            let offset = offset_text(evidence.offset);
             clauses.push(Clause::new(
                 sep(),
                 vec![
-                    Form::new(text(Paint::Text, full), 3),
-                    Form::new(text(Paint::Text, short), 0),
-                ],
-            ));
-            let bound = binding_words(&cap.binding);
-            clauses.push(Clause::new(
-                sep(),
-                vec![
-                    Form::new(text(Paint::Grey, format!("bound by {bound}")), 4),
-                    Form::new(text(Paint::Grey, bound), 2),
-                    Form::empty(),
+                    Form::new(
+                        text(
+                            Paint::Grey,
+                            format!("calc {offset}: {}", evidence.reason.label()),
+                        ),
+                        0,
+                    ),
+                    Form::new(text(Paint::Grey, format!("calc {offset}")), 1),
                 ],
             ));
         }
-        None => clauses.push(Clause::new(
+    } else {
+        let reason = ccd
+            .evidence
+            .as_ref()
+            .map_or("no cap yet", |evidence| evidence.reason.label());
+        clauses.push(Clause::new(
             sep(),
             vec![
-                Form::new(text(Paint::Grey, "S 0 · no cap yet".to_owned()), 2),
-                Form::new(text(Paint::Grey, "no cap yet".to_owned()), 0),
+                Form::new(text(Paint::Grey, format!("S 0 · {reason}")), 2),
+                Form::new(text(Paint::Grey, reason.to_owned()), 0),
             ],
-        )),
+        ));
     }
     let (edge_full, edge_short) = edge_words(ccd.edge.as_ref());
     let edge_paint = match ccd.edge {
@@ -244,47 +263,47 @@ pub(super) fn facts_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -
     fit_clauses(width, &clauses, scene.colours)
 }
 
-/// The coverage row: how many trial classes back the cap and how many are uncovered for it.
+/// The cap owner's eligible mapping witness hours and gaps; non-mapping exposure is not coverage.
 pub(super) fn coverage_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -> Line<'static> {
-    let text = |paint: Paint, value: String| Line::from(scene.paint(paint, value));
-    let Some(cap) = &ccd.cap else {
-        return fit_clauses(
-            width,
-            &[Clause::whole(
-                Line::default(),
-                text(Paint::Grey, "cap coverage: no cap yet".to_owned()),
-            )],
-            scene.colours,
-        );
-    };
-    let covered = cap.adequate.len();
-    let uncovered = cap.uncovered.len();
-    let paint = if uncovered == 0 {
-        Paint::Good
-    } else {
-        Paint::Warn
+    let text = |value: String| Line::from(scene.paint(Paint::Grey, value));
+    let (full, short) = match &ccd.evidence {
+        Some(evidence) => {
+            let seconds = evidence
+                .cells
+                .iter()
+                .fold(0_u64, |total, cell| total.saturating_add(cell.eligible_s));
+            let non_mapping = evidence
+                .uncovered
+                .iter()
+                .filter(|gap| gap.reason == togi_journal::UncoveredReason::NonMappingOnly)
+                .count();
+            let hours = seconds / 360;
+            (
+                format!(
+                    "Ruleset 13 mapping: {}.{}h eligible · {} gaps ({} non-mapping)",
+                    hours / 10,
+                    hours % 10,
+                    evidence.uncovered.len(),
+                    non_mapping
+                ),
+                format!(
+                    "Ruleset 13: {}.{}h · {} gaps",
+                    hours / 10,
+                    hours % 10,
+                    evidence.uncovered.len()
+                ),
+            )
+        }
+        None => (
+            "Ruleset 13 mapping: eligible hours/gaps unknown".to_owned(),
+            "Ruleset 13: hours/gaps unknown".to_owned(),
+        ),
     };
     fit_clauses(
         width,
         &[Clause::new(
             Line::default(),
-            vec![
-                Form::new(
-                    text(
-                        paint,
-                        format!(
-                            "{covered} covered for the cap · {uncovered} uncovered for the cap"
-                        ),
-                    ),
-                    3,
-                ),
-                Form::new(
-                    text(paint, format!("{covered} covered · {uncovered} uncovered")),
-                    2,
-                ),
-                Form::new(text(paint, format!("{covered} cov · {uncovered} unc")), 1),
-                Form::new(text(paint, format!("{covered}/{uncovered}")), 0),
-            ],
+            vec![Form::new(text(full), 1), Form::new(text(short), 0)],
         )],
         scene.colours,
     )

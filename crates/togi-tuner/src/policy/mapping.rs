@@ -52,6 +52,7 @@ pub(super) struct CapOutcome {
     pub(super) cap: cap::Cap<ClassId>,
     pub(super) classes: Vec<ExposureClass>,
     pub(super) previous: Slope,
+    pub(super) budget: Rate,
     /// Eligible seconds per mapping class and offset, for the journal's rate cells.
     pub(super) mapping_secs: BTreeMap<(ClassId, TargetOffset), u64>,
 }
@@ -436,7 +437,7 @@ fn slope_of(slope: &togi_journal::Slope) -> Slope {
     }
 }
 
-fn journal_slope(
+pub(super) fn journal_slope(
     slope: Slope,
     historical_min: Option<Beta>,
 ) -> Result<togi_journal::Slope, NotReady> {
@@ -473,7 +474,7 @@ fn candidate_offset(witness: &cap::Witness<ClassId>, beta: Beta, budget: Rate) -
         .unwrap_or(TargetOffset::ZERO)
 }
 
-fn rate_bound(bound: cap::Bound) -> Result<RateBound, NotReady> {
+pub(super) fn rate_bound(bound: cap::Bound) -> Result<RateBound, NotReady> {
     Ok(match bound {
         cap::Bound::Finite(rate) => RateBound::Finite {
             per_hour: JournalRate::new(rate.get())?,
@@ -558,6 +559,7 @@ impl State {
             cap,
             classes: interner.classes,
             previous,
+            budget: limits.per_ccd_budget(),
             mapping_secs,
         })
     }
@@ -900,6 +902,6 @@ fn outcome_is_unobserved(outcome: &CapOutcome) -> bool {
     outcome.mapping_secs.is_empty() && outcome.cap.witnesses.is_empty()
 }
 
-fn usize_of(id: ClassId) -> usize {
+pub(super) fn usize_of(id: ClassId) -> usize {
     usize::try_from(id.0).unwrap_or(usize::MAX)
 }

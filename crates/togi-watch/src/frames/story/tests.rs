@@ -716,6 +716,7 @@ mod the_trial_band {
             profile: profile(&[(0, -10), (1, -5)]),
             outstanding: Vec::new(),
             witnessed: 0,
+            eligible_s: 0,
         });
         fx.policy.night = Some(progress_night);
         let mut running = trial(Regime::R1, &[0, 1]);

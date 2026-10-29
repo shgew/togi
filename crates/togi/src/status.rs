@@ -22,6 +22,7 @@ use crate::read;
 use crate::report::fail;
 use crate::table::wrap;
 
+mod evidence;
 mod policy;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
@@ -40,16 +41,16 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// day, a stop or a dead end);
 /// session and BIOS context; then one table row per CCD: its cores, the applied day offset D, the
 /// cap S with its slope (fallback or measured) and binding, the edge U (unknown, fails at an offset
-/// or censored at the write limit), the distance still to go from D to S and how many trial classes
-/// are covered and uncovered for the cap, with the uncovered classes listed below. A Day policy
-/// part shows the applied profile, the hold's applied hours, the latest day step and what blocks
+/// or censored at the write limit), the distance D-S and how many trial classes are covered and
+/// uncovered for the cap, with typed zero/binding reasons, eligible hours and coverage gaps below.
+/// A Day policy part shows the applied profile, the hold's applied hours, the latest day step and what blocks
 /// it, freeze, firmware validity and the daily events and vetoes. A Night part shows when the night
 /// started (and the boot that ended it), the elapsed observed time, each queue's soft share beside
-/// the part of that time it used, the current task, mapping progress, qualification cells
-/// witnessed and outstanding and the reproductions. Status shows what the tuner committed; it
-/// computes no cap or eligibility itself. Between-trial MCEs are listed without treating them as
-/// failures, and a defect names its recorded decisions and the `togi reset --all` that starts
-/// fresh.
+/// the part of that time it used, the current task, mapping progress, qualification exposure
+/// hours and outstanding classes and the reproductions. The tuner supplies committed state and
+/// its current read-only cap calculation; status computes no cap or eligibility itself.
+/// Between-trial MCEs are listed without treating them as failures, and a defect names its
+/// recorded decisions and the `togi reset --all` that starts fresh.
 /// After daily observations exist, a Day section lists boots, checkpointed hours per read-back
 /// profile, clean/unclean ends and the last unclean boot's reset reason.
 /// Each unclean end of a day-observed boot becomes a question until answered: what togi saw, the
@@ -57,15 +58,22 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// current answer.
 /// Read-only, rendered from the journal. A different ruleset warns before rendering; a different
 /// schema is refused.
+/// With --evidence, also show exact-profile daily observations beside stock, provenance and
+/// unknown intervals, numeric cap/slope witnesses, qualification exposure, applied-step history
+/// and comparable same-class night clocks and temperatures. No safety verdict or ETA is given.
 ///
 /// An event of a kind this build does not know is skipped and an unknown field is ignored; stderr
 /// says which, after the output.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
-pub struct Args {}
+pub struct Args {
+    /// Show exact-profile observations, cap witnesses and recorded night comparisons
+    #[arg(long)]
+    pub evidence: bool,
+}
 
 /// Runs `togi status`.
-pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
+pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let recording = match read::open(ctx, "status") {
         Ok(recording) => recording,
         Err(exit) => return exit,
@@ -75,7 +83,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
         Some(fs) => togi_watch::model::Model::read_in(&*fs, ctx.state_dir, events),
         None => togi_watch::model::Model::read(ctx.state_dir, events),
     };
-    let text = match render_model(events, &model, &ctx.system.zone()) {
+    let mut text = match render_model(events, &model, &ctx.system.zone()) {
         Ok(text) => text,
         Err(Problem::NoSession) => {
             let message = format!("no session in {}", ctx.state_dir.display());
@@ -85,6 +93,14 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             return fail(ctx, "status", togi_render::error_chain(&error));
         }
     };
+    if args.evidence {
+        evidence::write(
+            &mut text,
+            events,
+            model.snapshot().policy,
+            model.tuner_state(),
+        );
+    }
     if let Err(error) = ctx
         .out
         .write_all(text.as_bytes())
@@ -247,6 +263,10 @@ fn render_model(
     .write();
     render_day(&mut out, events);
     render_questions(&mut out, events);
+    if let Some(report) = crate::morning::Report::of(events) {
+        out.push_str("\nMorning report\n");
+        wrap(&mut out, "", "  ", &report.text);
+    }
     Ok(out)
 }
 

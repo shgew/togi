@@ -1,0 +1,5 @@
+---
+source: crates/togi-watch/src/frames/dash/tests.rs
+expression: facts_text
+---
+D -10 · S -15 fallback slope · bound by rate R1 · calc 0: unknown edge · U fails at -23 · 5 counts to S

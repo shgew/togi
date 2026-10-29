@@ -214,6 +214,11 @@ pub(crate) fn snapshot(name: &str, actual: &str) {
         "status__status_idle",
         "status__status_recovering",
         "status__status_stopped",
+        "status__evidence_controls",
+        "status__evidence_mapping",
+        "status__evidence_day-step",
+        "status__status_morning",
+        "status__evidence_morning",
         "watch__watch_help",
     );
     let (_, body) = expected

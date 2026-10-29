@@ -1,6 +1,8 @@
 //! What status and watch show of the policy, and the `tuner` key of `state.json`: the committed edges and
 //! caps, the applied profile and its hold, the events and vetoes, the qualifications and the latest night.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use togi_journal::{
     Activity, Binding, Budget, Classification, DayEventId, DayStep, Edge, ExposureClass, NightId,
@@ -10,11 +12,62 @@ use togi_journal::{
 use togi_machine::{BootId, CcdId, CcdProfile, CoreSet, TargetOffset};
 
 use super::State;
-use super::ledger::saturating_u32;
+use super::ledger::{Sig, saturating_u32};
 use super::qualify::QualStatus;
 use crate::day::{Freeze, QuestionState};
 use crate::night::Cursor;
 
+/// The cap owner's reason, without the journal's lossy `baseline` label.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CapReason {
+    NoAdequateClass,
+    UnknownEdge,
+    NoJustifiedDecay,
+    Edge { rate_limited: TargetOffset },
+    Rate { class: ExposureClass },
+    Retained { recomputed: TargetOffset },
+}
+
+impl CapReason {
+    /// A concise label shared by evidence readers, never a safety verdict.
+    #[must_use]
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::NoAdequateClass => "no adequate mapping class",
+            Self::UnknownEdge => "unknown edge",
+            Self::NoJustifiedDecay => "no justified decay",
+            Self::Edge { .. } => "edge margin",
+            Self::Rate { .. } => "mapping rate bound",
+            Self::Retained { .. } => "retained shallower cap",
+        }
+    }
+}
+
+/// A current-context input retained by the slope owner, including non-mapping purposes.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct SlopeCell {
+    pub class: ExposureClass,
+    pub offset: TargetOffset,
+    pub purpose: crate::cap::Purpose,
+    pub failures: u32,
+    pub hours: f64,
+}
+
+/// Current read-only calculation, distinct from the last committed S.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CapEvidence {
+    pub offset: TargetOffset,
+    pub reason: CapReason,
+    pub slope: Slope,
+    pub budget: crate::cap::Rate,
+    pub cells: Vec<togi_journal::RateCell>,
+    /// Each rate cell projected at `offset`, in the same order; absent without justified decay.
+    pub projected: Vec<togi_journal::RateBound>,
+    pub uncovered: Vec<UncoveredClass>,
+    /// Observations with no hours and no failures contribute nothing; interrupted empty cells are omitted.
+    pub slope_inputs: Vec<SlopeCell>,
+}
 /// A committed cap S and what produced it.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CapProjection {
@@ -35,6 +88,9 @@ pub struct CcdProjection {
     /// `None` until a `ccd.edge` was committed; absence is not offset zero.
     pub edge: Option<Edge>,
     pub cap: Option<CapProjection>,
+    /// Recomputed by the existing cap owner; absence means the evidence context is not queryable.
+    #[serde(default)]
+    pub evidence: Option<CapEvidence>,
     /// D: CO 0 before any `day.applied`.
     pub day: TargetOffset,
     /// Counts from D down to S; zero when D is already at or past S. `None` without a cap.
@@ -73,6 +129,9 @@ pub struct QualificationProjection {
     pub state: QualificationStage,
     /// Whether it was made under the current firmware, epoch and content.
     pub current: bool,
+    /// Measured task exposure plus cited reuse, deduplicated; includes partials and failures, not cells.
+    #[serde(default)]
+    pub eligible_s: u64,
 }
 
 /// The applied-hour hold at the current D.
@@ -124,6 +183,8 @@ pub struct QualificationProgress {
     pub profile: CcdProfile,
     pub outstanding: Vec<ExposureClass>,
     pub witnessed: usize,
+    #[serde(default)]
+    pub eligible_s: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -170,6 +231,34 @@ pub struct Projection {
     pub night: Option<NightProjection>,
     /// A conclusive failure at all-zero ended the run.
     pub stopped: bool,
+}
+
+/// Which recorded profile an expanded evidence reader should inspect.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EvidenceProfile<'a> {
+    Applied(&'a CcdProfile),
+    NightQualified(&'a CcdProfile),
+    Baseline(&'a CcdProfile),
+}
+
+impl Projection {
+    /// A nonzero day profile takes priority; baseline stock must not hide completed night work.
+    #[must_use]
+    pub fn evidence_profile(&self) -> Option<EvidenceProfile<'_>> {
+        if let Some(profile) = self.applied.as_ref().filter(|profile| !profile.is_zero()) {
+            return Some(EvidenceProfile::Applied(profile));
+        }
+        self.qualifications
+            .iter()
+            .rev()
+            .find(|record| {
+                record.current
+                    && record.state == QualificationStage::Complete
+                    && !record.profile.is_zero()
+            })
+            .map(|record| EvidenceProfile::NightQualified(&record.profile))
+            .or_else(|| self.applied.as_ref().map(EvidenceProfile::Baseline))
+    }
 }
 
 const fn activity_of(queue: togi_journal::Queue) -> Option<Activity> {
@@ -238,6 +327,7 @@ impl State {
                         QualificationState::Failed { .. } => QualificationStage::Failed,
                     },
                     current: self.is_current_record(record),
+                    eligible_s: self.qualification_seconds(record),
                 })
                 .collect(),
             night: self.night_projection(),
@@ -245,7 +335,54 @@ impl State {
         }
     }
 
+    /// Selected/stock exposure witnesses in journal order. The ledger owns original-identity
+    /// deduplication, `Sig` owns class identity and `GroupKey` owns context compatibility. Each selected
+    /// observation uses the latest stock observation of its class and context, including historical
+    /// contexts rather than silently treating them as current evidence.
+    #[must_use]
+    pub fn comparable_exposures(&self, profile: &CcdProfile) -> Vec<(Seq, Seq)> {
+        if profile.is_zero() {
+            return Vec::new();
+        }
+        let mut stocks: HashMap<Sig, Vec<(&super::evidence::GroupKey, Seq)>> = HashMap::new();
+        for record in &self.ledger.records {
+            let observed = &record.observed;
+            if !observed.profile.ccd().is_zero() {
+                continue;
+            }
+            let Some(group) = self
+                .ledger
+                .groups
+                .iter()
+                .find(|group| group.key.matches(observed))
+            else {
+                continue;
+            };
+            let contexts = stocks.entry(Sig::of_class(&observed.class)).or_default();
+            if let Some((_, seq)) = contexts.iter_mut().find(|(key, _)| *key == &group.key) {
+                *seq = record.seq;
+            } else {
+                contexts.push((&group.key, record.seq));
+            }
+        }
+        self.ledger
+            .records
+            .iter()
+            .filter(|record| record.observed.profile.ccd() == profile)
+            .filter_map(|record| {
+                let observed = &record.observed;
+                let contexts = stocks.get(&Sig::of_class(&observed.class))?;
+                let (_, stock) = contexts.iter().find(|(key, _)| key.matches(observed))?;
+                Some((record.seq, *stock))
+            })
+            .collect()
+    }
+
     fn ccd_projections(&self, applied: Option<&CcdProfile>) -> Vec<CcdProjection> {
+        let known = self.known_contents(None);
+        let plan = self
+            .with_layout(|layout| self.mapping_plan(layout, &known))
+            .ok();
         let Some(topology) = self.machine.topology.as_ref() else {
             return Vec::new();
         };
@@ -260,6 +397,9 @@ impl State {
                 CcdProjection {
                     ccd,
                     cores,
+                    evidence: plan
+                        .as_ref()
+                        .and_then(|plan| self.cap_evidence(ccd, plan.caps.get(&ccd)?).ok()),
                     edge: self
                         .nights
                         .edges
@@ -380,6 +520,7 @@ impl State {
                             profile: record.start.payload.profile.ccd().clone(),
                             outstanding: outstanding.clone(),
                             witnessed: witnesses.len(),
+                            eligible_s: self.record_seconds(record, witnesses),
                         }),
                         QualStatus::Stale
                         | QualStatus::Complete { .. }
@@ -427,6 +568,139 @@ impl State {
             reproductions: latest,
             unavailable: plan.unavailable.clone(),
             filler: self.trials.filler_cursor(),
+        })
+    }
+    fn record_seconds(
+        &self,
+        record: &super::qualify::QualRecord,
+        witnesses: &[togi_journal::CellWitness],
+    ) -> u64 {
+        let mut cited: std::collections::BTreeSet<_> = witnesses
+            .iter()
+            .map(|witness| match witness.evidence {
+                togi_journal::CellEvidence::Fresh { exposure }
+                | togi_journal::CellEvidence::Reused { exposure } => exposure,
+            })
+            .collect();
+        if let Some(exposures) = self.ledger.by_task.get(&record.task()) {
+            cited.extend(exposures.iter().map(|&at| self.ledger.records[at].seq));
+        }
+        // Exposure commitments append in journal order; do not rescan the whole ledger per qualification.
+        cited
+            .into_iter()
+            .filter_map(|seq| {
+                self.ledger
+                    .records
+                    .binary_search_by_key(&seq, |record| record.seq)
+                    .ok()
+                    .map(|at| &self.ledger.records[at])
+            })
+            .fold(0_u64, |total, record| {
+                total.saturating_add(record.observed.eligible_s)
+            })
+    }
+
+    fn qualification_seconds(&self, record: &super::qualify::QualRecord) -> u64 {
+        let witnesses = match &record.latest.payload.state {
+            QualificationState::Start { .. } => &[][..],
+            QualificationState::Progress { witnesses, .. }
+            | QualificationState::Complete { witnesses }
+            | QualificationState::Failed { witnesses, .. } => witnesses,
+        };
+        self.record_seconds(record, witnesses)
+    }
+
+    fn cap_evidence(
+        &self,
+        ccd: CcdId,
+        outcome: &super::mapping::CapOutcome,
+    ) -> Result<CapEvidence, super::NotReady> {
+        use super::mapping::{rate_bound, usize_of};
+        use crate::cap;
+        let cap = &outcome.cap;
+        let class = |id| outcome.classes[usize_of(id)].clone();
+        let reason = match cap.binding {
+            cap::Binding::NoAdequateClass => CapReason::NoAdequateClass,
+            cap::Binding::UnknownEdge => CapReason::UnknownEdge,
+            cap::Binding::NoJustifiedDecay => CapReason::NoJustifiedDecay,
+            cap::Binding::Edge { rate_limited } => CapReason::Edge { rate_limited },
+            cap::Binding::Rate { class: id } => CapReason::Rate { class: class(id) },
+            cap::Binding::Retained { recomputed } => CapReason::Retained { recomputed },
+        };
+        let cells = cap
+            .witnesses
+            .iter()
+            .map(|witness| {
+                Ok(togi_journal::RateCell {
+                    class: class(witness.class),
+                    offset: witness.offset,
+                    eligible_s: outcome
+                        .mapping_secs
+                        .get(&(witness.class, witness.offset))
+                        .copied()
+                        .unwrap_or(0),
+                    failures: witness.failures,
+                    bound: rate_bound(witness.bound)?,
+                })
+            })
+            .collect::<Result<Vec<_>, super::NotReady>>()?;
+        let projected = cap
+            .slope
+            .beta()
+            .map(|beta| {
+                cap.witnesses
+                    .iter()
+                    .map(|witness| rate_bound(cap::project(witness, beta, cap.offset)))
+                    .collect::<Result<Vec<_>, super::NotReady>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let slope = super::mapping::journal_slope(cap.slope, None)?;
+        let uncovered = cap
+            .uncovered
+            .iter()
+            .map(|gap| UncoveredClass {
+                class: class(gap.class),
+                reason: match gap.reason {
+                    cap::UncoveredReason::NoObservations => {
+                        togi_journal::UncoveredReason::NoObservations
+                    }
+                    cap::UncoveredReason::NonMappingOnly => {
+                        togi_journal::UncoveredReason::NonMappingOnly
+                    }
+                    cap::UncoveredReason::MappingInadequate => {
+                        togi_journal::UncoveredReason::MappingInadequate
+                    }
+                },
+            })
+            .collect();
+        let slope_inputs = self
+            .current_groups()
+            .filter_map(|group| group.cap.get(&ccd))
+            .flatten()
+            .flat_map(|class| {
+                class
+                    .cells
+                    .iter()
+                    .filter(|cell| cell.hours > 0.0 || cell.failures > 0)
+                    .map(|cell| SlopeCell {
+                        class: class.class.clone(),
+                        offset: cell.offset,
+                        purpose: cell.purpose,
+                        failures: cell.failures,
+                        hours: cell.hours,
+                    })
+            })
+            .collect();
+        Ok(CapEvidence {
+            offset: cap.offset,
+            reason,
+            slope,
+            budget: outcome.budget,
+            cells,
+            projected,
+            uncovered,
+            slope_inputs,
         })
     }
 }

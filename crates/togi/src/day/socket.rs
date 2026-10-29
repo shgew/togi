@@ -25,9 +25,14 @@ pub enum Request {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Reply {
-    Questions { pending: Vec<DayUncleanEnd> },
+    Questions {
+        pending: Vec<DayUncleanEnd>,
+        morning: Option<crate::morning::Report>,
+    },
     Answered,
-    Refused { reason: String },
+    Refused {
+        reason: String,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -274,6 +279,7 @@ fn respond(
     match request {
         Request::Questions => Ok(Reply::Questions {
             pending: questions.pending().cloned().collect(),
+            morning: crate::morning::Report::of(journal.events()),
         }),
         Request::Answer { boot, answer } => {
             let Some(end) = questions.get(&boot) else {

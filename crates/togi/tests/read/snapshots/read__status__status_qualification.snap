@@ -9,11 +9,17 @@ BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
 in flight: [#11733] trial night-trial-2632 core 00 offset -1 R1 mprime SSE
   4K-21K 90 s together qualification task qualification #0 night #11644
 
+Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
+  prove the hazard goal. Coverage gaps remain unknown.
 CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 0   0-7   0   -1  fallback rate     censored -50 1         105     129
   bound by R9 ycruncher-snt-svt-all-threads serial cpu 6 120s isolated
 1   8-15  0   0   fallback rate     censored -50 0         105     119
   bound by R9 ycruncher-bkt-sftv4-all-threads serial cpu 29 120s isolated
+  CCD 0 current cap calculation: S -1; mapping rate bound; 2.7 h eligible
+    mapping witnesses; 129 coverage gaps
+  CCD 1 current cap calculation: S 0; mapping rate bound; 2.7 h eligible mapping
+    witnesses; 119 coverage gaps
   CCD 0 uncovered for the cap, no observations: R8
     mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 0 120s
     isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
@@ -89,8 +95,9 @@ requalification  10%    0%    0s
 current task: qualification (task qualification #0)
 mapping CCD 0: next offset -41
 mapping CCD 1: next offset -42
-qualification: CCD 0 -1, CCD 1 0 (next step) started
-qualifying CCD 0 -1, CCD 1 0: 0 cells witnessed, 259 outstanding
+qualification: CCD 0 -1, CCD 1 0 (next step) started, 0 h eligible witnessed
+  exposure
+qualifying CCD 0 -1, CCD 1 0: 0 h eligible witnessed exposure, 259 outstanding
   outstanding R1 mprime-sse-4k-21k 90s exact x16; R1 ycruncher-bkt-sftv4 90s
     exact x16; R1 ycruncher-snt-svt 90s exact x16; R2 mprime-avx2-36k-248k 90s
     exact x16; R2 mprime-avx512-36k-248k 90s exact x16; R2

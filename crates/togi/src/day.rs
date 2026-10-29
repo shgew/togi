@@ -83,7 +83,7 @@ pub enum Command {
         #[arg(value_parser = parse_answer)]
         answer: togi_journal::DayAnswerKind,
     },
-    /// Send pending questions to this graphical session's notification daemon.
+    /// Send pending questions and the morning evidence report to this graphical session.
     Notify,
     Record(record::Args),
 }

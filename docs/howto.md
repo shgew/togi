@@ -301,6 +301,19 @@ togi status
 
 `status` shows, for each CCD, its applied day offset `D`, its cap `S` with the slope (fallback or measured) and what binds it, its edge `U`, the counts still to go, and the trial classes covered and uncovered for the cap. Below the table it shows the Day policy (applied profile, hold, latest step and what blocks it, freeze, firmware, events and vetoes) and the Night (elapsed observed time and each queue's share used; [Commands](spec/runtime.md#commands)); [How togi tunes](how-togi-tunes.md) explains each. Another tuning run continues the session.
 
+For the evidence behind those labels:
+
+```sh
+togi status --evidence
+sudo togi doctor --day
+```
+
+The evidence view puts the selected exact profile beside stock observations, exposes rate/slope witnesses, hours and coverage gaps, and names the governing [cap rule](spec/tuner.md#cap-s-margin-from-measured-slope). “No observations”, “non-mapping exposure only” and “mapping exposure inadequate” are different gaps: daily hours and qualification hours do not become isolated mapping exposure. CO 0 is an untuned fallback, not a claim that stock meets the hazard goal. No view gives a safety verdict, an ETA or a promise that more nights will produce a nonzero profile.
+
+The first observed day boot after a night has a Morning report in `status`; `togi day notify` also sends it to the desktop. It summarizes recorded trial ends and observed task time, and says that automatic nonzero application is disabled. It is reconstructed from the existing journal and retained across a day-service restart in that boot, not repeated on the next day boot. Notification deduplication is per notifier process lifetime: restarting the notifier may show it again. A notification is not proof of current hardware offsets.
+
+`doctor --day` checks the day prerequisites rather than stress-workload availability. Its baseline row asks whether this boot has a complete, verified CO-0 baseline witness, separately from the journal's applied D or a current zero readback. Missing proof is not silently filled in. Like ordinary `doctor`, it writes no journal event and changes no offset; root hardware checks still require the host lock, so stop a competing hardware process first. See [day diagnostics](spec/runtime.md#day-diagnostics) for the exact checks.
+
 A night has no end time: `sudo togi run` tunes until you end it with Ctrl-C, F10 in the dashboard or a reboot (the power button included), and restores every core to CO 0 when it stops. A crash reboot into the tuning boot continues the same night; the next run after you end it opens a new one. The other stopping conditions are the tuner's [DeadEnd and Unavailable results](spec/tuner.md#night-query-results), including blocked stock controls with no other admissible work, and runtime safety dead ends.
 
 A night's mapping and qualification are evidence, not proof of stability. Qualification runs the [coverage matrix](spec/workloads.md#coverage-matrix) on the exact profile under test; classes that do not bound the cap are listed as uncovered, never as safe.

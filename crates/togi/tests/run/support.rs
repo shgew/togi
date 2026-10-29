@@ -617,6 +617,10 @@ impl System for Fake {
         panic!("run does not diagnose")
     }
 
+    fn diagnose_day(&self, _: &Config, _: Option<&HostLock>) -> Result<Diagnosis, Error> {
+        panic!("run does not diagnose day prerequisites")
+    }
+
     fn create_retry_marker(&self) -> io::Result<()> {
         panic!("run does not touch the retry marker")
     }

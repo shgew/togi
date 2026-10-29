@@ -743,14 +743,14 @@ fn a_ccd_with_no_cap_or_edge_says_so() {
     assert!(text.contains("no cap"), "{text}");
     assert!(text.contains("U unknown"), "{text}");
     let covered = coverage_text(&ccd_row(0, &[0], 0), 115);
-    assert!(covered.contains("no cap"), "{covered}");
+    assert!(covered.contains("hours/gaps unknown"), "{covered}");
 }
 
 #[test]
-fn the_coverage_row_counts_what_the_cap_has_and_lacks() {
+fn missing_current_evidence_is_not_fabricated_from_committed_cell_counts() {
     assert_eq!(
         coverage_text(&ccd_projection(), 115),
-        "2 covered for the cap · 1 uncovered for the cap"
+        "Ruleset 13 mapping: eligible hours/gaps unknown"
     );
 }
 
@@ -823,11 +823,7 @@ fn a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core() {
     assert!(rows[0].starts_with("CCD 0 one loaded"), "{:?}", rows[0]);
     assert!(rows[0].contains("-50"), "{:?}", rows[0]);
     assert!(rows[1].starts_with("D -10 · S -15"), "{:?}", rows[1]);
-    assert!(
-        rows[2].starts_with("2 covered for the cap"),
-        "{:?}",
-        rows[2]
-    );
+    assert!(rows[2].starts_with("Ruleset 13 mapping:"), "{:?}", rows[2]);
     assert!(rows[3].starts_with("► 00"), "{:?}", rows[3]);
     assert!(
         rows[3].contains("-10") && rows[3].contains("LOAD"),
@@ -1255,4 +1251,45 @@ fn trial_bars_have_no_strip_under_their_track(width: u16, height: u16, colours: 
         .take(usize::from(cells))
         .collect();
     assert!(below.chars().all(|c| c == ' '), "{below:?}");
+}
+
+#[test_case(togi_tuner::policy::CapReason::NoAdequateClass, include_str!("snapshots/committed-cap-current-zero.snap"); "no mapping class")]
+#[test_case(togi_tuner::policy::CapReason::UnknownEdge, include_str!("snapshots/committed-cap-current-unknown-edge.snap"); "unknown edge")]
+#[test_case(togi_tuner::policy::CapReason::NoJustifiedDecay, include_str!("snapshots/committed-cap-current-no-decay.snap"); "no justified decay")]
+fn committed_caps_keep_their_binding_separate_from_current_zero_reasons(
+    reason: togi_tuner::policy::CapReason,
+    snapshot: &str,
+) {
+    let words = reason.label();
+    let mut projection = ccd_projection();
+    projection.evidence = Some(togi_tuner::policy::CapEvidence {
+        offset: togi_machine::TargetOffset::ZERO,
+        reason,
+        slope: fallback(),
+        budget: togi_tuner::cap::Rate::MACHINE_BUDGET,
+        cells: vec![togi_journal::RateCell {
+            class: crate::frames::hand::class(Regime::R1, &[0]),
+            offset: togi_machine::TargetOffset::ZERO,
+            eligible_s: 5400,
+            failures: 0,
+            bound: togi_journal::RateBound::Unbounded {},
+        }],
+        projected: Vec::new(),
+        uncovered: vec![togi_journal::UncoveredClass {
+            class: crate::frames::hand::class(Regime::R3, &[0]),
+            reason: togi_journal::UncoveredReason::NonMappingOnly,
+        }],
+        slope_inputs: Vec::new(),
+    });
+    let (_, expected) = snapshot
+        .split_once("\n---\n")
+        .expect("an embedded insta snapshot header");
+    assert_eq!(format!("{}\n", facts_text(&projection, 180)), expected);
+    let narrow = facts_text(&projection, 115);
+    assert!(narrow.contains("S -15"), "{narrow}");
+    assert!(narrow.contains(&format!("calc 0: {words}")), "{narrow}");
+    assert_eq!(
+        coverage_text(&projection, 115),
+        "Ruleset 13 mapping: 1.5h eligible · 1 gaps (1 non-mapping)"
+    );
 }

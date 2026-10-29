@@ -343,6 +343,7 @@ fn night() -> NightProjection {
             profile: CcdProfile::zero([CcdId::new(0).unwrap()]).unwrap(),
             outstanding: Vec::new(),
             witnessed: 3,
+            eligible_s: 900,
         }),
         reproductions: vec![ReproductionProjection {
             source: DayEventId::Boot {
@@ -400,7 +401,10 @@ fn the_night_part_shows_its_start_elapsed_time_shares_and_progress() {
         out.contains("mapping CCD 1: next offset -12, bracketing the failure at -20"),
         "{out}"
     );
-    assert!(out.contains("3 cells witnessed, 0 outstanding"), "{out}");
+    assert!(
+        out.contains("0.2 h eligible witnessed exposure, 0 outstanding"),
+        "{out}"
+    );
     assert!(
         out.contains("reproduction: boot day-a: reproduction pending, 1.5 h consumed"),
         "{out}"
@@ -517,6 +521,7 @@ fn ccd_projection(
         ccd: CcdId::new(ccd).unwrap(),
         cores: cores.iter().map(|&id| core(id)).collect(),
         edge,
+        evidence: None,
         cap: Some(togi_tuner::policy::CapProjection {
             offset: TargetOffset::new(-1).unwrap(),
             binding: togi_journal::Binding::Baseline {},
@@ -530,6 +535,32 @@ fn ccd_projection(
         day: TargetOffset::new(-10).unwrap(),
         remaining: Some(0),
     }
+}
+
+#[test]
+fn current_cap_calculation_is_distinct_from_the_committed_cap() {
+    let mut policy = projection(None);
+    let mut ccd = ccd_projection(0, &[0, 1], None);
+    ccd.evidence = Some(togi_tuner::policy::CapEvidence {
+        offset: TargetOffset::new(-2).unwrap(),
+        reason: togi_tuner::policy::CapReason::NoAdequateClass,
+        slope: togi_journal::Slope::Fallback {
+            beta: togi_journal::Finite::new(1.0).unwrap(),
+        },
+        budget: togi_tuner::cap::Rate::MACHINE_BUDGET,
+        cells: Vec::new(),
+        projected: Vec::new(),
+        uncovered: Vec::new(),
+        slope_inputs: Vec::new(),
+    });
+    policy.ccds.push(ccd);
+    let out = shown(&policy, UTC);
+    let flat = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains("CCD 0 current cap calculation: S -2; no adequate mapping class"),
+        "{out}"
+    );
+    assert!(flat.contains("0 0-1 -10 -1 fallback baseline"), "{out}");
 }
 
 /// Where each header of the CCD table starts on `line`, and where each value of a row starts.
@@ -557,7 +588,11 @@ fn the_ccd_table_keeps_every_value_under_its_header_within_eighty_columns(
         ccd_projection(1, &[8, 9, 10, 11, 12, 13, 14, 15], edge),
     ];
     let out = shown(&policy, UTC);
-    let lines: Vec<&str> = out.lines().take(3).collect();
+    let lines: Vec<&str> = out
+        .lines()
+        .skip_while(|line| !line.starts_with("CCD CORES "))
+        .take(3)
+        .collect();
     let columns = [0, 4, 10, 14, 18, 27, 36, 49, 59, 67];
     assert_eq!(starts(lines[0]), columns, "{out}");
     assert_eq!(
@@ -584,7 +619,11 @@ fn noncontiguous_cores_are_counted_in_the_ccd_table_and_listed_under_their_row()
         ccd_projection(1, &[1, 3, 5, 7, 9, 11, 13, 15], None),
     ];
     let out = shown(&policy, UTC);
-    let lines: Vec<&str> = out.lines().take(5).collect();
+    let lines: Vec<&str> = out
+        .lines()
+        .skip_while(|line| !line.starts_with("CCD CORES "))
+        .take(5)
+        .collect();
     let columns = starts(lines[0]);
     assert_eq!(columns.len(), 10, "{out}");
     // `8 cores` is two words that start at the CORES column and inside it.

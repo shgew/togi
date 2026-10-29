@@ -5,6 +5,7 @@ mod adapters;
 mod assemble;
 mod checks;
 pub mod day;
+mod day_diagnose;
 mod diagnose;
 mod error;
 mod files;
@@ -114,6 +115,18 @@ pub fn diagnose(
         Path::new(SYSTEM_ROOT),
         config,
         recorded,
+        lock.is_some(),
+        Privilege::current(),
+    )
+}
+
+/// Makes the day-only identity, current readback, PID 1 watchdog and persistent journal checks.
+/// Like [`diagnose`], mailbox reads require root and the borrowed host lock.
+pub fn diagnose_day(config: &Config, lock: Option<&HostLock>) -> Result<Diagnosis, Error> {
+    check_platform()?;
+    day_diagnose::at(
+        Path::new(SYSTEM_ROOT),
+        config,
         lock.is_some(),
         Privilege::current(),
     )
