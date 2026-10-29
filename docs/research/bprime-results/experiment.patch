@@ -1,0 +1,673 @@
+diff --git a/crates/togi-simrun/Cargo.toml b/crates/togi-simrun/Cargo.toml
+index 3a4521d7..3924db5c 100644
+--- a/crates/togi-simrun/Cargo.toml
++++ b/crates/togi-simrun/Cargo.toml
+@@ -18,7 +18,7 @@ togi-machine.workspace = true
+ togi-render.workspace = true
+ togi-session.workspace = true
+ togi-sim.workspace = true
+-togi-tuner.workspace = true
++togi-tuner = { workspace = true, features = ["sim-bprime"] }
+ 
+ [dev-dependencies]
+ tempfile.workspace = true
+diff --git a/crates/togi-simrun/src/day_night.rs b/crates/togi-simrun/src/day_night.rs
+index 8c363c1e..8b6fd8d9 100644
+--- a/crates/togi-simrun/src/day_night.rs
++++ b/crates/togi-simrun/src/day_night.rs
+@@ -24,6 +24,8 @@ pub enum PolicyKind {
+     FixedMargin,
+     /// The production Ruleset 13 policy; `fallback_slope` is the per-count hazard multiplier.
+     Ruleset13 { fallback_slope: f64 },
++    /// Simulation-only B′ comparator, never a gate or a shipped policy.
++    Ruleset13Bprime { fallback_slope: f64 },
+ }
+ 
+ /// Whether a policy's results may pass the registered gate.
+@@ -57,12 +59,15 @@ impl PolicyKind {
+             Self::CoZero => "co-zero",
+             Self::FixedMargin => "fixed-margin",
+             Self::Ruleset13 { .. } => "ruleset13",
++            Self::Ruleset13Bprime { .. } => "ruleset13-bprime",
+         }
+     }
+ 
+     pub fn role(self) -> PolicyRole {
+         match self {
+-            Self::CoZero | Self::FixedMargin => PolicyRole::Diagnostic,
++            Self::CoZero | Self::FixedMargin | Self::Ruleset13Bprime { .. } => {
++                PolicyRole::Diagnostic
++            }
+             Self::Ruleset13 { .. } => PolicyRole::Gate,
+         }
+     }
+@@ -71,7 +76,9 @@ impl PolicyKind {
+     pub fn fallback_slope(self) -> Option<f64> {
+         match self {
+             Self::CoZero | Self::FixedMargin => None,
+-            Self::Ruleset13 { fallback_slope } => Some(fallback_slope),
++            Self::Ruleset13 { fallback_slope } | Self::Ruleset13Bprime { fallback_slope } => {
++                Some(fallback_slope)
++            }
+         }
+     }
+ 
+@@ -85,6 +92,11 @@ impl PolicyKind {
+                 .map(|fallback_slope| Self::Ruleset13 { fallback_slope })
+                 .ok_or(PolicyError::SlopeRequired("ruleset13"));
+         }
++        if label == "ruleset13-bprime" {
++            return fallback_slope
++                .map(|fallback_slope| Self::Ruleset13Bprime { fallback_slope })
++                .ok_or(PolicyError::SlopeRequired("ruleset13-bprime"));
++        }
+         let kind = Self::COMPARATORS
+             .into_iter()
+             .find(|kind| kind.label() == label)
+@@ -93,7 +105,7 @@ impl PolicyKind {
+                 known: Self::COMPARATORS
+                     .map(Self::label)
+                     .into_iter()
+-                    .chain(["ruleset13"])
++                    .chain(["ruleset13", "ruleset13-bprime"])
+                     .collect::<Vec<_>>()
+                     .join(", "),
+             })?;
+@@ -114,6 +126,9 @@ impl PolicyKind {
+                 Box::new(FixedMargin::new(calendar.fixed_margin, calendar.day_step)?)
+             }
+             Self::Ruleset13 { fallback_slope } => Box::new(Ruleset13::new(fallback_slope)?),
++            Self::Ruleset13Bprime { fallback_slope } => {
++                Box::new(Ruleset13::new_bprime(fallback_slope)?)
++            }
+         })
+     }
+ }
+diff --git a/crates/togi-simrun/src/day_night/ruleset13.rs b/crates/togi-simrun/src/day_night/ruleset13.rs
+index 7a8efc51..31fa5e1b 100644
+--- a/crates/togi-simrun/src/day_night/ruleset13.rs
++++ b/crates/togi-simrun/src/day_night/ruleset13.rs
+@@ -101,6 +101,16 @@ impl Ruleset13 {
+         }))
+     }
+ 
++    /// Simulation-only comparator sharing all policy rules except the cap and filler.
++    ///
++    /// # Errors
++    /// Refuses the same invalid slope multipliers as [`Self::new`].
++    pub fn new_bprime(multiplier: f64) -> Result<Self, RunError> {
++        let mut policy = Self::new(multiplier)?;
++        policy.state = State::new_sim_bprime(*policy.state.params());
++        Ok(policy)
++    }
++
+     /// Ruleset 13 deciding by `params`.
+     #[must_use]
+     pub fn with_params(params: Params) -> Self {
+diff --git a/crates/togi-simrun/src/day_night/ruleset13/tests.rs b/crates/togi-simrun/src/day_night/ruleset13/tests.rs
+index 111f1478..c7a651e8 100644
+--- a/crates/togi-simrun/src/day_night/ruleset13/tests.rs
++++ b/crates/togi-simrun/src/day_night/ruleset13/tests.rs
+@@ -36,6 +36,33 @@ fn the_gate_policy_builds_from_its_slope_and_refuses_a_non_multiplier() {
+     }
+ }
+ 
++#[test]
++fn bprime_is_explicitly_diagnostic_and_its_snapshot_cannot_select_it() {
++    let kind = PolicyKind::by_label("ruleset13-bprime", Some(1.5)).unwrap();
++    assert_eq!(kind.role(), crate::day_night::PolicyRole::Diagnostic);
++    assert_eq!(kind.label(), "ruleset13-bprime");
++    assert!(kind.build(&calendar(1)).is_ok());
++    let bprime = State::new_sim_bprime(Params::SPEC);
++    let serialized = serde_json::to_value(&bprime).unwrap();
++    assert!(serialized.get("sim_bprime").is_none());
++    let restored: State = serde_json::from_value(serialized).unwrap();
++    assert_eq!(restored, State::new(Params::SPEC));
++}
++
++#[test]
++fn bprime_journal_replays_through_the_explicit_comparator_constructor() {
++    let mut policy = Ruleset13::new_bprime(1.5).unwrap().recording();
++    run_with_policy(SCENARIO, 1, calendar(3), &mut policy).unwrap();
++    let mut replayed = State::new_sim_bprime(*policy.state().params());
++    for event in policy.events().unwrap() {
++        replayed.fold(event).unwrap();
++    }
++    assert_eq!(
++        serde_json::to_string(&replayed.project()).unwrap(),
++        serde_json::to_string(&policy.state().project()).unwrap()
++    );
++}
++
+ #[test]
+ fn the_journal_folds_identically_when_replayed() {
+     let mut policy = Ruleset13::new(1.5).unwrap().recording();
+diff --git a/crates/togi-simrun/src/day_night/tests.rs b/crates/togi-simrun/src/day_night/tests.rs
+index d9f64b3b..0afee54c 100644
+--- a/crates/togi-simrun/src/day_night/tests.rs
++++ b/crates/togi-simrun/src/day_night/tests.rs
+@@ -862,7 +862,7 @@ fn an_unknown_label_lists_the_known_ones_and_a_slope_needs_a_policy_that_takes_o
+         PolicyKind::by_label("ruleset14", None),
+         Err(super::PolicyError::Unknown {
+             name: "ruleset14".to_owned(),
+-            known: "co-zero, fixed-margin, ruleset13".to_owned(),
++            known: "co-zero, fixed-margin, ruleset13, ruleset13-bprime".to_owned(),
+         })
+     );
+     assert_eq!(
+diff --git a/crates/togi-tool-bench/src/day_night_cli.rs b/crates/togi-tool-bench/src/day_night_cli.rs
+index 5b997fcb..7b9a4531 100644
+--- a/crates/togi-tool-bench/src/day_night_cli.rs
++++ b/crates/togi-tool-bench/src/day_night_cli.rs
+@@ -37,7 +37,7 @@ pub(crate) struct DayNightArgs {
+     #[arg(long, value_name = "FILE")]
+     out: Option<PathBuf>,
+     /// A policy to run, by name; repeat to run several. Default: every diagnostic comparator
+-    /// (co-zero, fixed-margin).
++    /// (co-zero, fixed-margin). Explicit sim-only comparator: ruleset13-bprime.
+     #[arg(long = "policy", value_name = "NAME")]
+     policies: Vec<String>,
+     /// The fallback slope of a policy that takes one; must be a registered slope.
+diff --git a/crates/togi-tool-bench/src/day_night_tests.rs b/crates/togi-tool-bench/src/day_night_tests.rs
+index 5c9bfcbf..80376469 100644
+--- a/crates/togi-tool-bench/src/day_night_tests.rs
++++ b/crates/togi-tool-bench/src/day_night_tests.rs
+@@ -366,7 +366,7 @@ mod selection {
+         assert!(matches!(
+             error,
+             SelectError::Policy(PolicyError::Unknown { ref name, ref known })
+-                if name == "ruleset14" && known == "co-zero, fixed-margin, ruleset13"
++                if name == "ruleset14" && known == "co-zero, fixed-margin, ruleset13, ruleset13-bprime"
+         ));
+     }
+ 
+@@ -398,6 +398,22 @@ mod selection {
+         );
+     }
+ 
++    #[test]
++    fn bprime_selection_is_a_slope_parameterized_diagnostic() {
++        let selected =
++            select_policies(&registration(), &names(&["ruleset13-bprime"]), Some(1.5)).unwrap();
++        assert_eq!(
++            selected,
++            [PolicyKind::Ruleset13Bprime {
++                fallback_slope: 1.5
++            }]
++        );
++        assert_eq!(
++            selected[0].role(),
++            togi_simrun::day_night::PolicyRole::Diagnostic
++        );
++    }
++
+     #[test]
+     fn the_gating_policy_refuses_to_run_without_a_slope() {
+         assert!(matches!(
+diff --git a/crates/togi-tuner/Cargo.toml b/crates/togi-tuner/Cargo.toml
+index 4bbe05f5..2a55bf8d 100644
+--- a/crates/togi-tuner/Cargo.toml
++++ b/crates/togi-tuner/Cargo.toml
+@@ -6,6 +6,10 @@ repository.workspace = true
+ publish.workspace = true
+ description = "Ruleset 13 tuning rules: per-CCD cap, night and day policy, core topology and crash classification"
+ 
++[features]
++# Development comparator only; the shipped togi package never enables this feature.
++sim-bprime = []
++
+ [dependencies]
+ jiff.workspace = true
+ serde.workspace = true
+diff --git a/crates/togi-tuner/src/cap/bprime.rs b/crates/togi-tuner/src/cap/bprime.rs
+new file mode 100644
+index 00000000..c3799ac2
+--- /dev/null
++++ b/crates/togi-tuner/src/cap/bprime.rs
+@@ -0,0 +1,168 @@
++//! Simulation-only B′. This module is absent from a default shipped-package build.
++
++use std::collections::BTreeMap;
++use std::num::NonZeroU32;
++
++use togi_machine::TargetOffset;
++
++use super::{
++    Beta, Cap, CapLimits, Cell, Exposure, Hours, Purpose, Refresh, Slope, UncoveredReason, Witness,
++    offset_value, poisson_upper,
++};
++use crate::Secs;
++use crate::night::Matrix;
++
++/// No pre-onset second is evidence about sustained-day hazard. Subtract per launch,
++/// before aggregating: a thousand short launches must not become one long launch.
++#[must_use]
++pub fn onset_hours(eligible_seconds: u64, warm_up_seconds: u32) -> Hours {
++    let after = eligible_seconds.saturating_sub(u64::from(600_u32.saturating_sub(warm_up_seconds)));
++    #[expect(
++        clippy::cast_precision_loss,
++        reason = "trial seconds are far below the float mantissa"
++    )]
++    let hours = after as f64 / 3600.0;
++    Hours::new(hours).unwrap_or(Hours::ZERO)
++}
++
++/// A deep filler must actually observe time after onset. Its intended duration remains
++/// part of the class identity; short breadth cells are never merged into this class.
++#[must_use]
++pub fn sustain(mut matrix: Matrix) -> Matrix {
++    for planned in &mut matrix.cells {
++        planned.cell.duration = Secs::new(NonZeroU32::new(1800).unwrap_or(NonZeroU32::MIN));
++        planned.cell.sustained = true;
++    }
++    matrix
++}
++
++/// For fixed beta and reference x, the single likelihood has sufficient statistics
++/// `K = sum k_i` and `E_x = sum T_i exp(beta (x-o_i))`; lambda(x)'s upper endpoint is
++/// `chi2(.95, 2(K+1))/(2 E_x)`. This is NOT an exact adaptive confidence interval:
++/// offsets, exposure and beta are selected using the accumulated observations.
++/// Early failures retain their actual stopped exposure, never their intended tail.
++/// Counting even pre-onset failures in K is deliberately conservative; pre-onset
++/// survival supplies no denominator and therefore no positive day-hazard evidence.
++#[must_use]
++pub fn cap<K: Clone + Ord>(
++    classes: &BTreeMap<K, Vec<Cell>>,
++    slope: Slope,
++    edge: Option<TargetOffset>,
++    refresh: Refresh,
++    limits: &CapLimits,
++) -> Cap<K> {
++    super::limit::cap_with(classes, slope, edge, refresh, limits, |class, cells| {
++        witness(class, cells, slope.beta().unwrap_or(Beta::FALLBACK))
++    })
++}
++
++fn witness<K: Clone>(class: &K, cells: &[Cell], beta: Beta) -> Result<Witness<K>, UncoveredReason> {
++    if cells.is_empty() {
++        return Err(UncoveredReason::NoObservations);
++    }
++    if !cells.iter().any(|cell| cell.purpose == Purpose::Mapping) {
++        return Err(UncoveredReason::NonMappingOnly);
++    }
++    let offset = cells
++        .iter()
++        .filter(|cell| {
++            cell.purpose == Purpose::Mapping
++                && cell.exposure == Exposure::Adequate
++                && cell.hours.get() > 0.0
++        })
++        .map(|cell| cell.offset)
++        .min()
++        .ok_or(UncoveredReason::MappingInadequate)?;
++    let mut failures = 0_u32;
++    let mut effective = 0.0_f64;
++    for cell in cells.iter().filter(|cell| cell.purpose == Purpose::Mapping) {
++        failures = failures.saturating_add(cell.failures);
++        let weight = (beta.get() * (offset_value(offset) - offset_value(cell.offset))).exp();
++        effective = (effective + cell.hours.get() * weight).min(f64::MAX);
++    }
++    let hours = Hours::new(effective).unwrap_or(Hours::ZERO);
++    Ok(Witness {
++        class: class.clone(),
++        offset,
++        failures,
++        hours,
++        bound: poisson_upper(failures, hours),
++    })
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use test_case::test_case;
++
++    fn cell(offset: i64, failures: u32, hours: f64, exposure: Exposure) -> Cell {
++        Cell {
++            offset: TargetOffset::clamped(offset),
++            purpose: Purpose::Mapping,
++            failures,
++            hours: Hours::new(hours).unwrap(),
++            exposure,
++        }
++    }
++
++    #[test]
++    fn one_likelihood_pools_offsets_with_the_slope_exposure_weight() {
++        let beta = Beta::new(2.0_f64.ln()).unwrap();
++        let cells = [
++            cell(-10, 0, 2.0, Exposure::Adequate),
++            cell(-12, 1, 0.25, Exposure::Partial),
++        ];
++        let pooled = witness(&"class", &cells, beta).unwrap();
++        assert_eq!(pooled.offset, TargetOffset::clamped(-10));
++        assert_eq!(pooled.failures, 1);
++        assert_eq!(pooled.hours, Hours::new(3.0).unwrap());
++        assert_eq!(pooled.bound, poisson_upper(1, Hours::new(3.0).unwrap()));
++    }
++
++    #[test]
++    fn early_failures_keep_the_stopped_time_and_count_not_an_intended_tail() {
++        let cells = [
++            cell(-10, 0, 2.0, Exposure::Adequate),
++            cell(-12, 1, 0.0, Exposure::Partial),
++        ];
++        let pooled = witness(&0, &cells, Beta::FALLBACK).unwrap();
++        assert_eq!(pooled.bound, poisson_upper(1, Hours::new(2.0).unwrap()));
++    }
++
++    #[test_case(85, 5, 0.0; "short launch")]
++    #[test_case(595, 5, 0.0; "exact onset")]
++    #[test_case(1795, 5, 1.0 / 3.0; "post onset")]
++    #[test_case(570, 30, 0.0; "role warmup")]
++    fn onset_is_removed_from_each_actual_launch(eligible: u64, warm: u32, expected: f64) {
++        assert_eq!(onset_hours(eligible, warm).get(), expected);
++    }
++
++    #[test]
++    fn short_cells_do_not_become_sustained_day_evidence() {
++        assert_eq!(
++            witness(&0, &[cell(-40, 0, 0.0, Exposure::Adequate)], Beta::FALLBACK),
++            Err(UncoveredReason::MappingInadequate)
++        );
++    }
++
++    #[test]
++    fn pooling_does_not_change_policy_a() {
++        let classes = BTreeMap::from([(
++            0,
++            vec![
++                cell(-10, 0, 2.0, Exposure::Adequate),
++                cell(-12, 1, 0.25, Exposure::Partial),
++            ],
++        )]);
++        let limits = CapLimits::new(NonZeroU32::MIN);
++        let a = super::super::cap(
++            &classes,
++            Slope::FALLBACK,
++            Some(TargetOffset::clamped(-30)),
++            Refresh::Full,
++            &limits,
++        );
++        assert_eq!(a.witnesses[0].hours, Hours::new(2.0).unwrap());
++        assert_eq!(a.witnesses[0].failures, 0);
++    }
++}
+diff --git a/crates/togi-tuner/src/cap/limit.rs b/crates/togi-tuner/src/cap/limit.rs
+index 40d50967..89280982 100644
+--- a/crates/togi-tuner/src/cap/limit.rs
++++ b/crates/togi-tuner/src/cap/limit.rs
+@@ -121,6 +121,17 @@ pub fn cap<K: Clone + Ord>(
+     edge: Option<TargetOffset>,
+     refresh: Refresh,
+     limits: &CapLimits,
++) -> Cap<K> {
++    cap_with(classes, slope, edge, refresh, limits, witness)
++}
++
++pub(super) fn cap_with<K: Clone + Ord>(
++    classes: &BTreeMap<K, Vec<Cell>>,
++    slope: Slope,
++    edge: Option<TargetOffset>,
++    refresh: Refresh,
++    limits: &CapLimits,
++    witness: impl Fn(&K, &[Cell]) -> Result<Witness<K>, UncoveredReason>,
+ ) -> Cap<K> {
+     let mut witnesses = Vec::new();
+     let mut uncovered = Vec::new();
+diff --git a/crates/togi-tuner/src/cap/mod.rs b/crates/togi-tuner/src/cap/mod.rs
+index 22eb780b..ba7a1a98 100644
+--- a/crates/togi-tuner/src/cap/mod.rs
++++ b/crates/togi-tuner/src/cap/mod.rs
+@@ -7,6 +7,8 @@
+ //! so the simulator can run the same rules under other fallback slopes.
+ 
+ mod bound;
++#[cfg(feature = "sim-bprime")]
++pub mod bprime;
+ mod limit;
+ mod slope;
+ 
+diff --git a/crates/togi-tuner/src/policy/evidence.rs b/crates/togi-tuner/src/policy/evidence.rs
+index 9415f52d..8a53c15c 100644
+--- a/crates/togi-tuner/src/policy/evidence.rs
++++ b/crates/togi-tuner/src/policy/evidence.rs
+@@ -28,6 +28,9 @@ pub(super) struct CapCell {
+     pub(super) exposure: cap::Exposure,
+     pub(super) failures: u32,
+     pub(super) hours: f64,
++    #[cfg(feature = "sim-bprime")]
++    #[serde(default)]
++    pub(super) onset_hours: f64,
+ }
+ 
+ /// One class's cap input for one CCD.
+@@ -228,6 +231,12 @@ impl Group {
+             let hours = Hours::new(f64::from(saturating_u32(observed.eligible_s)) / SECS_PER_HOUR)
+                 .unwrap_or(Hours::ZERO)
+                 .get();
++            #[cfg(feature = "sim-bprime")]
++            let onset_hours = cap::bprime::onset_hours(
++                observed.eligible_s,
++                crate::night::warm_up_secs(observed.class.regime),
++            )
++            .get();
+             let exposure = if adequate {
+                 cap::Exposure::Adequate
+             } else {
+@@ -239,6 +248,10 @@ impl Group {
+                 Some(cell) => {
+                     cell.failures = cell.failures.saturating_add(failures);
+                     cell.hours = (cell.hours + hours).min(f64::MAX);
++                    #[cfg(feature = "sim-bprime")]
++                    {
++                        cell.onset_hours = (cell.onset_hours + onset_hours).min(f64::MAX);
++                    }
+                 }
+                 None => class.cells.push(CapCell {
+                     offset,
+@@ -246,6 +259,8 @@ impl Group {
+                     exposure,
+                     failures,
+                     hours,
++                    #[cfg(feature = "sim-bprime")]
++                    onset_hours,
+                 }),
+             }
+             if purpose == cap::Purpose::Mapping {
+diff --git a/crates/togi-tuner/src/policy/mapping.rs b/crates/togi-tuner/src/policy/mapping.rs
+index 0087e727..926f8d12 100644
+--- a/crates/togi-tuner/src/policy/mapping.rs
++++ b/crates/togi-tuner/src/policy/mapping.rs
+@@ -519,7 +519,35 @@ impl State {
+             .unwrap_or(NonZeroU32::MIN),
+             edge_margin: EDGE_MARGIN,
+         };
++        #[cfg(not(feature = "sim-bprime"))]
+         let cap = cap::cap(&cells, slope, edge.offset(), refresh, &limits);
++        #[cfg(feature = "sim-bprime")]
++        let cap = if self.sim_bprime {
++            let mut onset_cells = cells;
++            for class in onset_cells.values_mut() {
++                class.clear();
++            }
++            for class in self
++                .current_groups()
++                .filter_map(|group| group.cap.get(&ccd))
++                .flatten()
++            {
++                let id = interner.id(&class.class);
++                onset_cells
++                    .entry(id)
++                    .or_default()
++                    .extend(class.cells.iter().map(|cell| cap::Cell {
++                        offset: cell.offset,
++                        purpose: cell.purpose,
++                        failures: cell.failures,
++                        hours: Hours::new(cell.onset_hours).unwrap_or(Hours::ZERO),
++                        exposure: cell.exposure,
++                    }));
++            }
++            cap::bprime::cap(&onset_cells, slope, edge.offset(), refresh, &limits)
++        } else {
++            cap::cap(&cells, slope, edge.offset(), refresh, &limits)
++        };
+         Ok(CapOutcome {
+             cap,
+             classes: interner.classes,
+diff --git a/crates/togi-tuner/src/policy/mod.rs b/crates/togi-tuner/src/policy/mod.rs
+index f2b677ba..20bd8734 100644
+--- a/crates/togi-tuner/src/policy/mod.rs
++++ b/crates/togi-tuner/src/policy/mod.rs
+@@ -87,6 +87,10 @@ pub(crate) struct Stop {}
+ #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+ pub struct State {
+     params: Params,
++    /// Not serialized: a journal or snapshot can never opt the shipped policy into a comparator.
++    #[cfg(feature = "sim-bprime")]
++    #[serde(skip)]
++    sim_bprime: bool,
+     /// The last folded position; earlier events replay as no-ops.
+     last: Option<Seq>,
+     machine: Machine,
+@@ -135,6 +139,8 @@ impl State {
+     pub fn new(params: Params) -> Self {
+         Self {
+             params,
++            #[cfg(feature = "sim-bprime")]
++            sim_bprime: false,
+             last: None,
+             machine: Machine::default(),
+             trials: Trials::default(),
+@@ -146,6 +152,16 @@ impl State {
+         }
+     }
+ 
++    /// Simulation-only B′: pooled onset-aware cap likelihood and sustained deep filler.
++    #[cfg(feature = "sim-bprime")]
++    #[must_use]
++    pub fn new_sim_bprime(params: Params) -> Self {
++        Self {
++            sim_bprime: true,
++            ..Self::new(params)
++        }
++    }
++
+     #[must_use]
+     pub const fn params(&self) -> &Params {
+         &self.params
+diff --git a/crates/togi-tuner/src/policy/night_next.rs b/crates/togi-tuner/src/policy/night_next.rs
+index 8d6fd6dd..c0103e9d 100644
+--- a/crates/togi-tuner/src/policy/night_next.rs
++++ b/crates/togi-tuner/src/policy/night_next.rs
+@@ -716,7 +716,15 @@ impl State {
+             let Some(cap) = caps.get(ccd) else {
+                 continue;
+             };
+-            let Ok(deeper) = TargetOffset::new(cap.get() - 1) else {
++            #[cfg(feature = "sim-bprime")]
++            let candidate = if self.sim_bprime {
++                (edge.get() + i64::from(EDGE_MARGIN)).min(0)
++            } else {
++                cap.get() - 1
++            };
++            #[cfg(not(feature = "sim-bprime"))]
++            let candidate = cap.get() - 1;
++            let Ok(deeper) = TargetOffset::new(candidate) else {
+                 continue;
+             };
+             if deeper.get() < edge.get() + i64::from(EDGE_MARGIN) {
+@@ -729,6 +737,12 @@ impl State {
+         }
+         if let Some((ccd, offset, _)) = probe {
+             let matrix = mapping_cells(layout, ccd, offset, cursor)?;
++            #[cfg(feature = "sim-bprime")]
++            let matrix = if self.sim_bprime {
++                crate::cap::bprime::sustain(matrix)
++            } else {
++                matrix
++            };
+             if let Some(cell) = rotated(&matrix, cursor, unavailable) {
+                 return Ok(Some(Chosen {
+                     task,
+diff --git a/crates/togi-tuner/tests/night/matrix.rs b/crates/togi-tuner/tests/night/matrix.rs
+index 1009e38d..01180354 100644
+--- a/crates/togi-tuner/tests/night/matrix.rs
++++ b/crates/togi-tuner/tests/night/matrix.rs
+@@ -564,3 +564,28 @@ fn position_accounting_uses_the_minimum_across_required_positions() {
+     assert_eq!(minimum_position_seconds(set(&[0, 3]), &credited), 0);
+     assert_eq!(minimum_position_seconds(set(&[]), &credited), 0);
+ }
++
++#[cfg(feature = "sim-bprime")]
++#[test]
++fn bprime_filler_extends_only_the_isolated_mapping_duration() {
++    let machine = two_ccds();
++    let original = mapping_cells(&machine.layout(), ccd(0), offset(-20), 0).unwrap();
++    let sustained = togi_tuner::cap::bprime::sustain(original.clone());
++    assert_eq!(sustained.profile, original.profile);
++    assert_eq!(sustained.uncovered, original.uncovered);
++    assert_eq!(sustained.cells.len(), original.cells.len());
++    for (before, after) in original.cells.iter().zip(&sustained.cells) {
++        assert!(before.cell.duration.get() <= 120);
++        let mut expected = *before;
++        expected.cell.duration = togi_tuner::Secs::new(std::num::NonZeroU32::new(1800).unwrap());
++        expected.cell.sustained = true;
++        assert_eq!(*after, expected);
++        assert_eq!(
++            togi_tuner::cap::bprime::onset_hours(
++                u64::from(after.cell.eligible_seconds()),
++                togi_tuner::night::warm_up_secs(after.cell.regime()),
++            ),
++            togi_tuner::cap::Hours::new(1.0 / 3.0).unwrap()
++        );
++    }
++}
+diff --git a/docs/benchmarking.md b/docs/benchmarking.md
+index a26457e1..4559f456 100644
+--- a/docs/benchmarking.md
++++ b/docs/benchmarking.md
+@@ -62,6 +62,43 @@ The table distinguishes true CO-caused daily crashes from CPU-suspect classifica
+ 
+ The registration is authoritative: covered-class climb is crash-free in at least 90% of seeds; hidden-class first-year crashes are at most two per CCD in at least 90%; maximum overshoot is at most one count in at least 95% and never more than three; median days within one count of true safe is at most 90; after two years on the stock-background scenario at least 90% keep converged depth minus one; fixed caps need at most seven promotions per CCD. Each criterion is evaluated per scenario using each seed's worst CCD, never pooled. Every censored or nonconverged run stays in the denominator, with infinite convergence time; partial counts cannot earn a pass. The committed registration describes applicable scenarios and exact empirical fractions. A failed score is an owner decision, not a reason to relax thresholds.
+ 
++#### Simulation-only B′ comparator
++
++`--policy ruleset13-bprime --slope <1.5|2.0>` selects a diagnostic alternative to
++Ruleset 13's cap and filler, not the shipped policy and never a gate pass.
++Only the simulation runner enables the tuner's default-off `sim-bprime` feature;
++the shipped `togi` package does not enable it. Normal state construction and
++deserialization always select the specified policy A. B′ cannot be selected by
++configuration, a journal, or a state snapshot.
++
++B′ pools each compatible isolated mapping class's observations across offsets
++in one slope-aware Poisson likelihood. At reference offset x, let
++`E_x = Σ T_i exp(beta*(x-o_i))` and `K = Σ k_i`; its rate upper endpoint is
++`chi_square_quantile(0.95, 2(K+1))/(2 E_x)`. The existing measured/fallback slope,
++CCD count, λ*, edge margin, qualification, night shares and daily rules stay
++unchanged. This is not the minimum of separate rate bounds.
++
++For each launch, `T_i = max(actual_seconds - 600, 0)/3600`; remove onset before
++aggregation. Short launches supply no sustained-day survival information.
++Failures still count, even before onset, with only their actual stopped
++exposure, never an intended-duration tail. Counting pre-onset failures against
++the post-onset rate is conservative rather than a claim of a literal
++onset-only generative model. Every class without an adequate positive-time
++mapping launch remains explicitly uncovered. Intended duration stays part of
++class identity; breadth cells do not stand in for long cells.
++
++The filler retains the specified CCD selection and rotation, but runs
++1,800-second isolated mapping cells at the deepest admissible signed offset
++`min(U+5, 0)`, rather than S−1. This is the only changed trial duration; ordinary
++mapping and qualification matrices are unchanged. This comparator must collect
++real post-onset time, since the ordinary mapping cells last only 90–120 seconds.
++
++The 95% endpoint is a fixed-look modeling calculation, **not an exact adaptive
++confidence interval**: offsets, exposure allocation and the measured slope
++depend on accumulated evidence. Neither B′ nor A demonstrates a rare-event
++guarantee on hardware. Reduced development-seed reads are exploratory and do
++not replace the preregistered full development and holdout gates.
++
+ ### Historical gates
+ 
+ The Ruleset 9 gate is defined by [ADR 0038](adr/0038-self-sufficient-cores.md) and [#105](https://github.com/shgew/togi/issues/105); [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate. The [Ruleset 11 archive](../tools/bench/gates/ruleset-11/) holds its suite, baseline, candidate and scored report. These are historical records, not current-anchor measurements. The bench no longer judges any session-suite gate, and the archive is pinned by hash in the bench's tests.
