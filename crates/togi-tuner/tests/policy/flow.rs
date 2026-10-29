@@ -128,7 +128,10 @@ fn promoted_with(params: Params) -> (Journal, CcdProfile) {
 fn a_qualified_proposal_is_promoted_at_the_cold_boot_and_its_application_commits_d() {
     let (journal, qualified) = promoted();
     assert!(!qualified.is_zero());
-    assert_eq!(journal.state.project().applied, Some(qualified));
+    assert_eq!(
+        journal.state.project().applied,
+        Some(togi_tuner::UnitProfile::of_ccd(&qualified))
+    );
 }
 
 #[test]
@@ -144,7 +147,10 @@ fn a_firmware_change_zeroes_a_nonzero_d_and_the_next_night_requalifies_it_after_
         .unwrap_or_else(|| panic!("no firmware zero in {committed:?}"));
     assert!(step.proposed.ccd().is_zero());
     apply(&mut journal, &step, 2, "day2");
-    assert_eq!(journal.state.project().applied, Some(zero()));
+    assert_eq!(
+        journal.state.project().applied,
+        Some(togi_tuner::UnitProfile::of_ccd(&zero()))
+    );
     // The tuning night runs the stock controls first, then re-qualifies the retained D exactly.
     journal.reboot("tuning2");
     journal.append(firmware("2").into(), &[]);
@@ -265,7 +271,7 @@ fn a_reproduction_gets_one_night_even_across_a_crash_and_is_unreproduced_when_it
     let plan = journal.until_trial(at(62_000));
     assert_eq!(plan.task.queue, Queue::Reproduction);
     assert_eq!(plan.tested, Tested::Exact {});
-    assert_eq!(plan.profile, d);
+    assert_eq!(plan.profile.to_ccd().unwrap(), d);
     let night = plan.night;
     journal.run(&plan, Ending::Pass);
     // A crash reboot back into tuning continues the same night and the same reproduction.
@@ -526,7 +532,7 @@ fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores
         let fails = plan.activity == Activity::Mapping
             && plan
                 .profile
-                .get(ccd(0))
+                .get(togi_tuner::UnitId::Ccd(ccd(0)))
                 .is_some_and(|offset| offset.get() <= -19);
         journal.run(
             &plan,
@@ -556,12 +562,12 @@ fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores
     apply(&mut journal, &fallback, 3, "day3");
     // The next night qualifies the wanted profile, not the ordinary proposal from CO 0.
     let plans = night_until_filler(&mut journal, "tuning3");
-    let qualified: Vec<&CcdProfile> = plans
+    let qualified: Vec<CcdProfile> = plans
         .iter()
         .filter(|plan| plan.activity == Activity::Qualification && !plan.profile.is_zero())
-        .map(|plan| &plan.profile)
+        .map(|plan| plan.profile.to_ccd().unwrap())
         .collect();
-    assert_eq!(qualified.first(), Some(&&first), "{qualified:?}");
+    assert_eq!(qualified.first(), Some(&first), "{qualified:?}");
     // The next cold boot restores it: a retreat completing the event, not a promotion.
     journal.boot_start("day4");
     let committed = journal.settle_day(&cold_boot_at("day4", journal.now()));
@@ -709,7 +715,7 @@ fn measured() -> Journal {
         let fails = plan.activity == Activity::Mapping
             && plan
                 .profile
-                .get(ccd(0))
+                .get(togi_tuner::UnitId::Ccd(ccd(0)))
                 .is_some_and(|offset| offset.get() <= -10);
         journal.run(
             &plan,

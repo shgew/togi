@@ -90,7 +90,9 @@ impl State {
             }
             let scope = match observed.tested {
                 Tested::Exact {} => AttemptScope::Exact,
-                Tested::Isolated { ccd, .. } => AttemptScope::Ccd { ccd },
+                Tested::Isolated { ccd, .. } => AttemptScope::Unit {
+                    unit: crate::UnitId::Ccd(ccd),
+                },
             };
             match observed.outcome {
                 Outcome::Failure => {
@@ -159,7 +161,7 @@ impl State {
     ) -> Result<ReproView, NotReady> {
         for (ordinal, event, source, profile) in self.open_reproductions() {
             let ccd_profile = match &profile {
-                ObservedProfile::Ccd { ccd, .. } => ccd.clone(),
+                ObservedProfile::Ccd { ccd, .. } => crate::UnitProfile::of_ccd(ccd),
                 // Nonuniform offsets are observations, not eligible profiles (tuner.md), so no night
                 // writes one: the task closes at once as untestable and the veto still compares the
                 // event on every physical core.
@@ -253,7 +255,7 @@ impl State {
         source: &DayEventId,
         ordinal: u32,
         night: NightId,
-        profile: Option<&togi_machine::CcdProfile>,
+        profile: Option<&crate::UnitProfile>,
         remaining: Vec<ExposureClass>,
         failures: Vec<Seq>,
         state: ReproductionState,
@@ -285,7 +287,7 @@ impl State {
         source: &DayEventId,
         ordinal: u32,
         night: NightId,
-        profile: Option<&togi_machine::CcdProfile>,
+        profile: Option<&crate::UnitProfile>,
         remaining: Vec<ExposureClass>,
         failures: Vec<Seq>,
         state: ReproductionState,
