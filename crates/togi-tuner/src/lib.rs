@@ -42,12 +42,12 @@ pub use policy::{
 pub use topology::{Topology, TopologyError};
 pub use unit::{Phase, TuningUnit, UnitId, UnitProfile, UnitProfileError, Units};
 
-/// The strategy ruleset this build tunes by (`docs/spec/tuner.md`, Ruleset): its evidence, cap, night,
-/// day and daily-event rules. Bump it when any of them changes; a session started under another ruleset is
-/// archived and a fresh session maps from scratch, importing only raw day observations. It starts at 1
-/// because the Rust build starts its own journal schema and never reads a Go journal (`journal.md`); 3 is
-/// the Ruleset 13 design.
-pub const RULESET: u32 = 3;
+/// The strategy ruleset this build tunes by (`docs/spec/tuner-ruleset14.md`): its per-unit ceilings,
+/// exact-profile holds, night certificates, successful applications and lifetime campaign allowance.
+/// A different ruleset archives the previous session unchanged and starts at verified stock, importing
+/// original-identity evidence and reconstructing charges and stops without importing permission.
+/// Version 4 identifies the Ruleset 14 design; the journal schema and evidence epoch are independent.
+pub const RULESET: u32 = 4;
 
 /// The evidence epoch this build records trial outcomes under (`docs/spec/tuner.md`, Ruleset): workload
 /// content, generated backend configuration, intended durations and pass/failure detection. Bump it when a
