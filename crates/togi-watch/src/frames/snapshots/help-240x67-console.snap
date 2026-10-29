@@ -1,0 +1,120 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~  gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│
+│  ► NIGHT since 22:13 · 0h30m  ───  mapping CCD 1 at -20  ───  9:20 left
+~  ccwwwwwwwwwwwwwwwwwwwwwwwwwttkkkttttttttttttttttttttttttkkkttwwwwwwwww
+│
+│    READING THE SCREEN ─────────────────────────────────────────────────────────────    WHAT TOGI DOES ───────────────────────────────────────────────────────────    WORDS ─────────────────────────────────────────────────────────────────
+~    wwwwwwwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg    wwwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg    wwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│
+│    ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31         NIGHT       Until you end it, togi maps each unit's edge U, sweeps            offset        Curve Optimizer counts, 0 to -50; deeper is more negative
+~    wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwggggggggggggggttttf                     fff         wwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttt            wwwwww        ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                        applied -12 under load; dots reach hard ceiling C at -26; U                 uncovered cells from U toward C, qualifies exact profiles,        trial         one launch of one workload on its target
+~                        ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                 tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt        wwwww         tttttttttttttttttttttttttttttttttttttttt
+│                        observed at -31                                                             reproduces daily events and runs controls. Idle time repeats      D             the tuning unit's applied day offset; saved and proposed
+~                        ggggggggggggggg                                                             tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt      w             tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                    exact-current-D qualification cells, never S-directed probes.                   profiles are not hardware readback
+~                                                                                                    ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                   tttttttttttttttttttttttttttttttttt
+│      09   -8           ▄▄▄▄▄▄▄▄                                                                                                                                      C             the hard night ceiling, with its edge and margin
+~    wwwwwwwwwwwwwwwwwwwwgggggggg                                                                                                                                      w             tttttttttttttttttttttttttttttttttttttttttttttttt
+│                        idle, so grey; C is unknown until U is mapped, so there are     DAY         permission: experimental hold + exact night qualification. The                  witnesses; unknown U blocks ordinary promotion
+~                        ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg     www         tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                  tttttttttttttttttttttttttttttttttttttttttttttt
+│                        no ceiling dots or edge mark                                                day panel shows the exact-profile hold, the last step,            S             non-authorizing statistical diagnostic, with its slope,
+~                        gggggggggggggggggggggggggggg                                                tttttttttttttttttttttttttttttttttttttttttttttttttttttt            w             ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                    allowance and what blocks the next one. Finish ends                             witnesses and gaps; never permission or a retreat trigger
+~                                                                                                    ttttttttttttttttttttttttttttttttttttttttttttttttttt                             ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│      11    ?           ·············································    ▄  -50                     exploration, not observation or safety work.                      U             the night edge: the shallowest offset that failed in
+~    wwwwwwwwwwwwwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggggtttta  aaa                     tttttttttttttttttttttttttttttttttttttttttttt                      w             tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                        no readback yet; U censored at -50 gives hard ceiling C at                                                                                                  isolation; unknown until mapped, censored when nothing
+~                        gggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                                  tttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                        -45, not physical -50                                           CCD TABLES  Physical CCD tables keep the topology visible. Each tuning                      failed down to the limit
+~                        ggggggggggggggggggggg                                           wwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                      tttttttttttttttttttttttt
+│                                                                                                    unit shows applied D, hard ceiling C and tagged U; core rows      slope         how fast a class's failure rate grows with depth: a
+~                                                                                                    tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt      wwwww         ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    ►         the core carries load in this trial                                                   retain their hardware readback. S is diagnostic only and never                  fallback until enough is measured
+~    w         ttttttttttttttttttttttttttttttttttt                                                   tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                  ttttttttttttttttttttttttttttttttt
+│    ▄▄▄       offset applied now, or saved after a stop restored the hardware; white                authorizes a step.                                                bound by      what limits diagnostic S: a class's failure rate, edge
+~    www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                tttttttttttttttttt                                                wwwwwwww      tttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              when this trial loads the core                                                                                                                                        margin, or baseline; not what permits D
+~              tttttttttttttttttttttttttttttt                                                                                                                                        ttttttttttttttttttttttttttttttttttttttt
+│    ?         no hardware offset has been read back for this core                       R6          During idle trials this screen holds still, clock included, so    covered       a class with diagnostic exposure; this does not qualify a
+~    w         ttttttttttttttttttttttttttttttttttttttttttttttttttt                       ww          tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt    wwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    grey ▄▄▄  the same depth, grey when the core is not loaded                                      it cannot wake the cores.                                                       whole profile
+~    wwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttt                                      ttttttttttttttttttttttttt                                                       ttttttttttttt
+│    ···       the hard night ceiling C for this tuning unit, not statistical                                                                                          hold          clean observed hours at the current exact D; earlier
+~    www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                          wwww          tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              permission                                                                NO ETA      Nights and days follow the clock, but when a hold completes                     profiles, nights and paused time do not count
+~              tttttttttt                                                                wwwwww      ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                     ttttttttttttttttttttttttttttttttttttttttttttt
+│    red ▄     the night edge U of its tuning unit: the shallowest offset that failed                depends on what runs, so togi shows only what is scheduled and    step          hold, promote one tuning unit, retreat, restore, or reset
+~    wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt    wwww          ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              in isolation, one count wide at Wide and Medium                                       the time left in the current trial.                                             after a firmware change
+~              ttttttttttttttttttttttttttttttttttttttttttttttt                                       ttttttttttttttttttttttttttttttttttt                                             ttttttttttttttttttttttt
+│    amber ▄   a censored edge: nothing failed down to the mapping limit                                                                                               veto          a profile an event forbids until the veto clears
+~    wwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                               wwww          tttttttttttttttttttttttttttttttttttttttttttttttt
+│    cyan      running now                                                               RULES       How togi decides what to do:                                      freeze        keeps D and blocks promotions; a required retreat or
+~    wwww      ttttttttttt                                                               wwwww       tttttttttttttttttttttttttttt                                      wwwwww        tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    amber     a hold, a veto, a retreat, a crash, or outstanding qualification                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md                      firmware reset still applies
+~    wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                      tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                      tttttttttttttttttttttttttttt
+│    red       failures, past and present                                                                                                                              qualifying    running a whole profile until every class has witnessed
+~    www       tttttttttttttttttttttttttt                                                                                                                              wwwwwwwwww    ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    green     passed, done, covered                                                                                                                                                 it
+~    wwwww     ttttttttttttttttttttt                                                                                                                                                 tt
+│    grey      idle, still to come, unknown                                                                                                                            reproducing   re-running a daily event's conditions to see whether it
+~    wwww      tttttttttttttttttttttttttttt                                                                                                                            wwwwwwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                                    comes back
+~                                                                                                                                                                                    tttttttttt
+│                                                                                                                                                                      share         the part of the night's elapsed time a queue has used,
+~                                                                                                                                                                      wwwww         tttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                                against the part it is meant to take
+~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                                tttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      allowance     machine-wide consumed and remaining events, including
+~                                                                                                                                                                      wwwwwwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    failures       failure decisions, including trials skipped because they already                                                                                                 provisional charges; reclassification does not refund
+~    wwwwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                                 ttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                   failed                                                                                                                                                           them and finish does not hide later events
+~                   tttttt                                                                                                                                                           tttttttttttttttttttttttttttttttttttttttttt
+│    crashes        boots that ended without a clean shutdown                                                                                                          experimental  experimental: 50 clean hours; at most 1 crash per 17 h
+~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt                                                                                                          wwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    last observed  the last failure seen in this session that changed what togi                                                                                                     (95%, fixed-rate model). This is an example for current
+~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                                     ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                   does; skips do not count                                                                                                                                         exact-profile evidence, not a reliability certificate;
+~                   tttttttttttttttttttttttt                                                                                                                                         tttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    q              exit dashboard; tuning itself keeps running                                                                                                                      finish alone never meets the hazard goal
+~    w              ttttttttttttttttttttttttttttttttttttttttttt                                                                                                                      tttttttttttttttttttttttttttttttttttttttt
+│
+│
+│                                                                                                                                                                      KINDS OF LOAD ─────────────────────────────────────────────────────────
+~                                                                                                                                                                      wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│
+│                                                                                                                                                                      R1 light          one light thread: compiling, browsing
+~                                                                                                                                                                      wwwwwwww          ttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+~                                                                                                                                                                      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R3 load steps     load switching on and off: current steps
+~                                                                                                                                                                      wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R4 partial load   light load at 25-75% duty: bursty work
+~                                                                                                                                                                      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R5 both threads   both threads of one core: SMT pressure
+~                                                                                                                                                                      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R6 idle + bursts  idle with short wake-ups: idle and boost
+~                                                                                                                                                                      wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R7 all-core       a CCD, part of one, or every core: power and heat
+~                                                                                                                                                                      wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│   ?  help    l  log    esc  back    q  exit dashboard
+~  uuu gggg   hhh ggg   hhhhh gggg   hhh gggggggggggggg

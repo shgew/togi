@@ -22,6 +22,7 @@ use crate::screen::Colours;
 use crate::words::{core_ids, workload_display};
 
 pub(crate) use night::queue_of;
+pub(crate) use night::{blocker_words, climb_lines, finish_words, vector_words};
 pub(crate) use resting::{last_lines, resting_band};
 
 /// What the narrator says: why the screen looks the way it does, never what the trial band already says.

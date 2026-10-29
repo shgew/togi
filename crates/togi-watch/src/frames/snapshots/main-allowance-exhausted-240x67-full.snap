@@ -1,0 +1,102 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~  gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│
+│  ► DAY
+~  ccwww
+│
+│  ▌  NIGHT OVER   allowance: 3 consumed / 2 limit; 0 remaining · 1 provisional · 1 reclassified · exhausted; no           last trial      PASS  10:00 on core 00
+~  c  cccccccccccccttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt           ggggggggggggggggppppgggggggggggggggggg
+│  ▌               additional climbing
+~  c               ttttttttttttttttttt
+│
+│  BETWEEN TRIALS ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~  gggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+│  last: PASS after 10:00 · R1 light on core 00
+~  tttttttttttttttttttttttttttttttttttttttttttt
+│  next trial: deciding
+~  tttttttttttttttttttt
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│  CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
+~  wwwww gggg          g       ggg       ggg       ggg       ggg       ggg                                                 wwwww gggg          g       ggg       ggg       ggg       ggg       ggg
+│  D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                              D -8 · C -45 · U censored at -50 · 37 counts to C · S -15 diagnostic only
+~  ttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                              tttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│  finished: allowance exhausted · last clean -10 · hold 50 / 50 h · no candidate                                          finished: allowance exhausted · last clean -8 · hold 50 / 50 h · no candidate
+~  tttttttttttttttttttttttttttttttttttttttttttttt   tttttttttttttt   tttttttttttt                                          ttttttttttttttttttttttttttttttttttttttttttttt   tttttttttttttt   tttttttttttt
+│    00  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      08   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    01  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      09   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    02  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      10   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    03  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      11   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    04  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      12   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    05  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      13   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    06  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      14   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    07  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      15   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│
+│  DAY ─────── applied D 0:-10 1:-10 2:-10 3:-10 4:-10 5:-10 6:-10 7:-10 8:-8 9:-8 10:-8 11:-8 12:-8 13:-8 14:-8 15:-8     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+~  www kkkkkkk ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg     ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggggggggggggggggggggggggg
+│  permission: experimental hold + exact night qualification
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  allowance: 3 consumed / 2 limit; 0 remaining · 1 provisional · 1 reclassified · exhausted; no additional climbing       22:13  start    session started on 16 cores
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt       ggggg  tttttttt ttttttttttttttttttttttttttt
+│  post-finish event boot boot-provisional: non-CPU · provisional · reclassified; allowance not refunded
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  experimental: 50.000 clean hours; at most 1 crash per 17 h (95%, fixed-rate model) · 0 crashes / 50.000 observed h
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  CCD 0: finished: allowance exhausted; last clean -10; remains experimental; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  CCD 0: applied step -5 → -10 (5 counts); application ApplicationId(2); witnesses [Seq(5)]
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  CCD 1: finished: allowance exhausted; last clean -8; remains experimental; hold 50.000 / 50.000 h at exact D
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  firmware    valid
+~  ggggggggggggppppp
+│
+│  LAST NIGHT 14:13-22:13 ────────────────────────────────────────────────────────────────────────────────────────────
+~  wwwwwwwwwwwwwwwwwwwwww kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+│  task        none running · 1 of 2 planned tasks done
+~  gggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%
+~  ggggggggggggtttttttttttttttgggtttttttttttttttttttttgggttttttttttttt
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│   ?  help    l  log    esc  back    q  exit dashboard
+~  hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

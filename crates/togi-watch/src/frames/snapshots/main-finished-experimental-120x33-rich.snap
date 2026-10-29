@@ -1,0 +1,62 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~ gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│ ► DAY
+~ ccwww
+│
+│ ▌  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified
+~ c  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│
+│ BETWEEN TRIALS  last: PASS after 10:00 · R1 light on core 00
+~ gggggggggggggg  tttttttttttttttttttttttttttttttttttttttttttt
+│ next trial: deciding
+~ tttttttttttttttttttt
+│
+│
+│
+│ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
+~ wwwww gggg       g  kkkkkkkkkkkkk       ggg                 wwwww gggg       g  kkkkkkkkkkkkk       ggg
+│ D -10 · C -10 · U observed at -31 · 0 counts to C           D -8 · C -8 · U censored at -50 · 0 counts to C
+~ ttttt   ttttt   ttttttttttttttttt   ttttttttttttt           tttt   tttt   ttttttttttttttttt   ttttttttttttt
+│ finished: night ceiling reached · last clean -10            finished: night ceiling reached · last clean -8
+~ tttttttttttttttttttttttttttttttttttttttttttttttt            ttttttttttttttttttttttttttttttttttttttttttttttt
+│   00 -10          ▆▆▆▆▆          ▆                            08  -8          ▆▆▆▆                    ▆
+~   tt ttt          ggggg          f                            tt ttt          gggg                    a
+│   01 -10          ▆▆▆▆▆          ▆                            09  -8          ▆▆▆▆                    ▆
+~   tt ttt          ggggg          f                            tt ttt          gggg                    a
+│   02 -10          ▆▆▆▆▆          ▆                            10  -8          ▆▆▆▆                    ▆
+~   tt ttt          ggggg          f                            tt ttt          gggg                    a
+│   03 -10          ▆▆▆▆▆          ▆                            11  -8          ▆▆▆▆                    ▆
+~   tt ttt          ggggg          f                            tt ttt          gggg                    a
+│   04 -10          ▆▆▆▆▆          ▆                            12  -8          ▆▆▆▆                    ▆
+~   tt ttt          ggggg          f                            tt ttt          gggg                    a
+│   05 -10          ▆▆▆▆▆          ▆                            13  -8          ▆▆▆▆                    ▆
+~   tt ttt          ggggg          f                            tt ttt          gggg                    a
+│   06 -10          ▆▆▆▆▆          ▆                            14  -8          ▆▆▆▆                    ▆
+~   tt ttt          ggggg          f                            tt ttt          gggg                    a
+│   07 -10          ▆▆▆▆▆          ▆                            15  -8          ▆▆▆▆                    ▆
+~   tt ttt          ggggg          f                            tt ttt          gggg                    a
+│
+│ DAY ─────────────────────────────────────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
+~ www kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk   ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggg
+│ permission: experimental hold + exact night qualification
+~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ allowance: 0 consumed / 2 limit; 2 remaining · 0…           22:13  start    session started on 16 cores
+~ ttttttttttttttttttttttttttttttttttttttttttttttttt           ggggg  tttttttt ttttttttttttttttttttttttttt
+│ experimental: 50.000 clean hours; at most 1 crash per 17…
+~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ CCD 0: finished: night ceiling reached; last clean -10…
+~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ CCD 0: applied step -5 → -10 (5 counts); application…
+~ ttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ CCD 1: finished: night ceiling reached; last clean -8…
+~ tttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ +4 more
+~ ggggggg
+│
+│  ?  help    l  log    esc  back    q  exit dashboard
+~ hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

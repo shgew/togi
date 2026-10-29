@@ -1,4 +1,4 @@
-//! The Ruleset 13 narration on hand-built states: what a night trial is for, between trials, the day state, the
+//! The D narration on hand-built states: what a night trial is for, between trials, the day state, the
 //! stock failure stop and recovery.
 
 use super::*;
@@ -290,10 +290,11 @@ fn a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification()
     assert_eq!(said.label, "FILLER");
     assert_eq!(
         said.lines[0],
-        "Filler repeat of the day profile, CCD 0 at -20, CCD 1 at -15: every CCD runs together at its offset, one exact qualification cell per trial."
+        "Filler repeat of the current exact D profile, CCD 0 at -20, CCD 1 at -15: all units run together, one exact qualification cell per trial."
     );
     assert!(
-        said.lines[1].starts_with("Filler runs only when nothing else can;"),
+        said.lines[1]
+            .starts_with("Filler repeats exact-current-D cells only when primary work is empty;"),
         "{:?}",
         said.lines
     );
@@ -306,7 +307,7 @@ fn a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification()
     }
     assert_eq!(
         said.brief,
-        "Filler repeat of the day profile, CCD 0 at -20, CCD 1 at -15 (filler task 4)."
+        "Filler repeat of the current exact D profile, CCD 0 at -20, CCD 1 at -15 (filler task 4)."
     );
     let scene = fx.scene(ts(1001));
     assert_eq!(
@@ -316,7 +317,7 @@ fn a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification()
 }
 
 #[test]
-fn a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step() {
+fn historical_mapping_filler_never_claims_s_unlocks_permission() {
     let mut fx = Fx::new();
     filler_night(&mut fx);
     let trial = filler(
@@ -328,16 +329,10 @@ fn a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step() {
     );
     let said = running(&mut fx, trial.clone());
     assert_eq!(said.label, "FILLER");
-    assert_eq!(
-        said.lines[0],
-        "Filler cap probe on CCD 1 at -16, one count deeper than its cap S: every other CCD stays at CO 0."
-    );
-    assert!(
-        said.lines[1].contains("never finishes a mapping step"),
-        "{:?}",
-        said.lines
-    );
-    assert_eq!(said.brief, "Filler probe on CCD 1 at -16 (filler task 4).");
+    assert!(said.lines[0].starts_with("Mapping CCD 1 at -16"));
+    assert!(said.lines[1].contains("sweeps uncovered cells from U toward hard ceiling C"));
+    assert!(!said.lines[0].contains("cap"));
+    assert!(said.lines[1].contains("non-authorizing diagnostic"));
     let scene = fx.scene(ts(1001));
     assert_eq!(
         plain(&operation(&scene, &trial), Colours::None),
@@ -450,7 +445,7 @@ fn a_held_step_names_every_blocker() {
     };
     assert_eq!(
         day_step(every, false),
-        "The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired, it failed qualification."
+        "The latest proposal keeps the profile: its hold is not complete, no ordinary step remains; see the unit's finish or held reason, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired, it failed qualification."
     );
 }
 

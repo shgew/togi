@@ -7,17 +7,17 @@ expression: body
 │
 │ █ READING THE SCREEN ────────────────────────────────────────────────────────
 │ █
-│ █ ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31
-│ │                     applied -12 under load; the dots run to the cap S at
-│ │                     -26; the red mark is the edge U, failed at -31
+│ │ ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31
+│ │                     applied -12 under load; dots reach hard ceiling C at
+│ │                     -26; U observed at -31
 │ │
-│ │   09   -8           ▄▄▄▄▄▄▄▄······
-│ │                     idle, so grey; the cap S is -14 and its CCD has no edge
-│ │                     yet, so there is no red mark
+│ │   09   -8           ▄▄▄▄▄▄▄▄
+│ │                     idle, so grey; C is unknown until U is mapped, so there
+│ │                     are no ceiling dots or edge mark
 │ │
-│ │   11    ?           ······························                   ▄  -50
-│ │                     no readback yet; the cap S is -30 and the edge is
-│ │                     censored: nothing failed down to -50
+│ │   11    ?           ·············································    ▄  -50
+│ │                     no readback yet; U censored at -50 gives hard ceiling C
+│ │                     at -45, not physical -50
 │ │
 │ │ ►         the core carries load in this trial
 │ │ ▄▄▄       offset applied now, or saved after a stop restored the hardware;

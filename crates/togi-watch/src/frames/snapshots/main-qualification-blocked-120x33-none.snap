@@ -1,0 +1,37 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│ ► DAY
+│
+│ ▌  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified
+│
+│ BETWEEN TRIALS  last: PASS after 10:00 · R1 light on core 00
+│ next trial: deciding
+│
+│
+│
+│ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
+│ D -10 · C -26 · U observed at -31 · 16 counts to C          D -8 · C -45 · U censored at -50 · 37 counts to C
+│ held: exact candidate qualification blocked                 climbing · hold 50 / 50 h · no candidate
+│   00 -10          ▄▄▄▄▄········  ▄                            08  -8          ▄▄▄▄··················· ▄
+│   01 -10          ▄▄▄▄▄········  ▄                            09  -8          ▄▄▄▄··················· ▄
+│   02 -10          ▄▄▄▄▄········  ▄                            10  -8          ▄▄▄▄··················· ▄
+│   03 -10          ▄▄▄▄▄········  ▄                            11  -8          ▄▄▄▄··················· ▄
+│   04 -10          ▄▄▄▄▄········  ▄                            12  -8          ▄▄▄▄··················· ▄
+│   05 -10          ▄▄▄▄▄········  ▄                            13  -8          ▄▄▄▄··················· ▄
+│   06 -10          ▄▄▄▄▄········  ▄                            14  -8          ▄▄▄▄··················· ▄
+│   07 -10          ▄▄▄▄▄········  ▄                            15  -8          ▄▄▄▄··················· ▄
+│
+│ DAY ─────────────────────────────────────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ permission: experimental hold + exact night qualification
+│ allowance: 0 consumed / 2 limit; 2 remaining · 0...         22:13  start    session started on 16 cores
+│ experimental: 50.000 clean hours; at most 1 crash per...
+│ CCD 0: held/unfinished: exact candidate qualification...
+│ CCD 0: applied step -5 → -10 (5 counts); application...
+│ CCD 1: climbing; hold 50.000 / 50.000 h at exact D
+│ +4 more
+│
+│  ?  help    l  log    esc  back    q  exit dashboard

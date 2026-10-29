@@ -5,7 +5,7 @@ expression: body
 │ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
 │ ► DAY
 │
-│ ▌  The latest step promoted CCD 0 and it was applied.
+│ ▌  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified
 │
 │ BETWEEN TRIALS  last: PASS after 10:00 · R1 light on core 00
 │ next trial: deciding
@@ -13,24 +13,24 @@ expression: body
 │
 │
 │ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
-│ D -10 · S -26 · rate R1 · U fails at -31 · 16 counts to S   D -8 · S -15 · rate R1 · U censored at -50 · 7 to S
-│ 3 covered for the cap · 1 uncovered for the cap             4 covered for the cap · 0 uncovered for the cap
-│   00 -10          ▄▄▄▄▄········  ▄                            08  -8          ▄▄▄▄····                ▄
-│   01 -10          ▄▄▄▄▄········  ▄                            09  -8          ▄▄▄▄····                ▄
-│   02 -10          ▄▄▄▄▄········  ▄                            10  -8          ▄▄▄▄····                ▄
-│   03 -10          ▄▄▄▄▄········  ▄                            11  -8          ▄▄▄▄····                ▄
-│   04 -10          ▄▄▄▄▄········  ▄                            12  -8          ▄▄▄▄····                ▄
-│   05 -10          ▄▄▄▄▄········  ▄                            13  -8          ▄▄▄▄····                ▄
-│   06 -10          ▄▄▄▄▄········  ▄                            14  -8          ▄▄▄▄····                ▄
-│   07 -10          ▄▄▄▄▄········  ▄                            15  -8          ▄▄▄▄····                ▄
+│ D -10 · C -26 · U observed at -31 · 16 counts to C          D -8 · C -45 · U censored at -50 · 37 counts to C
+│ climbing · hold 3 / 50 h · no candidate                     climbing · hold 3 / 50 h · no candidate
+│   00 -10          ▄▄▄▄▄········  ▄                            08  -8          ▄▄▄▄··················· ▄
+│   01 -10          ▄▄▄▄▄········  ▄                            09  -8          ▄▄▄▄··················· ▄
+│   02 -10          ▄▄▄▄▄········  ▄                            10  -8          ▄▄▄▄··················· ▄
+│   03 -10          ▄▄▄▄▄········  ▄                            11  -8          ▄▄▄▄··················· ▄
+│   04 -10          ▄▄▄▄▄········  ▄                            12  -8          ▄▄▄▄··················· ▄
+│   05 -10          ▄▄▄▄▄········  ▄                            13  -8          ▄▄▄▄··················· ▄
+│   06 -10          ▄▄▄▄▄········  ▄                            14  -8          ▄▄▄▄··················· ▄
+│   07 -10          ▄▄▄▄▄········  ▄                            15  -8          ▄▄▄▄··················· ▄
 │
-│ DAY ────────────────────────────────────── applied -10/-8   WHAT HAPPENED ─────────────────────────────── l: last 400
-│ hold        3h00m of 8h00m · holding -10/-8
-│ last step   promoted CCD 0                                  22:13  start    session started on 16 cores
-│ firmware    valid
-│ LAST NIGHT 14:13-22:13 ──────────────────────────────────
-│ task        none running · 1 of 2 planned tasks done
-│ shares      mapping 66%/10% · qualification 33%/75%...
-│
+│ DAY ─────────────────────────────────────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ permission: experimental hold + exact night qualification
+│ allowance: 0 consumed / 2 limit; 2 remaining · 0...         22:13  start    session started on 16 cores
+│ experimental: current exact-profile daily evidence...
+│ CCD 0: climbing; hold 3.000 / 50.000 h at exact D
+│ CCD 0: applied step -5 → -10 (5 counts); application...
+│ CCD 1: climbing; hold 3.000 / 50.000 h at exact D
+│ +4 more
 │
 │  ?  help    l  log    esc  back    q  exit dashboard

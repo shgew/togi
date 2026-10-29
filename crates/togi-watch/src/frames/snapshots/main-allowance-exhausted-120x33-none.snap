@@ -1,0 +1,37 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│ ► DAY
+│
+│ ▌  allowance: 3 consumed / 2 limit; 0 remaining · 1 provisional · 1 reclassified · exhausted; no additional climbing
+│
+│ BETWEEN TRIALS  last: PASS after 10:00 · R1 light on core 00
+│ next trial: deciding
+│
+│
+│
+│ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
+│ D -10 · C -26 · U observed at -31 · 16 counts to C          D -8 · C -45 · U censored at -50 · 37 counts to C
+│ finished: allowance exhausted · last clean -10              finished: allowance exhausted · last clean -8
+│   00 -10          ▄▄▄▄▄········  ▄                            08  -8          ▄▄▄▄··················· ▄
+│   01 -10          ▄▄▄▄▄········  ▄                            09  -8          ▄▄▄▄··················· ▄
+│   02 -10          ▄▄▄▄▄········  ▄                            10  -8          ▄▄▄▄··················· ▄
+│   03 -10          ▄▄▄▄▄········  ▄                            11  -8          ▄▄▄▄··················· ▄
+│   04 -10          ▄▄▄▄▄········  ▄                            12  -8          ▄▄▄▄··················· ▄
+│   05 -10          ▄▄▄▄▄········  ▄                            13  -8          ▄▄▄▄··················· ▄
+│   06 -10          ▄▄▄▄▄········  ▄                            14  -8          ▄▄▄▄··················· ▄
+│   07 -10          ▄▄▄▄▄········  ▄                            15  -8          ▄▄▄▄··················· ▄
+│
+│ DAY ─────────────────────────────────────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ permission: experimental hold + exact night qualification
+│ allowance: 3 consumed / 2 limit; 0 remaining · 1...         22:13  start    session started on 16 cores
+│ post-finish event boot boot-provisional: non-CPU...
+│ experimental: 50.000 clean hours; at most 1 crash per...
+│ CCD 0: finished: allowance exhausted; last clean -10...
+│ CCD 0: applied step -5 → -10 (5 counts); application...
+│ +5 more
+│
+│  ?  help    l  log    esc  back    q  exit dashboard

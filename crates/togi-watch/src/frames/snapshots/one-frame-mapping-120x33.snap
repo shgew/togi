@@ -13,24 +13,24 @@ expression: body
 │
 │
 │ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 all loaded 0  2 counts/cell       -50
-│ D -10 · S -26 · rate R1 · U fails at -31 · 16 counts to S   D -8 · S -15 · rate R1 · U censored at -50 · 7 to S
-│ 3 covered for the cap · 1 uncovered for the cap             4 covered for the cap · 0 uncovered for the cap
-│   00 -10          ▄▄▄▄▄········  ▄                          ► 08  -8 LOADED   ▄▄▄▄····                ▄
-│   01 -10          ▄▄▄▄▄········  ▄                          ► 09  -8 LOADED   ▄▄▄▄····                ▄
-│   02 -10          ▄▄▄▄▄········  ▄                          ► 10  -8 LOADED   ▄▄▄▄····                ▄
-│   03 -10          ▄▄▄▄▄········  ▄                          ► 11  -8 LOADED   ▄▄▄▄····                ▄
-│   04 -10          ▄▄▄▄▄········  ▄                          ► 12  -8 LOADED   ▄▄▄▄····                ▄
-│   05 -10          ▄▄▄▄▄········  ▄                          ► 13  -8 LOADED   ▄▄▄▄····                ▄
-│   06 -10          ▄▄▄▄▄········  ▄                          ► 14  -8 LOADED   ▄▄▄▄····                ▄
-│   07 -10          ▄▄▄▄▄········  ▄                          ► 15  -8 LOADED   ▄▄▄▄····                ▄
+│ D -10 · C -26 · U observed at -31 · 16 counts to C          D -8 · C -45 · U censored at -50 · 37 counts to C
+│ climbing · hold 3 / 50 h · no candidate                     climbing · hold 3 / 50 h · no candidate
+│   00 -10          ▄▄▄▄▄········  ▄                          ► 08  -8 LOADED   ▄▄▄▄··················· ▄
+│   01 -10          ▄▄▄▄▄········  ▄                          ► 09  -8 LOADED   ▄▄▄▄··················· ▄
+│   02 -10          ▄▄▄▄▄········  ▄                          ► 10  -8 LOADED   ▄▄▄▄··················· ▄
+│   03 -10          ▄▄▄▄▄········  ▄                          ► 11  -8 LOADED   ▄▄▄▄··················· ▄
+│   04 -10          ▄▄▄▄▄········  ▄                          ► 12  -8 LOADED   ▄▄▄▄··················· ▄
+│   05 -10          ▄▄▄▄▄········  ▄                          ► 13  -8 LOADED   ▄▄▄▄··················· ▄
+│   06 -10          ▄▄▄▄▄········  ▄                          ► 14  -8 LOADED   ▄▄▄▄··················· ▄
+│   07 -10          ▄▄▄▄▄········  ▄                          ► 15  -8 LOADED   ▄▄▄▄··················· ▄
 │
 │ NIGHT since 22:13 · 0h30m elapsed ───────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
 │ task        mapping task 2 · 1 of 2 planned tasks done
 │ mapping     CCD 1 at -20                                    22:13  start    session started on 16 cores
 │ shares      mapping 66%/10% · qualification 33%/75%...
-│ DAY ────────────────────────────────────── applied -10/-8
-│ hold        3h00m of 8h00m · holding -10/-8
-│ firmware    valid
-│
+│ DAY ─────────────────────────────────────────────────────
+│ permission: experimental hold + exact night qualification
+│ allowance: 0 consumed / 2 limit; 2 remaining · 0...
+│ +5 more
 │
 │

@@ -1,0 +1,67 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~ gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│ ► NIGHT 0h30m ─ mapping C1 -20 ─ 9:20 left
+~ ccwwwwwwwwwwwtkttttttttttttttttktwwwwwwwww
+│
+│ █ READING THE SCREEN ────────────────────────────────────────────────────────────────────────────────────────────────
+~ t wwwwwwwwwwwwwwwwww gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│ █
+~ t
+│ █ ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31
+~ t wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwggggggggggggggttttf                     fff
+│ █                     applied -12 under load; dots reach hard ceiling C at -26; U observed at -31
+~ t                     ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│ █
+~ t
+│ █   09   -8           ▄▄▄▄▄▄▄▄
+~ t wwwwwwwwwwwwwwwwwwwwgggggggg
+│ █                     idle, so grey; C is unknown until U is mapped, so there are no ceiling dots or edge mark
+~ t                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│ █
+~ t
+│ │   11    ?           ·············································    ▄  -50
+~ g wwwwwwwwwwwwwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggggtttta  aaa
+│ │                     no readback yet; U censored at -50 gives hard ceiling C at -45, not physical -50
+~ g                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│ │
+~ g
+│ │ ►         the core carries load in this trial
+~ g w         ttttttttttttttttttttttttttttttttttt
+│ │ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial loads the core
+~ g www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ ?         no hardware offset has been read back for this core
+~ g w         ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ grey ▄▄▄  the same depth, grey when the core is not loaded
+~ g wwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ ···       the hard night ceiling C for this tuning unit, not statistical permission
+~ g www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ red ▄     the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at
+~ g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │           Wide and Medium
+~ g           ttttttttttttttt
+│ │ amber ▄   a censored edge: nothing failed down to the mapping limit
+~ g wwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ cyan      running now
+~ g wwww      ttttttttttt
+│ │ amber     a hold, a veto, a retreat, a crash, or outstanding qualification
+~ g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ red       failures, past and present
+~ g www       tttttttttttttttttttttttttt
+│ │ green     passed, done, covered
+~ g wwwww     ttttttttttttttttttttt
+│ │ grey      idle, still to come, unknown
+~ g wwww      tttttttttttttttttttttttttttt
+│ │
+~ g
+│ │
+~ g
+│ │ THE TOP LINE ──────────────────────────────────────────────────────────────────────────────────────────────────────
+~ g wwwwwwwwwwww gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│
+│  ?  help    l  log    esc  back    q  exit dashboard
+~ uuu gggg   hhh ggg   hhhhh gggg   hhh gggggggggggggg

@@ -1,0 +1,90 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~  gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│
+│  ► NIGHT since 22:13 · 0h30m  ───  mapping CCD 1 at -20  ───  9:20 left
+~  ccwwwwwwwwwwwwwwwwwwwwwwwwwttkkkttttttttttttttttttttttttkkkttwwwwwwwww
+│
+│  █ READING THE SCREEN ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~  t wwwwwwwwwwwwwwwwww gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  █
+~  t
+│  █ ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31
+~  t wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwggggggggggggggttttf                     fff
+│  █                     applied -12 under load; dots reach hard ceiling C at -26; U observed at -31
+~  t                     ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  █
+~  t
+│  █   09   -8           ▄▄▄▄▄▄▄▄
+~  t wwwwwwwwwwwwwwwwwwwwgggggggg
+│  █                     idle, so grey; C is unknown until U is mapped, so there are no ceiling dots or edge mark
+~  t                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  █
+~  t
+│  █   11    ?           ·············································    ▄  -50
+~  t wwwwwwwwwwwwwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggggtttta  aaa
+│  █                     no readback yet; U censored at -50 gives hard ceiling C at -45, not physical -50
+~  t                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  █
+~  t
+│  █ ►         the core carries load in this trial
+~  t w         ttttttttttttttttttttttttttttttttttt
+│  █ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial loads the core
+~  t www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  █ ?         no hardware offset has been read back for this core
+~  t w         ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  █ grey ▄▄▄  the same depth, grey when the core is not loaded
+~  t wwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttt
+│  █ ···       the hard night ceiling C for this tuning unit, not statistical permission
+~  t www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ red ▄     the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at Wide and Medium
+~  g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ amber ▄   a censored edge: nothing failed down to the mapping limit
+~  g wwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ cyan      running now
+~  g wwww      ttttttttttt
+│  │ amber     a hold, a veto, a retreat, a crash, or outstanding qualification
+~  g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ red       failures, past and present
+~  g www       tttttttttttttttttttttttttt
+│  │ green     passed, done, covered
+~  g wwwww     ttttttttttttttttttttt
+│  │ grey      idle, still to come, unknown
+~  g wwww      tttttttttttttttttttttttttttt
+│  │
+~  g
+│  │
+~  g
+│  │ THE TOP LINE ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~  g wwwwwwwwwwww gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  │
+~  g
+│  │ failures       failure decisions, including trials skipped because they already failed
+~  g wwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ crashes        boots that ended without a clean shutdown
+~  g wwwwwww        ttttttttttttttttttttttttttttttttttttttttt
+│  │ last observed  the last failure seen in this session that changed what togi does; skips do not count
+~  g wwwwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ q              exit dashboard; tuning itself keeps running
+~  g w              ttttttttttttttttttttttttttttttttttttttttttt
+│  │
+~  g
+│  │
+~  g
+│  │ WHAT TOGI DOES ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~  g wwwwwwwwwwwwww gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  │
+~  g
+│  │ NIGHT       Until you end it, togi maps each unit's edge U, sweeps uncovered cells from U toward C, qualifies exact profiles, reproduces daily events and
+~  g wwwww       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │             runs controls. Idle time repeats exact-current-D qualification cells, never S-directed probes.
+~  g             tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │
+~  g
+│
+│   ?  help    l  log    esc  back    q  exit dashboard
+~  uuu gggg   hhh ggg   hhhhh gggg   hhh gggggggggggggg

@@ -595,7 +595,7 @@ fn gauge_of(
     gauge(
         &scene,
         &snapshot.cores[0],
-        Some(projection),
+        Some(&crate::frames::hand::climb_row(projection)),
         Some(applied),
         cells,
     )
@@ -698,7 +698,7 @@ fn facts_text(projection: &togi_tuner::policy::UnitProjection, width: usize) -> 
     plain(
         &facts_line(
             &scene(&snapshot, FIXED_NOW, &zone, Colours::None),
-            projection,
+            &crate::frames::hand::climb_row(projection),
             width,
         ),
         Colours::None,
@@ -712,7 +712,7 @@ fn coverage_text(projection: &togi_tuner::policy::UnitProjection, width: usize) 
     plain(
         &coverage_line(
             &scene(&snapshot, FIXED_NOW, &zone, Colours::None),
-            projection,
+            &crate::frames::hand::climb_row(projection),
             width,
         ),
         Colours::None,
@@ -720,10 +720,10 @@ fn coverage_text(projection: &togi_tuner::policy::UnitProjection, width: usize) 
 }
 
 #[test]
-fn the_facts_row_names_day_cap_binding_edge_and_distance() {
+fn the_facts_row_names_day_ceiling_tagged_edge_and_diagnostic_s() {
     assert_eq!(
         facts_text(&ccd_projection(), 115),
-        "D -10 · S -15 fallback slope · bound by rate R1 · U fails at -23 · 5 counts to S"
+        "D -10 · C -15 · U observed at -23 · 5 counts to C · S -15 diagnostic only"
     );
     let measured_cap = with_cap(
         ccd_row(0, &[0, 1], -10),
@@ -732,7 +732,7 @@ fn the_facts_row_names_day_cap_binding_edge_and_distance() {
         5,
     );
     let text = facts_text(&measured_cap, 115);
-    assert!(text.contains("measured slope"), "{text}");
+    assert!(text.contains("S -15 diagnostic only"), "{text}");
     assert!(text.contains("U censored at -50"), "{text}");
 }
 
@@ -740,17 +740,17 @@ fn the_facts_row_names_day_cap_binding_edge_and_distance() {
 fn a_ccd_with_no_cap_or_edge_says_so() {
     let text = facts_text(&ccd_row(0, &[0], 0), 115);
     assert!(text.starts_with("D 0 · "), "{text}");
-    assert!(text.contains("no cap"), "{text}");
+    assert!(text.contains("C unknown"), "{text}");
     assert!(text.contains("U unknown"), "{text}");
     let covered = coverage_text(&ccd_row(0, &[0], 0), 115);
-    assert!(covered.contains("no cap"), "{covered}");
+    assert!(covered.contains("no candidate"), "{covered}");
 }
 
 #[test]
-fn the_coverage_row_counts_what_the_cap_has_and_lacks() {
+fn the_second_row_shows_exact_hold_and_candidate_not_statistical_permission() {
     assert_eq!(
         coverage_text(&ccd_projection(), 115),
-        "2 covered for the cap · 1 uncovered for the cap"
+        "climbing · hold 3 / 50 h · no candidate"
     );
 }
 
@@ -758,14 +758,12 @@ fn the_coverage_row_counts_what_the_cap_has_and_lacks() {
 fn the_facts_row_never_cuts_a_value_whatever_the_width() {
     let whole = [
         "D -10",
-        "S -15 fallback slope",
-        "S -15",
-        "bound by rate R1",
-        "rate R1",
-        "U fails at -23",
-        "U -23",
-        "5 counts to S",
-        "5 to S",
+        "C -15",
+        "S -15 diagnostic only",
+        "U observed at -23",
+        "U observed -23",
+        "5 counts to C",
+        "5 to C",
     ];
     for width in 21..=120 {
         let text = facts_text(&ccd_projection(), width);
@@ -791,7 +789,16 @@ fn table(hand: &Hand, width: u16, height: u16, colours: Colours) -> Vec<String> 
     let rect = Rect::new(0, 0, width, height);
     let mut buf = Buffer::empty(rect);
     let zone = TimeZone::UTC;
-    let snapshot = hand.snapshot();
+    let mut policy = hand.policy.clone();
+    policy.climb.units = policy
+        .units
+        .iter()
+        .map(crate::frames::hand::climb_row)
+        .collect();
+    let snapshot = crate::model::Snapshot {
+        policy: &policy,
+        ..hand.snapshot()
+    };
     let scene = scene(&snapshot, FIXED_NOW, &zone, colours);
     draw_ccd(
         &mut buf,
@@ -822,9 +829,9 @@ fn a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core() {
     let rows = table(&hand, 115, 5, Colours::None);
     assert!(rows[0].starts_with("CCD 0 one loaded"), "{:?}", rows[0]);
     assert!(rows[0].contains("-50"), "{:?}", rows[0]);
-    assert!(rows[1].starts_with("D -10 · S -15"), "{:?}", rows[1]);
+    assert!(rows[1].starts_with("D -10 · C -15"), "{:?}", rows[1]);
     assert!(
-        rows[2].starts_with("2 covered for the cap"),
+        rows[2].starts_with("climbing · hold 3 / 50 h"),
         "{:?}",
         rows[2]
     );

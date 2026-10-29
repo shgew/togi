@@ -9,23 +9,23 @@ expression: body
 │  █ READING THE SCREEN ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  █
 │  █ ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31
-│  █                     applied -12 under load; the dots run to the cap S at -26; the red mark is the edge U, failed at -31
+│  █                     applied -12 under load; dots reach hard ceiling C at -26; U observed at -31
 │  █
-│  █   09   -8           ▄▄▄▄▄▄▄▄······
-│  █                     idle, so grey; the cap S is -14 and its CCD has no edge yet, so there is no red mark
+│  █   09   -8           ▄▄▄▄▄▄▄▄
+│  █                     idle, so grey; C is unknown until U is mapped, so there are no ceiling dots or edge mark
 │  █
-│  █   11    ?           ······························                   ▄  -50
-│  █                     no readback yet; the cap S is -30 and the edge is censored: nothing failed down to -50
+│  █   11    ?           ·············································    ▄  -50
+│  █                     no readback yet; U censored at -50 gives hard ceiling C at -45, not physical -50
 │  █
 │  █ ►         the core carries load in this trial
 │  █ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial loads the core
 │  █ ?         no hardware offset has been read back for this core
 │  █ grey ▄▄▄  the same depth, grey when the core is not loaded
-│  █ ···       the cap S: how far past the applied offset the night's evidence lets its CCD go
-│  █ red ▄     the night edge U of its CCD: the shallowest offset that failed in isolation, one count wide at Wide and Medium
+│  █ ···       the hard night ceiling C for this tuning unit, not statistical permission
+│  │ red ▄     the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at Wide and Medium
 │  │ amber ▄   a censored edge: nothing failed down to the mapping limit
 │  │ cyan      running now
-│  │ amber     a hold, a veto, a retreat, a crash, or classes uncovered for the cap
+│  │ amber     a hold, a veto, a retreat, a crash, or outstanding qualification
 │  │ red       failures, past and present
 │  │ green     passed, done, covered
 │  │ grey      idle, still to come, unknown
@@ -41,8 +41,8 @@ expression: body
 │  │
 │  │ WHAT TOGI DOES ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  │
-│  │ NIGHT       Until you end it, togi maps each CCD's edge, qualifies profiles, reproduces daily events and runs controls, and fills idle time with cap
-│  │             probes and exact repeats. The stage shows when the night started, its elapsed time and what the current trial tests; the night panel lists
-│  │             each queue's share of that time and the progress.
+│  │ NIGHT       Until you end it, togi maps each unit's edge U, sweeps uncovered cells from U toward C, qualifies exact profiles, reproduces daily events and
+│  │             runs controls. Idle time repeats exact-current-D qualification cells, never S-directed probes.
+│  │
 │
 │   ?  help    l  log    esc  back    q  exit dashboard

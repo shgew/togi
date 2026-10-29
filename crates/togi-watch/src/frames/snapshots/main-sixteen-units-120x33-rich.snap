@@ -1,0 +1,61 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~ gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│ ► DAY
+~ ccwww
+│
+│ ▌  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified
+~ c  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│
+│ BETWEEN TRIALS  last: PASS after 10:00 · R1 light on core 00
+~ gggggggggggggg  tttttttttttttttttttttttttttttttttttttttttttt
+│ next trial: deciding
+~ tttttttttttttttttttt
+│
+│
+│
+│ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
+~ wwwww gggg       g  kkkkkkkkkkkkk       ggg                 wwwww gggg       g  kkkkkkkkkkkkk       ggg
+│ core tuning · physical CCD topology                         core tuning · physical CCD topology
+~ ggggggggggggggggggggggggggggggggggg                         ggggggggggggggggggggggggggggggggggg
+│
+│ core 0 · D -10 · C -26 · U observed at -31 · 16 to C        core 8 · D -8 · C -26 · U observed at -31 · 16 to C
+~ wwwwwwwwwttttt   ttttt   ttttttttttttttttt   ttttttt        wwwwwwwwwtttt   ttttt   ttttttttttttttttt   ttttttt
+│   00 -10          ▆▆▆▆▆········  ▆                            08  -8          ▆▆▆▆·········  ▆
+~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggg  f
+│ core 1 · D -10 · C -26 · U observed at -31 · 16 to C        core 9 · D -8 · C -26 · U observed at -31 · 16 to C
+~ wwwwwwwwwttttt   ttttt   ttttttttttttttttt   ttttttt        wwwwwwwwwtttt   ttttt   ttttttttttttttttt   ttttttt
+│   01 -10          ▆▆▆▆▆········  ▆                            09  -8          ▆▆▆▆·········  ▆
+~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggg  f
+│ core 2 · D -10 · C -26 · U observed at -31 · 16 to C        core 10 · D -8 · C -26 · U observed at -31 · 16 to C
+~ wwwwwwwwwttttt   ttttt   ttttttttttttttttt   ttttttt        wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   ttttttt
+│   02 -10          ▆▆▆▆▆········  ▆                            10  -8          ▆▆▆▆·········  ▆
+~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggg  f
+│ core 3 · D -10 · C -26 · U observed at -31 · 16 to C        core 11 · D -8 · C -26 · U observed at -31 · 16 to C
+~ wwwwwwwwwttttt   ttttt   ttttttttttttttttt   ttttttt        wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   ttttttt
+│   03 -10          ▆▆▆▆▆········  ▆                            11  -8          ▆▆▆▆·········  ▆
+~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggg  f
+│ core 4 · D -10 · C -26 · U observed at -31 · 16 to C        core 12 · D -8 · C -26 · U observed at -31 · 16 to C
+~ wwwwwwwwwttttt   ttttt   ttttttttttttttttt   ttttttt        wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   ttttttt
+│   04 -10          ▆▆▆▆▆········  ▆                            12  -8          ▆▆▆▆·········  ▆
+~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggg  f
+│ core 5 · D -10 · C -26 · U observed at -31 · 16 to C        core 13 · D -8 · C -26 · U observed at -31 · 16 to C
+~ wwwwwwwwwttttt   ttttt   ttttttttttttttttt   ttttttt        wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   ttttttt
+│   05 -10          ▆▆▆▆▆········  ▆                            13  -8          ▆▆▆▆·········  ▆
+~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggg  f
+│ core 6 · D -10 · C -26 · U observed at -31 · 16 to C        core 14 · D -8 · C -26 · U observed at -31 · 16 to C
+~ wwwwwwwwwttttt   ttttt   ttttttttttttttttt   ttttttt        wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   ttttttt
+│   06 -10          ▆▆▆▆▆········  ▆                            14  -8          ▆▆▆▆·········  ▆
+~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggg  f
+│ core 7 · D -10 · C -26 · U observed at -31 · 16 to C        core 15 · D -8 · C -26 · U observed at -31 · 16 to C
+~ wwwwwwwwwttttt   ttttt   ttttttttttttttttt   ttttttt        wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   ttttttt
+│   07 -10          ▆▆▆▆▆········  ▆                            15  -8          ▆▆▆▆·········  ▆
+~   tt ttt          ggggggggggggg  f                            tt ttt          ggggggggggggg  f
+│
+│
+│  ?  help    l  log    esc  back    q  exit dashboard
+~ hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

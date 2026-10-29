@@ -1,0 +1,120 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~  gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│
+│  ► DAY
+~  ccwww
+│
+│  ▌  NIGHT OVER   allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified                           last trial      PASS  10:00 on core 00
+~  c  cccccccccccccttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                           ggggggggggggggggppppgggggggggggggggggg
+│
+│
+│  BETWEEN TRIALS ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~  gggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+│  last: PASS after 10:00 · R1 light on core 00
+~  tttttttttttttttttttttttttttttttttttttttttttt
+│  next trial: deciding
+~  tttttttttttttttttttt
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│  CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
+~  wwwww gggg          g       ggg       ggg       ggg       ggg       ggg                                                 wwwww gggg          g       ggg       ggg       ggg       ggg       ggg
+│  core tuning · physical CCD topology                                                                                     core tuning · physical CCD topology
+~  ggggggggggggggggggggggggggggggggggg                                                                                     ggggggggggggggggggggggggggggggggggg
+│
+│  core 0 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 8 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                     wwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│    00  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      08   -8            ▄▄▄▄▄▄▄▄··················    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            gggggggggggggggggggggggggg    f
+│  core 1 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 9 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                     wwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│    01  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      09   -8            ▄▄▄▄▄▄▄▄··················    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            gggggggggggggggggggggggggg    f
+│  core 2 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 10 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│    02  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      10   -8            ▄▄▄▄▄▄▄▄··················    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            gggggggggggggggggggggggggg    f
+│  core 3 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 11 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│    03  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      11   -8            ▄▄▄▄▄▄▄▄··················    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            gggggggggggggggggggggggggg    f
+│  core 4 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 12 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│    04  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      12   -8            ▄▄▄▄▄▄▄▄··················    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            gggggggggggggggggggggggggg    f
+│  core 5 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 13 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│    05  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      13   -8            ▄▄▄▄▄▄▄▄··················    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            gggggggggggggggggggggggggg    f
+│  core 6 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 14 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│    06  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      14   -8            ▄▄▄▄▄▄▄▄··················    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            gggggggggggggggggggggggggg    f
+│  core 7 · D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                     core 15 · D -8 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│    07  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      15   -8            ▄▄▄▄▄▄▄▄··················    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            gggggggggggggggggggggggggg    f
+│
+│  DAY ─────── applied D 0:-10 1:-10 2:-10 3:-10 4:-10 5:-10 6:-10 7:-10 8:-8 9:-8 10:-8 11:-8 12:-8 13:-8 14:-8 15:-8     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+~  www kkkkkkk ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg     ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggggggggggggggggggggggggg
+│  permission: experimental hold + exact night qualification
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified                                           22:13  start    session started on 16 cores
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                           ggggg  tttttttt ttttttttttttttttttttttttttt
+│  experimental: 50.000 clean hours; at most 1 crash per 17 h (95%, fixed-rate model) · 0 crashes / 50.000 observed h
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 0: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 1: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 2: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 3: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 4: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 5: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 6: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 7: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 8: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 9: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 10: climbing; hold 50.000 / 50.000 h at exact D
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 11: climbing; hold 50.000 / 50.000 h at exact D
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 12: climbing; hold 50.000 / 50.000 h at exact D
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 13: climbing; hold 50.000 / 50.000 h at exact D
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 14: climbing; hold 50.000 / 50.000 h at exact D
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 15: climbing; hold 50.000 / 50.000 h at exact D
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  firmware    valid
+~  ggggggggggggppppp
+│
+│  LAST NIGHT 14:13-22:13 ────────────────────────────────────────────────────────────────────────────────────────────
+~  wwwwwwwwwwwwwwwwwwwwww kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+│  task        none running · 1 of 2 planned tasks done
+~  gggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%
+~  ggggggggggggtttttttttttttttgggtttttttttttttttttttttgggttttttttttttt
+│
+│   ?  help    l  log    esc  back    q  exit dashboard
+~  hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg
