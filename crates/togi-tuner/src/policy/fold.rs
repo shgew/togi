@@ -41,6 +41,13 @@ impl State {
             return Ok(());
         }
         self.apply(event)?;
+        if matches!(event.payload,
+            Payload::DayUncleanEnd(_) | Payload::DayAnswer(_) | Payload::DayRecord(_)
+            | Payload::DayFault(_) | Payload::Mce(_) | Payload::ExposureObserved(_)
+            | Payload::NightQualification(_) | Payload::DayImported(_)
+        ) {
+            self.observe_raw_campaign(event.time)?;
+        }
         self.last = Some(event.seq);
         Ok(())
     }
