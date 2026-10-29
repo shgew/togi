@@ -52,22 +52,26 @@ mapping CCD 0: next offset -5
 mapping CCD 1: next offset -5
 
 Evidence
-Statistical S is diagnostic only and never authorizes a step. S uses isolated
-  mapping classes only. Qualification, reproduction and controls can inform
-  slope but cannot supply mapping rate coverage. The diagnostic cap is
-  coverage-incomplete.
-The machine incremental hazard goal is 1 crash per 3,000 applied hours, divided
-  among CCDs. Poisson bounds and log-linear projection are modeling assumptions,
-  not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that
-  stock meets the hazard goal.
+Ruleset 14. Permission: experimental hold + exact night qualification. S is a
+  non-authorizing diagnostic: isolated mapping classes supply its rate coverage;
+  qualification, reproduction and controls can inform slope only. Coverage gaps
+  remain unknown.
+The machine incremental hazard goal is 1 crash per 3,000 applied hours. Current
+  exact-profile daily evidence alone supports its fixed-rate Poisson claim;
+  qualification, stock and previous-profile hours do not. Log-linear S
+  projections are modeling assumptions, not demonstrated rare-event guarantees.
+  CO 0 is a fallback, not proof that stock meets the goal.
+current exact profile daily evidence: 0 h; 0 crashes []
+experimental: rate bound unavailable (95%, fixed-rate model)
 Exact baseline stock profile: CCD 0 0, CCD 1 0
-exact profile: 0.0h observed, 0 crashes
+historical exact profile (all recorded contexts; not a current-profile bound):
+  0.0h observed, 0 crashes
 stock (CO 0): 0.0h observed, 0 crashes
 0 unknown intervals across recorded day intervals; downtime and uncheckpointed
   crash tails are not hours. Totals retain live/imported provenance, not a
   bound.
 
-Cap calculation witnesses
+Diagnostic cap calculation witnesses (S never authorizes or retreats D)
 CCD 0: current read-only calculation S 0; unknown edge; fallback beta=0.405465
 CCD share of incremental hazard goal: 0.00016667/h
 committed S 0 [#1917]; fallback beta=0.405465

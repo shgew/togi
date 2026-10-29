@@ -1,0 +1,5 @@
+---
+source: crates/togi-watch/src/frames/dash/tests.rs
+expression: facts_text
+---
+D -10 · C -15 · U observed at -23 · 5 counts to C · S -15 diagnostic only

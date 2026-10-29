@@ -45,8 +45,8 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~ wwwwwwwwwwwwwwwwwgggggggggggggggg kkkkkkkkkkkkkkkkkkkkkkk   ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggg
 │ task        qualification task 4 · 1 of 2 planned...
 ~ ggggggggggggccccccccccccccccccccgggggggggggggggggggg
-│ qualifying  -10/-8 · next step · 3 witnessed · 2...         22:13  start    session started on 16 cores
-~ ggggggggggggttttttttttttttttttttttttttttttttttttttt         ggggg  tttttttt ttttttttttttttttttttttttttt
+│ qualifying  -10/-8 · next step · 0h15m eligible...          22:13  start    session started on 16 cores
+~ ggggggggggggtttttttttttttttttttttttttttttttttttttt          ggggg  tttttttt ttttttttttttttttttttttttttt
 │ shares      mapping 66%/10% · qualification 33%/75%...
 ~ ggggggggggggtttttttttttttttgggtttttttttttttttttttttttt
 │ DAY ─────────────────────────────────────────────────────

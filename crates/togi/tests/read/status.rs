@@ -1025,8 +1025,12 @@ fn evidence_is_read_only_and_identical_under_no_color(scenario: Scenario) {
     let shown = evidence_output(scenario, false);
     assert_eq!(shown, evidence_output(scenario, true));
     assert!(!shown.contains('\u{1b}'));
-    assert!(shown.contains("Statistical S is diagnostic only and never authorizes a step."));
-    assert!(shown.contains("Cap calculation witnesses"));
+    assert!(shown.contains("Ruleset 14."));
+    let shown_flat = flat(&shown);
+    assert!(shown_flat.contains("Permission: experimental hold + exact night qualification"));
+    assert!(shown_flat.contains("S is a non-authorizing diagnostic"));
+    assert!(shown_flat.contains("Current exact-profile daily evidence alone"));
+    assert!(shown.contains("cap calculation witnesses"));
     assert!(shown.contains("Qualification exposure"));
     assert!(shown.contains("Applied-step history"));
     assert!(shown.contains("Comparable same-class night clocks and temperatures"));

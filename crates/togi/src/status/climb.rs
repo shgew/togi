@@ -422,6 +422,40 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
             );
         }
     }
+    daily_evidence(out, policy);
+    match &policy.firmware_restoration {
+        None => out.push_str("firmware restoration: none\n"),
+        Some(restoration) => {
+            let state = match &restoration.state {
+                FirmwareRestorationState::Saved {} => {
+                    "saved; awaiting new-context qualification and stock hold".to_owned()
+                }
+                FirmwareRestorationState::Qualified { certificate } => {
+                    format!("qualified in new context [#{certificate}]")
+                }
+                FirmwareRestorationState::Held { hold } => format!(
+                    "held for stock hours: {} h [{}]",
+                    hours(hold.eligible_s),
+                    witnesses(&hold.credited)
+                ),
+                FirmwareRestorationState::Restored { application } => format!(
+                    "restored in one whole-profile learning step; application {}",
+                    application.0
+                ),
+                FirmwareRestorationState::SteppedBack { event: id } => format!(
+                    "stepped back to stock; restored units stopped after {}",
+                    event(id)
+                ),
+            };
+            line(out, "firmware restoration: ", &state);
+            line(out, "  saved exact profile: ", &vector(&restoration.saved));
+        }
+    }
+}
+
+/// Current exact-profile evidence is identical in concise and expanded status.
+pub(super) fn daily_evidence(out: &mut String, policy: &ClimbProjection) {
+    let profiles = &policy.profiles;
     match &policy.daily {
         None => out.push_str("experimental: current exact profile daily evidence unavailable\n"),
         Some(daily) if profiles.applied.as_ref() == Some(&daily.profile) => {
@@ -460,33 +494,5 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
         Some(_) => out.push_str(
             "experimental: daily evidence belongs to another profile; no current-profile claim\n",
         ),
-    }
-    match &policy.firmware_restoration {
-        None => out.push_str("firmware restoration: none\n"),
-        Some(restoration) => {
-            let state = match &restoration.state {
-                FirmwareRestorationState::Saved {} => {
-                    "saved; awaiting new-context qualification and stock hold".to_owned()
-                }
-                FirmwareRestorationState::Qualified { certificate } => {
-                    format!("qualified in new context [#{certificate}]")
-                }
-                FirmwareRestorationState::Held { hold } => format!(
-                    "held for stock hours: {} h [{}]",
-                    hours(hold.eligible_s),
-                    witnesses(&hold.credited)
-                ),
-                FirmwareRestorationState::Restored { application } => format!(
-                    "restored in one whole-profile learning step; application {}",
-                    application.0
-                ),
-                FirmwareRestorationState::SteppedBack { event: id } => format!(
-                    "stepped back to stock; restored units stopped after {}",
-                    event(id)
-                ),
-            };
-            line(out, "firmware restoration: ", &state);
-            line(out, "  saved exact profile: ", &vector(&restoration.saved));
-        }
     }
 }

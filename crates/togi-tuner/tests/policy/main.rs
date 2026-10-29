@@ -307,8 +307,8 @@ fn the_projection_names_the_units_the_day_and_the_running_task() {
     assert_eq!(
         json["units"],
         serde_json::json!([
-            {"unit": {"ccd": 0}, "cores": json["units"][0]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null},
-            {"unit": {"ccd": 1}, "cores": json["units"][1]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null},
+            {"unit": {"ccd": 0}, "cores": json["units"][0]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null, "evidence": json["units"][0]["evidence"]},
+            {"unit": {"ccd": 1}, "cores": json["units"][1]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null, "evidence": json["units"][1]["evidence"]},
         ])
     );
     for unit in json["units"].as_array().unwrap() {

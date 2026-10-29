@@ -1281,15 +1281,15 @@ fn trial_bars_have_no_strip_under_their_track(width: u16, height: u16, colours: 
     assert!(below.chars().all(|c| c == ' '), "{below:?}");
 }
 
-#[test_case(togi_tuner::policy::CapReason::NoAdequateClass, include_str!("snapshots/committed-cap-current-zero.snap"); "no mapping class")]
-#[test_case(togi_tuner::policy::CapReason::UnknownEdge, include_str!("snapshots/committed-cap-current-unknown-edge.snap"); "unknown edge")]
-#[test_case(togi_tuner::policy::CapReason::NoJustifiedDecay, include_str!("snapshots/committed-cap-current-no-decay.snap"); "no justified decay")]
-fn committed_caps_keep_their_binding_separate_from_current_zero_reasons(
+#[test_case(togi_tuner::policy::CapReason::NoAdequateClass; "no mapping class")]
+#[test_case(togi_tuner::policy::CapReason::UnknownEdge; "unknown edge")]
+#[test_case(togi_tuner::policy::CapReason::NoJustifiedDecay; "no justified decay")]
+fn current_zero_reasons_never_move_d_c_u_or_grant_s_permission(
     reason: togi_tuner::policy::CapReason,
-    snapshot: &str,
 ) {
     let words = reason.label();
-    let mut projection = ccd_projection();
+    let baseline = ccd_projection();
+    let mut projection = baseline.clone();
     projection.evidence = Some(togi_tuner::policy::CapEvidence {
         offset: togi_machine::TargetOffset::ZERO,
         reason,
@@ -1309,15 +1309,20 @@ fn committed_caps_keep_their_binding_separate_from_current_zero_reasons(
         }],
         slope_inputs: Vec::new(),
     });
-    let (_, expected) = snapshot
+    let (_, expected) = include_str!("snapshots/committed-cap-diagnostic-s.snap")
         .split_once("\n---\n")
         .expect("an embedded insta snapshot header");
     assert_eq!(format!("{}\n", facts_text(&projection, 180)), expected);
-    let narrow = facts_text(&projection, 115);
-    assert!(narrow.contains("S -15"), "{narrow}");
-    assert!(narrow.contains(&format!("calc 0: {words}")), "{narrow}");
+    for width in [180, 115] {
+        let text = facts_text(&projection, width);
+        assert_eq!(text, facts_text(&baseline, width), "D, C and U moved");
+        assert!(text.contains("S -15 diagnostic only"), "{text}");
+        assert!(!text.contains("to S"), "S is never a destination: {text}");
+        assert!(!text.contains(words), "a zero reason leaked: {text}");
+    }
     assert_eq!(
         coverage_text(&projection, 115),
-        "Ruleset 13 mapping: 1.5h eligible · 1 gaps (1 non-mapping)"
+        coverage_text(&baseline, 115),
+        "a zero reason changed permission"
     );
 }
