@@ -236,9 +236,9 @@ fn qualification_value(
         .map(|record| record.purpose.as_str().replace('_', " "));
     let purpose = purpose.map_or_else(String::new, |purpose| format!(" · {purpose}"));
     let text = format!(
-        "{}{purpose} · {} witnessed · {} outstanding",
+        "{}{purpose} · {} eligible exposure · {} outstanding",
         profile_text(&progress.profile),
-        progress.witnessed,
+        secs(progress.eligible_s),
         progress.outstanding.len()
     );
     value(scene, Paint::Text, text)
@@ -279,6 +279,16 @@ fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'
         scene.style(Paint::Track),
         scene.colours,
     )];
+    out.push(field_row(
+        scene,
+        "Ruleset 13",
+        value(
+            scene,
+            Paint::Grey,
+            "mapping-only cap; CO 0 is not hazard-goal proof".to_owned(),
+        ),
+        width,
+    ));
     out.push(field_row(scene, "hold", hold_value(scene, day), width));
     if let Some((_, step)) = &day.last_step {
         out.push(field_row(
@@ -574,7 +584,11 @@ mod tests {
             "{:?}",
             rows[day]
         );
-        assert!(rows[day + 1].contains("holding -10"), "{:?}", rows[day + 1]);
+        assert_eq!(
+            rows[day + 1],
+            "Ruleset 13  mapping-only cap; CO 0 is not hazard-goal proof"
+        );
+        assert!(rows[day + 2].contains("holding -10"), "{:?}", rows[day + 2]);
         assert!(
             rows.iter()
                 .any(|row| row

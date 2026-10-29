@@ -24,7 +24,7 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │
 │  CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
 │  D -10 · S -26 fallback slope · bound by rate R1 · U fails at -31 · 16 counts to S                                       D -8 · S -15 measured slope · bound by rate R1 · U censored at -50 · 7 counts to S
-│  3 covered for the cap · 1 uncovered for the cap                                                                         4 covered for the cap · 0 uncovered for the cap
+│  Ruleset 13 mapping: eligible hours/gaps unknown                                                                         Ruleset 13 mapping: eligible hours/gaps unknown
 │    00  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      08   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
 │    01  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      09   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
 │    02  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      10   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
@@ -39,9 +39,9 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │  shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%                                                     22:13  start    session started on 16 cores
 │
 │  DAY ──────────────────────────────────────────────────────────────────────────────────────────────── applied -10/-8
+│  Ruleset 13  mapping-only cap; CO 0 is not hazard-goal proof
 │  hold        3h00m of 8h00m · holding -10/-8
 │  firmware    valid
-│
 │
 │
 │

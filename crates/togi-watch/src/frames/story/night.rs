@@ -343,8 +343,8 @@ fn detail(policy: &Projection, activity: Activity, task: Option<TaskId>) -> Stri
                 || "Only a complete qualification lets the profile be applied by day.".to_owned(),
                 |progress| {
                     format!(
-                        "{} witnessed, {} outstanding; only a complete qualification lets the profile be applied by day.",
-                        plural(progress.witnessed, "cell"),
+                        "{} eligible s witnessed, {} outstanding; only a complete qualification lets the profile be applied by day.",
+                        progress.eligible_s,
                         progress.outstanding.len()
                     )
                 },

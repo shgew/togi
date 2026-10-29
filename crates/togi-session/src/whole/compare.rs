@@ -636,6 +636,7 @@ impl<'events> Names<'events> {
             cores,
             edge,
             cap,
+            evidence,
             day,
             remaining,
         } = ccd;
@@ -661,7 +662,7 @@ impl<'events> Names<'events> {
             None => "None".to_owned(),
         };
         format!(
-            "ccd {ccd:?} cores={cores:?} edge={edge} cap={cap} day={day:?} remaining={remaining:?}"
+            "ccd {ccd:?} cores={cores:?} edge={edge} cap={cap} evidence={evidence:?} day={day:?} remaining={remaining:?}"
         )
     }
 
@@ -782,9 +783,10 @@ impl<'events> Names<'events> {
                 purpose,
                 state,
                 current,
+                eligible_s,
             } = entry;
             lines.push(format!(
-                "qualification {profile:?} {purpose:?} {state:?} current={current}"
+                "qualification {profile:?} {purpose:?} {state:?} current={current} eligible_s={eligible_s}"
             ));
         }
         lines.push(match night {

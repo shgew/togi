@@ -36,6 +36,18 @@ fn invocation(end: &DayUncleanEnd, actions: bool) -> Invocation {
     ))
 }
 
+fn morning_invocation(report: &crate::morning::Report) -> Invocation {
+    Invocation::new("notify-send")
+        .args([
+            "--app-name=togi",
+            "--icon=dialog-information",
+            "--expire-time=120000",
+        ])
+        .output_limit(4096)
+        .arg("Last night's evidence")
+        .arg(&report.text)
+}
+
 fn selected(bytes: &[u8]) -> Option<DayAnswerKind> {
     let value = std::str::from_utf8(bytes).ok()?.strip_suffix('\n')?;
     super::parse_answer(value).ok()
@@ -60,9 +72,10 @@ pub(super) fn run(ctx: &mut Context<'_>) -> Exit {
 
 fn serve(ctx: &mut Context<'_>, cancel: &CancellationToken, clock: &mut impl Clock) -> Exit {
     let mut sent = BTreeSet::new();
+    let mut morning_sent = BTreeSet::new();
     loop {
-        let pending = match ctx.system.day_request(&Request::Questions) {
-            Ok(Reply::Questions { pending }) => pending,
+        let (pending, morning) = match ctx.system.day_request(&Request::Questions) {
+            Ok(Reply::Questions { pending, morning }) => (pending, morning),
             Ok(Reply::Answered | Reply::Refused { .. }) => {
                 return exit_with(
                     ctx,
@@ -80,6 +93,22 @@ fn serve(ctx: &mut Context<'_>, cancel: &CancellationToken, clock: &mut impl Clo
                 );
             }
         };
+        if let Some(report) = morning.filter(|report| !morning_sent.contains(&report.boot)) {
+            match ctx.system.day_notification(&morning_invocation(&report)) {
+                Ok(output) if output.status.success() => {
+                    morning_sent.insert(report.boot);
+                }
+                Ok(_) => return exit_with(ctx, "day notify", "notify-send failed", Exit::Error),
+                Err(error) => {
+                    return exit_with(
+                        ctx,
+                        "day notify",
+                        togi_render::error_chain(&error),
+                        Exit::Error,
+                    );
+                }
+            }
+        }
         for end in &pending {
             if sent.contains(&end.boot) {
                 continue;
@@ -303,6 +332,14 @@ mod tests {
             panic!("notify does not diagnose hardware")
         }
 
+        fn diagnose_day(
+            &self,
+            _: &togi_config::Config,
+            _: Option<&HostLock>,
+        ) -> Result<togi_hardware::Diagnosis, togi_hardware::Error> {
+            panic!("notify does not diagnose day hardware")
+        }
+
         fn bootloader(&self, _: &Path) -> std::io::Result<Box<dyn togi_tuningboot::Bootloader>> {
             panic!("notify does not touch the bootloader")
         }
@@ -451,6 +488,7 @@ mod tests {
     fn pending(boots: &[&str]) -> Reply {
         Reply::Questions {
             pending: boots.iter().map(|boot| end(boot)).collect(),
+            morning: None,
         }
     }
 
@@ -477,6 +515,26 @@ mod tests {
         (exit, String::from_utf8(err).unwrap())
     }
 
+    #[test]
+    fn a_morning_report_is_notified_once_per_boot_without_question_actions() {
+        let report = crate::morning::Report {
+            boot: boot("morning"),
+            text: "No automatic nonzero change; restricted to stock (CO 0).".into(),
+        };
+        let reply = || Reply::Questions {
+            pending: Vec::new(),
+            morning: Some(report.clone()),
+        };
+        let desktop = Desktop::new([Ok(reply()), Ok(reply())], [Ok(chose(b"frozen\n"))]);
+        let mut ticks = Ticks::new([Ok(()), Err(togi_machine::Error::Cancelled)]);
+        let (exit, err) = drive(&desktop, &mut ticks);
+        assert_eq!((exit, err.as_str()), (Exit::Ok, ""));
+        assert_eq!(*desktop.shown.borrow(), [morning_invocation(&report)]);
+        assert_eq!(
+            *desktop.requests.borrow(),
+            [Seen::Questions, Seen::Questions]
+        );
+    }
     fn boot(id: &str) -> BootId {
         id.to_owned().into()
     }

@@ -35,6 +35,8 @@ The trial-class key is `(regime, workload content identities, effective backend 
 
 Daily observations have a separate ledger of applied hours, faults, ends and answers per exact profile and firmware context. They supply holds and events, not synthetic class exposure. Report observed total crashes and hours beside the CO-0 totals, including provenance and unknown intervals; neither total nor an untested class is claimed bounded.
 
+Readers expose the existing cap owners' typed reasons and witnesses, including eligible hours and coverage gaps, rather than deriving another cap from displayed totals. They identify these Ruleset 13 rules and distinguish their mapping-only cap population from qualification and daily exposure. CO 0 is the fallback when evidence cannot justify a nonzero cap, not proof that stock meets the hazard goal. Evidence displays give no stability verdict, ETA or promise of progress; a later policy's experimental allowance is not a current rule. [Runtime](runtime.md#status) owns the evidence view and diagnostics.
+
 ### Adequate exposure
 
 A class/offset is adequately exposed for coverage once at least one conclusive launch has completed its intended duration, including its internal warm-up boundary, with valid placement and credit. Keep failures and partial exposure before this threshold; they are not passes. Requiring a complete launch prevents many truncated starts hiding delayed failures. [The workload matrix](workloads.md#coverage-matrix) separately owns qualification breadth, sustained cells and tightly scoped unchanged-CCD reuse. This completion threshold does not make every trial purpose eligible for the cap; [the cap's evidence population](#cap-s-margin-from-measured-slope) owns that restriction.

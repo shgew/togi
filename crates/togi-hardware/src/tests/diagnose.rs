@@ -261,3 +261,101 @@ fn assert_identity_only_diagnosis(request_privileged: bool, privilege: Privilege
     assert!(!driver.check_readback().ok);
     assert_eq!(watch.touched(), Vec::<&str>::new());
 }
+
+#[test]
+fn day_diagnosis_uses_driver_checks_without_backend_or_scope_probes() {
+    let tree = Tree::new();
+    let (mut host, privileged) = diagnosis_host(&tree, true, Privilege::Root).unwrap();
+    let scope = Scope::creating();
+    host.scope = Box::new(scope.clone());
+    let diagnosis = crate::day_diagnose::with_host(
+        &host,
+        privileged,
+        togi_machine::WatchdogState::Armed {
+            detail: "hardware timer held by PID 1".into(),
+        },
+        Check {
+            name: "persistent_journal".into(),
+            detail: "persistent entry".into(),
+            ok: true,
+        },
+    );
+    assert_eq!(
+        names(&diagnosis.ran),
+        [
+            "cpu",
+            "ryzen_smu",
+            "readback",
+            "watchdog",
+            "persistent_journal"
+        ]
+    );
+    assert!(diagnosis.ran[0].ok);
+    assert!(diagnosis.ran[1].ok);
+    assert!(diagnosis.ran[3].ok);
+    assert_eq!(scope.calls.get(), 0);
+    assert!(diagnosis.skipped.is_empty());
+}
+
+#[test]
+fn day_diagnosis_without_privilege_never_touches_mailbox_or_pm_files() {
+    let tree = Tree::new();
+    let (host, privileged) = diagnosis_host(&tree, false, Privilege::Root).unwrap();
+    let watch = Watch::on(&tree);
+    let diagnosis = crate::day_diagnose::with_host(
+        &host,
+        privileged,
+        togi_machine::WatchdogState::Unarmed {
+            detail: "open but not counting".into(),
+        },
+        Check {
+            name: "persistent_journal".into(),
+            detail: "no persistent entry".into(),
+            ok: false,
+        },
+    );
+    assert_eq!(
+        names(&diagnosis.ran),
+        ["cpu", "ryzen_smu", "watchdog", "persistent_journal"]
+    );
+    assert_eq!(
+        diagnosis.skipped,
+        [Skipped {
+            name: CheckName::Readback,
+            reason: Skip::NeedsRoot
+        }]
+    );
+    assert!(!diagnosis.ran[2].ok);
+    assert_eq!(diagnosis.ran[2].detail, "open but not counting");
+    assert!(!diagnosis.ran[3].ok);
+    assert_eq!(watch.touched(), Vec::<&str>::new());
+}
+
+#[test]
+fn day_diagnosis_does_not_read_offsets_after_a_failed_identity() {
+    let tree = Tree::new();
+    tree.put("sys/kernel/ryzen_smu_drv/codename", "999\n");
+    let (host, privileged) = diagnosis_host(&tree, true, Privilege::Root).unwrap();
+    let watch = Watch::on(&tree);
+    let diagnosis = crate::day_diagnose::with_host(
+        &host,
+        privileged,
+        togi_machine::WatchdogState::Armed {
+            detail: "PID 1 watchdog".into(),
+        },
+        Check {
+            name: "persistent_journal".into(),
+            detail: "persistent entry".into(),
+            ok: true,
+        },
+    );
+    assert!(!diagnosis.ran[1].ok);
+    assert_eq!(
+        diagnosis.skipped,
+        [Skipped {
+            name: CheckName::Readback,
+            reason: Skip::NeedsIdentity
+        }]
+    );
+    assert_eq!(watch.touched(), Vec::<&str>::new());
+}

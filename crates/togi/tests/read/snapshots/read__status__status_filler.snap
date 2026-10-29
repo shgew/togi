@@ -9,12 +9,18 @@ BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
 in flight: [#10771] trial 1810 core 00 offset -1 R1 mprime SSE 4K-21K 90 s
   together mapping task filler #0 night #31 testing CCD0 at -1
 
+Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
+  prove the hazard goal. Coverage gaps remain unknown.
 CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 0   0-7   0   0   measured rate     fails -9     0         121     121
   bound by R8 ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light
            core 0 120s isolated
 1   8-15  0   0   fallback rate     fails -7     0         103     128
   bound by R9 ycruncher-bkt-sftv4-all-threads serial cpu 25 120s isolated
+  CCD 0 cap evidence: mapping rate bound; 4.5 h eligible mapping witnesses; 121
+    coverage gaps
+  CCD 1 cap evidence: mapping rate bound; 3.7 h eligible mapping witnesses; 128
+    coverage gaps
   CCD 0 uncovered for the cap, no observations: R9
     ycruncher-bkt-sftv4-all-threads serial cpu 4 120s isolated
   CCD 0 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k

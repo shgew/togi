@@ -29,6 +29,8 @@ struct Crash {
     imported: bool,
     /// A manual record names it, so no answer can say it was not a crash.
     recorded: bool,
+    #[serde(default)]
+    offsets: PerCore<ObservedOffset>,
 }
 
 /// Hours and crashes of one scope, with what part of each came from imported records.
@@ -85,6 +87,8 @@ pub struct DayTotals {
     stock: [u64; 2],
     unknown: u32,
     imported: Vec<Provenance>,
+    #[serde(default)]
+    profiles: Vec<(PerCore<ObservedOffset>, [u64; 2])>,
 }
 
 fn is_stock(offsets: &PerCore<ObservedOffset>) -> bool {
@@ -129,19 +133,35 @@ impl DayTotals {
             offsets, seconds, ..
         }) = self.boots.apply(event)
         {
-            let stock = is_stock(offsets);
+            let offsets = *offsets;
+            let stock = is_stock(&offsets);
             self.credit(stock, imported, seconds);
+            match self
+                .profiles
+                .iter_mut()
+                .find(|(known, _)| *known == offsets)
+            {
+                Some((_, seconds_by_origin)) => {
+                    let slot = usize::from(imported);
+                    seconds_by_origin[slot] = seconds_by_origin[slot].saturating_add(seconds);
+                }
+                None => {
+                    let mut seconds_by_origin = [0; 2];
+                    seconds_by_origin[usize::from(imported)] = seconds;
+                    self.profiles.push((offsets, seconds_by_origin));
+                }
+            }
         }
         if let Payload::DayUncleanEnd(end) = &event.payload {
             let id = CrashId::Boot(end.boot.clone());
-            self.crash(id, is_stock(&end.offsets), imported, false);
+            self.crash(id, &end.offsets, imported, false);
         }
         if let Payload::DayRecord(record) = &event.payload {
             let id = match &record.boot {
                 CrashedBoot::UncleanEnd { boot } => CrashId::Boot(boot.clone()),
                 CrashedBoot::Unobserved { at } => CrashId::At(*at),
             };
-            self.crash(id, is_stock(record.offsets.get()), imported, true);
+            self.crash(id, record.offsets.get(), imported, true);
         }
         if let Payload::DayInterval(interval) = &event.payload {
             if matches!(
@@ -161,16 +181,23 @@ impl DayTotals {
         }
     }
 
-    fn crash(&mut self, id: CrashId, stock: bool, imported: bool, recorded: bool) {
+    fn crash(
+        &mut self,
+        id: CrashId,
+        offsets: &PerCore<ObservedOffset>,
+        imported: bool,
+        recorded: bool,
+    ) {
         if let Some(known) = self.crashes.iter_mut().find(|known| known.id == id) {
             known.recorded |= recorded;
             return;
         }
         self.crashes.push(Crash {
             id,
-            stock,
+            stock: is_stock(offsets),
             imported,
             recorded,
+            offsets: *offsets,
         });
     }
 
@@ -214,6 +241,31 @@ impl DayTotals {
     #[must_use]
     pub fn stock(&self) -> Tally {
         self.tally(self.stock, true)
+    }
+    /// The exact read-back vector, without merging componentwise offsets or other profiles.
+    #[must_use]
+    pub fn profile(&self, offsets: &PerCore<ObservedOffset>) -> Tally {
+        let seconds = self
+            .profiles
+            .iter()
+            .find(|(known, _)| known == offsets)
+            .map_or([0; 2], |(_, seconds)| *seconds);
+        let mut tally = Tally {
+            secs: seconds[0].saturating_add(seconds[1]),
+            imported_secs: seconds[1],
+            ..Tally::default()
+        };
+        for crash in self
+            .crashes
+            .iter()
+            .filter(|crash| &crash.offsets == offsets && self.counts(crash))
+        {
+            tally.crashes = tally.crashes.saturating_add(1);
+            if crash.imported {
+                tally.imported_crashes = tally.imported_crashes.saturating_add(1);
+            }
+        }
+        tally
     }
 
     /// Recorded intervals whose profile or time togi could not establish.

@@ -241,6 +241,14 @@ impl System for Night {
         self.host.diagnose(config, recorded, lock)
     }
 
+    fn diagnose_day(
+        &self,
+        config: &Config,
+        lock: Option<&HostLock>,
+    ) -> Result<Diagnosis, togi_hardware::Error> {
+        self.host.diagnose_day(config, lock)
+    }
+
     fn bootloader(&self, _: &Path) -> io::Result<Box<dyn Bootloader>> {
         self.host.step("grub")?;
         Ok(Box::new(Grub(Rc::clone(&self.grub))))

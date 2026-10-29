@@ -8,6 +8,8 @@ Make the preflight checks of run, check the hardware watchdog and, when a sessio
 
 Prints the check rows with ok, FAIL, warn or skipped, then ready, not fully checked, or not ready with the failed checks: those run would refuse at startup. A missing hardware watchdog is a warning, as in a run started outside the tuning boot. A changed BIOS context is a warning too: run records the new context and the session continues under it. A journal with a newer schema, ruleset or evidence epoch, or with unknown event kinds, is refused as run refuses it. On a platform other than Linux it reports that hardware runs need Linux and exits 1 before reading anything.
 
+With --day, check CPU/ryzen_smu identity, current offset readback, PID 1's armed hardware watchdog (including the shared counting check where supported), this boot's entries in the persistent system journal, and the installed GRUB or systemd-boot setup. Also require a recorded, complete CO-0 baseline or restoration receipt citing this boot's zero readbacks. Applied D, a day boot's observations, and a current zero readback are not historical baseline proof. These read-only diagnostics neither apply a profile nor give a stability verdict.
+
 Usage: togi doctor [OPTIONS]
 
 Options:
@@ -19,9 +21,13 @@ Options:
           
           [default: /var/lib/togi]
 
+      --day
+          Check day-observation prerequisites instead of night-run preflight
+
   -h, --help
           Print help (see a summary with '-h')
 
 Examples:
-  togi doctor        Make the checks that need no root
-  sudo togi doctor   Make every check run makes
+  togi doctor              Make the checks that need no root
+  sudo togi doctor         Make every check run makes
+  sudo togi doctor --day   Check daily-observation prerequisites

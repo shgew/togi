@@ -358,7 +358,7 @@ _togi() {
             return 0
             ;;
         togi__subcmd__doctor)
-            opts="-h --config --state-dir --help"
+            opts="-h --config --day --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -860,7 +860,7 @@ _togi() {
             return 0
             ;;
         togi__subcmd__status)
-            opts="-h --state-dir --help"
+            opts="-h --evidence --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

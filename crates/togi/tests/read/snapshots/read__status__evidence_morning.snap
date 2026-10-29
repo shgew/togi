@@ -1,0 +1,87 @@
+---
+source: crates/togi/tests/read/status.rs
+expression: text(&ran.stdout)
+---
+day
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+BIOS F1 on board, CPU, microcode 0x1, boost limit 5000 MHz
+in flight: none
+
+Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
+  prove the hazard goal. Coverage gaps remain unknown.
+CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
+0   0-7   0   -   -        -        unknown      -         -       -
+1   8-15  0   -   -        -        unknown      -         -       -
+  CCD 0 cap evidence: context unavailable; eligible hours and gaps unknown
+  CCD 1 cap evidence: context unavailable; eligible hours and gaps unknown
+  A CCD with no cap yet has S at offset 0.
+
+Day policy
+applied profile: CCD 0 0, CCD 1 0
+hold: none recorded
+latest step: none
+freeze: off
+firmware: invalidated since [#6]; D returns to 0 until requalified
+
+Last night 00:00–07:00
+elapsed: 4h00m
+QUEUE          SHARE  USED  TIME
+mapping        10%    25%   1h00m
+qualification  75%    75%   3h00m
+control        5%     0%    0s
+current task: mapping (task mapping #1)
+
+Day
+boots observed: 1; clean ends: 0; unclean ends: 0
+hardware watchdog at the last observer check: not recorded
+Applied hours per read-back profile (changed intervals excluded):
+all profiles: 0.0h observed, 0 crashes (0 unknown intervals)
+stock (CO 0): 0.0h observed, 0 crashes
+totals are observations, not a bound
+last unclean end: none
+
+Morning report
+Last night #5: 0 recorded trial ends. mapping: 3600s observed task time.
+  qualification: 10800s observed task time. control: 0s observed task time. No
+  automatic nonzero change is made at this boot; day application is restricted
+  to stock (CO 0). This report does not verify the current hardware readback or
+  establish stability. See togi status --evidence for cap reasons, hours and
+  coverage gaps.
+
+Evidence
+Ruleset 13 (compatibility RULESET 3). S uses isolated mapping classes only.
+  Qualification, reproduction and controls can inform slope but cannot supply
+  mapping rate coverage. The cap is coverage-incomplete.
+The machine incremental hazard goal is 1 crash per 3,000 applied hours, divided
+  among CCDs. Poisson bounds and log-linear projection are modeling assumptions,
+  not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that
+  stock meets the hazard goal.
+Exact applied day profile: CCD 0 0, CCD 1 0
+exact profile: 0.0h observed, 0 crashes
+stock (CO 0): 0.0h observed, 0 crashes
+0 unknown intervals across recorded day intervals; downtime and uncheckpointed
+  crash tails are not hours. Totals retain live/imported provenance, not a
+  bound.
+
+Cap calculation witnesses
+CCD 0: current evidence context unavailable; no inferred rate or eligible hours
+CCD 1: current evidence context unavailable; no inferred rate or eligible hours
+
+Qualification exposure
+none recorded
+
+Day observation provenance and excluded intervals
+Exact-vector day totals include all recorded firmware contexts; historical hours
+  are not current-context qualification or hold credit.
+[#6] live observer start; boot morning
+
+Applied-step history
+none recorded; a proposal is not an application
+
+Night exposure provenance
+none recorded for the selected profile or stock
+
+Comparable same-class night clocks and temperatures
+no distinct nonzero selected profile for a stock comparison
+These are observations and coverage gaps. No stability verdict or completion
+  time is inferred.

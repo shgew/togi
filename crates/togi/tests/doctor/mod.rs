@@ -690,3 +690,403 @@ fn assert_snapshot(snapshot: &str, actual: &str) {
         .1;
     assert_eq!(actual, expected);
 }
+
+fn day_host(session: &Session) -> Host {
+    let host = Host::with_fs(session.fs.clone());
+    *host.day_diagnosis.borrow_mut() = Some(Ok(Diagnosis {
+        ran: vec![
+            check("cpu", "supported CPU", true),
+            check("ryzen_smu", "supported driver", true),
+            check("readback", "current offsets: core 0 = 0", true),
+            check("watchdog", "hardware timer counting, held by PID 1", true),
+            check(
+                "persistent_journal",
+                "this boot has persistent entries",
+                true,
+            ),
+        ],
+        skipped: Vec::new(),
+        bios_context_error: None,
+    }));
+    host.write(
+        togi_tuningboot::night::SETUP_PATH,
+        r#"{"loader":"grub","grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#,
+    )
+    .unwrap();
+    host
+}
+
+fn append_day_event(
+    session: &Session,
+    boot: &str,
+    payload: togi_journal::Payload,
+    cause: Vec<togi_journal::Seq>,
+) -> togi_journal::Seq {
+    let text = session.text();
+    let last: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    let seq = togi_journal::Seq::new(last["seq"].as_u64().unwrap() + 1).unwrap();
+    let event = togi_journal::Event::new(
+        seq,
+        togi_journal::Stamp {
+            time: "2026-01-01T00:00:00Z".parse().unwrap(),
+            mono: None,
+        },
+        togi_machine::BootId::from(boot.to_owned()),
+        cause,
+        payload,
+    );
+    session.fs.put(
+        session.journal(),
+        format!("{text}{}\n", event.encode().unwrap()).into_bytes(),
+    );
+    seq
+}
+
+fn zero_readback(session: &Session, boot: &str, core: i64) -> togi_journal::Seq {
+    append_day_event(
+        session,
+        boot,
+        togi_journal::SmuReadback {
+            core: togi_machine::CoreId::new(core).unwrap(),
+            offset: togi_machine::ObservedOffset(0),
+            expected: None,
+        }
+        .into(),
+        Vec::new(),
+    )
+}
+
+fn zero_baseline(session: &Session, boot: &str, causes: Vec<togi_journal::Seq>) {
+    append_day_event(
+        session,
+        boot,
+        togi_journal::SessionBaseline {
+            offsets: [(
+                togi_machine::CoreId::new(0).unwrap(),
+                togi_machine::ObservedOffset(0),
+            )]
+            .into_iter()
+            .collect(),
+        }
+        .into(),
+        causes,
+    );
+}
+
+#[test]
+fn day_checks_require_a_historical_same_boot_receipt_and_do_not_change_anything() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    let before = (files(&session.fs, session.path()), session.text());
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert_eq!(ran.err, "");
+    assert_eq!(host.lock_busy_in_diagnose.get(), Some(true));
+    assert_eq!((files(&session.fs, session.path()), session.text()), before);
+    assert_eq!(
+        host.diagnoses.borrow().len(),
+        0,
+        "night diagnosis was called"
+    );
+    let rows: Vec<_> = ran
+        .out
+        .lines()
+        .skip(1)
+        .take(7)
+        .map(|line| line.split_whitespace().take(2).collect::<Vec<_>>())
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            vec!["cpu", "ok"],
+            vec!["ryzen_smu", "ok"],
+            vec!["readback", "ok"],
+            vec!["watchdog", "ok"],
+            vec!["persistent_journal", "ok"],
+            vec!["bootloader", "ok"],
+            vec!["co0_baseline", "ok"],
+        ]
+    );
+    assert!(
+        ran.out
+            .contains("distinct from applied D and current readback")
+    );
+    assert!(
+        ran.out
+            .ends_with("day checks complete; no stability verdict\n")
+    );
+    assert_eq!(
+        host.grubenvs.borrow().len(),
+        0,
+        "doctor opened the loader for mutation"
+    );
+}
+
+#[test_case::test_case("watchdog"; "watchdog is mandatory for day")]
+#[test_case::test_case("persistent_journal"; "persistent journal is mandatory")]
+#[test_case::test_case("ryzen_smu"; "driver identity is mandatory")]
+fn failed_day_prerequisites_are_failures_not_night_warnings(name: &str) {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    host.day_diagnosis
+        .borrow_mut()
+        .as_mut()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .ran
+        .iter_mut()
+        .find(|check| check.name == name)
+        .unwrap()
+        .ok = false;
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight);
+    assert_eq!(ran.err, format!("togi doctor: not ready: {name}\n"));
+    assert!(
+        ran.out
+            .lines()
+            .any(|line| { line.split_whitespace().take(2).eq([name, "FAIL"]) }),
+        "{}",
+        ran.out
+    );
+}
+
+#[test]
+fn current_zero_readback_alone_does_not_prove_this_boots_baseline() {
+    let session = Session::new();
+    let host = day_host(&session);
+    zero_readback(&session, &host.boot, 0);
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight);
+    assert_eq!(ran.err, "togi doctor: not ready: co0_baseline\n");
+    assert!(ran.out.contains("current zero readback are not proof"));
+}
+
+#[test_case::test_case(false; "uncited zero readback")]
+#[test_case::test_case(true; "receipt cites another boots readback")]
+fn a_baseline_without_this_boots_cited_readbacks_is_not_verified(other_boot: bool) {
+    let session = Session::new();
+    let host = day_host(&session);
+    let boot = if other_boot {
+        "previous-boot"
+    } else {
+        &host.boot
+    };
+    let readback = zero_readback(&session, boot, 0);
+    zero_baseline(
+        &session,
+        &host.boot,
+        if other_boot { vec![readback] } else { vec![] },
+    );
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight);
+    assert_eq!(ran.err, "togi doctor: not ready: co0_baseline\n");
+}
+
+#[test]
+fn a_previous_boots_verified_baseline_does_not_prove_this_boots_baseline() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, "previous-boot", 0);
+    zero_baseline(&session, "previous-boot", vec![readback]);
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight);
+    assert_eq!(ran.err, "togi doctor: not ready: co0_baseline\n");
+}
+
+#[test]
+fn a_baseline_must_cover_the_whole_current_topology() {
+    let session = Session::new();
+    let mut host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    host.topology.push(togi_machine::CoreInfo {
+        core: togi_machine::CoreId::new(1).unwrap(),
+        ccd: togi_machine::CcdId::new(0).unwrap(),
+        cpus: vec![togi_machine::CpuId::from(1_u16)],
+    });
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight);
+    assert_eq!(ran.err, "togi doctor: not ready: co0_baseline\n");
+}
+
+#[test]
+fn this_boots_verified_zero_restoration_is_a_baseline_receipt() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    append_day_event(
+        &session,
+        &host.boot,
+        togi_journal::ProfileRestored {
+            offsets: [(
+                togi_machine::CoreId::new(0).unwrap(),
+                togi_machine::TargetOffset::ZERO,
+            )]
+            .into_iter()
+            .collect(),
+        }
+        .into(),
+        vec![readback],
+    );
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+}
+
+#[test_case::test_case(r#"{"loader":"systemd-boot","esp":"/boot","boot":"/boot","state":"/var/lib/togi/loader","specialisation":"togi"}"#, true; "systemd boot supported")]
+#[test_case::test_case(r#"{"loader":"unknown"}"#, false; "unsupported loader")]
+#[test_case::test_case("not json", false; "malformed setup")]
+fn day_diagnostics_read_the_supported_installed_loader_without_opening_it(
+    setup: &str,
+    supported: bool,
+) {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    host.write(togi_tuningboot::night::SETUP_PATH, setup)
+        .unwrap();
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(
+        ran.exit,
+        if supported { Exit::Ok } else { Exit::Preflight },
+        "{}",
+        ran.err
+    );
+    assert_eq!(host.grubenvs.borrow().len(), 0);
+}
+
+#[test]
+fn unprivileged_day_checks_keep_readback_skipped_and_request_the_day_command() {
+    let session = Session::new();
+    let mut host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    host.root = false;
+    {
+        let mut diagnosis = host.day_diagnosis.borrow_mut();
+        let diagnosis = diagnosis.as_mut().unwrap().as_mut().unwrap();
+        diagnosis.ran.retain(|check| check.name != "readback");
+        diagnosis.skipped.push(Skipped {
+            name: CheckName::Readback,
+            reason: Skip::NeedsRoot,
+        });
+    }
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert_eq!(host.lock_acquisitions.get(), 0);
+    assert!(
+        ran.out
+            .ends_with("not fully checked: run sudo togi doctor --day\n")
+    );
+}
+
+#[test]
+fn an_applied_zero_day_profile_does_not_replace_a_baseline_receipt() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    append_day_event(
+        &session,
+        &host.boot,
+        togi_journal::DayApplied {
+            application: togi_journal::ApplicationId(1),
+            cause: togi_journal::ApplyCause::Reapplication {},
+            target: togi_journal::CcdVector::expand(
+                togi_machine::CcdProfile::zero([togi_machine::CcdId::new(0).unwrap()]).unwrap(),
+                &host.topology,
+            )
+            .unwrap(),
+            readbacks: [(
+                togi_machine::CoreId::new(0).unwrap(),
+                togi_machine::ObservedOffset(0),
+            )]
+            .into_iter()
+            .collect(),
+            transactions: Vec::new(),
+            boot: togi_machine::BootId::from(host.boot.clone()),
+            mono_ns: 0,
+        }
+        .into(),
+        vec![readback],
+    );
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight);
+    assert_eq!(ran.err, "togi doctor: not ready: co0_baseline\n");
+}
+
+#[test]
+fn a_baseline_claim_citing_a_nonzero_readback_is_not_verified() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = append_day_event(
+        &session,
+        &host.boot,
+        togi_journal::SmuReadback {
+            core: togi_machine::CoreId::new(0).unwrap(),
+            offset: togi_machine::ObservedOffset(-1),
+            expected: None,
+        }
+        .into(),
+        Vec::new(),
+    );
+    zero_baseline(&session, &host.boot, vec![readback]);
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight);
+    assert_eq!(ran.err, "togi doctor: not ready: co0_baseline\n");
+}
+
+#[test]
+fn day_diagnostics_need_a_supported_installed_loader_setup() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    togi_journal::fs::Fs::remove_file(
+        &*session.fs,
+        std::path::Path::new(togi_tuningboot::night::SETUP_PATH),
+    )
+    .unwrap();
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight);
+    assert_eq!(ran.err, "togi doctor: not ready: bootloader\n");
+}
+
+#[test]
+fn day_help_names_the_read_only_checks_and_separates_baseline_proof() {
+    let host = Host::new();
+    let ran = doctor(&host, std::path::Path::new("/state"), &["--help"]);
+    assert_eq!(ran.exit, Exit::Ok);
+    assert!(ran.out.contains("--day"));
+    assert!(ran.out.contains("persistent system journal"));
+    assert!(ran.out.contains("Applied D"));
+    assert!(ran.out.contains("historical baseline"));
+    assert_eq!(host.calls.get(), 0);
+}
+
+#[test]
+fn a_historical_zero_receipt_is_distinct_from_a_current_nonzero_readback() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    host.day_diagnosis
+        .borrow_mut()
+        .as_mut()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .ran
+        .iter_mut()
+        .find(|check| check.name == "readback")
+        .unwrap()
+        .detail = "current offsets: core 0 = -5".into();
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert!(ran.out.contains("current offsets: core 0 = -5"));
+    assert!(ran.out.contains("this boot's verified CO-0 receipt"));
+}

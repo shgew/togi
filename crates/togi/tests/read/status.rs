@@ -607,7 +607,9 @@ fn an_open_night_names_its_start_elapsed_time_shares_and_current_task() {
         flat.contains("current task: mapping (task mapping #1)"),
         "{flat}"
     );
-    for gone in ["until", "available", "RESERVED", "deadline"] {
+    let night = shown.split_once("\nNight since 00:00\n").unwrap().1;
+    assert!(!night.contains("available"), "{shown}");
+    for gone in ["until", "RESERVED", "deadline"] {
         assert!(!shown.contains(gone), "{gone}: {shown}");
     }
 }
@@ -971,4 +973,118 @@ fn controls_in_bios_context_fields_are_escaped() {
     let shown = status_of(&dir);
     assert_visibly_escaped(&shown);
     assert_eq!(flat(&shown).matches(HOSTILE_ESCAPED).count(), 4, "{shown}");
+}
+
+fn evidence_output(scenario: Scenario, no_color: bool) -> String {
+    evidence_in(&super::support::session(scenario), no_color)
+}
+
+fn evidence_in(state: &Session, no_color: bool) -> String {
+    let mutations = state.fs.mutations();
+    let mut host = state.host();
+    host.stdout_facts = Some(togi_render::OutputFacts {
+        is_terminal: true,
+        no_color,
+        journald: false,
+    });
+    let ran = super::support::output(host.run(state.path(), &["status", "--evidence"]));
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    assert_eq!(text(&ran.stderr), "");
+    assert_eq!(state.fs.mutations(), mutations);
+    text(&ran.stdout).to_owned()
+}
+
+#[test_case::test_case(Scenario::Controls; "no cap evidence")]
+#[test_case::test_case(Scenario::Mapping; "mapping witnesses")]
+#[test_case::test_case(Scenario::DayStep; "qualified profile without day application")]
+fn evidence_is_read_only_and_identical_under_no_color(scenario: Scenario) {
+    let shown = evidence_output(scenario, false);
+    assert_eq!(shown, evidence_output(scenario, true));
+    assert!(!shown.contains('\u{1b}'));
+    assert!(shown.contains("Ruleset 13 (compatibility RULESET 3)"));
+    assert!(shown.contains("Cap calculation witnesses"));
+    assert!(shown.contains("Qualification exposure"));
+    assert!(shown.contains("Applied-step history"));
+    assert!(shown.contains("Comparable same-class night clocks and temperatures"));
+    assert!(shown.contains("stock (CO 0):"));
+    for line in shown.lines() {
+        assert!(line.width() <= 80, "{} cells: {line}", line.width());
+    }
+    super::support::snapshot(&format!("status__evidence_{}", scenario.name()), &shown);
+}
+
+fn morning_state() -> Session {
+    let mut events = append(&base(), vec![night_plan()]);
+    let last = events.last().unwrap();
+    let start = Event::new(
+        Seq::new(last.seq.get() + 1).unwrap(),
+        Stamp {
+            time: last
+                .time
+                .checked_add(SignedDuration::from_hours(7))
+                .unwrap(),
+            mono: None,
+        },
+        "morning".to_owned().into(),
+        Vec::new(),
+        DayBootStart {
+            build: build(),
+            bios: BiosContext::default(),
+            offsets: PerCore::default(),
+            watchdog: None,
+        }
+        .into(),
+    );
+    events.push(start);
+    installed(&events)
+}
+
+#[test]
+fn first_day_status_and_evidence_show_the_same_morning_report() {
+    let state = morning_state();
+    let status = togi(&state, &["status"]);
+    let shown = text(&status.stdout);
+    assert!(shown.contains("\nMorning report\n"), "{shown}");
+    let evidence = evidence_in(&state, true);
+    assert_eq!(evidence, evidence_in(&state, false));
+    let morning = shown.split_once("\nMorning report\n").unwrap().1;
+    assert!(evidence.contains(morning));
+    super::support::snapshot("status__status_morning", shown);
+    super::support::snapshot("status__evidence_morning", &evidence);
+}
+
+/// Explicit fixture publication only; ordinary tests stay on MemFs.
+#[test]
+#[ignore = "writes status fixtures to an explicitly supplied temporary directory"]
+fn real_fs_generate_status_snapshots() {
+    let directory = std::env::var_os("TOGI_STATUS_SNAPSHOTS").expect("set TOGI_STATUS_SNAPSHOTS");
+    let directory = std::path::Path::new(&directory);
+    assert!(
+        directory.starts_with(std::env::temp_dir()),
+        "use a temporary directory"
+    );
+    std::fs::create_dir_all(directory).unwrap();
+    let emit = |name: &str, body: &str| {
+        std::fs::write(
+            directory.join(format!("read__status__{name}.snap")),
+            format!("---\nsource: crates/togi/tests/read/status.rs\nexpression: text(&ran.stdout)\n---\n{body}"),
+        ).unwrap();
+    };
+    let help = togi(&Session::empty(), &["status", "--help"]);
+    emit("status_help", text(&help.stdout));
+    for scenario in Scenario::ALL {
+        let state = super::support::session(scenario);
+        let ran = togi(&state, &["status"]);
+        assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+        emit(&format!("status_{}", scenario.name()), text(&ran.stdout));
+    }
+    for scenario in [Scenario::Controls, Scenario::Mapping, Scenario::DayStep] {
+        emit(
+            &format!("evidence_{}", scenario.name()),
+            &evidence_output(scenario, true),
+        );
+    }
+    let morning = morning_state();
+    emit("status_morning", text(&togi(&morning, &["status"]).stdout));
+    emit("evidence_morning", &evidence_in(&morning, true));
 }

@@ -1,0 +1,2526 @@
+---
+source: crates/togi/tests/read/status.rs
+expression: text(&ran.stdout)
+---
+night since 00:00, 11h55m elapsed: mapping (task mapping #2)
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
+  boost limit 5700 MHz
+in flight: [#2321] trial 0388 core 00 offset -5 R1 mprime SSE 4K-21K 90 s
+  together mapping task mapping #2 night #31 testing CCD0 at -5
+
+Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
+  prove the hazard goal. Coverage gaps remain unknown.
+CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
+0   0-7   0   0   fallback baseline unknown      0         64      129
+1   8-15  0   0   fallback baseline unknown      0         64      128
+  CCD 0 cap evidence: unknown edge; 1.5 h eligible mapping witnesses; 129
+    coverage gaps
+  CCD 1 cap evidence: unknown edge; 1.5 h eligible mapping witnesses; 128
+    coverage gaps
+  CCD 0 uncovered for the cap, no observations: R8
+    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 0 120s
+    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
+    core 1 120s isolated; R8
+    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 2 120s
+    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
+    core 3 120s isolated; R8
+    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 4 120s
+    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
+    core 5 120s isolated; R8
+    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 6 120s
+    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
+    core 7 120s isolated; R9 ycruncher-snt-svt-all-threads serial cpu 2 120s
+    isolated
+  CCD 0 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
+    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
+    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
+    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
+    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
+    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
+    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
+    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
+    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
+    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    1 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 2 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 3 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    7 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 0 600s exact
+  CCD 1 uncovered for the cap, no observations: R8
+    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 8 120s
+    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
+    core 9 120s isolated; R8
+    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 10 120s
+    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
+    core 11 120s isolated; R8
+    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 12 120s
+    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
+    core 13 120s isolated; R8
+    ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 14 120s
+    isolated; R8 ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light
+    core 15 120s isolated; R9 ycruncher-snt-svt-all-threads serial cpu 10 120s
+    isolated
+  CCD 1 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
+    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
+    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
+    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
+    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
+    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
+    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
+    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
+    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
+    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    9 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 10 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 11 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    15 120s exact
+  A class is uncovered for the cap when mapping has not adequately exposed it or
+    it lies outside the mapping projection; uncovered is never read as safe.
+
+Day policy
+applied profile: CCD 0 0, CCD 1 0
+hold: none recorded
+latest step: none
+freeze: off
+firmware: valid
+
+Night since 00:00
+elapsed: 11h55m
+QUEUE            SHARE  USED  TIME
+reproduction     25%    0%    0s
+qualification    75%    0%    0s
+mapping          10%    29%   3h28m
+control          5%     70%   8h27m
+requalification  10%    0%    0s
+current task: mapping (task mapping #2)
+mapping CCD 0: next offset -5
+mapping CCD 1: next offset -5
+
+Evidence
+Ruleset 13 (compatibility RULESET 3). S uses isolated mapping classes only.
+  Qualification, reproduction and controls can inform slope but cannot supply
+  mapping rate coverage. The cap is coverage-incomplete.
+The machine incremental hazard goal is 1 crash per 3,000 applied hours, divided
+  among CCDs. Poisson bounds and log-linear projection are modeling assumptions,
+  not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that
+  stock meets the hazard goal.
+Exact applied day profile: CCD 0 0, CCD 1 0
+exact profile: 0.0h observed, 0 crashes
+stock (CO 0): 0.0h observed, 0 crashes
+0 unknown intervals across recorded day intervals; downtime and uncheckpointed
+  crash tails are not hours. Totals retain live/imported provenance, not a
+  bound.
+
+Cap calculation witnesses
+CCD 0: current read-only calculation S 0; unknown edge; fallback beta=0.405465
+CCD share of incremental hazard goal: 0.00016667/h
+committed S 0 [#1914]; fallback beta=0.405465
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 120s isolated
+  at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h; at
+  calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1 120s isolated
+  at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h; at
+  calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2 120s isolated
+  at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h; at
+  calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3 120s isolated
+  at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h; at
+  calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s isolated
+  at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h; at
+  calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s isolated
+  at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h; at
+  calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6 120s isolated
+  at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h; at
+  calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7 120s isolated
+  at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h; at
+  calculated S: 119.82929094/h
+R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R9 mprime-sse-4k-21k-all-threads serial cpu 0 120s isolated at CO 0: 90 eligible
+  s (0 h), 0 failures; 95% upper 119.82929094/h; at calculated S: 119.82929094/h
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
+  600s exact at CO 0, Control, 0.158333 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
+  120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1
+  120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2
+  120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3
+  120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4
+  120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5
+  120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6
+  120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7
+  120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R9 mprime-sse-4k-21k-all-threads serial cpu 0 120s isolated at CO
+  0, Mapping, 0.025000 eligible h, 0 failures
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 600s exact
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 0 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 1 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 2 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 3 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 4 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 5 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 6 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 7 120s
+  isolated
+uncovered for the cap (no observations): R9 ycruncher-snt-svt-all-threads serial
+  cpu 2 120s isolated
+CCD 1: current read-only calculation S 0; unknown edge; fallback beta=0.405465
+CCD share of incremental hazard goal: 0.00016667/h
+committed S 0 [#2293]; fallback beta=0.405465
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 mprime-sse-4k-21k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-bkt-sftv4 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R1 ycruncher-snt-svt 90s isolated at CO 0: 85 eligible s (0 h), 0 failures; 95%
+  upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx2-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 mprime-avx512-36k-248k 90s isolated at CO 0: 85 eligible s (0 h), 0 failures;
+  95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0: 85 eligible s (0 h), 0
+  failures; 95% upper 126.87807276/h; at calculated S: 126.87807276/h
+R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 8 120s
+  isolated at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h;
+  at calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 9 120s
+  isolated at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h;
+  at calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 10 120s
+  isolated at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h;
+  at calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 11 120s
+  isolated at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h;
+  at calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 12 120s
+  isolated at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h;
+  at calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 13 120s
+  isolated at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h;
+  at calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 14 120s
+  isolated at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h;
+  at calculated S: 119.82929094/h
+R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 15 120s
+  isolated at CO 0: 90 eligible s (0 h), 0 failures; 95% upper 119.82929094/h;
+  at calculated S: 119.82929094/h
+R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0: 115 eligible s (0 h), 0
+  failures; 95% upper 93.77944509/h; at calculated S: 93.77944509/h
+R9 ycruncher-bkt-sftv4-all-threads serial cpu 25 120s isolated at CO 0: 90
+  eligible s (0 h), 0 failures; 95% upper 119.82929094/h; at calculated S:
+  119.82929094/h
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 mprime-sse-4k-21k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-bkt-sftv4 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s exact at CO 0, Control, 0.023611 eligible
+  h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R1 ycruncher-snt-svt 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx2-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 mprime-avx512-36k-248k 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s exact at CO 0, Control, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R2 ycruncher-fftv4-n63-vt3 90s isolated at CO 0, Mapping, 0.023611
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 mprime-sse-4k-21k-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-bkt-sftv4-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R3 ycruncher-snt-svt-steps 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 mprime-sse-4k-21k-duty25 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-bkt-sftv4-duty50 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R4 ycruncher-snt-svt-duty75 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R5 mprime-sse-4k-21k-smt 120s exact at CO 0, Control, 0.031944
+  eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx2-36k-248k-allcore 120s exact at CO 0, Control,
+  0.031944 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 9
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 10
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 11
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 15
+  120s exact at CO 0, Control, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+  core 8 120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+  core 9 120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+  core 10 120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+  core 11 120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+  core 12 120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+  core 13 120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+  core 14 120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
+  core 15 120s isolated at CO 0, Mapping, 0.025000 eligible h, 0 failures
+slope input: R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R7 mprime-avx512-36k-248k-allcore 120s isolated at CO 0, Mapping,
+  0.031944 eligible h, 0 failures
+slope input: R9 ycruncher-bkt-sftv4-all-threads serial cpu 25 120s isolated at
+  CO 0, Mapping, 0.025000 eligible h, 0 failures
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 mprime-sse-4k-21k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-bkt-sftv4 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R1 ycruncher-snt-svt 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx2-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 mprime-avx512-36k-248k 90s
+  exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R2 ycruncher-fftv4-n63-vt3
+  90s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 mprime-sse-4k-21k-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-bkt-sftv4-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R3 ycruncher-snt-svt-steps
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 mprime-sse-4k-21k-duty25
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-bkt-sftv4-duty50
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R4 ycruncher-snt-svt-duty75
+  120s exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R5 mprime-sse-4k-21k-smt 120s
+  exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R7
+  mprime-avx2-36k-248k-allcore 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 9 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 10 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 11 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14 120s exact
+uncovered for the cap (non-mapping exposure only): R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 15 120s exact
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 8 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 9 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 10 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 11 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 12 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 13 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 14 120s
+  isolated
+uncovered for the cap (no observations): R8
+  ycruncher-bkt-sftv4-neighbours+mprime-avx512-36k-248k light core 15 120s
+  isolated
+uncovered for the cap (no observations): R9 ycruncher-snt-svt-all-threads serial
+  cpu 10 120s isolated
+
+Qualification exposure
+none recorded
+
+Day observation provenance and excluded intervals
+Exact-vector day totals include all recorded firmware contexts; historical hours
+  are not current-context qualification or hold credit.
+
+Applied-step history
+none recorded; a proposal is not an application
+
+Night exposure provenance
+[#38] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #35; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#43] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #40; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#48] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #45; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#53] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #50; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#58] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #55; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#63] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #60; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#68] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #65; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#73] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #70; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#78] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #75; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#83] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #80; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#88] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #85; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#93] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #90; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#98] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #95; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#103] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #100; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#108] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #105; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#113] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #110; epoch 1; R1 mprime-sse-4k-21k 90s exact
+[#118] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #115; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#123] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #120; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#128] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #125; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#133] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #130; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#138] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #135; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#143] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #140; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#148] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #145; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#153] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #150; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#158] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #155; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#163] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #160; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#168] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #165; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#173] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #170; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#178] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #175; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#183] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #180; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#188] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #185; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#193] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #190; epoch 1; R1 ycruncher-bkt-sftv4 90s exact
+[#198] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #195; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#203] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #200; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#208] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #205; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#213] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #210; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#218] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #215; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#223] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #220; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#228] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #225; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#233] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #230; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#238] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #235; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#243] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #240; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#248] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #245; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#253] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #250; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#258] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #255; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#263] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #260; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#268] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #265; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#273] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #270; epoch 1; R1 ycruncher-snt-svt 90s exact
+[#278] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #275; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#283] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #280; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#288] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #285; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#293] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #290; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#298] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #295; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#303] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #300; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#308] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #305; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#313] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #310; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#318] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #315; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#323] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #320; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#328] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #325; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#333] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #330; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#338] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #335; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#343] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #340; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#348] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #345; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#353] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #350; epoch 1; R2 mprime-avx2-36k-248k 90s exact
+[#358] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #355; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#363] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #360; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#368] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #365; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#373] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #370; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#378] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #375; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#383] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #380; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#388] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #385; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#393] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #390; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#398] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #395; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#403] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #400; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#408] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #405; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#413] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #410; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#418] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #415; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#423] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #420; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#428] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #425; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#433] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #430; epoch 1; R2 mprime-avx512-36k-248k 90s exact
+[#438] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #435; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#443] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #440; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#448] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #445; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#453] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #450; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#458] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #455; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#463] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #460; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#468] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #465; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#473] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #470; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#478] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #475; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#483] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #480; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#488] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #485; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#493] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #490; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#498] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #495; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#503] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #500; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#508] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #505; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#513] CCD 0 0, CCD 1 0: 85 eligible s, Control, Live; source session
+  20260101T000000Z #510; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s exact
+[#520] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #515; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#527] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #522; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#534] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #529; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#541] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #536; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#548] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #543; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#555] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #550; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#562] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #557; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#569] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #564; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#576] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #571; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#583] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #578; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#590] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #585; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#597] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #592; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#604] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #599; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#611] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #606; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#618] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #613; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#625] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #620; epoch 1; R3 mprime-sse-4k-21k-steps 120s exact
+[#632] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #627; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#639] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #634; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#646] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #641; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#653] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #648; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#660] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #655; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#667] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #662; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#674] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #669; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#681] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #676; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#688] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #683; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#695] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #690; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#702] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #697; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#709] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #704; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#716] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #711; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#723] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #718; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#730] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #725; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#737] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #732; epoch 1; R3 ycruncher-bkt-sftv4-steps 120s exact
+[#744] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #739; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#751] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #746; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#758] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #753; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#765] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #760; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#772] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #767; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#779] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #774; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#786] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #781; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#793] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #788; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#800] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #795; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#807] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #802; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#814] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #809; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#821] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #816; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#828] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #823; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#835] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #830; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#842] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #837; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#849] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #844; epoch 1; R3 ycruncher-snt-svt-steps 120s exact
+[#856] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #851; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#863] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #858; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#870] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #865; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#877] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #872; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#884] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #879; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#891] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #886; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#898] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #893; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#905] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #900; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#912] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #907; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#919] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #914; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#926] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #921; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#933] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #928; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#940] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #935; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#947] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #942; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#954] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #949; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#961] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #956; epoch 1; R4 mprime-sse-4k-21k-duty25 120s exact
+[#968] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #963; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#975] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #970; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#982] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #977; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#989] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #984; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#996] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #991; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1003] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #998; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1010] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1005; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1017] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1012; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1024] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1019; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1031] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1026; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1038] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1033; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1045] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1040; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1052] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1047; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1059] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1054; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1066] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1061; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1073] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1068; epoch 1; R4 ycruncher-bkt-sftv4-duty50 120s exact
+[#1080] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1075; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1087] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1082; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1094] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1089; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1101] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1096; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1108] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1103; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1115] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1110; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1122] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1117; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1129] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1124; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1136] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1131; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1143] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1138; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1150] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1145; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1157] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1152; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1164] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1159; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1171] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1166; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1178] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1173; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1185] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1180; epoch 1; R4 ycruncher-snt-svt-duty75 120s exact
+[#1190] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1187; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1195] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1192; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1200] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1197; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1205] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1202; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1210] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1207; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1215] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1212; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1220] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1217; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1225] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1222; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1230] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1227; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1235] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1232; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1240] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1237; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1245] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1242; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1250] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1247; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1255] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1252; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1260] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1257; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1265] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1262; epoch 1; R5 mprime-sse-4k-21k-smt 120s exact
+[#1272] CCD 0 0, CCD 1 0: 895 eligible s, Control, Live; source session
+  20260101T000000Z #1267; epoch 1; R6 mprime-sse-4k-21k-idle 900s exact
+[#1277] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1274; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1282] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1279; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1287] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1284; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1292] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1289; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1297] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1294; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1302] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1299; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1307] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1304; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1312] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1309; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1317] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1314; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1322] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1319; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1327] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1324; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1332] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1329; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1337] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1334; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1342] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1339; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1347] CCD 0 0, CCD 1 0: 115 eligible s, Control, Live; source session
+  20260101T000000Z #1344; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s exact
+[#1352] CCD 0 0, CCD 1 0: 595 eligible s, Control, Live; source session
+  20260101T000000Z #1349; epoch 1; R7 mprime-avx2-36k-248k-allcore 600s exact
+[#1357] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1354; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 120s exact
+[#1362] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1359; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1 120s exact
+[#1367] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1364; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2 120s exact
+[#1372] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1369; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3 120s exact
+[#1377] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1374; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s exact
+[#1382] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1379; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s exact
+[#1387] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1384; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6 120s exact
+[#1392] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1389; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7 120s exact
+[#1397] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1394; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8 120s exact
+[#1402] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1399; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 9 120s exact
+[#1407] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1404; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 10 120s exact
+[#1412] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1409; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 11 120s exact
+[#1417] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1414; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12 120s exact
+[#1422] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1419; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s exact
+[#1427] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1424; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14 120s exact
+[#1432] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1429; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 15 120s exact
+[#1437] CCD 0 0, CCD 1 0: 570 eligible s, Control, Live; source session
+  20260101T000000Z #1434; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 600s exact
+[#1442] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1439; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 0
+  120s exact
+[#1447] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1444; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 1
+  120s exact
+[#1452] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1449; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 2
+  120s exact
+[#1457] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1454; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 3
+  120s exact
+[#1462] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1459; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 4
+  120s exact
+[#1467] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1464; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 5
+  120s exact
+[#1472] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1469; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 6
+  120s exact
+[#1477] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1474; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 7
+  120s exact
+[#1482] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1479; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 8
+  120s exact
+[#1487] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1484; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 9
+  120s exact
+[#1492] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1489; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+  10 120s exact
+[#1497] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1494; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+  11 120s exact
+[#1502] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1499; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+  12 120s exact
+[#1507] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1504; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+  13 120s exact
+[#1512] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1509; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+  14 120s exact
+[#1517] CCD 0 0, CCD 1 0: 90 eligible s, Control, Live; source session
+  20260101T000000Z #1514; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu
+  15 120s exact
+[#1522] CCD 0 0, CCD 1 0: 570 eligible s, Control, Live; source session
+  20260101T000000Z #1519; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 0
+  600s exact
+[#1528] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1525; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1534] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1531; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1540] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1537; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1546] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1543; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1552] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1549; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1558] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1555; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1564] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1561; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1570] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1567; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1576] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1573; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1582] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1579; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1588] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1585; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1594] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1591; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1600] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1597; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1606] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1603; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1612] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1609; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1618] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1615; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1624] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1621; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#1630] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1627; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#1636] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1633; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#1642] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1639; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#1648] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1645; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#1654] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1651; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#1660] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1657; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#1666] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1663; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#1672] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1669; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#1678] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1675; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#1684] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1681; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#1690] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1687; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#1696] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1693; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#1702] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1699; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#1708] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1705; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#1714] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1711; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#1720] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1717; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#1726] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1723; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#1732] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1729; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#1738] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1735; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#1744] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1741; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#1750] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1747; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#1756] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1753; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#1762] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1759; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#1768] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1765; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#1774] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1771; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#1780] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1777; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#1786] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1783; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#1792] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1789; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#1798] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1795; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#1804] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1801; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#1810] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1807; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#1816] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1813; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 120s isolated
+[#1822] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1819; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 1 120s isolated
+[#1828] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1825; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 2 120s isolated
+[#1834] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1831; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3 120s isolated
+[#1840] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1837; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s isolated
+[#1846] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1843; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s isolated
+[#1852] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1849; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6 120s isolated
+[#1858] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1855; epoch 1; R8
+  mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 7 120s isolated
+[#1864] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1861; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1870] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1867; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1876] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1873; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1882] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1879; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1888] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1885; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1894] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1891; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1900] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #1897; epoch 1; R7 mprime-avx2-36k-248k-allcore 120s isolated
+[#1906] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #1903; epoch 1; R9 mprime-sse-4k-21k-all-threads serial cpu 0
+  120s isolated
+[#1913] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1910; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1920] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1917; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1926] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1923; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1932] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1929; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1938] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1935; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1944] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1941; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1950] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1947; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1956] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1953; epoch 1; R1 mprime-sse-4k-21k 90s isolated
+[#1962] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1959; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1968] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1965; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1974] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1971; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1980] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1977; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1986] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1983; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1992] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1989; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#1998] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #1995; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#2004] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2001; epoch 1; R1 ycruncher-bkt-sftv4 90s isolated
+[#2010] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2007; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#2016] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2013; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#2022] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2019; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#2028] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2025; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#2034] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2031; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#2040] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2037; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#2046] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2043; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#2052] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2049; epoch 1; R1 ycruncher-snt-svt 90s isolated
+[#2058] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2055; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#2064] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2061; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#2070] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2067; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#2076] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2073; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#2082] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2079; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#2088] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2085; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#2094] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2091; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#2100] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2097; epoch 1; R2 mprime-avx2-36k-248k 90s isolated
+[#2106] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2103; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#2112] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2109; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#2118] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2115; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#2124] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2121; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#2130] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2127; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#2136] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2133; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#2142] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2139; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#2148] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2145; epoch 1; R2 mprime-avx512-36k-248k 90s isolated
+[#2154] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2151; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#2160] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2157; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#2166] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2163; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#2172] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2169; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#2178] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2175; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#2184] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2181; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#2190] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2187; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#2196] CCD 0 0, CCD 1 0: 85 eligible s, Mapping, Live; source session
+  20260101T000000Z #2193; epoch 1; R2 ycruncher-fftv4-n63-vt3 90s isolated
+[#2202] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2199; epoch 1; R8
+  mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 8 120s
+  isolated
+[#2208] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2205; epoch 1; R8
+  mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 9 120s
+  isolated
+[#2214] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2211; epoch 1; R8
+  mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 10 120s
+  isolated
+[#2220] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2217; epoch 1; R8
+  mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 11 120s
+  isolated
+[#2226] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2223; epoch 1; R8
+  mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 12 120s
+  isolated
+[#2232] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2229; epoch 1; R8
+  mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 13 120s
+  isolated
+[#2238] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2235; epoch 1; R8
+  mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 14 120s
+  isolated
+[#2244] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2241; epoch 1; R8
+  mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 15 120s
+  isolated
+[#2250] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2247; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+  isolated
+[#2256] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2253; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+  isolated
+[#2262] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2259; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+  isolated
+[#2268] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2265; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+  isolated
+[#2274] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2271; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+  isolated
+[#2280] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2277; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+  isolated
+[#2286] CCD 0 0, CCD 1 0: 115 eligible s, Mapping, Live; source session
+  20260101T000000Z #2283; epoch 1; R7 mprime-avx512-36k-248k-allcore 120s
+  isolated
+[#2292] CCD 0 0, CCD 1 0: 90 eligible s, Mapping, Live; source session
+  20260101T000000Z #2289; epoch 1; R9 ycruncher-bkt-sftv4-all-threads serial cpu
+  25 120s isolated
+
+Comparable same-class night clocks and temperatures
+no distinct nonzero selected profile for a stock comparison
+These are observations and coverage gaps. No stability verdict or completion
+  time is inferred.

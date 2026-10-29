@@ -391,3 +391,82 @@ fn serialized_day_totals_keep_the_boot_shape_and_resume_pending_intervals() {
     assert_eq!(restored.all().secs, 5400);
     assert_eq!(restored.stock().secs, 3600);
 }
+
+#[test]
+fn exact_profile_totals_do_not_merge_another_nonzero_profile_or_stock() {
+    let mut events = mixed();
+    events.push(event(6, "day-c", start(-11)));
+    events.push(event(7, "day-c", checkpoint(900)));
+    let totals = DayTotals::of(&events);
+    assert_eq!(
+        totals.profile(&offsets(-10)),
+        Tally {
+            secs: 1800,
+            crashes: 1,
+            ..Tally::default()
+        }
+    );
+    assert_eq!(
+        totals.profile(&offsets(-11)),
+        Tally {
+            secs: 900,
+            ..Tally::default()
+        }
+    );
+    assert_eq!(totals.profile(&offsets(0)), totals.stock());
+    assert_eq!(totals.profile(&offsets(-12)), Tally::default());
+}
+
+#[test]
+fn exact_profile_preserves_imported_hours_and_crash_provenance() {
+    let events = [
+        imported(
+            1,
+            EventKind::DayBootStart,
+            ImportClass::Boot,
+            json(&start(-10)),
+            "old",
+        ),
+        imported(
+            2,
+            EventKind::DayCheckpoint,
+            ImportClass::Checkpoint,
+            json(&checkpoint(3600)),
+            "old",
+        ),
+        imported(
+            3,
+            EventKind::DayUncleanEnd,
+            ImportClass::End,
+            json(&unclean("old", -10)),
+            "old-next",
+        ),
+    ];
+    let totals = DayTotals::of(&events);
+    assert_eq!(
+        totals.profile(&offsets(-10)),
+        Tally {
+            secs: 3600,
+            imported_secs: 3600,
+            crashes: 1,
+            imported_crashes: 1,
+        }
+    );
+}
+
+#[test]
+fn an_exact_profile_crash_remains_answerable_without_erasing_its_hours() {
+    let mut events = mixed();
+    events.push(event(
+        6,
+        "day-c",
+        answer("day-b", -10, DayAnswerKind::PowerOff),
+    ));
+    assert_eq!(
+        DayTotals::of(&events).profile(&offsets(-10)),
+        Tally {
+            secs: 1800,
+            ..Tally::default()
+        }
+    );
+}

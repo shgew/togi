@@ -151,6 +151,13 @@ pub trait System {
         lock: Option<&HostLock>,
     ) -> Result<Diagnosis, togi_hardware::Error>;
 
+    /// The day-only checks; current readback is not historical CO-0 baseline proof.
+    fn diagnose_day(
+        &self,
+        config: &Config,
+        lock: Option<&HostLock>,
+    ) -> Result<Diagnosis, togi_hardware::Error>;
+
     /// Opens a GRUB environment, or the module's setup file for another supported loader.
     fn bootloader(&self, selection: &Path) -> io::Result<Box<dyn Bootloader>>;
 
@@ -299,6 +306,14 @@ impl System for Real {
         lock: Option<&HostLock>,
     ) -> Result<Diagnosis, togi_hardware::Error> {
         togi_hardware::diagnose(config, recorded, lock)
+    }
+
+    fn diagnose_day(
+        &self,
+        config: &Config,
+        lock: Option<&HostLock>,
+    ) -> Result<Diagnosis, togi_hardware::Error> {
+        togi_hardware::diagnose_day(config, lock)
     }
 
     fn bootloader(&self, selection: &Path) -> io::Result<Box<dyn Bootloader>> {

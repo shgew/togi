@@ -48,6 +48,7 @@ fn a_qualification_trial_names_the_profile_and_its_progress() {
         profile: profile(&[(0, -10), (1, -5)]),
         outstanding: Vec::new(),
         witnessed: 3,
+        eligible_s: 900,
     });
     fx.policy.night = Some(plan);
     let mut trial = trial(Regime::R1, &[0, 1]);
@@ -61,7 +62,7 @@ fn a_qualification_trial_names_the_profile_and_its_progress() {
         "{:?}",
         said.lines
     );
-    assert!(said.lines[1].starts_with("3 cells witnessed, 0 outstanding;"));
+    assert!(said.lines[1].starts_with("900 eligible s witnessed, 0 outstanding;"));
     trial.task = Some(task(Queue::Requalification, 2));
     assert_eq!(running(&mut fx, trial).label, "REQUALIFYING");
 }
@@ -276,6 +277,7 @@ fn filler_night(fx: &mut Fx) {
         profile: profile(&[(0, -30), (1, -30)]),
         outstanding: vec![crate::frames::hand::class(Regime::R1, &[0])],
         witnessed: 1,
+        eligible_s: 300,
     });
     fx.policy.night = Some(plan);
     fx.cores = vec![fixtures::core_view(0, 0), fixtures::core_view(8, 1)];

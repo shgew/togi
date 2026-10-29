@@ -289,10 +289,35 @@ fn the_projection_names_the_ccds_the_day_and_the_running_task() {
     assert_eq!(
         json["ccds"],
         serde_json::json!([
-            {"ccd": 0, "cores": json["ccds"][0]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null},
-            {"ccd": 1, "cores": json["ccds"][1]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null},
+            {"ccd": 0, "cores": json["ccds"][0]["cores"], "edge": null, "cap": null, "evidence": json["ccds"][0]["evidence"], "day": 0, "remaining": null},
+            {"ccd": 1, "cores": json["ccds"][1]["cores"], "edge": null, "cap": null, "evidence": json["ccds"][1]["evidence"], "day": 0, "remaining": null},
         ])
     );
+    for ccd in json["ccds"].as_array().unwrap() {
+        let evidence = &ccd["evidence"];
+        let uncovered = evidence["uncovered"].as_array().unwrap();
+        assert!(!uncovered.is_empty(), "{evidence}");
+        for gap in uncovered {
+            assert_eq!(gap["reason"], serde_json::json!("no_observations"));
+            assert!(!gap["class"]["cores"].as_array().unwrap().is_empty());
+        }
+        assert_eq!(
+            evidence,
+            &serde_json::json!({
+                "offset": 0,
+                "reason": {"kind": "no_adequate_class"},
+                "budget": Params::SPEC.machine_budget.get() / 2.0,
+                "cells": [],
+                "projected": [],
+                "slope": {
+                    "kind": "fallback",
+                    "beta": Params::SPEC.fallback_slope.get(),
+                },
+                "slope_inputs": [],
+                "uncovered": uncovered,
+            })
+        );
+    }
     assert_eq!(
         json["day"]["firmware"],
         serde_json::json!({"kind": "valid"})

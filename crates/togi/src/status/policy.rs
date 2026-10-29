@@ -258,6 +258,28 @@ pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
         }
     }
     for ccd in &policy.ccds {
+        let detail = match &ccd.evidence {
+            Some(evidence) => {
+                let seconds = evidence
+                    .cells
+                    .iter()
+                    .fold(0_u64, |total, cell| total.saturating_add(cell.eligible_s));
+                format!(
+                    "CCD {} cap evidence: {}; {} h eligible mapping witnesses; {} coverage gaps",
+                    ccd.ccd,
+                    evidence.reason.label(),
+                    hours(seconds),
+                    evidence.uncovered.len()
+                )
+            }
+            None => format!(
+                "CCD {} cap evidence: context unavailable; eligible hours and gaps unknown",
+                ccd.ccd
+            ),
+        };
+        wrap(out, "  ", "    ", &detail);
+    }
+    for ccd in &policy.ccds {
         match &ccd.cap {
             Some(cap) if !cap.uncovered.is_empty() => {
                 for &reason in UncoveredReason::ALL {
@@ -654,10 +676,11 @@ fn night_part(out: &mut String, night: &NightProjection, policy: &Projection, at
             "qualification: ",
             "  ",
             &format!(
-                "{} ({}) {}{freshness}",
+                "{} ({}) {}{freshness}, {} h eligible witnessed exposure",
                 profile_word(&record.profile),
                 purpose_word(record.purpose),
-                stage_word(record.state)
+                stage_word(record.state),
+                hours(record.eligible_s)
             ),
         );
     }
@@ -667,9 +690,9 @@ fn night_part(out: &mut String, night: &NightProjection, policy: &Projection, at
             "",
             "  ",
             &format!(
-                "qualifying {}: {} cells witnessed, {} outstanding",
+                "qualifying {}: {} h eligible witnessed exposure, {} outstanding",
                 profile_word(&open.profile),
-                open.witnessed,
+                hours(open.eligible_s),
                 open.outstanding.len()
             ),
         );
@@ -700,6 +723,12 @@ fn night_part(out: &mut String, night: &NightProjection, policy: &Projection, at
 
 /// The CCD table and the day and night parts, after the header.
 pub(super) fn sections(out: &mut String, policy: &Projection, at: Where<'_>) {
+    wrap(
+        out,
+        "",
+        "  ",
+        "Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not prove the hazard goal. Coverage gaps remain unknown.",
+    );
     ccd_table(out, policy);
     day_part(out, &policy.day, policy);
     if let Some(night) = &policy.night {

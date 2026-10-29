@@ -559,6 +559,14 @@ mod vm_recovery {
             self.0.diagnose(config, recorded, lock)
         }
 
+        fn diagnose_day(
+            &self,
+            config: &Config,
+            lock: Option<&HostLock>,
+        ) -> Result<Diagnosis, HardwareError> {
+            self.0.diagnose_day(config, lock)
+        }
+
         fn bootloader(&self, grubenv: &Path) -> io::Result<Box<dyn Bootloader>> {
             self.0.bootloader(grubenv)
         }
