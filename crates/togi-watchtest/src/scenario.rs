@@ -1,13 +1,12 @@
 use std::fmt;
 
-use togi_journal::{Activity, Event, EventKind, Payload, Queue, StepKind, Tested};
+use togi_journal::{Activity, ClimbAction, Event, EventKind, Payload, Queue, Tested};
 use togi_machine::{Regime, TargetOffset};
 
 use crate::cut::{before_crash_detected, cut_at, cut_passed_trial, cut_trial};
 use crate::{Base, Error};
 
-/// A watch golden scenario that has a journal: the state of a simulated Ruleset 13 night at the moment its name
-/// claims.
+/// A watch golden scenario cut from a live bounded-exploration session at the named state.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Scenario {
     /// The first night's first CO-0 control trial has started.
@@ -26,7 +25,7 @@ pub enum Scenario {
     Filler,
     /// A calendar night is qualifying the next exact day profile: its first qualification trial has started.
     Qualification,
-    /// A cold boot's day decision promotes the qualified profile: the calendar's first promoting `day.step`.
+    /// A cold boot proposes the first hold-earned exact-qualified `climb.decision` promotion.
     DayStep,
     /// A calendar night reproduces the CPU-suspect daily event at the promoted profile: its first reproduction trial
     /// has started.
@@ -126,7 +125,7 @@ impl Scenario {
             })?,
             Self::DayStep => cut_at(
                 events,
-                |event| matches!(&event.payload, Payload::DayStep(step) if matches!(step.step, StepKind::Promote { .. })),
+                |event| matches!(&event.payload, Payload::ClimbDecision(step) if matches!(step.decision, ClimbAction::Promote { .. })),
             )?,
             Self::Reproduction => cut_trial(events, |intent| {
                 intent.activity == Some(Activity::Reproduction)
