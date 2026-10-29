@@ -1,4 +1,4 @@
-//! What a new release commit waits for: an empty target-machine queue (ADR 0043) and a passing `check` run on
+//! What a new release commit waits for: an empty [target-machine queue](../../../docs/issues.md#work-that-waits-on-the-target-machine) and a passing `check` run on
 //! the commit it builds on ([CI and release gates](../../../docs/development.md#ci-and-release-gates)).
 
 use std::fmt;

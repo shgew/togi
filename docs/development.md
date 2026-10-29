@@ -95,6 +95,28 @@ Rejected:
 - Uploading every built store path or retaining unused target archives: VM systems, images and Cargo archives consume the cache without useful hits. A per-check GitHub Actions store cache or Magic Nix Cache cannot share PR-written results with the post-merge ref and adds restoration overhead.
 - Dropping revision stamps: development builds become indistinguishable in journals. Serving prebuilt user packages as the goal: hits require the project's nixpkgs pin, duplicating runtime dependencies and fetching/evaluating another pin to avoid a small package build.
 
+## Tests and simulations in memory
+
+Ordinary tests and simulations use `togi-journal`'s `MemFs` and in-memory fakes of the `togi-machine` seams, with time from the injected `Clock` or Tokio's paused clock. They do no network I/O, start no processes, leave no process-wide state behind and never call `fsync`, directly or through production code. Inject sync failures or record durability ordering instead; production retains its per-event durability.
+
+Disk is permitted only for:
+
+- Kernel-dependent filesystem or process behavior in a named `real_fs_` or `real_process_` test, with files confined to its own temporary directory and sync disabled; tests behind the `hardware` Cargo feature run by `just hardware`; and VM tests exercising the shipped binary's real durability.
+- Requested output: a flag such as `--state-dir` or `--keep`, a single `togi-tool-sim` session whose announced state directory is its output, or a failing run retaining evidence for diagnosis.
+- The [temporary-journal child protocol](#temporary-journals-for-research-children) below.
+
+Put I/O behind a narrow interface only at a real boundary: filesystem, clock, processes, hardware or SMU. Each boundary has an in-memory fake; a type with no boundary gets no interface and tests use its real implementation. A new boundary brings its fake, so logic above it needs no disk, process or real clock. Every change looks for test and simulation speed wins in the code it touches; reviewers flag needless disk writes, processes or real-clock use ([review criteria](../REVIEW.md)). New exceptions require a recorded decision with measurements. [Rust test execution](#rust-test-execution) owns concurrency.
+
+Rejected: temporary directories for every test charge file creation, writes and cleanup to logic that needs no kernel, can leave files after failed cleanup and can pay for sync. An interface for every replaceable type adds indirection and a fake that can drift, so the test checks the fake. Keeping only a terse rule in `AGENTS.md` hides why its exceptions exist; this section owns the rule and rationale.
+
+### Temporary journals for research children
+
+Bench, `same`, `smoke` and `audit` children run with a temporary `--state-dir`; the parent reads and parses each journal after the child exits. This is the exception to in-memory simulation, not permission for other tests to write files. The child protocol remains its exit status and state directory, including when comparing a base tree's simulator. `--keep` retains run directories; `same` reruns a differing session with files kept, so the journal itself is the evidence.
+
+The dominant cost was per-event `state.json` publication, removed in [#871](https://github.com/shgew/togi/pull/871). The [#868 measurements](https://github.com/shgew/togi/issues/868#issuecomment-6127558468) found a default session's writes fell from 347.6 MB to 5.04 MB; reading and parsing journals cost about 1% of the development split's CPU. After that fix, in-memory children were within CPU noise and used up to 30 MiB more resident memory. These measurements used scratch storage; they do not promise the same disk cost everywhere. Revisit the protocol only with new end-to-end measurements if parent reads become material.
+
+Rejected: events on stdout or a dedicated pipe still require parsing the same bytes and leave a crashed child without its journal; the pipe also adds a protocol. Digest-only children move metric computation into the child and require the base tree to speak the digest protocol. In-memory children showed no CPU saving after the publication fix and used more memory. Temporary journals retain crash evidence without that protocol change.
+
 ## Rust test execution
 
 There is no race-detector check. Safe Rust's `Send`/`Sync` rejects data races; it does not prove absence of logic races, deadlock or time-of-check/time-of-use errors. Allowed unsafe scopes and dependencies remain outside that guarantee. [Rust rules](../AGENTS.md#rust) own unsafe-code restrictions and safety comments; concurrent behavior needs real-thread and process tests, with deterministic seams and simulations as additional evidence, never a replacement.
@@ -109,6 +131,12 @@ Rejected:
 - Shuffling Rust tests: nextest has no shuffle option, while libtest's is unstable and lacks nextest's per-test isolation.
 - A custom nextest result cache: no supported hook or measured saving justifies maintaining a correct binary-and-fixture cache. Manual stress runs remain a tool for investigating flakes, not a default check.
 - A separate concurrency cap merely for filesystem/process tests: owned temporary paths and children are not shared resources, and a cap greater than one cannot exclude a real shared-resource race.
+
+## Work that waits on the target machine
+
+Record target-machine verification still owed; never quietly declare it verified. VM tests cannot exercise the SMU mailbox, the accepted physical CPU or the real mprime and y-cruncher backends. Otherwise-green changes may merge while that evidence is pending, but the obligation remains visible and blocks a new release and updating the target machine's togi input. [Issues, Work that waits on the target machine](issues.md#work-that-waits-on-the-target-machine) owns the label, exact run instructions, merge wording, board queue and failure/closure mechanics; [Releasing](releasing.md) owns the workflow's refusal and publication retry.
+
+Rejected: a separate pinned checklist duplicates issue state and needs manual updates; a run-retrospective issue hides obligations among history and cannot drive the queue or release refusal. Holding every PR open until hardware is available blocks reviewed changes and dependent work. A VM backend check cannot supply the missing SMU or CPU, hosted runners do not guarantee AVX-512, and mprime's license does not clearly allow publishing its binaries in the public check cache. Manually unlinking an issue before merge can silently lose the obligation; querying the label even on closed issues fails safe.
 
 ## Simulations and research
 
@@ -148,6 +176,12 @@ This table records the evidence that leaves the default local tier and the named
 | `crates/togi-simrun/tests/sim/warm_cold.rs::warm_equals_cold::{test_case_1_flat_hazard_102,test_case_2_flat_hazard_7,test_case_3_misleading_mce_3,test_case_4_shared_voltage_1000}` | Exact journal and state bytes match across the long warm/cold matrix | `crates/togi-simrun/tests/sim/warm_cold.rs::a_bounded_crash_resume_has_identical_warm_and_cold_journal_and_state_bytes` retains an exact two-boot comparison locally. |
 
 ## Crates and toolchain
+
+Development and debugging programs live in `crates/togi-tool-*`, with `publish = false`, never in the operator-facing `togi` crate. The package builds only `-p togi`, which depends on no tool crate. `just sim` runs `togi-tool-sim`; `togi-simrun` owns the simulated crash/reboot loop, separate from `togi-session`. Product tests build simulated journals in process through test dependencies, not an operator simulation flag.
+
+A program with a parser, a versioned format or tests pinning refusals belongs in a Rust tool crate; Nushell orchestrates `gh`/`git` output into text, as `tools/board` does. `tools/` holds unshipped benchmark/research data, board orchestration and SQL views, not shipped runtime behavior. Rust tools share workspace types, errors, lints and in-memory unit tests; a pipeline needs no crate merely to reshape JSON. [The language decision](adr/0071-no-go-in-the-repository.md) records why Go was removed.
+
+Rejected: a build-gated `togi debug` command keeps harness code in the operator command and adds a second build to maintain. Simulation inside the release binary tells an operator nothing about their chip while complicating real commands with simulation flags and exclusions. Simulating therefore requires a source checkout; real-machine diagnostics such as `togi doctor` stay free of simulation. Nushell for every tool loses typed parsers and precise refusal tests; Rust for every orchestration pipeline adds a build and test harness without a corresponding boundary.
 
 A new crate needs a `Cargo.toml` with `[lints] workspace = true`. The `productCrates` closure in `flake.nix` discovers dependencies of `togi`, `togi-simrun` and `togi-watchtest`; register an unshipped crate outside that closure in `toolCrates`. Evaluation rejects missing, repeated or unknown registrations. Register fixtures read outside `crates/` in `crateFixtures` there, for the crate whose tests read them. The exact toolchain in `rust-toolchain.toml` changes only in its own pull request.
 
