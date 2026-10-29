@@ -104,12 +104,25 @@ impl State {
                 phase: charge.map_or(journal::CampaignEventPhase::PostFinish, |charge| match charge.phase { climb::EventPhase::Learning => journal::CampaignEventPhase::Learning, climb::EventPhase::PostFinish => journal::CampaignEventPhase::PostFinish }),
                 unit_phase: charge.map_or(history.units().phase(), |charge| charge.unit_phase),
                 profile, provisional: charge.is_some_and(|charge| charge.provisional),
-                classification: self.days.events.get(&id).map_or(journal::Classification::Unexplained {}, |book| book.latest.payload.classification),
+                classification: Self::journal_classification(event.class),
                 reclassified: charge.is_some_and(|charge| charge.reclassified), witnesses: meta.map_or_else(Vec::new, |meta| meta.witnesses.clone()),
             });
         }
+        for charge in self.climb.campaign.charges() {
+            if view.events.iter().any(|event| charge.aliases.contains(&event.id)) { continue; }
+            let receipt = self.climb.charges.iter().find(|receipt| self.policy_event_id(&receipt.payload.event).is_some_and(|id| charge.aliases.contains(&id)));
+            let Some(receipt) = receipt else { continue; };
+            let mut witnesses = vec![receipt.seq];
+            witnesses.extend(self.climb.reclassifications.iter().filter(|record| record.payload.event == receipt.payload.event).map(|record| record.seq));
+            events.push(ClimbEventProjection {
+                event: receipt.payload.event.clone(), aliases: charge.aliases.iter().filter_map(|id| self.journal_event_id(id)).collect(),
+                phase: receipt.payload.phase, unit_phase: charge.unit_phase, profile: receipt.payload.profile.clone(),
+                provisional: charge.provisional, classification: if charge.reclassified { journal::Classification::NonCpu {} } else { journal::Classification::CpuSuspect { certainty: if charge.provisional { journal::Certainty::Provisional } else { journal::Certainty::Definite } } },
+                reclassified: charge.reclassified, witnesses,
+            });
+        }
         Some(ClimbCampaignProjection {
-            campaign: start.payload.campaign, history: if self.climb.campaign.consumed().is_some() { journal::CampaignHistory::Complete {} } else { journal::CampaignHistory::Unreconstructible { reason: "The immutable campaign history cannot be reconstructed.".into() } },
+            campaign: start.payload.campaign, history: self.climb.history_error.as_ref().map_or(journal::CampaignHistory::Complete {}, |reason| journal::CampaignHistory::Unreconstructible { reason: reason.clone() }),
             limit: 2, consumed: saturating_u32(u64::try_from(self.climb.campaign.charges().len()).unwrap_or(u64::MAX)),
             remaining: saturating_u32(u64::try_from(self.climb.campaign.remaining().unwrap_or(0)).unwrap_or(u64::MAX)),
             provisional: saturating_u32(u64::try_from(self.climb.campaign.charges().iter().filter(|charge| charge.provisional).count()).unwrap_or(u64::MAX)),

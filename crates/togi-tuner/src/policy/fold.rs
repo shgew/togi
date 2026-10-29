@@ -152,13 +152,9 @@ impl State {
             Payload::UnitMapping(p) => self.fold_mapping(event, p)?,
             Payload::ClimbDecision(p) => self.fold_climb_decision(event, p)?,
             Payload::UnitStop(p) => self.fold_unit_stop(event, p)?,
-            Payload::CampaignStart(p) => self.fold_campaign_start(event, p),
-            Payload::CampaignCharge(p) => {
-                self.climb.charges.push(committed(event, p.clone()));
-            }
-            Payload::CampaignReclassified(p) => {
-                self.climb.reclassifications.push(committed(event, p.clone()));
-            }
+            Payload::CampaignStart(p) => self.fold_campaign_start(event, p)?,
+            Payload::CampaignCharge(p) => self.fold_campaign_charge(event, p),
+            Payload::CampaignReclassified(p) => self.fold_campaign_reclassified(event, p),
             Payload::FirmwareRestoration(p) => {
                 self.climb.restoration = Some(committed(event, p.clone()));
             }
@@ -243,6 +239,7 @@ impl State {
             Payload::DayImported(p) => {
                 if !self.climb.imports.iter().any(|known| known.original == p.original) {
                     self.climb.imports.push(p.clone());
+                    self.climb.import_sequences.insert(p.original, seq);
                 }
                 self.imported(seq, p);
             }
@@ -766,7 +763,7 @@ impl State {
     }
 }
 
-fn committed<T>(event: &Event, payload: T) -> Committed<T> {
+pub(super) fn committed<T>(event: &Event, payload: T) -> Committed<T> {
     Committed {
         seq: event.seq,
         time: event.time,
