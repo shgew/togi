@@ -14,6 +14,7 @@ mod numbers;
 mod partial;
 pub mod policy;
 mod topology;
+pub mod unit;
 
 #[cfg(test)]
 mod honest_chain_tests;
@@ -31,6 +32,7 @@ pub use policy::{
     State, TrialPlan, VetoProjection,
 };
 pub use topology::{Topology, TopologyError};
+pub use unit::{Phase, TuningUnit, UnitId, UnitProfile, UnitProfileError, Units};
 
 /// The strategy ruleset this build tunes by (`docs/spec/tuner.md`, Ruleset): its evidence, cap, night,
 /// day and daily-event rules. Bump it when any of them changes; a session started under another ruleset is
