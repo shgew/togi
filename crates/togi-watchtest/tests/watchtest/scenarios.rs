@@ -70,7 +70,7 @@ fn every_session_scenario_but_the_ended_night_folds_into_one_open_night() {
             night.started, events[0].time,
             "{scenario}: the night opened as the session started"
         );
-        assert!(!projection.ccds.is_empty(), "{scenario}");
+        assert!(!projection.units.is_empty(), "{scenario}");
     }
 }
 
@@ -90,7 +90,7 @@ fn controls_starts_the_first_nights_zero_offset_control_trial() {
     assert_eq!(activity, Some(Activity::Control));
     assert!(night.mapping.iter().all(|mapping| mapping.cursor.is_some()));
     assert!(
-        project(&events).ccds.iter().all(|ccd| ccd.cap.is_none()),
+        project(&events).units.iter().all(|unit| unit.cap.is_none()),
         "no cap is committed before any exposure"
     );
 }
