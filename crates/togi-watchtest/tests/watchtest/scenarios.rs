@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 
 use jiff::SignedDuration;
 use togi_journal::{
-    Activity, DeadEndCondition, Event, EventKind, Outcome, Payload, QualificationState, Queue,
-    ShutdownReason, StepKind, TaskStatus, Tested,
+    Activity, Classification, DeadEndCondition, Event, EventKind, Outcome, Payload,
+    QualificationState, Queue, ShutdownReason, StepKind, TaskStatus, Tested,
 };
 use togi_machine::{Regime, TargetOffset};
 use togi_watchtest::{Base, Scenario};
@@ -253,6 +253,27 @@ fn day_step_ends_on_the_first_promotion_after_a_complete_qualification() {
 #[test]
 fn reproduction_retests_the_cpu_suspect_profile_exactly() {
     let events = cut(Scenario::Reproduction);
+    assert_eq!(
+        Base::Calendar.events().expect("the Calendar simulates"),
+        events.as_slice(),
+        "live generation stops at the reproduction start, not after a later trial or day"
+    );
+    let promotion = events
+        .iter()
+        .position(|event| matches!(&event.payload,
+            Payload::DayStep(step) if matches!(step.step, StepKind::Promote { .. })))
+        .expect("the Calendar promoted a qualified profile");
+    let suspect = events
+        .iter()
+        .position(|event| matches!(&event.payload,
+            Payload::DayEvent(day) if matches!(day.classification, Classification::CpuSuspect { .. })))
+        .expect("the Calendar classified the scripted CPU answer");
+    let reproduction = events
+        .iter()
+        .position(|event| matches!(&event.payload,
+            Payload::TrialIntent(intent) if intent.activity == Some(Activity::Reproduction)))
+        .expect("the Calendar started reproduction");
+    assert!(promotion < suspect && suspect < reproduction);
     let intent = running_trial(&events);
     assert_eq!(intent.activity, Some(Activity::Reproduction));
     assert_eq!(

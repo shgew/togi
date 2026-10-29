@@ -244,6 +244,11 @@ pub trait Policy {
         machine: &mut Machine<'_>,
     ) -> Result<DayClassification, RunError>;
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError>;
+
+    /// Whether a caller-selected journal boundary ended this run during its last night.
+    fn is_finished(&self) -> bool {
+        false
+    }
 }
 
 /// Per-CCD vectors always retain every CCD and every seed, including censored runs.
@@ -489,13 +494,18 @@ pub(crate) fn run_controlled<P: Policy + ?Sized>(
         let remainder = Duration::from_hours(24)
             .checked_sub(spent)
             .ok_or(RunError::Calendar("policy waits overran the calendar day"))?;
-        runtime.sleep(remainder)?;
-        // Includes policy sleeps and unused night time, neither of which is active exposure.
         metrics.active_hours += active.as_secs_f64() / 3600.0;
-        metrics.sleep_hours += 24.0 - active.as_secs_f64() / 3600.0 - night_hours;
+        if !policy.is_finished() {
+            runtime.sleep(remainder)?;
+            // Includes policy sleeps and unused night time, neither of which is active exposure.
+            metrics.sleep_hours += 24.0 - active.as_secs_f64() / 3600.0 - night_hours;
+        }
         let final_depth = runtime.depths()?;
         record_profile(&mut metrics, &before_night, &final_depth, &caps, day, None);
         previous = final_depth;
+        if policy.is_finished() {
+            break;
+        }
     }
     metrics.final_depth = previous[..runtime.ccd_count()].to_vec();
     metrics.censored = metrics.convergence_days.iter().any(Option::is_none);

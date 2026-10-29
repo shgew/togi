@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -28,8 +29,8 @@ const LONG_NIGHT: SignedDuration = SignedDuration::from_hours(60);
 /// The calendar simulator's machine for [`Base::Calendar`]: a deep edge, so the first promotion comes within a month.
 const CALENDAR_MACHINE: &str = "edge-deep";
 
-/// The days [`Base::Calendar`] runs: enough for its first promotion, which lands in the fourth week, and the
-/// reproduction night after it.
+/// The calendar's safety bound: generation stops at the first reproduction trial start, or fails
+/// if that transition is not reached within a month.
 const CALENDAR_DAYS: u32 = 30;
 
 /// How many control trials run before [`Base::DeadEnd`] crashes one: the fourth.
@@ -47,7 +48,7 @@ pub enum Base {
     /// The same long night, stopped once its first filler trial has ended, after mapping has nothing left to do
     /// (about fifty hours in).
     Filler,
-    /// A month of Ruleset 13 days and nights on the calendar simulator's `edge-deep` machine, seed 1: the real policy
+    /// Ruleset 13 days and nights up to the first reproduction trial start on `edge-deep`, seed 1: the real policy
     /// decides every night trial and day step, the trial runner runs them on a simulated machine, and the day
     /// observer's boots, checkpoints and clean stops are the calendar's. Its nights qualify an exact profile, which a
     /// later cold boot promotes. The one scripted fact is the operator's: the first day after the promotion ends in
@@ -120,7 +121,7 @@ fn after_first_filler() -> Halt {
 fn calendar() -> Result<Vec<Event>, Error> {
     let mut policy = CpuAnswerAfterPromotion {
         inner: Ruleset13::with_params(Params::SPEC).recording(),
-        answered: false,
+        progress: CalendarProgress::AwaitingPromotion,
     };
     run_with_policy(
         CALENDAR_MACHINE,
@@ -131,10 +132,13 @@ fn calendar() -> Result<Vec<Event>, Error> {
         },
         &mut policy,
     )?;
+    if !policy.is_finished() {
+        return Err(Error::NoCut("the Calendar's first reproduction trial start"));
+    }
     Ok(policy
         .inner
         .events()
-        .unwrap_or_default()
+        .ok_or(Error::NoCut("the recorded Calendar journal"))?
         .iter()
         .map(with_fixed_build)
         .collect())
@@ -144,7 +148,13 @@ fn calendar() -> Result<Vec<Event>, Error> {
 /// CPU.
 struct CpuAnswerAfterPromotion {
     inner: Ruleset13,
-    answered: bool,
+    progress: CalendarProgress,
+}
+
+enum CalendarProgress {
+    AwaitingPromotion,
+    AwaitingReproduction,
+    Complete,
 }
 
 impl Policy for CpuAnswerAfterPromotion {
@@ -168,8 +178,8 @@ impl Policy for CpuAnswerAfterPromotion {
             .project()
             .applied
             .is_some_and(|profile| !profile.is_zero());
-        if promoted && !self.answered {
-            self.answered = true;
+        if promoted && matches!(self.progress, CalendarProgress::AwaitingPromotion) {
+            self.progress = CalendarProgress::AwaitingReproduction;
             let crashed = DayObservation::Ended {
                 active: Duration::from_hours(1),
                 answer: Some(EndAnswer::Cpu),
@@ -180,7 +190,17 @@ impl Policy for CpuAnswerAfterPromotion {
     }
 
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
-        self.inner.night(night, machine)
+        let progress = self.inner.night_until_trial_start(night, machine, |intent| {
+            intent.activity == Some(Activity::Reproduction)
+        })?;
+        if let ControlFlow::Break(()) = progress {
+            self.progress = CalendarProgress::Complete;
+        }
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        matches!(self.progress, CalendarProgress::Complete)
     }
 }
 

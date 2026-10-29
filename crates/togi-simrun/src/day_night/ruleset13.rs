@@ -5,6 +5,7 @@
 //! [`State`] and executes what the state decides through the machine seams.
 
 use std::collections::BTreeMap;
+use std::ops::ControlFlow;
 use std::time::Duration;
 
 use jiff::{SignedDuration, Timestamp};
@@ -12,7 +13,7 @@ use togi_journal::{
     ApplicationId, ApplyCause, Build, CcdVector, DayAnswer, DayAnswerKind, DayApplied,
     DayBootStart, DayCheckpoint, DayCleanStop, DayEventId, DayOffsetsChanged, DayUncleanEnd, Event,
     FixStamp, Payload, SCHEMA, Seq, SessionBaseline, SessionContext, SessionId, SessionStart,
-    Shutdown, ShutdownReason, Stamp, TrialId, TrialInstance, TrialSignal, TrialStart,
+    Shutdown, ShutdownReason, Stamp, TrialId, TrialInstance, TrialIntent, TrialSignal, TrialStart,
     WorkloadContent,
 };
 use togi_machine::{
@@ -35,6 +36,8 @@ enum Ended {
     Completed,
     /// The operator ended the night while the trial ran.
     Interrupted,
+    /// The caller retained this trial's start as the end of its run.
+    Retained,
 }
 
 /// The uid the simulated operator answers with.
@@ -394,6 +397,7 @@ impl Ruleset13 {
         &mut self,
         machine: &mut Machine<'_>,
         plan: &TrialPlan,
+        stop_at_start: &mut impl FnMut(&TrialIntent) -> bool,
     ) -> Result<Ended, RunError> {
         let cores = self.cores()?;
         let id = TrialId::from(format!("night-trial-{}", self.trials));
@@ -407,6 +411,7 @@ impl Ruleset13 {
             });
         }
         let intent = plan.intent(id.clone(), &cores, content)?;
+        let retain_start = stop_at_start(&intent);
         let (regime, workload, intended) = (
             intent.regime,
             intent.workload,
@@ -487,6 +492,11 @@ impl Ruleset13 {
             .into(),
             &[intent],
         )?;
+        if retain_start {
+            let _stopped = running.stop()?;
+            machine.trials.ended(id.as_str())?;
+            return Ok(Ended::Retained);
+        }
         let waited = running.wait(&cancel, &mut Silent);
         let _stopped = running.stop()?;
         machine.trials.ended(id.as_str())?;
@@ -619,11 +629,31 @@ impl Policy for Ruleset13 {
         })
     }
 
+    fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        self.night_until_trial_start(night, machine, |_| false)
+            .map(|_| ())
+    }
+}
+
+impl Ruleset13 {
+    /// Runs a night until its budget ends or `stop` selects a trial whose start should end the run.
+    ///
+    /// A selected trial is started and stopped through the machine seams, but no outcome or shutdown
+    /// is journaled. The journal retains the open trial, and simulated day offsets are restored.
+    /// `Break` means the caller must not run another calendar day.
+    ///
+    /// # Errors
+    /// Returns policy, journal-fold and machine-operation failures, including trial teardown failures.
     #[expect(
         clippy::disallowed_methods,
         reason = "the calendar adapter restores the day profile to simulated registers only"
     )]
-    fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
+    pub fn night_until_trial_start(
+        &mut self,
+        night: &Night,
+        machine: &mut Machine<'_>,
+        mut stop_at_start: impl FnMut(&TrialIntent) -> bool,
+    ) -> Result<ControlFlow<()>, RunError> {
         self.start(machine)?;
         self.close_day(machine)?;
         self.next_boot();
@@ -644,6 +674,7 @@ impl Policy for Ruleset13 {
             .ok_or(RunError::Calendar("the Ruleset 13 session has not started"))?;
         let mut decided = 0_usize;
         let mut stop = ShutdownReason::Signal;
+        let mut retained = ControlFlow::Continue(());
         // The operator ends the night at `until`; the policy itself ends it only at a dead end.
         while machine.clock.now() < until {
             let action = self.state.next(&NightQuery {
@@ -661,8 +692,13 @@ impl Policy for Ruleset13 {
                 }
                 Action::RunTrial(plan) => {
                     decided = 0;
-                    if self.run_trial(machine, &plan)? == Ended::Interrupted {
-                        break;
+                    match self.run_trial(machine, &plan, &mut stop_at_start)? {
+                        Ended::Completed => {}
+                        Ended::Interrupted => break,
+                        Ended::Retained => {
+                            retained = ControlFlow::Break(());
+                            break;
+                        }
                     }
                 }
                 Action::EndNight(reason) => {
@@ -675,17 +711,19 @@ impl Policy for Ruleset13 {
         }
         // Tuning closes through its shutdown before the next day boot: the operator's signal when the
         // operator ended the night, mid-trial or between trials, else the policy's own stop.
-        self.append(
-            machine,
-            Shutdown {
-                reason: stop,
-                kernel_cursor: None,
-                kernel_error: None,
-                cycles: None,
-            }
-            .into(),
-            &[],
-        )?;
+        if retained.is_continue() {
+            self.append(
+                machine,
+                Shutdown {
+                    reason: stop,
+                    kernel_cursor: None,
+                    kernel_error: None,
+                    cycles: None,
+                }
+                .into(),
+                &[],
+            )?;
+        }
         // The tuning boot ends; the next day boot starts from the profile the day held.
         for (core, offset) in day_profile.iter() {
             machine.smu.set_offset(
@@ -694,7 +732,7 @@ impl Policy for Ruleset13 {
                     .map_err(|_| RunError::Calendar("day readback offset"))?,
             )?;
         }
-        Ok(())
+        Ok(retained)
     }
 }
 
