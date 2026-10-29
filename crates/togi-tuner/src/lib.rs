@@ -26,6 +26,12 @@ pub use class::Secs;
 pub use crash::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 pub use partial::{HonestChain, PartialBasis, UncoveredReason};
 pub use policy::{
+    ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
+    ClimbHoldProjection, ClimbPermissionMode, ClimbProfiles, ClimbProjection,
+    ClimbProposalProjection, ClimbQualificationProjection, ClimbQualificationState,
+    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+};
+pub use policy::{
     Action, CapProjection, Contents, DayProjection, DayQuery, Decision, EndReason, EventProjection,
     FirmwareValidity, FoldError, HoldProjection, MappingProjection, NightProjection, NightQuery,
     NotReady, Params, PlanError, PolicyPayload, Projection, QualificationProgress,
