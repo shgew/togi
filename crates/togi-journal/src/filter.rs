@@ -219,6 +219,15 @@ fn widening_covers(payload: &Payload, widening: &Widening) -> bool {
         | Payload::DayFreeze(_)
         | Payload::DayInterval(_)
         | Payload::DayImported(_)
+        | Payload::UnitMapping(_)
+        | Payload::UnitEdge(_)
+        | Payload::ClimbDecision(_)
+        | Payload::UnitStop(_)
+        | Payload::CampaignStart(_)
+        | Payload::CampaignCharge(_)
+        | Payload::CampaignReclassified(_)
+        | Payload::FirmwareRestoration(_)
+        | Payload::SuccessorImported(_)
         | Payload::StateRebuilt(_) => false,
     }
 }
