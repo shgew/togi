@@ -690,14 +690,7 @@ impl Journal {
             queue: togi_journal::Queue::Qualification,
             ordinal: 0,
         };
-        let plan = r1_trial(
-            night,
-            task,
-            0,
-            &proposal,
-            Tested::Exact {},
-            vec![started],
-        );
+        let plan = r1_trial(night, task, 0, &proposal, Tested::Exact {}, vec![started]);
         let (_, observed) = journal.witnessed_pass(&plan, &cell);
         journal.append(
             qualification(QualificationState::Complete {
