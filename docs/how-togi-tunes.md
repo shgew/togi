@@ -1,18 +1,16 @@
 # How togi tunes
 
-This is the entry point to the tuning policy. It explains the shape of the policy and what the screens show; [the tuner spec](spec/tuner.md) owns the rules and numbers, [the workload spec](spec/workloads.md) owns what runs, and [the glossary](../GLOSSARY.md) owns the terms. The design is [#1214](https://github.com/shgew/togi/issues/1214) with the owner's answers in [#1215](https://github.com/shgew/togi/issues/1215); [ADR 0079](adr/0079-day-observer-night-tester.md), [ADR 0080](adr/0080-per-ccd-first.md) and [ADR 0081](adr/0081-margin-from-measured-slope.md) record the decisions.
+This is the entry point to the tuning policy. [Ruleset 14](spec/tuner-ruleset14.md) owns the rules and numbers, [workloads](spec/workloads.md) owns what runs, and [ADR 0094](adr/0094-two-ends-bounded-exploration.md) records why two-ends D replaces statistical-cap permission.
 
 Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More negative is **deeper**. It deliberately encounters failures, including crashes; passing the workloads tested is evidence about those workloads, not a promise that the machine cannot fail later.
 
-## Approved next ruleset: two-ends D
+## Two-ends D: Ruleset 14
 
-[Ruleset 14 #1460](https://github.com/shgew/togi/issues/1460) tracks the approved [D design #1458](https://github.com/shgew/togi/issues/1458). **The shipped binary still implements Ruleset 13, described below; D is specified, not implemented or enabled.** [The successor specification](spec/tuner-ruleset14.md) owns its rules and [ADR 0094](adr/0094-two-ends-bounded-exploration.md) records why.
+Ruleset 14 is the only tuning policy. Clean daily observation permits a bounded experiment, not a claim of reliability. The [activation gate](spec/tuner-ruleset14.md#9-safety-and-activation) still governs automatic nonzero use.
 
 D makes clean daily observation permission for a bounded experiment beneath a night-derived ceiling, not statistical certification by S. Nights must qualify the exact next whole profile; each daily change earns a fresh hold, including the first change from stock. A suspect event stops the newest stepped unit, with whole-profile vetoes and further retreats; a durable machine allowance is shared across coarse and later core refinement, never automatically renewed. Firmware changes return to stock before guarded exact-profile restoration. Per-core refinement inherits real coarse history rather than restarting the climb.
 
 Finishing the climb does not mean “stable” or “meets your goal”: evidence remains experimental until current-profile observations support the stated model claim. The [successor evidence wording](spec/tuner-ruleset14.md#6-finish-steady-use-and-the-words-shown), [per-core cost contract](spec/tuner-ruleset14.md#8-per-core-refinement-is-the-end-goal-not-a-restart-from-zero) and [activation gate](spec/tuner-ruleset14.md#9-safety-and-activation) explain those limits. The original Ruleset 13 policy shipped in v0.12.0 but did not meet its registered gate; [#1457](https://github.com/shgew/togi/issues/1457) registers the successor, without retrospectively accepting the old result.
-
-## Shipped policy: Ruleset 13
 
 ## Days and nights
 
@@ -20,23 +18,17 @@ Finishing the climb does not mean “stable” or “meets your goal”: evidenc
 - **Days observe.** In normal boots togi watches the day profile without running workloads: applied hours, faults, clean and unclean ends. [Daily observation](howto.md#daily-observation) says how to answer what happened after an unclean end.
 - **BIOS stays at CO 0.** The day service will apply the day profile at boot ([#1218](https://github.com/shgew/togi/issues/1218), [ADR 0082](adr/0082-bios-stays-at-zero.md)); togi never tells you to enter offsets in BIOS.
 
-A **profile** is one offset per CCD, expanded to every core of that CCD. Per-core refinement is outside this ruleset.
+A profile is the complete ordered per-core vector and its unit mapping. Coarse tuning moves one CCD at a time; later core refinement inherits the clean coarse result and actual history rather than restarting from zero.
 
-## Three numbers per CCD
+## D, C and U
 
-| Name | Meaning | Who moves it |
-|---|---|---|
-| **D**, the day offset | The offset applied on normal boots; 0 before the first step | Day steps, retreats and a firmware reset |
-| **S**, the cap | The deepest offset the night evidence supports | Night evidence, recomputed whenever it changes |
-| **U**, the edge | The shallowest offset that actually failed with only that CCD tuned | Night mapping and reproduction, never a day event |
+| Name | Meaning |
+|---|---|
+| **D**, day offset | Applied and read-back offset, distinct from saved or proposed values |
+| **C**, hard night ceiling | Five counts shallower than the isolated edge, capped at stock |
+| **U**, night edge | Tagged unknown, observed failure or write-limit-censored edge |
 
-**U** is *unknown* until mapping has looked, *fails at N* once a failure is observed, or *censored at −50* when nothing failed down to the write limit. Unknown is not zero.
-
-**S** combines a rate limit with a margin from the observed edge; [Cap S](spec/tuner.md#cap-s-margin-from-measured-slope) owns the budget, projection and missing-evidence rules.
-
-The projection uses a **slope** describing how fast failure rate grows with depth; [Measured slope](spec/tuner.md#measured-slope) owns the labelled **fallback** and the conservative fitted **measured** slope.
-
-**Coverage.** Only mapping classes count towards S: single-core rotation, light core beside heavy neighbours, multi-core partial loads and all-threads serial positions. Everything else, such as load steps, duty-limited loads, SMT, idle, and qualification, control and reproduction exposure, is **uncovered for the cap** even when it passed. `togi status` lists those classes with the reason for each: no observations, non-mapping exposure only, or mapping exposure that never reached the adequacy threshold. Uncovered is never read as safe.
+Unknown U grants no ordinary nonzero promotion. S may remain visible only as a labelled non-authorizing statistical diagnostic, with its assumptions and uncovered classes; it neither grants permission nor forces retreat.
 
 ## What a night does
 
@@ -46,11 +38,11 @@ A night works through five queues, with soft shares of elapsed observed time; [N
 |---|---|
 | reproduction | Investigates a CPU-suspect daily event at its failed profile and with each CCD alone |
 | qualification | Completes the coverage certificate for the next day profile |
-| mapping | Explores each CCD alone to find its edge and gather cap evidence |
+| mapping | Finds each unit's isolated U and sweeps uncovered cells toward C |
 | control | Checks the platform at all-zero rather than attributing stock instability to tuning |
 | requalification | Refreshes the coverage certificate for the current day profile |
 
-When none has due work, [filler](spec/tuner.md#filler) gathers further cap or qualification evidence. A cell that needs an **unavailable backend** (one that stayed inconclusive through its retries) is skipped and the night records it. A night ends at the operator's stop, the next normal boot, a dead end, or when every cell it could run needs an unavailable backend.
+When primary work is empty, filler repeats exact-current-D qualification cells using the durable cursor; there is no S−1 permission filler. Unavailable backends supply no credit. Work spans nights rather than shortening required cells to fit.
 
 A **trial** is one launch of one workload under one applied profile for a stated duration. It passes, fails or is inconclusive; an inconclusive trial adds no evidence. Exposure is eligible measured execution time only, never intended time, downtime or an extrapolated crash tail. [The coverage matrix](spec/workloads.md#coverage-matrix) owns which classes a qualification needs.
 
@@ -60,14 +52,12 @@ A **qualification** is a composite certificate for the proposed day profile: [th
 
 Day steps are decided at a cold boot and applied only after a verified readback.
 
-- **Hold.** Later promotions need applied daily observation at the current profile; [Hold and next proposal](spec/tuner.md#hold-and-next-proposal) owns the required hours and which intervals count.
-- **Step.** A proposal moves a CCD towards its cap; [Hold and next proposal](spec/tuner.md#hold-and-next-proposal) owns selection and distance, and [Day steps](spec/tuner.md#day-steps) owns eligibility and blockers.
-- **Veto.** A CPU-suspect daily event rules out profiles and triggers step-backs under [Day steps and daily-event escalation](spec/tuner.md#whole-profile-veto-and-escalation).
-- **Retreat.** A shallower cap can force the day profile back without waiting for a hold, under [Day steps](spec/tuner.md#day-steps).
-- **Freeze.** Keeps D and blocks promotions, not required retreats or resets, under [Day steps](spec/tuner.md#eligibility-and-constraints).
-- **Firmware.** A firmware change resets the evidence context and day profile; [Firmware](spec/tuner.md#firmware) owns invalidation and the requirements for returning to a tuned profile.
+- **Hold and step.** Every promotion, including the first from verified stock, needs 50 clean observed hours at the exact applied profile and exact next-profile qualification. Move one unfinished unit toward C using the bounded half-distance rule; [§4](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) owns selection, sizing and blockers.
+- **Stop and retreat.** A CPU-suspect event vetoes the whole profile, undoes the newest successful step and permanently stops that unit. Further events walk every unit's actual history toward stock; [§5](spec/tuner-ruleset14.md#5-newest-step-blame-stop-and-the-machine-allowance) owns attribution, provisional events and escalation.
+- **Campaign allowance.** Two unique CPU-suspect events at nonzero campaign profiles consume the shared machine allowance, including provisional and post-finish events. Reclassification is shown separately, never refunded. Restart, reset, firmware change, new session and reboot never renew it; exhaustion stops exploration, not observation or safety work.
+- **Safety first.** Adverse U/C, vetoes and context invalidation still force retreat or stock. Freeze blocks promotion only. Firmware restoration needs the exact previous full profile's new-context certificate and a fresh stock hold; it grants no new depth or reopened climb.
 
-An unclean end raises a question. Machine-check evidence comes first: a core-local or uncorrected machine check makes the end CPU-suspect whatever the answer. For an otherwise unexplained end, answering `frozen` makes it CPU-suspect, `graphics` or `power_off` makes it non-CPU, and `unsure` or no answer at a nonzero D forms a provisional CPU-suspect event. The rules are in [Daily events](spec/tuner.md#daily-events).
+An unexplained unclean end raises a question; independent CPU machine-check evidence remains CPU-suspect regardless of the answer. Unanswered/unsure ends at nonzero D consume allowance provisionally. Answer changes do not erase independent evidence or historical charges.
 
 ## What the screens show
 
@@ -76,12 +66,12 @@ An unclean end raises a question. Machine-check evidence comes first: a core-loc
 `togi watch` has a header (clock, tuning time, session age, failures, crashes), a stage line, a narration line, one table per CCD and lower panels. Press `?` for the on-screen help and `l` for the log.
 
 - **Stage line.** `NIGHT since 22:13 · 0h30m` with the task, for example `mapping CCD 1 at -20`, or `DAY`. It names no end time. After the night ended it shows `LAST NIGHT` times.
-- **CCD table.** Its title gives the CCD's load state. The first line reads `D -10 · S -26 fallback slope · bound by rate R1 · U fails at -31 · 16 counts to S`; the second `3 covered for the cap · 1 uncovered for the cap`. Each core row gives its offset and a gauge: applied depth, dots up to S, and a red mark at U (amber when censored).
-- **Night panel.** The open task, the mapping or qualification in progress, any reproduction, and each queue's `share` as used/target; [the scheduler](spec/tuner.md#night-order-and-reserved-budgets) owns the targets.
-- **Day panel.** `hold` (applied hours of the hours a step needs), the last step, freeze, firmware validity, pending questions, events and vetoes.
-- **Help.** Explains the words in the screen (offset, trial, D, S, U, slope, covered, hold, step, veto, freeze, qualifying, reproducing, share) and the kinds of load; the tuner spec owns the rules.
+- **Unit facts.** Applied D, hard ceiling C and tagged U, qualification and outstanding cells; any S/slope display is explicitly diagnostic, not permission or “remaining to S.”
+- **Night panel.** Current task, mapping/qualification progress and queue time shares.
+- **Day panel.** Exact-profile hold, phase, latest successful step, held/finished/stopped reason, blockers, firmware, freeze/pause, events and vetoes.
+- **Campaign.** Consumed/remaining allowance, provisional and subsequently reclassified counts, and post-finish events.
 
-`togi status` prints the same facts as text: the activity line (`night since 00:00, 11h55m elapsed: mapping (task mapping #2)`, or the day, a stop or a dead end); session and BIOS context; the trial in flight; a table `CCD CORES D S SLOPE BINDING U REMAINING COVERED UNCOVERED` with the uncovered classes below it; a **Day policy** part (applied profile, hold, latest step and what blocks it, freeze, firmware, events and vetoes); a **Night** part with the elapsed observed time and the queue table `QUEUE SHARE USED TIME`, current task, mapping cursors and qualification progress; and **Day** observation totals. Neither screen estimates a completion time.
+Status and watch distinguish applied/read-back, proposed and paused saved profiles and show current-profile observed hours/crashes beside stock totals. Evidence reads `experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`. Fifty clean hours support about 1 crash per 17 h under that model, not the 1/3,000 h goal. Finish means exploration ended, not “stable”; [§6](spec/tuner-ruleset14.md#6-finish-steady-use-and-the-words-shown) owns the assumptions and permitted claims.
 
 ## Costs
 
@@ -93,7 +83,7 @@ Earlier rulesets are recorded in [Ruleset history](#ruleset-history), the change
 
 Merge commits below are where each numbered constant first reached `main`, not necessarily a PR whose title names the whole behavior change: several were stacks. Commit `84c2a011` is a ruleset-9 **comparison reference**, not its introducing merge. The reasons come from the linked decisions and [#493's historical summary](https://github.com/shgew/togi/issues/493#issuecomment-6040930168); they distinguish target-machine observations from simulator evidence.
 
-The Rust constant starts its own numbering at 1; `togi_tuner::RULESET` 3 is the Ruleset 13 design ([Ruleset](spec/tuner.md#ruleset)).
+The Rust constant starts its own numbering at 1; Ruleset 13 used `togi_tuner::RULESET` 3. Ruleset 14's compatibility switch is distinct from its design number.
 
 | Ruleset | What changed | What prompted it | Introducing merge commit |
 |---|---|---|---|
