@@ -284,6 +284,10 @@ pub enum Error {
     NotApplying,
     #[error("a pause needs an unexpired deadline or the next cold boot")]
     PauseDeadline,
+    #[error("the pause changed before the extension reached the service")]
+    PauseChanged,
+    #[error("only a timed pause can be extended")]
+    PauseNotTimed,
     #[error("emergency zero failed after daily service error: {original}")]
     Emergency {
         original: Box<Error>,
@@ -462,22 +466,15 @@ fn observe_with_socket(
     let mut polled = started;
     loop {
         if let Some(socket) = socket {
+            let mut controls = Controls {
+                progress: &mut progress,
+                sampler: &sampler,
+                observer: &mut *observer,
+                pause: &mut pause,
+                live: live.as_deref_mut(),
+            };
             socket.poll(journal, clock, &mut |journal, clock, control| {
-                let resuming = matches!(control, socket::Control::Resume { .. });
-                if !matches!(control, socket::Control::Status) {
-                    progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
-                }
-                let status = pause.control(
-                    journal,
-                    observer,
-                    clock,
-                    live.as_deref_mut().ok_or(Error::NotApplying)?,
-                    control,
-                )?;
-                if resuming {
-                    progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
-                }
-                Ok(status)
+                controls.apply(journal, clock, control)
             })?;
         }
         if let Some(source) = pause.expired(journal.boot(), clock) {
@@ -535,6 +532,43 @@ fn observe_with_socket(
             append(journal, clock, DayCleanStop {})?;
             return Ok(());
         }
+    }
+}
+
+/// The live service's side of a socket control: every durable change is bracketed by checkpoints so the raw
+/// interval fold credits the running time before it and excludes the held time after it.
+struct Controls<'a> {
+    progress: &'a mut Progress,
+    sampler: &'a Sampler,
+    observer: &'a mut dyn Observer,
+    pause: &'a mut pause::Pause,
+    live: Option<&'a mut apply::Live>,
+}
+
+impl Controls<'_> {
+    fn apply(
+        &mut self,
+        journal: &mut Journal,
+        clock: &dyn Clock,
+        control: socket::Control,
+    ) -> Result<socket::ControlStatus, Error> {
+        let resuming = matches!(control, socket::Control::Resume { .. });
+        if !matches!(control, socket::Control::Status) {
+            self.progress
+                .checkpoint(journal, clock, self.sampler, self.observer.offsets()?)?;
+        }
+        let status = self.pause.control(
+            journal,
+            self.observer,
+            clock,
+            self.live.as_deref_mut().ok_or(Error::NotApplying)?,
+            control,
+        )?;
+        if resuming {
+            self.progress
+                .checkpoint(journal, clock, self.sampler, self.observer.offsets()?)?;
+        }
+        Ok(status)
     }
 }
 

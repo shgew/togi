@@ -333,7 +333,8 @@ impl System for Host {
             Request::State => Ok(Reply::State {
                 status: self.day_status.borrow().clone(),
             }),
-            Request::Pause { state } => {
+            Request::Extend(_) => panic!("only the desktop notifier extends a pause"),
+            Request::Pause(togi_cli::day::socket::PauseRequest { state }) => {
                 self.day_controls
                     .borrow_mut()
                     .push(togi_cli::day::socket::Control::Pause {
@@ -356,7 +357,7 @@ impl System for Host {
                     })
                 })
             }
-            Request::Freeze { frozen } => {
+            Request::Freeze(togi_cli::day::socket::FreezeRequest { frozen }) => {
                 self.day_controls
                     .borrow_mut()
                     .push(togi_cli::day::socket::Control::Freeze {

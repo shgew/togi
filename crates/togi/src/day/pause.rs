@@ -8,6 +8,9 @@ use togi_machine::{BootId, Clock};
 
 use super::{Error, append, apply, socket};
 
+/// How far an extension moves a timed pause's deadline.
+const EXTENSION: std::time::Duration = std::time::Duration::from_hours(1);
+
 pub(super) struct Pause {
     state: PauseState,
     boot: BootId,
@@ -97,6 +100,8 @@ impl Pause {
         match control {
             socket::Control::Status => {}
             socket::Control::Pause { state, uid } => {
+                // The deadline can pass while the service checkpoints after the socket validated it; that is the
+                // peer's refusal, decided before any pause is recorded or any core is written.
                 if matches!(state, PauseState::Running {})
                     || matches!(&state, PauseState::Until { deadline } if *deadline <= clock.now())
                 {
@@ -104,6 +109,30 @@ impl Pause {
                 }
                 // Persist the lifetime before touching hardware: a failed zero cannot lose the user's pause.
                 self.persist(journal, clock, state, PauseSource::Command { uid })?;
+                live.zero(journal, observer, clock)?;
+            }
+            socket::Control::Extend { revision, uid } => {
+                // The revision names the pause the requester saw: a resume, expiry or replacement since then
+                // changes the newest `day.pause`, and the extension must not overwrite it.
+                if self.revision != Some(revision) {
+                    return Err(Error::PauseChanged);
+                }
+                let PauseState::Until { deadline } = self.state else {
+                    return Err(Error::PauseNotTimed);
+                };
+                // A pause whose deadline passed has ended; the service only has not recorded the end yet.
+                if deadline <= clock.now() {
+                    return Err(Error::PauseChanged);
+                }
+                let extended = deadline
+                    .checked_add(EXTENSION)
+                    .map_err(|_| Error::PauseDeadline)?;
+                self.persist(
+                    journal,
+                    clock,
+                    PauseState::Until { deadline: extended },
+                    PauseSource::Command { uid },
+                )?;
                 live.zero(journal, observer, clock)?;
             }
             socket::Control::Resume { uid } => {

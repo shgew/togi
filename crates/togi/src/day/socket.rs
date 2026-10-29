@@ -12,16 +12,29 @@ use togi_journal::{
     DayAnswer, DayAnswerKind, DayQuestions, DayRecord, DayUncleanEnd, Journal, PauseState, Seq,
     SessionId,
 };
-use togi_machine::{BootId, Clock};
+use togi_machine::{BootId, Clock, object_only};
 use togi_session::{AppendRecordError, append_record};
 
 /// An authenticated control operation. Identity always comes from the socket credentials.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Control {
     Status,
-    Pause { state: PauseState, uid: u32 },
-    Resume { uid: u32 },
-    Freeze { frozen: bool, uid: u32 },
+    Pause {
+        state: PauseState,
+        uid: u32,
+    },
+    /// Extends the timed pause that `revision` names by one hour; refused when another change followed it.
+    Extend {
+        revision: Seq,
+        uid: u32,
+    },
+    Resume {
+        uid: u32,
+    },
+    Freeze {
+        frozen: bool,
+        uid: u32,
+    },
     Reapply,
 }
 
@@ -52,13 +65,12 @@ const EXCHANGE: Duration = Duration::from_secs(1);
 pub enum Request {
     Questions,
     State,
-    Pause {
-        state: PauseState,
-    },
+    Pause(PauseRequest),
+    /// Notifier only: extend the timed pause that `revision` names, so a resume, expiry or replacement since the
+    /// notifier read the state is refused instead of overwritten.
+    Extend(ExtendRequest),
     Resume,
-    Freeze {
-        frozen: bool,
-    },
+    Freeze(FreezeRequest),
     Answer {
         boot: BootId,
         answer: DayAnswerKind,
@@ -71,6 +83,31 @@ pub enum Request {
     },
     /// Root only: reapply the day profile after resume; answered only once the transaction succeeded.
     Reapply,
+}
+
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct PauseRequest {
+        pub state: PauseState,
+    }
+}
+
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ExtendRequest {
+        /// The newest `day.pause` the requester saw.
+        pub revision: Seq,
+    }
+}
+
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct FreezeRequest {
+        pub frozen: bool,
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -362,7 +399,7 @@ pub fn respond(
         Request::State => Ok(Reply::State {
             status: control(journal, clock, Control::Status)?,
         }),
-        Request::Pause { state } => {
+        Request::Pause(PauseRequest { state }) => {
             let refusal = match &state {
                 PauseState::UntilBoot {} => None,
                 PauseState::Until { deadline } if *deadline > clock.now() => None,
@@ -374,16 +411,15 @@ pub fn respond(
                     reason: reason.into(),
                 });
             }
-            Ok(Reply::Controlled {
-                status: control(journal, clock, Control::Pause { state, uid })?,
-            })
+            controlled(control(journal, clock, Control::Pause { state, uid }))
         }
-        Request::Resume => Ok(Reply::Controlled {
-            status: control(journal, clock, Control::Resume { uid })?,
-        }),
-        Request::Freeze { frozen } => Ok(Reply::Controlled {
-            status: control(journal, clock, Control::Freeze { frozen, uid })?,
-        }),
+        Request::Extend(ExtendRequest { revision }) => {
+            controlled(control(journal, clock, Control::Extend { revision, uid }))
+        }
+        Request::Resume => controlled(control(journal, clock, Control::Resume { uid })),
+        Request::Freeze(FreezeRequest { frozen }) => {
+            controlled(control(journal, clock, Control::Freeze { frozen, uid }))
+        }
         Request::Answer { boot, answer } => {
             let questions = DayQuestions::of(journal.events());
             let Some(end) = questions.get(&boot) else {
@@ -444,6 +480,22 @@ pub fn respond(
             })?;
             Ok(Reply::Recorded { seq })
         }
+    }
+}
+
+/// A control the current state no longer allows, such as a deadline that passed while the service checkpointed, is
+/// the peer's refusal. Only a failed durable step ends the service.
+fn controlled(result: Result<ControlStatus, super::Error>) -> Result<Reply, super::Error> {
+    match result {
+        Ok(status) => Ok(Reply::Controlled { status }),
+        Err(
+            refusal @ (super::Error::PauseDeadline
+            | super::Error::PauseChanged
+            | super::Error::PauseNotTimed),
+        ) => Ok(Reply::Refused {
+            reason: togi_render::error_chain(&refusal),
+        }),
+        Err(error) => Err(error),
     }
 }
 

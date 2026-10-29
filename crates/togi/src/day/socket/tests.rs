@@ -526,11 +526,12 @@ fn status() -> ControlStatus {
 }
 
 #[test_case(Request::State, Control::Status; "state")]
-#[test_case(Request::Pause { state: PauseState::UntilBoot {} }, Control::Pause { state: PauseState::UntilBoot {}, uid: 1000 }; "untimed pause")]
-#[test_case(Request::Pause { state: PauseState::Until { deadline: Timestamp::UNIX_EPOCH + Duration::from_secs(1) } }, Control::Pause { state: PauseState::Until { deadline: Timestamp::UNIX_EPOCH + Duration::from_secs(1) }, uid: 1000 }; "timed pause")]
+#[test_case(Request::Pause(PauseRequest { state: PauseState::UntilBoot {} }), Control::Pause { state: PauseState::UntilBoot {}, uid: 1000 }; "untimed pause")]
+#[test_case(Request::Pause(PauseRequest { state: PauseState::Until { deadline: Timestamp::UNIX_EPOCH + Duration::from_secs(1) } }), Control::Pause { state: PauseState::Until { deadline: Timestamp::UNIX_EPOCH + Duration::from_secs(1) }, uid: 1000 }; "timed pause")]
+#[test_case(Request::Extend(ExtendRequest { revision: Seq::new(3).unwrap() }), Control::Extend { revision: Seq::new(3).unwrap(), uid: 1000 }; "extend")]
 #[test_case(Request::Resume, Control::Resume { uid: 1000 }; "resume")]
-#[test_case(Request::Freeze { frozen: true }, Control::Freeze { frozen: true, uid: 1000 }; "freeze")]
-#[test_case(Request::Freeze { frozen: false }, Control::Freeze { frozen: false, uid: 1000 }; "unfreeze")]
+#[test_case(Request::Freeze(FreezeRequest { frozen: true }), Control::Freeze { frozen: true, uid: 1000 }; "freeze")]
+#[test_case(Request::Freeze(FreezeRequest { frozen: false }), Control::Freeze { frozen: false, uid: 1000 }; "unfreeze")]
 fn group_controls_use_kernel_identity_and_return_verified_status(
     request: Request,
     expected: Control,
@@ -603,6 +604,39 @@ fn control_status_round_trips_with_its_revision() {
 #[test_case(PauseState::Until { deadline: Timestamp::UNIX_EPOCH - Duration::from_secs(1) }; "deadline expired")]
 fn invalid_pause_states_are_refused_without_entering_the_controller(state: PauseState) {
     let mut journal = crate::day::tests::journal();
-    let reply = serve(&mut journal, 1000, Request::Pause { state }).unwrap();
+    let reply = serve(&mut journal, 1000, Request::Pause(PauseRequest { state })).unwrap();
     assert!(matches!(reply, Reply::Refused { .. }));
+}
+
+#[test_case(|| crate::day::Error::PauseDeadline, "a pause needs an unexpired deadline or the next cold boot"; "deadline passed while checkpointing")]
+#[test_case(|| crate::day::Error::PauseChanged, "the pause changed before the extension reached the service"; "pause changed since the revision")]
+#[test_case(|| crate::day::Error::PauseNotTimed, "only a timed pause can be extended"; "pause has no deadline")]
+fn a_control_the_state_no_longer_allows_is_a_refusal_not_a_service_failure(
+    refusal: fn() -> crate::day::Error,
+    reason: &str,
+) {
+    let mut journal = crate::day::tests::journal();
+    let reply = respond(
+        &mut journal,
+        &FixedClock,
+        1000,
+        Request::Extend(ExtendRequest {
+            revision: Seq::new(1).unwrap(),
+        }),
+        &mut |_, _, _| Err(refusal()),
+    )
+    .unwrap();
+    let Reply::Refused { reason: actual } = reply else {
+        panic!("expected a refusal, got {reply:?}")
+    };
+    assert_eq!(actual, reason);
+}
+
+#[test_case(r#"{"pause":{"state":{"kind":"until_boot"}}}"#, r#"{"pause":[{"kind":"until_boot"}]}"#; "pause")]
+#[test_case(r#"{"extend":{"revision":7}}"#, r#"{"extend":[7]}"#; "extend")]
+#[test_case(r#"{"freeze":{"frozen":true}}"#, r#"{"freeze":[true]}"#; "freeze")]
+fn control_requests_decode_from_objects_only(object: &str, array: &str) {
+    serde_json::from_str::<Request>(object).unwrap();
+    let decoded = serde_json::from_str::<Request>(array);
+    assert!(decoded.is_err(), "{array} decoded as {decoded:?}");
 }

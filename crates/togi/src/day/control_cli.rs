@@ -6,7 +6,7 @@ use clap::Args as ClapArgs;
 use jiff::{Timestamp, ToSpan as _, civil::Time, tz::TimeZone};
 use togi_journal::PauseState;
 
-use super::socket::{Reply, Request};
+use super::socket::{FreezeRequest, PauseRequest, Reply, Request};
 use crate::cli::Context;
 use crate::exit::Exit;
 use crate::report::{emit, exit_with};
@@ -107,7 +107,7 @@ pub(super) fn pause(args: &Args, ctx: &mut Context<'_>) -> Exit {
     };
     control(
         ctx,
-        &Request::Pause { state },
+        &Request::Pause(PauseRequest { state }),
         "day pause",
         "day paused at verified stock",
     )
@@ -125,7 +125,7 @@ pub(super) fn resume(ctx: &mut Context<'_>) -> Exit {
 pub(super) fn freeze(frozen: bool, ctx: &mut Context<'_>) -> Exit {
     control(
         ctx,
-        &Request::Freeze { frozen },
+        &Request::Freeze(FreezeRequest { frozen }),
         if frozen { "day freeze" } else { "day unfreeze" },
         if frozen {
             "day frozen; pause lifetime unchanged"

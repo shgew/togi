@@ -3,11 +3,13 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use togi_command::Invocation;
 use togi_journal::{DayAnswerKind, DayUncleanEnd, PauseState, Seq};
 use togi_machine::{CancellationToken, Clock};
 
-use super::socket::{ControlStatus, Reply, Request};
+use super::socket::{ControlStatus, Error as SocketError, ExtendRequest, Reply, Request};
 use crate::cli::Context;
 use crate::exit::Exit;
 use crate::report::exit_with;
@@ -53,7 +55,7 @@ fn selected(bytes: &[u8]) -> Option<DayAnswerKind> {
     super::parse_answer(value).ok()
 }
 
-fn pause_warning(actions: bool) -> Invocation {
+fn pause_warning(actions: bool, deadline: Timestamp, zone: &TimeZone) -> Invocation {
     let mut command = Invocation::new("notify-send")
         .args([
             "--app-name=togi",
@@ -64,8 +66,11 @@ fn pause_warning(actions: bool) -> Invocation {
     if actions {
         command = command.args(["--wait", "--action=extend-hour=Extend pause by one hour"]);
     }
-    command.args(["Day pause ends within five minutes",
-        "Stock will be reapplied and verified before the pause ends. Extend by one hour from the current deadline, or use togi day pause to pause until cold boot."])
+    let ends = deadline.to_zoned(zone.clone()).strftime("%H:%M");
+    command.args([
+        "Day pause ends within five minutes".to_owned(),
+        format!("The pause ends at {ends}. Stock will be reapplied and verified before then, and daily observation resumes. Extend by one hour from that deadline, or use togi day pause to pause until cold boot."),
+    ])
 }
 
 fn pause_ended() -> Invocation {
@@ -149,57 +154,21 @@ impl PauseNotices {
                     && let Some(revision) = status.revision
                     && self.warned != Some(revision)
                 {
-                    let warning = pause_warning(ctx.system.day_notification_actions());
+                    let warning = pause_warning(
+                        ctx.system.day_notification_actions(),
+                        *deadline,
+                        &ctx.system.zone(),
+                    );
                     let output = show(ctx, &warning)?;
                     self.warned = Some(revision);
                     if output.stdout == b"extend-hour\n" {
-                        // A notification may have waited while another client resumed or replaced the pause.
-                        // Never turn that stale action into a new pause.
-                        let current = match ctx.system.day_request(&Request::State) {
-                            Ok(Reply::State { status }) => status,
-                            Ok(
-                                Reply::Questions { .. }
-                                | Reply::Controlled { .. }
-                                | Reply::Answered
-                                | Reply::Recorded { .. }
-                                | Reply::Reapplied
-                                | Reply::Refused { .. },
-                            ) => {
-                                return Err(exit_with(
-                                    ctx,
-                                    "day notify",
-                                    "unexpected day service reply",
-                                    Exit::Error,
-                                ));
-                            }
-                            Err(error) => {
-                                return Err(exit_with(
-                                    ctx,
-                                    "day notify",
-                                    togi_render::error_chain(&error),
-                                    Exit::Error,
-                                ));
-                            }
-                        };
-                        if current.revision != status.revision || current.pause != status.pause {
-                            self.previous = Some(status);
-                            return Ok(());
-                        }
-                        let deadline =
-                            deadline
-                                .checked_add(Duration::from_secs(3600))
-                                .map_err(|error| {
-                                    exit_with(
-                                        ctx,
-                                        "day notify",
-                                        togi_render::error_chain(&error),
-                                        Exit::Error,
-                                    )
-                                })?;
-                        match ctx.system.day_request(&Request::Pause {
-                            state: PauseState::Until { deadline },
-                        }) {
-                            Ok(Reply::Controlled { .. }) => {}
+                        // The service extends only the pause this revision names, in one exchange: a resume,
+                        // expiry or replacement since the state was read is refused, never overwritten.
+                        match ctx
+                            .system
+                            .day_request(&Request::Extend(ExtendRequest { revision }))
+                        {
+                            Ok(Reply::Controlled { .. }) | Err(SocketError::Refused(_)) => {}
                             Ok(
                                 Reply::Questions { .. }
                                 | Reply::State { .. }
@@ -434,15 +403,12 @@ mod tests {
     use std::process::ExitStatus;
     use std::sync::Arc;
 
-    use jiff::Timestamp;
-    use jiff::tz::TimeZone;
     use togi_command::Output;
     use togi_hostlock::{HostLock, Policy};
     use togi_machine::BootId;
     use togi_render::OutputFacts;
 
     use crate::dashboard::Surface;
-    use crate::day::socket::Error as SocketError;
     use crate::system::System;
 
     #[derive(Debug, PartialEq)]
@@ -450,13 +416,15 @@ mod tests {
         Questions,
         Answer(BootId, DayAnswerKind),
         State,
-        Pause(PauseState),
+        Extend(Seq),
     }
 
     /// A desktop session whose day service and notification daemon answer from scripts.
     #[derive(Default)]
     struct Desktop {
         actions: bool,
+        /// Where local times render; UTC when unset.
+        zone: Option<TimeZone>,
         listen_error: RefCell<Option<crate::signals::Error>>,
         token: RefCell<Option<CancellationToken>>,
         replies: RefCell<VecDeque<Result<Reply, SocketError>>>,
@@ -529,7 +497,7 @@ mod tests {
         }
 
         fn zone(&self) -> TimeZone {
-            TimeZone::UTC
+            self.zone.clone().unwrap_or(TimeZone::UTC)
         }
 
         fn topology(&self) -> Result<Vec<togi_machine::CoreInfo>, togi_hardware::Error> {
@@ -614,13 +582,14 @@ mod tests {
             self.requests.borrow_mut().push(match request {
                 Request::Questions => Seen::Questions,
                 Request::State => Seen::State,
-                Request::Pause { state } => Seen::Pause(*state),
+                Request::Extend(ExtendRequest { revision }) => Seen::Extend(*revision),
                 Request::Answer { boot, answer } => Seen::Answer(boot.clone(), *answer),
                 Request::Record { .. }
                 | Request::Reapply
                 | Request::Resume
-                | Request::Freeze { .. } => {
-                    panic!("notifier must not request record or reapply")
+                | Request::Pause(_)
+                | Request::Freeze(_) => {
+                    panic!("notifier must not request record, reapply or an unconditional pause")
                 }
             });
             if matches!(request, Request::State) {
@@ -637,7 +606,7 @@ mod tests {
                     })
                     .map(|status| Reply::State { status });
             }
-            if matches!(request, Request::Pause { .. }) {
+            if matches!(request, Request::Extend(_)) {
                 return self
                     .controlled
                     .borrow_mut()
@@ -1113,6 +1082,33 @@ mod tests {
         }
     }
 
+    fn warning(actions: bool, seconds: i64) -> Invocation {
+        pause_warning(
+            actions,
+            Timestamp::from_second(seconds).unwrap(),
+            &TimeZone::UTC,
+        )
+    }
+
+    #[test]
+    fn the_warning_says_when_the_pause_ends_in_local_time() {
+        let desktop = Desktop {
+            zone: Some(TimeZone::fixed(jiff::tz::offset(2))),
+            ..Desktop::new([Ok(pending(&[]))], [Ok(chose(b""))])
+        };
+        desktop.states.borrow_mut().push_back(Ok(paused(240, 1)));
+        let mut ticks = Ticks::new([Err(togi_machine::Error::Cancelled)]);
+        assert_eq!(drive(&desktop, &mut ticks), (Exit::Ok, String::new()));
+        let expected = Invocation::new("notify-send")
+            .args(["--app-name=togi", "--icon=dialog-information", "--expire-time=120000"])
+            .output_limit(4096)
+            .args([
+                "Day pause ends within five minutes",
+                "The pause ends at 02:04. Stock will be reapplied and verified before then, and daily observation resumes. Extend by one hour from that deadline, or use togi day pause to pause until cold boot.",
+            ]);
+        assert_eq!(*desktop.shown.borrow(), [expected]);
+    }
+
     #[test_case(301, false; "outside warning window")]
     #[test_case(300, true; "five minute boundary")]
     #[test_case(1, true; "one second left")]
@@ -1128,7 +1124,7 @@ mod tests {
         assert_eq!(drive(&desktop, &mut ticks), (Exit::Ok, String::new()));
         assert_eq!(desktop.shown.borrow().len(), usize::from(warns));
         if warns {
-            assert_eq!(*desktop.shown.borrow(), [pause_warning(false)]);
+            assert_eq!(*desktop.shown.borrow(), [warning(false, seconds)]);
         }
         assert_eq!(*desktop.requests.borrow(), [Seen::Questions, Seen::State]);
     }
@@ -1162,17 +1158,16 @@ mod tests {
         assert_eq!(drive(&desktop, &mut ticks), (Exit::Ok, String::new()));
         assert_eq!(
             *desktop.shown.borrow(),
-            [pause_warning(false), pause_ended()]
+            [warning(false, 300), pause_ended()]
         );
     }
 
     #[test]
-    fn extend_action_adds_one_hour_to_the_current_deadline_not_now() {
+    fn extend_action_asks_the_service_to_extend_the_revision_it_saw() {
         let desktop = Desktop {
             actions: true,
             ..Desktop::new([Ok(pending(&[]))], [Ok(chose(b"extend-hour\n"))])
         };
-        desktop.states.borrow_mut().push_back(Ok(paused(240, 7)));
         desktop.states.borrow_mut().push_back(Ok(paused(240, 7)));
         desktop
             .controlled
@@ -1182,16 +1177,13 @@ mod tests {
             }));
         let mut ticks = Ticks::new([Err(togi_machine::Error::Cancelled)]);
         assert_eq!(drive(&desktop, &mut ticks), (Exit::Ok, String::new()));
-        assert_eq!(*desktop.shown.borrow(), [pause_warning(true)]);
+        assert_eq!(*desktop.shown.borrow(), [warning(true, 240)]);
         assert_eq!(
             *desktop.requests.borrow(),
             [
                 Seen::Questions,
                 Seen::State,
-                Seen::State,
-                Seen::Pause(PauseState::Until {
-                    deadline: Timestamp::from_second(3840).unwrap()
-                }),
+                Seen::Extend(Seq::new(7).unwrap()),
             ]
         );
     }
@@ -1215,7 +1207,7 @@ mod tests {
         assert_eq!(drive(&desktop, &mut ticks), (Exit::Ok, String::new()));
         assert_eq!(
             *desktop.shown.borrow(),
-            [pause_warning(false), pause_warning(false)]
+            [warning(false, 300), warning(false, 300)]
         );
     }
 
@@ -1226,16 +1218,17 @@ mod tests {
             ..Desktop::new([Ok(pending(&[]))], [Ok(chose(b"extend-hour\n"))])
         };
         desktop.states.borrow_mut().push_back(Ok(paused(300, 1)));
-        desktop.states.borrow_mut().push_back(Ok(paused(300, 1)));
         desktop
             .controlled
             .borrow_mut()
-            .push_back(Err(SocketError::Refused("transaction failed".into())));
+            .push_back(Err(SocketError::Io(std::io::Error::other(
+                "transaction failed",
+            ))));
         let mut ticks = Ticks::new([]);
         let (exit, err) = drive(&desktop, &mut ticks);
         assert_eq!(exit, Exit::Error);
         assert!(err.contains("transaction failed"), "{err}");
-        assert_eq!(*desktop.shown.borrow(), [pause_warning(true)]);
+        assert_eq!(*desktop.shown.borrow(), [warning(true, 300)]);
         assert!(ticks.slept.is_empty());
     }
 
@@ -1254,24 +1247,49 @@ mod tests {
         assert!(ticks.slept.is_empty());
     }
 
-    #[test_case(ControlStatus { pause: PauseState::Running {}, frozen: false, revision: Seq::new(2) }; "already resumed")]
-    #[test_case(paused(600, 2); "replaced pause")]
-    fn a_stale_extend_action_never_resurrects_or_replaces_a_newer_pause(current: ControlStatus) {
+    #[test_case(ControlStatus { pause: PauseState::Running {}, frozen: false, revision: Seq::new(2) }, true; "already resumed")]
+    #[test_case(paused(300, 2), false; "replaced pause")]
+    fn a_refused_extension_leaves_the_newer_state_to_the_next_poll(
+        current: ControlStatus,
+        ended: bool,
+    ) {
         let desktop = Desktop {
             actions: true,
-            ..Desktop::new([Ok(pending(&[]))], [Ok(chose(b"extend-hour\n"))])
+            ..Desktop::new(
+                [Ok(pending(&[])), Ok(pending(&[]))],
+                [Ok(chose(b"extend-hour\n")), Ok(chose(b""))],
+            )
         };
         desktop
             .states
             .borrow_mut()
             .extend([Ok(paused(300, 1)), Ok(current)]);
-        let mut ticks = Ticks::new([Err(togi_machine::Error::Cancelled)]);
+        // The state changed between the check and the mutation: the service refuses the stale revision.
+        desktop
+            .controlled
+            .borrow_mut()
+            .push_back(Err(SocketError::Refused(
+                "the pause changed before the extension reached the service".into(),
+            )));
+        let mut ticks = Ticks::new([Ok(()), Err(togi_machine::Error::Cancelled)]);
         assert_eq!(drive(&desktop, &mut ticks), (Exit::Ok, String::new()));
+        // One extension, for the revision the notifier saw; nothing else mutates the pause.
         assert_eq!(
             *desktop.requests.borrow(),
-            [Seen::Questions, Seen::State, Seen::State]
+            [
+                Seen::Questions,
+                Seen::State,
+                Seen::Extend(Seq::new(1).unwrap()),
+                Seen::Questions,
+                Seen::State,
+            ]
         );
-        assert_eq!(*desktop.shown.borrow(), [pause_warning(true)]);
+        let later = if ended {
+            pause_ended()
+        } else {
+            warning(true, 300)
+        };
+        assert_eq!(*desktop.shown.borrow(), [warning(true, 300), later]);
     }
 
     #[test]
