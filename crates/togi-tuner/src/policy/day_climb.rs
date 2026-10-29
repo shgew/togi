@@ -93,7 +93,7 @@ impl State {
         Ok(None)
     }
 
-    fn stop_reason(&self, reason: &climb::FinishReason) -> Result<journal::UnitStopReason, NotReady> {
+    pub(super) fn stop_reason(&self, reason: &climb::FinishReason) -> Result<journal::UnitStopReason, NotReady> {
         Ok(match reason {
             climb::FinishReason::Ceiling => journal::UnitStopReason::Ceiling {},
             climb::FinishReason::AllowanceExhausted => journal::UnitStopReason::AllowanceExhausted {},
@@ -103,7 +103,8 @@ impl State {
                 climb::StopReason::FirstBackstep { event, application } => {
                     let event = self.journal_event_id(event).ok_or(NotReady::NoSession)?;
                     let application = application.and_then(|id| self.days.applications.iter().find(|commit| commit.seq.get() == id.get()))
-                        .map(|commit| commit.payload.application).unwrap_or(journal::ApplicationId(0));
+                        .or_else(|| self.days.applications.last())
+                        .map(|commit| commit.payload.application).ok_or(NotReady::NoBaseline)?;
                     journal::UnitStopReason::FirstBackstep { event, application }
                 }
                 climb::StopReason::RestorationBackstep { event, .. } => journal::UnitStopReason::RestorationBackstep {
