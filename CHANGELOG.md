@@ -2,6 +2,31 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.12.1] - 2026-10-29
+
+### Changed
+
+- The `togi day record` confirmation says the tuner treats the record as whole-profile evidence and a veto when choosing day steps and qualifications, and that this build applies no day profile at runtime ([#1304]).
+
+### Removed
+
+- `togi` without a command no longer prints the ASCII wordmark and tagline above the help ([#1317]).
+- Removed the unused legacy controller-placement path; trial supervision uses the same managed placement contract as sessions ([#1362]).
+
+### Fixed
+
+- `togi doctor` compares the firmware against the session's latest recorded context, as `togi run` does, instead of its first ([#1299]).
+- Exact-profile trials on multi-CCD CPUs now use an uncapped idle CO-0 core instead of mapping's capped idle-CCD controller placement; operators with a session affected by the old placement must run `togi reset --all` to archive it and start over ([#1300]).
+- A `togi day record` of a crash no day observer saw reaches a durable `day.event` and `day.veto`, so it steps the day profile back, gets its reproduction night and stops blocking promotion once those are done. A session that already holds such a record keeps the wrong retreat and escalation history from before this fix: run `togi reset --all` to archive it and start over ([#1304]).
+- A zero-offset rerun after a stock failure no longer stops the night when a full-CCD trial reordered the partial loads in between ([#1305]).
+- Mixed trials, which load a light and a heavy backend together, now count retries, inconclusive streaks and missing binaries against every backend that took part, not only the light one. Run `togi reset --all` to archive a session started by an earlier build and start over ([#1318]).
+- Archived events from earlier rulesets (tuner decisions, hunts, core phases, checking cycles, deepening rounds and combinations) now print plain instead of green or yellow, as the journal spec's colour table says; a found defect stays yellow ([#1378]).
+- When writing or deleting a systemd-boot EFI variable fails and restoring its immutable flag then fails too, the error now reports both failures instead of only the first ([#1379]).
+- `togi night-end --help` no longer says the command ends the night: it restores the day's boot selection, and the night closes when a tuning run stops or the next day's boot starts ([#1380]).
+- The dashboard history shows an event from an earlier ruleset with the message the journal recorded for it, instead of rewording it with the current formatter ([#1409]).
+- `togi status` names a stopped run `stopped` instead of `day` ([#1411]).
+- `togi watch` shows `DAY` instead of `STOPPED` once a later boot starts day observation after a stop ([#1411]).
+
 ## [0.12.0] - 2026-10-27
 
 ### Added
@@ -552,6 +577,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.12.0]: https://github.com/shgew/togi/releases/tag/v0.12.0
 
+[0.12.1]: https://github.com/shgew/togi/releases/tag/v0.12.1
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -776,3 +803,15 @@ All notable changes to togi are documented in this file. The format is based on 
 [#1258]: https://github.com/shgew/togi/pull/1258
 [#1260]: https://github.com/shgew/togi/pull/1260
 [#1261]: https://github.com/shgew/togi/pull/1261
+[#1299]: https://github.com/shgew/togi/pull/1299
+[#1300]: https://github.com/shgew/togi/pull/1300
+[#1304]: https://github.com/shgew/togi/pull/1304
+[#1305]: https://github.com/shgew/togi/pull/1305
+[#1317]: https://github.com/shgew/togi/pull/1317
+[#1318]: https://github.com/shgew/togi/pull/1318
+[#1362]: https://github.com/shgew/togi/pull/1362
+[#1378]: https://github.com/shgew/togi/pull/1378
+[#1379]: https://github.com/shgew/togi/pull/1379
+[#1380]: https://github.com/shgew/togi/pull/1380
+[#1409]: https://github.com/shgew/togi/pull/1409
+[#1411]: https://github.com/shgew/togi/pull/1411
