@@ -56,9 +56,9 @@ fn holds_promotion(policy: &Ruleset13) -> bool {
 
 /// Each application of a climb decision: its index in `events`, its receipt, and the index and
 /// commitment of the decision it applied. A receipt names its decision by the decision's sequence.
-fn applied_decisions<'a>(
-    events: &'a [Event],
-) -> impl Iterator<Item = (usize, &'a DayApplied, usize, &'a ClimbDecision)> {
+fn applied_decisions(
+    events: &[Event],
+) -> impl Iterator<Item = (usize, &DayApplied, usize, &ClimbDecision)> {
     events.iter().enumerate().filter_map(|(index, event)| {
         let Payload::DayApplied(receipt) = &event.payload else {
             return None;
@@ -69,11 +69,14 @@ fn applied_decisions<'a>(
         let (decided, proposal) = events[..index]
             .iter()
             .enumerate()
-            .find_map(|(decided, event)| match &event.payload {
-                Payload::ClimbDecision(proposal) if DecisionId(event.seq.get()) == decision => {
+            .find_map(|(decided, event)| {
+                if let Payload::ClimbDecision(proposal) = &event.payload
+                    && DecisionId(event.seq.get()) == decision
+                {
                     Some((decided, proposal))
+                } else {
+                    None
                 }
-                _ => None,
             })
             .unwrap_or_else(|| {
                 panic!(
@@ -341,12 +344,15 @@ fn retreat_and_stop(events: &[Event]) -> Option<(&ClimbDecision, &DayApplied, &U
     let ClimbAction::Retreat { units, .. } = &proposal.decision else {
         return None;
     };
-    let stop = events[..applied_at]
-        .iter()
-        .find_map(|event| match &event.payload {
-            Payload::UnitStop(stop) if units.contains(&stop.unit) => Some(stop),
-            _ => None,
-        })?;
+    let stop = events[..applied_at].iter().find_map(|event| {
+        if let Payload::UnitStop(stop) = &event.payload
+            && units.contains(&stop.unit)
+        {
+            Some(stop)
+        } else {
+            None
+        }
+    })?;
     Some((proposal, receipt, stop))
 }
 
