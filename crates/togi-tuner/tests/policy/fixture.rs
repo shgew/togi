@@ -719,7 +719,7 @@ impl Journal {
             .find(|step| matches!(step.step, StepKind::Promote { .. }))
             .cloned()
             .unwrap_or_else(|| panic!("no promotion in {committed:?}"));
-        assert_eq!(step.proposed.ccd, proposal);
+        assert_eq!(step.proposed.ccd(), &proposal);
         apply(&mut journal, &step, 1, "day1");
         (journal, proposal)
     }
