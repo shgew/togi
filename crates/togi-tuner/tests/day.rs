@@ -1373,6 +1373,48 @@ mod day {
         );
     }
 
+    /// A reclassified step back to [-12, -12] that reverted `reverted`, after `promotions` from
+    /// [0, 0]; the next proposal under caps of -20.
+    fn restored_after(promotions: &[[i64; 2]], reverted: &[(u64, u8)]) -> UnitProfile {
+        let mut day = Day::new([-20, -20]);
+        for &values in promotions {
+            day.promote(values);
+        }
+        day.crash("a", *promotions.last().unwrap(), EndClass::Unknown);
+        day.push(
+            [-12, -12],
+            ApplicationKind::Retreat {
+                events: vec![EventId::Boot(boot("a"))],
+                reverted: reverted
+                    .iter()
+                    .map(|&(step, id)| Reverted {
+                        step: seq(step),
+                        unit: unit(id),
+                    })
+                    .collect(),
+            },
+        );
+        day.answer("a", DayAnswerKind::Graphics);
+        let proposal = next_proposal(&day.history, &day.events(), &day.caps)
+            .unwrap()
+            .unwrap();
+        assert!(proposal.restores.is_some(), "{proposal:?}");
+        proposal.profile
+    }
+
+    #[test]
+    fn of_several_owed_restorations_the_newest_reverted_promotion_comes_first() {
+        // Promotion 3 moved unit 0 and promotion 4 unit 1; the newer wins over the lower unit.
+        let restored = restored_after(&[[-12, -12], [-14, -12], [-14, -14]], &[(3, 0), (4, 1)]);
+        assert_eq!(restored, profile([-12, -14]));
+    }
+
+    #[test]
+    fn restorations_owed_by_the_same_promotion_go_to_the_lower_unit_first() {
+        let restored = restored_after(&[[-12, -12], [-14, -14]], &[(3, 1), (3, 0)]);
+        assert_eq!(restored, profile([-14, -12]));
+    }
+
     #[test]
     fn a_reclassification_before_its_step_back_applies_restores_nothing() {
         let mut day = Day::new([-20, -20]);
