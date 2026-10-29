@@ -3051,8 +3051,6 @@ slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3
 slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4
   120s exact cores 0-7 at CO 0, Control, 0.025000 eligible h, 0 failures
 slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4
-  120s exact cores 0-7 at CO -1, Qualification, 0.000000 eligible h, 0 failures
-slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4
   120s exact cores 0-7 at CO -1, Qualification, 0.025000 eligible h, 0 failures
 slope input: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5
   120s exact cores 0-7 at CO 0, Control, 0.025000 eligible h, 0 failures
