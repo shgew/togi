@@ -1,8 +1,8 @@
 //! Frame time and fold time of the dashboard on simulated sessions.
 //!
-//! `frame` draws one 240x67 main-view frame of the longest scenario's folded journal, and of the first R7
-//! controls trial, which has the most panels, into a buffer; `frame-bytes` also encodes the whole frame as the
-//! terminal bytes a first draw writes; `project` folds the controls journal from nothing.
+//! `frame` draws one 240x67 main-view frame of the longest scenario's folded journal, and of the first night's
+//! CO-0 control trial (R1), which has the most panels, into a buffer; `frame-bytes` also encodes the whole frame
+//! as the terminal bytes a first draw writes; `project` folds the controls journal from nothing.
 
 use std::hint::black_box;
 
