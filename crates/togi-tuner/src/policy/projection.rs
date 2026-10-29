@@ -335,7 +335,7 @@ impl State {
     }
 
     /// Selected/stock exposure witnesses in journal order. The ledger owns original-identity
-    /// deduplication, Sig owns class identity and GroupKey owns context compatibility. Each selected
+    /// deduplication, `Sig` owns class identity and `GroupKey` owns context compatibility. Each selected
     /// observation uses the latest stock observation of its class and context, including historical
     /// contexts rather than silently treating them as current evidence.
     #[must_use]
