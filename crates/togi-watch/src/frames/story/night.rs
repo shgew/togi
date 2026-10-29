@@ -6,8 +6,8 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 
 use togi_journal::{Activity, HoldReason, Queue, Resolution, StepKind, TaskId, TaskStatus, Tested};
-use togi_tuner::unit::{UnitId, UnitProfile};
 use togi_tuner::policy::{FirmwareValidity, NightProjection, Projection};
+use togi_tuner::unit::{UnitId, UnitProfile};
 
 use super::super::colours::Paint;
 use super::super::scene::Scene;

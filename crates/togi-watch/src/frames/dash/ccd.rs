@@ -245,7 +245,11 @@ pub(super) fn facts_line(scene: &Scene<'_>, ccd: &UnitProjection, width: usize) 
 }
 
 /// The coverage row: how many trial classes back the cap and how many are uncovered for it.
-pub(super) fn coverage_line(scene: &Scene<'_>, ccd: &UnitProjection, width: usize) -> Line<'static> {
+pub(super) fn coverage_line(
+    scene: &Scene<'_>,
+    ccd: &UnitProjection,
+    width: usize,
+) -> Line<'static> {
     let text = |paint: Paint, value: String| Line::from(scene.paint(paint, value));
     let Some(cap) = &ccd.cap else {
         return fit_clauses(
@@ -361,7 +365,12 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             colours,
         );
     }
-    let projection = scene.s.policy.units.iter().find(|p| p.unit == togi_tuner::unit::UnitId::Ccd(id));
+    let projection = scene
+        .s
+        .policy
+        .units
+        .iter()
+        .find(|p| p.unit == togi_tuner::unit::UnitId::Ccd(id));
     match projection {
         Some(projection) => {
             put(buf, r, 0, 1, &facts_line(scene, projection, width), colours);

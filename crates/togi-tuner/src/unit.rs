@@ -212,15 +212,30 @@ impl UnitProfile {
     }
 
     /// Expands at adapters that receive a physical core listing rather than a unit table.
-    pub fn expand_topology(&self, topology: &[CoreInfo]) -> Result<PerCore<TargetOffset>, UnitProfileError> {
+    pub fn expand_topology(
+        &self,
+        topology: &[CoreInfo],
+    ) -> Result<PerCore<TargetOffset>, UnitProfileError> {
         let core_phase = self.units().any(|unit| matches!(unit, UnitId::Core(_)));
-        let id_of = |info: &CoreInfo| if core_phase { UnitId::Core(info.core) } else { UnitId::Ccd(info.ccd) };
+        let id_of = |info: &CoreInfo| {
+            if core_phase {
+                UnitId::Core(info.core)
+            } else {
+                UnitId::Ccd(info.ccd)
+            }
+        };
         let mut cores = PerCore::default();
         for info in topology {
             let unit = id_of(info);
-            cores.set(info.core, self.get(unit).ok_or(UnitProfileError::Missing(unit))?);
+            cores.set(
+                info.core,
+                self.get(unit).ok_or(UnitProfileError::Missing(unit))?,
+            );
         }
-        if let Some(extra) = self.units().find(|&unit| !topology.iter().any(|info| id_of(info) == unit)) {
+        if let Some(extra) = self
+            .units()
+            .find(|&unit| !topology.iter().any(|info| id_of(info) == unit))
+        {
             return Err(UnitProfileError::Extra(extra));
         }
         Ok(cores)
