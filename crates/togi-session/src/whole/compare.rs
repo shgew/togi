@@ -568,6 +568,11 @@ impl<'events> Names<'events> {
                             | ClimbBlocker::Paused {}
                             | ClimbBlocker::AllowanceExhausted {}
                             | ClimbBlocker::UnknownEdge { .. }
+                            | ClimbBlocker::CampaignHistory {}
+                            | ClimbBlocker::SameBoot {}
+                            | ClimbBlocker::HoldProfile {}
+                            | ClimbBlocker::SafeApply {}
+                            | ClimbBlocker::ActivationClosed {}
                             | ClimbBlocker::Finished { .. } => format!("{blocker:?}"),
                         }
                     })
@@ -607,6 +612,8 @@ impl<'events> Names<'events> {
         match reason {
             UnitStopReason::Ceiling {} => "ceiling".to_owned(),
             UnitStopReason::AllowanceExhausted {} => "allowance_exhausted".to_owned(),
+            UnitStopReason::AdverseCeiling {} => "adverse_ceiling".to_owned(),
+            UnitStopReason::Veto {} => "veto".to_owned(),
             UnitStopReason::FirstBackstep { event, application } => {
                 format!("first_backstep {} {application:?}", self.event_id(event))
             }
