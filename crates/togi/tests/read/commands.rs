@@ -165,7 +165,7 @@ fn an_unknown_kind_as_the_first_event_is_never_skipped(command: &str) {
     // The first line is not a header of this build, whatever its kind: the refusal does not say which build.
     super::fixture::assert_refusal(command, text(&ran.stderr), dir.path());
     assert_eq!(
-        crate::fixture::snapshot(dir.fs.as_ref(), dir.path()),
+        super::fixture::snapshot(dir.fs.as_ref(), dir.path()),
         before,
         "{command}"
     );
