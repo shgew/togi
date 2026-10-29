@@ -37,7 +37,7 @@ struct Samples(&'static str);
 
 impl Trials for Samples {
     fn controller_pid(&self) -> u32 {
-        togi_sim::CONTROLLER_PID
+        123
     }
 
     fn content(&mut self, _: togi_machine::WorkloadId) -> Result<togi_machine::ContentId, Error> {
@@ -77,7 +77,7 @@ fn trial_with_samples(lines: &'static str) -> RunnerHandle<Samples> {
 #[test]
 fn the_runner_handle_forwards_its_controller_pid() {
     let handle = trial_with_samples("");
-    assert_eq!(handle.controller_pid(), togi_sim::CONTROLLER_PID);
+    assert_eq!(handle.controller_pid(), 123);
     assert!(handle.is_unlocked());
 }
 
