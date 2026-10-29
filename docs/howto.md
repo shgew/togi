@@ -195,6 +195,61 @@ services.togi = {
 
 A hardware watchdog may keep counting during s2idle, which has not been measured, so the option keeps the pre-sleep pause in `togi-day-watchdog-sleep.service`. SP5100 TCO loses timer MMIO decoding after deep sleep on the measured platform: it can still report `active` while `timeleft` reads `4294967295`, providing no reset protection. After every systemd-managed resume the unit unloads and reloads `sp5100_tco` before re-arming PID 1's watchdog. Module failures are logged and do not skip the re-arm request. The observer rechecks at sampling ticks and checkpoints, recording changes immediately; `togi status` reports its last check, not merely its startup check. Check `/sys/class/watchdog/watchdog0/timeleft` several seconds apart before and after a deep sleep longer than 90 seconds: readings must be at most `timeout` and count down between PID 1's feeds, and status must say `armed`. A present but unreadable or malformed counter, or a value greater than `timeout`, is not armed; drivers without a `timeleft` attribute retain their state-only check. A sleep started by writing `/sys/power/state` directly bypasses this unit, and `CONFIG_WATCHDOG_NOWAYOUT` or the driver's `nowayout` parameter can prevent release and reload. [Day watchdog](spec/runtime.md#day-watchdog) owns the rules and limits. A reset whose crashed boot ended at a sleep entry remains sleep-related, not evidence of a CPU hang.
 
+### Deliberately letting the watchdog fire
+
+This is a **destructive reset test**, not a routine health check or a stability test. It deliberately panics the kernel while the day service is running. Unsaved data will be lost; `sync` reduces pending writes but cannot make an abrupt reset safe. Save work, stop unrelated workloads, keep backups, and have local access to reset or power-cycle the machine if the watchdog fails. Run only in a normal boot, with BIOS Curve Optimizer at **0 on every core**, an existing compatible session, and the day/watchdog options above enabled. Do not test with an offset profile you want to qualify: this creates real, permanent crash evidence in that session.
+
+1. **Check before crashing.** Leave `togi-day.service` running; stopping it would write a clean-stop marker. Record these outputs somewhere you can read after reboot:
+
+   ```sh
+   togi --version
+   systemctl is-active togi-day.service
+   cat /proc/sys/kernel/random/boot_id
+   togi status
+   togi events --kind day
+   cat /sys/class/watchdog/watchdog0/{identity,state,timeout}
+   for i in 1 2 3; do cat /sys/class/watchdog/watchdog0/timeleft; sleep 3; done
+   ```
+
+   Require an active day service, a `day.boot_start` for this boot with every readback at 0, and `status` reporting PID 1's watchdog armed. For the module's SP5100 device, require identity `SP5100 TCO timer`, state `active`, timeout `60`, and changing `timeleft` values no greater than 60 (never `4294967295`). If `status` identifies another watchdog number, use that device's sysfs directory. Do not proceed on an unavailable or non-counting watchdog.
+
+2. **Exclude another reboot mechanism.** This procedure requires Magic SysRq support (`/proc/sysrq-trigger`), no loaded crash kernel, and no panic debugger or platform-specific panic handler that reboots, powers off or feeds the hardware watchdog. Check your kernel configuration if uncertain:
+
+   ```sh
+   sudo test -w /proc/sysrq-trigger
+   cat /sys/kernel/kexec_crash_loaded
+   sysctl kernel.panic
+   sudo sysctl -w kernel.panic=0
+   ```
+
+   Require `kexec_crash_loaded` to be `0`; if that file is absent, establish that kexec crash dumping is disabled in the kernel rather than assuming it. Save the original `kernel.panic` value. Setting it to 0 disables the kernel's own timed panic reboot for this boot, so a fast panic reboot cannot masquerade as watchdog expiry. Do not add a persistent sysctl setting. If you cancel the test, restore the saved value with `sudo sysctl -w kernel.panic=<saved-value>`.
+
+3. **Flush, then trigger once.** The last command below intentionally freezes normal execution and will not return. Do not paste it until all prerequisites pass:
+
+   ```sh
+   sudo journalctl --sync
+   sync
+   sudo sh -c 'echo c > /proc/sysrq-trigger'
+   ```
+
+   [Magic SysRq `c`](https://docs.kernel.org/admin-guide/sysrq.html) triggers a kernel panic; writing `/proc/sysrq-trigger` as an administrator does not require enabling the keyboard SysRq mask. The [kernel panic path](https://github.com/torvalds/linux/blob/v6.12/kernel/panic.c) stops other CPUs and, with no crash kernel and `kernel.panic=0`, waits instead of scheduling a reboot. PID 1 can no longer feed the hardware watchdog. [systemd's runtime watchdog](https://www.freedesktop.org/software/systemd/man/latest/systemd-system.conf.html#RuntimeWatchdogSec=) is fed by PID 1, not by `togi-day.service`; merely stopping the day service would not test expiry.
+
+   Expect a hardware reset within roughly one configured timeout of the last feed, not exactly 60 seconds after your command. Observe the elapsed time externally. If no reset occurs after 90 seconds, recover locally with reset or power-cycle and retain the failed result; that manual reset does not prove the watchdog fired. Do not repeat blindly.
+
+4. **Inspect the next normal boot.**
+
+   ```sh
+   systemctl is-active togi-day.service
+   togi status
+   togi events --kind day
+   journalctl -b -1 -k --no-pager
+   journalctl -b -u togi-day.service --no-pager
+   ```
+
+   The boot ID must change. The next day service start records `day.unclean_end` for the old boot, with its last checkpoint (if any), last read-back offsets and available reset/log evidence; it does not invent exposure after that checkpoint or a clean stop. It opens the usual four-answer question in `status`/`watch` and the desktop notifier. A proven immediate-successor watchdog reason is retained as such; unavailable reset reporting remains unknown. The evidence classification is not guaranteed to say only “watchdog”: a retained kernel fault or graphics tail can take precedence, and a watchdog reset ending at sleep entry is sleep-related ([classification](spec/runtime.md#day-observation)). Missing panic log lines are not proof that no panic occurred.
+
+   Answer with `togi day answer <old-boot> power-off` for this deliberately interrupted, otherwise working machine, not `frozen` as though it had spontaneously hung. This records the operator's intentional interruption; it does not erase the evidence or prove CPU stability. At stock the daily policy treats the event as a platform observation, not evidence against a nonzero profile. An unanswered question remains pending; the [answering procedure](#answering-what-happened) also explains changing an answer. Check that the watchdog is armed and counting again after reboot. Normal boot reapplies the configured panic sysctl policy; verify it with `sysctl kernel.panic`.
+
 ## 4. Overnight: the tuning boot
 
 Enable `services.togi.tuning.enable = true;` with exactly one supported boot loader, GRUB or systemd-boot, and rebuild. Switch from the day with `sudo togi night`. It shows what the night will do, as `togi status` plans it, then asks `Reboot into the night now? [y/N]`. Only `y` or `yes` goes on: it says good night, persistently selects the current generation's tuning entry, remembers the boot selection it replaces and reboots. Any other answer changes nothing. In a normal boot, `sudo togi watch` offers the same switch on `n`, with a confirmation.
