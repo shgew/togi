@@ -18,6 +18,7 @@ use togi_watch::screen::{Colours, Journal, Quit, Screen, Switch, View};
 use togi_watchtest::Scenario;
 
 const SCREEN: Screen = Screen {
+    day_controls: false,
     view: View::Main,
     keys: true,
     scroll: 0,

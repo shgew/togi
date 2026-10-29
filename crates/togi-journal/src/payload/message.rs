@@ -16,14 +16,14 @@ use super::tuner::{Member, Rederived};
 use super::{
     BackendRetry, BootLeaveReason, BootSavedEntry, CheckingChain, CheckingCycle, CheckingStep,
     Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, CrashedBoot, DayAnswer,
-    DayBootStart, DayCheckpoint, DayFault, DayOffsetsChanged, DayRecord, DayUncleanEnd, DeadEnd,
-    DeepeningRound, DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking, HuntEnd,
-    HuntGroup, HuntSkipped, HuntStart, JournalTorn, LiveFault, Mce, OffsetSource, Payload,
-    PreflightCheck, ProfileApplied, ProfileChange, ProfileRestored, SessionArchived,
-    SessionBaseline, SessionCarried, SessionContext, SessionNotice, SessionStart, SessionWarning,
-    Shutdown, SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt, Trap,
-    TrialCarried, TrialEnd, TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart,
-    TunerDecision, TunerWarning,
+    DayBootStart, DayCheckpoint, DayFault, DayOffsetsChanged, DayPause, DayRecord, DayUncleanEnd,
+    DeadEnd, DeepeningRound, DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking,
+    HuntEnd, HuntGroup, HuntSkipped, HuntStart, JournalTorn, LiveFault, Mce, OffsetSource,
+    PauseSource, PauseState, Payload, PreflightCheck, ProfileApplied, ProfileChange,
+    ProfileRestored, SessionArchived, SessionBaseline, SessionCarried, SessionContext,
+    SessionNotice, SessionStart, SessionWarning, Shutdown, SmuError, SmuIntentRecord, SmuReadback,
+    SmuWriteRecord, StateRebuilt, Trap, TrialCarried, TrialEnd, TrialIntent, TrialProgress,
+    TrialSample, TrialSignal, TrialStart, TunerDecision, TunerWarning,
 };
 use crate::Build;
 
@@ -107,6 +107,7 @@ impl Payload {
             Self::DayFreeze(p) => ruleset13::day_freeze(p),
             Self::DayInterval(p) => ruleset13::day_interval(p),
             Self::DayImported(p) => ruleset13::day_imported(p),
+            Self::DayPause(p) => day_pause(p),
         }
     }
 }
@@ -1376,6 +1377,20 @@ fn day_fault(p: &DayFault) -> String {
         p.monotonic_ns / 1_000_000_000,
         offsets(&p.offsets, |offset| offset.0.to_string())
     )
+}
+
+fn day_pause(p: &DayPause) -> String {
+    let state = match p.state {
+        PauseState::UntilBoot {} => "paused until the next cold boot".to_owned(),
+        PauseState::Until { deadline } => format!("paused until {deadline}"),
+        PauseState::Running {} => "running the day profile again".to_owned(),
+    };
+    let by = match p.source {
+        PauseSource::Command { uid } => format!("uid {uid}"),
+        PauseSource::Deadline {} => "its deadline".to_owned(),
+        PauseSource::ColdBoot {} => "a cold boot".to_owned(),
+    };
+    format!("day {state} by {by}")
 }
 
 fn day_answer(p: &DayAnswer) -> String {

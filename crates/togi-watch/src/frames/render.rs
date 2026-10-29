@@ -204,6 +204,7 @@ fn help(layout: &Layout, screen: &Screen, buf: &mut Buffer) -> usize {
         screen.scroll,
         screen.colours,
         screen.quit,
+        screen.day_controls,
     );
     rows(buf, layout.body, body, screen.colours);
     extent

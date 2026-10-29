@@ -143,6 +143,9 @@ pub struct Config<'a> {
     pub terminating: bool,
     /// What `q`, `Q`, Ctrl-C and Ctrl-D do.
     pub quit: Quit,
+    /// Offer rootless day control keys, ending with [`Outcome::Control`] for the caller to carry out.
+    /// Replay and other read-only feeds leave this false.
+    pub day_controls: bool,
     /// The night switch to offer: its key is shown and, once confirmed, ends the dashboard with
     /// [`Outcome::Switch`]. `None` offers none.
     pub switch: Option<Direction>,
@@ -156,6 +159,15 @@ pub enum Outcome {
     Ended,
     /// The viewer confirmed the night switch in this direction; the caller carries it out.
     Switch(Direction),
+    /// A day control key; the caller delegates to the installed command before reopening the dashboard.
+    Control(DayControl),
+}
+
+/// Rootless day controls offered on the normal dashboard's main view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DayControl {
+    Pause,
+    Freeze,
 }
 
 /// The journal a dashboard shows, which the caller owns.
@@ -260,6 +272,7 @@ fn run_rendered(
     start(
         source,
         &Config {
+            day_controls: quit == Quit::Keys,
             watch: Some(state_dir),
             tick: None,
             stop: None,
@@ -311,6 +324,7 @@ fn run_after_rendered(
     start(
         source,
         &Config {
+            day_controls: false,
             watch: Some(state_dir),
             tick: None,
             stop: Some(stop),
@@ -464,6 +478,7 @@ fn drive_with<B: console::Console>(
                 show::Options {
                     palette: uses_palette(colours),
                     keys: reader.is_some(),
+                    day_controls: live.day_controls,
                     quit: live.quit,
                     switch: live.switch,
                     colours,
@@ -582,6 +597,7 @@ fn one_frame_loaded(
         return Err(refusal.into());
     }
     let screen = Screen {
+        day_controls: false,
         view: View::Main,
         keys: false,
         scroll: 0,
@@ -811,6 +827,7 @@ mod tests {
         };
         let stop = Stop::new();
         let config = Config {
+            day_controls: false,
             watch: None,
             tick: Some(std::time::Duration::from_millis(10)),
             stop: Some(&stop),
@@ -873,6 +890,7 @@ mod tests {
         let (read, write) = pipe();
         let stop = Stop::new();
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),
@@ -952,6 +970,7 @@ mod tests {
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),
@@ -1039,6 +1058,7 @@ mod tests {
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),
@@ -1085,6 +1105,7 @@ mod tests {
         stop.stop();
         let recorder = Recorder::new(80, 12);
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),
@@ -1112,6 +1133,7 @@ mod tests {
         let stop = Stop::new();
         let recorder = Recorder::new(80, 12);
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),
@@ -1160,6 +1182,7 @@ mod tests {
             let stop = Stop::new();
             stop.stop();
             let live = Config {
+                day_controls: false,
                 watch: None,
                 tick: None,
                 stop: Some(&stop),
@@ -1198,6 +1221,7 @@ mod tests {
         let stop = Stop::new();
         stop.stop();
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),
@@ -1253,6 +1277,7 @@ mod tests {
         let stop = Stop::new();
         let mut frames = 0;
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: Some(Duration::from_millis(250)),
             stop: Some(&stop),
@@ -1296,6 +1321,7 @@ mod tests {
         let mut painted_at = None;
         let mut frames = 0;
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),
@@ -1375,6 +1401,7 @@ mod tests {
         let sender = RefCell::new(None::<tokio::sync::mpsc::UnboundedSender<Event>>);
         let mut frames = 0;
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),
@@ -1609,6 +1636,7 @@ mod tests {
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),
@@ -1637,6 +1665,7 @@ mod tests {
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         let live = Config {
+            day_controls: false,
             watch: None,
             tick: None,
             stop: Some(&stop),

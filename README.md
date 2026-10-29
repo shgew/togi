@@ -47,6 +47,10 @@ sudo togi night                        # GRUB or systemd-boot: confirm, remember
 sudo togi day                          # apply stock and observe; needs verified CO 0 and PID 1's counting watchdog
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
 sudo togi day record                   # record a missed crash through the live service; no stop needed
+togi day pause                         # verify stock until the next cold boot
+togi day pause 3h                      # or use --until 18:30; timed pauses survive restart and reboot
+togi day resume                        # end the pause with a verified stock-only transaction
+togi day freeze                        # stop promotions; use unfreeze to lift it, safety retreats still run
 togi status                            # activity, each CCD's D, S and U, night queues, day policy and observations
 togi status --evidence                 # cap reasons, hours, coverage gaps and profile/stock evidence; no verdict
 togi watch                             # full-width dashboard: current trial, every core
@@ -61,7 +65,9 @@ The dashboard adapts to wide and compact terminals. It shows the stage line, one
 
 `status --evidence` explains the current [cap rules](docs/spec/tuner.md#cap-s-margin-from-measured-slope), including why a cap remains zero. Recorded hours and incomplete coverage are evidence, not a promise of another step or a completion estimate. On the first observed day boot after a night, `status` and `togi day notify` report the night's recorded work and the stock-only application restriction; they do not claim that a nonzero profile was applied.
 
-`status` adds a Day section after observations exist: observed boots, checkpointed hours per read-back offset profile, clean and unclean ends, and the latest unclean boot's reset reason. Each unclean end becomes a question that `status` and `watch` show, with what togi saw, until you answer it with `togi day answer <boot> <frozen|graphics|power-off|unsure>`; no root shell is needed. The answer counts: `frozen` makes the end CPU-suspect, which vetoes that profile and retreats the day step, and a later answer can reclassify it ([Daily events](docs/spec/tuner.md#daily-events)). `togi day notify` raises a desktop notification through the installed `notify-send`, with answer buttons on KDE Plasma. Observation itself writes no offsets. See [day observation](docs/howto.md#daily-observation) for service setup and [answering](docs/howto.md#answering-what-happened).
+With the day service running and your user in `services.togi.day.users`, pause/resume and freeze/unfreeze need no root shell. On the main `watch` view, `p` toggles pause and `f` toggles freeze. Timed pauses warn five minutes before expiry and offer a one-hour extension. Expiry and early resume still reapply **CO 0 only**, not historical nonzero offsets; [pause and freeze](docs/howto.md#pausing-for-important-work) explain the lifetimes.
+
+`status` adds a Day section after observations exist: observed boots, checkpointed hours per read-back offset profile, clean and unclean ends, and the latest unclean boot's reset reason. Each unclean end becomes a question that `status` and `watch` show, with what togi saw, until you answer it with `togi day answer <boot> <frozen|graphics|power-off|unsure>`; no root shell is needed. The answer counts: `frozen` makes the end CPU-suspect, which vetoes that profile and retreats the day step, and a later answer can reclassify it ([Daily events](docs/spec/tuner.md#daily-events)). `togi day notify` raises desktop notifications through the installed `notify-send`, with answer buttons on KDE Plasma, pause-expiry warnings and verified stock-reapplication notices. See [day observation](docs/howto.md#daily-observation) for service setup and [answering](docs/howto.md#answering-what-happened).
 
 The NixOS tuning specialisation supports exactly one of GRUB or systemd-boot. `sudo togi night` selects it persistently, so crash reboots stay in the night; F10 on its dashboard or the power button restores the previous boot selection. See [Night and day](docs/spec/runtime.md#night-and-day) for saved defaults and menu-started nights.
 

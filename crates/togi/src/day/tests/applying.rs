@@ -421,8 +421,14 @@ fn resume_with_an_unarmed_or_noncounting_watchdog_refuses_without_a_write(detail
     let mut hardware = Hardware::stock();
     let clock = ActiveClock::one();
     let mut live = crate::day::apply::Live::preflight(&journal, &mut hardware).unwrap();
-    live.start(&mut journal, &mut hardware, &clock, false)
-        .unwrap();
+    live.start(
+        &mut journal,
+        &mut hardware,
+        &clock,
+        false,
+        togi_tuner::day::Pause::Running,
+    )
+    .unwrap();
     let events = journal.events().len();
     let applied = applications(&journal).len();
     let writes = hardware.writes.clone();
@@ -665,3 +671,5 @@ fn stock_applied_hours_exclude_suspended_wall_time() {
         "stock has no nonzero hold; its raw exposure above is still only the 720 active seconds"
     );
 }
+
+mod pause_tests;

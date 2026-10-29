@@ -1020,6 +1020,13 @@ pub(crate) fn samples() -> Vec<Payload> {
             reason: "fresh Ruleset 13 transition; no tuning carry".into(),
         }
         .into(),
+        DayPause {
+            state: PauseState::Until {
+                deadline: "2026-10-02T03:00:00Z".parse::<Timestamp>().unwrap(),
+            },
+            source: PauseSource::Command { uid: 1000 },
+        }
+        .into(),
     ]
 }
 

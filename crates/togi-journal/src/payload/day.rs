@@ -578,6 +578,42 @@ impl DayRecord {
     }
 }
 
+object_only! {
+    /// How long a day pause holds every core at CO 0. `UntilBoot` lasts until the boot it was recorded in (its
+    /// envelope `boot`) ends; `Until` lasts across reboots, resumes and restarts until `deadline`; `Running` ends
+    /// a pause and is recorded only after the day profile was re-applied and read back.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum PauseState {
+        UntilBoot {},
+        Until { deadline: Timestamp },
+        Running {},
+    }
+}
+
+object_only! {
+    /// What changed the pause state: `Command`, a user through the day socket, as the kernel reported the uid;
+    /// `Deadline`, a timed pause reaching its deadline; `ColdBoot`, an untimed pause ending with its boot.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum PauseSource {
+        Command { uid: u32 },
+        Deadline {},
+        ColdBoot {},
+    }
+}
+
+object_only! {
+    /// A new day pause state. The newest record is the state in force; a pause is recorded before the cores are
+    /// zeroed, and its end only after the re-applied profile was read back.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct DayPause {
+        pub state: PauseState,
+        pub source: PauseSource,
+    }
+}
+
 /// An unclean end a crash record can name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordableEnd {
@@ -595,9 +631,16 @@ pub struct RecordableEnd {
 pub struct DayIntervalBoot {
     pub boot: BootId,
     pub offsets: PerCore<ObservedOffset>,
-    /// Cumulative active seconds, including intervals excluded after an offset change.
+    /// Cumulative active seconds, including intervals excluded after an offset change or a pause.
     pub seconds: u64,
     changed: bool,
+    /// The pause in force, from the newest `day.pause` of this boot or the timed pause it inherited; never
+    /// `Running`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pause: Option<PauseState>,
+    /// A pause held, began or ended within the interval the next checkpoint closes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    paused: bool,
 }
 
 /// The raw interval closed by a checkpoint, not the tuner's hold eligibility.
@@ -608,14 +651,17 @@ pub enum DayIntervalCredit<'a> {
         offsets: &'a PerCore<ObservedOffset>,
         seconds: u64,
     },
-    /// A change occurred at an unknown time, so neither profile receives this interval.
+    /// A change occurred at an unknown time, or a pause held for part of the interval, so no profile receives it.
     Excluded { boot: &'a BootId, seconds: u64 },
 }
 
 /// Raw day intervals folded per boot, independently of how their consumers report them.
 ///
 /// Boots are kept in order of their latest `day.boot_start`. A same-boot restart preserves the
-/// cumulative checkpoint seconds, replaces the offsets and starts an unchanged interval.
+/// cumulative checkpoint seconds and the pause, replaces the offsets and starts an unchanged interval. A
+/// `day.pause` makes the checkpoint closing its interval, and every later one while the pause holds, exclude
+/// that interval from every profile; cumulative seconds still advance. A boot started after another inherits
+/// the earlier boot's timed pause (`until`), never an `until_boot` one, which a cold boot ends.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct DayIntervals {
@@ -632,19 +678,45 @@ impl DayIntervals {
         intervals
     }
 
+    /// Whether the next checkpoint's interval touched a durable operator pause.
+    pub fn checkpoint_paused(&self, boot: &BootId) -> bool {
+        self.get(boot).is_some_and(|state| state.paused)
+    }
+
     /// Folds one event in journal order. Only a checkpoint for a known boot closes an interval:
-    /// `Some` distinguishes credited time from excluded changed time; `None` closes no interval.
+    /// `Some` distinguishes credited time from excluded changed or paused time; `None` closes no interval.
     /// Imported raw records must be unwrapped by the consumer before applying them.
     pub fn apply(&mut self, event: &Event) -> Option<DayIntervalCredit<'_>> {
         if let Payload::DayBootStart(start) = &event.payload {
             let previous = self.boots.iter().rposition(|boot| boot.boot == event.boot);
-            let seconds = previous.map_or(0, |at| self.boots.remove(at).seconds);
+            let (seconds, pause, paused) = if let Some(at) = previous {
+                let boot = self.boots.remove(at);
+                (boot.seconds, boot.pause, boot.paused)
+            } else {
+                let pause = self
+                    .boots
+                    .last()
+                    .and_then(|boot| boot.pause)
+                    .filter(|pause| matches!(pause, PauseState::Until { .. }));
+                (0, pause, pause.is_some())
+            };
             self.boots.push(DayIntervalBoot {
                 boot: event.boot.clone(),
                 offsets: start.offsets,
                 seconds,
                 changed: false,
+                pause,
+                paused,
             });
+        }
+        if let Payload::DayPause(change) = &event.payload
+            && let Some(boot) = self.boot_mut(&event.boot)
+        {
+            boot.pause = match change.state {
+                PauseState::Running {} => None,
+                held @ (PauseState::UntilBoot {} | PauseState::Until { .. }) => Some(held),
+            };
+            boot.paused = true;
         }
         if let Payload::DayOffsetsChanged(change) = &event.payload
             && let Some(boot) = self.boot_mut(&event.boot)
@@ -658,7 +730,8 @@ impl DayIntervals {
             let seconds = checkpoint.applied_secs.saturating_sub(boot.seconds);
             boot.seconds = checkpoint.applied_secs;
             let changed = std::mem::replace(&mut boot.changed, false);
-            return Some(if changed {
+            let paused = std::mem::replace(&mut boot.paused, boot.pause.is_some());
+            return Some(if changed || paused {
                 DayIntervalCredit::Excluded {
                     boot: &boot.boot,
                     seconds,

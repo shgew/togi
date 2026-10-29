@@ -1,4 +1,4 @@
-//! `togi watch`: the read-only dashboard of the journal.
+//! `togi watch`: the journal dashboard, with rootless day controls on its normal main view.
 
 use std::io::{stdin, stdout};
 use std::os::fd::AsFd as _;
@@ -10,6 +10,7 @@ use togi_watch::screen::{Direction, Quit};
 use togi_watch::terminal::{self, ONE_FRAME_SIZE, Outcome, SourceError};
 
 use crate::cli::{Context, examples};
+use crate::day::socket;
 use crate::exit::Exit;
 use crate::night::{self, Confirmation};
 use crate::night_end;
@@ -29,7 +30,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     ])
 });
 
-/// Show the session as a read-only dashboard
+/// Show the session dashboard with rootless stock-only day controls
 ///
 /// It redraws when the journal changes and on whole-second boundaries for the clock. During an idle trial it
 /// holds still, clock included, until the journal changes, a key is pressed or the terminal is
@@ -42,6 +43,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Up/Down and PageUp/PageDown scroll both, Esc returns, and `q` exits the dashboard. A journal scrolled back holds its list still
 /// and counts new events until End. It is rendered from the journal, which it reloads only when
 /// it changes.
+/// On the normal main view, `p` toggles a stock-only pause until cold boot and `f` toggles freeze.
+/// These controls use the credential-checked day socket without root; `f` still scrolls help and log.
 ///
 /// The screen's words are explained by `?` on the screen itself; the rules behind them are in
 /// docs/spec/tuner.md.
@@ -90,7 +93,23 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     if let Err(error @ DirError::ForeignJournal { .. }) = ctx.system.recorded_build(ctx.state_dir) {
         return fail(ctx, "watch", togi_render::error_chain(&error));
     }
-    let result = if ctx.system.stdout_facts().is_terminal {
+    let system = ctx.system;
+    match dashboard(|| show(args, ctx), |request| system.day_request(request)) {
+        Ok(Leave::Ended) => Exit::Ok,
+        Ok(Leave::Switch(Direction::Night)) => night::begin(ctx, Confirmation::Given),
+        Ok(Leave::Switch(Direction::Day)) => night_end::leave(ctx),
+        Err(Stop::Screen(terminal::Error::Journal(SourceError::Read(error)))) => {
+            let message = unknown_kind(&error).unwrap_or_else(|| togi_render::error_chain(&error));
+            fail(ctx, "watch", message)
+        }
+        Err(Stop::Screen(error)) => fail(ctx, "watch", togi_render::error_chain(&error)),
+        Err(Stop::Control(error)) => fail(ctx, "watch", togi_render::error_chain(&error)),
+    }
+}
+
+/// Shows the dashboard once: full screen on a terminal, otherwise one frame.
+fn show(args: &Args, ctx: &mut Context<'_>) -> Result<Outcome, terminal::Error> {
+    if ctx.system.stdout_facts().is_terminal {
         let out = stdout();
         let keys = stdin();
         terminal::run(
@@ -114,16 +133,90 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     } else {
         terminal::one_frame(ctx.state_dir, args.width, args.height, &mut ctx.out)
             .map(|()| Outcome::Ended)
-    };
-    match result {
-        Ok(Outcome::Ended) => Exit::Ok,
-        Ok(Outcome::Switch(Direction::Night)) => night::begin(ctx, Confirmation::Given),
-        Ok(Outcome::Switch(Direction::Day)) => night_end::leave(ctx),
-        Err(terminal::Error::Journal(SourceError::Read(error))) => {
-            let message = unknown_kind(&error).unwrap_or_else(|| togi_render::error_chain(&error));
-            fail(ctx, "watch", message)
+    }
+}
+
+/// Why the dashboard left its screen for good.
+#[derive(Debug, PartialEq, Eq)]
+enum Leave {
+    Ended,
+    Switch(Direction),
+}
+
+/// What stopped the dashboard with an error.
+#[derive(Debug)]
+enum Stop {
+    Screen(terminal::Error),
+    Control(ControlError),
+}
+
+/// A day control key the day service did not carry out.
+#[derive(Debug, thiserror::Error)]
+enum ControlError {
+    #[error(transparent)]
+    Socket(#[from] socket::Error),
+    #[error("unexpected day service reply")]
+    Unexpected,
+}
+
+/// Shows the dashboard until it ends or switches. Each day control key is carried out through `exchange`, one
+/// day-socket request and its reply, and the dashboard is then shown again; a control that fails ends the watch.
+fn dashboard(
+    mut show: impl FnMut() -> Result<Outcome, terminal::Error>,
+    mut exchange: impl FnMut(&socket::Request) -> Result<socket::Reply, socket::Error>,
+) -> Result<Leave, Stop> {
+    loop {
+        match show().map_err(Stop::Screen)? {
+            Outcome::Ended => return Ok(Leave::Ended),
+            Outcome::Switch(direction) => return Ok(Leave::Switch(direction)),
+            Outcome::Control(action) => control(action, &mut exchange).map_err(Stop::Control)?,
         }
-        Err(error) => fail(ctx, "watch", togi_render::error_chain(&error)),
+    }
+}
+
+fn control_request(
+    action: terminal::DayControl,
+    status: &crate::day::socket::ControlStatus,
+) -> crate::day::socket::Request {
+    use crate::day::socket::Request;
+    match action {
+        terminal::DayControl::Pause => match status.pause {
+            togi_journal::PauseState::Running {} => Request::Pause(socket::PauseRequest {
+                state: togi_journal::PauseState::UntilBoot {},
+            }),
+            togi_journal::PauseState::UntilBoot {} | togi_journal::PauseState::Until { .. } => {
+                Request::Resume
+            }
+        },
+        terminal::DayControl::Freeze => Request::Freeze(socket::FreezeRequest {
+            frozen: !status.frozen,
+        }),
+    }
+}
+
+/// Asks the day service for its state, then sends the control the key means in that state.
+fn control(
+    action: terminal::DayControl,
+    exchange: &mut impl FnMut(&socket::Request) -> Result<socket::Reply, socket::Error>,
+) -> Result<(), ControlError> {
+    use socket::{Reply, Request};
+    let status = match exchange(&Request::State)? {
+        Reply::State { status } => status,
+        Reply::Refused { reason } => return Err(socket::Error::Refused(reason).into()),
+        Reply::Questions { .. }
+        | Reply::Controlled { .. }
+        | Reply::Answered
+        | Reply::Recorded { .. }
+        | Reply::Reapplied => return Err(ControlError::Unexpected),
+    };
+    match exchange(&control_request(action, &status))? {
+        Reply::Controlled { .. } => Ok(()),
+        Reply::Refused { reason } => Err(socket::Error::Refused(reason).into()),
+        Reply::Questions { .. }
+        | Reply::State { .. }
+        | Reply::Answered
+        | Reply::Recorded { .. }
+        | Reply::Reapplied => Err(ControlError::Unexpected),
     }
 }
 
@@ -154,10 +247,17 @@ impl Args {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
-    use togi_watch::screen::Quit;
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+    use std::io;
 
-    use super::Args;
+    use clap::Parser;
+    use togi_journal::PauseState;
+    use togi_watch::screen::{Direction, Quit};
+    use togi_watch::terminal::{DayControl, Outcome};
+
+    use super::{Args, Leave, Stop, dashboard};
+    use crate::day::socket::{ControlStatus, Error, Reply};
 
     #[derive(Parser)]
     struct Cli {
@@ -187,5 +287,137 @@ mod tests {
     #[test_case::test_case(&["--tuning_boot"]; "underscore")]
     fn the_tuning_boot_flag_takes_no_value(args: &[&str]) {
         assert!(parse(args).is_err(), "{args:?}");
+    }
+
+    fn status(pause: PauseState, frozen: bool) -> ControlStatus {
+        ControlStatus {
+            pause,
+            frozen,
+            revision: None,
+        }
+    }
+
+    /// The dashboard's two seams, scripted: the screens it is shown and the day-socket replies it gets.
+    struct Script {
+        screens: RefCell<VecDeque<Outcome>>,
+        replies: RefCell<VecDeque<Result<Reply, Error>>>,
+        shown: RefCell<usize>,
+        sent: RefCell<Vec<serde_json::Value>>,
+    }
+
+    impl Script {
+        fn new(
+            screens: impl IntoIterator<Item = Outcome>,
+            replies: impl IntoIterator<Item = Result<Reply, Error>>,
+        ) -> Self {
+            Self {
+                screens: RefCell::new(screens.into_iter().collect()),
+                replies: RefCell::new(replies.into_iter().collect()),
+                shown: RefCell::new(0),
+                sent: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn run(&self) -> Result<Leave, Stop> {
+            dashboard(
+                || {
+                    *self.shown.borrow_mut() += 1;
+                    Ok(self
+                        .screens
+                        .borrow_mut()
+                        .pop_front()
+                        .expect("the dashboard was shown more often than scripted"))
+                },
+                |request| {
+                    self.sent
+                        .borrow_mut()
+                        .push(serde_json::to_value(request).unwrap());
+                    self.replies
+                        .borrow_mut()
+                        .pop_front()
+                        .expect("the day socket was asked more often than scripted")
+                },
+            )
+        }
+    }
+
+    fn json(text: &str) -> serde_json::Value {
+        serde_json::from_str(text).unwrap()
+    }
+
+    #[test_case::test_case(DayControl::Pause, PauseState::Running {}, false, r#"{"pause":{"state":{"kind":"until_boot"}}}"#; "start untimed pause")]
+    #[test_case::test_case(DayControl::Pause, PauseState::UntilBoot {}, false, r#""resume""#; "end untimed pause")]
+    #[test_case::test_case(DayControl::Pause, PauseState::Until { deadline: jiff::Timestamp::UNIX_EPOCH }, false, r#""resume""#; "end timed pause")]
+    #[test_case::test_case(DayControl::Freeze, PauseState::UntilBoot {}, false, r#"{"freeze":{"frozen":true}}"#; "freeze keeps pause")]
+    #[test_case::test_case(DayControl::Freeze, PauseState::UntilBoot {}, true, r#"{"freeze":{"frozen":false}}"#; "unfreeze keeps pause")]
+    fn a_day_key_sends_the_request_its_status_calls_for_and_shows_the_dashboard_again(
+        action: DayControl,
+        pause: PauseState,
+        frozen: bool,
+        expected: &str,
+    ) {
+        let now = status(pause, frozen);
+        let script = Script::new(
+            [Outcome::Control(action), Outcome::Ended],
+            [
+                Ok(Reply::State {
+                    status: now.clone(),
+                }),
+                Ok(Reply::Controlled { status: now }),
+            ],
+        );
+        assert!(matches!(script.run(), Ok(Leave::Ended)));
+        assert_eq!(*script.sent.borrow(), [json(r#""state""#), json(expected)]);
+        assert_eq!(*script.shown.borrow(), 2);
+    }
+
+    #[test]
+    fn a_night_switch_ends_the_dashboard_without_asking_the_day_socket() {
+        let script = Script::new([Outcome::Switch(Direction::Night)], []);
+        assert!(matches!(script.run(), Ok(Leave::Switch(Direction::Night))));
+        assert_eq!(*script.sent.borrow(), Vec::<serde_json::Value>::new());
+    }
+
+    fn refused() -> Error {
+        Error::Refused("pause needs the day service".into())
+    }
+
+    #[test_case::test_case(Err(refused()), "day service refused the request: pause needs the day service"; "socket refusal")]
+    #[test_case::test_case(Ok(Reply::Refused { reason: "frozen by hand".into() }), "day service refused the request: frozen by hand"; "refused reply")]
+    #[test_case::test_case(Err(Error::Absent(io::Error::other("no socket"))), "reach the day service: no socket"; "no day service")]
+    #[test_case::test_case(Ok(Reply::Answered), "unexpected day service reply"; "wrong reply")]
+    fn a_failed_control_ends_the_watch_with_the_reason_and_does_not_reopen_it(
+        reply: Result<Reply, Error>,
+        message: &str,
+    ) {
+        let script = Script::new(
+            [Outcome::Control(DayControl::Pause)],
+            [
+                Ok(Reply::State {
+                    status: status(PauseState::Running {}, false),
+                }),
+                reply,
+            ],
+        );
+        let Err(Stop::Control(error)) = script.run() else {
+            panic!("a control that failed must end the watch");
+        };
+        assert_eq!(togi_render::error_chain(&error), message);
+        assert_eq!(script.sent.borrow().len(), 2);
+        assert_eq!(*script.shown.borrow(), 1);
+    }
+
+    #[test_case::test_case(Err(Error::Absent(io::Error::other("no socket"))), "reach the day service: no socket"; "no day service")]
+    #[test_case::test_case(Err(refused()), "day service refused the request: pause needs the day service"; "socket refusal")]
+    #[test_case::test_case(Ok(Reply::Refused { reason: "not yours".into() }), "day service refused the request: not yours"; "refused reply")]
+    #[test_case::test_case(Ok(Reply::Reapplied), "unexpected day service reply"; "wrong reply")]
+    fn a_failed_status_query_sends_no_control(reply: Result<Reply, Error>, message: &str) {
+        let script = Script::new([Outcome::Control(DayControl::Freeze)], [reply]);
+        let Err(Stop::Control(error)) = script.run() else {
+            panic!("a failed status query must end the watch");
+        };
+        assert_eq!(togi_render::error_chain(&error), message);
+        assert_eq!(*script.sent.borrow(), [json(r#""state""#)]);
+        assert_eq!(*script.shown.borrow(), 1);
     }
 }

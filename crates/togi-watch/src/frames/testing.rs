@@ -87,9 +87,10 @@ pub(crate) fn render_missing(screen: &Screen) -> (Buffer, Drawn) {
     render_checked(&Journal::Missing, screen, FIXED_NOW)
 }
 
-/// A screen with the given view, size and profile, at the top of its view.
+/// A read-only screen with the given view, size and profile, at the top of its view.
 pub(crate) fn screen(view: View, width: u16, height: u16, colours: Colours, keys: bool) -> Screen {
     Screen {
+        day_controls: false,
         view,
         keys,
         scroll: 0,

@@ -180,6 +180,26 @@ pub(super) fn press(screen: Screen, key: Key, scrolled: usize) -> (Screen, bool)
     }
 }
 
+/// Keep day actions on the normal main view; `f` still scrolls help and log.
+pub(super) fn day_control(screen: Screen, key: Key) -> Option<super::DayControl> {
+    if !screen.day_controls || screen.view != View::Main || screen.quit == Quit::Ignored {
+        return None;
+    }
+    match key {
+        Key::Char('p') => Some(super::DayControl::Pause),
+        Key::Char('f') => Some(super::DayControl::Freeze),
+        Key::Char(_)
+        | Key::Esc
+        | Key::Up
+        | Key::Down
+        | Key::PageUp
+        | Key::PageDown
+        | Key::Home
+        | Key::End
+        | Key::F10 => None,
+    }
+}
+
 /// What a key does to the night switch before [`press`] sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Step {
@@ -241,6 +261,7 @@ mod tests {
 
     fn screen(view: View, scroll: usize, height: u16) -> Screen {
         Screen {
+            day_controls: true,
             view,
             keys: true,
             scroll,
@@ -716,5 +737,38 @@ mod tests {
                 Step::Screen(offering(Switch::Offered(direction)))
             );
         }
+    }
+
+    #[test_case('p', Some(crate::terminal::DayControl::Pause))]
+    #[test_case('f', Some(crate::terminal::DayControl::Freeze))]
+    #[test_case('x', None)]
+    fn normal_main_view_has_day_controls(key: char, expected: Option<crate::terminal::DayControl>) {
+        assert_eq!(
+            super::day_control(screen(View::Main, 0, 24), Key::Char(key)),
+            expected
+        );
+    }
+
+    #[test_case(View::Help, Quit::Keys, 'f'; "f still scrolls help")]
+    #[test_case(View::Log, Quit::Keys, 'f'; "f still scrolls log")]
+    #[test_case(View::Help, Quit::Keys, 'p'; "p in help")]
+    #[test_case(View::Main, Quit::Ignored, 'p'; "unattended night pause disabled")]
+    #[test_case(View::Main, Quit::Ignored, 'f'; "unattended night freeze disabled")]
+    fn other_views_and_the_tuning_boot_do_not_offer_day_actions(view: View, quit: Quit, key: char) {
+        let screen = Screen {
+            quit,
+            ..screen(view, 0, 24)
+        };
+        assert_eq!(super::day_control(screen, Key::Char(key)), None);
+    }
+
+    #[test_case('p')]
+    #[test_case('f')]
+    fn read_only_feeds_do_not_handle_day_control_keys(key: char) {
+        let screen = Screen {
+            day_controls: false,
+            ..screen(View::Main, 0, 24)
+        };
+        assert_eq!(super::day_control(screen, Key::Char(key)), None);
     }
 }

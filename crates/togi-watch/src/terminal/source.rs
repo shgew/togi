@@ -543,6 +543,7 @@ mod tests {
 
     fn screen(view: View, scroll: usize) -> Screen {
         Screen {
+            day_controls: false,
             view,
             keys: true,
             scroll,

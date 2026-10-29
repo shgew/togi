@@ -9,14 +9,46 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use togi_journal::{
-    DayAnswer, DayAnswerKind, DayQuestions, DayRecord, DayUncleanEnd, Journal, Seq, SessionId,
+    DayAnswer, DayAnswerKind, DayQuestions, DayRecord, DayUncleanEnd, Journal, PauseState, Seq,
+    SessionId,
 };
-use togi_machine::{BootId, Clock};
+use togi_machine::{BootId, Clock, object_only};
 use togi_session::{AppendRecordError, append_record};
 
-/// What the observer does for a root `Reapply` request. `Ok` means the whole transaction succeeded and is the
-/// only thing that is acknowledged.
-pub type Reapply<'a> = &'a mut dyn FnMut(&mut Journal, &dyn Clock) -> Result<(), super::Error>;
+/// An authenticated control operation. Identity always comes from the socket credentials.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Control {
+    Status,
+    Pause {
+        state: PauseState,
+        uid: u32,
+    },
+    /// Extends the timed pause that `revision` names by one hour; refused when another change followed it.
+    Extend {
+        revision: Seq,
+        uid: u32,
+    },
+    Resume {
+        uid: u32,
+    },
+    Freeze {
+        frozen: bool,
+        uid: u32,
+    },
+    Reapply,
+}
+
+/// The observer acknowledges a control only after its durable transaction succeeds.
+pub type Controller<'a> =
+    &'a mut dyn FnMut(&mut Journal, &dyn Clock, Control) -> Result<ControlStatus, super::Error>;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ControlStatus {
+    pub pause: PauseState,
+    pub frozen: bool,
+    /// Newest `day.pause` event, used to deduplicate desktop notifications.
+    pub revision: Option<Seq>,
+}
 
 pub const PATH: &str = "/run/togi/day.sock";
 /// Room for a crash record of every core with a long note; the deadline, not this, bounds a slow peer.
@@ -32,6 +64,13 @@ const EXCHANGE: Duration = Duration::from_secs(1);
 )]
 pub enum Request {
     Questions,
+    State,
+    Pause(PauseRequest),
+    /// Notifier only: extend the timed pause that `revision` names, so a resume, expiry or replacement since the
+    /// notifier read the state is refused instead of overwritten.
+    Extend(ExtendRequest),
+    Resume,
+    Freeze(FreezeRequest),
     Answer {
         boot: BootId,
         answer: DayAnswerKind,
@@ -46,12 +85,43 @@ pub enum Request {
     Reapply,
 }
 
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct PauseRequest {
+        pub state: PauseState,
+    }
+}
+
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ExtendRequest {
+        /// The newest `day.pause` the requester saw.
+        pub revision: Seq,
+    }
+}
+
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct FreezeRequest {
+        pub frozen: bool,
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Reply {
     Questions {
         pending: Vec<DayUncleanEnd>,
         morning: Option<crate::morning::Report>,
+    },
+    State {
+        status: ControlStatus,
+    },
+    Controlled {
+        status: ControlStatus,
     },
     Answered,
     Recorded {
@@ -142,7 +212,7 @@ impl Server {
         &self,
         journal: &mut Journal,
         clock: &dyn Clock,
-        reapply: Reapply<'_>,
+        control: Controller<'_>,
     ) -> Result<(), super::Error> {
         let (stream, _) = match self.listener.accept() {
             Ok(connection) => connection,
@@ -166,7 +236,7 @@ impl Server {
         });
         let reply = match peer {
             Ok((uid, true)) => match read_request(&mut exchange) {
-                Ok(request) => respond(journal, clock, uid, request, reapply)?,
+                Ok(request) => respond(journal, clock, uid, request, control)?,
                 Err(error) => Reply::Refused {
                     reason: error.to_string(),
                 },
@@ -316,15 +386,42 @@ pub fn respond(
     clock: &dyn Clock,
     uid: u32,
     request: Request,
-    reapply: Reapply<'_>,
+    control: Controller<'_>,
 ) -> Result<Reply, super::Error> {
-    let questions = DayQuestions::of(journal.events());
     match request {
         Request::Questions => Ok(Reply::Questions {
-            pending: questions.pending().cloned().collect(),
+            pending: DayQuestions::of(journal.events())
+                .pending()
+                .cloned()
+                .collect(),
             morning: crate::morning::Report::of(journal.events()),
         }),
+        Request::State => Ok(Reply::State {
+            status: control(journal, clock, Control::Status)?,
+        }),
+        Request::Pause(PauseRequest { state }) => {
+            let refusal = match &state {
+                PauseState::UntilBoot {} => None,
+                PauseState::Until { deadline } if *deadline > clock.now() => None,
+                PauseState::Until { .. } => Some("pause deadline must be in the future"),
+                PauseState::Running {} => Some("use resume to end a pause"),
+            };
+            if let Some(reason) = refusal {
+                return Ok(Reply::Refused {
+                    reason: reason.into(),
+                });
+            }
+            controlled(control(journal, clock, Control::Pause { state, uid }))
+        }
+        Request::Extend(ExtendRequest { revision }) => {
+            controlled(control(journal, clock, Control::Extend { revision, uid }))
+        }
+        Request::Resume => controlled(control(journal, clock, Control::Resume { uid })),
+        Request::Freeze(FreezeRequest { frozen }) => {
+            controlled(control(journal, clock, Control::Freeze { frozen, uid }))
+        }
         Request::Answer { boot, answer } => {
+            let questions = DayQuestions::of(journal.events());
             let Some(end) = questions.get(&boot) else {
                 return Ok(Reply::Refused {
                     reason: "no pending end exists for that boot".into(),
@@ -344,13 +441,13 @@ pub fn respond(
             Ok(Reply::Answered)
         }
         Request::Reapply => {
-            // Even a member of the answer group may not move hardware.
+            // Reapply is reserved for the system sleep hook, unlike user-session controls.
             if uid != 0 {
                 return Ok(Reply::Refused {
                     reason: "reapplying offsets needs root".into(),
                 });
             }
-            reapply(journal, clock)?;
+            control(journal, clock, Control::Reapply)?;
             Ok(Reply::Reapplied)
         }
         Request::Record { session, record } => {
@@ -383,6 +480,22 @@ pub fn respond(
             })?;
             Ok(Reply::Recorded { seq })
         }
+    }
+}
+
+/// A control the current state no longer allows, such as a deadline that passed while the service checkpointed, is
+/// the peer's refusal. Only a failed durable step ends the service.
+fn controlled(result: Result<ControlStatus, super::Error>) -> Result<Reply, super::Error> {
+    match result {
+        Ok(status) => Ok(Reply::Controlled { status }),
+        Err(
+            refusal @ (super::Error::PauseDeadline
+            | super::Error::PauseChanged
+            | super::Error::PauseNotTimed),
+        ) => Ok(Reply::Refused {
+            reason: togi_render::error_chain(&refusal),
+        }),
+        Err(error) => Err(error),
     }
 }
 
@@ -426,9 +539,12 @@ fn request_at(path: &Path, request: &Request) -> Result<Reply, Error> {
     let reply = read_reply(&mut stream)?;
     match reply {
         Reply::Refused { reason } => Err(Error::Refused(reason)),
-        Reply::Questions { .. } | Reply::Answered | Reply::Recorded { .. } | Reply::Reapplied => {
-            Ok(reply)
-        }
+        Reply::Questions { .. }
+        | Reply::State { .. }
+        | Reply::Controlled { .. }
+        | Reply::Answered
+        | Reply::Recorded { .. }
+        | Reply::Reapplied => Ok(reply),
     }
 }
 

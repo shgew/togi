@@ -62,11 +62,17 @@ _togi() {
             togi__subcmd__day,answer)
                 cmd="togi__subcmd__day__subcmd__answer"
                 ;;
+            togi__subcmd__day,freeze)
+                cmd="togi__subcmd__day__subcmd__freeze"
+                ;;
             togi__subcmd__day,help)
                 cmd="togi__subcmd__day__subcmd__help"
                 ;;
             togi__subcmd__day,notify)
                 cmd="togi__subcmd__day__subcmd__notify"
+                ;;
+            togi__subcmd__day,pause)
+                cmd="togi__subcmd__day__subcmd__pause"
                 ;;
             togi__subcmd__day,reapply)
                 cmd="togi__subcmd__day__subcmd__reapply"
@@ -74,8 +80,17 @@ _togi() {
             togi__subcmd__day,record)
                 cmd="togi__subcmd__day__subcmd__record"
                 ;;
+            togi__subcmd__day,resume)
+                cmd="togi__subcmd__day__subcmd__resume"
+                ;;
+            togi__subcmd__day,unfreeze)
+                cmd="togi__subcmd__day__subcmd__unfreeze"
+                ;;
             togi__subcmd__day__subcmd__help,answer)
                 cmd="togi__subcmd__day__subcmd__help__subcmd__answer"
+                ;;
+            togi__subcmd__day__subcmd__help,freeze)
+                cmd="togi__subcmd__day__subcmd__help__subcmd__freeze"
                 ;;
             togi__subcmd__day__subcmd__help,help)
                 cmd="togi__subcmd__day__subcmd__help__subcmd__help"
@@ -83,11 +98,20 @@ _togi() {
             togi__subcmd__day__subcmd__help,notify)
                 cmd="togi__subcmd__day__subcmd__help__subcmd__notify"
                 ;;
+            togi__subcmd__day__subcmd__help,pause)
+                cmd="togi__subcmd__day__subcmd__help__subcmd__pause"
+                ;;
             togi__subcmd__day__subcmd__help,reapply)
                 cmd="togi__subcmd__day__subcmd__help__subcmd__reapply"
                 ;;
             togi__subcmd__day__subcmd__help,record)
                 cmd="togi__subcmd__day__subcmd__help__subcmd__record"
+                ;;
+            togi__subcmd__day__subcmd__help,resume)
+                cmd="togi__subcmd__day__subcmd__help__subcmd__resume"
+                ;;
+            togi__subcmd__day__subcmd__help,unfreeze)
+                cmd="togi__subcmd__day__subcmd__help__subcmd__unfreeze"
                 ;;
             togi__subcmd__help,completion)
                 cmd="togi__subcmd__help__subcmd__completion"
@@ -131,14 +155,26 @@ _togi() {
             togi__subcmd__help__subcmd__day,answer)
                 cmd="togi__subcmd__help__subcmd__day__subcmd__answer"
                 ;;
+            togi__subcmd__help__subcmd__day,freeze)
+                cmd="togi__subcmd__help__subcmd__day__subcmd__freeze"
+                ;;
             togi__subcmd__help__subcmd__day,notify)
                 cmd="togi__subcmd__help__subcmd__day__subcmd__notify"
+                ;;
+            togi__subcmd__help__subcmd__day,pause)
+                cmd="togi__subcmd__help__subcmd__day__subcmd__pause"
                 ;;
             togi__subcmd__help__subcmd__day,reapply)
                 cmd="togi__subcmd__help__subcmd__day__subcmd__reapply"
                 ;;
             togi__subcmd__help__subcmd__day,record)
                 cmd="togi__subcmd__help__subcmd__day__subcmd__record"
+                ;;
+            togi__subcmd__help__subcmd__day,resume)
+                cmd="togi__subcmd__help__subcmd__day__subcmd__resume"
+                ;;
+            togi__subcmd__help__subcmd__day,unfreeze)
+                cmd="togi__subcmd__help__subcmd__day__subcmd__unfreeze"
                 ;;
             *)
                 ;;
@@ -189,7 +225,7 @@ _togi() {
             return 0
             ;;
         togi__subcmd__day)
-            opts="-h --state-dir --help answer notify reapply record help"
+            opts="-h --state-dir --help answer notify reapply record pause resume freeze unfreeze help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -230,8 +266,29 @@ _togi() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        togi__subcmd__day__subcmd__freeze)
+            opts="-h --state-dir --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --state-dir)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         togi__subcmd__day__subcmd__help)
-            opts="answer notify reapply record help"
+            opts="answer notify reapply record pause resume freeze unfreeze help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -245,6 +302,20 @@ _togi() {
             return 0
             ;;
         togi__subcmd__day__subcmd__help__subcmd__answer)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__day__subcmd__help__subcmd__freeze)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -286,6 +357,20 @@ _togi() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        togi__subcmd__day__subcmd__help__subcmd__pause)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         togi__subcmd__day__subcmd__help__subcmd__reapply)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -314,6 +399,34 @@ _togi() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        togi__subcmd__day__subcmd__help__subcmd__resume)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__day__subcmd__help__subcmd__unfreeze)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         togi__subcmd__day__subcmd__notify)
             opts="-h --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -321,6 +434,31 @@ _togi() {
                 return 0
             fi
             case "${prev}" in
+                --state-dir)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__day__subcmd__pause)
+            opts="-h --until --state-dir --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --until)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --state-dir)
                     COMPREPLY=()
                     if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
@@ -387,6 +525,48 @@ _togi() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --state-dir)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__day__subcmd__resume)
+            opts="-h --state-dir --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --state-dir)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__day__subcmd__unfreeze)
+            opts="-h --state-dir --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
                 --state-dir)
                     COMPREPLY=()
                     if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
@@ -477,7 +657,7 @@ _togi() {
                     if [[ ${cur} == *,* ]]; then
                         prefix="${cur%,*},"
                     fi
-                    COMPREPLY=($(compgen -P "${prefix}" -W "backend backend.retry boot boot.leave_reason boot.saved_entry ccd ccd.cap ccd.edge checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.applied day.boot_start day.checkpoint day.clean_stop day.event day.fault day.freeze day.hold day.imported day.interval day.offsets_changed day.record day.step day.unclean_end day.veto deadend deepening deepening.round defect defect.answered defect.found exposure exposure.observed failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce night night.plan night.qualification night.reproduction preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.imported session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt task task.start trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning" -- "${cur##*,}"))
+                    COMPREPLY=($(compgen -P "${prefix}" -W "backend backend.retry boot boot.leave_reason boot.saved_entry ccd ccd.cap ccd.edge checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.applied day.boot_start day.checkpoint day.clean_stop day.event day.fault day.freeze day.hold day.imported day.interval day.offsets_changed day.pause day.record day.step day.unclean_end day.veto deadend deepening deepening.round defect defect.answered defect.found exposure exposure.observed failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce night night.plan night.qualification night.reproduction preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.imported session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt task task.start trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning" -- "${cur##*,}"))
                     return 0
                     ;;
                 --trial)
@@ -544,7 +724,7 @@ _togi() {
             return 0
             ;;
         togi__subcmd__help__subcmd__day)
-            opts="answer notify reapply record"
+            opts="answer notify reapply record pause resume freeze unfreeze"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -571,7 +751,35 @@ _togi() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        togi__subcmd__help__subcmd__day__subcmd__freeze)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         togi__subcmd__help__subcmd__day__subcmd__notify)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__help__subcmd__day__subcmd__pause)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -600,6 +808,34 @@ _togi() {
             return 0
             ;;
         togi__subcmd__help__subcmd__day__subcmd__record)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__help__subcmd__day__subcmd__resume)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__help__subcmd__day__subcmd__unfreeze)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
