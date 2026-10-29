@@ -211,6 +211,32 @@ Actual-history expected failures are integrated over the trajectory's real therm
 #### Limitations
 
 The calendar idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat, so these records omit that overhead, as the [Ruleset 13 gate](#daynight-gate) does. The hardware's actual overhead must be measured and the [production workload rules](spec/workloads.md#durations-and-checking-schedule) still charge it. The Poisson upper rate is a model-based diagnostic, not an adaptive-policy guarantee. Synthetic trajectories and their hazard are not hardware evidence, establish no real-night feasibility and authorize no nonzero deployment.
+#### Successor registration draft
+
+[`tools/bench/day-night-successor.json`](../tools/bench/day-night-successor.json)
+owns the successor's numbers, applicability, policy identities, source pins,
+commands, run profiles and execution limits for
+[#1483](https://github.com/shgew/togi/issues/1483). **It is a draft, not a frozen
+registration or authorization to score.** Pending source identities and command
+availability must be resolved after the runner and candidate layers land, before
+any successor-criteria scoring, including development scoring.
+
+The separate [physical-core truth catalog](simulating.md#successor-physical-core-truth)
+preserves complete readbacks and joint admissibility while this registration
+evaluates CCD-uniform policies only. Safety, usefulness and completeness are
+separate verdicts; complete unconverged trajectories are not crashes or missing
+observations. Learning allowance and post-finish risk remain separate accounts,
+including firmware restoration without a safety grace interval.
+
+Use the registration's `commands` only after finalization. Reduced development
+output is **EXPLORATORY REDUCED DEV — NOT A REGISTERED SCORE**; it cannot pass the
+gate. Registered development retains every registered cell and the full horizon.
+Runtime expiry retains partial evidence and returns for a decision, never an
+easier seed set or horizon. The sealed holdout requires explicit authorization in
+the issue; any executed confirmation is spent, interrupted included, and a failed
+confirmation stays failed. Neither profile establishes hardware reliability or
+per-core-policy acceptance. Simulated setup/teardown and placement/repeat
+idealizations still require separate hardware acceptance.
 
 ### Historical gates
 

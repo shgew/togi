@@ -4,6 +4,15 @@
 
 This program is a versioned historical record of the original Ruleset 13 experiment, not authorization for a new campaign; see [the day/night gate](../../docs/benchmarking.md#daynight-gate) for the read's scope, provenance and reproduction.
 
+## Successor registration draft
+
+[`day-night-successor.json`](day-night-successor.json) owns the separate
+successor experiment's numbers and commands; see
+[its registration status](../../docs/benchmarking.md#successor-registration-draft).
+It remains a draft until merged source identities and implemented commands are
+frozen before any scoring. It neither changes the historical program below nor
+authorizes a campaign, holdout confirmation, compatibility switch or deployment.
+
 ## Original Ruleset 13 program
 
 Rules for the **production policy experiment** mode of a [research campaign](../../docs/benchmarking.md#research-campaigns). The objective is the Ruleset 13 [day/night gate's registered metrics](../../docs/benchmarking.md#daynight-gate) on development seeds, not a session's time to conclusion. [`day-night.json`](day-night.json) owns the scenarios, seeds, calendar, hazard budget, thresholds and tail treatment. The campaign's limits, prohibitions, record and end state are in [Research campaigns](../../docs/benchmarking.md#research-campaigns).
