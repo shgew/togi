@@ -20,26 +20,26 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │
 │ CCD 0 all loaded 0  2 counts/cell       -50                 CCD 1 all loaded 0  2 counts/cell       -50
 ~ wwwww gggggggggg g  kkkkkkkkkkkkk       ggg                 wwwww gggggggggg g  kkkkkkkkkkkkk       ggg
-│ D -10 · S -26 · rate R1 · U fails at -31 · 16 counts to S   D -8 · S -15 · rate R1 · U censored at -50 · 7 to S
-~ ggwwwkkktttttkkkgggggggkkkffffffffffffffkkktttttttttttttt   ggwwkkktttttkkkgggggggkkkaaaaaaaaaaaaaaaaakkktttttt
-│ Ruleset 13 mapping: eligible hours/gaps unknown             Ruleset 13 mapping: eligible hours/gaps unknown
-~ ggggggggggggggggggggggggggggggggggggggggggggggg             ggggggggggggggggggggggggggggggggggggggggggggggg
-│ ► 00 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 08  -8 LOADED   ▆▆▆▆····                ▆
-~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwgggg                a
-│ ► 01 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 09  -8 LOADED   ▆▆▆▆····                ▆
-~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwgggg                a
-│ ► 02 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 10  -8 LOADED   ▆▆▆▆····                ▆
-~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwgggg                a
-│ ► 03 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 11  -8 LOADED   ▆▆▆▆····                ▆
-~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwgggg                a
-│ ► 04 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 12  -8 LOADED   ▆▆▆▆····                ▆
-~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwgggg                a
-│ ► 05 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 13  -8 LOADED   ▆▆▆▆····                ▆
-~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwgggg                a
-│ ► 06 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 14  -8 LOADED   ▆▆▆▆····                ▆
-~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwgggg                a
-│ ► 07 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 15  -8 LOADED   ▆▆▆▆····                ▆
-~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwgggg                a
+│ D -10 · C -26 · U observed at -31 · 16 counts to C          D -8 · C -45 · U censored at -50 · 37 counts to C
+~ ttttt   ttttt   ttttttttttttttttt   tttttttttttttt          tttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│ climbing · hold 3 / 50 h · no candidate                     climbing · hold 3 / 50 h · no candidate
+~ tttttttt   ttttttttttttt   tttttttttttt                     tttttttt   ttttttttttttt   tttttttttttt
+│ ► 00 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 08  -8 LOADED   ▆▆▆▆··················· ▆
+~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwggggggggggggggggggg a
+│ ► 01 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 09  -8 LOADED   ▆▆▆▆··················· ▆
+~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwggggggggggggggggggg a
+│ ► 02 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 10  -8 LOADED   ▆▆▆▆··················· ▆
+~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwggggggggggggggggggg a
+│ ► 03 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 11  -8 LOADED   ▆▆▆▆··················· ▆
+~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwggggggggggggggggggg a
+│ ► 04 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 12  -8 LOADED   ▆▆▆▆··················· ▆
+~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwggggggggggggggggggg a
+│ ► 05 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 13  -8 LOADED   ▆▆▆▆··················· ▆
+~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwggggggggggggggggggg a
+│ ► 06 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 14  -8 LOADED   ▆▆▆▆··················· ▆
+~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwggggggggggggggggggg a
+│ ► 07 -10 LOADED   ▆▆▆▆▆········  ▆                          ► 15  -8 LOADED   ▆▆▆▆··················· ▆
+~ c ww www tttttt   wwwwwgggggggg  f                          c ww www tttttt   wwwwggggggggggggggggggg a
 │
 │ NIGHT since 22:13 · 0h30m elapsed ───────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
 ~ wwwwwwwwwwwwwwwwwgggggggggggggggg kkkkkkkkkkkkkkkkkkkkkkk   ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggg
@@ -49,14 +49,14 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~ ggggggggggggttttttttttttttttttttttttttttttttttttttttttttt   ggggg  tttttttt ttttttttttttttttttttttttttt
 │ shares      mapping 66%/10% · qualification 33%/75%…
 ~ ggggggggggggtttttttttttttttgggtttttttttttttttttttttt
-│ DAY ────────────────────────────────────── applied -10/-8
-~ www kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggggggg
-│ Ruleset 13  mapping-only cap; CO 0 is not hazard-goal…
-~ gggggggggggggggggggggggggggggggggggggggggggggggggggggg
-│ hold        3h00m of 8h00m · holding -10/-8
-~ ggggggggggggwwwwwwwwwwwwwwggggggggggggggggg
-│ firmware    valid
-~ ggggggggggggppppp
+│ DAY ─────────────────────────────────────────────────────
+~ www kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+│ permission: experimental hold + exact night qualification
+~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ allowance: 0 consumed / 2 limit; 2 remaining · 0…
+~ ttttttttttttttttttttttttttttttttttttttttttttttttt
+│ +5 more
+~ ggggggg
 │
 │  ?  help    l  log    esc  back    q  exit dashboard
 ~ hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

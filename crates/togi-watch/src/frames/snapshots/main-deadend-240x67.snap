@@ -13,24 +13,28 @@ expression: body
 │  no evidence: kernel log unreadable: permission denied
 │
 │  CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
-│  D -10 · S -26 fallback slope · bound by rate R1 · U fails at -31 · 16 counts to S                                       D -8 · S -15 measured slope · bound by rate R1 · U censored at -50 · 7 counts to S
-│  Ruleset 13 mapping: eligible hours/gaps unknown                                                                         Ruleset 13 mapping: eligible hours/gaps unknown
-│    00  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      08   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-│    01  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      09   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-│    02  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      10   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-│    03  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      11   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-│    04  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      12   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-│    05  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      13   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-│    06  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      14   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-│    07  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      15   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
+│  D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                              D -8 · C -45 · U censored at -50 · 37 counts to C · S -15 diagnostic only
+│  climbing · hold 3 / 50 h · no candidate                                                                                 climbing · hold 3 / 50 h · no candidate
+│    00  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      08   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+│    01  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      09   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+│    02  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      10   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+│    03  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      11   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+│    04  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      12   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+│    05  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      13   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+│    06  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      14   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+│    07  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      15   -8            ▄▄▄▄▄▄▄▄·····································    ▄
 │
 │  NIGHT since 22:13 · 0h30m elapsed ─────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 │  task        none running · 1 of 2 planned tasks done
 │  shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%                                                     22:13  start    session started on 16 cores
 │
-│  DAY ──────────────────────────────────────────────────────────────────────────────────────────────── applied -10/-8
-│  Ruleset 13  mapping-only cap; CO 0 is not hazard-goal proof
-│  hold        3h00m of 8h00m · holding -10/-8
+│  DAY ─────── applied D 0:-10 1:-10 2:-10 3:-10 4:-10 5:-10 6:-10 7:-10 8:-8 9:-8 10:-8 11:-8 12:-8 13:-8 14:-8 15:-8
+│  permission: experimental hold + exact night qualification
+│  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified
+│  experimental: current exact-profile daily evidence unavailable; no rate bound
+│  CCD 0: climbing; hold 3.000 / 50.000 h at exact D
+│  CCD 0: applied step -5 → -10 (5 counts); application ApplicationId(2); witnesses [Seq(5)]
+│  CCD 1: climbing; hold 3.000 / 50.000 h at exact D
 │  firmware    valid
 │
 │
@@ -63,8 +67,5 @@ expression: body
 │
 │
 │
-│
-│
-│
-│
+
 │   ?  help    l  log    esc  back    q  exit dashboard

@@ -1,0 +1,82 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~  gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│
+│  ► DAY
+~  ccwww
+│
+│  ▌  NIGHT OVER   allowance: 0 consumed / 2 limit; 2 remaining · 0                last trial      PASS  10:00 on core 00
+~  c  ccccccccccccctttttttttttttttttttttttttttttttttttttttttttttttt                ggggggggggggggggppppgggggggggggggggggg
+│  ▌               provisional · 0 reclassified
+~  c               tttttttttttttttttttttttttttt
+│
+│  BETWEEN TRIALS ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~  gggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+│  last: PASS after 10:00 · R1 light on core 00
+~  tttttttttttttttttttttttttttttttttttttttttttt
+│  next trial: deciding
+~  tttttttttttttttttttt
+│
+│
+│
+│
+│
+│  CCD 0 idle         0       -10       -20       -30       -40       -50          CCD 1 idle         0       -10       -20       -30       -40       -50
+~  wwwww gggg         g       ggg       ggg       ggg       ggg       ggg          wwwww gggg         g       ggg       ggg       ggg       ggg       ggg
+│  core tuning · physical CCD topology                                             core tuning · physical CCD topology
+~  ggggggggggggggggggggggggggggggggggg                                             ggggggggggggggggggggggggggggggggggg
+│
+│  core 0 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 8 · D -8 · C -26 · U observed at -31 · 18 counts to C
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│    00  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               08   -8           ▆▆▆▆▆▆▆▆··················    ▆
+~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
+│  core 1 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 9 · D -8 · C -26 · U observed at -31 · 18 counts to C
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│    01  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               09   -8           ▆▆▆▆▆▆▆▆··················    ▆
+~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
+│  core 2 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 10 · D -8 · C -26 · U observed at -31 · 18 counts to C
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│    02  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               10   -8           ▆▆▆▆▆▆▆▆··················    ▆
+~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
+│  core 3 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 11 · D -8 · C -26 · U observed at -31 · 18 counts to C
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│    03  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               11   -8           ▆▆▆▆▆▆▆▆··················    ▆
+~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
+│  core 4 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 12 · D -8 · C -26 · U observed at -31 · 18 counts to C
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│    04  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               12   -8           ▆▆▆▆▆▆▆▆··················    ▆
+~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
+│  core 5 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 13 · D -8 · C -26 · U observed at -31 · 18 counts to C
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│    05  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               13   -8           ▆▆▆▆▆▆▆▆··················    ▆
+~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
+│  core 6 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 14 · D -8 · C -26 · U observed at -31 · 18 counts to C
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│    06  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               14   -8           ▆▆▆▆▆▆▆▆··················    ▆
+~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
+│  core 7 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 15 · D -8 · C -26 · U observed at -31 · 18 counts to C
+~  wwwwwwwwwttttt   ttttt   ttttttttttttttttt   tttttttttttttt                     wwwwwwwwwwtttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│    07  -10           ▆▆▆▆▆▆▆▆▆▆················    ▆                               15   -8           ▆▆▆▆▆▆▆▆··················    ▆
+~    tt  ttt           gggggggggggggggggggggggggg    f                               tt  ttt           gggggggggggggggggggggggggg    f
+│
+│  DAY ───────────────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+~  www kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk     ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggg
+│  permission: experimental hold + exact night qualification
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0…               22:13  start    session started on 16 cores
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt               ggggg  tttttttt ttttttttttttttttttttttttttt
+│  experimental: 50.000 clean hours; at most 1 crash per 17 h (95%…
+~  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 0: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  core 1: climbing; hold 50.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  +19 more
+~  gggggggg
+│
+│   ?  help    l  log    esc  back    q  exit dashboard
+~  hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

@@ -33,26 +33,26 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │
 │  CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
 ~  wwwww gggg          g       ggg       ggg       ggg       ggg       ggg                                                 wwwww gggg          g       ggg       ggg       ggg       ggg       ggg
-│  D -10 · S -26 fallback slope · bound by rate R1 · U fails at -31 · 16 counts to S                                       D -8 · S -15 measured slope · bound by rate R1 · U censored at -50 · 7 counts to S
-~  ggwwwkkkttttttttttttttttttttkkkggggggggggggggggkkkffffffffffffffkkktttttttttttttt                                       ggwwkkkttttttttttttttttttttkkkggggggggggggggggkkkaaaaaaaaaaaaaaaaakkkttttttttttttt
-│  Ruleset 13 mapping: eligible hours/gaps unknown                                                                         Ruleset 13 mapping: eligible hours/gaps unknown
-~  ggggggggggggggggggggggggggggggggggggggggggggggg                                                                         ggggggggggggggggggggggggggggggggggggggggggggggg
-│    00  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      08   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggg                                  a
-│    01  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      09   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggg                                  a
-│    02  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      10   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggg                                  a
-│    03  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      11   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggg                                  a
-│    04  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      12   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggg                                  a
-│    05  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      13   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggg                                  a
-│    06  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      14   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggg                                  a
-│    07  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      15   -8            ▄▄▄▄▄▄▄▄·······                                  ▄
-~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggg                                  a
+│  D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                              D -8 · C -45 · U censored at -50 · 37 counts to C · S -15 diagnostic only
+~  ttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                              tttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│  climbing · hold 3 / 50 h · no candidate                                                                                 climbing · hold 3 / 50 h · no candidate
+~  tttttttt   ttttttttttttt   tttttttttttt                                                                                 tttttttt   ttttttttttttt   tttttttttttt
+│    00  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      08   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    01  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      09   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    02  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      10   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    03  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      11   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    04  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      12   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    05  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      13   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    06  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      14   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
+│    07  -10            ▄▄▄▄▄▄▄▄▄▄················    ▄                                                                      15   -8            ▄▄▄▄▄▄▄▄·····································    ▄
+~    tt  ttt            gggggggggggggggggggggggggg    f                                                                      tt  ttt            ggggggggggggggggggggggggggggggggggggggggggggg    a
 │
 │  NIGHT since 22:13 · 0h30m elapsed ─────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 ~  wwwwwwwwwwwwwwwwwgggggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk     ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggggggggggggggggggggggggg
@@ -61,12 +61,20 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │  shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%                                                     22:13  start    session started on 16 cores
 ~  ggggggggggggtttttttttttttttgggtttttttttttttttttttttgggttttttttttttt                                                     ggggg  tttttttt ttttttttttttttttttttttttttt
 │
-│  DAY ──────────────────────────────────────────────────────────────────────────────────────────────── applied -10/-8
-~  www kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggggggg
-│  Ruleset 13  mapping-only cap; CO 0 is not hazard-goal proof
-~  ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
-│  hold        3h00m of 8h00m · holding -10/-8
-~  ggggggggggggwwwwwwwwwwwwwwggggggggggggggggg
+│  DAY ─────── applied D 0:-10 1:-10 2:-10 3:-10 4:-10 5:-10 6:-10 7:-10 8:-8 9:-8 10:-8 11:-8 12:-8 13:-8 14:-8 15:-8
+~  www kkkkkkk ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  permission: experimental hold + exact night qualification
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  experimental: current exact-profile daily evidence unavailable; no rate bound
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  CCD 0: climbing; hold 3.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttt
+│  CCD 0: applied step -5 → -10 (5 counts); application ApplicationId(2); witnesses [Seq(5)]
+~  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  CCD 1: climbing; hold 3.000 / 50.000 h at exact D
+~  ttttttttttttttttttttttttttttttttttttttttttttttttt
 │  firmware    valid
 ~  ggggggggggggppppp
 │
@@ -91,9 +99,6 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │
 │
 │
-│
-│
-│
-│
+
 │   ?  help    l  log    esc  back    q  exit dashboard
 ~  hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

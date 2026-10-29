@@ -1,4 +1,4 @@
-//! The Ruleset 13 narration on hand-built states: what a night trial is for, between trials, the day state, the
+//! The D narration on hand-built states: what a night trial is for, between trials, the day state, the
 //! stock failure stop and recovery.
 
 use super::*;
@@ -292,10 +292,11 @@ fn a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification()
     assert_eq!(said.label, "FILLER");
     assert_eq!(
         said.lines[0],
-        "Filler repeat of the day profile, CCD 0 at -20, CCD 1 at -15: every CCD runs together at its offset, one exact qualification cell per trial."
+        "Filler repeat of the current exact D profile, CCD 0 at -20, CCD 1 at -15: all units run together, one exact qualification cell per trial."
     );
     assert!(
-        said.lines[1].starts_with("Filler runs only when nothing else can;"),
+        said.lines[1]
+            .starts_with("Filler repeats exact-current-D cells only when primary work is empty;"),
         "{:?}",
         said.lines
     );
@@ -308,7 +309,7 @@ fn a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification()
     }
     assert_eq!(
         said.brief,
-        "Filler repeat of the day profile, CCD 0 at -20, CCD 1 at -15 (filler task 4)."
+        "Filler repeat of the current exact D profile, CCD 0 at -20, CCD 1 at -15 (filler task 4)."
     );
     let scene = fx.scene(ts(1001));
     assert_eq!(
@@ -318,7 +319,7 @@ fn a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification()
 }
 
 #[test]
-fn a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step() {
+fn historical_mapping_filler_never_claims_s_unlocks_permission() {
     let mut fx = Fx::new();
     filler_night(&mut fx);
     let trial = filler(
@@ -330,16 +331,10 @@ fn a_filler_cap_probe_names_its_ccd_and_never_claims_a_mapping_step() {
     );
     let said = running(&mut fx, trial.clone());
     assert_eq!(said.label, "FILLER");
-    assert_eq!(
-        said.lines[0],
-        "Filler cap probe on CCD 1 at -16, one count deeper than its cap S: every other CCD stays at CO 0."
-    );
-    assert!(
-        said.lines[1].contains("never finishes a mapping step"),
-        "{:?}",
-        said.lines
-    );
-    assert_eq!(said.brief, "Filler probe on CCD 1 at -16 (filler task 4).");
+    assert!(said.lines[0].starts_with("Mapping CCD 1 at -16"));
+    assert!(said.lines[1].contains("sweeps uncovered cells from U toward hard ceiling C"));
+    assert!(!said.lines[0].contains("cap"));
+    assert!(said.lines[1].contains("non-authorizing diagnostic"));
     let scene = fx.scene(ts(1001));
     assert_eq!(
         plain(&operation(&scene, &trial), Colours::None),
@@ -452,7 +447,7 @@ fn a_held_step_names_every_blocker() {
     };
     assert_eq!(
         day_step(every, false),
-        "The latest proposal keeps the profile: its hold is not complete, it is at the cap, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired, it failed qualification."
+        "The latest proposal keeps the profile: its hold is not complete, no ordinary step remains; see the unit's finish or held reason, no complete qualification covers it, a veto stands, a day question is pending, a day event is unresolved, promotion is frozen, the cold boot started paused, the proposal expired, it failed qualification."
     );
 }
 
@@ -473,4 +468,84 @@ fn unresolved_day_events_are_counted_as_blocking_promotion() {
         .into();
     let said = story(&fx.scene(ts(2000)));
     assert_eq!(said.lines[2], "2 day events still block promotion.");
+}
+
+#[test_case::test_case(&togi_journal::ClimbBlocker::CampaignHistory {}, "campaign history unavailable"; "missing campaign history")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::SameBoot {}, "promotion requires an eligible cold boot"; "same boot")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::HoldProfile {}, "hold belongs to a different exact profile"; "wrong hold profile")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::SafeApply {}, "safe application prerequisites missing"; "safe apply")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::ActivationClosed {}, "nonzero activation closed"; "activation closed")]
+#[test_case::test_case(&togi_journal::ClimbBlocker::Ceiling { unit: togi_tuner::UnitId::Core(core(0)) }, "hard night ceiling blocks the target"; "target past the hard ceiling")]
+fn d_permission_blockers_name_the_missing_prerequisite(
+    reason: &togi_journal::ClimbBlocker,
+    expected: &str,
+) {
+    assert_eq!(super::super::night::blocker_words(reason), expected);
+}
+
+#[test_case::test_case(&togi_journal::UnitStopReason::AdverseCeiling {}, "adverse night ceiling; permanently stopped"; "adverse ceiling")]
+#[test_case::test_case(&togi_journal::UnitStopReason::Veto {}, "whole-profile veto; permanently stopped"; "veto")]
+#[test_case::test_case(&togi_journal::UnitStopReason::Predecessor { original: togi_journal::Provenance { session: togi_journal::SessionId::new(ts(1000), None).unwrap(), seq: togi_journal::Seq::new(1).unwrap() } }, "predecessor event; permanently stopped"; "predecessor stop persists")]
+fn safety_stops_are_not_reported_as_successful_ceiling_completion(
+    reason: &togi_journal::UnitStopReason,
+    expected: &str,
+) {
+    assert_eq!(super::super::night::finish_words(reason), expected);
+}
+
+#[test]
+fn a_nonuniform_trial_never_borrows_one_cores_offset_for_its_ccd() {
+    let mut fx = Fx::new();
+    filler_night(&mut fx);
+    fx.cores = vec![fixtures::core_view(0, 0), fixtures::core_view(1, 0)];
+    let mut trial = filler(Activity::Qualification, Tested::Exact {});
+    trial.profile = [(core(0), off(-20)), (core(1), off(-15))]
+        .into_iter()
+        .collect();
+    let said = running(&mut fx, trial);
+    assert!(
+        said.lines[0].contains("core 0 at -20, core 1 at -15"),
+        "{:?}",
+        said.lines
+    );
+    assert!(!said.lines[0].contains("CCD 0 at"));
+}
+
+#[test_case::test_case(togi_journal::ClimbAction::Retreat { units: vec![], cause: togi_journal::ClimbRetreatCause::AdverseCeiling { edges: vec![] }, wanted: None }, "retreat: adverse night ceiling"; "adverse retreat")]
+#[test_case::test_case(togi_journal::ClimbAction::Restore { restoration: togi_journal::RestorationKind::Firmware, units: vec![] }, "firmware restoration"; "firmware restore")]
+#[test_case::test_case(togi_journal::ClimbAction::Restore { restoration: togi_journal::RestorationKind::Reclassified, units: vec![] }, "guarded reclassification restoration; climb stays stopped"; "guarded restore")]
+#[test_case::test_case(togi_journal::ClimbAction::FirmwareZero {}, "firmware reset to stock"; "firmware zero")]
+fn d_applied_history_names_the_action_without_reopening_exploration(
+    action: togi_journal::ClimbAction,
+    expected: &str,
+) {
+    let mut hand = crate::frames::hand::Staged::Day.hand();
+    hand.policy.climb.units[0]
+        .latest_step
+        .as_mut()
+        .unwrap()
+        .action = action;
+    let words = super::super::night::climb_lines(&hand.policy).join("\n");
+    assert!(words.contains(expected), "{words}");
+    assert!(words.contains("application ApplicationId(2)"), "{words}");
+}
+
+#[test]
+fn missing_campaign_and_daily_evidence_never_look_like_unused_allowance_or_a_zero_rate() {
+    let mut hand = crate::frames::hand::Staged::Day.hand();
+    hand.policy.climb.campaign = None;
+    hand.policy.climb.daily = None;
+    let words = super::super::night::climb_lines(&hand.policy).join("\n");
+    assert!(
+        words.contains("history unavailable; new exploration blocked"),
+        "{words}"
+    );
+    assert!(
+        words.contains("daily evidence unavailable; no rate bound"),
+        "{words}"
+    );
+    assert!(
+        !words.contains("0 consumed") && !words.contains("0 crashes"),
+        "{words}"
+    );
 }

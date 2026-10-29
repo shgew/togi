@@ -267,9 +267,14 @@ fn reproduction_value(scene: &Scene<'_>, reproduction: &ReproductionProjection) 
 }
 
 fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'static>> {
-    let applied = policy.applied.as_ref().map_or_else(
-        || "applied CO 0".to_owned(),
-        |profile| format!("applied {}", profile_text(profile)),
+    let applied = policy.climb.profiles.applied.as_ref().map_or_else(
+        || {
+            policy.applied.as_ref().map_or_else(
+                || "applied profile unavailable".to_owned(),
+                |profile| format!("applied {}", profile_text(profile)),
+            )
+        },
+        |profile| format!("applied D {}", super::super::story::vector_words(profile)),
     );
     let day = &policy.day;
     let mut out = vec![rule(
@@ -279,24 +284,19 @@ fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'
         scene.style(Paint::Track),
         scene.colours,
     )];
-    out.push(field_row(
-        scene,
-        "Ruleset 13",
-        value(
-            scene,
-            Paint::Grey,
-            "mapping-only cap; CO 0 is not hazard-goal proof".to_owned(),
-        ),
-        width,
-    ));
-    out.push(field_row(scene, "hold", hold_value(scene, day), width));
-    if let Some((_, step)) = &day.last_step {
-        out.push(field_row(
-            scene,
-            "last step",
-            step_value(scene, step),
-            width,
-        ));
+    for text in super::super::story::climb_lines(policy) {
+        out.push(value(scene, Paint::Text, text));
+    }
+    if policy.climb.units.is_empty() {
+        out.push(field_row(scene, "hold", hold_value(scene, day), width));
+        if let Some((_, step)) = &day.last_step {
+            out.push(field_row(
+                scene,
+                "last step",
+                step_value(scene, step),
+                width,
+            ));
+        }
     }
     if day.freeze {
         out.push(field_row(
@@ -396,7 +396,7 @@ fn reason_words(reason: &HoldReason) -> String {
             credited_s,
             required_s,
         } => format!("incomplete, {} of {}", secs(*credited_s), secs(*required_s)),
-        HoldReason::AtCap {} => "at the cap".to_owned(),
+        HoldReason::AtCap {} => "no ordinary step; see unit finish/held reason".to_owned(),
         HoldReason::NotQualified {} => "not qualified".to_owned(),
         HoldReason::Vetoed { veto } => format!("vetoed by {}", event_name(veto)),
         HoldReason::QuestionPending { .. } => "a question is pending".to_owned(),
@@ -583,15 +583,22 @@ mod tests {
             "a blank row separates the sections"
         );
         assert!(
-            rows[day].trim_end().ends_with("applied CO 0"),
+            rows[day]
+                .trim_end()
+                .ends_with("applied profile unavailable"),
             "{:?}",
             rows[day]
         );
         assert_eq!(
             rows[day + 1],
-            "Ruleset 13  mapping-only cap; CO 0 is not hazard-goal proof"
+            "permission: experimental hold + exact night qualification"
         );
-        assert!(rows[day + 2].contains("holding -10"), "{:?}", rows[day + 2]);
+        assert!(
+            rows[day..]
+                .iter()
+                .any(|row| row.starts_with("hold ") && row.contains("holding -10")),
+            "{rows:#?}"
+        );
         assert!(
             rows.iter()
                 .any(|row| row

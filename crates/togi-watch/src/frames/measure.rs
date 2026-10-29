@@ -108,7 +108,15 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
         } else {
             (usize::from(margin), low_y, full)
         };
-        let mut height = (cores + CCD_HEAD_ROWS).min(hint.saturating_sub(y + 1));
+        let core_phase = scene
+            .s
+            .policy
+            .climb
+            .units
+            .iter()
+            .any(|unit| matches!(unit.unit, togi_tuner::unit::UnitId::Core(_)));
+        let core_rows = cores * if core_phase { 2 } else { 1 };
+        let mut height = (core_rows + CCD_HEAD_ROWS).min(hint.saturating_sub(y + 1));
         if !side {
             let share = (hint.saturating_sub(ccd_y + 3) / ids.len().max(1)).max(CCD_HEAD_ROWS);
             height = height.min(share);

@@ -52,7 +52,7 @@ pub enum Tag {
     Night,
     /// A CCD's edge changed.
     Edge,
-    /// A CCD's cap changed.
+    /// A CCD's non-authorizing statistical diagnostic changed.
     Cap,
     /// A night qualification moved.
     Qualify,
@@ -443,12 +443,12 @@ pub const fn slope_words(slope: &Slope) -> &'static str {
     }
 }
 
-/// What fixed a cap, in words.
+/// What fixed the historical statistical diagnostic, not permission for D.
 pub fn binding_words(binding: &Binding) -> String {
     match binding {
         Binding::Rate { class } => format!("rate of {} {}", class.regime, kind_words(class.regime)),
         Binding::EdgeMargin {} => "edge margin".to_owned(),
-        Binding::Baseline {} => "no cap yet".to_owned(),
+        Binding::Baseline {} => "baseline diagnostic".to_owned(),
     }
 }
 
@@ -457,7 +457,7 @@ fn cap_line(d: &CcdCap) -> Line {
         Tag::Cap,
         Tone::Plain,
         format!(
-            "CCD{} cap {} → {} · {} · {}",
+            "CCD{} S {} → {} · diagnostic only, not permission · {} · {}",
             d.ccd,
             offset_text(d.old),
             offset_text(d.new),

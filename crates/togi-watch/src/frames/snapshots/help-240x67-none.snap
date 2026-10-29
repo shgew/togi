@@ -1,0 +1,71 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│
+│  ► NIGHT since 22:13 · 0h30m  ───  mapping CCD 1 at -20  ───  9:20 left
+│
+│    READING THE SCREEN ─────────────────────────────────────────────────────────────    WHAT TOGI DOES ───────────────────────────────────────────────────────────    WORDS ─────────────────────────────────────────────────────────────────
+│
+│    ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31         NIGHT       Until you end it, togi maps each unit's edge U, sweeps            offset        Curve Optimizer counts, 0 to -50; deeper is more negative
+│                        applied -12 under load; dots reach hard ceiling C at -26; U                 uncovered cells from U toward C, qualifies exact profiles,        trial         one launch of one workload on its target
+│                        observed at -31                                                             reproduces daily events and runs controls. Idle time repeats      D             the tuning unit's applied day offset; saved and proposed
+│                                                                                                    exact-current-D qualification cells, never S-directed probes.                   profiles are not hardware readback
+│      09   -8           ▄▄▄▄▄▄▄▄                                                                                                                                      C             the hard night ceiling, with its edge and margin
+│                        idle, so grey; C is unknown until U is mapped, so there are     DAY         permission: experimental hold + exact night qualification. The                  witnesses; unknown U blocks ordinary promotion
+│                        no ceiling dots or edge mark                                                day panel shows the exact-profile hold, the last step,            S             non-authorizing statistical diagnostic, with its slope,
+│                                                                                                    allowance and what blocks the next one. Finish ends                             witnesses and gaps; never permission or a retreat trigger
+│      11    ?           ·············································    ▄  -50                     exploration, not observation or safety work.                      U             the night edge: the shallowest offset that failed in
+│                        no readback yet; U censored at -50 gives hard ceiling C at                                                                                                  isolation; unknown until mapped, censored when nothing
+│                        -45, not physical -50                                           CCD TABLES  Physical CCD tables keep the topology visible. Each tuning                      failed down to the limit
+│                                                                                                    unit shows applied D, hard ceiling C and tagged U; core rows      slope         how fast a class's failure rate grows with depth: a
+│    ►         the core carries load in this trial                                                   retain their hardware readback. S is diagnostic only and never                  fallback until enough is measured
+│    ▄▄▄       committed day offset D, distinct from the numeric hardware readback;                  authorizes a step.                                                bound by      what limits diagnostic S: a class's failure rate, edge
+│              white when this trial loads the core                                                                                                                                  margin, or baseline; not what permits D
+│    ?         no hardware offset has been read back for this core                       R6          During idle trials this screen holds still, clock included, so    covered       a class with diagnostic exposure; this does not qualify a
+│    grey ▄▄▄  the same depth, grey when the core is not loaded                                      it cannot wake the cores.                                                       whole profile
+│    ···       the hard night ceiling C for this tuning unit, not statistical                                                                                          hold          clean observed hours at the current exact D; earlier
+│              permission                                                                NO ETA      Nights and days follow the clock, but when a hold completes                     profiles, nights and paused time do not count
+│    red ▄     the night edge U of its tuning unit: the shallowest offset that failed                depends on what runs, so togi shows only what is scheduled and    step          hold, promote one tuning unit, retreat, restore, or reset
+│              in isolation, one count wide at Wide and Medium                                       the time left in the current trial.                                             after a firmware change
+│    amber ▄   a censored edge: nothing failed down to the mapping limit                                                                                               veto          a profile an event forbids until the veto clears
+│    cyan      running now                                                               RULES       How togi decides what to do:                                      freeze        keeps D and blocks promotions; a required retreat or
+│    amber     a hold, a veto, a retreat, a crash, or outstanding qualification                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md                      firmware reset still applies
+│    red       failures, past and present                                                                                                                              qualifying    running a whole profile until every class has witnessed
+│    green     passed, done, covered                                                                                                                                                 it
+│    grey      idle, still to come, unknown                                                                                                                            reproducing   re-running a daily event's conditions to see whether it
+│                                                                                                                                                                                    comes back
+│                                                                                                                                                                      share         the part of the night's elapsed time a queue has used,
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                                against the part it is meant to take
+│                                                                                                                                                                      allowance     machine-wide consumed and remaining events, including
+│    failures       failure decisions, including trials skipped because they already                                                                                                 provisional charges; reclassification does not refund
+│                   failed                                                                                                                                                           them and finish does not hide later events
+│    crashes        boots that ended without a clean shutdown                                                                                                          experimental  experimental: 50 clean hours; at most 1 crash per 17 h
+│    last observed  the last failure seen in this session that changed what togi                                                                                                     (95%, fixed-rate model). This is an example for current
+│                   does; skips do not count                                                                                                                                         exact-profile evidence, not a reliability certificate;
+│    q              exit dashboard; tuning itself keeps running                                                                                                                      finish alone never meets the hazard goal
+│
+│
+│                                                                                                                                                                      KINDS OF LOAD ─────────────────────────────────────────────────────────
+│
+│                                                                                                                                                                      R1 light          one light thread: compiling, browsing
+│                                                                                                                                                                      R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+│                                                                                                                                                                      R3 load steps     load switching on and off: current steps
+│                                                                                                                                                                      R4 partial load   light load at 25-75% duty: bursty work
+│                                                                                                                                                                      R5 both threads   both threads of one core: SMT pressure
+│                                                                                                                                                                      R6 idle + bursts  idle with short wake-ups: idle and boost
+│                                                                                                                                                                      R7 all-core       a CCD, part of one, or every core: power and heat
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│   ?  help    l  log    esc  back    q  exit dashboard

@@ -1,4 +1,4 @@
-//! The Ruleset 13 narration: what a trial is for, what the night does between trials, and the day state when no
+//! The D narration: what a trial is for, what the night does between trials, and the day state when no
 //! night is planned. It says what the journal and the policy projection hold and decides nothing: no thresholds,
 //! no estimate of when anything finishes.
 
@@ -157,12 +157,26 @@ pub(super) fn is_filler(task: Option<TaskId>) -> bool {
     task.is_some_and(|task| task.queue == Queue::Filler)
 }
 
-/// The CCD profile a trial runs at, from its intent's per-core offsets; `None` when no core of it has a known CCD.
+/// Preserve a nonuniform physical-core vector rather than borrowing one core's value for its CCD.
 pub(super) fn trial_profile(scene: &Scene<'_>, trial: &TrialView) -> Option<UnitProfile> {
+    let core_phase = scene
+        .s
+        .policy
+        .climb
+        .units
+        .iter()
+        .any(|unit| matches!(unit.unit, UnitId::Core(_)));
+    if core_phase {
+        return Some(UnitProfile::of_cores(&trial.profile));
+    }
     let mut ccds = std::collections::BTreeMap::new();
     for (core, offset) in trial.profile.iter() {
-        if let Some(view) = scene.s.cores.iter().find(|view| view.id == core) {
-            ccds.entry(UnitId::Ccd(view.ccd)).or_insert(offset);
+        let view = scene.s.cores.iter().find(|view| view.id == core)?;
+        if ccds
+            .insert(UnitId::Ccd(view.ccd), offset)
+            .is_some_and(|previous| previous != offset)
+        {
+            return Some(UnitProfile::of_cores(&trial.profile));
         }
     }
     UnitProfile::try_from(ccds).ok()
@@ -188,8 +202,7 @@ pub(super) fn exact_profile<'s>(
     }
 }
 
-/// A filler trial's purpose and brief: a cap probe on one CCD, or a repeat of the day profile's exact cells at
-/// `profile`, the profile the trial actually runs. `None` when the trial is neither, so the activity's own words stand.
+/// Filler repeats exact-current-D cells; it never probes statistical S.
 fn filler_purpose(
     activity: Activity,
     task: Option<TaskId>,
@@ -201,56 +214,31 @@ fn filler_purpose(
         return None;
     }
     match (activity, tested) {
-        (Activity::Mapping, Some(Tested::Isolated { ccd, offset })) => Some((
-            format!(
-                "Filler cap probe on CCD {} at {}, one count deeper than its cap S: every other CCD stays at CO 0.",
-                ccd.get(),
-                offset.get()
-            ),
-            format!(
-                "Filler probe on CCD {} at {}{task_part}.",
-                ccd.get(),
-                offset.get()
-            ),
-        )),
         (Activity::Qualification, Some(Tested::Exact {}) | None) => {
             let named = profile.map_or_else(
-                || "the day profile".to_owned(),
-                |profile| format!("the day profile, {}", profile_words(profile)),
+                || "the current exact D profile".to_owned(),
+                |profile| format!("the current exact D profile, {}", profile_words(profile)),
             );
             Some((
                 format!(
-                    "Filler repeat of {named}: every CCD runs together at its offset, one exact qualification cell per trial."
+                    "Filler repeat of {named}: all units run together, one exact qualification cell per trial."
                 ),
                 format!("Filler repeat of {named}{task_part}."),
             ))
         }
-        (Activity::Mapping, Some(Tested::Exact {}) | None)
-        | (Activity::Qualification, Some(Tested::Isolated { .. }))
-        | (
-            Activity::Reproduction
-            | Activity::Control
-            | Activity::Search
-            | Activity::Checking
-            | Activity::Hunt
-            | Activity::Deepening,
-            _,
-        ) => None,
+        _ => None,
     }
 }
 
-/// What a filler trial's result feeds; `None` when the trial is no filler cap probe or exact repeat.
+/// What a filler trial's result feeds; only exact-current-D qualification is filler.
 fn filler_detail(activity: Activity, task: Option<TaskId>) -> Option<String> {
     if !is_filler(task) {
         return None;
     }
     match activity {
-        Activity::Mapping => Some(
-            "Filler runs only when nothing else can; a probe can set the CCD's edge U but never finishes a mapping step."
-                .to_owned(),
-        ),
+        Activity::Mapping => None,
         Activity::Qualification => Some(
-            "Filler runs only when nothing else can; a failure here is a re-qualification event against the day profile."
+            "Filler repeats exact-current-D cells only when primary work is empty; a failure enters the current-D CPU-suspect event path, not a failed candidate's allowance-free block."
                 .to_owned(),
         ),
         Activity::Reproduction
@@ -335,7 +323,7 @@ fn purpose(
 fn detail(policy: &Projection, activity: Activity, task: Option<TaskId>) -> String {
     let mut text = filler_detail(activity, task).unwrap_or_else(|| match activity {
         Activity::Mapping => {
-            "Mapping exposure is what a cap S is computed from; a failure here can set the CCD's edge U."
+            "Mapping brackets tagged U, then sweeps uncovered cells from U toward hard ceiling C; S is a non-authorizing diagnostic."
                 .to_owned()
         }
         Activity::Qualification => policy
@@ -430,8 +418,232 @@ fn hours(seconds: u64) -> String {
 }
 
 /// The day state, in up to two lines: the applied profile and what the latest proposal says.
+pub(crate) fn blocker_words(reason: &togi_journal::ClimbBlocker) -> &'static str {
+    use togi_journal::ClimbBlocker;
+    match reason {
+        ClimbBlocker::Hold { .. } => "exact-profile hold incomplete",
+        ClimbBlocker::Certificate {} => "exact night qualification missing",
+        ClimbBlocker::CertificateFailed { .. } => "exact candidate qualification blocked",
+        ClimbBlocker::QuestionPending { .. } => "question pending",
+        ClimbBlocker::EventUnresolved { .. } => "event unresolved",
+        ClimbBlocker::Veto { .. } => "whole-profile veto",
+        ClimbBlocker::FirmwareInvalid {} => "firmware invalid",
+        ClimbBlocker::Frozen {} => "promotion frozen",
+        ClimbBlocker::Paused {} => "paused",
+        ClimbBlocker::AllowanceExhausted {} => "allowance exhausted",
+        ClimbBlocker::UnknownEdge { .. } => "unknown U",
+        ClimbBlocker::Finished { .. } => "exploration finished",
+        ClimbBlocker::Ceiling { .. } => "hard night ceiling blocks the target",
+        ClimbBlocker::CampaignHistory {} => "campaign history unavailable",
+        ClimbBlocker::SameBoot {} => "promotion requires an eligible cold boot",
+        ClimbBlocker::HoldProfile {} => "hold belongs to a different exact profile",
+        ClimbBlocker::SafeApply {} => "safe application prerequisites missing",
+        ClimbBlocker::ActivationClosed {} => "nonzero activation closed",
+    }
+}
+
+pub(crate) fn finish_words(reason: &togi_journal::UnitStopReason) -> &'static str {
+    use togi_journal::UnitStopReason;
+    match reason {
+        UnitStopReason::Ceiling {} => "night ceiling reached",
+        UnitStopReason::FirstBackstep { .. } => "first backstep; permanently stopped",
+        UnitStopReason::AllowanceExhausted {} => "allowance exhausted",
+        UnitStopReason::RestorationBackstep { .. } => "restoration backstep; permanently stopped",
+        UnitStopReason::AdverseCeiling {} => "adverse night ceiling; permanently stopped",
+        UnitStopReason::Veto {} => "whole-profile veto; permanently stopped",
+        UnitStopReason::Predecessor { .. } => "predecessor event; permanently stopped",
+    }
+}
+
+pub(crate) fn vector_words(profile: &togi_journal::UnitVector) -> String {
+    profile
+        .cores
+        .iter()
+        .map(|(core, offset)| format!("{}:{}", core.get(), offset.get()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+const PERMISSION: &str = "permission: experimental hold + exact night qualification";
+
+fn allowance_words(campaign: Option<&togi_tuner::policy::ClimbCampaignProjection>) -> String {
+    campaign.map_or_else(
+        || "allowance: history unavailable; new exploration blocked".to_owned(),
+        |campaign| format!(
+            "allowance: {} consumed / {} limit; {} remaining · {} provisional · {} reclassified{}",
+            campaign.consumed, campaign.limit, campaign.remaining, campaign.provisional, campaign.reclassified,
+            if campaign.exhausted { " · exhausted; no additional climbing" } else { "" },
+        ),
+    )
+}
+
+fn event_words(event: &togi_journal::DayEventId) -> String {
+    match event {
+        togi_journal::DayEventId::Boot { boot } => format!("boot {}", boot.as_str()),
+        togi_journal::DayEventId::Record { seq, .. } => format!("record #{seq}"),
+        togi_journal::DayEventId::Requalification { night } => format!("requalification {night}"),
+    }
+}
+/// Campaign and daily evidence are already projected; no renderer invents a permission or rate bound.
+pub(crate) fn climb_lines(policy: &Projection) -> Vec<String> {
+    use togi_journal::{CampaignEventPhase, CampaignHistory, ClimbAction};
+    let climb = &policy.climb;
+    let mut lines = vec![
+        PERMISSION.to_owned(),
+        allowance_words(climb.campaign.as_ref()),
+    ];
+    if let Some(campaign) = &climb.campaign {
+        if let CampaignHistory::Unreconstructible { reason } = &campaign.history {
+            lines.push(format!(
+                "campaign history unavailable: {reason}; new exploration blocked"
+            ));
+        }
+        for event in &campaign.events {
+            let phase = match event.phase {
+                CampaignEventPhase::Learning => "learning",
+                CampaignEventPhase::PostFinish => "post-finish",
+            };
+            let class = match &event.classification {
+                togi_journal::Classification::CpuSuspect { certainty } => {
+                    format!("CPU-suspect ({certainty})")
+                }
+                togi_journal::Classification::NonCpu {} => "non-CPU".to_owned(),
+                togi_journal::Classification::Unexplained {} => "unexplained".to_owned(),
+            };
+            lines.push(format!(
+                "{phase} event {}: {class}{}{}",
+                event_words(&event.event),
+                if event.provisional {
+                    " · provisional"
+                } else {
+                    ""
+                },
+                if event.reclassified {
+                    " · reclassified; allowance not refunded"
+                } else {
+                    ""
+                }
+            ));
+        }
+    }
+    match &climb.daily {
+        None => lines.push(
+            "experimental: current exact-profile daily evidence unavailable; no rate bound"
+                .to_owned(),
+        ),
+        Some(daily) => {
+            let bound = daily
+                .poisson_upper_per_h
+                .filter(|rate| rate.is_finite() && *rate > 0.0)
+                .map_or_else(
+                    || "rate bound unavailable".to_owned(),
+                    |rate| {
+                        format!(
+                            "at most 1 crash per {:.0} h (95%, fixed-rate model)",
+                            1.0 / rate
+                        )
+                    },
+                );
+            lines.push(format!(
+                "experimental: {} clean hours; {bound} · {} crashes / {} observed h",
+                hours(daily.clean_s),
+                daily.crashes,
+                hours(daily.observed_s)
+            ));
+        }
+    }
+    if let Some(profile) = &climb.profiles.proposed {
+        lines.push(format!("proposed, not applied: {}", vector_words(profile)));
+    }
+    if let Some(profile) = &climb.profiles.paused_saved {
+        lines.push(format!(
+            "paused saved D, not readback: {}",
+            vector_words(profile)
+        ));
+    }
+    for unit in &climb.units {
+        let name = match unit.unit {
+            UnitId::Ccd(id) => format!("CCD {}", id.get()),
+            UnitId::Core(id) => format!("core {}", id.get()),
+        };
+        let state = match &unit.state {
+            togi_tuner::policy::ClimbUnitState::Climbing => "climbing".to_owned(),
+            togi_tuner::policy::ClimbUnitState::Held { reason } => format!(
+                "held/unfinished: {}",
+                reason
+                    .iter()
+                    .map(blocker_words)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            togi_tuner::policy::ClimbUnitState::Finished {
+                reason, last_clean, ..
+            } => format!(
+                "finished: {}; last clean {}; remains experimental",
+                finish_words(reason),
+                last_clean.get()
+            ),
+        };
+        lines.push(format!(
+            "{name}: {state}; hold {} / {} h at exact D",
+            hours(unit.hold.credited_s),
+            hours(unit.hold.required_s)
+        ));
+        if let Some(step) = &unit.latest_step {
+            let action = match &step.action {
+                ClimbAction::Hold { blocked_by } => format!(
+                    "hold: {}",
+                    blocked_by
+                        .iter()
+                        .map(blocker_words)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                ClimbAction::Promote { from, to, step, .. } => {
+                    format!("step {} → {} ({step} counts)", from.get(), to.get())
+                }
+                ClimbAction::Retreat { cause, .. } => {
+                    use togi_journal::ClimbRetreatCause;
+                    match cause {
+                        ClimbRetreatCause::AdverseCeiling { .. } => {
+                            "retreat: adverse night ceiling".to_owned()
+                        }
+                        ClimbRetreatCause::Event { event } => {
+                            format!("retreat: CPU-suspect {}", event_words(event))
+                        }
+                        ClimbRetreatCause::Veto { event } => {
+                            format!("retreat: whole-profile veto from {}", event_words(event))
+                        }
+                        ClimbRetreatCause::Completion {} => {
+                            "retreat: exploration completion".to_owned()
+                        }
+                    }
+                }
+                ClimbAction::Restore { restoration, .. } => match restoration {
+                    togi_journal::RestorationKind::Firmware => "firmware restoration".to_owned(),
+                    togi_journal::RestorationKind::Reclassified => {
+                        "guarded reclassification restoration; climb stays stopped".to_owned()
+                    }
+                },
+                ClimbAction::FirmwareZero {} => "firmware reset to stock".to_owned(),
+            };
+            lines.push(format!(
+                "{name}: applied {action}; application {:?}; witnesses {:?}",
+                step.application, step.witnesses
+            ));
+        }
+    }
+    lines
+}
+
 pub(super) fn day_lines(snapshot: &Snapshot<'_>) -> Vec<String> {
     let policy = snapshot.policy;
+    if !policy.climb.units.is_empty() {
+        return vec![
+            PERMISSION.to_owned(),
+            allowance_words(policy.climb.campaign.as_ref()),
+        ];
+    }
     let mut first = match &policy.applied {
         Some(profile) => format!("The day profile is {}.", profile_words(profile)),
         None => "No day profile has been applied; every CCD stays at CO 0.".to_owned(),
@@ -532,7 +744,7 @@ fn ccd_list(ccds: &[togi_machine::CcdId]) -> String {
 fn hold_reason(reason: &HoldReason) -> &'static str {
     match reason {
         HoldReason::Incomplete { .. } => "its hold is not complete",
-        HoldReason::AtCap {} => "it is at the cap",
+        HoldReason::AtCap {} => "no ordinary step remains; see the unit's finish or held reason",
         HoldReason::NotQualified {} => "no complete qualification covers it",
         HoldReason::Vetoed { .. } => "a veto stands",
         HoldReason::QuestionPending { .. } => "a day question is pending",

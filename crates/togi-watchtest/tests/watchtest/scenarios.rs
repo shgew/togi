@@ -172,16 +172,24 @@ fn mapping_starts_the_first_isolated_trial_below_zero_after_the_controls() {
 }
 
 #[test]
-fn filler_starts_once_mapping_has_nothing_left() {
+fn filler_repeats_the_exact_current_day_profile_after_real_work_is_done() {
     let events = cut(Scenario::Filler);
     let intent = running_trial(&events);
     assert_eq!(intent.task.map(|task| task.queue), Some(Queue::Filler));
-    assert!(
-        matches!(intent.tested, Some(Tested::Isolated { offset, .. }) if offset != TargetOffset::ZERO),
-        "filler tests one CCD past its cap: {:?}",
-        intent.tested
+    assert_eq!(intent.activity, Some(Activity::Qualification));
+    assert!(matches!(intent.tested, Some(Tested::Exact {})));
+    let projection = project(&events);
+    let applied = projection
+        .climb
+        .profiles
+        .applied
+        .as_ref()
+        .expect("current D");
+    assert_eq!(
+        intent.profile, applied.cores,
+        "filler qualifies exact-current-D; it never probes S−1"
     );
-    let night = project(&events).night.expect("planned");
+    let night = projection.night.expect("planned");
     assert!(
         night
             .tasks

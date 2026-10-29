@@ -32,7 +32,7 @@ fn screen_items(colours: Colours) -> Vec<(&'static str, &'static str)> {
         ("►", "the core carries load in this trial"),
         (
             pick("▄▄▄", "▆▆▆"),
-            "offset applied now, or saved after a stop restored the hardware; white when this trial loads the core",
+            "committed day offset D, distinct from the numeric hardware readback; white when this trial loads the core",
         ),
         ("?", "no hardware offset has been read back for this core"),
         (
@@ -41,11 +41,11 @@ fn screen_items(colours: Colours) -> Vec<(&'static str, &'static str)> {
         ),
         (
             "···",
-            "the cap S: how far past the applied offset the night's evidence lets its CCD go",
+            "the hard night ceiling C for this tuning unit, not statistical permission",
         ),
         (
             pick("red ▄", "red ▆"),
-            "the night edge U of its CCD: the shallowest offset that failed in isolation, one count wide at Wide and Medium",
+            "the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at Wide and Medium",
         ),
         (
             pick("amber ▄", "amber ▆"),
@@ -54,7 +54,7 @@ fn screen_items(colours: Colours) -> Vec<(&'static str, &'static str)> {
         ("cyan", "running now"),
         (
             "amber",
-            "a hold, a veto, a retreat, a crash, or classes uncovered for the cap",
+            "a hold, a veto, a retreat, a crash, or outstanding qualification",
         ),
         ("red", "failures, past and present"),
         ("green", "passed, done, covered"),
@@ -85,15 +85,15 @@ const TUNING: Section = Section {
     items: &[
         (
             "NIGHT",
-            "Until you end it, togi maps each CCD's edge, qualifies profiles, reproduces daily events and runs controls, and fills idle time with cap probes and exact repeats. The stage shows when the night started, its elapsed time and what the current trial tests; the night panel lists each queue's share of that time and the progress.",
+            "Until you end it, togi maps each unit's edge U, sweeps uncovered cells from U toward C, qualifies exact profiles, reproduces daily events and runs controls. Idle time repeats exact-current-D qualification cells, never S-directed probes.",
         ),
         (
             "DAY",
-            "The applied profile holds for a number of applied hours before it takes one step. The day panel shows the hold, the last step and what blocks the next one.",
+            "permission: experimental hold + exact night qualification. The day panel shows the exact-profile hold, the last step, allowance and what blocks the next one. Finish ends exploration, not observation or safety work.",
         ),
         (
             "CCD TABLES",
-            "One table per CCD: its applied offset D, its cap S, its edge U and how far D is from S, then the classes that cover the cap and a row per core with the offset read back.",
+            "Physical CCD tables keep the topology visible. Each tuning unit shows applied D, hard ceiling C and tagged U; core rows retain their hardware readback. S is diagnostic only and never authorizes a step.",
         ),
         (
             "R6",
@@ -120,11 +120,15 @@ const WORDS: Section = Section {
         ("trial", "one launch of one workload on its target"),
         (
             "D",
-            "the CCD's applied day offset; 0 before the first day step",
+            "the tuning unit's applied day offset; saved and proposed profiles are not hardware readback",
+        ),
+        (
+            "C",
+            "the hard night ceiling, with its edge and margin witnesses; unknown U blocks ordinary promotion",
         ),
         (
             "S",
-            "the cap: the deepest offset the night's evidence supports, with its slope and what binds it",
+            "non-authorizing statistical diagnostic, with its slope, witnesses and gaps; never permission or a retreat trigger",
         ),
         (
             "U",
@@ -136,16 +140,19 @@ const WORDS: Section = Section {
         ),
         (
             "bound by",
-            "what limits S: a class's failure rate, the margin from the edge, or the baseline",
+            "what limits diagnostic S: a class's failure rate, edge margin, or baseline; not what permits D",
         ),
         (
             "covered",
-            "a class whose evidence backs the cap; an uncovered class does not yet",
+            "a class with diagnostic exposure; this does not qualify a whole profile",
         ),
-        ("hold", "applied hours at D out of the hours a step needs"),
+        (
+            "hold",
+            "clean observed hours at the current exact D; earlier profiles, nights and paused time do not count",
+        ),
         (
             "step",
-            "what the day decided: hold, promote one CCD, retreat, or reset after a firmware change",
+            "hold, promote one tuning unit, retreat, restore, or reset after a firmware change",
         ),
         ("veto", "a profile an event forbids until the veto clears"),
         (
@@ -163,6 +170,14 @@ const WORDS: Section = Section {
         (
             "share",
             "the part of the night's elapsed time a queue has used, against the part it is meant to take",
+        ),
+        (
+            "allowance",
+            "machine-wide consumed and remaining events, including provisional charges; reclassification does not refund them and finish does not hide later events",
+        ),
+        (
+            "experimental",
+            "experimental: 50 clean hours; at most 1 crash per 17 h (95%, fixed-rate model). This is an example for current exact-profile evidence, not a reliability certificate; finish alone never meets the hazard goal",
         ),
     ],
 };
@@ -326,7 +341,7 @@ fn examples(colours: Colours) -> [Example; 3] {
             offset: Some(-12),
             state: "LOADED",
             edge: Some(("-31", Paint::Bad)),
-            note: "applied -12 under load; the dots run to the cap S at -26; the red mark is the edge U, failed at -31",
+            note: "applied -12 under load; dots reach hard ceiling C at -26; U observed at -31",
             gauge: gauge(
                 colours,
                 &[
@@ -343,11 +358,8 @@ fn examples(colours: Colours) -> [Example; 3] {
             offset: Some(-8),
             state: "",
             edge: None,
-            note: "idle, so grey; the cap S is -14 and its CCD has no edge yet, so there is no red mark",
-            gauge: gauge(
-                colours,
-                &[(Paint::Grey, &applied, 8), (Paint::Grey, "·", 6)],
-            ),
+            note: "idle, so grey; C is unknown until U is mapped, so there are no ceiling dots or edge mark",
+            gauge: gauge(colours, &[(Paint::Grey, &applied, 8)]),
         },
         Example {
             marker: "  ",
@@ -355,12 +367,12 @@ fn examples(colours: Colours) -> [Example; 3] {
             offset: None,
             state: "",
             edge: Some(("-50", Paint::Warn)),
-            note: "no readback yet; the cap S is -30 and the edge is censored: nothing failed down to -50",
+            note: "no readback yet; U censored at -50 gives hard ceiling C at -45, not physical -50",
             gauge: gauge(
                 colours,
                 &[
-                    (Paint::Grey, "·", 30),
-                    (Paint::Text, " ", 19),
+                    (Paint::Grey, "·", 45),
+                    (Paint::Text, " ", 4),
                     (Paint::Warn, &edge, 1),
                 ],
             ),
@@ -653,11 +665,11 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         for said in [
-            "the night edge U of its CCD: the shallowest offset that failed in isolation",
+            "the night edge U of its tuning unit: the shallowest offset that failed in isolation",
             "the night edge: the shallowest offset that failed in isolation",
-            "the cap: the deepest offset the night's evidence supports",
-            "a class whose evidence backs the cap; an uncovered class does not yet",
-            "applied hours at D out of the hours a step needs",
+            "non-authorizing statistical diagnostic",
+            "permission: experimental hold + exact night qualification",
+            "clean observed hours at the current exact D",
         ] {
             assert!(words.contains(said), "help lost {said:?}: {words}");
         }
@@ -719,7 +731,6 @@ mod tests {
             "by offset when offsets",
             "stand in for requests",
             "not a guarantee",
-            "evidence, not",
             "until every core has one",
         ] {
             assert!(
@@ -764,10 +775,10 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         for explanation in [
-            "D the CCD's applied day offset; 0 before the first day step",
-            "S the cap: the deepest offset the night's evidence supports, with its slope and what binds it",
+            "D the tuning unit's applied day offset; saved and proposed profiles are not hardware readback",
+            "S non-authorizing statistical diagnostic",
             "U the night edge: the shallowest offset that failed in isolation; unknown until mapped, censored when nothing failed down to the limit",
-            "covered a class whose evidence backs the cap; an uncovered class does not yet",
+            "covered a class with diagnostic exposure",
             "veto a profile an event forbids until the veto clears",
         ] {
             assert!(
@@ -1311,8 +1322,8 @@ mod tests {
                 .unwrap_or_else(|| panic!("no legend row {label:?}: {rows:#?}"))
                 .clone()
         };
-        assert!(row_of(applied).contains("offset applied now"));
-        assert!(row_of(edge).contains("the night edge U of its CCD"));
+        assert!(row_of(applied).contains("committed day offset D"));
+        assert!(row_of(edge).contains("the night edge U of its tuning unit"));
         assert!(row_of(censored).contains("a censored edge"));
         let text = rows.join("\n");
         let rich = colours == Colours::Rich;

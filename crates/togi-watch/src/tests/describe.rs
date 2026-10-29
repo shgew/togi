@@ -145,7 +145,7 @@ fn a_night_reads_in_order_from_plan_to_promotion() {
     );
     assert_eq!(
         sentences[3],
-        "cap: CCD0 cap 0 → -15 · edge margin · fallback slope"
+        "cap: CCD0 S 0 → -15 · diagnostic only, not permission · edge margin · fallback slope"
     );
     assert_eq!(
         sentences[4],

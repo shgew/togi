@@ -159,6 +159,7 @@ pub(crate) fn mapping_trial(ordinal: u32, ccd_id: u8, offset: i64, cores: &[u8])
 /// The projection of a machine with no committed edge, cap, day or night.
 pub(crate) fn bare(ccds: Vec<UnitProjection>) -> Projection {
     Projection {
+        climb: togi_tuner::policy::ClimbProjection::default(),
         applied: None,
         units: ccds,
         day: DayProjection {
@@ -173,7 +174,6 @@ pub(crate) fn bare(ccds: Vec<UnitProjection>) -> Projection {
         qualifications: Vec::new(),
         night: None,
         stopped: false,
-        climb: Default::default(),
     }
 }
 
@@ -201,6 +201,67 @@ pub(crate) fn censored(limit: i64) -> Edge {
     Edge::Censored {
         limit: off(limit),
         witnesses: vec![seq(7), seq(9)],
+    }
+}
+
+/// Adapt a historical test row into an explicit D fixture; this is not a production ceiling calculation.
+pub(crate) fn climb_row(row: &UnitProjection) -> togi_tuner::policy::ClimbUnitProjection {
+    use togi_tuner::policy::{
+        ClimbHoldProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+    };
+    ClimbUnitProjection {
+        unit: row.unit,
+        phase: togi_tuner::unit::Phase::Coarse,
+        parent: None,
+        cores: row.cores,
+        inherited_start: off(0),
+        applied: row.day,
+        edge: row.edge.clone().unwrap_or(Edge::Unknown {}),
+        ceiling: row.cap.as_ref().map(|cap| cap.offset),
+        remaining: row.remaining,
+        hold: ClimbHoldProjection {
+            credited_s: 3 * 3600,
+            required_s: 50 * 3600,
+            witnesses: vec![seq(3)],
+        },
+        next: None,
+        state: ClimbUnitState::Climbing,
+        latest_step: None,
+        diagnostic_s: row
+            .cap
+            .clone()
+            .map(|cap| DiagnosticStatisticalProjection { cap }),
+    }
+}
+
+pub(crate) fn unit_vector(
+    units: &[togi_tuner::policy::ClimbUnitProjection],
+) -> togi_journal::UnitVector {
+    use togi_journal::{UnitMapping, UnitMembership, UnitPhase};
+    let cores = units
+        .iter()
+        .flat_map(|unit| unit.cores.iter().map(|core| (core, unit.applied)))
+        .collect();
+    togi_journal::UnitVector {
+        cores,
+        mapping: UnitMapping {
+            phase: if units
+                .iter()
+                .any(|unit| matches!(unit.unit, UnitId::Core(_)))
+            {
+                UnitPhase::Core
+            } else {
+                UnitPhase::Coarse
+            },
+            units: units
+                .iter()
+                .map(|unit| UnitMembership {
+                    unit: unit.unit,
+                    cores: unit.cores,
+                    parent: unit.parent,
+                })
+                .collect(),
+        },
     }
 }
 
@@ -412,6 +473,39 @@ fn two_ccds() -> Projection {
     projection.applied = Some(profile_of(&[(0, -10), (1, -8)]));
     projection.day.hold = Some(hold(&[(0, -10), (1, -8)], 3 * 3600, 8 * 3600));
     projection.day.firmware = FirmwareValidity::Valid;
+    projection.climb.units = projection.units.iter().map(climb_row).collect();
+    projection.climb.units[1].ceiling = Some(off(-45));
+    projection.climb.units[1].remaining = Some(37);
+    projection.climb.profiles.applied = Some(unit_vector(&projection.climb.units));
+    projection.climb.campaign = Some(togi_tuner::policy::ClimbCampaignProjection {
+        campaign: togi_journal::CampaignId(togi_journal::Provenance {
+            session: "20231114T221320Z".parse().unwrap(),
+            seq: seq(1),
+        }),
+        history: togi_journal::CampaignHistory::Complete {},
+        limit: 2,
+        consumed: 0,
+        remaining: 2,
+        provisional: 0,
+        reclassified: 0,
+        exhausted: false,
+        events: vec![],
+    });
+    let mut before = projection.climb.units.clone();
+    before[0].applied = off(-5);
+    projection.climb.units[0].latest_step = Some(togi_tuner::policy::ClimbStepProjection {
+        application: togi_journal::ApplicationId(2),
+        at: FIXED_NOW,
+        action: togi_journal::ClimbAction::Promote {
+            unit: togi_journal::UnitId::Ccd(ccd(0)),
+            from: off(-5),
+            to: off(-10),
+            step: 5,
+        },
+        before: unit_vector(&before),
+        after: unit_vector(&projection.climb.units),
+        witnesses: vec![seq(5)],
+    });
     projection
 }
 
