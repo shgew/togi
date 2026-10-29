@@ -20,7 +20,7 @@ pub use events::{
     ProvisionalCause, QuestionState, Witness, classify, daily_events,
 };
 pub use history::{ApplicationKind, DayApplication, DayHistory, HistoryError, Promotion, Reverted};
-pub use hold::{DayInterval, IntervalKind, Readback, credited_secs};
+pub use hold::{DayInterval, IntervalKind, Readback, credited_secs, hold_accounting};
 pub use profile::{CoreProfile, CoreProfileError};
 pub use retreat::{
     EventStatus, ReproductionOutcome, RetreatCause, RetreatEvent, RetreatState, Veto,

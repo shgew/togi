@@ -35,25 +35,34 @@ pub struct DayInterval {
     pub kind: IntervalKind,
 }
 
-/// The seconds that count toward a hold at `profile`: applied intervals with a verified unchanged
-/// readback at exactly that profile, recorded after `origin` (`docs/spec/tuner.md`, Hold and next
-/// proposal). Suspended, paused, unobserved, ambiguous and other-profile time is excluded.
-pub fn credited_secs(intervals: &[DayInterval], profile: &UnitProfile, origin: Seq) -> u64 {
-    intervals
-        .iter()
-        .filter(|interval| interval.at > origin)
-        .filter_map(|interval| match &interval.kind {
-            IntervalKind::Applied {
+/// Credited seconds and the indices of their interval witnesses at exactly `profile`.
+///
+/// Only verified applied intervals recorded after `origin` count (`docs/spec/tuner.md`, Hold and
+/// next proposal). Witness indices preserve input order and let callers recover commitment identities
+/// without allocating when only seconds are needed. Suspended, paused, unobserved, ambiguous and
+/// other-profile time is excluded.
+pub fn hold_accounting<'a>(
+    intervals: &'a [DayInterval],
+    profile: &'a UnitProfile,
+    origin: Seq,
+) -> (u64, impl Iterator<Item = usize> + 'a) {
+    let credited = intervals.iter().enumerate().filter(move |(_, interval)| {
+        interval.at > origin
+            && matches!(&interval.kind, IntervalKind::Applied {
                 profile: observed,
                 readback: Readback::Verified,
-            } if observed == profile => Some(interval.secs),
-            IntervalKind::Applied { .. }
-            | IntervalKind::Paused
-            | IntervalKind::Suspended
-            | IntervalKind::Unobserved
-            | IntervalKind::Ambiguous => None,
-        })
-        .fold(0_u64, saturating_add_secs)
+            } if observed == profile)
+    });
+    let seconds = credited
+        .clone()
+        .map(|(_, interval)| interval.secs)
+        .fold(0_u64, saturating_add_secs);
+    (seconds, credited.map(|(index, _)| index))
+}
+
+/// Credited seconds without materializing interval witnesses.
+pub fn credited_secs(intervals: &[DayInterval], profile: &UnitProfile, origin: Seq) -> u64 {
+    hold_accounting(intervals, profile, origin).0
 }
 
 /// Credited seconds saturate at the largest count a hold can represent.

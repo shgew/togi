@@ -295,28 +295,18 @@ impl State {
         let Some(history) = self.days.history.as_ref() else {
             return (Vec::new(), 0);
         };
-        let applied = &history.current().profile;
-        let origin = history.hold_origin();
-        let mut seqs = Vec::new();
-        let mut secs = 0_u64;
-        for (commit, folded) in self
-            .days
-            .intervals
-            .iter()
-            .zip(self.committed_intervals().iter())
-        {
-            if let IntervalKind::Applied {
-                profile,
-                readback: Readback::Verified,
-            } = &folded.kind
-                && profile == applied
-                && folded.at > origin
-            {
-                seqs.push(commit.seq);
-                secs = secs.saturating_add(folded.secs);
-            }
-        }
-        (seqs, secs)
+        let intervals = self.committed_intervals();
+        let (seconds, witnesses) = crate::day::hold_accounting(
+            &intervals,
+            &history.current().profile,
+            history.hold_origin(),
+        );
+        (
+            witnesses
+                .map(|index| self.days.intervals[index].seq)
+                .collect(),
+            seconds,
+        )
     }
 
     /// The `day.hold` owed because the credit at the current D changed.
@@ -442,9 +432,10 @@ impl State {
         &self,
         history: &crate::day::DayHistory,
         view: &DayView,
-        caps: &UnitProfile,
+        permission: &super::permission::Permission,
     ) -> Result<BTreeSet<UnitProfile>, NotReady> {
-        Ok(crate::day::next_proposal(history, &view.events, caps)?
+        Ok(permission
+            .candidate(history, &view.events)?
             .map(|proposal| proposal.profile)
             .filter(|profile| self.qualification_blocked(profile).is_some())
             .into_iter()
@@ -491,16 +482,16 @@ impl State {
             .rfind(|step| step.payload.cold_boot == query.boot);
         let intervals = self.committed_intervals();
         let reproductions = self.reproduction_outcomes();
-        let caps = self.committed_caps()?;
+        let permission = self.permission()?;
         let qualified = self.qualified_profiles(query.now);
-        let blocked = self.blocked_proposals(history, view, &caps)?;
+        let blocked = self.blocked_proposals(history, view, &permission)?;
         let decision = day_step(&DayInputs {
             topology: &self.machine.cores,
             history,
             events: &view.events,
             reproductions: &reproductions,
             intervals: intervals.as_slice(),
-            caps: &caps,
+            caps: &permission.limits,
             qualified: &qualified,
             blocked: &blocked,
             firmware: self.firmware_state(),
@@ -541,8 +532,9 @@ impl State {
                 if matches!(query.invocation, Invocation::SameBoot) {
                     return Ok(None);
                 }
-                let proposal_profile =
-                    crate::day::next_proposal(history, &view.events, &caps)?.map(|p| p.profile);
+                let proposal_profile = permission
+                    .candidate(history, &view.events)?
+                    .map(|p| p.profile);
                 let blocked_by = self.hold_reasons(&blockers, proposal_profile.as_ref())?;
                 for reason in &blocked_by {
                     if let HoldReason::QualificationFailed {
