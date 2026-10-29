@@ -8,7 +8,7 @@ use togi_simrun::day_night::successor::{
 };
 
 use super::super::fixture::{Lab, Spec, resync, uid};
-use super::{Audit, LearningAudit, Rules, audit};
+use super::{LearningAudit, Rules, audit};
 
 const SCENARIO: &str = "successor-edge-deep";
 
@@ -147,14 +147,7 @@ fn kind(record: &mut Record) -> &mut StepKind {
 }
 
 fn judged(lab: &Lab, record: &Record) -> LearningAudit {
-    let rules = Rules::new(&lab.registration);
-    let mut audit = Audit {
-        record,
-        rules: &rules,
-        result: LearningAudit::default(),
-    };
-    audit.reclassified_restorations();
-    audit.result
+    audit(record, &Rules::new(&lab.registration))
 }
 
 fn assert_rule(lab: &Lab, record: &Record, rule: &str) {
