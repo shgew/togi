@@ -454,22 +454,22 @@ impl State {
                         .map(|event| journal::ClimbBlocker::Veto { event }),
                 ),
                 climb::Blocker::FirmwareInvalid => {
-                    result.push(journal::ClimbBlocker::FirmwareInvalid {})
+                    result.push(journal::ClimbBlocker::FirmwareInvalid {});
                 }
                 climb::Blocker::Freeze => result.push(journal::ClimbBlocker::Frozen {}),
                 climb::Blocker::Pause => result.push(journal::ClimbBlocker::Paused {}),
                 climb::Blocker::SameBoot => result.push(journal::ClimbBlocker::SameBoot {}),
                 climb::Blocker::AllowanceExhausted => {
-                    result.push(journal::ClimbBlocker::AllowanceExhausted {})
+                    result.push(journal::ClimbBlocker::AllowanceExhausted {});
                 }
                 climb::Blocker::CampaignHistory => {
-                    result.push(journal::ClimbBlocker::CampaignHistory {})
+                    result.push(journal::ClimbBlocker::CampaignHistory {});
                 }
                 climb::Blocker::UnknownEdge { unit } => {
-                    result.push(journal::ClimbBlocker::UnknownEdge { unit: *unit })
+                    result.push(journal::ClimbBlocker::UnknownEdge { unit: *unit });
                 }
                 climb::Blocker::Ceiling { unit } => {
-                    result.push(journal::ClimbBlocker::Ceiling { unit: *unit })
+                    result.push(journal::ClimbBlocker::Ceiling { unit: *unit });
                 }
                 climb::Blocker::Finished => result.extend(
                     history
@@ -478,7 +478,7 @@ impl State {
                         .map(|unit| journal::ClimbBlocker::Finished { unit }),
                 ),
                 climb::Blocker::ActivationClosed => {
-                    result.push(journal::ClimbBlocker::ActivationClosed {})
+                    result.push(journal::ClimbBlocker::ActivationClosed {});
                 }
                 climb::Blocker::SafeApply => result.push(journal::ClimbBlocker::SafeApply {}),
             }
