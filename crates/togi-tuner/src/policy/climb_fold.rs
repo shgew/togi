@@ -182,6 +182,10 @@ impl State {
         let journal::ApplyCause::Step { decision } = applied.cause else { return None; };
         let seq = Seq::new(decision.0)?;
         let plan = self.climb.plans.get(&seq)?;
+        let actual = UnitProfile::of_ccd(applied.target.ccd());
+        if plan.target() != Some(&actual) {
+            return Some(if self.days.history.as_ref().is_some_and(|history| history.current().profile == actual) { ApplicationKind::Reapplication } else { ApplicationKind::SafetyCap });
+        }
         Some(match &plan.action {
             climb::ClimbAction::Promote(_) | climb::ClimbAction::Restore(_) => ApplicationKind::Promotion,
             climb::ClimbAction::FirmwareZero { .. } => ApplicationKind::FirmwareZero,
@@ -204,8 +208,7 @@ impl State {
         if let Some(history) = &mut self.climb.history {
             let application = climb::ApplicationId::new(event.seq.get()).ok_or(FoldError::ClimbRecord("invalid application identity"))?;
             let target = UnitProfile::of_ccd(applied.target.ccd());
-            if let Some(plan) = plan {
-                if plan.target() != Some(&target) { return Err(FoldError::ClimbRecord("readback differs from decision")); }
+            if let Some(plan) = plan.filter(|plan| plan.target() == Some(&target)) {
                 history.apply(application, event.time, &plan)?;
             } else if target != *history.current() {
                 if !target.is_zero() { self.climb.history_error.get_or_insert_with(|| "A nonzero application has no reconstructible climb decision.".into()); }

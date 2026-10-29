@@ -38,6 +38,7 @@ impl State {
             let latest_step = self.days.applications.iter().rev().find_map(|application| {
                 let journal::ApplyCause::Step { decision } = application.payload.cause else { return None; };
                 let commitment = self.climb.decisions.get(&Seq::new(decision.0)?)?;
+                if application.payload.target.cores() != &commitment.payload.proposed.cores { return None; }
                 if commitment.payload.before.cores == commitment.payload.proposed.cores { return None; }
                 if !unit.cores.iter().any(|core| commitment.payload.before.cores.get(core) != commitment.payload.proposed.cores.get(core)) { return None; }
                 Some(ClimbStepProjection {

@@ -98,7 +98,7 @@ impl Params {
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Stop {}
 
-/// The folded Ruleset 13 policy state.
+/// The folded Ruleset 14 policy state.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct State {
     params: Params,
