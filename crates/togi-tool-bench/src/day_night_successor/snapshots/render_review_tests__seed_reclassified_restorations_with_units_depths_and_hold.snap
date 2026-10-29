@@ -1,0 +1,24 @@
+---
+source: crates/togi-tool-bench/src/day_night_successor/render_review_tests.rs
+expression: "rendered(|out| seed_section(out, &group, &item))"
+---
+### successor-reclassified-restoration — ccd-uniform — slope 1.5 — seed 5
+
+Outcome Converged; first finish 10; settled 12; unit-total depth 6 of reference M = 6 (physical maximum 6, required 5); physical-core mean depth 3; final depths [3,3]; at first finish [3,3].
+
+Events (unique): daily 0 total / 0 CO / 0 background / 0 non-CPU / 0 unattributed; night 0 total / 0 CO. Learning-phase daily CO 0; post-finish daily CO 0.
+
+| Unit | Finish | Finish day | Settled | Finish depth | Final depth | Promotions | Retreat steps | Learning H | Post-finish H |
+|---|---|---|---|---|---|---|---|---|---|
+
+Allowance: limit 3, consumed 1, remaining 2, overspend 0, exhausted false; provisional 0, reclassified 2; stopped units []; newest step step-7.
+
+| Reclassified restoration | Answer day | Retreat | Event | Units | Before | After | Hold h | Qualification | Consumed before | Consumed after | Violations |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| reclass-1 | 40.25 | retreat-1 | event-3 | [0,1] | [2,2] | [3,3] | 12.5 | qual-1 | 2 | 1 | 0 |
+| reclass-2 | 90 | retreat-2 | event-5 \| late | [1] | [3,1] | [3,2] | none | none | 1 | 1 | 1 |
+
+| Epoch | Context | Days | Operational M | Physical max | Per-unit feasible | Certificate | Hours in A / total | In A at end | Recovered to A at |
+|---|---|---|---|---|---|---|---|---|---|
+
+- Violation `reclassified-restoration-refund` (reclass-2): refunded 0 \| expected 1

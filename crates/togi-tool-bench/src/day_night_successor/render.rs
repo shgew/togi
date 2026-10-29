@@ -843,6 +843,40 @@ fn seed_section(out: &mut String, group: &Group, seed: &SeedMetrics) {
         }
         put(out, "");
     }
+    if !seed.learning.reclassified_restorations.is_empty() {
+        put(
+            out,
+            "| Reclassified restoration | Answer day | Retreat | Event | Units | Before | After | Hold h | Qualification | Consumed before | Consumed after | Violations |",
+        );
+        put(out, "|---|---|---|---|---|---|---|---|---|---|---|---|");
+        for item in &seed.learning.reclassified_restorations {
+            put(
+                out,
+                format!(
+                    "| {} | {} | {} | {} | [{}] | [{}] | [{}] | {} | {} | {} | {} | {} |",
+                    cell(&item.id),
+                    num(item.day),
+                    cell(&item.retreat),
+                    cell(&item.event),
+                    item.units
+                        .iter()
+                        .map(|unit| unit.get().to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    depths(&item.before_depths),
+                    depths(&item.after_depths),
+                    item.hold_hours.map_or_else(|| "none".into(), num),
+                    item.qualification
+                        .as_deref()
+                        .map_or_else(|| "none".into(), cell),
+                    item.consumed_before,
+                    item.consumed_after,
+                    item.violations
+                ),
+            );
+        }
+        put(out, "");
+    }
     put(
         out,
         "| Epoch | Context | Days | Operational M | Physical max | Per-unit feasible | Certificate | Hours in A / total | In A at end | Recovered to A at |",

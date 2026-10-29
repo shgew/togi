@@ -81,7 +81,10 @@ fn with_unit(record: &Record, base: PerCore<u8>, unit: usize, depth: u8) -> PerC
 fn climb_qualification(record: &mut Record, index: usize) -> &mut Qualification {
     match &mut record.steps[index].kind {
         StepKind::Climb { qualification, .. } => qualification,
-        StepKind::Restoration { .. } | StepKind::Retreat { .. } | StepKind::StockReset { .. } => {
+        StepKind::Restoration { .. }
+        | StepKind::ReclassifiedRestoration { .. }
+        | StepKind::Retreat { .. }
+        | StepKind::StockReset { .. } => {
             unreachable!("a promotion")
         }
     }
@@ -92,7 +95,10 @@ fn climb_hold(record: &mut Record, index: usize) -> &mut f64 {
         StepKind::Climb {
             clean_hold_hours, ..
         } => clean_hold_hours,
-        StepKind::Restoration { .. } | StepKind::Retreat { .. } | StepKind::StockReset { .. } => {
+        StepKind::Restoration { .. }
+        | StepKind::ReclassifiedRestoration { .. }
+        | StepKind::Retreat { .. }
+        | StepKind::StockReset { .. } => {
             unreachable!("a promotion")
         }
     }

@@ -13,7 +13,8 @@ use super::*;
 use crate::day_night_successor::registration::PolicyRole;
 use crate::day_night_successor::score::fixture::uid;
 use crate::day_night_successor::score::learning::{
-    LearningAudit, PromotionView, RestorationStatus, RestorationView, Violation,
+    LearningAudit, PromotionView, ReclassifiedRestorationView, RestorationStatus, RestorationView,
+    Violation,
 };
 use crate::day_night_successor::score::measure::{
     CompleteOutcome, DepthMetrics, EpochView, EventCounts, EventView, LedgerView, Losses,
@@ -627,6 +628,7 @@ fn a_seed_lists_blocked_retained_and_crashed_restorations_with_violations() {
                 1,
             ),
         ],
+        reclassified_restorations: vec![],
     };
     let group = group(
         "successor-restoration-states",
@@ -637,6 +639,65 @@ fn a_seed_lists_blocked_retained_and_crashed_restorations_with_violations() {
     );
     assert_snapshot!(
         "seed_restoration_states_violations_and_risk_sources",
+        rendered(|out| seed_section(out, &group, &item))
+    );
+}
+
+#[test]
+fn a_seed_lists_reclassified_restorations_with_units_depths_hold_and_allowance() {
+    let mut item = seed(5);
+    let mut accounts = ledger(3, 1, None);
+    accounts.reclassified = 2;
+    item.ledger = Some(accounts);
+    item.policy_evidence.newest_step = Some("step-7".into());
+    item.learning = LearningAudit {
+        reported: true,
+        violations: vec![Violation {
+            rule: "reclassified-restoration-refund",
+            subject: "reclass-2".into(),
+            detail: "refunded 0 | expected 1".into(),
+        }],
+        reclassified_restorations: vec![
+            ReclassifiedRestorationView {
+                id: "reclass-1".into(),
+                day: 40.25,
+                retreat: "retreat-1".into(),
+                event: "event-3".into(),
+                units: vec![uid(0), uid(1)],
+                before_depths: vec![2, 2],
+                after_depths: vec![3, 3],
+                hold_hours: Some(12.5),
+                qualification: Some("qual-1".into()),
+                consumed_before: 2,
+                consumed_after: 1,
+                violations: 0,
+            },
+            ReclassifiedRestorationView {
+                id: "reclass-2".into(),
+                day: 90.0,
+                retreat: "retreat-2".into(),
+                event: "event-5 | late".into(),
+                units: vec![uid(1)],
+                before_depths: vec![3, 1],
+                after_depths: vec![3, 2],
+                hold_hours: None,
+                qualification: None,
+                consumed_before: 1,
+                consumed_after: 1,
+                violations: 1,
+            },
+        ],
+        ..LearningAudit::default()
+    };
+    let group = group(
+        "successor-reclassified-restoration",
+        UnitMode::CcdUniform,
+        1.5,
+        vec![item.clone()],
+        &[5],
+    );
+    assert_snapshot!(
+        "seed_reclassified_restorations_with_units_depths_and_hold",
         rendered(|out| seed_section(out, &group, &item))
     );
 }
