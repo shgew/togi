@@ -631,9 +631,33 @@ fn an_exit_queued_before_a_cancellation_is_still_an_unexpected_exit() {
     });
 }
 
-/// A worker that floods stdout with short lines until it is terminated.
-fn flooding(_: usize, _: &crate::launch::LaunchCommand) -> Launch {
-    Launch::Run(script(|mut ctx: ProcCtx| async move {
+/// Charges the runtime and both storage-writer threads, but not OS descheduling.
+/// Nextest isolates this test in its own process; concurrent tests in a shared process can
+/// only spend these unchanged bounds sooner. The runnable driver also charges idle waits.
+fn cpu_clock() -> tokio::task::JoinHandle<()> {
+    let cpu_time = || {
+        Duration::try_from(rustix::time::clock_gettime(
+            rustix::time::ClockId::ProcessCPUTime,
+        ))
+        .expect("the process CPU clock is nonnegative")
+    };
+    let mut last_cpu = cpu_time();
+    tokio::task::spawn_local(async move {
+        loop {
+            let now_cpu = cpu_time();
+            let spent = now_cpu
+                .checked_sub(last_cpu)
+                .expect("the process CPU clock never runs backwards");
+            tokio::time::advance(spent).await;
+            last_cpu = now_cpu;
+        }
+    })
+}
+
+/// A worker that floods stdout with unpaced short-line batches until it is terminated.
+/// The separate CPU clock charges flooding, supervision, classification and output draining.
+fn flooding(last_batch: Rc<Cell<Option<Instant>>>) -> Launch {
+    Launch::Run(script(move |mut ctx: ProcCtx| async move {
         loop {
             while let Ok(delivery) = ctx.signals.try_recv() {
                 if matches!(
@@ -646,6 +670,7 @@ fn flooding(_: usize, _: &crate::launch::LaunchCommand) -> Launch {
                 }
             }
             ctx.print(&"ok\n".repeat(4096)).await;
+            last_batch.set(Some(Instant::now()));
             tokio::task::yield_now().await;
         }
     }))
@@ -653,15 +678,24 @@ fn flooding(_: usize, _: &crate::launch::LaunchCommand) -> Launch {
 
 #[test]
 fn an_output_flood_neither_skips_load_steps_nor_delays_the_deadline() {
-    crate::testing::runtime(false).block_on(async move {
+    crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            rig.fake.on_launch(flooding);
+            let last_batch = Rc::new(Cell::new(None));
+            rig.fake.on_launch({
+                let last_batch = Rc::clone(&last_batch);
+                move |_, _| flooding(Rc::clone(&last_batch))
+            });
             let trial = spec(Regime::R4, &[0], secs(1));
             let schedule = LoadSchedule::for_spec(&trial).unwrap();
             let handle = rig.start(trial).await.unwrap();
+            let clock = cpu_clock();
             let started = tokio::time::Instant::now();
-            let run = finish(&handle).await;
+            let timing = rig.env.timing;
+            let run = tokio::time::timeout(timing.wait_bound(secs(1)), finish(&handle)).await;
+            clock.abort();
+            let run =
+                run.expect("the flood starved supervision or cleanup past the existing bound");
             let ended = tokio::time::Instant::now();
             let term = rig
                 .fake
@@ -675,9 +709,10 @@ fn an_output_flood_neither_skips_load_steps_nor_delays_the_deadline() {
             let expected = schedule.toggles(secs(1));
             assert_eq!(
                 (run.finished.result.stops, run.finished.result.conts),
-                (expected.stops, expected.conts)
+                (expected.stops, expected.conts),
+                "{:?}",
+                run.finished
             );
-            let timing = rig.env.timing;
             assert!(
                 term < secs(1) + Duration::from_millis(500),
                 "the flood delayed the deadline: {term:?}"
@@ -687,7 +722,12 @@ fn an_output_flood_neither_skips_load_steps_nor_delays_the_deadline() {
                 "the end outlived the spec's bound: {:?}",
                 ended.duration_since(started)
             );
-            assert!(run.finished.teardown.is_ok());
+            assert!(run.finished.teardown.is_ok(), "{:?}", run.finished);
+            assert!(
+                last_batch.get().is_some_and(|at| at >= started + secs(1)),
+                "the worker flooded throughout the trial on the CPU clock: {:?}",
+                last_batch.get().map(|at| at.duration_since(started))
+            );
         })
         .await;
     });
