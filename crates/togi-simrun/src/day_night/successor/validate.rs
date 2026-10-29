@@ -381,9 +381,14 @@ impl Record {
             )?;
             let count = u32::try_from(self.units.len())
                 .map_err(|_| ValidationError::Invalid("unit count"))?;
+            let allocated_ratio = a.unit_ratios.iter().sum::<f64>() / f64::from(count);
+            // Ratios for rejected profiles can be much larger than one. Scale representation
+            // roundoff here only; membership below still compares each ratio exactly with one.
+            let allocation_tolerance =
+                epoch.reference.tolerance * a.joint_ratio.max(allocated_ratio).max(1.0);
             require(
-                a.joint_ratio + epoch.reference.tolerance
-                    >= a.unit_ratios.iter().sum::<f64>() / f64::from(count),
+                a.joint_ratio >= allocated_ratio
+                    || allocated_ratio - a.joint_ratio <= allocation_tolerance,
                 "joint hazard source allocation",
             )?;
             require(

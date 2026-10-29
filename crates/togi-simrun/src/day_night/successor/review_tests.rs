@@ -262,3 +262,32 @@ fn a_complete_observation_does_not_include_an_event_at_the_unobserved_endpoint()
         Err(ValidationError::Invalid("ordered event days"))
     ));
 }
+
+#[test_case(101.999_999_910_592_99, 101.999_999_910_593_02, true; "initial rejected profile roundoff")]
+#[test_case(26_111.999_977_111_795, 26_111.999_977_111_813, true; "firmware rejected profile roundoff")]
+#[test_case(26_111.999_977_111_795, 26_111.999_978_111_795, false; "materially missing allocation")]
+#[test_case(1.0, 1.000_000_000_000_000_2, true; "allocation roundoff never grants membership")]
+fn source_allocation_roundoff_is_relative_without_relaxing_membership(
+    joint: f64,
+    allocated: f64,
+    valid: bool,
+) {
+    let mut record = fixture();
+    for epoch in &mut record.epochs {
+        epoch.reference.tolerance = 1e-12;
+    }
+    for interval in &mut record.intervals {
+        interval.profile = profile(30);
+        interval.admissibility.joint_ratio = joint;
+        interval.admissibility.unit_ratios.fill(allocated);
+        interval.admissibility.member = joint <= 1.0 && allocated <= 1.0;
+        assert!(!interval.admissibility.member);
+    }
+    assert_eq!(record.validate().is_ok(), valid);
+    if !valid {
+        assert_eq!(
+            record.validate(),
+            Err(ValidationError::Invalid("joint hazard source allocation"))
+        );
+    }
+}
