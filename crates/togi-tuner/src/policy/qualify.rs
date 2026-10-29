@@ -17,7 +17,7 @@ use super::decision::{Decision, PolicyPayload};
 use super::ledger::{Sig, is_adequate};
 use super::night_query::NotReady;
 use super::plan::workloads_of;
-use crate::day::{CoreProfile, awaiting, vetoes};
+use crate::day::{CoreProfile, vetoes};
 use crate::night::{Cell, Layout, Matrix, Reuse, Source, qualification_cells};
 use crate::{EVIDENCE_EPOCH, UnitProfile};
 
@@ -699,39 +699,40 @@ impl State {
         (!blocked.is_empty()).then_some(blocked)
     }
 
-    /// The next admissible promotion proposal: the restoration a reclassified step back owes, else D moved
-    /// toward the committed cap S, unless an active veto
-    /// forbids it. A vetoed proposal is held, not replaced by another CCD or step, so there is nothing
-    /// to qualify until a cap or a veto changes.
+    /// The exact deterministic D candidate, including guarded restoration. A vetoed candidate
+    /// is held rather than replaced by another unit or an ad hoc smaller step.
     pub(super) fn proposal(&self) -> Result<Option<UnitProfile>, NotReady> {
-        let Some(history) = self.days.history.as_ref() else {
+        if self.climb.history.is_none() {
             return Ok(None);
-        };
+        }
         let permission = self.permission()?;
         let view = self.day_view()?;
-        let Some(proposal) = permission.candidate(history, &view.events)? else {
+        let Some(proposal) = permission.candidate(&view.events)? else {
             return Ok(None);
         };
         let vetoes = vetoes(&view.events);
         if !vetoes.is_empty() {
-            let core = CoreProfile::of_units(&proposal.profile, &self.machine.cores)?;
+            let core = CoreProfile::of_units(&proposal, &self.machine.cores)?;
             if vetoes.iter().any(|veto| veto.profile.forbids(&core)) {
                 return Ok(None);
             }
         }
-        Ok(Some(proposal.profile))
+        Ok(Some(proposal))
     }
 
-    /// The retreat profile CO 0 is holding for a required step back, as the day would restore it under
-    /// the committed caps; `None` when CO 0 holds nothing or the restoration would be CO 0 itself.
+    /// The exact pending retreat target held at stock, clipped only by actual current ceilings.
     fn fallback_target(&self) -> Result<Option<UnitProfile>, NotReady> {
-        let view = self.day_view()?;
-        let Some(statuses) = self.statuses(&view)? else {
+        let Some(history) = self.climb.history.as_ref() else {
             return Ok(None);
         };
-        let Some((_, wanted)) = awaiting(&statuses)? else {
+        let Some(record) = history.retreats().last().filter(|record| {
+            history.current().is_zero() && record.after.is_zero() && !record.wanted.is_zero()
+        }) else {
             return Ok(None);
         };
+        let wanted = crate::climb::SavedProfile {
+            units: record.units.clone(), profile: record.wanted.clone(),
+        }.for_units(history.units())?;
         let target = self.permission()?.clip(&wanted)?;
         Ok((!target.is_zero()).then_some(target))
     }
@@ -757,7 +758,7 @@ impl State {
         };
         // After a firmware change the profile D held before is re-qualified exactly, in the new context,
         // before it is restored; until that qualification stands or fails the ordinary proposal waits.
-        let retained = match Self::retained_profile(history) {
+        let retained = match self.climb.history.as_ref().and_then(|history| history.saved()).map(|saved| saved.profile.clone()) {
             Some(profile) if matches!(fallback, QualWork::None) => {
                 self.work_for(&records, profile, QualificationPurpose::Firmware, now)?
             }
@@ -799,15 +800,7 @@ impl State {
         Ok((next, requal, due))
     }
 
-    /// The nonzero profile applied just before the latest firmware zero, while D has not returned to it.
-    fn retained_profile(history: &crate::day::DayHistory) -> Option<UnitProfile> {
-        let applications: Vec<_> = history.iter().collect();
-        let zeroed = applications.iter().rposition(|application| {
-            application.kind == crate::day::ApplicationKind::FirmwareZero
-        })?;
-        let before = &applications.get(zeroed.checked_sub(1)?)?.profile;
-        (!before.is_zero() && *before != history.current().profile).then(|| before.clone())
-    }
+
 
     fn work_for(
         &self,

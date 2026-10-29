@@ -46,6 +46,12 @@ impl EdgeU {
         }
     }
 
+    /// The hard night ceiling C; unknown evidence supplies no ceiling.
+    #[must_use]
+    pub fn ceiling(&self) -> Option<TargetOffset> {
+        self.offset()
+            .map(|offset| TargetOffset::clamped(offset.get() + i64::from(crate::cap::EDGE_MARGIN)))
+    }
     /// This edge after a failure charged to the tested unit. A shallower failure replaces a deeper
     /// one; a censored or unknown edge takes any failure.
     #[must_use]
@@ -103,7 +109,7 @@ pub enum MappingKind {
     Sweep,
 }
 
-/// Where a unit's mapping goes next, in counts (0 to -50, `Sweep` up toward S).
+/// Where a unit's mapping goes next, in counts (0 to -50, `Sweep` up toward C).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "cursor", rename_all = "snake_case")]
 pub enum Cursor {
@@ -112,7 +118,7 @@ pub enum Cursor {
     /// Descending by one count from the last passing coarse step toward `failed`, the first
     /// failing coarse step; `next` is the offset in progress.
     Bracket { failed: i64, next: i64 },
-    /// Each integer from U toward S, for cells still uncovered; `next` is the offset in progress.
+    /// Each integer above U toward C, for cells still uncovered; `next` is the offset in progress.
     Sweep { next: i64 },
 }
 
@@ -144,16 +150,16 @@ impl UnitMapping {
     }
 
     /// The next offset to map and why, or `None` when the descent and bracket are done and the
-    /// sweep has reached `cap`, the unit's current S. An offset whose cells are all covered finishes
+    /// sweep has reached `ceiling`, the unit's current C. An offset whose cells are all covered finishes
     /// as [`StepResult::Passed`] without spending night time.
     #[must_use]
-    pub fn target(&self, cap: TargetOffset) -> Option<(TargetOffset, MappingKind)> {
+    pub fn target(&self, ceiling: TargetOffset) -> Option<(TargetOffset, MappingKind)> {
         match self.cursor {
             Cursor::Coarse { offset } => Some((offset_of(offset), MappingKind::Coarse)),
             Cursor::Bracket { next, .. } => Some((offset_of(next), MappingKind::Bracket)),
             Cursor::Sweep { next } => {
                 let offset = TargetOffset::new(next).ok()?;
-                (offset <= cap).then_some((offset, MappingKind::Sweep))
+                (offset <= ceiling).then_some((offset, MappingKind::Sweep))
             }
         }
     }
@@ -296,9 +302,9 @@ impl MappingBoard {
     }
 
     /// The next unit with something to map after the last visited one, wrapping to the first, with
-    /// its offset. `caps` holds each unit's S; a missing one is CO 0.
+    /// its offset. `ceilings` holds each known unit's C; unknown units still descend and bracket.
     #[must_use]
-    pub fn next_target(&self, caps: &BTreeMap<UnitId, TargetOffset>) -> Option<MappingTarget> {
+    pub fn next_target(&self, ceilings: &BTreeMap<UnitId, TargetOffset>) -> Option<MappingTarget> {
         let after = match self.visited {
             Some(visited) => self
                 .units
@@ -310,9 +316,9 @@ impl MappingBoard {
             .into_iter()
             .flat_map(|visited| self.units.range(..=visited));
         after.chain(wrapped).find_map(|(&unit, mapping)| {
-            let cap = caps.get(&unit).copied().unwrap_or(TargetOffset::ZERO);
+            let ceiling = ceilings.get(&unit).copied().unwrap_or(TargetOffset::ZERO);
             mapping
-                .target(cap)
+                .target(ceiling)
                 .map(|(offset, kind)| MappingTarget { unit, offset, kind })
         })
     }

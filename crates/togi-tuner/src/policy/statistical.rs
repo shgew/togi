@@ -1,15 +1,15 @@
-//! Statistical cap computation and commitments, independent of mapping replay.
+//! Non-authorizing statistical diagnostics and `ccd.cap` commitments, independent of scheduling.
 
 use super::decision::{Decision, PolicyPayload};
 use super::evidence::ClassCap;
 use super::ledger::{Sig, saturating_u32};
 use super::night_query::NotReady;
 use super::{State, mapping::MappingPlan};
+use crate::UnitId;
 use crate::cap::{
     self, Beta, CapLimits, EDGE_MARGIN, Hours, LikelihoodCutoff, Rate, Refresh, Slope,
 };
 use crate::night::{EdgeU, Layout, mapping_cells};
-use crate::{UnitId, UnitProfile};
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -22,13 +22,12 @@ use togi_machine::{CcdId, ContentId, TargetOffset, WorkloadId};
 /// A class of the interned cap input; the cap's classes must be ordered, an exposure class is not.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct ClassId(u32);
-/// The cap S of one CCD and what produced it.
+/// The diagnostic S of one CCD and what produced it; never a scheduling or target permission.
 #[derive(Clone, Debug)]
 pub(super) struct CapOutcome {
     pub(super) cap: cap::Cap<ClassId>,
     pub(super) classes: Vec<ExposureClass>,
     pub(super) previous: Slope,
-    pub(super) budget: Rate,
     /// Eligible seconds per mapping class and offset, for the journal's rate cells.
     pub(super) mapping_secs: BTreeMap<(ClassId, TargetOffset), u64>,
 }
@@ -81,7 +80,7 @@ fn slope_of(slope: &togi_journal::Slope) -> Slope {
     }
 }
 
-pub(super) fn journal_slope(
+fn journal_slope(
     slope: Slope,
     historical_min: Option<Beta>,
 ) -> Result<togi_journal::Slope, NotReady> {
@@ -118,7 +117,7 @@ fn candidate_offset(witness: &cap::Witness<ClassId>, beta: Beta, budget: Rate) -
         .unwrap_or(TargetOffset::ZERO)
 }
 
-pub(super) fn rate_bound(bound: cap::Bound) -> Result<RateBound, NotReady> {
+fn rate_bound(bound: cap::Bound) -> Result<RateBound, NotReady> {
     Ok(match bound {
         cap::Bound::Finite(rate) => RateBound::Finite {
             per_hour: JournalRate::new(rate.get())?,
@@ -202,7 +201,6 @@ impl State {
             cap,
             classes: interner.classes,
             previous,
-            budget: limits.per_ccd_budget(),
             mapping_secs,
         })
     }
@@ -370,8 +368,8 @@ impl State {
             }
             let mut causes: Vec<Seq> = self
                 .nights
-                .edges
-                .get(&ccd)
+                .unit_edges
+                .get(&UnitId::Ccd(ccd))
                 .map(|edge| edge.seq)
                 .into_iter()
                 .collect();
@@ -386,18 +384,6 @@ impl State {
             )));
         }
         Ok(None)
-    }
-
-    /// The committed cap S of every CCD; CO 0 until a cap is committed.
-    pub(super) fn committed_caps(&self) -> Result<UnitProfile, NotReady> {
-        let ccds = self.ccds();
-        let mut caps = togi_machine::CcdProfile::zero(ccds.iter().copied())?;
-        for ccd in ccds {
-            if let Some(cap) = self.nights.caps.get(&ccd) {
-                caps = caps.with(ccd, cap.payload.new);
-            }
-        }
-        Ok(UnitProfile::of_ccd(&caps))
     }
 }
 fn same_cap(a: &CcdCap, b: &CcdCap) -> bool {
@@ -430,6 +416,6 @@ fn outcome_is_unobserved(outcome: &CapOutcome) -> bool {
     outcome.mapping_secs.is_empty() && outcome.cap.witnesses.is_empty()
 }
 
-pub(super) fn usize_of(id: ClassId) -> usize {
+fn usize_of(id: ClassId) -> usize {
     usize::try_from(id.0).unwrap_or(usize::MAX)
 }

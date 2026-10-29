@@ -1,10 +1,11 @@
-//! The composed Ruleset 13 policy state, through its public API.
+//! The composed Ruleset 14 policy state, through its public API.
 
 #![expect(
     clippy::unwrap_used,
     reason = "integration test fixtures and assertions panic on invalid evidence"
 )]
 
+mod climb;
 mod day;
 mod fixture;
 mod flow;
@@ -16,7 +17,7 @@ mod unobserved;
 use std::collections::BTreeMap;
 
 use fixture::{Ending, Journal, at};
-use togi_journal::{Activity, DayStep, Payload, SessionContext, StepKind};
+use togi_journal::{Activity, ClimbAction, ClimbDecision, Payload, SessionContext};
 use togi_machine::{Backend, BootId, ContentId, Digest};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{Action, DayQuery, NightQuery, NotReady, Params, State};
@@ -33,12 +34,27 @@ fn a_session_without_a_baseline_is_not_ready() {
     assert!(matches!(journal.next(at(0)), Err(NotReady::NoBaseline)));
 }
 
+fn next_plan(journal: &mut Journal) -> togi_tuner::policy::Decision {
+    for _ in 0..50 {
+        let action = journal.next(journal.now()).unwrap();
+        let Action::Decide(decision) = action else {
+            panic!("expected a plan before running a trial: {action:?}");
+        };
+        if matches!(
+            Payload::from(decision.payload.clone()),
+            Payload::NightPlan(_)
+        ) {
+            return decision;
+        }
+        journal.commit(Action::Decide(decision));
+    }
+    panic!("no night plan after the contextual commitments");
+}
+
 #[test]
 fn the_first_query_of_a_night_opens_it_with_a_plan() {
-    let journal = Journal::ready();
-    let Ok(Action::Decide(decision)) = journal.next(at(100)) else {
-        panic!("expected the plan");
-    };
+    let mut journal = Journal::ready();
+    let decision = next_plan(&mut journal);
     let Payload::NightPlan(plan) = Payload::from(decision.payload) else {
         panic!("expected a night.plan");
     };
@@ -50,9 +66,9 @@ fn the_first_query_of_a_night_opens_it_with_a_plan() {
 #[test]
 fn a_later_query_continues_the_open_night() {
     let mut journal = Journal::ready();
-    let first = journal.next(at(100)).unwrap();
-    let opened = journal.commit(first);
-    let later = journal.next(at(20_000)).unwrap();
+    let first = next_plan(&mut journal);
+    let opened = journal.append(first.payload.into(), &first.causes);
+    let later = Action::Decide(next_plan(&mut journal));
     let Action::Decide(decision) = later else {
         panic!("expected the task plan, got {later:?}");
     };
@@ -216,16 +232,18 @@ fn a_new_backend_build_puts_the_controls_back_in_front() {
 
 #[test]
 fn a_same_boot_day_query_at_zero_owes_nothing() {
-    let journal = Journal::ready();
-    let owed = journal
-        .state
-        .day(&DayQuery {
-            boot: BootId::from("boot".to_owned()),
-            invocation: Invocation::SameBoot,
-            now: at(100),
-        })
-        .unwrap();
-    assert!(owed.is_empty());
+    let mut journal = Journal::ready();
+    let query = DayQuery {
+        boot: BootId::from("boot".to_owned()),
+        invocation: Invocation::SameBoot,
+        now: at(100),
+    };
+    let owed = journal.settle_day(&query);
+    assert!(
+        flow::steps(&owed).is_empty(),
+        "same-boot initialization never decides a step"
+    );
+    assert!(journal.state.day(&query).unwrap().is_empty());
 }
 
 #[test]
@@ -238,18 +256,18 @@ fn a_cold_boot_at_zero_holds_once() {
         },
         now: at(100),
     };
-    let owed = journal.state.day(&query).unwrap();
-    let [step] = owed.as_slice() else {
+    let owed = journal.settle_day(&query);
+    let decisions = flow::steps(&owed);
+    let [step] = decisions.as_slice() else {
         panic!("expected one step, got {owed:?}");
     };
     assert!(matches!(
-        Payload::from(step.payload.clone()),
-        Payload::DayStep(DayStep {
-            step: StepKind::Hold { .. },
+        step,
+        ClimbDecision {
+            decision: ClimbAction::Hold { .. },
             ..
-        })
+        }
     ));
-    journal.append(Payload::from(step.payload.clone()), &step.causes);
     assert!(journal.state.day(&query).unwrap().is_empty());
 }
 
@@ -289,8 +307,8 @@ fn the_projection_names_the_units_the_day_and_the_running_task() {
     assert_eq!(
         json["units"],
         serde_json::json!([
-            {"unit": {"Ccd": 0}, "cores": json["units"][0]["cores"], "edge": null, "cap": null, "evidence": json["units"][0]["evidence"], "day": 0, "remaining": null},
-            {"unit": {"Ccd": 1}, "cores": json["units"][1]["cores"], "edge": null, "cap": null, "evidence": json["units"][1]["evidence"], "day": 0, "remaining": null},
+            {"unit": {"ccd": 0}, "cores": json["units"][0]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null},
+            {"unit": {"ccd": 1}, "cores": json["units"][1]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null},
         ])
     );
     for unit in json["units"].as_array().unwrap() {

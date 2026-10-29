@@ -29,6 +29,8 @@ use crate::Build;
 
 #[path = "message_ruleset13.rs"]
 mod ruleset13;
+#[path = "message_ruleset14.rs"]
+mod ruleset14;
 
 impl Payload {
     pub fn message(&self) -> String {
@@ -107,6 +109,15 @@ impl Payload {
             Self::DayFreeze(p) => ruleset13::day_freeze(p),
             Self::DayInterval(p) => ruleset13::day_interval(p),
             Self::DayImported(p) => ruleset13::day_imported(p),
+            Self::UnitMapping(p) => ruleset14::unit_mapping(p),
+            Self::UnitEdge(p) => ruleset14::unit_edge(p),
+            Self::ClimbDecision(p) => ruleset14::climb_decision(p),
+            Self::UnitStop(p) => ruleset14::unit_stop(p),
+            Self::CampaignStart(p) => ruleset14::campaign_start(p),
+            Self::CampaignCharge(p) => ruleset14::campaign_charge(p),
+            Self::CampaignReclassified(p) => ruleset14::campaign_reclassified(p),
+            Self::FirmwareRestoration(p) => ruleset14::firmware_restoration(p),
+            Self::SuccessorImported(p) => ruleset14::successor_imported(p),
         }
     }
 }

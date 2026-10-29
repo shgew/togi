@@ -23,6 +23,9 @@ use crate::report::fail;
 use crate::table::wrap;
 
 mod evidence;
+mod climb;
+#[cfg(test)]
+mod climb_tests;
 mod policy;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
@@ -39,18 +42,16 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 ///
 /// The activity (the open night with its start, elapsed observed time and the task it runs, the
 /// day, a stop or a dead end);
-/// session and BIOS context; then one table row per CCD: its cores, the applied day offset D, the
-/// cap S with its slope (fallback or measured) and binding, the edge U (unknown, fails at an offset
-/// or censored at the write limit), the distance D-S and how many trial classes are covered and
-/// uncovered for the cap, with typed zero/binding reasons, eligible hours and coverage gaps below.
-/// A Day policy part shows the applied profile, the hold's applied hours, the latest day step and what blocks
-/// it, freeze, firmware validity and the daily events and vetoes. A Night part shows when the night
-/// started (and the boot that ended it), the elapsed observed time, each queue's soft share beside
-/// the part of that time it used, the current task, mapping progress, qualification exposure
-/// hours and outstanding classes and the reproductions. The tuner supplies committed state and
-/// its current read-only cap calculation; status computes no cap or eligibility itself.
-/// Between-trial MCEs are listed without treating them as failures, and a defect names its
-/// recorded decisions and the `togi reset --all` that starts fresh.
+/// session and BIOS context; then one table row per tuning unit with its physical cores,
+/// applied D, hard ceiling C, remaining D-C, hold hours and climbing/held/finished state.
+/// Tagged U retains observed-failure or censored write-limit witnesses. Statistical S is
+/// diagnostic and never authorizes a step. Day policy shows experimental hold + exact
+/// night qualification, applied/read-back versus proposed and paused-saved profiles,
+/// machine allowance and every classified event, finish/held reasons and current exact
+/// profile daily evidence under the 95% fixed-rate model. A Night part shows elapsed
+/// observed time, queue shares, mapping, outstanding qualification and reproductions.
+/// Status shows policy facts; it computes no ceiling or eligibility itself.
+/// A defect names its recorded decisions and the `togi reset --all` that starts fresh.
 /// After daily observations exist, a Day section lists boots, checkpointed hours per read-back
 /// profile, clean/unclean ends and the last unclean boot's reset reason.
 /// Each unclean end of a day-observed boot becomes a question until answered: what togi saw, the
@@ -228,6 +229,15 @@ impl<'a> Scan<'a> {
                 | Payload::BootLeaveReason(_)
                 | Payload::Shutdown(_)
                 | Payload::JournalTorn(_)
+                | Payload::UnitMapping(_)
+                | Payload::UnitEdge(_)
+                | Payload::ClimbDecision(_)
+                | Payload::UnitStop(_)
+                | Payload::CampaignStart(_)
+                | Payload::CampaignCharge(_)
+                | Payload::CampaignReclassified(_)
+                | Payload::FirmwareRestoration(_)
+                | Payload::SuccessorImported(_)
                 | Payload::StateRebuilt(_) => {}
             }
         }

@@ -1,5 +1,6 @@
 use togi_journal::{
-    Certainty, Classification, Edge, Outcome, Payload, QualificationState, StepKind, VetoState,
+    Certainty, Classification, ClimbAction, Edge, FirmwareRestorationState, Outcome, Payload,
+    QualificationState, StepKind, UnitStopReason, VetoState,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -39,6 +40,9 @@ impl Style {
 /// event except `session.warning`. Ruleset 13 kinds are plain except a `ccd.edge` with an observed failure, a failed
 /// qualification and a CPU-suspect `day.event` (red), a shallower `ccd.cap`, a retreat or firmware-zero
 /// `day.step` and an active `day.veto` (yellow), and a complete qualification and promoting step (green).
+/// Climb payloads distinguish adverse evidence (red), safety retreat/stopping/exhaustion
+/// (yellow), and applied-direction proposals or ceiling completion (green). Green is
+/// progress in an experiment, never statistical certification.
 /// A new kind lands here by naming its arm.
 #[must_use]
 pub fn style_for(payload: &Payload) -> Style {
@@ -85,6 +89,46 @@ pub fn style_for(payload: &Payload) -> Style {
             VetoState::Active => Style::Yellow,
             VetoState::Cleared => Style::Plain,
         },
+        Payload::UnitEdge(edge) => match edge.new {
+            Edge::Observed { .. } => Style::Red,
+            Edge::Unknown {} | Edge::Censored { .. } => Style::Plain,
+        },
+        Payload::ClimbDecision(decision) => match decision.decision {
+            ClimbAction::Promote { .. } | ClimbAction::Restore { .. } => Style::Green,
+            ClimbAction::Retreat { .. } | ClimbAction::FirmwareZero {} => Style::Yellow,
+            ClimbAction::Hold { .. } => Style::Plain,
+        },
+        Payload::UnitStop(stop) => match stop.reason {
+            UnitStopReason::Ceiling {} => Style::Green,
+            UnitStopReason::FirstBackstep { .. }
+            | UnitStopReason::RestorationBackstep { .. }
+            | UnitStopReason::AdverseCeiling {}
+            | UnitStopReason::Veto {}
+            | UnitStopReason::Predecessor { .. }
+            | UnitStopReason::AllowanceExhausted {} => Style::Yellow,
+        },
+        Payload::CampaignCharge(charge) => {
+            if charge.exhausted {
+                Style::Yellow
+            } else {
+                Style::Red
+            }
+        }
+        Payload::CampaignReclassified(event) => match event.to {
+            Classification::CpuSuspect { .. } => Style::Red,
+            Classification::NonCpu {} | Classification::Unexplained {} => Style::Plain,
+        },
+        Payload::FirmwareRestoration(restoration) => match restoration.state {
+            FirmwareRestorationState::Qualified { .. }
+            | FirmwareRestorationState::Restored { .. } => Style::Green,
+            FirmwareRestorationState::SteppedBack { .. } => Style::Yellow,
+            FirmwareRestorationState::Saved {} | FirmwareRestorationState::Held { .. } => {
+                Style::Plain
+            }
+        },
+        Payload::UnitMapping(_) | Payload::CampaignStart(_) | Payload::SuccessorImported(_) => {
+            Style::Plain
+        }
         Payload::SessionStart(_)
         | Payload::SessionContext(_)
         | Payload::SessionBaseline(_)

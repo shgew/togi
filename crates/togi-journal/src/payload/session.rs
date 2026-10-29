@@ -114,7 +114,7 @@ object_only! {
 }
 
 object_only! {
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct Provenance {
         pub session: SessionId,

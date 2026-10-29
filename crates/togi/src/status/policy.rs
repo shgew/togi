@@ -1,6 +1,5 @@
-//! The Ruleset 13 sections of `togi status`: the header activity, the per-CCD table and the day and night
-//! policy parts. Policy facts come from the tuner's projection, runtime stops from the shared journal
-//! fold; nothing here computes a cap, a distance or an eligibility.
+//! Status header activity, shared class wording and the latest night's progress.
+//! Daily experimental-permission facts are rendered from the D projection by `climb`.
 
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -8,15 +7,11 @@ use std::time::Duration;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_journal::{
-    Activity, Binding, DayEventId, DayStep, Edge, ExposureClass, HoldReason, Position,
-    QualificationPurpose, Queue, ReproductionState, Resolution, RetreatCause, Slope, StepKind,
-    TaskId, UncoveredReason, VetoState,
+    Activity, DayEventId, ExposureClass, Position, QualificationPurpose, Queue, ReproductionState,
+    Resolution, TaskId, VetoState,
 };
-use togi_machine::{CcdProfile, CoreId, CoreSet, TargetOffset};
-use togi_tuner::policy::{
-    DayProjection, FirmwareValidity, NightProjection, Projection, QualificationStage,
-    UnitProjection,
-};
+use togi_machine::TargetOffset;
+use togi_tuner::policy::{FirmwareValidity, NightProjection, Projection, QualificationStage};
 use togi_tuner::unit::{UnitId, UnitProfile};
 
 use togi_watch::model::StopView;
@@ -34,7 +29,7 @@ pub(super) struct Where<'a> {
 }
 
 impl Where<'_> {
-    fn clock(&self, at: Timestamp) -> String {
+    pub(super) fn clock(&self, at: Timestamp) -> String {
         at.to_zoned(self.zone.clone()).strftime("%H:%M").to_string()
     }
 }
@@ -80,54 +75,6 @@ pub(super) fn activity(policy: &Projection, stopped: Option<&StopView>, at: Wher
     }
 }
 
-/// A CCD's cores as ranges: `0-7`, `0-3 8`.
-fn core_ranges(cores: CoreSet) -> String {
-    let mut ids: Vec<u8> = cores.into_iter().map(CoreId::get).collect();
-    ids.sort_unstable();
-    let mut parts: Vec<String> = Vec::new();
-    let mut at = 0;
-    while at < ids.len() {
-        let mut end = at;
-        while end + 1 < ids.len() && ids[end + 1] == ids[end] + 1 {
-            end += 1;
-        }
-        parts.push(if end == at {
-            ids[at].to_string()
-        } else {
-            format!("{}-{}", ids[at], ids[end])
-        });
-        at = end + 1;
-    }
-    if parts.is_empty() {
-        "-".to_owned()
-    } else {
-        parts.join(" ")
-    }
-}
-
-fn edge_word(edge: Option<&Edge>) -> String {
-    match edge {
-        None | Some(Edge::Unknown {}) => "unknown".to_owned(),
-        Some(Edge::Observed { offset, .. }) => format!("fails {}", offset.get()),
-        Some(Edge::Censored { limit, .. }) => format!("censored {}", limit.get()),
-    }
-}
-
-const fn slope_word(slope: &Slope) -> &'static str {
-    match slope {
-        Slope::Fallback { .. } => "fallback",
-        Slope::Measured { .. } => "measured",
-    }
-}
-
-const fn binding_word(binding: &Binding) -> &'static str {
-    match binding {
-        Binding::Rate { .. } => "rate",
-        Binding::EdgeMargin {} => "edge",
-        Binding::Baseline {} => "baseline",
-    }
-}
-
 /// A trial class in words: regime, workloads, the position it names, duration and placement.
 pub(super) fn class_word(class: &ExposureClass) -> String {
     let workloads: Vec<&str> = class
@@ -160,15 +107,6 @@ fn classes_word(classes: &[ExposureClass]) -> String {
     counted_words(classes.iter())
 }
 
-/// Why a class is uncovered for the cap.
-fn uncovered_reason_word(reason: UncoveredReason) -> &'static str {
-    match reason {
-        UncoveredReason::NoObservations => "no observations",
-        UncoveredReason::NonMappingOnly => "non-mapping exposure only",
-        UncoveredReason::MappingInadequate => "mapping exposure inadequate",
-    }
-}
-
 /// The distinct classes in order, each repeated one suffixed with its count.
 fn counted_words<'a>(classes: impl Iterator<Item = &'a ExposureClass>) -> String {
     let mut counted: Vec<(String, usize)> = Vec::new();
@@ -195,13 +133,6 @@ fn profile_word(profile: &UnitProfile) -> String {
     profile_words(profile.iter())
 }
 
-fn ccd_profile_word(profile: &CcdProfile) -> String {
-    profile_words(
-        profile
-            .iter()
-            .map(|(ccd, offset)| (UnitId::Ccd(ccd), offset)),
-    )
-}
 
 fn profile_words(profile: impl Iterator<Item = (UnitId, TargetOffset)>) -> String {
     let parts: Vec<String> = profile
@@ -235,176 +166,6 @@ fn event_word(id: &DayEventId) -> String {
     }
 }
 
-/// The CCD table's columns, each with the width it is laid out at: the widest value its column can hold (`censored
-/// -50` for U, a CCD's core range, an offset). Columns are one space apart, so the ten columns span 76 cells and every
-/// value sits under its header whatever the values are; a wider value widens its column for every row.
-const CCD_COLUMNS: [(&str, usize); 10] = [
-    ("CCD", 3),
-    ("CORES", 5),
-    ("D", 3),
-    ("S", 3),
-    ("SLOPE", 8),
-    ("BINDING", 8),
-    ("U", 12),
-    ("REMAINING", 9),
-    ("COVERED", 7),
-    ("UNCOVERED", 9),
-];
-
-/// The widest CORES cell: the other columns at their widths take 71 cells, so this keeps the row within 80. A CCD
-/// whose core ranges are wider, such as a noncontiguous `0 2 4 6 8 10 12 14`, counts its cores in the cell and lists
-/// them under its row.
-const CORES_WIDTH: usize = 9;
-
-pub(super) fn ccd_table(out: &mut String, policy: &Projection) {
-    if policy.units.is_empty() {
-        return;
-    }
-    let header = CCD_COLUMNS.map(|(name, _)| name.to_owned());
-    let rows: Vec<([String; 10], Option<String>, Option<String>)> =
-        policy.units.iter().map(ccd_row).collect();
-    let widths: [usize; 10] = std::array::from_fn(|column| {
-        rows.iter()
-            .map(|(cells, _, _)| cells[column].chars().count())
-            .fold(CCD_COLUMNS[column].1, usize::max)
-    });
-    ccd_line(out, &header, &widths);
-    for (cells, listed, bound) in &rows {
-        ccd_line(out, cells, &widths);
-        if let Some(cores) = listed {
-            wrap(out, "  cores ", "        ", cores);
-        }
-        if let Some(class) = bound {
-            wrap(out, "  bound by ", "           ", class);
-        }
-    }
-    for unit in &policy.units {
-        let detail = match &unit.evidence {
-            Some(evidence) => {
-                let seconds = evidence
-                    .cells
-                    .iter()
-                    .fold(0_u64, |total, cell| total.saturating_add(cell.eligible_s));
-                format!(
-                    "CCD {} current cap calculation: S {}; {}; {} h eligible mapping witnesses; {} coverage gaps",
-                    unit.unit,
-                    evidence.offset.get(),
-                    evidence.reason.label(),
-                    hours(seconds),
-                    evidence.uncovered.len()
-                )
-            }
-            None => format!(
-                "CCD {} cap evidence: context unavailable; eligible hours and gaps unknown",
-                unit.unit
-            ),
-        };
-        wrap(out, "  ", "    ", &detail);
-    }
-    for unit in &policy.units {
-        match &unit.cap {
-            Some(cap) if !cap.uncovered.is_empty() => {
-                for &reason in UncoveredReason::ALL {
-                    let mut classes = cap
-                        .uncovered
-                        .iter()
-                        .filter(|uncovered| uncovered.reason == reason)
-                        .map(|uncovered| &uncovered.class)
-                        .peekable();
-                    if classes.peek().is_none() {
-                        continue;
-                    }
-                    let text = format!(
-                        "CCD {} uncovered for the cap, {}: {}",
-                        unit.unit,
-                        uncovered_reason_word(reason),
-                        counted_words(classes)
-                    );
-                    wrap(out, "  ", "    ", &text);
-                }
-            }
-            Some(_) | None => {}
-        }
-    }
-    if policy.units.iter().any(|unit| {
-        unit.cap
-            .as_ref()
-            .is_some_and(|cap| !cap.uncovered.is_empty())
-    }) {
-        wrap(
-            out,
-            "  ",
-            "    ",
-            "A class is uncovered for the cap when mapping has not adequately exposed it or it lies outside the mapping projection; uncovered is never read as safe.",
-        );
-    }
-    if policy.units.iter().any(|unit| unit.cap.is_none()) {
-        wrap(
-            out,
-            "  ",
-            "    ",
-            "A CCD with no cap yet has S at offset 0.",
-        );
-    }
-}
-
-/// One line of the CCD table: each cell padded to its column's width and one space, the last unpadded.
-fn ccd_line(out: &mut String, cells: &[String; 10], widths: &[usize; 10]) {
-    let last = cells.len() - 1;
-    for (column, cell) in cells.iter().enumerate() {
-        out.push_str(cell);
-        if column < last {
-            let pad = widths[column] - cell.chars().count() + 1;
-            let _ = write!(out, "{:pad$}", "");
-        }
-    }
-    out.push('\n');
-}
-
-/// A CCD's cells, in [`CCD_COLUMNS`] order; its full core list when the CORES cell had to count the cores instead;
-/// and the class its cap is bound by when a rate binds it.
-fn ccd_row(unit: &UnitProjection) -> ([String; 10], Option<String>, Option<String>) {
-    let (cap, slope, binding, covered, uncovered) = match &unit.cap {
-        Some(cap) => (
-            cap.offset.get().to_string(),
-            slope_word(&cap.slope).to_owned(),
-            binding_word(&cap.binding).to_owned(),
-            cap.adequate.len().to_string(),
-            cap.uncovered.len().to_string(),
-        ),
-        None => (
-            "-".to_owned(),
-            "-".to_owned(),
-            "-".to_owned(),
-            "-".to_owned(),
-            "-".to_owned(),
-        ),
-    };
-    let ranges = core_ranges(unit.cores);
-    let (cores, listed) = if ranges.chars().count() > CORES_WIDTH {
-        (format!("{} cores", unit.cores.len()), Some(ranges))
-    } else {
-        (ranges, None)
-    };
-    let cells = [
-        unit.unit.to_string(),
-        cores,
-        unit.day.get().to_string(),
-        cap,
-        slope,
-        binding,
-        edge_word(unit.edge.as_ref()),
-        unit.remaining
-            .map_or("-".to_owned(), |left| left.to_string()),
-        covered,
-        uncovered,
-    ];
-    let bound = match unit.cap.as_ref().map(|cap| &cap.binding) {
-        Some(Binding::Rate { class }) => Some(class_word(class)),
-        Some(Binding::EdgeMargin {} | Binding::Baseline {}) | None => None,
-    };
-    (cells, listed, bound)
-}
 
 const fn reproduction_word(state: ReproductionState) -> &'static str {
     match state {
@@ -415,182 +176,6 @@ const fn reproduction_word(state: ReproductionState) -> &'static str {
     }
 }
 
-fn hold_reason(reason: &HoldReason) -> String {
-    match reason {
-        HoldReason::Incomplete {
-            credited_s,
-            required_s,
-        } => format!(
-            "hold incomplete, {} of {} h",
-            hours(*credited_s),
-            hours(*required_s)
-        ),
-        HoldReason::AtCap {} => "every CCD is at its cap".to_owned(),
-        HoldReason::NotQualified {} => "the proposed profile is not qualified".to_owned(),
-        HoldReason::Vetoed { veto } => format!("vetoed by {}", event_word(veto)),
-        HoldReason::QuestionPending { boot } => {
-            format!("question pending for boot {}", esc(boot.as_str()))
-        }
-        HoldReason::EventUnresolved { event } => {
-            format!("{} is unresolved", event_word(event))
-        }
-        HoldReason::Frozen {} => "promotion is frozen".to_owned(),
-        HoldReason::Paused {} => "paused".to_owned(),
-        HoldReason::Expired {} => "qualification expired".to_owned(),
-        HoldReason::QualificationFailed { profile, .. } => format!(
-            "{} failed qualification and stays blocked",
-            ccd_profile_word(profile.ccd())
-        ),
-    }
-}
-
-fn retreat_cause(cause: &RetreatCause) -> String {
-    match cause {
-        RetreatCause::ShallowerCap {} => "a cap became shallower".to_owned(),
-        RetreatCause::Event { event, .. } => format!("{} was CPU-suspect", event_word(event)),
-        RetreatCause::Completion {} => "a held retreat is now qualified".to_owned(),
-    }
-}
-
-fn changed_word(changed: &[togi_machine::CcdId]) -> String {
-    changed
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn step_lines(out: &mut String, seq: togi_journal::Seq, step: &DayStep) {
-    let proposed = ccd_profile_word(step.proposed.ccd());
-    let head = match &step.step {
-        StepKind::Hold { blocked_by } => {
-            let reasons: Vec<String> = blocked_by.iter().map(hold_reason).collect();
-            if reasons.is_empty() {
-                "holds".to_owned()
-            } else {
-                format!("holds, blocked by: {}", reasons.join("; "))
-            }
-        }
-        StepKind::Promote { changed } => format!("promotes CCD {changed} to {proposed}"),
-        StepKind::Retreat {
-            changed,
-            cause,
-            wanted,
-        } => {
-            let mut head = format!(
-                "retreats CCD {} to {proposed}: {}",
-                changed_word(changed),
-                retreat_cause(cause)
-            );
-            if let Some(wanted) = wanted {
-                let _ = write!(
-                    head,
-                    "; the wanted {} is not qualified, so it falls back to CO 0 until it is",
-                    ccd_profile_word(wanted.ccd())
-                );
-            }
-            head
-        }
-        StepKind::FirmwareZero { changed } => {
-            format!(
-                "sets CCD {} to 0 after a firmware change",
-                changed_word(changed)
-            )
-        }
-    };
-    wrap(
-        out,
-        "",
-        "  ",
-        &format!(
-            "latest step [#{seq}] at cold boot {}: {head}",
-            esc(step.cold_boot.as_str())
-        ),
-    );
-}
-
-fn day_part(out: &mut String, day: &DayProjection, policy: &Projection) {
-    out.push_str("\nDay policy\n");
-    let applied = policy
-        .applied
-        .as_ref()
-        .map_or("none yet (CO 0)".to_owned(), profile_word);
-    wrap(out, "", "  ", &format!("applied profile: {applied}"));
-    match &day.hold {
-        Some(hold) => wrap(
-            out,
-            "",
-            "  ",
-            &format!(
-                "hold: {}/{} h at {} [#{}]",
-                hours(hold.eligible_s),
-                hours(hold.required_s),
-                profile_word(&hold.profile),
-                hold.witness
-            ),
-        ),
-        None => out.push_str("hold: none recorded\n"),
-    }
-    match &day.last_step {
-        Some((seq, step)) => step_lines(out, *seq, step),
-        None => out.push_str("latest step: none\n"),
-    }
-    let _ = writeln!(out, "freeze: {}", if day.freeze { "on" } else { "off" });
-    let firmware = match &day.firmware {
-        FirmwareValidity::Valid => "valid".to_owned(),
-        FirmwareValidity::Unknown => "unknown".to_owned(),
-        FirmwareValidity::Invalidated { since } => {
-            format!("invalidated since [#{since}]; D returns to 0 until requalified")
-        }
-    };
-    let _ = writeln!(out, "firmware: {firmware}");
-    for boot in &day.pending_questions {
-        wrap(
-            out,
-            "",
-            "  ",
-            &format!("question pending for boot {}", esc(boot.as_str())),
-        );
-    }
-    for event in &policy.events {
-        let class = match event.classification {
-            togi_journal::Classification::CpuSuspect {
-                certainty: togi_journal::Certainty::Definite,
-            } => "CPU-suspect",
-            togi_journal::Classification::CpuSuspect {
-                certainty: togi_journal::Certainty::Provisional,
-            } => "provisionally CPU-suspect",
-            togi_journal::Classification::NonCpu {} => "not CPU",
-            togi_journal::Classification::Unexplained {} => "unexplained",
-        };
-        let resolution = match event.resolution {
-            Resolution::Unresolved {} => "unresolved",
-            Resolution::Resolved { .. } => "resolved",
-        };
-        let reproduction = reproduction_word(event.reproduction);
-        wrap(
-            out,
-            "event: ",
-            "  ",
-            &format!(
-                "{}: {class}, {resolution}, {reproduction}",
-                event_word(&event.event)
-            ),
-        );
-    }
-    for veto in &policy.vetoes {
-        let state = match veto.state {
-            VetoState::Active => "active",
-            VetoState::Cleared => "cleared",
-        };
-        wrap(
-            out,
-            "veto: ",
-            "  ",
-            &format!("{}: {state}", event_word(&veto.event)),
-        );
-    }
-}
 
 const fn queue_word(queue: Queue) -> &'static str {
     queue.as_str()
@@ -743,16 +328,66 @@ fn night_part(out: &mut String, night: &NightProjection, policy: &Projection, at
     }
 }
 
-/// The CCD table and the day and night parts, after the header.
+/// Runtime safety remains visible independently of exploration progress or campaign reconstruction.
+fn safety_part(out: &mut String, policy: &Projection) {
+    out.push_str("\nDaily safety\n");
+    let day = &policy.day;
+    let _ = writeln!(out, "freeze: {}", if day.freeze { "on" } else { "off" });
+    let firmware = match day.firmware {
+        FirmwareValidity::Valid => "valid".to_owned(),
+        FirmwareValidity::Unknown => "unknown".to_owned(),
+        FirmwareValidity::Invalidated { since } => {
+            format!("invalidated since [#{since}]; stock until new-context restoration")
+        }
+    };
+    wrap(out, "firmware: ", "  ", &firmware);
+    for boot in &day.pending_questions {
+        wrap(out, "question pending for boot ", "  ", &esc(boot.as_str()));
+    }
+    for event in &policy.events {
+        let classification = match event.classification {
+            togi_journal::Classification::CpuSuspect {
+                certainty: togi_journal::Certainty::Definite,
+            } => "CPU-suspect",
+            togi_journal::Classification::CpuSuspect {
+                certainty: togi_journal::Certainty::Provisional,
+            } => "provisionally CPU-suspect",
+            togi_journal::Classification::NonCpu {} => "not CPU",
+            togi_journal::Classification::Unexplained {} => "unexplained",
+        };
+        let resolution = match event.resolution {
+            Resolution::Unresolved {} => "unresolved",
+            Resolution::Resolved { .. } => "resolved",
+        };
+        wrap(
+            out,
+            "safety event: ",
+            "  ",
+            &format!(
+                "{}: {classification}, {resolution}, {}",
+                event_word(&event.event),
+                reproduction_word(event.reproduction)
+            ),
+        );
+    }
+    for veto in &policy.vetoes {
+        let state = match veto.state {
+            VetoState::Active => "active",
+            VetoState::Cleared => "cleared",
+        };
+        wrap(
+            out,
+            "veto: ",
+            "  ",
+            &format!("{}: {state}", event_word(&veto.event)),
+        );
+    }
+}
+
+/// The unit table and experimental day policy, followed by the latest night.
 pub(super) fn sections(out: &mut String, policy: &Projection, at: Where<'_>) {
-    wrap(
-        out,
-        "",
-        "  ",
-        "Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not prove the hazard goal. Coverage gaps remain unknown.",
-    );
-    ccd_table(out, policy);
-    day_part(out, &policy.day, policy);
+    super::climb::sections(out, &policy.climb, at);
+    safety_part(out, policy);
     if let Some(night) = &policy.night {
         night_part(out, night, policy, at);
     }

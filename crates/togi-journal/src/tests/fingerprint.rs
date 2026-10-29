@@ -173,6 +173,9 @@ fn real_fs_the_build_fingerprint_is_this_modules_digest_of_the_build_source() {
 
 #[test_case("crates/togi-journal/src/lib.rs", true; "production source")]
 #[test_case("crates/togi-journal/build/fingerprint.rs", true; "the fingerprint module")]
+#[test_case("crates/togi-journal/src/payload/ruleset14.rs", true; "Ruleset 14 decoder")]
+#[test_case("crates/togi-journal/src/payload/message_ruleset14.rs", true; "Ruleset 14 messages")]
+#[test_case("crates/togi-journal/src/tests/ruleset14.rs", false; "Ruleset 14 tests")]
 #[test_case("crates/togi-journal/src/tests/fingerprint.rs", false; "a tests directory")]
 #[test_case("crates/togi-journal/src/snapshot_tests.rs", false; "a _tests.rs file")]
 #[test_case("crates/togi-journal/src/testing.rs", false; "a listed test module")]

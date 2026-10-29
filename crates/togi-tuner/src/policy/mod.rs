@@ -1,9 +1,8 @@
-//! The composed Ruleset 13 tuner state (`docs/spec/tuner.md`, `docs/spec/runtime.md`, Ruleset 13 policy
-//! boundary).
+//! The composed Ruleset 14 tuner state (`docs/spec/tuner-ruleset14.md`).
 //!
 //! [`State`] folds the journal: raw facts (session, trial, day observer and answer records) and the
-//! policy's own commitments (exposure, edge, cap, night plan, qualification, reproduction, day event,
-//! veto, interval, hold, step and application). Its queries are pure: [`State::next`] decides what the
+//! policy's own commitments (exposure, unit edge, night plan, qualification, reproduction, day event,
+//! veto, interval, hold, climb decision, campaign charge, stop and successful application). Its queries are pure: [`State::next`] decides what the
 //! night does next, [`State::day`] what a day invocation must commit, and [`State::project`] what
 //! status shows. A query reads nothing but the state and its arguments. The state's only interior
 //! mutability is its memoized query caches (`cache.rs`), which are never state, so cloning it, folding
@@ -16,7 +15,12 @@
 
 mod books;
 mod cache;
+mod climb_projection;
 mod controls;
+mod climb_fold;
+mod climb_import;
+mod climb_view;
+mod day_climb;
 mod day_events;
 mod day_query;
 mod decision;
@@ -33,10 +37,17 @@ mod projection;
 mod qualify;
 mod reproduce;
 mod statistical;
-mod wire;
+pub mod successor;
+pub(crate) mod wire;
 
 use togi_machine::CcdId;
 
+pub use climb_projection::{
+    ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
+    ClimbHoldProjection, ClimbPermissionMode, ClimbProfiles, ClimbProjection,
+    ClimbProposalProjection, ClimbQualificationProjection, ClimbQualificationState,
+    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+};
 pub use day_query::DayQuery;
 pub use decision::{Decision, PolicyPayload};
 pub use fold::FoldError;
@@ -88,7 +99,7 @@ impl Params {
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Stop {}
 
-/// The folded Ruleset 13 policy state.
+/// The folded Ruleset 14 policy state.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct State {
     params: Params,
@@ -99,6 +110,7 @@ pub struct State {
     ledger: Ledger,
     nights: Nights,
     days: Days,
+    climb: books::Climb,
     stop: Option<Stop>,
     #[serde(skip)]
     caches: Caches,
@@ -147,6 +159,7 @@ impl State {
             ledger: Ledger::default(),
             nights: Nights::default(),
             days: Days::default(),
+            climb: books::Climb::default(),
             stop: None,
             caches: Caches::default(),
         }

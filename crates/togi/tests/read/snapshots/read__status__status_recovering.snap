@@ -2,108 +2,75 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-night since 00:00, 15h30m elapsed: mapping (task mapping #5)
+night since 00:00, 23h57m elapsed: mapping (task mapping #5)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
 in flight: none
 
-Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
-  prove the hazard goal. Coverage gaps remain unknown.
-CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
-0   0-7   0   0   fallback rate     fails -10    0         80      129
-  bound by R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
-           120s isolated
-1   8-15  0   0   fallback baseline unknown      0         80      135
-  CCD 0 current cap calculation: S 0; mapping rate bound; 2 h eligible mapping
-    witnesses; 129 coverage gaps
-  CCD 1 current cap calculation: S 0; unknown edge; 2 h eligible mapping
-    witnesses; 135 coverage gaps
-  CCD 0 uncovered for the cap, no observations: R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 0 120s
-    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 1 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 2 120s
-    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 3 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 4 120s
-    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 5 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 6 120s
-    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 7 120s isolated; R9 ycruncher-snt-svt-all-threads serial cpu 21
-    120s isolated
-  CCD 0 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
-    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
-    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
-    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
-    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
-    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
-    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
-    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
-    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
-    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0
-    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    1 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
-    core 2 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
-    light core 3 120s exact; R8
-    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s exact;
-    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5 120s
-    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6
-    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    7 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
-    core 0 600s exact
-  CCD 1 uncovered for the cap, no observations: R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 8 120s
-    isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 9 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 10
-    120s isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 11 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 12
-    120s isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 13 120s isolated; R8
-    ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3 light core 14
-    120s isolated; R8 ycruncher-snt-svt-steps-neighbours+ycruncher-fftv4-n63-vt3
-    light core 15 120s isolated; R7 ycruncher-fftv4-n63-vt3-allcore 120s
-    isolated x7; R9 ycruncher-snt-svt-all-threads serial cpu 29 120s isolated
-  CCD 1 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
-    90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
-    exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
-    90s exact x8; R2 ycruncher-fftv4-n63-vt3 90s exact x8; R3
-    mprime-sse-4k-21k-steps 120s exact x8; R3 ycruncher-bkt-sftv4-steps 120s
-    exact x8; R3 ycruncher-snt-svt-steps 120s exact x8; R4
-    mprime-sse-4k-21k-duty25 120s exact x8; R4 ycruncher-bkt-sftv4-duty50 120s
-    exact x8; R4 ycruncher-snt-svt-duty75 120s exact x8; R5
-    mprime-sse-4k-21k-smt 120s exact x8; R7 mprime-avx2-36k-248k-allcore 120s
-    exact x7; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 8
-    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    9 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
-    core 10 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
-    light core 11 120s exact; R8
-    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 12 120s exact;
-    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s
-    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14
-    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    15 120s exact
-  A class is uncovered for the cap when mapping has not adequately exposed it or
-    it lies outside the mapping projection; uncovered is never read as safe.
+UNIT   CORES                  D  C        D-C  HOLD h  STATE
+CCD 0  0,1,2,3,4,5,6,7        0  -5       5    0/50    climbing
+CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    climbing
 
 Day policy
-applied profile: CCD 0 0, CCD 1 0
-hold: none recorded
-latest step: none
+permission: experimental hold + exact night qualification
+S: diagnostic, non-authorizing; finishing is not a safety certificate
+applied profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
+  core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core
+  13 0, core 14 0, core 15 0
+read-back profile: unavailable
+proposed profile: none
+paused-saved profile: none
+allowance: unavailable; campaign history must be reconstructed
+unit: CCD 0, phase coarse, parent none, inherited start 0
+  U: observed -10 [#3128]
+  state: climbing
+  next proposal: core 0 -3, core 1 -3, core 2 -3, core 3 -3, core 4 -3, core 5
+  -3, core 6 -3, core 7 -3, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
+  core 13 0, core 14 0, core 15 0
+  qualification: complete [#4649]; 0 outstanding [#3164 #3169 #3174 #3179 #3184
+  #3189 #3194 #3199 #3204 #3209 #3214 #3219 #3224 #3229 #3234 #3239 #3244 #3249
+  #3254 #3259 #3264 #3269 #3274 #3279 #3284 #3289 #3294 #3299 #3304 #3309 #3314
+  #3319 #3324 #3329 #3334 #3339 #3344 #3349 #3354 #3359 #3364 #3369 #3374 #3379
+  #3384 #3389 #3394 #3399 #3404 #3409 #3414 #3419 #3424 #3429 #3434 #3439 #3444
+  #3449 #3454 #3459 #3464 #3469 #3474 #3479 #3484 #3489 #3494 #3499 #3504 #3509
+  #3514 #3519 #3524 #3529 #3534 #3539 #3544 #3549 #3554 #3559 #3564 #3569 #3574
+  #3579 #3584 #3589 #3594 #3599 #3604 #3609 #3614 #3619 #3624 #3629 #3634 #3639
+  #3646 #3653 #3660 #3667 #3674 #3681 #3688 #3695 #3702 #3709 #3716 #3723 #3730
+  #3737 #3744 #3751 #3758 #3765 #3772 #3779 #3786 #3793 #3800 #3807 #3814 #3821
+  #3828 #3835 #3842 #3849 #3856 #3863 #3870 #3877 #3884 #3891 #3898 #3905 #3912
+  #3919 #3926 #3933 #3940 #3947 #3954 #3961 #3968 #3975 #3982 #3989 #3996 #4003
+  #4010 #4017 #4024 #4031 #4038 #4045 #4052 #4059 #4066 #4073 #4080 #4087 #4094
+  #4101 #4108 #4115 #4122 #4129 #4136 #4143 #4150 #4157 #4164 #4171 #4178 #4185
+  #4192 #4199 #4206 #4213 #4220 #4227 #4234 #4241 #4248 #4255 #4262 #4269 #4276
+  #4283 #4290 #4297 #4304 #4311 #4316 #4321 #4326 #4331 #4336 #4341 #4346 #4351
+  #4356 #4361 #4366 #4371 #4376 #4381 #4386 #4391 #4398 #4403 #4408 #4413 #4418
+  #4423 #4428 #4433 #4438 #4443 #4448 #4453 #4458 #4463 #4468 #4473 #4478 #4483
+  #4488 #4493 #4498 #4503 #4508 #4513 #4518 #4523 #4528 #4533 #4538 #4543 #4548
+  #4553 #4558 #4563 #4568 #4573 #4578 #4583 #4588 #4593 #4598 #4603 #4608 #4613
+  #4618 #4623 #4628 #4633 #4638 #4643 #4648]
+  diagnostic S (non-authorizing): 0 [#3132]
+unit: CCD 1, phase coarse, parent none, inherited start 0
+  U: unknown
+  state: climbing
+  diagnostic S (non-authorizing): 0 [#3104]
+current exact profile daily evidence: 0 h; 0 crashes []
+experimental: rate bound unavailable (95%, fixed-rate model)
+firmware restoration: none
+
+Daily safety
 freeze: off
 firmware: valid
 
 Night since 00:00
-elapsed: 15h30m
+elapsed: 23h57m
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
-qualification    75%    0%    0s
-mapping          10%    45%   7h03m
-control          5%     54%   8h27m
+qualification    75%    35%   8h27m
+mapping          10%    29%   7h03m
+control          5%     35%   8h27m
 requalification  10%    0%    0s
 current task: mapping (task mapping #5)
 mapping CCD 0: next offset -6, bracketing the failure at -10
 mapping CCD 1: next offset -10
+qualification: CCD 0 -3, CCD 1 0 (next step) complete

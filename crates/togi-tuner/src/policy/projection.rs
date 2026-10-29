@@ -2,7 +2,6 @@
 //! caps, the applied profile and its hold, the events and vetoes, the qualifications and the latest night.
 
 use std::collections::HashMap;
-
 use crate::{UnitId, UnitProfile};
 use serde::{Deserialize, Serialize};
 use togi_journal::{
@@ -94,7 +93,7 @@ pub struct UnitProjection {
     pub evidence: Option<CapEvidence>,
     /// D: CO 0 before any `day.applied`.
     pub day: TargetOffset,
-    /// Counts from D down to S; zero when D is already at or past S. `None` without a cap.
+    /// Counts from D down to C; unknown U gives no distance. Statistical S is diagnostic only.
     pub remaining: Option<u32>,
 }
 
@@ -207,8 +206,8 @@ pub struct NightProjection {
     pub closed_by: Option<Seq>,
     pub budgets: Vec<Budget>,
     pub tasks: Vec<PlannedTask>,
-    /// The running task and its activity. A filler task runs cap probes (mapping) and exact repeats
-    /// (qualification): its activity is its latest trial's, unknown before its first trial.
+    /// The running task and its activity. Filler repeats exact-current-D qualification cells;
+    /// its activity is unknown before its first trial.
     pub current: Option<(TaskId, Option<Activity>)>,
     pub mapping: Vec<MappingProjection>,
     pub qualification: Option<QualificationProgress>,
@@ -223,6 +222,8 @@ pub struct NightProjection {
 /// The `tuner` key of `state.json` and what `status` and `watch` read.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Projection {
+    #[serde(default)]
+    pub climb: super::ClimbProjection,
     pub applied: Option<UnitProfile>,
     pub units: Vec<UnitProjection>,
     pub day: DayProjection,
@@ -293,6 +294,7 @@ impl State {
             .as_ref()
             .map(|history| history.current().profile.clone());
         Projection {
+            climb: self.climb_projection(),
             units: self.unit_projections(applied.as_ref()),
             applied,
             day: self.day_projection(),
@@ -406,13 +408,8 @@ impl State {
                         .edges
                         .get(&ccd)
                         .map(|edge| edge.payload.edge.clone()),
-                    remaining: cap.map(|cap| {
-                        saturating_u32(
-                            day.get()
-                                .saturating_sub(cap.payload.new.get())
-                                .max(0)
-                                .unsigned_abs(),
-                        )
+                    remaining: self.ceilings().get(&UnitId::Ccd(ccd)).and_then(|ceiling| ceiling.c).map(|ceiling| {
+                        saturating_u32(day.get().saturating_sub(ceiling.get()).max(0).unsigned_abs())
                     }),
                     cap: cap.map(|cap| CapProjection {
                         offset: cap.payload.new,
@@ -450,7 +447,8 @@ impl State {
                     .filter_map(|event| match &event.id {
                         crate::day::EventId::Boot(boot) => Some(boot.clone()),
                         crate::day::EventId::Unobserved(_)
-                        | crate::day::EventId::Requalification(_) => None,
+                        | crate::day::EventId::Requalification(_)
+                        | crate::day::EventId::Imported(_) => None,
                     })
                     .collect()
             })
