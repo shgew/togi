@@ -16,6 +16,12 @@ use togi_simrun::day_night::successor::{
 use super::rules::{MAX_STEP, Rules};
 
 #[cfg(test)]
+#[path = "boundary_review_tests.rs"]
+mod boundary_review_tests;
+#[cfg(test)]
+#[path = "contract_guard_tests.rs"]
+mod contract_guard_tests;
+#[cfg(test)]
 #[path = "learning_review_tests.rs"]
 mod review_tests;
 
@@ -112,8 +118,9 @@ struct Audit<'a> {
 struct Lifetime {
     start: f64,
     end: f64,
-    /// The event a closing retreat names; that event precedes the retreat and still belongs to the span.
-    closing_event: Option<String>,
+    /// Index of the application step; its `after` is the restored profile that a closing-day event
+    /// physically ran on before the closing application.
+    application: usize,
 }
 
 fn zero(profile: &PerCore<u8>) -> bool {
@@ -1067,29 +1074,21 @@ impl Audit<'_> {
         Some(Lifetime {
             start: application.day,
             end: closing.map_or(self.rules.horizon_end(), |step| step.day),
-            closing_event: closing.and_then(|step| match &step.kind {
-                StepKind::Retreat {
-                    event: Some(id), ..
-                } => Some(id.clone()),
-                StepKind::Retreat { event: None, .. }
-                | StepKind::Climb { .. }
-                | StepKind::Restoration { .. }
-                | StepKind::StockReset { .. } => None,
-            }),
+            application: index,
         })
     }
 
     /// Whether a daily event happens while the restoration governs the profile. At the application day
-    /// only an event naming the restoration follows it; at the closing day only the closing retreat's
-    /// own event precedes it.
+    /// only an event naming the restoration follows it. At the closing day an event precedes the
+    /// closing application exactly when it ran on the restored profile, the physical pre-interruption
+    /// profile of that boundary; the closing step's event reference never decides membership.
     fn within(&self, life: &Lifetime, id: &str, event: &MachineEvent) -> bool {
         let tolerance = self.rules.day_tolerance;
         let day = event.policy_event.day;
         let names = matches!(&event.policy_event.newest_step, Some(StepIdentity::Restoration { restoration, .. }) if restoration == id);
         let after = day > life.start + tolerance || (day >= life.start - tolerance && names);
         let before = day < life.end - tolerance
-            || (day <= life.end + tolerance
-                && life.closing_event.as_deref() == Some(event.policy_event.id.as_str()));
+            || (day <= life.end && event.profile == self.record.steps[life.application].after);
         after && before
     }
 
