@@ -1,15 +1,15 @@
 # Every flake check runs, on pull requests and on workflow_dispatch alike, unless the public Cachix cache `togi`
-# already holds its output, which the owner's gate publishes for what it built (ADR 0085, ADR 0074). A pull request
+# already holds its output, which the local gate publishes for what it built (docs/development.md#check-cache). A pull request
 # builds the cheap checks named in the eval step together in one light job and every other uncached check, such as
 # clippy, doc, nextest, nextest-tools, nextest-recovery and the VM tests, in a job of its own so the VM tests
-# boot in parallel (ADR 0090). The release dispatches and waits for a run on the exact main head before making its
+# boot in parallel (docs/development.md#nextest-by-concern). The release dispatches and waits for a run on the exact main head before making its
 # release commit; a check that run finds cached counts as passed.
-# No job runs on macOS (ADR 0061): `just lint` and `just gate` clippy the Rust workspace for
+# No job runs on macOS (docs/development.md#ci-and-release-gates): `just lint` and `just gate` clippy the Rust workspace for
 # aarch64-apple-darwin from Linux, and a breakage found on a Mac is fixed as a bug.
 # eval skips outputs already in the public Cachix cache `togi`; build jobs substitute from it and push
 # their outputs when CACHIX_AUTH_TOKEN is available. The aggregate `check` accepts cached or successful
 # builds, even when all outputs were cached. Checks build the package with revision `dev` so that a new
-# commit alone changes none of them (ADR 0021).
+# commit alone changes none of them (docs/development.md#check-cache).
 name: check
 
 on:

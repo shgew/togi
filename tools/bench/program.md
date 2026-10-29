@@ -40,7 +40,7 @@ Breaking any rule invalidates an experiment, however good its metrics look.
 - **Safe writes.** Preserve the [tuner invariants](../../docs/spec/tuner.md#invariants) and the [SMU write transaction](../../docs/spec/runtime.md#offset-types-and-the-write-transaction).
 - **Failure detection stays intact.** Failures remain evidence under the spec's validity and qualification rules. Never ignore, retry away or reclassify a failure to improve a score.
 - **Evidence volume.** Preserve the [workload matrix](../../docs/spec/workloads.md#coverage-matrix), [adequate-exposure boundary](../../docs/spec/tuner.md#adequate-exposure), and all required durations, repeats and placement rules. Reorder work only where the spec permits; do not shorten trials, omit required cells or count unobserved time as exposure.
-- **Tests prove correctness.** Run the affected ordinary tests for each candidate. Simulations are [research tools, not correctness checks](../../docs/adr/0087-simulations-are-research-tools-not-checks.md); a passing day/night score cannot replace tests.
+- **Tests prove correctness.** Run the affected ordinary tests for each candidate. Simulations are [research tools, not correctness checks](../../docs/development.md#simulations-and-research); a passing day/night score cannot replace tests.
 - **No ruleset bump per experiment.** One bump covers the kept decision changes when they become pull requests; file each as a sub-issue of the open `Ruleset N` issue (`docs/issues.md`).
 
 ## Method
