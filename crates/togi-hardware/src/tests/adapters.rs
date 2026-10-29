@@ -36,6 +36,10 @@ fn the_runners_slot_clone_sees_no_table_until_the_reader_is_published() {
 struct Samples(&'static str);
 
 impl Trials for Samples {
+    fn controller_pid(&self) -> u32 {
+        123
+    }
+
     fn content(&mut self, _: togi_machine::WorkloadId) -> Result<togi_machine::ContentId, Error> {
         panic!("sample reads must not ask for workload content")
     }
@@ -68,6 +72,13 @@ impl Trials for Samples {
 
 fn trial_with_samples(lines: &'static str) -> RunnerHandle<Samples> {
     RunnerHandle::new(Samples(lines))
+}
+
+#[test]
+fn the_runner_handle_forwards_its_controller_pid() {
+    let handle = trial_with_samples("");
+    assert_eq!(handle.controller_pid(), 123);
+    assert!(handle.is_unlocked());
 }
 
 #[test]

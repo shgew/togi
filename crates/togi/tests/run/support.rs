@@ -697,6 +697,10 @@ struct InterruptingTrials {
 }
 
 impl Trials for InterruptingTrials {
+    fn controller_pid(&self) -> u32 {
+        togi_sim::CONTROLLER_PID
+    }
+
     fn content(
         &mut self,
         workload: togi_machine::WorkloadId,

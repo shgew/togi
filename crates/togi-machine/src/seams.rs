@@ -259,6 +259,9 @@ pub trait Trials {
         &'a self,
         id: &'a str,
     ) -> Box<dyn Iterator<Item = Result<TrialConditions, crate::SampleError>> + 'a>;
+    /// The process whose threads managed placement confines, as a trial's controller evidence
+    /// records it: togi's own process on a machine, a fixed id in a simulation.
+    fn controller_pid(&self) -> u32;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

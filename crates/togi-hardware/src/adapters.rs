@@ -139,6 +139,10 @@ impl ScopeProbe for RunnerHandle {
 }
 
 impl<R: Trials> Trials for RunnerHandle<R> {
+    fn controller_pid(&self) -> u32 {
+        lock(&self.0).controller_pid()
+    }
+
     fn content(
         &mut self,
         workload: togi_machine::WorkloadId,

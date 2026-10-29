@@ -37,6 +37,12 @@ fn secs(n: u64) -> Duration {
     Duration::from_secs(n)
 }
 
+#[test]
+fn the_native_controller_pid_is_this_process() {
+    let (runner, _) = runner(|_| {}, fast());
+    assert_eq!(runner.controller_pid(), std::process::id());
+}
+
 fn fast() -> Timing {
     Timing {
         sample: Duration::from_millis(50),
