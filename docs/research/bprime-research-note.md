@@ -96,28 +96,40 @@ The four JSONL files together are about 555 KB, rather than the approximate
 
 ## Commands and provenance limits
 
-A's original text headers establish these argument vectors (executable and file
-locations normalized to portable names):
+The retained execution records establish the following build and scoring
+commands, with executable and data locations normalized to portable names.
+A was built in a separate scoring checkout whose revision was not recorded:
 
 ```sh
-togi-tool-bench day-night --registration dev10.json --split dev --policy ruleset13 --slope 1.5 --jobs 24 --out dev10-1.5.jsonl
-togi-tool-bench day-night --registration dev10.json --split dev --policy ruleset13 --slope 2.0 --jobs 24 --out dev10-2.0.jsonl
+cargo build --release --locked -q -p togi-tool-bench
+for S in 1.5 2.0; do
+  togi-tool-bench day-night --registration dev10.json --split dev --policy ruleset13 --slope "$S" --jobs 24 --out "dev10-$S.jsonl" > "dev10-$S.txt" 2>&1
+done
 ```
 
-They name a release executable, but not its build command or source revision.
-B′'s tables establish the policy and slope, and the issue comment establishes
-the reduced seed set and horizon. They do **not** retain the exact B′ invocation,
-build command, job count or output arguments; no matching shell-history entry
-was found. The patch establishes support for
-`--policy ruleset13-bprime --slope <1.5|2.0>`, not proof of a particular command's
-execution. Do not treat a reconstructed command as an original transcript.
+B′ was built in the experimental checkout; the build did not use `--locked`:
 
-The records name neither source revision nor slope in each JSON object, and do
+```sh
+cargo build --release -p togi-tool-bench
+for S in 1.5 2.0; do
+  togi-tool-bench day-night --registration dev10.json --split dev --policy ruleset13-bprime --slope "$S" --jobs 12 --out "bprime-$S.jsonl" | tee "bprime-$S.txt"
+done
+```
+
+The concurrency differs: A used 24 workers and B′ 12. In the retained source,
+`day_night_report::run_policies` uses this argument only to dispatch independent
+scenario/seed/policy runs through the thread pool; each simulator receives its
+own scenario, seed, policy and calendar, not the worker count. Records are
+collected in registered order regardless of completion order. Simulated scores
+are therefore independent of this setting; wall-time measurements are not
+comparable as policy performance evidence.
+
+The JSONL records name neither source revision nor slope in each object, and do
 not embed a registration digest. File names and text headings supply the slope.
-The retained registration supplies the reduced definition, but its use by B′
-cannot be independently established from its headerless outputs. The source
-head `c3be02d2` and patch explain the retained implementation; they do not prove
-that every measured executable was built from exactly that clean revision.
+The execution records identify `dev10.json` for both policies, but do not pin
+its contents with a digest. The source head `c3be02d2` and patch explain the
+retained implementation; uncommitted state at execution is unknown. They do not
+prove that every measured executable was built from exactly that clean revision.
 
 Finally, the pooled endpoint is a fixed-look model calculation, **not an
 adaptive joint confidence bound**: offsets, exposure allocation and measured
