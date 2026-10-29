@@ -583,10 +583,7 @@ fn r1_trial(
 }
 
 fn vector(profile: &CcdProfile) -> CcdVector {
-    CcdVector {
-        ccd: profile.clone(),
-        cores: profile.expand(&cores()).unwrap(),
-    }
+    CcdVector::expand(profile.clone(), &cores()).unwrap()
 }
 
 impl Journal {
