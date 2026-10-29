@@ -29,6 +29,8 @@ use togi_tuner::policy::{
 
 use super::{DayClassification, DayObservation, EndAnswer, Night, Policy, RunError};
 
+mod witnesses;
+
 /// How a night trial ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Ended {
@@ -83,6 +85,7 @@ pub struct Ruleset13 {
     applications: u64,
     trials: u64,
     report_events: Vec<(DayEventId, super::successor::LearningEvent)>,
+    witnesses: witnesses::Witnesses,
 }
 
 impl Ruleset13 {
@@ -116,6 +119,7 @@ impl Ruleset13 {
             applications: 0,
             trials: 0,
             report_events: Vec::new(),
+            witnesses: witnesses::Witnesses::default(),
         }
     }
 
@@ -161,6 +165,7 @@ impl Ruleset13 {
             payload,
         );
         self.state.fold(&event)?;
+        self.witnesses.observe(&event);
         self.appended = seq.get();
         if let Some(recorded) = &mut self.recorded {
             recorded.push(event);
@@ -567,6 +572,9 @@ impl Policy for Ruleset13 {
                 event.provisional = provisional;
             }
         }
+        report
+            .events
+            .extend_from_slice(self.witnesses.night_events());
         if let Observer::Watching(day) = &self.observer {
             report.readback = day
                 .offsets
@@ -575,6 +583,10 @@ impl Policy for Ruleset13 {
                 .collect::<Option<PerCore<_>>>();
         }
         report
+    }
+
+    fn applications(&self) -> super::successor::PolicyApplications {
+        self.witnesses.applications()
     }
 
     fn firmware_changed(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
@@ -667,10 +679,11 @@ impl Policy for Ruleset13 {
             )
             | None => DayClassification::NotCpuSuspect,
         };
+        let reported_id = witnesses::event_id(&event);
         self.report_events.push((
             event,
             super::successor::LearningEvent {
-                id: format!("ruleset13-event-{}", self.report_events.len()),
+                id: reported_id,
                 day: 1.0 + machine.clock.monotonic()?.as_secs_f64() / 86_400.0,
                 classification: reported,
                 provisional,

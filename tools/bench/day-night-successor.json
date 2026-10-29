@@ -2497,8 +2497,8 @@
   ],
   "sources": {
     "simulator_revision": "f1f7bd42288c96579189decb1e69b3e137efc5c6",
-    "runner_revision": "62a5ed4c4c2579790dd1a88a52a7298e285b994e",
-    "report_revision": "4ed8e3f177c3f7da11477a3d23bad05883506fb5",
+    "runner_revision": "a7c401fc1d251684c08ab897891be1c144b2b6cf",
+    "report_revision": "a43da69c1281b6a2c7e43caa2fa6d961688d76e6",
     "binary_sha256": null,
     "input_sha256": null,
     "policies": [
@@ -2604,8 +2604,8 @@
         "role": "comparator",
         "source": {
           "kind": "pinned",
-          "revision": "2bc7f131b8c9cd5e397ed4623f0896ae8d5107ce",
-          "sha256": "0b44f2e250c44bc96908afb49b00183f447d9be765cd82084e3a2c8aad3ecf4a"
+          "revision": "538b1dc6f9d4d48292a4c0971bfce56db4be7695",
+          "sha256": "b486aef5983c51a452fcb7d8cb5e5d1e9f03a379b7e78102f3255879bf09103f"
         },
         "parameters_sha256": "cce0e775274e5352e921e4b516dd020011226208725cc160a00af13a5bd3985b",
         "parameters": [

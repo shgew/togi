@@ -236,7 +236,9 @@ impl Audit<'_> {
             .sum()
     }
 
-    fn epoch_at(&self, day: f64) -> Option<&str> {
+    /// The observable context of the truth epoch covering `day`. Moving-limit epochs share the
+    /// context of the epoch they move within; only a firmware change opens a new one.
+    fn context_at(&self, day: f64) -> Option<&str> {
         self.record
             .epochs
             .iter()
@@ -244,7 +246,7 @@ impl Audit<'_> {
                 day >= epoch.start_day - self.rules.day_tolerance
                     && day < epoch.end_day - self.rules.day_tolerance
             })
-            .map(|epoch| epoch.id.as_str())
+            .map(|epoch| epoch.context.as_str())
     }
 
     fn ledger(&mut self) {
@@ -561,21 +563,27 @@ impl Audit<'_> {
                 "the qualified profile is not the exact applied profile",
             );
         }
-        if self.epoch_at(step.day) != Some(qualification.epoch.as_str()) {
+        let context = self
+            .record
+            .epochs
+            .iter()
+            .find(|epoch| epoch.id == qualification.epoch)
+            .map(|epoch| epoch.context.as_str());
+        if context.is_none() || self.context_at(step.day) != context {
             self.violate(
                 "qualification-context",
                 subject,
                 format!(
-                    "qualification epoch {} is not the epoch of day {}",
+                    "qualification epoch {} is unknown or its context differs from the context of day {}",
                     qualification.epoch, step.day
                 ),
             );
         }
-        if self.epoch_at(qualification.day) != Some(qualification.epoch.as_str()) {
+        if context.is_none() || self.context_at(qualification.day) != context {
             self.violate(
                 "qualification-date-context",
                 subject,
-                "qualification predates its recorded truth context",
+                "qualification predates its recorded observable context",
             );
         }
         if !qualification.safety_checks_satisfied {

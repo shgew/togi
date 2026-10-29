@@ -42,6 +42,131 @@ fn config(scenario: &truth::Scenario, days: u32, mode: UnitMode) -> RunConfig {
     }
 }
 
+#[test]
+fn ruleset13_promotions_keep_their_journal_witnesses() {
+    use std::collections::BTreeSet;
+    use togi_journal::{ApplyCause, Payload, StepKind as JournalStep};
+
+    let scenario = truth::Scenario::builtin("successor-edge-deep", 20_001).unwrap();
+    let mut policy = crate::day_night::Ruleset13::new(1.5).unwrap().recording();
+    let record =
+        crate::day_night::successor::run(config(&scenario, 30, UnitMode::CcdUniform), &mut policy)
+            .unwrap();
+    let journal = policy.events().unwrap();
+    let promotions: Vec<_> = journal
+        .iter()
+        .filter_map(|event| {
+            let Payload::DayApplied(applied) = &event.payload else {
+                return None;
+            };
+            let ApplyCause::Step { decision } = applied.cause else {
+                return None;
+            };
+            journal.iter().find_map(|proposal| {
+                if let Payload::DayStep(step) = &proposal.payload
+                    && step.decision == decision
+                    && matches!(step.step, JournalStep::Promote { .. })
+                {
+                    Some((event, applied))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+    assert!(!promotions.is_empty(), "fixture never promoted");
+    for (event, applied) in promotions {
+        let day = 1.0 + event.mono.unwrap().as_secs_f64() / 86_400.0;
+        let witness = record
+            .steps
+            .iter()
+            .find(|step| step.day == day && matches!(step.kind, StepKind::Climb { .. }))
+            .expect("applied promotion has a step witness");
+        for info in scenario.topology() {
+            assert_eq!(
+                i64::from(witness.after.get(info.core).unwrap()),
+                -applied.target.ccd().get(info.ccd).unwrap().observed().0
+            );
+        }
+    }
+    for summary in record.units.iter().filter(|unit| unit.promotions > 0) {
+        let witnesses: BTreeSet<_> = record
+            .steps
+            .iter()
+            .filter_map(|step| {
+                if let StepKind::Climb {
+                    unit,
+                    qualification,
+                    ..
+                } = &step.kind
+                    && *unit == summary.unit
+                {
+                    Some(qualification)
+                } else {
+                    None
+                }
+            })
+            .flat_map(|qualification| {
+                qualification
+                    .fresh_witnesses
+                    .iter()
+                    .chain(&qualification.reused_witnesses)
+                    .chain(&qualification.stock_controls)
+            })
+            .collect();
+        assert!(
+            !witnesses.is_empty(),
+            "promoted unit has no qualification witnesses"
+        );
+        assert!(
+            summary.qualification_launches > 0,
+            "promoted unit has no observed qualification launches"
+        );
+        for id in witnesses {
+            assert!(
+                journal.iter().any(|event| {
+                    matches!(&event.payload, Payload::TrialStart(start)
+                        if start.trial.as_str() == id.as_str())
+                }),
+                "qualification witness {id} has no journaled launch"
+            );
+        }
+    }
+}
+
+#[test]
+fn ruleset13_night_failures_keep_their_journal_classification() {
+    use togi_journal::{Outcome, Payload};
+
+    // The shallow edge binds at five to seven counts, so the ordinary hunt encounters it
+    // without waiting for the deep-edge fixture's long clean climb.
+    let scenario = truth::Scenario::builtin("successor-edge-shallow", 20_001).unwrap();
+    let mut policy = crate::day_night::Ruleset13::new(1.5).unwrap().recording();
+    let record =
+        crate::day_night::successor::run(config(&scenario, 7, UnitMode::CcdUniform), &mut policy)
+            .unwrap();
+    let journal = policy.events().unwrap();
+    let failures: Vec<_> = journal
+        .iter()
+        .filter(|event| {
+            matches!(&event.payload, Payload::TrialEnd(end) if end.outcome == Outcome::Failure)
+        })
+        .collect();
+    assert!(!failures.is_empty(), "fixture never failed at night");
+    for failure in failures {
+        let day = 1.0 + failure.mono.unwrap().as_secs_f64() / 86_400.0;
+        let reported = record
+            .events
+            .iter()
+            .find(|event| event.period == Period::Night && event.policy_event.day == day)
+            .expect("night failure has a machine event");
+        assert_eq!(
+            reported.policy_event.classification,
+            Classification::CpuSuspect
+        );
+    }
+}
+
 fn snapshot(at: Duration, report: PolicyReport) -> Snapshot {
     Snapshot {
         at,
