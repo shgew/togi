@@ -249,7 +249,7 @@ fn restoration_hold_boundary_uses_verified_current_profile_hours(hours: f64, acc
     record
         .intervals
         .iter_mut()
-        .find(|interval| interval.start_day == 20.0 && interval.end_day == 30.0)
+        .find(|interval| interval.start_day >= 20.0 && interval.end_day <= 30.0)
         .expect("current-profile hold interval")
         .verified_daily_active_hours = hours;
     resync(&mut record);
