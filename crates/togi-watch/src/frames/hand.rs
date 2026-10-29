@@ -14,12 +14,12 @@ use togi_journal::{
     StepKind, TaskId, TaskStatus, Tested, UncoveredClass, UncoveredReason,
 };
 use togi_machine::{BootId, CcdId, ObservedOffset, Regime, ResetKind, TargetOffset};
-use togi_tuner::unit::{UnitId, UnitProfile};
 use togi_tuner::policy::{
-    CapProjection, UnitProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
+    CapProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
     MappingProjection, NightProjection, Projection, QualificationProgress, QualificationProjection,
-    QualificationStage, ReproductionProjection,
+    QualificationStage, ReproductionProjection, UnitProjection,
 };
+use togi_tuner::unit::{UnitId, UnitProfile};
 
 use super::testing::{FIXED_NOW, draw_journal, main_screen};
 use crate::day_totals::DayTotals;

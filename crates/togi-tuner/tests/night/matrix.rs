@@ -445,7 +445,15 @@ fn mapping_runs_r1_r2_r8_r7_r9_on_one_ccd_with_the_others_at_zero() {
 #[test]
 fn mapping_selections_are_frozen_by_the_mapping_ordinal() {
     let machine = two_ccds();
-    let at = |ordinal| mapping_cells(&machine.layout(), crate::fixture::unit(0), offset(-5), ordinal).unwrap();
+    let at = |ordinal| {
+        mapping_cells(
+            &machine.layout(),
+            crate::fixture::unit(0),
+            offset(-5),
+            ordinal,
+        )
+        .unwrap()
+    };
     let pair = |matrix: &Matrix| regime_cells(matrix, Regime::R8)[0].workloads;
     assert_ne!(pair(&at(0)), pair(&at(1)));
     assert_eq!(pair(&at(1)), pair(&at(7)));
@@ -462,8 +470,12 @@ fn reproduction_tests_the_exact_profile_then_each_nonzero_ccd_alone() {
         scopes,
         [
             AttemptScope::Exact,
-            AttemptScope::Unit { unit: crate::fixture::unit(0) },
-            AttemptScope::Unit { unit: crate::fixture::unit(1) }
+            AttemptScope::Unit {
+                unit: crate::fixture::unit(0)
+            },
+            AttemptScope::Unit {
+                unit: crate::fixture::unit(1)
+            }
         ]
     );
     assert_eq!(attempts[0].matrix.profile, profile(&[-10, -5]));
@@ -501,7 +513,12 @@ fn a_ccd_at_zero_has_nothing_to_isolate() {
     let machine = two_ccds();
     let attempts = reproduction_cells(&machine.layout(), &profile(&[-10, 0]), 0).unwrap();
     assert_eq!(attempts.len(), 2);
-    assert_eq!(attempts[1].scope, AttemptScope::Unit { unit: crate::fixture::unit(0) });
+    assert_eq!(
+        attempts[1].scope,
+        AttemptScope::Unit {
+            unit: crate::fixture::unit(0)
+        }
+    );
 }
 
 #[test]
