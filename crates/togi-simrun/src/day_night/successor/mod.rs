@@ -7,6 +7,10 @@
 //! intervals: the scorer never prorates active hours across an unresolved interruption.
 //! Optional invocation timings identify whole execution attempts; equal identities must
 //! carry equal elapsed times, and absent timings remain unavailable rather than zero.
+//! The physical profile timeline explicitly distinguishes ordinary daily deployment from
+//! night trials. Daily safety, clean holds and K/T/H exclude night trial intervals, whose
+//! exact tested profiles and truth-side risk remain recorded. Missing policy allowance or
+//! classification is explicit absence, never a synthetic zero account or suspect decision.
 //! `Record::validate` checks representation and accounting; the benchmark owns acceptance.
 
 mod policy;
@@ -117,6 +121,7 @@ object_only! {
         pub registration_sha256: String,
         pub source_revision: String,
         pub simulator_revision: String,
+        pub runner_revision: String,
         pub report_revision: String,
         /// Absent before execution; a registered score requires the pinned hash.
         pub binary_sha256: Option<String>,
@@ -161,6 +166,7 @@ object_only! {
     pub struct ProfileInterval {
         pub start_day: f64,
         pub end_day: f64,
+        pub period: Period,
         #[serde(deserialize_with = "profile::deserialize")]
         pub profile: PerCore<u8>,
         pub membership: Vec<PolicyUnit>,

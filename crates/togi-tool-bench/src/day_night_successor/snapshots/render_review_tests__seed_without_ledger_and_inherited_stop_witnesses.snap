@@ -1,0 +1,22 @@
+---
+source: crates/togi-tool-bench/src/day_night_successor/render_review_tests.rs
+expression: "rendered(|out| seed_section(out, &group, &item))"
+---
+### successor-inherited-stop — ccd-uniform — slope 2 — seed 3
+
+Outcome UnconvergedCrashFree; first finish ∞; settled ∞; unit-total depth 4 of reference M = 6 (physical maximum 6, required 5); physical-core mean depth n/a; final depths [2,2].
+
+Events (unique): daily 0 total / 0 CO / 0 background / 0 non-CPU / 0 unattributed; night 0 total / 0 CO. Learning-phase daily CO 0; post-finish daily CO 0.
+
+| Unit | Finish | Finish day | Settled | Finish depth | Final depth | Promotions | Retreat steps | Learning H | Post-finish H |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | InheritedStop | 1 | 1 | 2 | 2 | 0 | 0 | 0 | 0 |
+| 1 | none | ∞ | ∞ | n/a | 2 | 0 | 0 | 0 | 0 |
+
+Allowance: unreported (the policy kept no allowance ledger; the learning contract is not judged); stopped units [0]; newest step none.
+
+Inherited coarse stop: unit 0, InheritedStop, day 1, witnesses [prior-crash-1, prior-crash-2].
+
+| Epoch | Context | Days | Operational M | Physical max | Per-unit feasible | Certificate | Hours in A / total | In A at end | Recovered to A at |
+|---|---|---|---|---|---|---|---|---|---|
+| epoch-0 | stock | 0–731 | 6 | 6 | [3,3] | exact | 700.5 / 1000 | true | 400.25 |

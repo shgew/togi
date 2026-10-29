@@ -17,7 +17,7 @@ use togi_simrun::day_night::successor::{
     TruthCause, UnitFinish, UnitId, UnitMode, UnitPhase, UnitSummary,
 };
 
-use super::super::registration::{self, Cell, Registration, SeedSelection};
+use super::super::registration::{self, Cell, Registration, SeedSelection, SourceIdentity};
 use super::ScoreSelection;
 
 pub(crate) const HORIZON_END: f64 = 731.0;
@@ -65,7 +65,7 @@ impl Lab {
 
     /// The full registration fixture: every scenario, the registered seed counts.
     pub(crate) fn full() -> Self {
-        let mut lab = Self::new(&["edge-deep"], 0);
+        let mut lab = Self::new(&["successor-edge-deep"], 0);
         lab.registration = registration::tests::registration();
         lab.registration.sources.binary_sha256 = Some(hex('b'));
         lab.registration.sources.input_sha256 = Some(hex('c'));
@@ -190,8 +190,6 @@ pub(crate) struct Spec {
     pub(crate) ratio: f64,
     pub(crate) events: Vec<Ev>,
     pub(crate) restore: Option<Restore>,
-    /// Tag the exposure after a retained restoration as restoration learning.
-    pub(crate) tag_restoration: bool,
     /// Override the derived outcome.
     pub(crate) outcome: Option<Outcome>,
     /// Stop observing at this day: a truncated run, or a harness error when `harness_error` is set.
@@ -212,7 +210,6 @@ impl Spec {
             ratio: 0.5,
             events: Vec::new(),
             restore: None,
-            tag_restoration: false,
             outcome: None,
             observed_until: None,
             harness_error: false,
@@ -296,6 +293,13 @@ impl Spec {
             .scenario(&self.scenario)
             .expect("scenario in the lab");
         let policy = registration.policy("successor").expect("successor policy");
+        let SourceIdentity::Pinned {
+            revision: source_revision,
+            sha256: source_sha256,
+        } = policy.source.clone()
+        else {
+            panic!("fixture policy source must be pinned")
+        };
         let ccds = usize::from(scenario.topology.ccds);
         let per_ccd = usize::from(scenario.topology.cores_per_ccd);
         let topology: Vec<CoreInfo> = (0..ccds * per_ccd)
@@ -380,7 +384,7 @@ impl Spec {
             .filter(|index| depths[*index] == 0)
             .map(uid)
             .collect();
-        let mut retained_from = None;
+        let mut span: Option<(f64, f64)> = None;
         if let Some(restore) = self.restore {
             let epoch = scenario
                 .epochs
@@ -414,7 +418,14 @@ impl Spec {
                             restoration: "fw".into(),
                         },
                     });
-                    retained_from = Some(applied);
+                    span = Some((
+                        applied,
+                        if restore == Restore::Crashed {
+                            applied + 2.0
+                        } else {
+                            f64::INFINITY
+                        },
+                    ));
                     let result = if restore == Restore::Retained {
                         RestorationResult::Retained {}
                     } else {
@@ -477,6 +488,7 @@ impl Spec {
             });
         }
         steps.sort_by(|a, b| a.day.total_cmp(&b.day));
+        let in_span = |day: f64| span.is_some_and(|(applied, end)| day >= applied && day < end);
         let first_finish = finish_day.iter().copied().fold(1.0, f64::max);
 
         // Epochs.
@@ -541,13 +553,8 @@ impl Spec {
                 } else {
                     Phase::Learning
                 },
-                restoration_learning: if self.tag_restoration
-                    && retained_from.is_some_and(|applied| start >= applied)
-                {
-                    Some("fw".into())
-                } else {
-                    None
-                },
+                period: Period::Day,
+                restoration_learning: in_span(start).then(|| "fw".to_string()),
                 admissibility: Admissibility {
                     joint_ratio: ratio,
                     unit_ratios: vec![ratio; n],
@@ -599,7 +606,8 @@ impl Spec {
                     period: event.period,
                     truth: event.truth.clone(),
                     phase,
-                    restoration_learning: event.tag.clone(),
+                    restoration_learning: (event.period == Period::Day && in_span(event.day))
+                        .then(|| "fw".to_string()),
                     profile,
                 }
             })
@@ -716,13 +724,14 @@ impl Spec {
             provenance: Provenance {
                 registration_id: registration.id.clone(),
                 registration_sha256: lab.sha.clone(),
-                source_revision: policy.source_revision.clone(),
+                runner_revision: registration.sources.runner_revision.clone(),
+                source_revision,
                 simulator_revision: registration.sources.simulator_revision.clone(),
                 report_revision: registration.sources.report_revision.clone(),
                 binary_sha256: registration.sources.binary_sha256.clone(),
                 input_sha256: registration.sources.input_sha256.clone(),
                 policy_identity: policy.identity.clone(),
-                policy_source_sha256: policy.source_sha256.clone(),
+                policy_source_sha256: source_sha256.clone(),
                 parameters_sha256: policy.parameters_sha256.clone(),
                 slope: self.slope,
                 split: self.split,
@@ -742,7 +751,7 @@ impl Spec {
                     .iter()
                     .filter_map(|unit| unit.finish.clone())
                     .collect(),
-                allowance,
+                allowance: Some(allowance),
                 events: machine_events
                     .iter()
                     .filter(|event| event.period == Period::Day)
@@ -838,7 +847,9 @@ fn accounts_for(
 
 /// Re-derives the ledger, K/T/H accounts and exposure after a test edits intervals or events.
 pub(crate) fn resync(record: &mut Record) {
-    record.policy.allowance = ledger_for(&record.events);
+    if record.policy.allowance.is_some() {
+        record.policy.allowance = Some(ledger_for(&record.events));
+    }
     record.accounts = accounts_for(&record.intervals, &record.events, record.units.len());
     let seconds = record
         .intervals

@@ -28,6 +28,9 @@
 #[cfg(test)]
 #[path = "fixture.rs"]
 pub(crate) mod fixture;
+#[cfg(test)]
+#[path = "score_integration_tests.rs"]
+mod integration_tests;
 pub mod learning;
 pub mod measure;
 pub mod rules;
@@ -70,6 +73,8 @@ pub enum ScoreError {
     Registration(#[from] registration::Error),
     #[error("policy {0:?} is not registered")]
     UnknownPolicy(String),
+    #[error("policy {0:?} has no frozen source identity")]
+    PendingPolicy(String),
     #[error("slope {0} is not a registered slope")]
     UnregisteredSlope(f64),
     #[error("registration_sha256 must be 64 lower-case hex digits")]
@@ -318,6 +323,8 @@ struct Context<'a> {
     sha256: &'a str,
     selection: &'a ScoreSelection,
     policy: &'a PolicySource,
+    source_revision: &'a str,
+    source_sha256: &'a str,
     rules: Rules,
     registered: bool,
 }
@@ -359,6 +366,13 @@ fn score_validated(
     let policy = registration
         .policy(&selection.policy)
         .ok_or_else(|| ScoreError::UnknownPolicy(selection.policy.clone()))?;
+    let registration::SourceIdentity::Pinned {
+        revision: source_revision,
+        sha256: source_sha256,
+    } = &policy.source
+    else {
+        return Err(ScoreError::PendingPolicy(policy.name.clone()));
+    };
     let spec = registration
         .run_profile(selection.run_profile)
         .ok_or(registration::Error::Invalid("run profile not registered"))?;
@@ -381,6 +395,8 @@ fn score_validated(
         sha256: registration_sha256,
         selection,
         policy,
+        source_revision,
+        source_sha256,
         rules: Rules::new(registration),
         registered: selection.run_profile == RunProfile::Registered,
     };
@@ -466,7 +482,8 @@ fn score_validated(
             .iter()
             .map(|id| format!("inconsistent invocation timing: {id}")),
     );
-    if selected.len() != registration.slopes.len() {
+    // Only a gate profile needs every registered slope; a reduced read is one slope by design.
+    if spec.gate_verdict && selected.len() != registration.slopes.len() {
         issues.push(format!("slope selection covers {} of {} registered slopes; a registered gate needs all of them", selected.len(), registration.slopes.len()));
     }
     if registration.sources.binary_sha256.is_none() && hashes.0.len() > 1 {
@@ -629,11 +646,11 @@ impl Context<'_> {
             "policy identity differs from the registered resolved identity",
         );
         check(
-            provenance.source_revision == self.policy.source_revision,
+            provenance.source_revision == self.source_revision,
             "policy source revision differs",
         );
         check(
-            provenance.policy_source_sha256 == self.policy.source_sha256,
+            provenance.policy_source_sha256 == self.source_sha256,
             "policy source hash differs",
         );
         check(
@@ -647,6 +664,10 @@ impl Context<'_> {
         check(
             provenance.report_revision == registration.sources.report_revision,
             "report revision differs",
+        );
+        check(
+            provenance.runner_revision == registration.sources.runner_revision,
+            "runner revision differs",
         );
         for (recorded, pinned, name) in [
             (
@@ -688,6 +709,19 @@ impl Context<'_> {
                     )
             }),
             "invocation wall time exceeds the registered budget",
+        );
+        check(
+            record.policy.allowance.is_some() || self.policy.role == PolicyRole::Comparator,
+            "a candidate policy report carries no allowance ledger",
+        );
+        check(
+            self.policy.role == PolicyRole::Comparator
+                || record.events.iter().all(|event| {
+                    event.period == togi_simrun::day_night::successor::Period::Night
+                        || event.policy_event.classification
+                            != togi_simrun::day_night::successor::Classification::Unreported
+                }),
+            "a candidate daily event carries no policy classification",
         );
 
         // Topology and unit dimensions come from the scenario.
@@ -871,8 +905,8 @@ fn build_group(
         measured: rate.to_string(),
         passed: rate.all(),
     });
-    let learning = count(&|seed| seed.learning.violations.is_empty());
-    list.push(Criterion { name: "learning-contract", column: Column::Safety, rule: "no allowance, stop, step, hold, qualification or restoration violation on any complete seed".into(), share: Some(learning), measured: learning.to_string(), passed: learning.all() });
+    let learning = count(&|seed| seed.learning.reported && seed.learning.violations.is_empty());
+    list.push(Criterion { name: "learning-contract", column: Column::Safety, rule: "an allowance ledger is reported and there is no allowance, stop, step, hold, qualification or restoration violation on any complete seed".into(), share: Some(learning), measured: learning.to_string(), passed: learning.all() });
 
     if scope.benign {
         let benign = count(&|seed| seed.benign_ok);

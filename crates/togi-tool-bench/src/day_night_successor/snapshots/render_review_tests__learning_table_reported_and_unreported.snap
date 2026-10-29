@@ -1,0 +1,11 @@
+---
+source: crates/togi-tool-bench/src/day_night_successor/render_review_tests.rs
+expression: "rendered(|out| learning_table(out, &group))"
+---
+Learning contract per seed (limit 2 shared across phases; consumption counts every charged unique event):
+
+| Seed | Limit | Consumed | Remaining | Overspend | Exhausted day | Charged learning | Charged post-finish | Restoration-tagged (overlap) | True CO learning crashes | Violations |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2 | 3 | 0 | 1 | 9.5 | 2 | 1 | 1 | 2 | 2 |
+| 2 | 2 | 1 | 1 | 0 | none | 0 | 0 | 0 | 0 | 0 |
+| 3 | unreported | unreported | unreported | unreported | unreported | unreported | unreported | unreported | 1 | unreported |

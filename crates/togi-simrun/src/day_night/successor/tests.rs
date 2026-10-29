@@ -50,6 +50,7 @@ fn fixture() -> Record {
             registration_sha256: "a".repeat(64),
             source_revision: "source".into(),
             simulator_revision: "truth".into(),
+            runner_revision: "runner".into(),
             report_revision: "report".into(),
             binary_sha256: Some("b".repeat(64)),
             input_sha256: Some("c".repeat(64)),
@@ -82,6 +83,7 @@ fn fixture() -> Record {
         intervals: vec![ProfileInterval {
             start_day: 1.0,
             end_day: 731.0,
+            period: Period::Day,
             profile,
             membership: membership.clone(),
             epoch: "initial".into(),
@@ -124,13 +126,13 @@ fn fixture() -> Record {
             .collect(),
         policy: PolicyReport {
             finishes,
-            allowance: AllowanceLedger {
+            allowance: Some(AllowanceLedger {
                 limit: 2,
                 consumed: 0,
                 provisional: 0,
                 reclassified: 0,
                 exhausted_day: None,
-            },
+            }),
             events: vec![],
             stopped_units: vec![],
             inherited_stops: vec![],
@@ -289,7 +291,7 @@ fn malformed_records_are_refused(fault: Fault) {
         Fault::Exposure => record.exposure.eligible_seconds += 1.0,
         Fault::Nonfinite => record.intervals[0].admissibility.joint_ratio = f64::NAN,
         Fault::PolicyFinish => record.policy.finishes.clear(),
-        Fault::Ledger => record.policy.allowance.consumed = 1,
+        Fault::Ledger => record.policy.allowance.as_mut().unwrap().consumed = 1,
         Fault::Ceiling => record.units[0].ceiling_evidence.push(CeilingEvidence {
             day: 1.0,
             epoch: "initial".into(),
@@ -346,17 +348,18 @@ fn provisional_reclassification_keeps_unique_charge_and_uncapped_consumption() {
         .iter()
         .map(|event| event.policy_event.clone())
         .collect();
-    record.policy.allowance = AllowanceLedger {
+    record.policy.allowance = Some(AllowanceLedger {
         limit: 2,
         consumed: 3,
         provisional: 2,
         reclassified: 1,
         exhausted_day: Some(3.0),
-    };
+    });
     assert!(record.validate().is_ok());
-    assert_eq!(record.policy.allowance.remaining(), 0);
-    assert_eq!(record.policy.allowance.overspend(), 1);
-    assert!(record.policy.allowance.exhausted());
+    let ledger = record.policy.allowance.as_ref().unwrap();
+    assert_eq!(ledger.remaining(), 0);
+    assert_eq!(ledger.overspend(), 1);
+    assert!(ledger.exhausted());
     record.events.push(record.events[0].clone());
     assert!(record.validate().is_err());
 }
@@ -382,7 +385,7 @@ fn interaction_crash_is_counted_once_not_per_implicated_unit() {
         .iter()
         .map(|event| event.policy_event.clone())
         .collect();
-    record.policy.allowance.consumed = 1;
+    record.policy.allowance.as_mut().unwrap().consumed = 1;
     record.accounts.post_finish.push(SourceAccount {
         source: source.clone(),
         k: 1,
@@ -444,7 +447,7 @@ fn zero_co_is_not_zero_total_interruptions() {
         .iter()
         .map(|event| event.policy_event.clone())
         .collect();
-    record.policy.allowance.consumed = 1;
+    record.policy.allowance.as_mut().unwrap().consumed = 1;
     assert!(record.validate().is_ok());
     assert_eq!(record.events.len(), 1);
     assert_eq!(
@@ -512,8 +515,9 @@ fn finishing_interruption_keeps_learning_identity_before_immediate_retreat() {
         .iter()
         .map(|event| event.policy_event.clone())
         .collect();
-    record.policy.allowance.consumed = 1;
-    record.policy.allowance.provisional = 1;
+    let ledger = record.policy.allowance.as_mut().unwrap();
+    ledger.consumed = 1;
+    ledger.provisional = 1;
     for account in &mut record.accounts.learning {
         account.active_hours = 8.0;
     }
@@ -588,3 +592,40 @@ fn firmware_restoration_learning_overlaps_original_post_finish_exposure() {
     );
     assert_eq!(record.accounts.post_finish[0].active_hours, 5840.0);
 }
+
+#[test_case(false; "explicitly absent")]
+#[test_case(true; "absent field")]
+fn an_absent_allowance_is_not_a_zero_ledger(omit: bool) {
+    let mut record = fixture();
+    record.policy.allowance = None;
+    record.validate().unwrap();
+    let mut value = serde_json::to_value(&record).unwrap();
+    if omit {
+        value["policy"].as_object_mut().unwrap().remove("allowance");
+    } else {
+        assert_eq!(value["policy"]["allowance"], serde_json::Value::Null);
+    }
+    assert_eq!(
+        Record::parse(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        record
+    );
+}
+
+#[test]
+fn a_charged_event_requires_a_reported_machine_allowance() {
+    let mut record = fixture();
+    record.policy.allowance = None;
+    let mut observed = event("charged", 2.0, TruthCause::Background {}, false, false);
+    observed.policy_event.classification = Classification::CpuSuspect;
+    record.policy.events = vec![observed.policy_event.clone()];
+    record.events = vec![observed];
+    assert!(matches!(
+        record.validate(),
+        Err(ValidationError::Invalid(
+            "charged event without a machine allowance"
+        ))
+    ));
+}
+
+#[path = "review_tests.rs"]
+mod review_tests;

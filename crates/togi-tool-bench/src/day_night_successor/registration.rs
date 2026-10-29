@@ -8,8 +8,8 @@
 //!
 //! # Schema
 //!
-//! - `id`, `version`: [`VERSION`] and a nonempty id. [`REGISTRATION_ID`] registers `ccd-uniform`
-//!   only; a `per-core` registration needs a distinct id and exactly one mode, so the two never mix.
+//! - `id`, `version`: a nonempty id, free of any mode coupling, and [`VERSION`]. Exactly one unit
+//!   mode is registered, so a ccd-uniform and a per-core registration never mix.
 //! - `lambda_per_hour`: λ* as an exact [`Fraction`], 1/3000 CO-added crashes per active
 //!   machine-hour, applied jointly and as λ*/n per tuning unit.
 //! - `slopes`: the fallback slopes 1.5 and 2.0; a scenario passes only at every slope.
@@ -28,9 +28,10 @@
 //! - `budgets`, `resources`: 1,800 and 43,200 elapsed seconds excluding compilation, the
 //!   fixed job count and resource class.
 //! - `tolerance`: computational tolerances, never a relaxation of the risk budget.
-//! - `unit_modes`: the scored modes. Per-core needs its own registration, so it is refused.
-//! - `sources`: simulator and report revisions, optional binary and input hashes, and every
-//!   policy's resolved identity, source revision, source and parameter hashes and parameters.
+//! - `unit_modes`: exactly one scored mode, `ccd-uniform` or `per-core`.
+//! - `sources`: simulator, runner and report revisions, optional binary and input hashes, and
+//!   every policy's resolved identity, source identity (pending or pinned revision and hash),
+//!   parameter hash and parameters.
 //! - `commands`, `streams`, `continuation`: the exact commands, random stream domains and
 //!   topology permutation, and the deterministic development continuation rule.
 //! - `notes`: free text, each entry nonempty.
@@ -45,7 +46,6 @@ use sha2::{Digest, Sha256};
 use togi_machine::object_only;
 use togi_simrun::day_night::successor::{RunProfile, Split, UnitMode};
 
-pub const REGISTRATION_ID: &str = "day-night-successor";
 pub const VERSION: u32 = 1;
 pub const LAMBDA_PER_HOUR: Fraction = Fraction {
     numerator: 1,
@@ -65,39 +65,12 @@ pub const REDUCED_DEV_LABEL: &str = "EXPLORATORY REDUCED DEV — NOT A REGISTERE
 pub const REDUCED_DEV_BUDGET_SECONDS: u32 = 1800;
 pub const REGISTERED_BUDGET_SECONDS: u32 = 43_200;
 pub const CANDIDATE_POLICY: &str = "successor";
-pub const NO_WRITE_LIMIT_SCENARIO: &str = "no-write-limit-failure";
+/// The single per-unit depth floor any scenario may carry (the no-write-limit fixture).
 pub const NO_WRITE_LIMIT_FLOOR: u8 = 44;
-/// Named members of the frozen benign list; the third is the new within-CCD heterogeneous fixture.
-pub const BENIGN_NAMED: [&str; 2] = ["no-write-limit-failure", "edge-deep"];
+/// Benign-applicable scenarios: the two settled fixtures plus the within-CCD heterogeneous one.
 pub const BENIGN_COUNT: usize = 3;
-pub const RETENTION_SCENARIOS: [&str; 1] = ["stock-background"];
 /// Upper bound on any registered computational tolerance.
 pub const MAX_TOLERANCE: f64 = 1e-6;
-/// The Ruleset 13 challenge families, kept as successor challenges.
-pub const HISTORICAL_SCENARIOS: [&str; 22] = [
-    "edge-shallow",
-    "edge-deep",
-    "no-write-limit-failure",
-    "slope-flat",
-    "slope-steep",
-    "flattening-tail",
-    "flatter-dangerous-class",
-    "delayed-onset",
-    "thermal-history",
-    "hidden-daily",
-    "partial-only",
-    "single-core-binding",
-    "jointly-binding",
-    "r8-nonbinding",
-    "both-ccd-interaction",
-    "stock-background",
-    "single-ccd",
-    "moving-cap",
-    "firmware-change",
-    "non-cpu-correct",
-    "non-cpu-wrong",
-    "non-cpu-missing",
-];
 pub const SETTLED_CALENDAR: (u32, u32, u32, u32, usize, u32, u32) = (1, 730, 8, 8, 3, 365, 181);
 
 pub const SETTLED_CRITERIA: Criteria = Criteria {
@@ -362,6 +335,7 @@ object_only! {
     #[serde(deny_unknown_fields)]
     pub struct Sources {
         pub simulator_revision: String,
+        pub runner_revision: String,
         pub report_revision: String,
         pub binary_sha256: Option<String>,
         pub input_sha256: Option<String>,
@@ -376,10 +350,19 @@ object_only! {
         /// Resolved identity printed and recorded in every run's provenance.
         pub identity: String,
         pub role: PolicyRole,
-        pub source_revision: String,
-        pub source_sha256: String,
+        /// Pending until the policy implementation exists; a pending policy is never scored.
+        pub source: SourceIdentity,
         pub parameters_sha256: String,
         pub parameters: Vec<Parameter>,
+    }
+
+    /// A policy's source pin. `Pending` freezes a registration before the policy exists; a
+    /// pending policy is never scored.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+    pub enum SourceIdentity {
+        Pending {},
+        Pinned { revision: String, sha256: String },
     }
 
     #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -457,6 +440,23 @@ pub enum Error {
 /// Lower-case hex SHA-256, the form of `registration_sha256` in run provenance.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     crate::suite::hex(&Sha256::digest(bytes))
+}
+
+impl SourceIdentity {
+    /// Pending is a valid freeze; a pin needs a 40-hex revision and a SHA-256.
+    pub fn valid(&self) -> bool {
+        match self {
+            Self::Pending {} => true,
+            Self::Pinned {
+                revision: r,
+                sha256: s,
+            } => revision(r) && sha256(s),
+        }
+    }
+
+    pub fn is_pending(&self) -> bool {
+        matches!(self, Self::Pending {})
+    }
 }
 
 impl Fraction {
@@ -733,14 +733,9 @@ impl Registration {
         {
             return Err(Error::Invalid("unit modes"));
         }
-        let expected = if self.id == REGISTRATION_ID {
-            UnitMode::CcdUniform
-        } else {
-            UnitMode::PerCore
-        };
-        if self.unit_modes.len() != 1 || self.unit_modes[0].mode != expected {
+        if self.unit_modes.len() != 1 {
             return Err(Error::Settled(
-                "one unit mode per registration: the current id is ccd-uniform only; a per-core registration needs its own id",
+                "one unit mode per registration: ccd-uniform and per-core never mix",
             ));
         }
         Ok(())
@@ -748,8 +743,11 @@ impl Registration {
 
     fn validate_sources(&self) -> Result<(), Error> {
         let sources = &self.sources;
-        if !revision(&sources.simulator_revision) || !revision(&sources.report_revision) {
-            return Err(Error::Invalid("simulator and report revisions"));
+        if !revision(&sources.simulator_revision)
+            || !revision(&sources.runner_revision)
+            || !revision(&sources.report_revision)
+        {
+            return Err(Error::Invalid("simulator, runner and report revisions"));
         }
         if [&sources.binary_sha256, &sources.input_sha256]
             .into_iter()
@@ -768,8 +766,7 @@ impl Registration {
         for policy in policies {
             if blank(&policy.name)
                 || blank(&policy.identity)
-                || !revision(&policy.source_revision)
-                || !sha256(&policy.source_sha256)
+                || !policy.source.valid()
                 || !sha256(&policy.parameters_sha256)
             {
                 return Err(Error::Invalid("policy source identity"));
@@ -792,12 +789,6 @@ impl Registration {
         if !unique(self.scenarios.iter().map(|scenario| &scenario.name)) {
             return Err(Error::Invalid("scenario names must be unique"));
         }
-        if HISTORICAL_SCENARIOS
-            .iter()
-            .any(|name| self.scenario(name).is_none())
-        {
-            return Err(Error::Settled("historical scenario families"));
-        }
         let registered: BTreeSet<_> = self.unit_modes.iter().map(|spec| spec.mode).collect();
         for scenario in &self.scenarios {
             self.validate_scenario(scenario, &registered)?;
@@ -807,36 +798,43 @@ impl Registration {
             .iter()
             .filter(|scenario| scenario.benign)
             .collect();
-        let new_benign = benign
-            .iter()
-            .filter(|scenario| !HISTORICAL_SCENARIOS.contains(&scenario.name.as_str()))
-            .count();
-        if benign.len() != BENIGN_COUNT
-            || new_benign != 1
-            || BENIGN_NAMED
-                .iter()
-                .any(|name| !benign.iter().any(|scenario| scenario.name == *name))
-        {
+        if benign.len() != BENIGN_COUNT {
             return Err(Error::Settled("benign applicability"));
         }
-        let retention: Vec<_> = self
+        if self
             .scenarios
             .iter()
             .filter(|scenario| scenario.retention)
-            .map(|scenario| scenario.name.as_str())
-            .collect();
-        if retention != RETENTION_SCENARIOS {
+            .count()
+            != 1
+        {
             return Err(Error::Settled("retention applicability"));
         }
-        let fixed_transitions = [
-            ("firmware-change", Transition::Firmware),
-            ("moving-cap", Transition::Moving),
-        ];
-        if fixed_transitions.iter().any(|(name, transition)| {
-            self.scenario(name)
-                .is_none_or(|scenario| scenario.transition != *transition)
-        }) {
-            return Err(Error::Settled("truth transitions"));
+        let floors: Vec<_> = self
+            .scenarios
+            .iter()
+            .filter(|scenario| scenario.unit_depth_floor.is_some())
+            .collect();
+        if floors.len() != 1 || !floors[0].benign {
+            return Err(Error::Settled("unit depth floor"));
+        }
+        let has = |wanted: Transition| {
+            self.scenarios
+                .iter()
+                .any(|scenario| scenario.transition == wanted)
+        };
+        if !has(Transition::Moving) {
+            return Err(Error::Settled("required moving-truth scenario"));
+        }
+        if !has(Transition::Firmware) {
+            return Err(Error::Settled("required firmware-change scenario"));
+        }
+        if !self
+            .scenarios
+            .iter()
+            .any(|scenario| scenario.coverage == Coverage::Adversarial)
+        {
+            return Err(Error::Settled("required adversarial scenario"));
         }
         Ok(())
     }
@@ -904,8 +902,10 @@ impl Registration {
                 "adversarial scenarios cannot carry the benign depth demand",
             ));
         }
-        let floor = (scenario.name == NO_WRITE_LIMIT_SCENARIO).then_some(NO_WRITE_LIMIT_FLOOR);
-        if scenario.unit_depth_floor != floor {
+        if scenario
+            .unit_depth_floor
+            .is_some_and(|floor| floor != NO_WRITE_LIMIT_FLOOR)
+        {
             return Err(Error::Settled("unit depth floor"));
         }
         if let Some(modes) = &scenario.modes
@@ -967,3 +967,104 @@ fn parameters(parameters: &[Parameter]) -> Result<(), Error> {
 #[cfg(test)]
 #[path = "registration_tests.rs"]
 pub(crate) mod tests;
+
+#[cfg(test)]
+#[path = "registration_fixture.rs"]
+pub(crate) mod fixture;
+
+/// SHA-256 of the registration's input set, the value `sources.input_sha256` pins.
+///
+/// Canonical domain: the compact `serde_json` serialization of the registration, fields in
+/// declaration order, with `sources.input_sha256` serialized as `null` and every other field
+/// (including `sources.binary_sha256`) unchanged. The pin itself therefore never changes the
+/// hash, so a registration can name its own input digest. Lower-case hex.
+pub fn input_sha256(registration: &Registration) -> Result<String, serde_json::Error> {
+    struct Hasher(Sha256);
+    impl std::io::Write for Hasher {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            Digest::update(&mut self.0, bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut hasher = Hasher(Sha256::new());
+    serde_json::to_writer(&mut hasher, &InputView(registration))?;
+    Ok(crate::suite::hex(&hasher.0.finalize()))
+}
+
+/// Borrowed serialization of a [`Registration`] with the input pin forced to `null`.
+struct InputView<'a>(&'a Registration);
+
+struct SourcesView<'a>(&'a Sources);
+
+impl serde::Serialize for InputView<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let Registration {
+            id,
+            version,
+            lambda_per_hour,
+            slopes,
+            seeds,
+            holdout,
+            calendar,
+            scenarios,
+            criteria,
+            run_profiles,
+            budgets,
+            resources,
+            tolerance,
+            unit_modes,
+            sources,
+            commands,
+            streams,
+            continuation,
+            notes,
+        } = self.0;
+        let mut state = serializer.serialize_struct("Registration", 19)?;
+        state.serialize_field("id", id)?;
+        state.serialize_field("version", version)?;
+        state.serialize_field("lambda_per_hour", lambda_per_hour)?;
+        state.serialize_field("slopes", slopes)?;
+        state.serialize_field("seeds", seeds)?;
+        state.serialize_field("holdout", holdout)?;
+        state.serialize_field("calendar", calendar)?;
+        state.serialize_field("scenarios", scenarios)?;
+        state.serialize_field("criteria", criteria)?;
+        state.serialize_field("run_profiles", run_profiles)?;
+        state.serialize_field("budgets", budgets)?;
+        state.serialize_field("resources", resources)?;
+        state.serialize_field("tolerance", tolerance)?;
+        state.serialize_field("unit_modes", unit_modes)?;
+        state.serialize_field("sources", &SourcesView(sources))?;
+        state.serialize_field("commands", commands)?;
+        state.serialize_field("streams", streams)?;
+        state.serialize_field("continuation", continuation)?;
+        state.serialize_field("notes", notes)?;
+        state.end()
+    }
+}
+
+impl serde::Serialize for SourcesView<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let Sources {
+            simulator_revision,
+            runner_revision,
+            report_revision,
+            binary_sha256,
+            input_sha256: _,
+            policies,
+        } = self.0;
+        let mut state = serializer.serialize_struct("Sources", 6)?;
+        state.serialize_field("simulator_revision", simulator_revision)?;
+        state.serialize_field("runner_revision", runner_revision)?;
+        state.serialize_field("report_revision", report_revision)?;
+        state.serialize_field("binary_sha256", binary_sha256)?;
+        state.serialize_field("input_sha256", &None::<String>)?;
+        state.serialize_field("policies", policies)?;
+        state.end()
+    }
+}

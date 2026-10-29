@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use togi_machine::PerCore;
 
 use super::{
-    EdgeObservation, FinishReason, Outcome, Period, Phase, Qualification, Record,
+    Classification, EdgeObservation, FinishReason, Outcome, Period, Phase, Qualification, Record,
     RestorationOutcome, RestorationResult, RiskSource, SourceAccount, SourceRisk, StepIdentity,
     StepKind, TruthCause, UnitMode, UnitPhase,
 };
@@ -73,6 +73,7 @@ impl Record {
             !p.registration_id.is_empty()
                 && !p.source_revision.is_empty()
                 && !p.simulator_revision.is_empty()
+                && !p.runner_revision.is_empty()
                 && !p.report_revision.is_empty()
                 && !p.policy_identity.is_empty()
                 && !p.scenario.is_empty(),
@@ -246,7 +247,7 @@ impl Record {
                 require(
                     finish.unit == summary.unit
                         && day(finish.day)
-                        && finish.day < self.outcome.observed_until_day()
+                        && self.observes_instant(finish.day)
                         && !finish.witnesses.is_empty()
                         && unique_text(finish.witnesses.iter().map(String::as_str)),
                     "finish witness",
@@ -297,7 +298,7 @@ impl Record {
                         .iter()
                         .any(|unit| unit.parent == Some(finish.unit))
                     && day(finish.day)
-                    && finish.day < self.outcome.observed_until_day()
+                    && self.observes_instant(finish.day)
                     && finish.reason != FinishReason::Ceiling
                     && !finish.witnesses.is_empty()
                     && unique_text(finish.witnesses.iter().map(String::as_str)),
@@ -335,8 +336,14 @@ impl Record {
             )?;
             require(
                 nonnegative(interval.verified_daily_active_hours)
-                    && interval.verified_daily_active_hours
-                        <= (interval.end_day - interval.start_day) * 24.0,
+                    && (interval.verified_daily_active_hours
+                        <= (interval.end_day - interval.start_day) * 24.0
+                        || close(
+                            interval.verified_daily_active_hours,
+                            (interval.end_day - interval.start_day) * 24.0,
+                        ))
+                    && (interval.period == Period::Day
+                        || interval.verified_daily_active_hours == 0.0),
                 "verified active hours",
             )?;
             match self.first_finish_day() {
@@ -439,7 +446,7 @@ impl Record {
             require(
                 day(observed.day)
                     && observed.day >= previous
-                    && observed.day < self.outcome.observed_until_day(),
+                    && self.observes_instant(observed.day),
                 "ordered event days",
             )?;
             previous = observed.day;
@@ -466,14 +473,25 @@ impl Record {
             self.validate_profile(&event.profile)?;
             // An interruption belongs to the profile that ended at its timestamp, before
             // the zero-time retreat application at that same boundary.
+            let deployed = self.intervals.iter().find(|interval| {
+                interval.period == event.period
+                    && (interval.start_day < observed.day
+                        || (observed.day == 1.0 && interval.start_day == 1.0))
+                    && observed.day <= interval.end_day
+            });
             require(
-                self.intervals.iter().any(|interval| {
-                    interval.start_day <= observed.day
-                        && observed.day <= interval.end_day
-                        && interval.profile == event.profile
-                }),
-                "event deployed profile",
+                deployed.is_some_and(|interval| interval.profile == event.profile),
+                "event pre-interruption profile",
             )?;
+            if observed.classification == Classification::Unreported {
+                require(
+                    !observed.charged
+                        && !observed.provisional
+                        && observed.reclassified_from.is_none()
+                        && observed.newest_step.is_none(),
+                    "unreported policy classification has no invented decision",
+                )?;
+            }
             if let Some(id) = &event.restoration_learning {
                 require(
                     self.restorations
@@ -507,7 +525,10 @@ impl Record {
         require(
             self.events
                 .iter()
-                .filter(|event| event.period == Period::Day)
+                .filter(|event| {
+                    event.period == Period::Day
+                        && event.policy_event.classification != Classification::Unreported
+                })
                 .map(|event| &event.policy_event)
                 .eq(self.policy.events.iter()),
             "policy event report",
@@ -515,11 +536,16 @@ impl Record {
         if let Some(step) = &self.policy.newest_step {
             self.validate_step_identity(step)?;
         }
-        let ledger = &self.policy.allowance;
         let charged = || {
             self.events
                 .iter()
                 .filter(|event| event.policy_event.charged)
+        };
+        let Some(ledger) = &self.policy.allowance else {
+            return require(
+                charged().next().is_none(),
+                "charged event without a machine allowance",
+            );
         };
         let consumed = u64::try_from(charged().count())
             .map_err(|_| ValidationError::Invalid("event count"))?;
@@ -554,7 +580,8 @@ impl Record {
         match identity {
             StepIdentity::Unit { unit, proposal } => require(
                 unit.index() < self.units.len()
-                    && self.steps.iter().any(|step| &step.id == proposal),
+                    && self.steps.iter().any(|step| &step.id == proposal
+                        && matches!(step.kind, StepKind::Climb { unit: proposed, .. } if proposed == *unit)),
                 "newest unit step identity",
             ),
             StepIdentity::Restoration { restoration, units } => require(
@@ -603,9 +630,7 @@ impl Record {
         let mut last_day = 1.0;
         for step in &self.steps {
             require(
-                day(step.day)
-                    && step.day >= last_day
-                    && step.day < self.outcome.observed_until_day(),
+                day(step.day) && step.day >= last_day && self.observes_instant(step.day),
                 "ordered application days",
             )?;
             last_day = step.day;
@@ -702,6 +727,11 @@ impl Record {
         Ok(())
     }
 
+    fn observes_instant(&self, day: f64) -> bool {
+        day < self.outcome.observed_until_day()
+            || (!self.outcome.is_complete() && day == self.outcome.observed_until_day())
+    }
+
     fn validate_accounts(&self) -> Result<()> {
         self.validate_phase_accounts(Phase::Learning, &self.accounts.learning)?;
         self.validate_phase_accounts(Phase::PostFinish, &self.accounts.post_finish)
@@ -711,7 +741,7 @@ impl Record {
         let intervals = || {
             self.intervals
                 .iter()
-                .filter(|interval| interval.phase == phase)
+                .filter(|interval| interval.period == Period::Day && interval.phase == phase)
         };
         let hours: f64 = intervals()
             .map(|interval| interval.verified_daily_active_hours)

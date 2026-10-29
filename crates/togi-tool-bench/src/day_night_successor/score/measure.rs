@@ -3,6 +3,14 @@
 //! Nothing here reads a simulator, a verdict or the recorded `member` flags beyond the validated
 //! ones: `settled_at`, the post-finish safety and risk accounts, depths, retention, per-unit costs and
 //! the event identities are all recomputed from the ordered intervals, events, steps and accounts.
+//!
+//! Safety, settling, final depth, the K/T/H accounts and epoch recovery read the day intervals only: a
+//! night interval is a physical probe with no verified daily hours, so an unsafe night probe never
+//! counts against the daily contract. Night events stay identifiable by their period.
+
+#[cfg(test)]
+#[path = "metrics_review_tests.rs"]
+mod metrics_review_tests;
 
 use std::collections::BTreeMap;
 
@@ -189,6 +197,11 @@ pub struct LedgerView {
     pub charged_learning: u64,
     pub charged_post_finish: u64,
     pub charged_restoration_tagged: u64,
+}
+
+/// What the policy reported about stops and its newest step, independent of any allowance ledger.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PolicyEvidence {
     pub stopped_units: Vec<UnitId>,
     pub inherited_stops: Vec<togi_simrun::day_night::successor::UnitFinish>,
     pub newest_step: Option<String>,
@@ -229,7 +242,9 @@ pub struct SeedMetrics {
     pub units: Vec<UnitMetrics>,
     pub events: EventCounts,
     pub event_views: Vec<EventView>,
-    pub ledger: LedgerView,
+    /// `None` when the policy reported no allowance ledger; never a fabricated zero ledger.
+    pub ledger: Option<LedgerView>,
+    pub policy_evidence: PolicyEvidence,
     pub learning: LearningAudit,
     pub epochs: Vec<EpochView>,
     /// Daily CO true crash count over every phase, the basis of the crash-free outcome.
@@ -282,14 +297,19 @@ fn tally<T>(items: impl Iterator<Item = T>) -> u64 {
     items.map(|_| 1_u64).sum()
 }
 
-/// Start of the final run of consecutive intervals satisfying `ok` that reaches the last interval.
-fn trailing_start(intervals: &[ProfileInterval], ok: impl Fn(usize) -> bool) -> Option<f64> {
+/// Start of the final run of consecutive day intervals (by index) satisfying `ok` that reaches the last
+/// day interval. Night intervals carry no daily exposure and never decide settling.
+fn trailing_start(
+    intervals: &[ProfileInterval],
+    days: &[usize],
+    ok: impl Fn(usize) -> bool,
+) -> Option<f64> {
     let mut start = None;
-    for (index, interval) in intervals.iter().enumerate().rev() {
+    for &index in days.iter().rev() {
         if !ok(index) {
             break;
         }
-        start = Some(interval.start_day);
+        start = Some(intervals[index].start_day);
     }
     start
 }
@@ -337,7 +357,16 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
         }
     };
     let intervals = &record.intervals;
-    let last = intervals.last().ok_or("no deployed intervals")?;
+    // Safety, settling, depth, K/T/H and epoch recovery read the day intervals only; a night interval
+    // is a physical probe and carries no daily exposure.
+    let days: Vec<usize> = intervals
+        .iter()
+        .enumerate()
+        .filter(|(_, interval)| interval.period == Period::Day)
+        .map(|(index, _)| index)
+        .collect();
+    let final_index = *days.last().ok_or("no deployed day intervals")?;
+    let last = &intervals[final_index];
     let mut depths = Vec::with_capacity(intervals.len());
     for interval in intervals {
         depths.push(
@@ -363,7 +392,7 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
             && intervals[index].admissibility.member
             && (!scope.benign || floor_met(index))
     };
-    let settled_at = trailing_start(intervals, qualifies);
+    let settled_at = trailing_start(intervals, &days, qualifies);
     match (complete, settled_at.is_some()) {
         (CompleteOutcome::Converged, false) => {
             return Err(
@@ -384,7 +413,6 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
             false,
         ) => {}
     }
-    let final_index = intervals.len() - 1;
     let final_in_a = last.admissibility.member;
 
     let mut post_finish = PostFinish {
@@ -394,7 +422,10 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
     let mut risk_learning = (0.0, 0.0);
     let mut tagged = Tagged::default();
     let mut h_post = 0.0;
-    for interval in intervals {
+    for interval in intervals
+        .iter()
+        .filter(|interval| interval.period == Period::Day)
+    {
         let h: f64 = interval
             .sources
             .iter()
@@ -539,9 +570,9 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
     let (required_total, unit_floors, reference) =
         floors(last).ok_or("final interval names no epoch")?;
     let finish_index = first_finish.and_then(|_| {
-        intervals
-            .iter()
-            .position(|interval| interval.phase == Phase::PostFinish)
+        days.iter()
+            .copied()
+            .find(|index| intervals[*index].phase == Phase::PostFinish)
     });
     let finish_depths = finish_index.map(|index| depths[index].clone());
     let final_total = final_depths.iter().map(|depth| u32::from(*depth)).sum();
@@ -586,11 +617,15 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
                 .is_some_and(|ratio| *ratio <= 1.0)
                 && (!scope.benign || depths[at][index] >= unit_floor)
         };
-        let settled_at = finish
-            .and_then(|(_, day)| trailing_start(intervals, own_ok).map(|start| start.max(day)));
+        let settled_at = finish.and_then(|(_, day)| {
+            trailing_start(intervals, &days, own_ok).map(|start| start.max(day))
+        });
         let mut learning_h = 0.0;
         let mut post_finish_h = 0.0;
-        for interval in intervals {
+        for interval in intervals
+            .iter()
+            .filter(|interval| interval.period == Period::Day)
+        {
             let h: f64 = interval
                 .sources
                 .iter()
@@ -658,14 +693,13 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
     }
 
     // Ledger and learning audit.
-    let ledger = &record.policy.allowance;
     let charged = || {
         record
             .events
             .iter()
             .filter(|event| event.policy_event.charged)
     };
-    let ledger_view = LedgerView {
+    let ledger_view = record.policy.allowance.as_ref().map(|ledger| LedgerView {
         limit: ledger.limit,
         consumed: ledger.consumed,
         remaining: ledger.remaining(),
@@ -679,6 +713,8 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
         charged_restoration_tagged: tally(
             charged().filter(|event| event.restoration_learning.is_some()),
         ),
+    });
+    let policy_evidence = PolicyEvidence {
         stopped_units: record.policy.stopped_units.clone(),
         inherited_stops: record.policy.inherited_stops.clone(),
         newest_step: record.policy.newest_step.as_ref().map(identity_label),
@@ -693,7 +729,7 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
             let epoch_intervals = || {
                 intervals
                     .iter()
-                    .filter(|interval| interval.epoch == epoch.id)
+                    .filter(|interval| interval.period == Period::Day && interval.epoch == epoch.id)
             };
             let hours = epoch_intervals()
                 .map(|interval| interval.verified_daily_active_hours)
@@ -743,6 +779,7 @@ pub fn measure(record: &Record, rules: &Rules, scope: Scope) -> Result<SeedMetri
         events,
         event_views: views,
         ledger: ledger_view,
+        policy_evidence,
         learning,
         epochs,
         daily_co_crashes: daily_co,

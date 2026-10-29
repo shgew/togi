@@ -1,0 +1,37 @@
+---
+source: crates/togi-tool-bench/src/day_night_successor/render_review_tests.rs
+expression: "rendered(|out| seed_section(out, &group, &item))"
+---
+### successor-restoration-states — ccd-uniform — slope 1.5 — seed 4
+
+Outcome Converged; first finish 20; settled 25; unit-total depth 6 of reference M = 6 (physical maximum 6, required 5); physical-core mean depth 3; final depths [3,3]; at first finish [3,3].
+
+Events (unique): daily 0 total / 0 CO / 0 background / 0 non-CPU / 0 unattributed; night 0 total / 0 CO. Learning-phase daily CO 0; post-finish daily CO 0.
+
+| Unit | Finish | Finish day | Settled | Finish depth | Final depth | Promotions | Retreat steps | Learning H | Post-finish H |
+|---|---|---|---|---|---|---|---|---|---|
+
+Allowance: limit 2, consumed 1, remaining 1, overspend 0, exhausted false; provisional 0, reclassified 0; stopped units []; newest step step-9.
+
+| Source | Learning K | Learning H | Post-finish K | Post-finish H |
+|---|---|---|---|---|
+| co | 1 | 0.5 | 0 | 0.125 |
+| background | 0 | 0 | 1 | 0.25 |
+
+Post-finish T = 40 h (shared), K = 1, H = 0.375; restoration-tagged overlap 10 h, H 0.125, K 0 (a subset of the post-finish figures, not additional).
+
+| Promotion | Day | Unit | Before | After | Ceiling | Charged events before |
+|---|---|---|---|---|---|---|
+| promo-1 | 3.5 | 1 | 1 | 2 | 3 | 1 |
+
+| Restoration | Epoch | Transition day | Stock reset day | Applied day | Clean stock h (recorded / recomputed) | Previous vector | Result | Stopped units | Qualification | Violations |
+|---|---|---|---|---|---|---|---|---|---|---|
+| restore-1 | epoch-1 | 100 | 100.5 | none | - / - | [3,3] | blocked: stock \| too small | [] | - | 0 |
+| restore-2 | epoch-2 | 200 | 200 | 201.5 | 12 / 12 | [3,2] | retained | [0] | qual-2 | 0 |
+| restore-3 | epoch-3 | 300 | 300 | 300.25 | 10 / 9.5 | [2,2] | crashed (crash-r3): stock step-back and permanent stop | [0,1] | - | 1 |
+
+| Epoch | Context | Days | Operational M | Physical max | Per-unit feasible | Certificate | Hours in A / total | In A at end | Recovered to A at |
+|---|---|---|---|---|---|---|---|---|---|
+
+- Violation `stock-reset-profile` (restore-3): profile \| mismatch
+- Violation `allowance-limit` (seed): overspent by 1

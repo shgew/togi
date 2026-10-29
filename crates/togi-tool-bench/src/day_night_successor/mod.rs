@@ -12,6 +12,11 @@
 //! complete horizon. Missing, duplicate, truncated, incompatible and invalid-execution
 //! artifacts are incomplete evidence, never a gate pass. Complete unconverged trajectories
 //! still contribute their observed safety; their missing convergence remains infinite.
+//! Registrations name their own scenario roles and pin simulator, runner and scorer revisions.
+//! A typed pending policy source can be frozen but cannot execute or score. Actual input
+//! digests use [`registration::input_sha256`], not a copied expected pin. Comparator policies
+//! may explicitly omit allowance/classification reports; this is not zero consumption or
+//! a satisfied learning contract. Candidate reports must provide both.
 //!
 //! Safety and usefulness are separate. An admissible stock profile cannot manufacture
 //! benign depth or convergence. Operational depth is measured against the certified value

@@ -22,6 +22,8 @@ pub enum Classification {
     NonCpu,
     Unanswered,
     Unexplained,
+    /// Metric-side absence: the policy did not report a classification.
+    Unreported,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -83,7 +85,9 @@ object_only! {
     #[serde(deny_unknown_fields)]
     pub struct PolicyReport {
         pub finishes: Vec<UnitFinish>,
-        pub allowance: AllowanceLedger,
+        /// Absent when a policy does not define a machine-wide campaign allowance.
+        /// This is not an allowance with zero consumption or zero limit.
+        pub allowance: Option<AllowanceLedger>,
         pub events: Vec<LearningEvent>,
         pub stopped_units: Vec<UnitId>,
         /// Coarse-stop witnesses inherited by refinement; ids use the coarse namespace.

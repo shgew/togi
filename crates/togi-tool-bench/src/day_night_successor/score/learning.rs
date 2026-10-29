@@ -15,6 +15,10 @@ use togi_simrun::day_night::successor::{
 
 use super::rules::{MAX_STEP, Rules};
 
+#[cfg(test)]
+#[path = "learning_review_tests.rs"]
+mod review_tests;
+
 /// One broken learning-contract rule on one record.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Violation {
@@ -63,16 +67,27 @@ pub struct PromotionView {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct LearningAudit {
+    /// The record carried an allowance ledger, so the contract could be judged; false means unreported,
+    /// which is not the same as zero violations.
+    pub reported: bool,
     pub violations: Vec<Violation>,
     pub promotions: Vec<PromotionView>,
     pub restorations: Vec<RestorationView>,
 }
 
+/// Audits the learning contract. A record without an allowance ledger has nothing to judge: the audit
+/// is returned unreported, never as an empty violation list.
 pub fn audit(record: &Record, rules: &Rules) -> LearningAudit {
+    if record.policy.allowance.is_none() {
+        return LearningAudit::default();
+    }
     let mut audit = Audit {
         record,
         rules,
-        result: LearningAudit::default(),
+        result: LearningAudit {
+            reported: true,
+            ..LearningAudit::default()
+        },
     };
     audit.ledger();
     audit.charges();
@@ -91,6 +106,16 @@ struct Audit<'a> {
     result: LearningAudit,
 }
 
+/// The span one applied restoration governs: from its application step to the next application that
+/// changes the profile (the stock step-back of a crash), or the horizon. Derived from the steps, never
+/// from the restoration's declared result or from tags.
+struct Lifetime {
+    start: f64,
+    end: f64,
+    /// The event a closing retreat names; that event precedes the retreat and still belongs to the span.
+    closing_event: Option<String>,
+}
+
 fn zero(profile: &PerCore<u8>) -> bool {
     profile.iter().all(|(_, depth)| depth == 0)
 }
@@ -101,7 +126,7 @@ fn suspect(classification: Classification) -> bool {
         Classification::CpuSuspect | Classification::Unanswered | Classification::Unexplained => {
             true
         }
-        Classification::NonCpu => false,
+        Classification::NonCpu | Classification::Unreported => false,
     }
 }
 
@@ -182,7 +207,9 @@ impl Audit<'_> {
     }
 
     fn ledger(&mut self) {
-        let ledger = &self.record.policy.allowance;
+        let Some(ledger) = &self.record.policy.allowance else {
+            return;
+        };
         if u64::from(self.rules.criteria.allowance_limit) != ledger.limit {
             self.violate(
                 "allowance-limit",
@@ -237,7 +264,12 @@ impl Audit<'_> {
             .map(|core| (core.core, 0))
             .collect();
         let mut next = 0;
-        for (index, interval) in record.intervals.iter().enumerate() {
+        for (index, interval) in record
+            .intervals
+            .iter()
+            .filter(|interval| interval.period == Period::Day)
+            .enumerate()
+        {
             while let Some(step) = record.steps.get(next)
                 && step.day <= interval.start_day + tolerance
             {
@@ -396,7 +428,8 @@ impl Audit<'_> {
                 .intervals
                 .iter()
                 .filter(|interval| {
-                    interval.start_day >= hold_start - self.rules.day_tolerance
+                    interval.period == Period::Day
+                        && interval.start_day >= hold_start - self.rules.day_tolerance
                         && interval.end_day <= step.day + self.rules.day_tolerance
                         && interval.profile == step.before
                 })
@@ -523,7 +556,9 @@ impl Audit<'_> {
         }
     }
 
-    /// A learning-phase charged event steps its newest unit back and stops it.
+    /// A learning-phase charged event stops its newest unit from the event onward and steps it back.
+    /// Both are bound to the event, not to the unit's summary finish: a later finish does not satisfy
+    /// the stop, the retreat must follow the event, and no promotion of the unit may follow the event.
     fn event_stops(&mut self) {
         let record = self.record;
         let tolerance = self.rules.day_tolerance;
@@ -540,31 +575,28 @@ impl Audit<'_> {
                     "a charged learning event has no newest-step identity",
                 );
             }
-            let Some(StepIdentity::Unit { unit, .. }) = &observed.newest_step else {
+            let Some(StepIdentity::Unit { unit, proposal }) = &observed.newest_step else {
                 continue;
             };
+            let cause = record.steps.iter().position(|step| step.id == *proposal);
             let stopped = record
                 .units
                 .get(unit.index())
                 .and_then(|summary| summary.finish.as_ref())
-                .is_some_and(|finish| match finish.reason {
-                    FinishReason::Ceiling => finish.day <= observed.day + tolerance,
-                    FinishReason::CpuSuspectStop
-                    | FinishReason::AllowanceExhausted
-                    | FinishReason::InheritedStop
-                    | FinishReason::FirmwareRestorationStop => {
-                        finish.day + tolerance >= observed.day
-                    }
-                });
+                .is_some_and(|finish| finish.day <= observed.day + tolerance);
             if !stopped {
                 self.violate(
                     "event-stop",
                     &observed.id,
-                    format!("unit {} is not stopped by its charged event", unit.get()),
+                    format!(
+                        "unit {} has no finish at or before its charged event",
+                        unit.get()
+                    ),
                 );
             }
-            let retreated = record.steps.iter().any(|step| {
+            let retreated = record.steps.iter().enumerate().any(|(index, step)| {
                 matches!(&step.kind, StepKind::Retreat { event: Some(id), units } if *id == observed.id && units.contains(unit))
+                    && self.follows(observed.day, cause, index, step.day)
                     && match (record.unit_depths(&step.before), record.unit_depths(&step.after)) {
                         (Ok(before), Ok(after)) => after[unit.index()] < before[unit.index()],
                         _ => false,
@@ -580,13 +612,47 @@ impl Audit<'_> {
                     ),
                 );
             }
+            for (index, step) in record.steps.iter().enumerate() {
+                if matches!(&step.kind, StepKind::Climb { unit: climbed, .. } if climbed == unit)
+                    && self.follows(observed.day, cause, index, step.day)
+                {
+                    self.violate(
+                        "promotion-after-stop",
+                        &step.id,
+                        format!(
+                            "unit {} is promoted after its charged event {}",
+                            unit.get(),
+                            observed.id
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Whether the step at `index` (day `step_day`) comes after an event of day `event_day` caused by
+    /// the step at `cause`: later days follow; at an equal day only a later application follows, so the
+    /// event's own step never trails its event.
+    fn follows(&self, event_day: f64, cause: Option<usize>, index: usize, step_day: f64) -> bool {
+        let tolerance = self.rules.day_tolerance;
+        if step_day > event_day + tolerance {
+            true
+        } else if step_day < event_day - tolerance {
+            false
+        } else {
+            cause.is_some_and(|cause| index > cause)
         }
     }
 
     fn stock_hours(&self, from: f64, until: f64) -> (f64, bool) {
         let mut hours = 0.0;
         let mut stock = true;
-        for interval in &self.record.intervals {
+        for interval in self
+            .record
+            .intervals
+            .iter()
+            .filter(|interval| interval.period == Period::Day)
+        {
             let overlap = interval.end_day.min(until) - interval.start_day.max(from);
             if overlap <= self.rules.day_tolerance {
                 continue;
@@ -619,17 +685,23 @@ impl Audit<'_> {
                     "the firmware change does not reset to a stock readback",
                 );
             }
-            let reset_step = record.steps.iter().any(|step| {
+            let reset_step = record.steps.iter().find(|step| {
                 matches!(&step.kind, StepKind::StockReset { epoch } if *epoch == restoration.epoch)
                     && self.rules.same_day(step.day, restoration.stock_reset_day)
                     && zero(&step.after)
             });
-            if !reset_step {
-                self.violate(
+            match reset_step {
+                None => self.violate(
                     "restoration-stock-step",
                     id,
                     "no stock-reset step at the recorded reset day",
-                );
+                ),
+                Some(step) if step.before != restoration.previous_profile => self.violate(
+                    "restoration-previous-profile",
+                    id,
+                    "the saved previous vector is not the profile deployed before the firmware reset",
+                ),
+                Some(_) => {}
             }
             let steps: Vec<(usize, &ProfileStep)> = record.steps.iter().enumerate().filter(|(_, step)| matches!(&step.kind, StepKind::Restoration { restoration: item } if item == id)).collect();
             let mut view = RestorationView {
@@ -702,6 +774,11 @@ impl Audit<'_> {
                             );
                         }
                     }
+                    let declared = match result {
+                        RestorationResult::Crashed { event, .. } => Some(event.as_str()),
+                        RestorationResult::Retained {} => None,
+                    };
+                    self.restoration_crashes(restoration, declared, &previous);
                 }
             }
             view.violations = self.result.violations.len() - before;
@@ -872,6 +949,16 @@ impl Audit<'_> {
             );
             return;
         };
+        if !crash.policy_event.charged
+            || !(suspect(crash.policy_event.classification)
+                || crash.policy_event.reclassified_from.is_some_and(suspect))
+        {
+            self.violate(
+                "restoration-crash-charge",
+                id,
+                "the crash event is not a charged CPU-suspect event",
+            );
+        }
         if crash.policy_event.day + tolerance < day
             || step_back_day + tolerance < crash.policy_event.day
         {
@@ -961,43 +1048,202 @@ impl Audit<'_> {
         }
     }
 
-    /// Restoration-learning tags name an applied restoration and never precede its application.
+    fn lifetime(&self, restoration: &FirmwareRestoration) -> Option<Lifetime> {
+        if !matches!(restoration.outcome, RestorationOutcome::Applied { .. }) {
+            return None;
+        }
+        let steps = &self.record.steps;
+        let mut own = steps.iter().enumerate().filter(|(_, step)| {
+            matches!(&step.kind, StepKind::Restoration { restoration: id } if *id == restoration.id)
+        });
+        let (index, application) = own.next()?;
+        if own.next().is_some() {
+            return None;
+        }
+        let closing = steps
+            .iter()
+            .skip(index + 1)
+            .find(|step| step.before != step.after);
+        Some(Lifetime {
+            start: application.day,
+            end: closing.map_or(self.rules.horizon_end(), |step| step.day),
+            closing_event: closing.and_then(|step| match &step.kind {
+                StepKind::Retreat {
+                    event: Some(id), ..
+                } => Some(id.clone()),
+                StepKind::Retreat { event: None, .. }
+                | StepKind::Climb { .. }
+                | StepKind::Restoration { .. }
+                | StepKind::StockReset { .. } => None,
+            }),
+        })
+    }
+
+    /// Whether a daily event happens while the restoration governs the profile. At the application day
+    /// only an event naming the restoration follows it; at the closing day only the closing retreat's
+    /// own event precedes it.
+    fn within(&self, life: &Lifetime, id: &str, event: &MachineEvent) -> bool {
+        let tolerance = self.rules.day_tolerance;
+        let day = event.policy_event.day;
+        let names = matches!(&event.policy_event.newest_step, Some(StepIdentity::Restoration { restoration, .. }) if restoration == id);
+        let after = day > life.start + tolerance || (day >= life.start - tolerance && names);
+        let before = day < life.end - tolerance
+            || (day <= life.end + tolerance
+                && life.closing_event.as_deref() == Some(event.policy_event.id.as_str()));
+        after && before
+    }
+
+    /// Crash obligations come from the recorded events, whatever result the record declares: a charged
+    /// CPU-suspect daily event while the restored profile is deployed needs a stock step-back and
+    /// permanent stops of the restored units. The declared crash is judged by `crashed`.
+    fn restoration_crashes(
+        &mut self,
+        restoration: &FirmwareRestoration,
+        declared: Option<&str>,
+        previous: &[u8],
+    ) {
+        let Some(life) = self.lifetime(restoration) else {
+            return;
+        };
+        let record = self.record;
+        let tolerance = self.rules.day_tolerance;
+        let id = restoration.id.as_str();
+        let restored: Vec<UnitId> = record
+            .units
+            .iter()
+            .filter(|summary| {
+                previous
+                    .get(summary.unit.index())
+                    .is_some_and(|depth| *depth > 0)
+            })
+            .map(|summary| summary.unit)
+            .collect();
+        let applicable: Vec<&MachineEvent> = record
+            .events
+            .iter()
+            .filter(|event| {
+                let observed = &event.policy_event;
+                event.period == Period::Day
+                    && observed.charged
+                    && (suspect(observed.classification)
+                        || observed.reclassified_from.is_some_and(suspect))
+                    && declared != Some(observed.id.as_str())
+                    && self.within(&life, id, event)
+            })
+            .collect();
+        for event in applicable {
+            let observed = &event.policy_event;
+            self.violate(
+                "restoration-crash-undeclared",
+                &observed.id,
+                format!("a charged CPU-suspect event happens on the profile restored by {id}, but the result does not record it as the crash"),
+            );
+            let stepped = record.steps.iter().any(|step| {
+                matches!(&step.kind, StepKind::Retreat { event: Some(item), units } if *item == observed.id && restored.iter().all(|unit| units.contains(unit)))
+                    && zero(&step.after)
+                    && step.day + tolerance >= observed.day
+            });
+            if !stepped {
+                self.violate(
+                    "restoration-step-back",
+                    id,
+                    format!(
+                        "no stock step-back follows the charged event {}",
+                        observed.id
+                    ),
+                );
+            }
+            let permanent = restored.iter().all(|unit| {
+                record.policy.stopped_units.contains(unit) && !record.steps.iter().any(|step| {
+                    matches!(&step.kind, StepKind::Climb { unit: climbed, .. } if climbed == unit)
+                        && step.day > observed.day + tolerance
+                })
+            });
+            if !permanent {
+                self.violate(
+                    "restoration-crash-stop",
+                    id,
+                    format!(
+                        "restored units are not permanently stopped after the charged event {}",
+                        observed.id
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Restoration-learning tags are exactly the application-to-result span of each applied restoration:
+    /// every daily interval and daily event inside it carries the restoration's tag, and nothing else
+    /// does. A night event's tag only has to name an applied restoration at or before it.
     fn tags(&mut self) {
         let record = self.record;
         let tolerance = self.rules.day_tolerance;
-        let applied = |tag: &str| {
-            record
-                .restorations
+        let lives: Vec<(&str, Lifetime)> = record
+            .restorations
+            .iter()
+            .filter_map(|restoration| {
+                self.lifetime(restoration)
+                    .map(|life| (restoration.id.as_str(), life))
+            })
+            .collect();
+        let show =
+            |tag: Option<&str>| tag.map_or_else(|| "no tag".to_owned(), |tag| format!("tag {tag}"));
+        let mut found: Vec<(String, String)> = Vec::new();
+        for interval in record
+            .intervals
+            .iter()
+            .filter(|interval| interval.period == Period::Day)
+        {
+            let expected = lives
                 .iter()
-                .find_map(|restoration| match &restoration.outcome {
-                    RestorationOutcome::Applied { day, .. } if restoration.id == tag => Some(*day),
-                    RestorationOutcome::Applied { .. } | RestorationOutcome::Blocked { .. } => None,
+                .find(|(_, life)| {
+                    interval.start_day >= life.start - tolerance
+                        && interval.start_day < life.end - tolerance
                 })
-        };
-        let mut found = Vec::new();
-        for interval in &record.intervals {
-            if let Some(tag) = &interval.restoration_learning
-                && applied(tag).is_none_or(|day| interval.start_day + tolerance < day)
-            {
-                found.push(format!("interval at day {}", interval.start_day));
+                .map(|(id, _)| *id);
+            if interval.restoration_learning.as_deref() != expected {
+                found.push((
+                    format!("interval at day {}", interval.start_day),
+                    format!(
+                        "has {}; the restoration application and result require {}",
+                        show(interval.restoration_learning.as_deref()),
+                        show(expected)
+                    ),
+                ));
             }
         }
         for event in &record.events {
-            let tag_bad = |event: &MachineEvent| {
-                event.restoration_learning.as_deref().is_some_and(|tag| {
-                    applied(tag).is_none_or(|day| event.policy_event.day + tolerance < day)
+            let observed = &event.policy_event;
+            let tag = event.restoration_learning.as_deref();
+            if event.period == Period::Day {
+                let expected = lives
+                    .iter()
+                    .find(|(id, life)| self.within(life, id, event))
+                    .map(|(id, _)| *id);
+                if tag != expected {
+                    found.push((
+                        format!("event {}", observed.id),
+                        format!(
+                            "has {}; the restoration application and result require {}",
+                            show(tag),
+                            show(expected)
+                        ),
+                    ));
+                }
+            } else if let Some(tag) = tag
+                && !record.restorations.iter().any(|restoration| {
+                    restoration.id == tag
+                        && matches!(&restoration.outcome, RestorationOutcome::Applied { day, .. } if observed.day + tolerance >= *day)
                 })
-            };
-            if tag_bad(event) {
-                found.push(format!("event {}", event.policy_event.id));
+            {
+                found.push((
+                    format!("event {}", observed.id),
+                    format!("has tag {tag} without an applied restoration at or before it"),
+                ));
             }
         }
-        for subject in found {
-            self.violate(
-                "restoration-tag",
-                subject,
-                "restoration-learning tag without an applied restoration at or before it",
-            );
+        for (subject, detail) in found {
+            self.violate("restoration-tag", subject, detail);
         }
     }
 }

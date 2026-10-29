@@ -79,12 +79,11 @@ fn depths(values: &[u8]) -> String {
         .join(",")
 }
 
-fn classification(value: Classification) -> &'static str {
-    match value {
-        Classification::CpuSuspect => "cpu-suspect",
-        Classification::NonCpu => "non-cpu",
-        Classification::Unanswered => "unanswered",
-        Classification::Unexplained => "unexplained",
+/// The classification's recorded kebab-case name, so every variant prints as the record states it.
+fn classification(value: Classification) -> String {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(name)) => name,
+        _ => format!("{value:?}"),
     }
 }
 
@@ -425,22 +424,19 @@ fn units(out: &mut String, group: &Group) {
             .collect();
         let n = rows.len().max(1) as f64;
         let finished = rows.iter().filter(|row| row.finish.is_some()).count();
-        let mean_finish = rows
+        let finish_depths: Vec<f64> = rows
             .iter()
             .filter_map(|row| row.finish_depth)
             .map(f64::from)
-            .sum::<f64>()
-            / rows
-                .iter()
-                .filter(|row| row.finish_depth.is_some())
-                .count()
-                .max(1) as f64;
+            .collect();
+        let mean_finish = (!finish_depths.is_empty())
+            .then(|| finish_depths.iter().sum::<f64>() / finish_depths.len() as f64);
         put(
             out,
             format!(
                 "| {unit} | {finished}/{} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
                 rows.len(),
-                num(mean_finish),
+                mean_finish.map_or_else(|| "n/a".into(), num),
                 num(rows
                     .iter()
                     .map(|row| f64::from(row.final_depth))
@@ -557,11 +553,14 @@ fn learning_table(out: &mut String, group: &Group) {
     );
     put(out, "|---|---|---|---|---|---|---|---|---|---|---|");
     for seed in &group.seeds {
-        let ledger = &seed.ledger;
-        put(
-            out,
-            format!(
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+        let violations = if seed.learning.reported {
+            seed.learning.violations.len().to_string()
+        } else {
+            "unreported".into()
+        };
+        let line = match &seed.ledger {
+            Some(ledger) => format!(
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {violations} |",
                 seed.seed,
                 ledger.limit,
                 ledger.consumed,
@@ -572,9 +571,13 @@ fn learning_table(out: &mut String, group: &Group) {
                 ledger.charged_post_finish,
                 ledger.charged_restoration_tagged,
                 seed.risk.learning_k,
-                seed.learning.violations.len()
             ),
-        );
+            None => format!(
+                "| {} | unreported | unreported | unreported | unreported | unreported | unreported | unreported | unreported | {} | {violations} |",
+                seed.seed, seed.risk.learning_k
+            ),
+        };
+        put(out, line);
     }
     put(out, "");
 }
@@ -653,31 +656,42 @@ fn seed_section(out: &mut String, group: &Group, seed: &SeedMetrics) {
         );
     }
     put(out, "");
-    let ledger = &seed.ledger;
-    put(
-        out,
-        format!(
-            "Allowance: limit {}, consumed {}, remaining {}, overspend {}, exhausted {}{}; provisional {}, reclassified {}; stopped units [{}]; newest step {}.\n",
-            ledger.limit,
-            ledger.consumed,
-            ledger.remaining,
-            ledger.overspend,
-            ledger.exhausted,
-            ledger
-                .exhausted_day
-                .map_or_else(String::new, |day| format!(" at day {}", num(day))),
-            ledger.provisional,
-            ledger.reclassified,
-            ledger
-                .stopped_units
-                .iter()
-                .map(|unit| unit.get().to_string())
-                .collect::<Vec<_>>()
-                .join(","),
-            ledger.newest_step.as_deref().unwrap_or("none")
-        ),
+    let evidence = &seed.policy_evidence;
+    let stops = format!(
+        "stopped units [{}]; newest step {}",
+        evidence
+            .stopped_units
+            .iter()
+            .map(|unit| unit.get().to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+        evidence.newest_step.as_deref().unwrap_or("none")
     );
-    for finish in &ledger.inherited_stops {
+    match &seed.ledger {
+        Some(ledger) => put(
+            out,
+            format!(
+                "Allowance: limit {}, consumed {}, remaining {}, overspend {}, exhausted {}{}; provisional {}, reclassified {}; {stops}.\n",
+                ledger.limit,
+                ledger.consumed,
+                ledger.remaining,
+                ledger.overspend,
+                ledger.exhausted,
+                ledger
+                    .exhausted_day
+                    .map_or_else(String::new, |day| format!(" at day {}", num(day))),
+                ledger.provisional,
+                ledger.reclassified,
+            ),
+        ),
+        None => put(
+            out,
+            format!(
+                "Allowance: unreported (the policy kept no allowance ledger; the learning contract is not judged); {stops}.\n"
+            ),
+        ),
+    }
+    for finish in &evidence.inherited_stops {
         put(
             out,
             format!(
@@ -688,6 +702,9 @@ fn seed_section(out: &mut String, group: &Group, seed: &SeedMetrics) {
                 cell(&finish.witnesses.join(", "))
             ),
         );
+    }
+    if !evidence.inherited_stops.is_empty() {
+        put(out, "");
     }
     if !seed.event_views.is_empty() {
         put(
@@ -715,7 +732,9 @@ fn seed_section(out: &mut String, group: &Group, seed: &SeedMetrics) {
                     event.restoration_learning.as_deref().unwrap_or("-"),
                     classification(event.classification),
                     event.provisional,
-                    event.reclassified_from.map_or("-", classification),
+                    event
+                        .reclassified_from
+                        .map_or_else(|| "-".into(), classification),
                     event.charged,
                     cell(&event.truth),
                     event
@@ -966,3 +985,7 @@ fn runtime(out: &mut String, score: &Score) {
         ),
     );
 }
+
+#[cfg(test)]
+#[path = "render_review_tests.rs"]
+mod review_tests;

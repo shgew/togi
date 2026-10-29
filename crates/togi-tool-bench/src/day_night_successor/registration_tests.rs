@@ -1,116 +1,45 @@
-//! Synthetic registration fixture and refusals. The fixture carries the settled values; its
+//! Registration refusals over the shared synthetic builder in `registration_fixture.rs`. Its
 //! source identities and scenario parameters are synthetic identities, not generated truth.
 
 use serde_json::{Value, json};
 use togi_simrun::day_night::successor::{RunProfile, Split, UnitMode};
 
+use super::fixture::{self as builder, HASH, REVISION, scenario};
 use super::*;
 
-const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
-const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-const NEW_BENIGN: &str = "within-ccd-heterogeneous";
+/// Synthetic registration scenarios, in the order tests index them.
+pub(crate) const SCENARIOS: [&str; 23] = [
+    "successor-edge-shallow",
+    "successor-edge-deep",
+    "successor-no-write-limit-failure",
+    "successor-slope-flat",
+    "successor-slope-steep",
+    "successor-flattening-tail",
+    "successor-flatter-dangerous-class",
+    "successor-delayed-onset",
+    "successor-thermal-history",
+    "successor-hidden-daily",
+    "successor-partial-only",
+    "successor-single-core-binding",
+    "successor-jointly-binding",
+    "successor-r8-nonbinding",
+    "successor-both-ccd-interaction",
+    "successor-stock-background",
+    "successor-single-ccd",
+    "successor-moving-cap",
+    "successor-firmware-change",
+    "successor-non-cpu-correct",
+    "successor-non-cpu-wrong",
+    "successor-non-cpu-missing",
+    "successor-within-ccd-heterogeneous",
+];
 
-fn scenario(name: &str) -> Value {
-    let (transition, epochs) = match name {
-        "moving-cap" => ("moving", vec![(1, "before"), (400, "after")]),
-        "firmware-change" => ("firmware", vec![(1, "before"), (181, "after")]),
-        _ => ("fixed", vec![(1, "only")]),
-    };
-    let adversarial = matches!(
-        name,
-        "hidden-daily" | "delayed-onset" | "thermal-history" | "partial-only"
-    );
-    json!({
-        "name": name,
-        "description": "synthetic fixture scenario",
-        "topology": {"ccds": 2, "cores_per_ccd": 8},
-        "daily_mix": [{"class": "compute", "seconds": 14400}, {"class": "idle-heavy", "seconds": 14400}],
-        "epochs": epochs.iter().map(|(day, id)| json!({
-            "id": id, "start_day": day, "context": "ctx", "description": "synthetic epoch",
-        })).collect::<Vec<_>>(),
-        "transition": transition,
-        "parameters": [{"name": "edge", "value": 30.0}],
-        "coverage": if adversarial { "adversarial" } else { "covered" },
-        "benign": matches!(name, "no-write-limit-failure" | "edge-deep" | NEW_BENIGN),
-        "retention": name == "stock-background",
-        "unit_depth_floor": if name == NO_WRITE_LIMIT_SCENARIO { json!(44) } else { Value::Null },
-        "modes": Value::Null,
-    })
-}
-
-fn policy(name: &str, role: &str) -> Value {
-    json!({
-        "name": name, "identity": format!("{name}-identity"), "role": role,
-        "source_revision": REVISION, "source_sha256": HASH, "parameters_sha256": HASH,
-        "parameters": [{"name": "allowance", "value": 2.0}],
-    })
+fn index(name: &str) -> usize {
+    SCENARIOS.iter().position(|item| *item == name).unwrap()
 }
 
 pub(crate) fn value() -> Value {
-    let scenarios: Vec<_> = HISTORICAL_SCENARIOS
-        .iter()
-        .copied()
-        .chain([NEW_BENIGN])
-        .map(scenario)
-        .collect();
-    json!({
-        "id": "day-night-successor", "version": 1,
-        "lambda_per_hour": {"numerator": 1, "denominator": 3000},
-        "slopes": [1.5, 2.0],
-        "seeds": {"dev": {"first": 20001, "count": 200}, "holdout": {"first": 30001, "count": 200}},
-        "holdout": {
-            "authorized_by": "registration custodian", "procedure": "unseal once per candidate and slope after freeze",
-            "command": "just bench-day-night --registration R --run-profile registered --split holdout --policy successor --slope 1.5 --out h.jsonl",
-            "confirmations_per_slope": 1, "spent_when_started": true, "inspection_before_freeze": false,
-        },
-        "calendar": {
-            "first_day": 1, "days": 730, "daily_active_hours": 8, "night_hours": 8,
-            "night_weekdays": [0, 2, 4], "year_days": 365, "firmware_change_day": 181,
-            "sleep": "remaining wall hours; thermal state cools",
-        },
-        "scenarios": scenarios,
-        "criteria": {
-            "final_in_admissible_fraction": {"numerator": 1, "denominator": 1},
-            "held_after_finish_fraction": {"numerator": 95, "denominator": 100},
-            "safety_grace_days": 0,
-            "post_finish_rate_of_lambda": {"numerator": 1, "denominator": 1},
-            "poisson_diagnostic_confidence": {"numerator": 95, "denominator": 100},
-            "allowance_limit": 2, "first_step_clean_stock_hours": 50, "clean_hold_hours": 50,
-            "restoration_clean_stock_hours": 50, "ceiling_margin": 5,
-            "operational_max_depth": 45, "physical_max_depth": 50,
-            "useful_fraction": {"numerator": 90, "denominator": 100},
-            "useful_depth_of_reference": {"numerator": 80, "denominator": 100},
-            "min_unit_depth": 5,
-            "settled_fraction": {"numerator": 90, "denominator": 100},
-            "settled_horizon_day": 730, "benign_median_settled_day": 180,
-            "retention_fraction": {"numerator": 90, "denominator": 100}, "retention_max_loss": 1,
-        },
-        "run_profiles": [
-            {"profile": "reduced-dev", "splits": ["dev"], "seeds": {"kind": "first", "count": 10},
-             "slopes_per_invocation": 1, "gate_verdict": false, "label": REDUCED_DEV_LABEL},
-            {"profile": "registered", "splits": ["dev", "holdout"], "seeds": {"kind": "all"},
-             "slopes_per_invocation": 1, "gate_verdict": true, "label": null},
-        ],
-        "budgets": {"reduced_dev_seconds": 1800, "registered_seconds": 43200, "holdout_seconds": 43200, "compilation_excluded": true},
-        "resources": {"jobs": 8, "resource_class": "workstation"},
-        "tolerance": {"admissibility": 1e-9, "hours": 1e-9},
-        "unit_modes": [{"mode": "ccd-uniform", "grouping": "one unit per CCD; lambda/n each"}],
-        "sources": {
-            "simulator_revision": REVISION, "report_revision": REVISION,
-            "binary_sha256": Value::Null, "input_sha256": Value::Null,
-            "policies": [policy("successor", "candidate"), policy("shipped", "comparator")],
-        },
-        "commands": {
-            "reduced_dev": "just bench-day-night --registration R --run-profile reduced-dev --split dev --policy successor --slope 1.5 --out r.jsonl",
-            "registered": "just bench-day-night --registration R --run-profile registered --split dev --policy successor --slope 1.5 --out d.jsonl",
-        },
-        "streams": {
-            "domains": [{"name": "truth", "tag": "T"}, {"name": "policy", "tag": "P"}],
-            "topology_permutation": "seed-keyed shuffle of physical-core identities",
-        },
-        "continuation": {"dev_rule": "resume missing cells in ascending scenario, seed, slope order", "holdout_resumable": false},
-        "notes": ["synthetic"],
-    })
+    builder::value(&SCENARIOS)
 }
 
 pub(crate) fn json() -> String {
@@ -189,7 +118,7 @@ fn cells_cover_scenarios_modes_slopes_and_seeds() {
     let first = &cells[0];
     assert_eq!(
         (first.scenario.as_str(), first.seed, first.slope),
-        ("edge-shallow", 20001, 1.5)
+        ("successor-edge-shallow", 20001, 1.5)
     );
 }
 
@@ -271,10 +200,7 @@ fn refuses_malformed_dimensions(path: &str, new: Value) {
 
 #[test]
 fn refuses_wrong_transition_schedules() {
-    let index = HISTORICAL_SCENARIOS
-        .iter()
-        .position(|name| *name == "firmware-change")
-        .unwrap();
+    let index = index("successor-firmware-change");
     let path = format!("/scenarios/{index}/epochs/1/start_day");
     assert!(matches!(
         parse(&edit(&path, json!(200))),
@@ -310,7 +236,6 @@ fn refuses_null_slope_and_out_of_range_tolerances() {
     assert!(parse(&edit("/tolerance/hours", json!(0.5))).is_err());
 }
 
-#[test_case::test_case("/id", json!("other"); "id")]
 #[test_case::test_case("/version", json!(2); "version")]
 #[test_case::test_case("/lambda_per_hour/denominator", json!(2000); "lambda")]
 #[test_case::test_case("/slopes", json!([1.5]); "one slope")]
@@ -362,12 +287,9 @@ fn refuses_missing_scenarios_and_bad_applicability() {
     doc["scenarios"].as_array_mut().unwrap().remove(0);
     assert!(parse(&doc).is_err());
     let mut doc = value();
-    doc["scenarios"][1] = scenario("edge-shallow");
+    doc["scenarios"][1] = scenario("successor-edge-shallow");
     assert!(parse(&doc).is_err());
-    let adversarial = HISTORICAL_SCENARIOS
-        .iter()
-        .position(|name| *name == "hidden-daily")
-        .unwrap();
+    let adversarial = index("successor-hidden-daily");
     assert!(
         parse(&edit(
             &format!("/scenarios/{adversarial}/benign"),
@@ -386,8 +308,8 @@ fn refuses_missing_scenarios_and_bad_applicability() {
 #[test_case::test_case("/sources/policies/0/name", json!(""); "policy name")]
 #[test_case::test_case("/sources/policies/1/name", json!("successor"); "duplicate policy name")]
 #[test_case::test_case("/sources/policies/1/identity", json!("successor-identity"); "duplicate policy identity")]
-#[test_case::test_case("/sources/policies/0/source_revision", json!("abc"); "short source revision")]
-#[test_case::test_case("/sources/policies/0/source_sha256", json!(HASH.to_uppercase()); "uppercase source hash")]
+#[test_case::test_case("/sources/policies/0/source/revision", json!("abc"); "short source revision")]
+#[test_case::test_case("/sources/policies/0/source/sha256", json!(HASH.to_uppercase()); "uppercase source hash")]
 #[test_case::test_case("/sources/policies/0/parameters_sha256", json!(""); "empty parameters hash")]
 #[test_case::test_case("/sources/policies/0/parameters", json!([]); "no parameters")]
 #[test_case::test_case("/sources/simulator_revision", json!(""); "empty simulator revision")]
@@ -397,7 +319,6 @@ fn refuses_missing_scenarios_and_bad_applicability() {
 #[test_case::test_case("/sources/policies/0/role", json!("comparator"); "no candidate")]
 #[test_case::test_case("/unit_modes", json!([]); "no unit modes")]
 #[test_case::test_case("/unit_modes/0/grouping", json!(""); "empty grouping")]
-#[test_case::test_case("/unit_modes", json!([{"mode": "per-core", "grouping": "one unit per core"}]); "per-core under current id")]
 #[test_case::test_case("/commands/reduced_dev", json!("just bench-day-night --run-profile reduced-dev --split dev"); "reduced command without registration")]
 #[test_case::test_case("/commands/registered", json!("make"); "foreign command")]
 #[test_case::test_case("/holdout/authorized_by", json!(""); "empty authority")]
@@ -451,13 +372,170 @@ fn refuses_mixed_or_misnamed_mode_registrations() {
         .unwrap()
         .push(json!({"mode": "ccd-uniform", "grouping": "g"}));
     assert!(parse(&mixed).is_err());
+    // The id carries no mode: a per-core document under the id the fixture uses for ccd-uniform
+    // is still exactly one mode and is accepted.
     let mut current = per_core();
-    current["id"] = json!(REGISTRATION_ID);
-    assert!(parse(&current).is_err());
-    let mut uniform = value();
-    uniform["id"] = json!("day-night-successor-other");
-    assert!(parse(&uniform).is_err());
-    assert!(parse(&edit("/id", json!(""))).is_err());
+    current["id"] = json!("day-night-successor");
+    assert_eq!(
+        parse(&current).unwrap().unit_modes[0].mode,
+        UnitMode::PerCore
+    );
+}
+
+#[test_case::test_case("day-night-successor"; "fixture id")]
+#[test_case::test_case("ccd-uniform-2031-trial"; "arbitrary ccd id")]
+#[test_case::test_case("x"; "short id")]
+fn ccd_uniform_accepts_any_nonempty_id(id: &str) {
+    let registration = parse(&edit("/id", json!(id))).unwrap();
+    assert_eq!(registration.id, id);
+    assert_eq!(registration.unit_modes[0].mode, UnitMode::CcdUniform);
+}
+
+#[test]
+fn refuses_blank_ids() {
+    for id in ["", "  "] {
+        assert!(parse(&edit("/id", json!(id))).is_err(), "{id:?}");
+    }
+}
+
+#[test]
+fn the_runner_revision_is_a_required_pin() {
+    let mut doc = value();
+    doc["sources"]
+        .as_object_mut()
+        .unwrap()
+        .remove("runner_revision");
+    assert!(matches!(parse(&doc), Err(Error::Decode(_))));
+    for bad in [
+        "",
+        "main",
+        "abc",
+        "0123456789ABCDEF0123456789ABCDEF01234567",
+    ] {
+        let edited = edit("/sources/runner_revision", json!(bad));
+        assert!(matches!(parse(&edited), Err(Error::Invalid(_))), "{bad:?}");
+    }
+    let registration = parse(&value()).unwrap();
+    assert_eq!(registration.sources.runner_revision, REVISION);
+}
+
+#[test]
+fn pinned_and_pending_policy_sources_are_typed() {
+    let registration = parse(&value()).unwrap();
+    assert_eq!(
+        registration.policy("successor").unwrap().source,
+        SourceIdentity::Pinned {
+            revision: REVISION.into(),
+            sha256: HASH.into(),
+        }
+    );
+    let pending = edit("/sources/policies/0/source", json!({"kind": "pending"}));
+    let registration = parse(&pending).unwrap();
+    let source = &registration.policy("successor").unwrap().source;
+    assert_eq!(*source, SourceIdentity::Pending {});
+    assert!(source.is_pending());
+    assert!(!registration.policy("shipped").unwrap().source.is_pending());
+}
+
+#[test_case::test_case(json!({"kind": "pending", "revision": REVISION}); "pending with a pin")]
+#[test_case::test_case(json!({"kind": "pinned"}); "pinned without fields")]
+#[test_case::test_case(json!({"kind": "pinned", "revision": REVISION}); "pinned without hash")]
+#[test_case::test_case(json!({"kind": "pinned", "revision": "abc", "sha256": HASH}); "short revision")]
+#[test_case::test_case(json!({"kind": "pinned", "revision": REVISION, "sha256": HASH.to_uppercase()}); "uppercase hash")]
+#[test_case::test_case(json!({"kind": "pinned", "revision": "", "sha256": ""}); "empty pin is not pending")]
+#[test_case::test_case(json!({"kind": "pinned", "revision": REVISION, "sha256": HASH, "extra": 1}); "unknown field")]
+#[test_case::test_case(json!({"kind": "unknown"}); "unknown kind")]
+#[test_case::test_case(json!({}); "no kind")]
+#[test_case::test_case(json!(""); "sentinel string")]
+#[test_case::test_case(json!(null); "null")]
+fn refuses_malformed_source_identities(source: Value) {
+    assert!(parse(&edit("/sources/policies/0/source", source)).is_err());
+}
+
+#[test_case::test_case("source_revision", json!(REVISION); "old revision field")]
+#[test_case::test_case("source_sha256", json!(HASH); "old hash field")]
+fn refuses_the_removed_policy_source_fields(field: &str, entry: Value) {
+    let mut doc = value();
+    doc["sources"]["policies"][0][field] = entry;
+    assert!(matches!(parse(&doc), Err(Error::Decode(_))));
+}
+
+#[test]
+fn refuses_a_policy_without_a_source() {
+    let mut doc = value();
+    doc["sources"]["policies"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("source");
+    assert!(matches!(parse(&doc), Err(Error::Decode(_))));
+}
+
+#[test]
+fn refuses_missing_required_scenario_roles() {
+    let settled = |doc: &Value, needle: &str| matches!(parse(doc), Err(Error::Settled(message)) if message.contains(needle));
+    let only = json!([{"id": "only", "start_day": 1, "context": "ctx", "description": "d"}]);
+    // R3-1: moving-cap switched to fixed with one initial epoch is otherwise a valid scenario;
+    // the moving role is what is missing.
+    let mut doc = value();
+    let moving = index("successor-moving-cap");
+    doc["scenarios"][moving]["transition"] = json!("fixed");
+    doc["scenarios"][moving]["epochs"] = only.clone();
+    assert!(settled(&doc, "moving"));
+    let mut doc = value();
+    let firmware = index("successor-firmware-change");
+    doc["scenarios"][firmware]["transition"] = json!("fixed");
+    doc["scenarios"][firmware]["epochs"] = only;
+    assert!(settled(&doc, "firmware"));
+    let mut doc = value();
+    for scenario in doc["scenarios"].as_array_mut().unwrap() {
+        scenario["coverage"] = json!("covered");
+    }
+    assert!(settled(&doc, "adversarial"));
+}
+
+#[test]
+fn roles_follow_declared_flags_not_names() {
+    // Renaming every scenario leaves a valid registration: nothing is matched by name.
+    let mut doc = value();
+    for (position, scenario) in doc["scenarios"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        scenario["name"] = json!(format!("renamed-{position}"));
+    }
+    assert_eq!(parse(&doc).unwrap().scenarios.len(), SCENARIOS.len());
+}
+
+#[test]
+fn the_depth_floor_is_one_benign_scenario_at_the_settled_value() {
+    let floor = index("successor-no-write-limit-failure");
+    let mut doc = value();
+    doc["scenarios"][floor]["unit_depth_floor"] = Value::Null;
+    assert!(matches!(
+        parse(&doc),
+        Err(Error::Settled("unit depth floor"))
+    ));
+    let mut doc = value();
+    doc["scenarios"][index("successor-edge-deep")]["unit_depth_floor"] = json!(44);
+    assert!(matches!(
+        parse(&doc),
+        Err(Error::Settled("unit depth floor"))
+    ));
+    let mut doc = value();
+    doc["scenarios"][floor]["unit_depth_floor"] = json!(43);
+    assert!(matches!(
+        parse(&doc),
+        Err(Error::Settled("unit depth floor"))
+    ));
+    let mut doc = value();
+    doc["scenarios"][floor]["unit_depth_floor"] = Value::Null;
+    doc["scenarios"][index("successor-slope-flat")]["unit_depth_floor"] = json!(44);
+    assert!(matches!(
+        parse(&doc),
+        Err(Error::Settled("unit depth floor"))
+    ));
 }
 
 #[test]
@@ -472,4 +550,32 @@ fn seed_ranges_reject_unrepresentable_hand_built_fields() {
         .is_err()
     );
     assert_eq!(SeedRange { first: 5, count: 2 }.values().unwrap(), 5..=6);
+}
+
+#[test]
+fn the_input_digest_is_the_hash_of_the_registration_with_a_null_input_pin() {
+    let mut cloned = registration();
+    cloned.sources.input_sha256 = None;
+    let expected = sha256_hex(&serde_json::to_vec(&cloned).unwrap());
+    let mut pinned = registration();
+    pinned.sources.input_sha256 = Some(HASH.into());
+    assert_eq!(input_sha256(&pinned).unwrap(), expected);
+    assert_eq!(input_sha256(&registration()).unwrap(), expected);
+}
+
+#[test]
+fn the_input_pin_does_not_change_the_digest_but_other_fields_do() {
+    let base = input_sha256(&registration()).unwrap();
+    let mut other_pin = registration();
+    other_pin.sources.input_sha256 = Some("f".repeat(64));
+    assert_eq!(input_sha256(&other_pin).unwrap(), base);
+    let mut binary = registration();
+    binary.sources.binary_sha256 = Some(HASH.into());
+    assert_ne!(input_sha256(&binary).unwrap(), base);
+    let mut scenario = registration();
+    scenario.scenarios[0].description.push('!');
+    assert_ne!(input_sha256(&scenario).unwrap(), base);
+    let mut policy = registration();
+    policy.sources.policies[1].parameters[0].value = 3.0;
+    assert_ne!(input_sha256(&policy).unwrap(), base);
 }
