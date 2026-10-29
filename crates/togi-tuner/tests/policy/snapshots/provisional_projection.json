@@ -1,13 +1,13 @@
 {
   "applied": [
-    [{"Ccd": 0}, -1],
-    [{"Ccd": 1}, 0]
+    [{"ccd": 0}, -1],
+    [{"ccd": 1}, 0]
   ],
   "units": [
     {
       "binding": "rate",
       "cap": -1,
-      "unit": {"Ccd": 0},
+      "unit": {"ccd": 0},
       "cores": [
         0,
         1
@@ -25,7 +25,7 @@
     {
       "binding": "rate",
       "cap": -1,
-      "unit": {"Ccd": 1},
+      "unit": {"ccd": 1},
       "cores": [
         2,
         3
@@ -49,8 +49,8 @@
     "hold": {
       "eligible_s": 0,
       "profile": [
-        [{"Ccd": 0}, -1],
-        [{"Ccd": 1}, 0]
+        [{"ccd": 0}, -1],
+        [{"ccd": 1}, 0]
       ],
       "required_s": 180000,
       "witness": 31

@@ -1,8 +1,7 @@
 ---
 source: crates/togi/tests/read/events.rs
 expression: text(&ran.stdout)
----
-Print the journal, one readable line per event
+---Print the journal, one readable line per event
 
 Oldest first. Filters combine, so you can narrow the journal to one core, one trial or a time window. A different ruleset warns before rendering, including `--json`; a different schema is refused. An event of a kind this build does not know is skipped and an unknown field is ignored, `--json` included; stderr says which, after the output. A kind selector must name a known exact kind or group; an unknown name and an explicitly empty list are usage errors (exit 2). A valid filter with no matches prints nothing and exits 0. Readable lines are colored on terminals and in the system journal unless `NO_COLOR` is set.
 
@@ -20,7 +19,7 @@ Options:
       --kind <kinds>
           Only these comma-separated known kinds, or groups such as trial for every trial.* kind
           
-          [possible values: backend, backend.retry, boot, boot.leave_reason, boot.saved_entry, ccd, ccd.cap, ccd.edge, checking, checking.chain, checking.cycle, checking.step, combination, command, command.reset, config, config.loaded, core, core.phase, crash, crash.detected, day, day.answer, day.applied, day.boot_start, day.checkpoint, day.clean_stop, day.event, day.fault, day.freeze, day.hold, day.imported, day.interval, day.offsets_changed, day.record, day.step, day.unclean_end, day.veto, deadend, deepening, deepening.round, defect, defect.answered, defect.found, exposure, exposure.observed, failure, failure.carried, host, host.ranking, hunt, hunt.end, hunt.group, hunt.skipped, hunt.start, journal, journal.torn, mce, night, night.plan, night.qualification, night.reproduction, preflight, preflight.check, profile, profile.applied, profile.change, profile.restored, session, session.archived, session.baseline, session.carried, session.context, session.imported, session.notice, session.start, session.warning, shutdown, smu, smu.error, smu.intent, smu.readback, smu.write, state, state.rebuilt, task, task.start, trial, trial.carried, trial.end, trial.intent, trial.progress, trial.sample, trial.signal, trial.start, tuner, tuner.decision, tuner.warning]
+          [possible values: backend, backend.retry, boot, boot.leave_reason, boot.saved_entry, campaign, campaign.charge, campaign.reclassified, campaign.start, ccd, ccd.cap, ccd.edge, checking, checking.chain, checking.cycle, checking.step, climb, climb.decision, combination, command, command.reset, config, config.loaded, core, core.phase, crash, crash.detected, day, day.answer, day.applied, day.boot_start, day.checkpoint, day.clean_stop, day.event, day.fault, day.freeze, day.hold, day.imported, day.interval, day.offsets_changed, day.record, day.step, day.unclean_end, day.veto, deadend, deepening, deepening.round, defect, defect.answered, defect.found, exposure, exposure.observed, failure, failure.carried, firmware, firmware.restoration, host, host.ranking, hunt, hunt.end, hunt.group, hunt.skipped, hunt.start, journal, journal.torn, mce, night, night.plan, night.qualification, night.reproduction, preflight, preflight.check, profile, profile.applied, profile.change, profile.restored, session, session.archived, session.baseline, session.carried, session.context, session.imported, session.notice, session.start, session.warning, shutdown, smu, smu.error, smu.intent, smu.readback, smu.write, state, state.rebuilt, successor, successor.imported, task, task.start, trial, trial.carried, trial.end, trial.intent, trial.progress, trial.sample, trial.signal, trial.start, tuner, tuner.decision, tuner.warning, unit, unit.edge, unit.mapping, unit.stop]
 
       --trial <ID>
           Only events of trial ID

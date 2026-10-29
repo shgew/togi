@@ -5,13 +5,13 @@ use crate::unit::Phase;
 
 pub const LEARNING_ALLOWANCE: usize = 2;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EventPhase {
     Learning,
     PostFinish,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Charge {
     pub event: EventId,
     pub aliases: BTreeSet<EventId>,
@@ -22,7 +22,7 @@ pub struct Charge {
 }
 
 /// A campaign outlives sessions, firmware and phase changes. It has no renewal operation.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Campaign {
     Unreconstructible,
     Known { charges: Vec<Charge> },
@@ -80,11 +80,13 @@ impl Campaign {
         let mut identities: BTreeSet<_> = aliases.iter().cloned().collect();
         identities.insert(event.id.clone());
         let mut found = None;
+        let mut first = None;
         let mut index = 0;
         while index < charges.len() {
             if charges[index].aliases.is_disjoint(&identities) {
                 index += 1;
             } else {
+                first.get_or_insert(index);
                 let charge = charges.remove(index);
                 identities.extend(charge.aliases.iter().cloned());
                 if found.is_none() {
@@ -96,7 +98,7 @@ impl Campaign {
         if let Some(mut charge) = found {
             charge.aliases = identities;
             charge.reclassified = event.class == Classification::NonCpu;
-            charges.push(charge);
+            charges.insert(first.unwrap_or(charges.len()), charge);
         } else if event.class.is_cpu_suspect() && !event.profile.is_zero() {
             charges.push(Charge {
                 event: event.id.clone(),
