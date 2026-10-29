@@ -154,6 +154,7 @@ impl State {
             journal::UnitStopReason::AllowanceExhausted {} => climb::FinishReason::AllowanceExhausted,
             journal::UnitStopReason::AdverseCeiling {} => climb::FinishReason::Stopped(climb::StopReason::AdverseCeiling),
             journal::UnitStopReason::Veto {} => climb::FinishReason::Stopped(climb::StopReason::Veto),
+            journal::UnitStopReason::Predecessor { original } => climb::FinishReason::Stopped(climb::StopReason::Predecessor { original: *original }),
             journal::UnitStopReason::FirstBackstep { event, application } => climb::FinishReason::Stopped(climb::StopReason::FirstBackstep {
                 event: self.policy_event_id(event).ok_or(FoldError::ClimbRecord("missing event identity"))?,
                 application: climb::ApplicationId::new(application.0),
