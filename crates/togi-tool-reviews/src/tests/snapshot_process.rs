@@ -646,7 +646,12 @@ fn real_process_rereview_cover_follows_later_insertions_and_rename() {
         &format!("// Inserted one\n// Inserted two\n{later}"),
         0o644,
     );
-    git(&["commit", "-q", "-am", "move file, insert above and edit nearby"]);
+    git(&[
+        "commit",
+        "-q",
+        "-am",
+        "move file, insert above and edit nearby",
+    ]);
     let head = git(&["rev-parse", "HEAD"]).trim().to_owned();
     git(&["remote", "add", "origin", &work.to_string_lossy()]);
     let raw = git(&["diff", "-M", &base, &head]);
