@@ -303,6 +303,7 @@ fn stock_comparator_accepts_registered_evaluation_slope_without_a_policy_paramet
 #[test]
 fn pinned_candidate_builds_the_production_successor_adapter() {
     let (mut registration, bytes) = fixture();
+    registration.calendar.days = 30;
     let candidate = registration
         .sources
         .policies
@@ -351,7 +352,16 @@ fn pinned_candidate_builds_the_production_successor_adapter() {
             .limit,
         2
     );
-    assert_eq!(record.policy.allowance.as_ref().unwrap().consumed, 0);
+    assert!(record.steps.iter().any(|step| matches!(
+        step.kind,
+        togi_simrun::day_night::successor::StepKind::Climb { .. }
+    )));
+    assert!(
+        record
+            .units
+            .iter()
+            .any(|unit| unit.qualification_launches > 0)
+    );
 }
 
 #[test]

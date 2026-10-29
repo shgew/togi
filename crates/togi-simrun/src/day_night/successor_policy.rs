@@ -75,13 +75,16 @@ impl Policy for SuccessorPolicy {
     }
 }
 
-/// Bounded by decisions, certificates and reported events, not by trial samples.
+/// Retains journal witness identities and report facts, never raw trial sample histories.
 pub(super) struct JournalFold {
     pub(super) report: PolicyReport,
     pub(super) applications: PolicyApplications,
     origin: Option<Timestamp>,
     decisions: BTreeMap<Seq, journal::ClimbDecision>,
     certificates: BTreeMap<Seq, records::Qualification>,
+    exposures: BTreeMap<Seq, String>,
+    failure_events: BTreeMap<Seq, String>,
+    event_aliases: Vec<(journal::DayEventId, String)>,
     ceilings: BTreeMap<journal::UnitId, u8>,
     mapping: Option<journal::UnitMapping>,
     epoch: String,
@@ -99,6 +102,9 @@ impl JournalFold {
             origin: None,
             decisions: BTreeMap::new(),
             certificates: BTreeMap::new(),
+            exposures: BTreeMap::new(),
+            failure_events: BTreeMap::new(),
+            event_aliases: Vec::new(),
             ceilings: BTreeMap::new(),
             mapping: None,
             epoch: "initial".to_owned(),
@@ -113,6 +119,13 @@ impl JournalFold {
         self.origin.map_or(1.0, |origin| {
             1.0 + time.duration_since(origin).as_secs_f64() / 86_400.0
         })
+    }
+
+    fn canonical_event(&self, event: &journal::DayEventId) -> String {
+        self.event_aliases
+            .iter()
+            .find(|(alias, _)| alias == event)
+            .map_or_else(|| event_id(event), |(_, id)| id.clone())
     }
 
     fn mapping(&mut self, mapping: &journal::UnitMapping) -> Result<(), RunError> {
@@ -145,35 +158,72 @@ impl JournalFold {
                     self.decisions.insert(event.seq, decision.clone());
                 }
             }
-            Payload::ExposureObserved(exposure)
-                if exposure.activity == journal::Activity::Control
-                    && exposure.outcome == journal::Outcome::Pass
-                    && exposure
-                        .profile
-                        .cores()
-                        .iter()
-                        .all(|(_, offset)| offset == TargetOffset::ZERO)
-                    && exposure.exclusions.is_empty()
-                    && exposure.failures.is_empty() =>
-            {
-                self.stock_controls.push((
-                    exposure.firmware.clone(),
-                    exposure.epoch,
-                    seq_id(event.seq),
-                ));
+            Payload::ExposureObserved(exposure) => {
+                if let Some(trial) = &exposure.source.trial {
+                    let id = trial.as_str().to_owned();
+                    self.exposures.insert(event.seq, id.clone());
+                    if exposure.outcome == journal::Outcome::Failure {
+                        self.failure_events
+                            .insert(event.seq, format!("journal-failure-{}", trial.as_str()));
+                    }
+                    if exposure.activity == journal::Activity::Control
+                        && exposure.outcome == journal::Outcome::Pass
+                        && exposure
+                            .profile
+                            .cores()
+                            .iter()
+                            .all(|(_, offset)| offset == TargetOffset::ZERO)
+                        && exposure.exclusions.is_empty()
+                        && exposure.failures.is_empty()
+                    {
+                        self.stock_controls
+                            .push((exposure.firmware.clone(), exposure.epoch, id));
+                    }
+                }
+            }
+            Payload::TrialEnd(end) => {
+                if end.outcome == journal::Outcome::Failure {
+                    let id = format!("journal-failure-{}", end.trial.as_str());
+                    self.failure_events.insert(event.seq, id.clone());
+                    self.report.events.push(records::LearningEvent {
+                        id,
+                        day,
+                        classification: records::Classification::CpuSuspect,
+                        provisional: false,
+                        reclassified_from: None,
+                        charged: false,
+                        phase: if self.finished() {
+                            records::Phase::PostFinish
+                        } else {
+                            records::Phase::Learning
+                        },
+                        unit_phase: phase(
+                            self.mapping
+                                .as_ref()
+                                .map_or(journal::UnitPhase::Coarse, |mapping| mapping.phase),
+                        ),
+                        newest_step: self.report.newest_step.clone(),
+                    });
+                }
             }
             Payload::NightQualification(certificate) => {
+                if let journal::QualificationState::Failed { failure, .. } = &certificate.state
+                    && let Some(id) = self.failure_events.get(failure).cloned()
+                {
+                    self.failure_events.insert(event.seq, id);
+                }
                 if let journal::QualificationState::Complete { witnesses } = &certificate.state {
                     let mut fresh = Vec::new();
                     let mut reused = Vec::new();
                     for witness in witnesses {
-                        match witness.evidence {
-                            journal::CellEvidence::Fresh { exposure } => {
-                                fresh.push(seq_id(exposure));
-                            }
-                            journal::CellEvidence::Reused { exposure } => {
-                                reused.push(seq_id(exposure));
-                            }
+                        let (exposure, destination) = match witness.evidence {
+                            journal::CellEvidence::Fresh { exposure } => (exposure, &mut fresh),
+                            journal::CellEvidence::Reused { exposure } => (exposure, &mut reused),
+                        };
+                        if let Some(trial) = self.exposures.get(&exposure)
+                            && !destination.contains(trial)
+                        {
+                            destination.push(trial.clone());
                         }
                     }
                     let profile = depths(certificate.profile.cores())?;
@@ -255,7 +305,7 @@ impl JournalFold {
                 };
                 let mut witnesses: Vec<_> = stop.witnesses.iter().copied().map(seq_id).collect();
                 if let Some(triggering) = triggering {
-                    witnesses.push(event_id(triggering));
+                    witnesses.push(self.canonical_event(triggering));
                 }
                 let finish = records::UnitFinish {
                     unit,
@@ -280,7 +330,20 @@ impl JournalFold {
                 }
             }
             Payload::DayEvent(observed) => {
-                let id = event_id(&observed.event);
+                if matches!(observed.event, journal::DayEventId::Requalification { .. })
+                    && let Some(id) = observed
+                        .witnesses
+                        .iter()
+                        .find_map(|seq| self.failure_events.get(seq))
+                    && !self
+                        .event_aliases
+                        .iter()
+                        .any(|(event, _)| event == &observed.event)
+                {
+                    self.event_aliases
+                        .push((observed.event.clone(), id.clone()));
+                }
+                let id = self.canonical_event(&observed.event);
                 let classification = classification(observed.classification);
                 let provisional = matches!(
                     observed.classification,
@@ -320,7 +383,7 @@ impl JournalFold {
             }
             Payload::CampaignCharge(charge) => {
                 self.mapping(&charge.profile.mapping)?;
-                let id = event_id(&charge.event);
+                let id = self.canonical_event(&charge.event);
                 if let Some(item) = self.report.events.iter_mut().find(|item| item.id == id) {
                     item.charged = true;
                     item.provisional = charge.provisional;
@@ -339,7 +402,7 @@ impl JournalFold {
                 self.update_counts();
             }
             Payload::CampaignReclassified(reclassified) => {
-                let id = event_id(&reclassified.event);
+                let id = self.canonical_event(&reclassified.event);
                 if let Some(item) = self.report.events.iter_mut().find(|item| item.id == id) {
                     item.reclassified_from = Some(classification(reclassified.from));
                     item.classification = classification(reclassified.to);
@@ -371,7 +434,6 @@ impl JournalFold {
             | Payload::TrialProgress(_)
             | Payload::TrialSignal(_)
             | Payload::TrialSample(_)
-            | Payload::TrialEnd(_)
             | Payload::TrialCarried(_)
             | Payload::Failure(_)
             | Payload::FailureCarried(_)
@@ -408,7 +470,6 @@ impl JournalFold {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
-            | Payload::ExposureObserved(_)
             | Payload::CcdEdge(_)
             | Payload::CcdCap(_)
             | Payload::NightPlan(_)
@@ -492,13 +553,17 @@ impl JournalFold {
                     });
                 self.restoration = Some(self.applications.restorations.len() - 1);
             }
-            if let Some(cause) = self.restoration_backstep.take()
+            let pending = self
+                .restoration_backstep
+                .take()
+                .map(|cause| self.canonical_event(&cause));
+            if let Some(cause) = pending
                 && let Some(index) = self.restoration
                 && let records::RestorationOutcome::Applied { result, .. } =
                     &mut self.applications.restorations[index].outcome
             {
                 *result = records::RestorationResult::Crashed {
-                    event: event_id(&cause),
+                    event: cause,
                     stock_step_back_day: day,
                     stock_readback: after,
                     stopped_units: self.report.stopped_units.clone(),
@@ -542,7 +607,9 @@ impl JournalFold {
             journal::ClimbAction::Retreat { units, cause, .. } => records::StepKind::Retreat {
                 event: match cause {
                     journal::ClimbRetreatCause::Event { event }
-                    | journal::ClimbRetreatCause::Veto { event } => Some(event_id(event)),
+                    | journal::ClimbRetreatCause::Veto { event } => {
+                        Some(self.canonical_event(event))
+                    }
                     journal::ClimbRetreatCause::AdverseCeiling { .. }
                     | journal::ClimbRetreatCause::Completion {} => None,
                 },
@@ -611,6 +678,7 @@ impl JournalFold {
                 }
             }
             journal::FirmwareRestorationState::SteppedBack { event: cause } => {
+                let id = self.canonical_event(cause);
                 if let Some(readback) = self.report.readback
                     && readback.iter().all(|(_, depth)| depth == 0)
                     && let Some(index) = self.restoration
@@ -618,7 +686,7 @@ impl JournalFold {
                         &mut self.applications.restorations[index].outcome
                 {
                     *result = records::RestorationResult::Crashed {
-                        event: event_id(cause),
+                        event: id,
                         stock_step_back_day: day,
                         stock_readback: readback,
                         stopped_units: self.report.stopped_units.clone(),
@@ -846,6 +914,25 @@ mod tests {
         assert_eq!(report.allowance.as_ref().unwrap().consumed, consumed);
         assert_eq!(consumed, 1);
         assert_eq!(report.allowance.as_ref().unwrap().limit, 2);
+        assert_eq!(
+            u64::try_from(report.events.iter().filter(|event| event.charged).count()).unwrap(),
+            consumed
+        );
+        for event in events {
+            if let Payload::TrialEnd(end) = &event.payload
+                && end.outcome == journal::Outcome::Failure
+            {
+                let id = format!("journal-failure-{}", end.trial.as_str());
+                assert_eq!(
+                    report
+                        .events
+                        .iter()
+                        .filter(|reported| reported.id == id)
+                        .count(),
+                    1
+                );
+            }
+        }
         for step in &applications.steps {
             let applied = events
                 .iter()
@@ -861,6 +948,20 @@ mod tests {
                 })
                 .unwrap();
             assert_eq!(step.after, observed_depths(&applied.readbacks).unwrap());
+            if let records::StepKind::Climb { qualification, .. } = &step.kind {
+                assert!(!qualification.fresh_witnesses.is_empty());
+                for id in qualification
+                    .fresh_witnesses
+                    .iter()
+                    .chain(&qualification.reused_witnesses)
+                    .chain(&qualification.stock_controls)
+                {
+                    assert!(events.iter().any(|event| {
+                        matches!(&event.payload, Payload::ExposureObserved(exposure)
+                            if exposure.source.trial.as_ref().is_some_and(|trial| trial.as_str() == id))
+                    }));
+                }
+            }
         }
     }
 }
