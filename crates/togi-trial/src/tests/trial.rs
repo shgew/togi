@@ -632,8 +632,10 @@ fn an_exit_queued_before_a_cancellation_is_still_an_unexpected_exit() {
 }
 
 /// A worker that floods stdout with short lines until it is terminated.
-fn flooding(_: usize, _: &crate::launch::LaunchCommand) -> Launch {
-    Launch::Run(script(|mut ctx: ProcCtx| async move {
+/// Each batch advances the paused clock without sleeping: the flood stays runnable, but
+/// unrelated CPU contention cannot consume the load-step or output-drain budgets.
+fn flooding(advanced: Rc<Cell<Duration>>) -> Launch {
+    Launch::Run(script(move |mut ctx: ProcCtx| async move {
         loop {
             while let Ok(delivery) = ctx.signals.try_recv() {
                 if matches!(
@@ -646,22 +648,31 @@ fn flooding(_: usize, _: &crate::launch::LaunchCommand) -> Launch {
                 }
             }
             ctx.print(&"ok\n".repeat(4096)).await;
-            tokio::task::yield_now().await;
+            let tick = Duration::from_millis(10);
+            advanced.set(advanced.get() + tick);
+            tokio::time::advance(tick).await;
         }
     }))
 }
 
 #[test]
 fn an_output_flood_neither_skips_load_steps_nor_delays_the_deadline() {
-    crate::testing::runtime(false).block_on(async move {
+    crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            rig.fake.on_launch(flooding);
+            let advanced = Rc::new(Cell::new(Duration::ZERO));
+            rig.fake.on_launch({
+                let advanced = Rc::clone(&advanced);
+                move |_, _| flooding(Rc::clone(&advanced))
+            });
             let trial = spec(Regime::R4, &[0], secs(1));
             let schedule = LoadSchedule::for_spec(&trial).unwrap();
             let handle = rig.start(trial).await.unwrap();
             let started = tokio::time::Instant::now();
-            let run = finish(&handle).await;
+            let timing = rig.env.timing;
+            let run = tokio::time::timeout(timing.wait_bound(secs(1)), finish(&handle))
+                .await
+                .expect("the flood starved supervision or cleanup past the existing bound");
             let ended = tokio::time::Instant::now();
             let term = rig
                 .fake
@@ -675,9 +686,10 @@ fn an_output_flood_neither_skips_load_steps_nor_delays_the_deadline() {
             let expected = schedule.toggles(secs(1));
             assert_eq!(
                 (run.finished.result.stops, run.finished.result.conts),
-                (expected.stops, expected.conts)
+                (expected.stops, expected.conts),
+                "{:?}",
+                run.finished
             );
-            let timing = rig.env.timing;
             assert!(
                 term < secs(1) + Duration::from_millis(500),
                 "the flood delayed the deadline: {term:?}"
@@ -687,7 +699,12 @@ fn an_output_flood_neither_skips_load_steps_nor_delays_the_deadline() {
                 "the end outlived the spec's bound: {:?}",
                 ended.duration_since(started)
             );
-            assert!(run.finished.teardown.is_ok());
+            assert!(run.finished.teardown.is_ok(), "{:?}", run.finished);
+            assert!(
+                advanced.get() >= secs(1),
+                "the worker flooded throughout the trial, driving its clock: {:?}",
+                advanced.get()
+            );
         })
         .await;
     });
