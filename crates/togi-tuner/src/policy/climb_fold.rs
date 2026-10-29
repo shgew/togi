@@ -117,6 +117,28 @@ impl State {
         for event in &view.events {
             self.climb.campaign.observe(event, &[], phase, unit_phase);
         }
+        // A classification irreversibly stops its blamed unit even if the safety write or its
+        // derived receipt is interrupted. Planning here consumes no transition or cursor.
+        let retreat = climb::retreat_plan(history, &view.events, &[], &climb::Ceilings::new())?;
+        if let Some(retreat) = retreat
+            && let Some(event) = retreat.events.last()
+        {
+            let history = self.climb.history.as_mut().ok_or(FoldError::ClimbRecord("missing application history"))?;
+            for unit in &retreat.stopped {
+                let Some(cursor) = retreat.cursors.iter().filter(|cursor| cursor.unit == *unit).max_by_key(|cursor| cursor.transition.application) else {
+                    self.climb.history_error.get_or_insert_with(|| "A classified event has no reconstructible successful step to blame.".into());
+                    continue;
+                };
+                let application = cursor.transition.application;
+                let reason = if history.steps().iter().any(|step| step.application == application && step.kind == climb::StepKind::FirmwareRestoration) {
+                    climb::StopReason::RestorationBackstep { event: event.clone(), application }
+                } else { climb::StopReason::FirstBackstep { event: event.clone(), application: Some(application) } };
+                let last_clean = retreat.wanted.get(*unit).ok_or(FoldError::ClimbRecord("missing blamed unit depth"))?;
+                history.finishes_mut().stop(*unit, climb::FinishWitness {
+                    reason: climb::FinishReason::Stopped(reason), at, profile: retreat.wanted.clone(), last_clean, ceiling: None,
+                });
+            }
+        }
         self.observe_finishes(at);
         Ok(())
     }

@@ -132,11 +132,13 @@ fn event_identity_is_unique_across_provisional_manual_and_imported_witnesses() {
     journal.state.fold(&raw).unwrap();
     let projection = journal.state.project();
     assert_eq!(projection.climb.campaign.as_ref().unwrap().consumed, 1);
+    assert!(projection.climb.units.iter().any(|unit| matches!(unit.state, togi_tuner::ClimbUnitState::Finished { .. })));
     let applied = projection.applied.unwrap().to_ccd().unwrap();
     journal.append(DayAnswer { boot: BootId::from("day1".to_owned()), offsets: offsets_of(&applied), answer: DayAnswerKind::PowerOff, uid: 1000 }.into(), &[raw.seq]);
     let campaign = journal.state.project().climb.campaign.unwrap();
     assert_eq!(campaign.consumed, 1);
     assert_eq!(campaign.reclassified, 1);
+    assert!(journal.state.project().climb.units.iter().any(|unit| matches!(unit.state, togi_tuner::ClimbUnitState::Finished { .. })));
     journal.append(togi_journal::DayRecord {
         boot: togi_journal::CrashedBoot::UncleanEnd { boot: BootId::from("day1".to_owned()) },
         offsets: togi_journal::RecordedOffsets::new(offsets_of(&applied)).unwrap(),
