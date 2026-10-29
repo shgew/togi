@@ -7,6 +7,7 @@ mod fixtures;
 mod lenient;
 mod message;
 mod object_only;
+mod ruleset14;
 mod session_id;
 mod state;
 mod strict;
