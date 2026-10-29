@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use test_case::test_case;
+
 use togi_machine::TargetOffset;
 use togi_tuner::night::{
     Cursor, EdgeU, IsolatedObservation, IsolatedResult, Location, MappingBoard, MappingKind,
@@ -21,13 +23,15 @@ fn charged(witness: u64) -> IsolatedResult {
     }
 }
 
-fn target(mapping: &UnitMapping, cap: i64) -> Option<(i64, MappingKind)> {
-    mapping.target(offset(cap)).map(|(o, kind)| (o.get(), kind))
+fn target(mapping: &UnitMapping, ceiling: i64) -> Option<(i64, MappingKind)> {
+    mapping
+        .target(offset(ceiling))
+        .map(|(o, kind)| (o.get(), kind))
 }
 
 /// Pass every step the mapping offers until it reaches `until`.
-fn pass_until(mapping: &mut UnitMapping, until: i64, cap: i64) {
-    while let Some((o, _)) = target(mapping, cap) {
+fn pass_until(mapping: &mut UnitMapping, until: i64, ceiling: i64) {
+    while let Some((o, _)) = target(mapping, ceiling) {
         if o == until {
             return;
         }
@@ -40,6 +44,7 @@ fn a_new_ccd_has_an_unknown_edge_and_starts_at_stock() {
     let mapping = UnitMapping::default();
     assert_eq!(mapping.edge(), EdgeU::Unknown);
     assert_eq!(mapping.edge().offset(), None);
+    assert_eq!(mapping.edge().ceiling(), None);
     assert_eq!(target(&mapping, 0), Some((0, MappingKind::Coarse)));
 }
 
@@ -78,7 +83,7 @@ fn the_first_failure_stops_the_step_and_brackets_from_the_last_passing_coarse_st
 }
 
 #[test]
-fn a_bracket_failure_is_the_shallowest_actual_failure_and_starts_the_sweep_above_it() {
+fn the_sweep_runs_from_the_edge_toward_the_ceiling() {
     let mut mapping = UnitMapping::default();
     pass_until(&mut mapping, -15, 0);
     mapping.finish(fail(1));
@@ -93,12 +98,13 @@ fn a_bracket_failure_is_the_shallowest_actual_failure_and_starts_the_sweep_above
         }
     );
     let mut sweep = Vec::new();
-    while let Some((o, MappingKind::Sweep)) = target(&mapping, -8) {
+    while let Some((o, MappingKind::Sweep)) = target(&mapping, -7) {
         sweep.push(o);
         mapping.finish(StepResult::Passed);
     }
-    assert_eq!(sweep, [-11, -10, -9, -8]);
-    assert_eq!(target(&mapping, -8), None);
+    assert_eq!(mapping.edge().ceiling(), Some(offset(-7)));
+    assert_eq!(sweep, [-11, -10, -9, -8, -7]);
+    assert_eq!(target(&mapping, -7), None);
 }
 
 #[test]
@@ -124,7 +130,7 @@ fn a_sweep_failure_moves_u_shallower_and_the_sweep_continues_above_it() {
 }
 
 #[test]
-fn a_shallower_sweep_extends_when_s_moves_up() {
+fn adverse_edge_evidence_extends_the_uncovered_sweep_toward_its_new_ceiling() {
     let mut mapping = UnitMapping::default();
     pass_until(&mut mapping, -10, 0);
     mapping.finish(fail(1));
@@ -135,8 +141,10 @@ fn a_shallower_sweep_extends_when_s_moves_up() {
         mapping.finish(StepResult::Passed);
     }
     assert_eq!(target(&mapping, -8), None);
-    // S moves shallower: the still-uncovered shallower cells are scheduled, nothing earlier repeats.
-    assert_eq!(target(&mapping, -6), Some((-7, MappingKind::Sweep)));
+    mapping.observe(offset(-7), charged(2));
+    let ceiling = mapping.edge().ceiling().unwrap().get();
+    assert_eq!(ceiling, -2);
+    assert_eq!(target(&mapping, ceiling), Some((-6, MappingKind::Sweep)));
 }
 
 #[test]
@@ -156,6 +164,7 @@ fn the_full_matrix_passing_at_the_write_limit_censors_the_edge_at_minus_fifty() 
     assert_eq!(mapping.edge(), EdgeU::Censored);
     assert_eq!(mapping.edge().offset(), Some(write_limit()));
     assert_eq!(write_limit().get(), -50);
+    assert_eq!(mapping.edge().ceiling(), Some(offset(-45)));
     assert_eq!(mapping.cursor(), Cursor::Sweep { next: -49 });
 }
 
@@ -164,6 +173,7 @@ fn before_the_limit_without_a_failure_u_stays_unknown() {
     let mut mapping = UnitMapping::default();
     pass_until(&mut mapping, -45, 0);
     assert_eq!(mapping.edge(), EdgeU::Unknown);
+    assert_eq!(mapping.edge().ceiling(), None);
 }
 
 #[test]
@@ -271,7 +281,7 @@ fn ccds_are_visited_round_robin_one_offset_each() {
 #[test]
 fn a_ccd_with_nothing_to_map_is_skipped_and_the_rotation_wraps() {
     let mut board = MappingBoard::new([unit(0), unit(1), unit(2)]);
-    // CCD 1 fails at stock: nothing to bracket, sweep range empty at S = 0.
+    // CCD 1 fails at stock: nothing to bracket, sweep range empty at C = 0.
     board.finish_step(unit(0), StepResult::Passed);
     board.finish_step(unit(1), fail(1));
     let next = board.next_target(&caps(&[])).unwrap();
@@ -298,4 +308,15 @@ fn board_observations_reach_only_their_ccd() {
         board.unit(unit(1)).unwrap().edge().offset(),
         Some(offset(-20))
     );
+}
+
+#[test_case(-30, -25; "ordinary_failure")]
+#[test_case(-4, 0; "near_stock_failure")]
+#[test_case(0, 0; "stock_failure")]
+fn observed_edges_have_the_fixed_five_count_ceiling(u: i64, c: i64) {
+    let edge = EdgeU::Observed {
+        offset: offset(u),
+        witness: seq(1),
+    };
+    assert_eq!(edge.ceiling(), Some(offset(c)));
 }

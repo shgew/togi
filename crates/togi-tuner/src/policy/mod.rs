@@ -18,6 +18,9 @@ mod books;
 mod cache;
 mod climb_projection;
 mod controls;
+mod climb_fold;
+mod climb_view;
+mod day_climb;
 mod day_events;
 mod day_query;
 mod decision;
@@ -34,7 +37,7 @@ mod projection;
 mod qualify;
 mod reproduce;
 mod statistical;
-mod wire;
+pub(crate) mod wire;
 
 use togi_machine::CcdId;
 
@@ -105,6 +108,7 @@ pub struct State {
     ledger: Ledger,
     nights: Nights,
     days: Days,
+    climb: books::Climb,
     stop: Option<Stop>,
     #[serde(skip)]
     caches: Caches,
@@ -153,6 +157,7 @@ impl State {
             ledger: Ledger::default(),
             nights: Nights::default(),
             days: Days::default(),
+            climb: books::Climb::default(),
             stop: None,
             caches: Caches::default(),
         }

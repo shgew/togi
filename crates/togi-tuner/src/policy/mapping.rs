@@ -16,7 +16,7 @@ use crate::night::{
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use togi_journal::Outcome;
-use togi_journal::{CcdEdge, Edge, ExposureClass, Seq, Tested};
+use togi_journal::{Edge, ExposureClass, Seq, Tested, UnitEdge};
 use togi_machine::{CcdId, ContentId, TargetOffset, WorkloadId};
 
 /// Offsets run 0 to -50, so a cursor can never need more alignment steps than this.
@@ -208,8 +208,8 @@ impl State {
             return Ok(());
         }
         match task.queue {
-            // Reproduction attempts and filler cap probes are isolated observations: they move U but never
-            // finish a mapping step.
+            // Historical isolated filler and reproduction observations move U, but never finish
+            // a mapping step. Current filler runs only exact-D qualification cells.
             togi_journal::Queue::Reproduction | togi_journal::Queue::Filler => {
                 if let Some(result) = self.isolated_result(trial, ccd) {
                     replay.mapped.board.observe(IsolatedObservation {
@@ -396,8 +396,8 @@ impl State {
         Ok(wanted.is_subset(&covered))
     }
 
-    /// The mapping board, every CCD's edge and cap, and the next uncovered mapping step. A step whose cells
-    /// are all covered finishes as passed without spending night time.
+    /// The mapping board, each CCD's edge and diagnostic cap, and the next uncovered mapping step.
+    /// Covered steps finish as passed without spending night time; the sweep ends at C, never S.
     pub(super) fn mapping_plan(
         &self,
         layout: &Layout<'_>,
@@ -426,9 +426,9 @@ impl State {
     ) -> Result<MappingPlan, NotReady> {
         let edges = mapped.edges();
         let caps = self.caps_of(layout, contents, &edges, mapped.next_ordinal)?;
-        let limits: BTreeMap<UnitId, TargetOffset> = caps
+        let limits: BTreeMap<UnitId, TargetOffset> = edges
             .iter()
-            .map(|(&ccd, outcome)| (UnitId::Ccd(ccd), outcome.cap.offset))
+            .filter_map(|(&ccd, edge)| edge.ceiling().map(|c| (UnitId::Ccd(ccd), c)))
             .collect();
         let target = mapped.board.next_target(&limits);
         Ok(MappingPlan {
@@ -455,33 +455,36 @@ impl State {
         }
     }
 
-    /// A `ccd.edge` owed because U moved.
+    /// A contextual `unit.edge` owed when tagged U changes, independently of diagnostic S.
     pub(super) fn owed_edge(&self, plan: &MappingPlan) -> Option<Decision> {
+        let firmware = self.machine.firmware.as_ref()?;
         self.ccds().into_iter().find_map(|ccd| {
+            let unit = UnitId::Ccd(ccd);
             let edge = Self::journal_edge(plan, ccd);
-            let committed = self.nights.edges.get(&ccd);
-            let old =
-                committed.map_or(Edge::Unknown {}, |committed| committed.payload.edge.clone());
-            if edge == old {
+            let committed = self.nights.unit_edges.get(&unit).filter(|committed| {
+                &committed.payload.firmware == firmware
+                    && committed.payload.epoch == crate::EVIDENCE_EPOCH
+            });
+            // Replay already filters U's witnesses by workload context. Unknown has no positive
+            // evidence to invalidate; a speculative content query must not recommit it forever.
+            let old = committed.map_or(Edge::Unknown {}, |committed| committed.payload.new.clone());
+            if committed.is_some() && edge == old {
                 return None;
             }
-            let (reason, causes) = match &edge {
-                Edge::Unknown {} => ("no failure observed".to_owned(), Vec::new()),
-                Edge::Observed { offset, witness } => (
-                    format!("first observed failure at {}", offset.get()),
-                    vec![*witness],
-                ),
-                Edge::Censored { limit, witnesses } => (
-                    format!("no failure down to the write limit {}", limit.get()),
-                    witnesses.clone(),
-                ),
+            let causes = match &edge {
+                Edge::Unknown {} => Vec::new(),
+                Edge::Observed { witness, .. } => vec![*witness],
+                Edge::Censored { witnesses, .. } => witnesses.clone(),
             };
             Some(Decision::new(
-                PolicyPayload::CcdEdge(CcdEdge {
-                    ccd,
-                    edge,
+                PolicyPayload::UnitEdge(UnitEdge {
+                    unit,
+                    firmware: firmware.clone(),
+                    epoch: crate::EVIDENCE_EPOCH,
                     old,
-                    reason,
+                    new: edge,
+                    ceiling: plan.edges.get(&ccd).and_then(EdgeU::ceiling),
+                    margin: u32::from(crate::cap::EDGE_MARGIN),
                 }),
                 causes,
             ))

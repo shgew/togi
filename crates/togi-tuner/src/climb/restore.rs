@@ -6,7 +6,7 @@ use crate::unit::{UnitProfile, Units};
 use super::{ApplicationId, ClimbError, ClimbHistory};
 
 /// The complete physical vector and the mapping under which it was applied.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SavedProfile {
     pub units: Units,
     pub profile: UnitProfile,
@@ -43,19 +43,19 @@ impl SavedProfile {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum RestorationKind {
     Firmware,
     Reclassified { retreat: ApplicationId },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RestorationProposal {
     pub kind: RestorationKind,
     pub profile: UnitProfile,
 }
 
-pub(super) fn candidate(
+pub fn candidate(
     history: &ClimbHistory,
     events: &[DailyEvent],
 ) -> Result<Option<RestorationProposal>, ClimbError> {
