@@ -660,7 +660,6 @@ fn restoration_learning_overlaps_the_post_finish_exposure() {
     let crash = Ev {
         classification: Classification::NonCpu,
         charged: false,
-        tag: Some("fw".into()),
         ..Ev::co("tagged", 200.0, 0)
     };
     let spec = Spec::new("successor-firmware-change", 20_001, SLOPE)

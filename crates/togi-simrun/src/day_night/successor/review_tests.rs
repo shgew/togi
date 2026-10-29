@@ -240,7 +240,7 @@ fn a_partial_observation_keeps_the_failure_finish_and_application_at_its_termina
         Outcome::Truncated {
             observed_until_day: 2.0,
             reason: "budget expiry".into(),
-            lower_bounds: PartialCounts {
+            lower_bound: PartialCounts {
                 daily_interruptions: 1,
                 daily_co_crashes: 0,
                 active_hours: 8.0,

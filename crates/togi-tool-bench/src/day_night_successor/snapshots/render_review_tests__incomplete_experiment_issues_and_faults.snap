@@ -20,7 +20,7 @@ Safety and usefulness are separate columns; each row is one scenario, unit mode 
 
 | Scenario | Mode | Slope | Complete seeds | Safety | Usefulness | Status |
 |---|---|---|---|---|---|---|
-| successor-ccd-incomplete | ccd-uniform | 1.5 | 0/3 | -(descriptive) | -(descriptive) | INCOMPLETE |
+| successor-ccd-incomplete | ccd-uniform | 1.5 | 0/3 | - (descriptive) | - (descriptive) | INCOMPLETE |
 
 ## Incomplete cells
 

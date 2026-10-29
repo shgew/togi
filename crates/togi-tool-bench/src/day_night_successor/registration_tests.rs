@@ -283,8 +283,19 @@ fn refuses_changed_settled_values(path: &str, new: Value) {
 
 #[test]
 fn refuses_missing_scenarios_and_bad_applicability() {
+    // A scenario carrying no required role may be absent: nothing is matched by name.
     let mut doc = value();
-    doc["scenarios"].as_array_mut().unwrap().remove(0);
+    doc["scenarios"]
+        .as_array_mut()
+        .unwrap()
+        .remove(index("successor-edge-shallow"));
+    assert!(parse(&doc).is_ok());
+    // Removing a role-bearing scenario is refused.
+    let mut doc = value();
+    doc["scenarios"]
+        .as_array_mut()
+        .unwrap()
+        .remove(index("successor-moving-cap"));
     assert!(parse(&doc).is_err());
     let mut doc = value();
     doc["scenarios"][1] = scenario("successor-edge-shallow");

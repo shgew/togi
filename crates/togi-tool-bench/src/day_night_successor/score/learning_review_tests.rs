@@ -389,7 +389,6 @@ fn a_charged_suspect_event_on_the_restored_profile_owes_a_step_back_and_stops(
         provisional,
         reclassified_from,
         charged,
-        tag: Some("fw".into()),
         ..Ev::co("late", 200.0, 0)
     };
     let record = firmware(&lab, Restore::Retained, vec![event]);

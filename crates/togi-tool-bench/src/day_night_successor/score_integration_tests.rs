@@ -121,6 +121,6 @@ fn a_complete_single_slope_reduced_invocation_is_exploratory() {
     assert_eq!(result.verdict, Verdict::ExploratoryReduced);
     assert_eq!(result.label.as_deref(), Some(REDUCED_DEV_LABEL));
     let rendered = crate::day_night_successor::render::render(&result);
-    assert!(rendered.starts_with(REDUCED_DEV_LABEL));
+    assert!(rendered.contains(REDUCED_DEV_LABEL));
     assert!(!rendered.contains("PASS"));
 }

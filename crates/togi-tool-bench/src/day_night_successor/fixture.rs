@@ -132,7 +132,6 @@ pub(crate) struct Ev {
     pub(crate) provisional: bool,
     pub(crate) reclassified_from: Option<Classification>,
     pub(crate) newest_step: Option<StepIdentity>,
-    pub(crate) tag: Option<String>,
 }
 
 impl Ev {
@@ -151,7 +150,6 @@ impl Ev {
             provisional: false,
             reclassified_from: None,
             newest_step: None,
-            tag: None,
         }
     }
 
@@ -432,7 +430,6 @@ impl Spec {
                         let step_back = applied + 2.0;
                         events.push(Ev {
                             id: "crash".into(),
-                            tag: Some("fw".into()),
                             newest_step: Some(StepIdentity::Restoration {
                                 restoration: "fw".into(),
                                 units: restored_units.clone(),
@@ -568,6 +565,73 @@ impl Spec {
                     })
                     .collect(),
             });
+        }
+
+        // A night event gets a physical Night interval of one day either side of it inside the
+        // Day interval that holds it: same profile and epoch, no verified daily hours. The
+        // displaced hours and expected failures move into the adjoining Day interval, so the
+        // daily T and H are those of the baseline.
+        for event in events.iter().filter(|event| event.period == Period::Night) {
+            let Some(at) = intervals.iter().position(|interval| {
+                interval.period == Period::Day
+                    && interval.start_day <= event.day
+                    && event.day < interval.end_day
+            }) else {
+                continue;
+            };
+            let whole = intervals[at].clone();
+            let lo = (event.day - 1.0).max(whole.start_day);
+            let hi = (event.day + 1.0).min(whole.end_day);
+            let length = whole.end_day - whole.start_day;
+            let part = |from: f64, to: f64, period: Period, hours_from: f64, hours_to: f64| {
+                let scale = (hours_to - hours_from) / length;
+                let day = period == Period::Day;
+                ProfileInterval {
+                    start_day: from,
+                    end_day: to,
+                    period,
+                    verified_daily_active_hours: if day {
+                        whole.verified_daily_active_hours * scale
+                    } else {
+                        0.0
+                    },
+                    restoration_learning: if day {
+                        whole.restoration_learning.clone()
+                    } else {
+                        None
+                    },
+                    sources: whole
+                        .sources
+                        .iter()
+                        .map(|risk| SourceRisk {
+                            source: risk.source.clone(),
+                            expected_failures: if day {
+                                risk.expected_failures * scale
+                            } else {
+                                0.0
+                            },
+                        })
+                        .collect(),
+                    ..whole.clone()
+                }
+            };
+            let mut pieces = Vec::new();
+            if lo > whole.start_day {
+                // The before piece also carries the displaced middle.
+                pieces.push(part(whole.start_day, lo, Period::Day, whole.start_day, hi));
+                pieces.push(part(lo, hi, Period::Night, lo, hi));
+                if hi < whole.end_day {
+                    pieces.push(part(hi, whole.end_day, Period::Day, hi, whole.end_day));
+                }
+            } else {
+                assert!(
+                    hi < whole.end_day,
+                    "a night event cannot displace a whole daily interval"
+                );
+                pieces.push(part(lo, hi, Period::Night, lo, hi));
+                pieces.push(part(hi, whole.end_day, Period::Day, lo, whole.end_day));
+            }
+            intervals.splice(at..=at, pieces);
         }
 
         // Events with the deployed profile and original-boundary phase.

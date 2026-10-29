@@ -322,7 +322,7 @@ fn a_per_core_seed_states_every_finish_reason_ledger_and_event_classification() 
     item.depth = depth(&[3, 2, 3, 2], 12, 9, Some(&[3, 3, 3, 2]));
     item.events = EventCounts {
         day_learning: causes(3, 2, 1, 0),
-        day_post_finish: causes(2, 1, 0, 1),
+        day_post_finish: causes(3, 2, 0, 1),
         night: causes(1, 1, 0, 0),
     };
     let finishes = [
@@ -349,9 +349,12 @@ fn a_per_core_seed_states_every_finish_reason_ledger_and_event_classification() 
         row.post_finish_h = post_h;
         item.units.push(row);
     }
-    let mut ledger = ledger(2, 3, Some(9.5));
+    let mut ledger = ledger(2, 4, Some(4.25));
     ledger.provisional = 1;
     ledger.reclassified = 1;
+    ledger.charged_learning = 2;
+    ledger.charged_post_finish = 2;
+    ledger.charged_restoration_tagged = 1;
     item.ledger = Some(ledger);
     item.policy_evidence = PolicyEvidence {
         stopped_units: vec![uid(1), uid(3)],
@@ -414,7 +417,16 @@ fn a_per_core_seed_states_every_finish_reason_ledger_and_event_classification() 
     f.reclassified_from = Some(Classification::Unexplained);
     f.charged = false;
     f.implicated = vec![uid(1)];
-    item.event_views = vec![a, b, c, d, e, f];
+    let mut g = view(
+        "silent-g",
+        21.0,
+        Period::Day,
+        Phase::PostFinish,
+        Classification::Unreported,
+    );
+    g.charged = false;
+    g.implicated = vec![uid(0)];
+    item.event_views = vec![a, b, c, d, e, f, g];
     item.epochs = vec![epoch(None)];
     let group = group(
         "successor-per-core-events",

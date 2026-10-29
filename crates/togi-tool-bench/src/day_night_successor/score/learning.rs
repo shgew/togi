@@ -9,8 +9,8 @@
 use serde::Serialize;
 use togi_machine::PerCore;
 use togi_simrun::day_night::successor::{
-    Classification, FinishReason, FirmwareRestoration, MachineEvent, Period, Phase, ProfileStep,
-    Qualification, Record, RestorationOutcome, RestorationResult, StepIdentity, StepKind, UnitId,
+    Classification, FirmwareRestoration, MachineEvent, Period, Phase, ProfileStep, Qualification,
+    Record, RestorationOutcome, RestorationResult, StepIdentity, StepKind, UnitId,
 };
 
 use super::rules::{MAX_STEP, Rules};
