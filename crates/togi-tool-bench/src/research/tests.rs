@@ -333,9 +333,10 @@ fn valid_manifest_starts_the_ledger_with_its_hash() {
 #[test_case(|m| m["output"] = json!("runs/research/427/t1"), "is not an absolute path" ; "relative output")]
 #[test_case(|m| m["output"] = json!("/research/427/../x"), "is not an absolute path" ; "output escapes")]
 #[test_case(|m| m["confirmations"] = json!(2), "allows 1 confirmations" ; "too many confirmations")]
-#[test_case(|m| m["limits"] = json!({"wall_minutes": 0, "candidates": 12, "jobs": 4}), "must be positive" ; "zero limit")]
+#[test_case(|m| m["limits"] = json!({"wall_minutes": 0, "candidates": 12}), "must be positive" ; "zero wall limit")]
+#[test_case(|m| m["limits"] = json!({"wall_minutes": 480, "candidates": 0}), "must be positive" ; "zero candidate limit")]
 #[test_case(|m| m["suite"] = json!({"path": SUITE, "sha256": "x", "split": "dev"}), "names no bench suite" ; "suite in model mode")]
-#[test_case(|m| m["limits"] = json!([480, 12, 4]), "expected an object" ; "limits as an array")]
+#[test_case(|m| m["limits"] = json!([480, 12]), "expected an object" ; "limits as an array")]
 #[test_case(|m| m["frozen"][0] = json!(["Cargo.lock", sha256(b"lock")]), "expected an object" ; "pin as an array")]
 #[test_case(|m| m["hypotheses"][0] = json!(["h1", "a shared core term"]), "expected an object" ; "hypothesis as an array")]
 fn manifest_is_rejected(change: fn(&mut Value), expected: &str) {
@@ -552,7 +553,6 @@ fn deleted_input_stops_the_campaign() {
 #[test_case("forward --facts facts/original.jsonl.gz", "seal exactly the input's 1 confirmation" ; "unsealed development run")]
 #[test_case("forward --facts facts/original.jsonl.gz --seal 2", "seal exactly" ; "sealing development sessions away")]
 #[test_case("forward --facts facts/original.jsonl.gz --seal 1 --reference-machine m", "--reference-machine is not allowed" ; "reference machine")]
-#[test_case("forward --facts facts/original.jsonl.gz --seal 1 --jobs 8", "--jobs 8 is outside 1..=4" ; "too many workers")]
 #[test_case("forward --facts facts/original.jsonl.gz --seal 1 --seal 1", "given twice" ; "repeated flag")]
 #[test_case("fit --facts facts/original.jsonl.gz --out /research/427/t1/fit", "does not serve this role" ; "fit in a candidate run")]
 #[test_case("forward --facts facts/original.jsonl.gz --seal 1 stray", "is not a --flag" ; "positional argument")]
@@ -569,15 +569,19 @@ fn model_evaluator_is_refused(command: &str, expected: &str) {
     assert_eq!(live.stopped(), None);
 }
 
-#[test]
-fn worker_limit_is_added_when_absent() {
+#[test_case(None ; "evaluator default")]
+#[test_case(Some("8") ; "explicit evaluator workers")]
+fn evaluator_arguments_pass_through_unchanged(jobs: Option<&str>) {
     let fake = fake(&sessions());
     let mut live = Live::start(&model_manifest(&fake), 427, &fake);
-    let planned = live.begin(&fake, "h1", Role::Reference, FORWARD).unwrap();
-    assert_eq!(
-        planned.started.args,
-        ["--facts", FACTS, "--seal", "1", "--jobs", "4"].map(str::to_owned)
-    );
+    let mut command = FORWARD.to_owned();
+    let mut expected = ["--facts", FACTS, "--seal", "1"].map(str::to_owned).to_vec();
+    if let Some(jobs) = jobs {
+        command.push_str(&format!(" --jobs {jobs}"));
+        expected.extend(["--jobs".to_owned(), jobs.to_owned()]);
+    }
+    let planned = live.begin(&fake, "h1", Role::Reference, &command).unwrap();
+    assert_eq!(planned.started.args, expected);
     assert_eq!(planned.budget, std::time::Duration::from_mins(479));
     assert_eq!(planned.started.stdout, "raw/0001-h1-reference.stdout");
 }
@@ -603,9 +607,7 @@ fn forward_records_are_written_inside_the_run() {
             "--seal",
             "1",
             "--records",
-            &records,
-            "--jobs",
-            "4"
+            &records
         ]
         .map(str::to_owned)
     );
@@ -773,7 +775,7 @@ fn run_stopped_at_the_wall_limit_stops_the_campaign() {
 fn candidate_limit_stops_the_campaign() {
     let mut fake = fake(&sessions());
     let mut manifest = model_manifest(&fake);
-    manifest["limits"] = json!({"wall_minutes": 480, "candidates": 1, "jobs": 4});
+    manifest["limits"] = json!({"wall_minutes": 480, "candidates": 1});
     let mut live = Live::start(&manifest, 427, &fake);
     fake.edit("crates/togi-sim/src/model.rs", "candidate one");
     live.run(

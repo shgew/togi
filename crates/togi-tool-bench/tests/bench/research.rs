@@ -223,7 +223,7 @@ fn real_process_a_campaign_starts_runs_an_evaluator_stops_and_reports() {
     let raw = fs::read_to_string(fixture.run_dir().join("raw/0001-h1-reference.stdout")).unwrap();
     assert_eq!(
         raw,
-        format!("just fit --forward-only --facts {FACTS} --seal 1 --jobs 4\n")
+        format!("just fit --forward-only --facts {FACTS} --seal 1\n")
     );
 
     let refused = fixture
@@ -284,7 +284,7 @@ fn real_process_a_campaign_starts_runs_an_evaluator_stops_and_reports() {
     assert!(report.contains("Nothing was kept."), "{report}");
     assert!(
         report.contains(&format!(
-            "`just fit --forward-only --facts {FACTS} --seal 1 --jobs 4`"
+            "`just fit --forward-only --facts {FACTS} --seal 1`"
         )),
         "{report}"
     );
@@ -334,7 +334,7 @@ fn real_process_a_replaced_manifest_stops_the_campaign() {
     assert!(start.status.success(), "{}", text(&start.stderr));
     let copy = fixture.run_dir().join("manifest.json");
     let mut manifest: Value = serde_json::from_slice(&fs::read(&copy).unwrap()).unwrap();
-    manifest["limits"] = json!({"wall_minutes": 6000, "candidates": 12, "jobs": 4});
+    manifest["limits"] = json!({"wall_minutes": 6000, "candidates": 12});
     fs::write(&copy, serde_json::to_vec(&manifest).unwrap()).unwrap();
     let output = fixture.exec("reference", &FORWARD).output().unwrap();
     let stderr = text(&output.stderr);
@@ -471,7 +471,7 @@ fn real_process_an_evaluator_that_ignores_termination_is_killed_after_the_grace_
     let fixture = fixture();
     let mut manifest: Value =
         serde_json::from_slice(&fs::read(&fixture.manifest).unwrap()).unwrap();
-    manifest["limits"] = json!({"wall_minutes": 1, "candidates": 12, "jobs": 4});
+    manifest["limits"] = json!({"wall_minutes": 1, "candidates": 12});
     fs::write(
         &fixture.manifest,
         serde_json::to_vec_pretty(&manifest).unwrap(),
