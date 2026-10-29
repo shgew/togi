@@ -585,11 +585,7 @@ pub fn zeroed(profile: &UnitProfile) -> UnitProfile {
 }
 
 /// `profile` zeroed except the selected tuning group at `offset`.
-fn isolated_profile(
-    layout: &Layout<'_>,
-    unit: UnitId,
-    offset: TargetOffset,
-) -> UnitProfile {
+fn isolated_profile(layout: &Layout<'_>, unit: UnitId, offset: TargetOffset) -> UnitProfile {
     let units = match unit {
         UnitId::Ccd(_) => Units::coarse(layout.topology),
         UnitId::Core(_) => Units::cores(layout.topology),
