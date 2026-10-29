@@ -17,7 +17,7 @@ use super::decision::{Decision, PolicyPayload};
 use super::ledger::{Sig, is_adequate};
 use super::night_query::NotReady;
 use super::plan::workloads_of;
-use crate::day::{CoreProfile, awaiting, next_proposal, shallower, vetoes};
+use crate::day::{CoreProfile, awaiting, vetoes};
 use crate::night::{Cell, Layout, Matrix, Reuse, Source, qualification_cells};
 use crate::{EVIDENCE_EPOCH, UnitProfile};
 
@@ -707,9 +707,9 @@ impl State {
         let Some(history) = self.days.history.as_ref() else {
             return Ok(None);
         };
-        let caps = self.committed_caps()?;
+        let permission = self.permission()?;
         let view = self.day_view()?;
-        let Some(proposal) = next_proposal(history, &view.events, &caps)? else {
+        let Some(proposal) = permission.candidate(history, &view.events)? else {
             return Ok(None);
         };
         let vetoes = vetoes(&view.events);
@@ -732,7 +732,7 @@ impl State {
         let Some((_, wanted)) = awaiting(&statuses)? else {
             return Ok(None);
         };
-        let target = shallower(&wanted, &self.committed_caps()?)?;
+        let target = self.permission()?.clip(&wanted)?;
         Ok((!target.is_zero()).then_some(target))
     }
 

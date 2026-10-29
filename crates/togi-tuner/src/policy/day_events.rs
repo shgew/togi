@@ -452,7 +452,7 @@ impl State {
         };
         let intervals = self.committed_intervals();
         let reproductions = self.reproduction_outcomes();
-        let caps = self.committed_caps()?;
+        let caps = self.permission()?.limits;
         let qualified = self.qualified_profiles(now);
         let decision = day_step(&DayInputs {
             topology: &self.machine.cores,

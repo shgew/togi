@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use togi_journal::{
-    DefectDirection, DefectFound, DefectId, Event, EventKind, FixStamp, Payload, Seq,
+    DefectDirection, DefectFound, DefectId, Event, EventKind, FixStamp, Payload, Seq, UnitId,
 };
 use togi_machine::{CcdId, CoreSet};
 
@@ -157,6 +157,13 @@ impl DefectState {
             Payload::ConfigLoaded(loaded) => self.fixes = loaded.build.fixes,
             Payload::CcdEdge(edge) => self.fold_decision(event, Some(edge.ccd)),
             Payload::CcdCap(cap) => self.fold_decision(event, Some(cap.ccd)),
+            Payload::UnitEdge(edge) => {
+                let cores = match edge.unit {
+                    UnitId::Ccd(ccd) => self.ccd_cores(Some(ccd)),
+                    UnitId::Core(core) => std::iter::once(core).collect(),
+                };
+                self.fold_cores(event, cores);
+            }
             Payload::NightPlan(_)
             | Payload::NightQualification(_)
             | Payload::NightReproduction(_) => self.fold_decision(event, None),
@@ -227,15 +234,29 @@ impl DefectState {
             | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::TunerDecision(_)
+            | Payload::UnitMapping(_)
+            | Payload::ClimbDecision(_)
+            | Payload::UnitStop(_)
+            | Payload::CampaignStart(_)
+            | Payload::CampaignCharge(_)
+            | Payload::CampaignReclassified(_)
+            | Payload::FirmwareRestoration(_)
+            | Payload::SuccessorImported(_)
             | Payload::StateRebuilt(_) => {}
         }
     }
 
-    fn fold_decision(&mut self, event: &Event, ccd: Option<CcdId>) {
-        let cores: CoreSet = ccd
-            .and_then(|ccd| self.ccds.iter().find(|(known, _)| *known == ccd))
+    fn ccd_cores(&self, ccd: Option<CcdId>) -> CoreSet {
+        ccd.and_then(|ccd| self.ccds.iter().find(|(known, _)| *known == ccd))
             .map(|(_, cores)| *cores)
-            .unwrap_or_default();
+            .unwrap_or_default()
+    }
+
+    fn fold_decision(&mut self, event: &Event, ccd: Option<CcdId>) {
+        self.fold_cores(event, self.ccd_cores(ccd));
+    }
+
+    fn fold_cores(&mut self, event: &Event, cores: CoreSet) {
         for entry in self.registry {
             if self.fixes.fixes(entry.id) {
                 continue;

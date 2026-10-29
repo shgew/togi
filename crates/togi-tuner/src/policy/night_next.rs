@@ -2,13 +2,13 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use crate::{UnitId, UnitProfile};
+use crate::UnitProfile;
 use togi_journal::{
     Activity, Budget, DeadEnd, DeadEndCondition, Event, NightId, NightPlan, NightQualification,
     PlannedTask, QualificationState, Queue as JournalQueue, Seq, Stamp, TaskId, TaskStatus, Tested,
     UnavailableBackend,
 };
-use togi_machine::{BootId, CcdId, ContentId, TargetOffset, WorkloadId};
+use togi_machine::{BootId, ContentId, WorkloadId};
 
 use super::State;
 use super::decision::{Decision, PolicyPayload};
@@ -18,11 +18,9 @@ use super::night_query::{Action, EndReason, NightQuery, NotReady, runnable};
 use super::plan::TrialPlan;
 use super::qualify::QualWork;
 use super::reproduce::{Open, ReproView};
-use crate::cap::EDGE_MARGIN;
 use crate::night::{
-    AttemptScope, Cell, Consumed, EdgeU, Inputs, Layout, Matrix, NightTask, Queue, Reason,
-    Reproduction, ReproductionStage, Reuse, Stock, WallSecs, Work, mapping_cells, next_task,
-    qualification_cells,
+    AttemptScope, Cell, Consumed, Inputs, Layout, Matrix, NightTask, Queue, Reason, Reproduction,
+    ReproductionStage, Stock, WallSecs, Work, mapping_cells, next_task,
 };
 
 const fn activity_of(queue: Queue) -> Activity {
@@ -84,7 +82,7 @@ fn runnable_work(
 
 /// The runnable cell at `cursor` in `matrix`'s rotation: the first runnable cell from the cursor's place
 /// onward, wrapping, so a cell that needs an excluded backend is skipped, not consumed.
-fn rotated(
+pub(super) fn rotated(
     matrix: &Matrix,
     cursor: u32,
     unavailable: &BTreeMap<togi_machine::Backend, Vec<Seq>>,
@@ -114,13 +112,13 @@ fn unavailable_of(
 }
 
 /// A trial the night chose, before the plan commitment that names its task.
-struct Chosen {
-    task: TaskId,
-    activity: Activity,
-    cell: Cell,
-    profile: UnitProfile,
-    tested: Tested,
-    retry: bool,
+pub(super) struct Chosen {
+    pub(super) task: TaskId,
+    pub(super) activity: Activity,
+    pub(super) cell: Cell,
+    pub(super) profile: UnitProfile,
+    pub(super) tested: Tested,
+    pub(super) retry: bool,
 }
 
 /// The evidence a qualification commitment cites.
@@ -335,7 +333,7 @@ impl State {
     }
 
     /// How many nights opened before `night`: the ordinal of its filler task.
-    fn night_ordinal(&self, night: NightId) -> u32 {
+    pub(super) fn night_ordinal(&self, night: NightId) -> u32 {
         self.nights.plans.get(&night).map_or(0, |book| book.ordinal)
     }
 
@@ -730,72 +728,6 @@ impl State {
             Some(owed) => Action::Decide(owed),
             None => Action::EndNight(EndReason::Unavailable),
         }
-    }
-
-    /// The filler, run while no queue has due work. A cap probe first: on the CCD whose S is furthest from
-    /// its observed or censored edge U (largest S − U, ties to the lowest CCD), the mapping matrix one count
-    /// deeper than S, where that offset is admissible (at least U + `EDGE_MARGIN`). Otherwise D's exact
-    /// qualification cells. The durable filler cursor, the count of filler trials before this one across
-    /// every night, rotates the matrix and picks its cell round-robin, skipping cells that need an excluded
-    /// backend. Neither form finishes a mapping step. `None` when every such cell needs an excluded backend.
-    fn filler(
-        &self,
-        layout: &Layout<'_>,
-        mapping: &MappingPlan,
-        night: NightId,
-        unavailable: &BTreeMap<togi_machine::Backend, Vec<Seq>>,
-    ) -> Result<Option<Chosen>, NotReady> {
-        let task = TaskId {
-            queue: JournalQueue::Filler,
-            ordinal: self.night_ordinal(night),
-        };
-        let cursor = self.trials.filler_cursor();
-        let caps = self.committed_caps()?;
-        let mut probe: Option<(CcdId, TargetOffset, i64)> = None;
-        for ccd in self.ccds() {
-            let Some(edge) = mapping.edges.get(&ccd).and_then(EdgeU::offset) else {
-                continue;
-            };
-            let Some(cap) = caps.get(UnitId::Ccd(ccd)) else {
-                continue;
-            };
-            let Ok(deeper) = TargetOffset::new(cap.get() - 1) else {
-                continue;
-            };
-            if deeper.get() < edge.get() + i64::from(EDGE_MARGIN) {
-                continue;
-            }
-            let distance = cap.get() - edge.get();
-            if probe.is_none_or(|(_, _, furthest)| distance > furthest) {
-                probe = Some((ccd, deeper, distance));
-            }
-        }
-        if let Some((ccd, offset, _)) = probe {
-            let matrix = mapping_cells(layout, UnitId::Ccd(ccd), offset, cursor)?;
-            if let Some(cell) = rotated(&matrix, cursor, unavailable) {
-                return Ok(Some(Chosen {
-                    task,
-                    activity: Activity::Mapping,
-                    cell,
-                    profile: matrix.profile,
-                    tested: Tested::Isolated { ccd, offset },
-                    retry: false,
-                }));
-            }
-        }
-        let Some(history) = self.days.history.as_ref() else {
-            return Ok(None);
-        };
-        let matrix =
-            qualification_cells(layout, &history.current().profile, cursor, &Reuse::AllFresh)?;
-        Ok(rotated(&matrix, cursor, unavailable).map(|cell| Chosen {
-            task,
-            activity: Activity::Qualification,
-            cell,
-            profile: matrix.profile,
-            tested: Tested::Exact {},
-            retry: false,
-        }))
     }
 
     /// The class of a recorded trial's intent, for telling a retry from a first attempt.
