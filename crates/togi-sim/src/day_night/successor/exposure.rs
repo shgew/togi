@@ -308,7 +308,7 @@ pub struct Failure {
 
 /// What an observed prefix of a trial exposes. Intended duration is the class identity and is
 /// never shortened by the prefix.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SliceSeconds {
     pub intended: Duration,
     pub observed: Duration,

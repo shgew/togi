@@ -131,8 +131,16 @@ impl Scenario {
     pub fn stock_background_per_hour(&self) -> f64 {
         self.original.stock_background_per_hour()
     }
-    pub fn non_cpu(&self) -> Option<super::NonCpuSchedule> {
-        self.original.non_cpu()
+    /// One-based public day of the original family's registered non-CPU interruption.
+    pub fn non_cpu_event(
+        &self,
+        day: u32,
+    ) -> Result<Option<(super::NonCpuCause, super::NonCpuAnswer)>, TruthError> {
+        self.epoch(day)?;
+        Ok(self
+            .original
+            .non_cpu()
+            .and_then(|schedule| schedule.on(day - 1).map(|cause| (cause, schedule.answer()))))
     }
     pub fn epoch(&self, day: u32) -> Result<TruthEpoch, TruthError> {
         if day == 0 {

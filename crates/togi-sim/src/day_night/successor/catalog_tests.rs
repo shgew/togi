@@ -207,3 +207,18 @@ fn inherited_uniform_sources_preserve_all_original_families() {
         }
     }
 }
+
+#[test_case(30, false)]
+#[test_case(31, true)]
+fn non_cpu_interruptions_use_one_based_public_days(day: u32, event: bool) {
+    let scenario = Scenario::builtin("successor-non-cpu-correct", 20001).unwrap();
+    let expected = event.then_some((
+        crate::day_night::NonCpuCause::Graphics,
+        crate::day_night::NonCpuAnswer::NotCpu,
+    ));
+    assert_eq!(scenario.non_cpu_event(day).unwrap(), expected);
+    assert_eq!(
+        scenario.non_cpu_event(0),
+        Err(TruthError::Invalid("one-based calendar day"))
+    );
+}

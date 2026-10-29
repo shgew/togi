@@ -459,6 +459,8 @@ is the exact table maximum, not an unverified optimizer estimate.
 moving truth changes before days 46, 91, …, 451, and firmware truth changes
 before day 181's active use. References are recomputed for the epoch and
 grouping; no safety grace interval is implied.
+`non_cpu_event(day)` uses the same public numbering when exposing the inherited
+graphics/power interruptions and their registered answer behavior.
 
 Truth history separates actual thermal exposure from policy-eligible time.
 Ordinary onset is zero, delayed onset is 600 uninterrupted seconds, and

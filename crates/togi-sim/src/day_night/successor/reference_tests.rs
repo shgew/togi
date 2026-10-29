@@ -13,7 +13,7 @@ fn reference(scenario: &Scenario, day: u32, grouping: UnitGrouping) -> Reference
         scenario,
         day,
         grouping,
-        calendar,
+        &calendar,
         LAMBDA,
         NUMERICAL_TOLERANCE,
     )
@@ -116,7 +116,7 @@ fn grouping_must_be_an_exact_partition() {
             &small,
             1,
             cores,
-            ReferenceCalendar::standard(&small).unwrap(),
+            &ReferenceCalendar::standard(&small).unwrap(),
             LAMBDA,
             NUMERICAL_TOLERANCE
         )
@@ -147,7 +147,7 @@ fn calendar_validates_ordered_mix() {
             &scenario,
             1,
             grouping.clone(),
-            wrong,
+            &wrong,
             LAMBDA,
             NUMERICAL_TOLERANCE
         )
@@ -159,7 +159,7 @@ fn calendar_validates_ordered_mix() {
             &scenario,
             0,
             grouping.clone(),
-            calendar.clone(),
+            &calendar,
             LAMBDA,
             NUMERICAL_TOLERANCE
         )
@@ -170,13 +170,13 @@ fn calendar_validates_ordered_mix() {
             &scenario,
             1,
             grouping.clone(),
-            calendar.clone(),
+            &calendar,
             0.0,
             NUMERICAL_TOLERANCE
         )
         .is_err()
     );
-    assert!(Reference::new(&scenario, 1, grouping, calendar, LAMBDA, -1.0).is_err());
+    assert!(Reference::new(&scenario, 1, grouping, &calendar, LAMBDA, -1.0).is_err());
 }
 
 #[test]

@@ -285,7 +285,7 @@ impl Reference {
         scenario: &Scenario,
         day: u32,
         grouping: UnitGrouping,
-        calendar: ReferenceCalendar,
+        calendar: &ReferenceCalendar,
         lambda: f64,
         tolerance: f64,
     ) -> Result<Self, TruthError> {
@@ -300,7 +300,9 @@ impl Reference {
         }
         let durations = calendar.durations();
         let active_s = calendar.active.as_secs_f64();
-        let sleep = CYCLE - calendar.active;
+        let sleep = CYCLE
+            .checked_sub(calendar.active)
+            .ok_or(TruthError::Invalid("daily reference calendar"))?;
         let mut cycle = blocks
             .iter()
             .zip(&durations)
@@ -365,6 +367,10 @@ impl Reference {
     }
 
     /// Validate monotone tables and derive the per-unit and cross-unit structure.
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "lookup arrays move into the owned reference rather than being copied from borrowed tables"
+    )]
     fn assemble(
         grouping: UnitGrouping,
         rates: [Option<Table>; CORES],
