@@ -13,6 +13,7 @@ use togi_machine::{
     PerCore, Running, TargetOffset, TrialResult, TrialRole, TrialSpec,
 };
 use togi_tuner::policy::TrialPlan;
+use togi_tuner::{Topology, unit::Units};
 
 use crate::error::{SessionError, Step};
 use crate::evidence::{self, ProcessFaults, RecordedMce, TrialEvidence};
@@ -135,9 +136,12 @@ impl Session<'_> {
     /// Puts the machine on the whole profile the plan runs at. Nothing is written when that profile is applied
     /// already.
     pub(crate) fn ensure_profile(&mut self, plan: &TrialPlan) -> Step<()> {
+        let topology = Topology::new(&self.topology)
+            .map_err(togi_tuner::policy::PlanError::from)
+            .map_err(SessionError::Plan)?;
         let target: PerCore<TargetOffset> = plan
             .profile
-            .expand(&self.topology)
+            .expand(&Units::for_profile(&topology, &plan.profile))
             .map_err(togi_tuner::policy::PlanError::from)
             .map_err(SessionError::Plan)?;
         let applied = self
