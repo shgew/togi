@@ -319,7 +319,7 @@ object_only! {
         pub witnesses: Vec<String>,
     }
 
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct ProfileVeto {
         pub event: String,
