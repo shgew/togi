@@ -34,7 +34,6 @@ pub(super) struct Mapped {
     pub(super) next_ordinal: u32,
 }
 
-
 /// Everything mapping decides this query.
 #[derive(Clone, Debug)]
 pub(super) struct MappingPlan {
@@ -374,9 +373,7 @@ impl Mapped {
     }
 }
 
-
 impl State {
-
     /// Whether every class of the target's mapping step already has an adequate mapping exposure there.
     fn step_covered(
         &self,
@@ -490,5 +487,4 @@ impl State {
             ))
         })
     }
-
 }
