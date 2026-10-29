@@ -85,11 +85,11 @@ fmt:
 gate: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
-    just check-one fmt
+    just check-one quality
     just lint
     names=$(just _nextest-checks)
     read -r -a nextest <<< "$names"
-    just check-one module changes doc-links board-test sql-test "${nextest[@]}"
+    just check-one "${nextest[@]}"
     cargo test --locked --doc
     cargo deny --locked check bans licenses sources
     cargo shear
@@ -154,7 +154,7 @@ check: _dev-shell
     read -r -a checks <<< "$names"
     just check-one "${checks[@]}"
 
-# Build named flake checks, streaming their build logs (`just check-one nextest`); `nextest-tools`, recovery and VM checks opt into CI-tier evidence
+# Build named flake checks, streaming their build logs (`just check-one quality`); nextest-tools, recovery and VM checks opt into CI-tier evidence
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -263,7 +263,7 @@ release: _dev-shell
 release-preview: _dev-shell
     cargo run --quiet --locked -p togi-tool-release
 
-# Check the changelog fragments in changes/ (the changes flake check)
+# Check the changelog fragments in changes/ (also a member of the quality flake check)
 [group('release')]
 changes: _dev-shell
     cargo run --quiet --locked -p togi-tool-release -- -check changes
@@ -364,7 +364,7 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
     just gate
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Push a review fix: format, lint, check doc links, build local nextest checks and changed board/SQL views, publish built outputs, then push as `just ship` does
+# Push a review fix: format, lint, build quality and local nextest checks, publish built outputs, then push as just ship does
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -375,13 +375,7 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
         exit 1
     }
     just lint
-    just check-one doc-links
-    if ! git diff --quiet "$pushed" HEAD -- tools/board; then
-        just board-test
-    fi
-    if ! git diff --quiet "$pushed" HEAD -- tools/sql; then
-        just sql-test
-    fi
+    just check-one quality
     names=$(just _nextest-checks)
     read -r -a nextest <<< "$names"
     just check-one "${nextest[@]}"

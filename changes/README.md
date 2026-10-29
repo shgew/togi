@@ -13,4 +13,4 @@ Each pull request with a change a user of togi would notice adds one file here, 
 - A breaking entry starts with `- **BREAKING**`, then what the operator must do or will see. Any breaking entry makes the release bump the minor version before 1.0.
 - A pull request that changes something not yet released edits that change's file instead of adding its own.
 
-`just changes` checks these rules, as does the `changes` flake check in CI. `just release-preview` shows the release section these files make.
+`just changes` checks these rules, as does the changelog-fragment member of the `quality` flake check in CI. `just release-preview` shows the release section these files make.

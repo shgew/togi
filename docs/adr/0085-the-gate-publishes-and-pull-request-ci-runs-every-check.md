@@ -33,3 +33,11 @@ The gate already builds identical derivations. Of 154 check identities, 154 matc
 - The gate depends on a token for its publish step; without one, CI does the building the gate could have spared.
 - An owner's gate run on a different head than the merged one publishes outputs no one asks for; the cache holds them harmlessly within the free tier's 5 GiB until Cachix evicts them.
 - Time to green and runner-minutes are measured after merge on one gated and one ungated pull request, against the modelled figures above.
+
+## Amendment: packed repository quality (#1429)
+
+`quality` is the one public local-tier check for formatting, changelog fragments, documentation links, board fixtures, SQL fixtures and module assertions. It is a link farm over six private member derivations, not aliases for six public checks. Each member retains its existing source scope, derivation name and build log; linking their outputs preserves independent cache reuse and keeps those outputs in the published closure.
+
+The gate builds `quality` before Cargo Clippy and local nextest. The review-fix path builds it on every push rather than selecting board and SQL fixtures by changed paths. Pull request CI packs the public checks `quality`, `deny`, `shear` and `package` into its light job; dispatch mode still selects every public check separately. The release's post-commit package/test build also includes `quality`, so the assembled changelog is checked.
+
+Clippy and doctests keep the local Cargo arrangement above. Deny and shear remain separate public checks: the gate's Cargo deny invocation omits the advisory audit that the flake check includes, and the gate runs shear through Cargo rather than building its flake output. Folding either into `quality` would change that arrangement. No test or assertion is removed or moved between tiers.

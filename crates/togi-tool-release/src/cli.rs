@@ -32,7 +32,7 @@ Usage: release [-commit | -publish | -check dir]
 
 Without flags, prints the release the release workflow would make from origin/main.
   -check dir
-    \tvalidate the changelog fragments in dir and exit (the changes flake check)
+    \tvalidate the changelog fragments in dir and exit (also part of the quality flake check)
   -commit
     \tcommit the next release on top of origin/main and check it out, refusing while any issue, open or closed, \
 is labeled needs-hardware, once the check workflow passed on origin/main, waiting up to an hour for it (release \
