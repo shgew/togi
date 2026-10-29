@@ -1253,10 +1253,14 @@ fn trial_bars_have_no_strip_under_their_track(width: u16, height: u16, colours: 
     assert!(below.chars().all(|c| c == ' '), "{below:?}");
 }
 
-#[test_case(togi_tuner::policy::CapReason::NoAdequateClass, "no adequate mapping class"; "no mapping class")]
-#[test_case(togi_tuner::policy::CapReason::UnknownEdge, "unknown edge"; "unknown edge")]
-#[test_case(togi_tuner::policy::CapReason::NoJustifiedDecay, "no justified decay"; "no justified decay")]
-fn zero_cap_reasons_are_visible_without_colour(reason: togi_tuner::policy::CapReason, words: &str) {
+#[test_case(togi_tuner::policy::CapReason::NoAdequateClass, include_str!("snapshots/committed-cap-current-zero.snap"); "no mapping class")]
+#[test_case(togi_tuner::policy::CapReason::UnknownEdge, include_str!("snapshots/committed-cap-current-unknown-edge.snap"); "unknown edge")]
+#[test_case(togi_tuner::policy::CapReason::NoJustifiedDecay, include_str!("snapshots/committed-cap-current-no-decay.snap"); "no justified decay")]
+fn committed_caps_keep_their_binding_separate_from_current_zero_reasons(
+    reason: togi_tuner::policy::CapReason,
+    snapshot: &str,
+) {
+    let words = reason.label();
     let mut projection = ccd_projection();
     projection.evidence = Some(togi_tuner::policy::CapEvidence {
         offset: togi_machine::TargetOffset::ZERO,
@@ -1277,7 +1281,13 @@ fn zero_cap_reasons_are_visible_without_colour(reason: togi_tuner::policy::CapRe
         }],
         slope_inputs: Vec::new(),
     });
-    assert!(facts_text(&projection, 115).contains(words));
+    let (_, expected) = snapshot
+        .split_once("\n---\n")
+        .expect("an embedded insta snapshot header");
+    assert_eq!(format!("{}\n", facts_text(&projection, 180)), expected);
+    let narrow = facts_text(&projection, 115);
+    assert!(narrow.contains("S -15"), "{narrow}");
+    assert!(narrow.contains(&format!("calc 0: {words}")), "{narrow}");
     assert_eq!(
         coverage_text(&projection, 115),
         "Ruleset 13 mapping: 1.5h eligible · 1 gaps (1 non-mapping)"

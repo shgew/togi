@@ -171,7 +171,7 @@ pub(crate) fn cap_words(cap: &CapProjection) -> (String, String) {
     )
 }
 
-/// The distance row: D, S with its slope and binding, U and the remaining distance.
+/// The distance row: committed D/S/binding, the separate current calculation, U and distance.
 pub(super) fn facts_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -> Line<'static> {
     let sep = || scene.paint(Paint::Track, " · ");
     let text = |paint: Paint, value: String| Line::from(scene.paint(paint, value));
@@ -191,10 +191,7 @@ pub(super) fn facts_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -
                 Form::new(text(Paint::Text, short), 0),
             ],
         ));
-        let bound = ccd.evidence.as_ref().map_or_else(
-            || binding_words(&cap.binding),
-            |evidence| evidence.reason.label().to_owned(),
-        );
+        let bound = binding_words(&cap.binding);
         clauses.push(Clause::new(
             sep(),
             vec![
@@ -203,6 +200,22 @@ pub(super) fn facts_line(scene: &Scene<'_>, ccd: &CcdProjection, width: usize) -
                 Form::empty(),
             ],
         ));
+        if let Some(evidence) = &ccd.evidence {
+            let offset = offset_text(evidence.offset);
+            clauses.push(Clause::new(
+                sep(),
+                vec![
+                    Form::new(
+                        text(
+                            Paint::Grey,
+                            format!("calc {offset}: {}", evidence.reason.label()),
+                        ),
+                        0,
+                    ),
+                    Form::new(text(Paint::Grey, format!("calc {offset}")), 1),
+                ],
+            ));
+        }
     } else {
         let reason = ccd
             .evidence
