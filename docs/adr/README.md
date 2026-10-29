@@ -25,14 +25,9 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0050](0050-json-for-first-party-data-files.md) JSON for every first-party data file — in force.
 - [0076](0076-kmscon-tuning-display.md) kmscon is the optional tuning-boot display — in force.
 - [0078](0078-controller-clock-and-rotation.md) Cap isolated controller clocks and rotate loaded hosts — in force.
-- [0079](0079-day-observer-night-tester.md) Days observe; nights test — in force.
-- [0080](0080-per-ccd-first.md) Tune one offset per CCD first — in force.
-- [0081](0081-margin-from-measured-slope.md) Set the cap from measured slope — in force.
-- [0082](0082-bios-stays-at-zero.md) Keep BIOS Curve Optimizer at zero — in force.
-- [0083](0083-ask-after-unclean-ends.md) Ask after unclean daily ends — in force.
-- [0084](0084-a-fresh-ruleset-transition.md) Start Ruleset 13 fresh, retaining raw daily observations — in force.
 - [0092](0092-rust-native-implementation.md) togi is a native Rust program; tools follow the same language rule — in force; supersedes 0001, 0048, 0058 and 0071.
 - [0093](0093-journal-fold-and-snapshots.md) The journal is authoritative; folds drive decisions and snapshots cache reads — in force; supersedes 0003, 0059 and 0077.
+- [0094](0094-two-ends-bounded-exploration.md) Two ends: clean daily holds earn bounded, night-qualified steps — in force, implementation pending; Ruleset 13 stays the shipped binary (registered gate not met); consolidates 0079–0084.
 
 ## Historical
 
@@ -97,6 +92,12 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0074](0074-pull-request-ci-gates-landing-on-main.md) Pull request CI gates landing on main — historical: [Development, CI and release gates](../development.md#ci-and-release-gates).
 - [0075](0075-nextest-runs-in-dependency-layer-groups.md) Nextest runs in dependency-layer groups — historical: [Development, Nextest by concern](../development.md#nextest-by-concern).
 - [0077](0077-verified-folded-state-snapshots.md) Verified folded-state snapshots are a cache, never authority — superseded by [0093](0093-journal-fold-and-snapshots.md).
+- [0079](0079-day-observer-night-tester.md) Days observe; nights test — historical: retained and consolidated in [0094](0094-two-ends-bounded-exploration.md).
+- [0080](0080-per-ccd-first.md) Tune one offset per CCD first — historical: retained, with the per-core continuation, in [0094](0094-two-ends-bounded-exploration.md).
+- [0081](0081-margin-from-measured-slope.md) Set the cap from measured slope — superseded by [0094](0094-two-ends-bounded-exploration.md).
+- [0082](0082-bios-stays-at-zero.md) Keep BIOS Curve Optimizer at zero — historical: retained in [0094](0094-two-ends-bounded-exploration.md).
+- [0083](0083-ask-after-unclean-ends.md) Ask after unclean daily ends — amended by [0094](0094-two-ends-bounded-exploration.md) (newest-step blame as a non-causal stop).
+- [0084](0084-a-fresh-ruleset-transition.md) Start Ruleset 13 fresh, retaining raw daily observations — historical: Ruleset 13 cutover; [0094](0094-two-ends-bounded-exploration.md) specifies the successor transition.
 - [0085](0085-the-gate-publishes-and-pull-request-ci-runs-every-check.md) The gate publishes and pull request CI runs every check — historical: [Development, Check cache](../development.md#check-cache).
 - [0086](0086-heavy-runs-wait-for-memory.md) Heavy runs wait for memory, not for each other — historical: host scheduling is outside the repository.
 - [0087](0087-simulations-are-research-tools-not-checks.md) Simulations are research tools, not checks — historical: [Development, Simulations and research](../development.md#simulations-and-research).

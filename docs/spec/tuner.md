@@ -8,6 +8,10 @@ Ruleset 13 is implemented by `togi_tuner::RULESET = 3`; the design number is dis
 
 The replaced per-core policy is removed, not left selectable: constraints, cores, decide, failures, hunt, later, optimum, phase plans, phases, R7 attribution/backoff, rounds, skip and checking chains/ordinary/reruns. Partial-load generation, machine seams, SMU transactions, containment and recovery remain. The stats tools' chain, counterfactual, R7-attribution and hunt analyses are retired with their callers.
 
+## Ruleset 14 (specified; not yet implemented)
+
+The approved successor, two-ends D, is specified in [Ruleset 14](tuner-ruleset14.md). It is **not implemented by the binary**: the Ruleset 13 rules below remain the normative shipped contract. The sibling document separates future policy from current behavior and owns the successor's transition, allowance, journal/reporting and per-core continuation contracts. Compatibility changes and nonzero activation remain separately gated.
+
 ## Invariants
 
 1. Targets are in [-50, 0]; smaller is deeper. Every core of a CCD receives that CCD's offset. Per-core refinement is outside this ruleset.

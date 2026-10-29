@@ -1,6 +1,6 @@
 # Ask after unclean daily ends
 
-Status: accepted for the Ruleset 13 stack.
+Status: accepted for the Ruleset 13 stack (shipped in v0.12.0; its registered gate was not met); amended by [0094](0094-two-ends-bounded-exploration.md). Revisable event classification and whole-profile vetoes are retained; newest-step blame, rejected below as causal localization, is used only as a non-causal stopping heuristic.
 
 A missing clean-stop marker is evidence of an unclean end, not proof that Curve Optimizer caused it. The owner chose to gather reset/kernel evidence and ask what happened, without counting orderly shutdowns as crashes ([#1214](https://github.com/shgew/togi/issues/1214), [#1215 Q15](https://github.com/shgew/togi/issues/1215)). [Daily events](../spec/tuner.md#daily-events) own classification, provisional retreat, profile vetoes, hold resets, unexpired escalation and the promotion block; [the journal](../spec/journal.md#day-observation) owns revisable raw answers.
 

@@ -1,6 +1,6 @@
 # Set the cap from measured slope
 
-Status: accepted for the Ruleset 13 stack.
+Status: accepted for the Ruleset 13 stack (shipped in v0.12.0; its registered gate was not met); superseded by [0094](0094-two-ends-bounded-exploration.md), which replaces the statistical cap as promotion permission with bounded exploration. The rejected overconfident extrapolation and stock-subtraction reasoning below is preserved there.
 
 Short passing tests cannot establish a rare daily crash rate. The owner chose a margin from controlled night evidence, not an annual-rate guarantee ([#1214](https://github.com/shgew/togi/issues/1214), [#1215 Q13–Q14](https://github.com/shgew/togi/issues/1215)). [Cap S](../spec/tuner.md#cap-s-margin-from-measured-slope) owns the edge margin, incremental stock-relative budget, fallback, exact rate bound and two-sided measured-slope calculation.
 
