@@ -7,6 +7,8 @@ use togi_journal::{Event, Payload};
 
 use crate::{OutputFacts, Renderer, Style, escape_text, style_for};
 
+mod ruleset14;
+
 fn event_with(kind: &str, msg: &str, data: &Value) -> Event {
     let line = json!({
         "seq": 1,

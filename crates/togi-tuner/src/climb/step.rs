@@ -4,7 +4,7 @@ use crate::unit::{UnitId, UnitProfile};
 
 use super::{Ceilings, FinishBook};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Proposal {
     pub unit: UnitId,
     pub from: TargetOffset,

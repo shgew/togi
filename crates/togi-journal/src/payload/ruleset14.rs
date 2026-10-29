@@ -18,6 +18,24 @@ pub enum UnitId {
     Core(CoreId),
 }
 
+impl UnitId {
+    pub const fn ccd(self) -> Option<CcdId> {
+        match self {
+            Self::Ccd(ccd) => Some(ccd),
+            Self::Core(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for UnitId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ccd(ccd) => ccd.fmt(f),
+            Self::Core(core) => write!(f, "core {core}"),
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for UnitId {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use serde::de::Error as _;
@@ -123,6 +141,7 @@ object_only! {
         AllowanceExhausted {},
         UnknownEdge { unit: UnitId },
         Finished { unit: UnitId },
+        Ceiling { unit: UnitId },
         CampaignHistory {},
         SameBoot {},
         HoldProfile {},
@@ -188,6 +207,7 @@ object_only! {
         RestorationBackstep { event: DayEventId },
         AdverseCeiling {},
         Veto {},
+        Predecessor { original: Provenance },
     }
 
     /// Sticky completion: the envelope records time; witnesses retain the edge/application history.

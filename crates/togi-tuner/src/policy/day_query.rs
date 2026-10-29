@@ -1,26 +1,20 @@
 //! The day query: the intervals, events, vetoes, hold and step a day invocation owes.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::UnitProfile;
 use jiff::Timestamp;
 use togi_journal::{
-    ApplicationId, DayHold, DayInterval, DayStep, DecisionId, HoldChange, HoldReason,
-    IntervalState, ObservedProfile, QualificationState, RetreatCause as JournalRetreatCause, Seq,
-    StepCauses, StepKind,
+    ApplicationId, DayHold, DayInterval, HoldChange, IntervalState, ObservedProfile, Seq,
 };
 use togi_machine::{BootId, ObservedOffset, PerCore};
 
 use super::State;
 use super::books::{Committed, Observed};
-use super::day_events::DayView;
 use super::decision::{Decision, PolicyPayload};
 use super::night_query::NotReady;
-use crate::day::{
-    Blocker, CoreProfile, DayDecision, DayInputs, EventId, IntervalKind, Invocation, Readback,
-    RetreatCause, day_step,
-};
+use crate::day::{CoreProfile, IntervalKind, Invocation, Readback};
 
 /// What a day invocation asks.
 #[derive(Clone, Debug)]
@@ -291,7 +285,7 @@ impl State {
     }
 
     /// The commitments of the intervals credited to the exact current D, with their seconds.
-    fn credited(&self) -> (Vec<Seq>, u64) {
+    pub(super) fn credited(&self) -> (Vec<Seq>, u64) {
         let Some(history) = self.days.history.as_ref() else {
             return (Vec::new(), 0);
         };
@@ -315,9 +309,6 @@ impl State {
             return Ok(None);
         };
         let current = history.current();
-        if current.profile.is_zero() {
-            return Ok(None);
-        }
         let Some(application) = self
             .days
             .applications
@@ -357,373 +348,6 @@ impl State {
         )))
     }
 
-    fn hold_reasons(
-        &self,
-        blockers: &[Blocker],
-        proposal_profile: Option<&UnitProfile>,
-    ) -> Result<Vec<HoldReason>, NotReady> {
-        let mut reasons = Vec::new();
-        for blocker in blockers {
-            match blocker {
-                Blocker::SameBoot => {}
-                Blocker::PausedColdBoot => reasons.push(HoldReason::Paused {}),
-                Blocker::Freeze => reasons.push(HoldReason::Frozen {}),
-                Blocker::PendingQuestion { events } => {
-                    reasons.extend(events.iter().filter_map(|event| match event {
-                        EventId::Boot(boot) => {
-                            Some(HoldReason::QuestionPending { boot: boot.clone() })
-                        }
-                        EventId::Unobserved(_) | EventId::Requalification(_) => None,
-                    }));
-                }
-                Blocker::UnresolvedEvents { events } => {
-                    reasons.extend(events.iter().filter_map(|event| {
-                        self.journal_event_id(event)
-                            .map(|event| HoldReason::EventUnresolved { event })
-                    }));
-                }
-                Blocker::NothingToPromote => reasons.push(HoldReason::AtCap {}),
-                Blocker::Vetoed { veto, .. } => {
-                    reasons.extend(
-                        self.journal_event_id(&veto.event)
-                            .map(|veto| HoldReason::Vetoed { veto }),
-                    );
-                }
-                Blocker::NotQualified { .. } => {
-                    let expired = proposal_profile.is_some_and(|profile| {
-                        self.qualification_records().iter().any(|record| {
-                            profile.matches_ccd(record.start.payload.profile.ccd())
-                                && self.is_current_record(record)
-                                && matches!(
-                                    record.latest.payload.state,
-                                    QualificationState::Complete { .. }
-                                )
-                        })
-                    });
-                    reasons.push(if expired {
-                        HoldReason::Expired {}
-                    } else {
-                        HoldReason::NotQualified {}
-                    });
-                }
-                Blocker::QualificationFailed { proposal } => {
-                    reasons.push(HoldReason::QualificationFailed {
-                        profile: self.ccd_vector(&proposal.profile)?,
-                        witnesses: self
-                            .qualification_blocked(&proposal.profile)
-                            .unwrap_or_default(),
-                    });
-                }
-                Blocker::HoldIncomplete {
-                    credited_secs,
-                    required_secs,
-                } => reasons.push(HoldReason::Incomplete {
-                    credited_s: *credited_secs,
-                    required_s: *required_secs,
-                }),
-            }
-        }
-        Ok(reasons)
-    }
-
-    /// The proposal a conclusive qualification failure durably blocks, if the next proposal is one:
-    /// the day policy asks about that exact profile only, so a genuinely different proposal is free.
-    fn blocked_proposals(
-        &self,
-        history: &crate::day::DayHistory,
-        view: &DayView,
-        permission: &super::permission::Permission,
-    ) -> Result<BTreeSet<UnitProfile>, NotReady> {
-        Ok(permission
-            .candidate(history, &view.events)?
-            .map(|proposal| proposal.profile)
-            .filter(|profile| self.qualification_blocked(profile).is_some())
-            .into_iter()
-            .collect())
-    }
-
-    fn event_commit(&self, id: &EventId) -> Option<Seq> {
-        self.journal_event_id(id)
-            .and_then(|id| self.days.events.get(&id))
-            .map(|book| book.latest.seq)
-    }
-
-    fn qualification_seq(&self, profile: &UnitProfile) -> Option<Seq> {
-        self.qualification_records()
-            .iter()
-            .filter(|record| {
-                profile.matches_ccd(record.start.payload.profile.ccd())
-                    && self.is_current_record(record)
-                    && matches!(
-                        record.latest.payload.state,
-                        QualificationState::Complete { .. }
-                    )
-            })
-            .map(|record| record.latest.seq)
-            .max()
-    }
-
-    /// The `day.step` this invocation owes. A boot gets one hold or promotion, so once it has any
-    /// step neither is owed again; a required retreat or firmware reset is owed whenever it differs
-    /// from the profile the boot's latest step already proposed, so a same-boot restart that finds a
-    /// firmware change or a cap under D still yields it, while an issued decision is never repeated.
-    fn owed_day_step(
-        &self,
-        query: &DayQuery,
-        view: &DayView,
-    ) -> Result<Option<Decision>, NotReady> {
-        let Some(history) = self.days.history.as_ref() else {
-            return Ok(None);
-        };
-        let issued = self
-            .days
-            .steps
-            .values()
-            .rfind(|step| step.payload.cold_boot == query.boot);
-        let intervals = self.committed_intervals();
-        let reproductions = self.reproduction_outcomes();
-        let permission = self.permission()?;
-        let qualified = self.qualified_profiles(query.now);
-        let blocked = self.blocked_proposals(history, view, &permission)?;
-        let decision = day_step(&DayInputs {
-            topology: &self.machine.cores,
-            history,
-            events: &view.events,
-            reproductions: &reproductions,
-            intervals: intervals.as_slice(),
-            caps: &permission.limits,
-            qualified: &qualified,
-            blocked: &blocked,
-            firmware: self.firmware_state(),
-            freeze: self.days.freeze,
-            invocation: query.invocation,
-            params: self.params.hold,
-        })?;
-        if issued.is_some()
-            && matches!(
-                decision,
-                DayDecision::Hold { .. } | DayDecision::Promote { .. }
-            )
-        {
-            return Ok(None);
-        }
-        let applied = &history.current().profile;
-        let old = self.ccd_vector(applied)?;
-        let (credited, hold_s) = self.credited();
-        let id = DecisionId(
-            self.days
-                .steps
-                .keys()
-                .next_back()
-                .map_or(0, |last| last + 1),
-        );
-        let predecessor = self.days.steps.keys().next_back().copied().map(DecisionId);
-        let changed = |to: &UnitProfile| -> Vec<togi_machine::CcdId> {
-            to.iter()
-                .filter(|&(ccd, offset)| applied.get(ccd) != Some(offset))
-                .filter_map(|(unit, _)| unit.ccd())
-                .collect()
-        };
-        let cap_commits: Vec<Seq> = self.nights.caps.values().map(|cap| cap.seq).collect();
-        // Witnesses a step cites beyond its `causes`: a restoration's and a blocking failure's.
-        let mut witnesses: Vec<Seq> = Vec::new();
-        let (proposed, step, reason, causes, hours) = match decision {
-            DayDecision::Hold { blockers } => {
-                if matches!(query.invocation, Invocation::SameBoot) {
-                    return Ok(None);
-                }
-                let proposal_profile = permission
-                    .candidate(history, &view.events)?
-                    .map(|p| p.profile);
-                let blocked_by = self.hold_reasons(&blockers, proposal_profile.as_ref())?;
-                for reason in &blocked_by {
-                    if let HoldReason::QualificationFailed {
-                        witnesses: failures,
-                        ..
-                    } = reason
-                    {
-                        witnesses.extend(failures.iter().copied());
-                    }
-                }
-                (
-                    old.clone(),
-                    StepKind::Hold { blocked_by },
-                    "the day profile holds".to_owned(),
-                    StepCauses {
-                        caps: cap_commits,
-                        ..StepCauses::default()
-                    },
-                    credited,
-                )
-            }
-            DayDecision::Promote { proposal, .. } => {
-                // A restoration cites the reclassified events and their last answers, the original
-                // promotion and the step back it undoes (`docs/spec/tuner.md`, Undoing a
-                // reclassified retreat).
-                let (events, reason) = match &proposal.restores {
-                    None => (
-                        Vec::new(),
-                        format!(
-                            "promote CCD {} from {} to {}",
-                            proposal.unit,
-                            proposal.from.get(),
-                            proposal.to.get()
-                        ),
-                    ),
-                    Some(restoration) => {
-                        witnesses.extend([restoration.promotion, restoration.retreat]);
-                        witnesses.extend(restoration.events.iter().filter_map(|event| {
-                            let EventId::Boot(boot) = event else {
-                                return None;
-                            };
-                            self.days
-                                .answers
-                                .iter()
-                                .rfind(|answer| &answer.boot == boot)
-                                .map(|answer| answer.seq)
-                        }));
-                        (
-                            restoration
-                                .events
-                                .iter()
-                                .filter_map(|event| self.event_commit(event))
-                                .collect(),
-                            format!(
-                                "restore CCD {} from {} to {}: the step back it undoes was reclassified",
-                                proposal.unit,
-                                proposal.from.get(),
-                                proposal.to.get()
-                            ),
-                        )
-                    }
-                };
-                (
-                    self.ccd_vector(&proposal.profile)?,
-                    StepKind::Promote {
-                        changed: proposal.unit.ccd().ok_or(NotReady::NonCoarse)?,
-                    },
-                    reason,
-                    StepCauses {
-                        caps: cap_commits,
-                        qualification: self.qualification_seq(&proposal.profile),
-                        events,
-                        ..StepCauses::default()
-                    },
-                    credited,
-                )
-            }
-            DayDecision::Retreat {
-                to,
-                causes,
-                unqualified,
-            } => {
-                let mut cited: Vec<EventId> = Vec::new();
-                let mut cause = JournalRetreatCause::ShallowerCap {};
-                let mut first = true;
-                for item in &causes {
-                    match item {
-                        RetreatCause::StepBack { events, .. }
-                        | RetreatCause::Escalation { events, .. } => {
-                            cited.extend(events.iter().map(|event| event.id.clone()));
-                            if first {
-                                if let Some(event) = events.first() {
-                                    let journal = self.journal_event_id(&event.id);
-                                    let escalation = journal
-                                        .as_ref()
-                                        .and_then(|id| self.days.events.get(id))
-                                        .and_then(|book| book.latest.payload.escalation);
-                                    if let (Some(event), Some(escalation)) = (journal, escalation) {
-                                        cause = JournalRetreatCause::Event { event, escalation };
-                                        first = false;
-                                    }
-                                }
-                            }
-                        }
-                        RetreatCause::Completion { events, .. } => {
-                            cited.extend(events.iter().map(|event| event.id.clone()));
-                            if first {
-                                cause = JournalRetreatCause::Completion {};
-                                first = false;
-                            }
-                        }
-                        RetreatCause::SafetyCap { .. } => {}
-                    }
-                }
-                let mut vetoes: Vec<Seq> = cited
-                    .iter()
-                    .filter_map(|id| self.journal_event_id(id))
-                    .filter_map(|id| self.days.vetoes.get(&id).map(|veto| veto.seq))
-                    .collect();
-                vetoes.sort_unstable();
-                let wanted = unqualified
-                    .as_ref()
-                    .map(|profile| self.ccd_vector(profile))
-                    .transpose()?;
-                (
-                    self.ccd_vector(&to)?,
-                    StepKind::Retreat {
-                        changed: changed(&to),
-                        cause,
-                        wanted,
-                    },
-                    "step the day profile back".to_owned(),
-                    StepCauses {
-                        caps: cap_commits,
-                        qualification: self.qualification_seq(&to),
-                        vetoes,
-                        events: cited
-                            .iter()
-                            .filter_map(|event| self.event_commit(event))
-                            .collect(),
-                    },
-                    Vec::new(),
-                )
-            }
-            DayDecision::FirmwareZero { to, .. } => (
-                self.ccd_vector(&to)?,
-                StepKind::FirmwareZero {
-                    changed: applied
-                        .iter()
-                        .filter(|&(_, offset)| offset != togi_machine::TargetOffset::ZERO)
-                        .filter_map(|(unit, _)| unit.ccd())
-                        .collect(),
-                },
-                "the firmware context changed: reset to CO 0".to_owned(),
-                StepCauses::default(),
-                Vec::new(),
-            ),
-        };
-        if issued.is_some_and(|step| step.payload.proposed == proposed) {
-            return Ok(None);
-        }
-        let hold_s = match &step {
-            StepKind::Hold { .. } | StepKind::Promote { .. } => hold_s,
-            StepKind::Retreat { .. } | StepKind::FirmwareZero { .. } => 0,
-        };
-        let cites = {
-            let mut cites = causes.caps.clone();
-            cites.extend(causes.events.iter().copied());
-            cites.extend(causes.vetoes.iter().copied());
-            cites.extend(causes.qualification);
-            cites.extend(witnesses);
-            cites
-        };
-        Ok(Some(Decision::new(
-            PolicyPayload::DayStep(DayStep {
-                decision: id,
-                cold_boot: query.boot.clone(),
-                old,
-                proposed,
-                step,
-                predecessor,
-                hours,
-                hold_s,
-                causes,
-                reason,
-            }),
-            cites,
-        )))
-    }
 
     /// What the day invocation owes, in the order the journal needs it: first what the night this boot
     /// ended owes at its close, one commitment at a time; then the observed intervals, events and vetoes,
@@ -752,7 +376,10 @@ impl State {
         if let Some(hold) = self.owed_day_hold()? {
             return Ok(vec![hold]);
         }
+        if let Some(commitment) = self.owed_climb_commitment(query)? {
+            return Ok(vec![commitment]);
+        }
         let view = self.day_view()?;
-        Ok(self.owed_day_step(query, &view)?.into_iter().collect())
+        Ok(self.owed_climb_decision(query, &view)?.into_iter().collect())
     }
 }

@@ -196,6 +196,8 @@ pub(super) struct Nights {
     pub(super) edges: BTreeMap<CcdId, Committed<CcdEdge>>,
     #[serde(with = "super::wire::pairs")]
     pub(super) caps: BTreeMap<CcdId, Committed<CcdCap>>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) unit_edges: BTreeMap<crate::UnitId, Committed<togi_journal::UnitEdge>>,
     pub(super) qualifications: Vec<Committed<NightQualification>>,
     pub(super) reproductions: Vec<Committed<NightReproduction>>,
 }
@@ -340,6 +342,49 @@ impl Default for Days {
             manual: Vec::new(),
             imported: HashSet::new(),
             reclassified: None,
+        }
+    }
+}
+
+/// The D campaign is independent of session-local hold and certificate books.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(super) struct Climb {
+    pub(super) history: Option<crate::climb::ClimbHistory>,
+    pub(super) campaign: crate::climb::Campaign,
+    pub(super) start: Option<Committed<togi_journal::CampaignStart>>,
+    pub(super) mapping: Option<Committed<togi_journal::UnitMapping>>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) decisions: BTreeMap<Seq, Committed<togi_journal::ClimbDecision>>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) plans: BTreeMap<Seq, crate::climb::ClimbDecision>,
+    #[serde(with = "super::wire::pairs")]
+    pub(super) stops: BTreeMap<crate::UnitId, Committed<togi_journal::UnitStop>>,
+    pub(super) charges: Vec<Committed<togi_journal::CampaignCharge>>,
+    pub(super) reclassifications: Vec<Committed<togi_journal::CampaignReclassified>>,
+    pub(super) restoration: Option<Committed<togi_journal::FirmwareRestoration>>,
+    pub(super) imports: Vec<togi_journal::DayImported>,
+    pub(super) import_summary: Option<togi_journal::SessionImported>,
+    pub(super) successor: Option<Committed<togi_journal::SuccessorImported>>,
+}
+
+impl Default for Climb {
+    fn default() -> Self {
+        Self {
+            history: None,
+            // Accumulate observations before enrollment without granting permission.
+            // The decision input remains unreconstructible until campaign.start is durable.
+            campaign: crate::climb::Campaign::approved_fresh(),
+            start: None,
+            mapping: None,
+            decisions: BTreeMap::new(),
+            plans: BTreeMap::new(),
+            stops: BTreeMap::new(),
+            charges: Vec::new(),
+            reclassifications: Vec::new(),
+            restoration: None,
+            imports: Vec::new(),
+            import_summary: None,
+            successor: None,
         }
     }
 }
