@@ -100,6 +100,7 @@ impl State {
             climb::FinishReason::Stopped(reason) => match reason {
                 climb::StopReason::AdverseCeiling => journal::UnitStopReason::AdverseCeiling {},
                 climb::StopReason::Veto => journal::UnitStopReason::Veto {},
+                climb::StopReason::Predecessor { original } => journal::UnitStopReason::Predecessor { original: *original },
                 climb::StopReason::FirstBackstep { event, application } => {
                     let event = self.journal_event_id(event).ok_or(NotReady::NoSession)?;
                     let application = application.and_then(|id| self.days.applications.iter().find(|commit| commit.seq.get() == id.get()))
@@ -197,7 +198,7 @@ impl State {
                 climb::Blocker::AllowanceExhausted => result.push(journal::ClimbBlocker::AllowanceExhausted {}),
                 climb::Blocker::CampaignHistory => result.push(journal::ClimbBlocker::CampaignHistory {}),
                 climb::Blocker::UnknownEdge { unit } => result.push(journal::ClimbBlocker::UnknownEdge { unit: *unit }),
-                climb::Blocker::Ceiling { unit } => result.push(journal::ClimbBlocker::Finished { unit: *unit }),
+                climb::Blocker::Ceiling { unit } => result.push(journal::ClimbBlocker::Ceiling { unit: *unit }),
                 climb::Blocker::Finished => result.extend(history.current().units().map(|unit| journal::ClimbBlocker::Finished { unit })),
                 climb::Blocker::ActivationClosed => result.push(journal::ClimbBlocker::ActivationClosed {}),
                 climb::Blocker::SafeApply => result.push(journal::ClimbBlocker::SafeApply {}),
