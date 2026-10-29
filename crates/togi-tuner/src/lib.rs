@@ -31,7 +31,7 @@ pub use policy::{
     FirmwareValidity, FoldError, HoldProjection, MappingProjection, NightProjection, NightQuery,
     NotReady, Params, PlanError, PolicyPayload, Projection, QualificationProgress,
     QualificationProjection, QualificationStage, ReproductionProjection, State, TrialPlan,
-    UnitProjection, VetoProjection,
+    UnitProjection, VetoProjection, VetoSource,
 };
 pub use policy::{
     ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,

@@ -495,6 +495,7 @@ pub(crate) enum ClimbLine {
 
 impl ClimbLine {
     /// The line at full length.
+    #[cfg(test)]
     pub(crate) fn words(&self) -> String {
         match self {
             Self::Text(text) => text.clone(),
@@ -530,6 +531,7 @@ impl DailyWords {
     pub(crate) const BOUND_SEP: &'static str = "; ";
     pub(crate) const OBSERVED_SEP: &'static str = " · ";
 
+    #[cfg(test)]
     fn words(&self) -> String {
         let bound = match &self.bound {
             DailyBound::Unavailable => "rate bound unavailable",

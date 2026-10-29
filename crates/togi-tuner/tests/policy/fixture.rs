@@ -383,6 +383,8 @@ fn contents_of(built: &ContentId) -> Contents {
 pub(crate) enum Ending {
     Pass,
     Interrupted,
+    Inconclusive { interrupted: bool },
+    Withheld,
     /// A conclusive failure, on `core` when it names one.
     Fail(Option<u8>),
 }
@@ -453,6 +455,8 @@ impl Journal {
         let (outcome, interrupted, core) = match ending {
             Ending::Pass => ("pass", false, None),
             Ending::Interrupted => ("failure", true, None),
+            Ending::Inconclusive { interrupted } => ("inconclusive", interrupted, None),
+            Ending::Withheld => ("pass", false, None),
             Ending::Fail(core) => ("failure", false, core),
         };
         let mut end = serde_json::json!({
@@ -463,6 +467,7 @@ impl Journal {
             end["core"] = serde_json::json!(core);
         }
         let mut end: TrialEnd = serde_json::from_value(end).unwrap();
+        end.backend_missing = matches!(ending, Ending::Withheld);
         end.voltage_requests_v = *requests;
         self.append(end.into(), &[intent])
     }

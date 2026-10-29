@@ -425,12 +425,14 @@ impl State {
         mapped: &Mapped,
     ) -> Result<MappingPlan, NotReady> {
         let edges = mapped.edges();
-        let caps = self.caps_of(layout, contents, &edges, mapped.next_ordinal)?;
         let limits: BTreeMap<UnitId, TargetOffset> = edges
             .iter()
             .filter_map(|(&ccd, edge)| edge.ceiling().map(|c| (UnitId::Ccd(ccd), c)))
             .collect();
         let target = mapped.board.next_target(&limits);
+        // An unfinished task retains its frozen matrix after an interrupted attempt.
+        let ordinal = target.map_or(mapped.next_ordinal, |target| mapped.ordinal_for(&target));
+        let caps = self.caps_of(layout, contents, &edges, ordinal)?;
         Ok(MappingPlan {
             mapped: mapped.clone(),
             edges,

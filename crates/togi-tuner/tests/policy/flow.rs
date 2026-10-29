@@ -4,6 +4,8 @@
 
 use std::collections::BTreeMap;
 
+use test_case::test_case;
+
 use togi_journal::{
     Activity, ApplicationId, ApplyCause, CcdVector, CellEvidence, Classification, ClimbAction,
     ClimbDecision, ClimbRetreatCause, DayApplied, DayCheckpoint, DayCleanStop, DayOffsetsChanged,
@@ -171,8 +173,10 @@ fn a_qualified_proposal_is_promoted_at_the_cold_boot_and_its_application_commits
     );
 }
 
-#[test]
-fn a_firmware_change_zeroes_d_requalifies_it_after_controls_and_restores_it_after_a_stock_hold() {
+/// The firmware scenario up to the applied restoration: the firmware update zeroes D, the tuning night runs the
+/// controls and re-qualifies the retained D exactly, a stock hold passes, and the restoration of D is
+/// applied as application 3 in the boot `restoration`. Returns the journal, D and the applied restoration.
+fn firmware_restored() -> (Journal, CcdProfile, ClimbDecision) {
     let (mut journal, d) = promoted();
     // The firmware update clears the offsets; the next cold boot reports the new firmware.
     journal.boot_start_at("day2", "2", &zero());
@@ -232,11 +236,119 @@ fn a_firmware_change_zeroes_d_requalifies_it_after_controls_and_restores_it_afte
                 journal.state.project().applied,
                 Some(togi_tuner::UnitProfile::of_ccd(&d))
             );
-            return;
+            return (journal, d, restoration);
         }
         journal.run(&plan, Ending::Pass);
     }
     panic!("D was never re-qualified under the new firmware");
+}
+
+#[test]
+fn a_firmware_change_zeroes_d_requalifies_it_after_controls_and_restores_it_after_a_stock_hold() {
+    let (journal, d, _) = firmware_restored();
+    assert_eq!(
+        journal.state.project().applied,
+        Some(togi_tuner::UnitProfile::of_ccd(&d))
+    );
+}
+
+/// The firmware restoration commitment a settled day owes, if it committed one.
+fn restoration_of(payloads: &[Payload]) -> Option<&togi_journal::FirmwareRestoration> {
+    payloads.iter().find_map(|payload| {
+        if let Payload::FirmwareRestoration(restoration) = payload {
+            Some(restoration)
+        } else {
+            None
+        }
+    })
+}
+
+#[test]
+fn a_successful_firmware_restoration_settles_as_restored_with_its_application() {
+    let (mut journal, d, restoration) = firmware_restored();
+    // Until the day settles it, the journal still records the restoration as owed, not as done.
+    assert!(!matches!(
+        journal
+            .state
+            .project()
+            .climb
+            .firmware_restoration
+            .map(|saved| saved.state),
+        Some(togi_journal::FirmwareRestorationState::Restored { .. })
+    ));
+    journal.boot_start_at("settled", "2", &d);
+    let committed = journal.settle_day(&cold_boot_at("settled", journal.now()));
+    let settled = restoration_of(&committed)
+        .unwrap_or_else(|| panic!("no restoration commitment in {committed:?}"));
+    assert_eq!(settled.saved, restoration.proposed);
+    assert_eq!(
+        settled.state,
+        togi_journal::FirmwareRestorationState::Restored {
+            application: ApplicationId(3)
+        }
+    );
+    let projection = journal.state.project();
+    assert_eq!(
+        projection.climb.firmware_restoration.as_ref(),
+        Some(settled)
+    );
+    assert_eq!(
+        crate::climb::replay(&journal.events).project(),
+        projection
+    );
+    assert_eq!(
+        crate::climb::snapshot(&journal.state).project(),
+        projection
+    );
+    // Settled once: the next cold boot owes nothing more.
+    journal.boot_start_at("quiet", "2", &d);
+    let quiet = journal.settle_day(&cold_boot_at("quiet", journal.now()));
+    assert_eq!(restoration_of(&quiet), None);
+}
+
+#[test]
+fn a_cpu_suspect_end_after_a_firmware_restoration_settles_it_as_stepped_back_with_its_event() {
+    let (mut journal, d, restoration) = firmware_restored();
+    unexplained_end_under(&mut journal, "2", "restoration", "stepped", &d);
+    let committed = journal.settle_day(&cold_boot_at("stepped", journal.now()));
+    let event = committed
+        .iter()
+        .find_map(|payload| {
+            if let Payload::DayEvent(event) = payload {
+                Some(event.event.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("no event in {committed:?}"));
+    let retreat = step_of(&committed, |action| {
+        matches!(action, ClimbAction::Retreat { .. })
+    });
+    assert_eq!(profile(&retreat.proposed), zero());
+    apply(&mut journal, &retreat, 4, "stepped");
+    journal.boot_start_at("settled", "2", &zero());
+    let settled = journal.settle_day(&cold_boot_at("settled", journal.now()));
+    let settled = restoration_of(&settled)
+        .unwrap_or_else(|| panic!("no restoration commitment in {settled:?}"))
+        .clone();
+    assert_eq!(settled.saved, restoration.proposed);
+    assert_eq!(
+        settled.state,
+        togi_journal::FirmwareRestorationState::SteppedBack { event }
+    );
+    let projection = journal.state.project();
+    assert_eq!(
+        projection.climb.firmware_restoration.as_ref(),
+        Some(&settled)
+    );
+    assert_eq!(
+        crate::climb::replay(&journal.events).project(),
+        projection
+    );
+    assert_eq!(
+        crate::climb::snapshot(&journal.state).project(),
+        projection
+    );
 }
 
 /// Ends the boot `day1` uncleanly at D, with nothing explaining the end, and starts the cold boot `day2`.
@@ -530,7 +642,18 @@ fn the_projection_after_a_provisional_retreat_matches_its_snapshot() {
 /// Ends the boot `ended` uncleanly at `at_profile`, with nothing explaining the end, and starts the cold
 /// boot `next`.
 fn unexplained_end_of(journal: &mut Journal, ended: &str, next: &str, at_profile: &CcdProfile) {
-    journal.boot_start_at(next, "1", &zero());
+    unexplained_end_under(journal, "1", ended, next, at_profile);
+}
+
+/// [`unexplained_end_of`] on a machine whose BIOS is `bios_version`.
+fn unexplained_end_under(
+    journal: &mut Journal,
+    bios_version: &str,
+    ended: &str,
+    next: &str,
+    at_profile: &CcdProfile,
+) {
+    journal.boot_start_at(next, bios_version, &zero());
     journal.append(
         DayUncleanEnd {
             boot: BootId::from(ended.to_owned()),
@@ -1096,6 +1219,158 @@ fn a_zero_exposure_interruption_adds_no_slope_input() {
         }
     };
     assert_eq!(evidence(true), evidence(false));
+}
+
+fn observed_mapping_trial(ending: Ending) -> (Journal, togi_journal::ExposureObserved) {
+    let mut journal = Journal::ready();
+    let plan = loop {
+        let plan = journal.until_trial(journal.now());
+        if plan.activity == Activity::Mapping {
+            break plan;
+        }
+        journal.run(&plan, Ending::Pass);
+    };
+    journal.run(&plan, ending);
+    loop {
+        let action = journal.next(journal.now()).unwrap();
+        let exposure = if let Action::Decide(decision) = &action
+            && let PolicyPayload::ExposureObserved(observed) = &decision.payload
+        {
+            Some(observed.clone())
+        } else {
+            None
+        };
+        journal.commit(action);
+        if let Some(exposure) = exposure {
+            return (journal, exposure);
+        }
+    }
+}
+
+#[test_case(Ending::Inconclusive { interrupted: false }; "inconclusive observation")]
+#[test_case(Ending::Inconclusive { interrupted: true }; "interrupted observation")]
+#[test_case(Ending::Withheld; "withheld placement")]
+fn an_unobserved_trial_adds_no_eligible_exposure_or_rate_input(ending: Ending) {
+    let (journal, observed) = observed_mapping_trial(ending);
+    assert_eq!(observed.eligible_s, 0);
+    assert_eq!(observed.uninterrupted_s, 0);
+    assert_eq!(observed.failures.len(), 0);
+    for unit in journal.state.project().units {
+        let evidence = unit.evidence.unwrap();
+        assert_eq!(
+            evidence
+                .slope_inputs
+                .iter()
+                .find(|cell| cell.class == observed.class),
+            None,
+        );
+        assert_eq!(
+            evidence.cells.iter().find(|cell| cell.class == observed.class),
+            None,
+        );
+    }
+}
+
+#[test_case(Ending::Fail(None), false; "live failure")]
+#[test_case(Ending::Interrupted, true; "recovered failure")]
+fn a_failed_trial_keeps_its_measured_exposure_and_failure(ending: Ending, interrupted: bool) {
+    let (journal, observed) = observed_mapping_trial(ending);
+    let expected = observed.class.duration_s - observed.class.regime.warm_up_s();
+    assert_eq!(observed.eligible_s, u64::from(expected));
+    assert_eq!(
+        observed.uninterrupted_s,
+        if interrupted { 0 } else { u64::from(expected) },
+    );
+    assert_eq!(observed.failures.len(), 1);
+    let projected = journal.state.project();
+    let cell = projected
+        .units
+        .iter()
+        .filter_map(|unit| unit.evidence.as_ref())
+        .flat_map(|evidence| &evidence.slope_inputs)
+        .find(|cell| cell.class == observed.class)
+        .unwrap();
+    assert_eq!(cell.failures, 1);
+    assert_eq!(cell.hours, f64::from(expected) / 3600.0);
+}
+
+#[test]
+fn an_imported_inconclusive_exposure_adds_no_hours_or_mapping_seconds() {
+    let (_, mut observed) =
+        observed_mapping_trial(Ending::Inconclusive { interrupted: true });
+    observed.source.session = serde_json::from_str("\"20251231T000000Z\"").unwrap();
+    observed.origin = togi_journal::ExposureOrigin::Imported {};
+    observed.eligible_s =
+        u64::from(observed.class.duration_s - observed.class.regime.warm_up_s());
+    let mut journal = Journal::ready();
+    journal.append(observed.clone().into(), &[]);
+    let Payload::ExposureObserved(recorded) = &journal.events.last().unwrap().payload else {
+        unreachable!();
+    };
+    assert_eq!(recorded, &observed, "the raw imported record is unchanged");
+    for unit in journal.state.project().units {
+        let evidence = unit.evidence.unwrap();
+        assert_eq!(
+            evidence
+                .slope_inputs
+                .iter()
+                .find(|cell| cell.class == observed.class),
+            None,
+        );
+        assert_eq!(
+            evidence.cells.iter().find(|cell| cell.class == observed.class),
+            None,
+        );
+    }
+    loop {
+        let plan = journal.until_trial(journal.now());
+        let mapping = plan.activity == Activity::Mapping;
+        journal.run(&plan, Ending::Pass);
+        if mapping {
+            let _ = journal.until_trial(journal.now());
+            break;
+        }
+    }
+    let projected = journal.state.project();
+    let cell = projected
+        .units
+        .iter()
+        .filter_map(|unit| unit.evidence.as_ref())
+        .flat_map(|evidence| &evidence.cells)
+        .find(|cell| cell.class == observed.class)
+        .unwrap();
+    assert_eq!(
+        cell.eligible_s, observed.eligible_s,
+        "only the later complete launch supplies mapping seconds",
+    );
+}
+
+#[test]
+fn an_interrupted_mapping_task_keeps_its_diagnostic_rotation() {
+    let mut journal = Journal::ready();
+    let plan = loop {
+        let plan = journal.until_trial(journal.now());
+        if matches!(plan.tested, Tested::Isolated { offset, .. } if offset.get() < 0) {
+            break plan;
+        }
+        journal.run(&plan, Ending::Pass);
+    };
+    let from = journal.events.len();
+    journal.run(&plan, Ending::Inconclusive { interrupted: true });
+    let retry = journal.until_trial(journal.now());
+    assert_eq!(retry.task, plan.task);
+    assert_eq!(retry.cell, plan.cell);
+    let caps: Vec<_> = journal.events[from..]
+        .iter()
+        .filter_map(|event| {
+            if let Payload::CcdCap(cap) = &event.payload {
+                Some(cap)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(caps.len(), 0, "the unfinished task has not rotated its matrix");
 }
 
 #[test]

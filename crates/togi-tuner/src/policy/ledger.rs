@@ -246,6 +246,23 @@ pub(super) fn position_core(
     }
 }
 
+/// Measured time that may enter stability evidence, including replayed records from older builds.
+pub(super) fn eligible_seconds(
+    outcome: Outcome,
+    exclusions: &[CreditExclusion],
+    measured_s: u64,
+) -> u64 {
+    if outcome == Outcome::Inconclusive
+        || exclusions
+            .iter()
+            .any(|exclusion| matches!(exclusion, CreditExclusion::PlacementWithheld {}))
+    {
+        0
+    } else {
+        measured_s
+    }
+}
+
 /// Whether the recorded exposure is an adequate one: a conclusive pass that ran its whole intended
 /// duration with valid placement and the tested position credited.
 pub(super) fn is_adequate(observed: &ExposureObserved, cores: &[togi_machine::CoreInfo]) -> bool {
@@ -318,7 +335,6 @@ impl State {
         let regime = intent.regime;
         let warm = regime.warm_up_s();
         let ran = ended.end.duration_s;
-        let eligible = ran.min(intent.duration_s).saturating_sub(warm);
         let cores: CoreSet = if intent.cores.is_empty() {
             intent.core.into_iter().collect()
         } else {
@@ -367,12 +383,17 @@ impl State {
             .iter()
             .map(|&core| CreditExclusion::HostCore { core })
             .collect();
-        if ended.end.containment_error.is_some()
+        let placement_withheld = ended.end.containment_error.is_some()
             || !ended.end.escaped.is_empty()
-            || ended.end.backend_missing
-        {
+            || ended.end.backend_missing;
+        if placement_withheld {
             exclusions.push(CreditExclusion::PlacementWithheld {});
         }
+        let eligible = eligible_seconds(
+            ended.end.outcome,
+            &exclusions,
+            u64::from(ran.min(intent.duration_s).saturating_sub(warm)),
+        );
         Some(ExposureObserved {
             source: OriginalSource {
                 session,
@@ -396,11 +417,11 @@ impl State {
             activity,
             outcome: ended.end.outcome,
             failures,
-            eligible_s: u64::from(eligible),
+            eligible_s: eligible,
             uninterrupted_s: if ended.end.interrupted {
                 0
             } else {
-                u64::from(eligible)
+                eligible
             },
             exclusions,
         })

@@ -13,6 +13,11 @@
 //! boot; directly compared exposures keep it exact. These bounded anchors do not recursively compare target
 //! citations. Policy commitments compare as a multiset; trial identities compare only by first-mention aliasing.
 //!
+//! A killed trial with observed wall time is compared against a control charged with that same interruption:
+//! it ends inconclusive, supplies no passing exposure and still consumes its queue's wall-time share.
+//! Every kill cut also checks its live folds and persisted snapshot against full replay;
+//! no cut or field is omitted.
+//!
 //! Machine crashes also cover every durable event. Power is cut before and after every actual SMU access.
 //! Each resumed phase checks its registers and each crashed trial's duration and failure attribution. Between
 //! night trials, decisions match an uninterrupted control with the reboot's elapsed time charged to its task;
@@ -393,6 +398,18 @@ fn day(
     if ran {
         assert!(!fired, "the day continued after its cut");
         let events = day.events().to_vec();
+        if matches!(fate, Fate::Killed) {
+            assert_eq!(
+                serde_json::to_value(&day.state).unwrap(),
+                serde_json::to_value(folded(&events)).unwrap(),
+                "live day state versus replay",
+            );
+            assert_lines_equal(
+                &compared_projection(&events, &day.state.project()),
+                &projection(&events),
+                "live day versus replay",
+            );
+        }
         drop(day.journal.close().unwrap());
         RunEnd::Stopped(None, events)
     } else if fired {
@@ -466,6 +483,18 @@ fn segment(
         return RunEnd::Crashed;
     }
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    if matches!(fate, Fate::Killed) {
+        ended
+            .capsule
+            .as_ref()
+            .expect("a completed phase returns its live folds")
+            .verify(ended.journal.events())
+            .unwrap();
+        crate::ResumeCapsule::read_snapshot(&ended.journal, bench.defects)
+            .unwrap()
+            .verify(ended.journal.events())
+            .unwrap();
+    }
     let stop = ended.stop;
     let events = ended.journal.events().to_vec();
     drop(ended.journal.close().unwrap());
@@ -1164,6 +1193,116 @@ fn projection(events: &[Event]) -> Vec<String> {
     compared_projection(events, &folded(events).project())
 }
 
+/// A killed open trial is an independently checked raw observation, not free execution. Charge the same
+/// interruption in a control that has no pending trial to recover; no policy commitment is copied into it.
+/// Zero-wall-time kills still compare against the original uninterrupted scenario.
+fn charged_kill_control(
+    played: &Played,
+    model: &Model,
+    after: usize,
+    resumed: &[Event],
+) -> Option<Vec<Event>> {
+    let prefix = &played.events[..after];
+    let (at, intended, intent) = prefix.iter().enumerate().rev().find_map(|(at, event)| {
+        if let Payload::TrialIntent(intent) = &event.payload {
+            Some((at, event, intent))
+        } else {
+            None
+        }
+    })?;
+    if prefix[at..].iter().any(|event| {
+        matches!(&event.payload, Payload::TrialEnd(end) if end.trial == intent.trial)
+    }) {
+        return None;
+    }
+    let ends: Vec<_> = resumed[after..]
+        .iter()
+        .filter_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload
+                && end.trial == intent.trial
+            {
+                Some(end)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(ends.len(), 1, "one end for killed trial {}", intent.trial);
+    let end = ends[0];
+    let start = prefix[at..].iter().find_map(|event| {
+        if matches!(&event.payload, Payload::TrialStart(start) if start.trial == intent.trial) {
+            event.mono
+        } else {
+            None
+        }
+    });
+    let last = prefix[at..].iter().rev().find_map(|event| {
+        if matches!(
+            event.payload,
+            Payload::TrialStart(_)
+                | Payload::TrialProgress(_)
+                | Payload::TrialSignal(_)
+                | Payload::TrialSample(_)
+        ) {
+            event.mono
+        } else {
+            None
+        }
+    });
+    let duration = start.zip(last).map_or(Duration::ZERO, |(start, last)| {
+        last.saturating_sub(start)
+    });
+    assert_eq!(u64::from(end.duration_s), duration.as_secs());
+    assert_eq!(end.outcome, Outcome::Inconclusive);
+    assert!(end.interrupted);
+    let observed: Vec<_> = resumed[after..]
+        .iter()
+        .filter_map(|event| {
+            if let Payload::ExposureObserved(observed) = &event.payload
+                && observed.source.trial.as_ref() == Some(&intent.trial)
+            {
+                Some(observed)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        observed.len(),
+        usize::from(intent.regime != togi_machine::Regime::R9 || start.is_some()),
+        "one observation per known class; an unstarted R9 has no recorded serial CPU",
+    );
+    for observed in observed {
+        assert_eq!(observed.eligible_s, 0);
+        assert_eq!(observed.uninterrupted_s, 0);
+        assert!(observed.failures.is_empty());
+    }
+    if prefix.last().unwrap().time == intent.task_start.unwrap_or(intended.time) {
+        return None;
+    }
+
+    let control = played.before.bench(model);
+    let Phase::Run { trials } = played.phase else {
+        panic!("an open night trial belongs to a run phase");
+    };
+    let trigger = AppendTrigger::new(after, AppendPoint::BeforeSync);
+    assert!(matches!(
+        segment(&control, Some(&trigger), Fate::Killed, played.start, trials),
+        RunEnd::Cut(false)
+    ));
+    assert_eq!(durable(&control), prefix);
+    let mut machine = control.sim.seams();
+    let mut journal = simulated(&control.mem)
+        .open_at(machine.host.boot_id().unwrap(), machine.clock.now())
+        .unwrap();
+    journal
+        .append(stamp(&mut machine), end.clone().into(), &[intended.seq])
+        .unwrap();
+    drop(journal.close().unwrap());
+    let (_, events) = play(&control, played.phase, played.start, None);
+    Some(events)
+}
+
 /// The policy commitments from `from` onward, without observations of interrupted trials, which only the resumed
 /// journal has. An observation may commit an unchanged cap before a retried trial rather than after it, so
 /// commitments are sorted by identity-hidden shape before naming citations. Anchors use the whole journal,
@@ -1291,12 +1430,60 @@ fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection
         let reference = &played[phase];
         let events = resume(reference, &model, after, Fate::Killed);
         assert_eq!(&events[..after], &reference.events[..after]);
-        assert_eq!(projection(&events), wanted[phase]);
-        assert_eq!(
-            commitments(&events, after, true),
-            commitments(&reference.events, after, true)
+        let control = charged_kill_control(reference, &model, after, &events);
+        let expected_events = control.as_deref().unwrap_or(&reference.events);
+        let expected_projection = control.as_deref().map(projection);
+        assert_lines_equal(
+            &projection(&events),
+            expected_projection.as_ref().unwrap_or(&wanted[phase]),
+            "projection",
+        );
+        assert_lines_equal(
+            &commitments(&events, after, true),
+            &commitments(expected_events, after, true),
+            "commitments",
         );
     });
+}
+
+#[test_case(false, false; "before single-core launch")]
+#[test_case(false, true; "before serial launch")]
+#[test_case(true, false; "after measured execution")]
+fn an_interruption_compares_against_identically_charged_observations(measured: bool, serial: bool) {
+    let (model, played, from) = scenario();
+    let (phase, after) = cuts(&played, from)
+        .into_iter()
+        .find(|&(phase, after)| {
+            let prefix = &played[phase].events[..after];
+            if !measured {
+                return matches!(&prefix.last().unwrap().payload, Payload::TrialIntent(intent)
+                    if (intent.regime == togi_machine::Regime::R9) == serial);
+            }
+            let Payload::TrialProgress(progress) = &prefix.last().unwrap().payload else {
+                return false;
+            };
+            prefix.iter().any(|event| {
+                matches!(&event.payload, Payload::TrialIntent(intent)
+                    if intent.trial == progress.trial && intent.regime == togi_machine::Regime::R6)
+            })
+        })
+        .expect("the swept qualification includes both interruption boundaries");
+    let reference = &played[phase];
+    let resumed = resume(reference, &model, after, Fate::Killed);
+    assert_eq!(
+        projection(&resumed) != projection(&reference.events),
+        measured,
+        "only charged interruption wall time changes the soft-share schedule",
+    );
+    let control = charged_kill_control(reference, &model, after, &resumed);
+    assert_eq!(control.is_some(), measured);
+    let expected = control.as_deref().unwrap_or(&reference.events);
+    assert_lines_equal(&projection(&resumed), &projection(expected), "projection");
+    assert_lines_equal(
+        &commitments(&resumed, after, true),
+        &commitments(expected, after, true),
+        "commitments",
+    );
 }
 
 /// The events of each trial on its own boot, from its intent through its end: the cuts where a crash leaves a trial

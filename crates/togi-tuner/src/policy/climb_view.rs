@@ -6,6 +6,7 @@ use super::climb_projection::{
     ClimbProposalProjection, ClimbQualificationProjection, ClimbQualificationState,
     ClimbStepProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
 };
+use super::qualify::QualStatus;
 use super::{CapProjection, State, ledger::saturating_u32, permission::vector};
 use crate::{
     UnitProfile,
@@ -234,61 +235,60 @@ impl State {
                 witnesses: Vec::new(),
             };
         };
-        let (state, outstanding, cells) = match &record.latest.payload.state {
-            journal::QualificationState::Start { outstanding } => (
-                ClimbQualificationState::InProgress,
-                outstanding.clone(),
-                Vec::new(),
-            ),
-            journal::QualificationState::Progress {
+        let status = self.qualification_status(record).ok();
+        let (state, outstanding, witnesses) = match status.as_deref() {
+            Some(QualStatus::Open {
                 witnesses,
                 outstanding,
-            } => (
+                ..
+            }) => (
                 ClimbQualificationState::InProgress,
                 outstanding.clone(),
-                witnesses
-                    .iter()
-                    .map(|witness| match witness.evidence {
-                        journal::CellEvidence::Fresh { exposure }
-                        | journal::CellEvidence::Reused { exposure } => exposure,
-                    })
-                    .collect(),
+                witnesses,
             ),
-            journal::QualificationState::Complete { witnesses } => (
-                ClimbQualificationState::Complete {
-                    certificate: record.latest.seq,
+            Some(QualStatus::Complete { witnesses }) => (
+                if matches!(
+                    record.latest.payload.state,
+                    journal::QualificationState::Complete { .. }
+                ) {
+                    ClimbQualificationState::Complete {
+                        certificate: record.latest.seq,
+                    }
+                } else {
+                    ClimbQualificationState::InProgress
                 },
                 Vec::new(),
-                witnesses
-                    .iter()
-                    .map(|witness| match witness.evidence {
-                        journal::CellEvidence::Fresh { exposure }
-                        | journal::CellEvidence::Reused { exposure } => exposure,
-                    })
-                    .collect(),
+                witnesses,
             ),
-            journal::QualificationState::Failed {
+            Some(QualStatus::Failed {
                 failure,
                 witnesses,
                 outstanding,
-            } => (
+            }) => (
                 ClimbQualificationState::Failed {
                     witnesses: vec![*failure],
                 },
                 outstanding.clone(),
-                witnesses
-                    .iter()
-                    .map(|witness| match witness.evidence {
-                        journal::CellEvidence::Fresh { exposure }
-                        | journal::CellEvidence::Reused { exposure } => exposure,
-                    })
-                    .collect(),
+                witnesses,
             ),
+            Some(QualStatus::Stale) | None => {
+                return ClimbQualificationProjection {
+                    state: ClimbQualificationState::Missing,
+                    outstanding: Vec::new(),
+                    witnesses: Vec::new(),
+                };
+            }
         };
         ClimbQualificationProjection {
             state,
             outstanding,
-            witnesses: cells,
+            witnesses: witnesses
+                .iter()
+                .map(|witness| match witness.evidence {
+                    journal::CellEvidence::Fresh { exposure }
+                    | journal::CellEvidence::Reused { exposure } => exposure,
+                })
+                .collect(),
         }
     }
 

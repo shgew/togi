@@ -11,7 +11,9 @@ use togi_journal::{
     Resolution, TaskId, VetoState,
 };
 use togi_machine::TargetOffset;
-use togi_tuner::policy::{FirmwareValidity, NightProjection, Projection, QualificationStage};
+use togi_tuner::policy::{
+    FirmwareValidity, NightProjection, Projection, QualificationStage, VetoSource,
+};
 use togi_tuner::unit::{UnitId, UnitProfile};
 
 use togi_watch::model::StopView;
@@ -395,11 +397,15 @@ fn safety_part(out: &mut String, policy: &Projection) {
             VetoState::Active => "active",
             VetoState::Cleared => "cleared",
         };
+        let source = match veto.source {
+            VetoSource::Day => "",
+            VetoSource::Predecessor => " (imported from the predecessor session)",
+        };
         wrap(
             out,
             "veto: ",
             "  ",
-            &format!("{}: {state}", event_word(&veto.event)),
+            &format!("{}: {state}{source}", event_word(&veto.event)),
         );
     }
 }

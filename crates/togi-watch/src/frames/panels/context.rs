@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use togi_journal::{Classification, DayEventId, DayStep, HoldReason, Queue, Resolution, StepKind};
 use togi_tuner::policy::{
     DayProjection, EventProjection, FirmwareValidity, NightProjection, Projection,
-    QualificationProgress, ReproductionProjection,
+    QualificationProgress, ReproductionProjection, VetoSource,
 };
 use togi_tuner::unit::UnitProfile;
 
@@ -388,13 +388,21 @@ fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'
     }
     let mut label = "vetoes";
     for veto in &policy.vetoes {
+        let source = match veto.source {
+            VetoSource::Day => "",
+            VetoSource::Predecessor => " · imported from predecessor",
+        };
         out.push(field_row(
             scene,
             label,
             value(
                 scene,
                 Paint::Text,
-                format!("{} · {}", event_name(&veto.event), veto.state.as_str()),
+                format!(
+                    "{} · {}{source}",
+                    event_name(&veto.event),
+                    veto.state.as_str()
+                ),
             ),
             width,
         ));

@@ -659,6 +659,7 @@
         "boot": "day1",
         "kind": "boot"
       },
+      "source": "day",
       "state": "active"
     }
   ]

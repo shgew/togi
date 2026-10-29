@@ -1158,6 +1158,12 @@ mod tests {
         assert!(history.charges[0].provisional);
         assert!(history.charges[0].reclassified);
         assert!(history.vetoes.is_empty());
+        // The reclassification lifts the veto but never the permanent stop the event caused.
+        assert_eq!(history.stops.len(), 1);
+        assert_eq!(
+            history.stops.values().next().map(|stop| stop.last_clean),
+            Some(TargetOffset::ZERO)
+        );
     }
 
     #[test]

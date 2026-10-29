@@ -376,6 +376,28 @@ fn shown(policy: &Projection, at: Where<'_>) -> String {
     out
 }
 
+#[test_case(togi_tuner::policy::VetoSource::Day, "veto: boot lost: active\n"; "a day veto")]
+#[test_case(
+    togi_tuner::policy::VetoSource::Predecessor,
+    "veto: boot lost: active (imported from the predecessor session)\n";
+    "a predecessor veto the tuner still enforces"
+)]
+fn a_veto_says_whether_the_predecessor_session_carried_it_over(
+    source: togi_tuner::policy::VetoSource,
+    line: &str,
+) {
+    let mut policy = projection(None);
+    policy.vetoes.push(togi_tuner::policy::VetoProjection {
+        event: DayEventId::Boot {
+            boot: togi_machine::BootId::from("lost".to_owned()),
+        },
+        state: togi_journal::VetoState::Active,
+        source,
+    });
+    let out = shown(&policy, UTC);
+    assert!(out.contains(line), "{out}");
+}
+
 #[test]
 fn the_night_part_shows_its_start_elapsed_time_shares_and_progress() {
     let out = shown(&projection(Some(night())), UTC);

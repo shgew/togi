@@ -995,8 +995,12 @@ impl<'events> Names<'events> {
             ));
         }
         for entry in vetoes {
-            let VetoProjection { event, state } = entry;
-            lines.push(format!("veto {} {state:?}", self.event_id(event)));
+            let VetoProjection {
+                event,
+                state,
+                source,
+            } = entry;
+            lines.push(format!("veto {} {state:?} {source:?}", self.event_id(event)));
         }
         for entry in qualifications {
             let QualificationProjection {

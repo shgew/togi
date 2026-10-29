@@ -469,21 +469,25 @@ fn bridged_charge_aliases_consume_one_event_and_keep_their_metadata_across_repla
     let proposed = source
         .events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::ClimbDecision(record)
-                if matches!(record.decision, ClimbAction::Promote { .. }) =>
+        .find_map(|event| {
+            if let Payload::ClimbDecision(record) = &event.payload
+                && matches!(record.decision, ClimbAction::Promote { .. })
             {
                 Some(record.proposed.clone())
+            } else {
+                None
             }
-            _ => None,
         })
         .unwrap();
     let campaign = source
         .events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::CampaignStart(start) => Some(start.campaign),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::CampaignStart(start) = &event.payload {
+                Some(start.campaign)
+            } else {
+                None
+            }
         })
         .unwrap();
     let id = |boot: &str| togi_journal::DayEventId::Boot {
@@ -551,23 +555,55 @@ fn bridged_charge_aliases_consume_one_event_and_keep_their_metadata_across_repla
     assert_eq!(campaign.reclassified, 1);
     assert_eq!(campaign.events.len(), 1);
     let event = &campaign.events[0];
-    // The canonical event is its own alias; the others are the two bridged identities.
+    // The aliases list every identity of the one event, the canonical one included.
+    assert_eq!(event.aliases.len(), 3, "{event:?}");
     for boot in ["first", "second", "third"] {
+        assert!(event.aliases.contains(&id(boot)), "{boot}: {event:?}");
+    }
+    assert!(event.aliases.contains(&event.event));
+    assert!(event.provisional && event.reclassified);
+    // A campaign event's witnesses are the successor's own commitments: the one charge receipt and the
+    // one reclassification record, not one per copied charge record.
+    let committed = |wanted: fn(&Payload) -> bool| {
+        let found: Vec<_> = successor
+            .events
+            .iter()
+            .filter(|record| wanted(&record.payload))
+            .map(|record| record.seq)
+            .collect();
+        assert_eq!(found.len(), 1, "{found:?}");
+        found[0]
+    };
+    let charged = committed(|payload| matches!(payload, Payload::CampaignCharge(_)));
+    let reclassified = committed(|payload| matches!(payload, Payload::CampaignReclassified(_)));
+    assert_eq!(event.witnesses, [charged, reclassified]);
+    // The one receipt cites every copied charge record that named the event.
+    let receipt = successor
+        .events
+        .iter()
+        .find(|record| record.seq == charged)
+        .unwrap();
+    for original in 1_000..1_005_u64 {
+        let copy = successor
+            .events
+            .iter()
+            .find(|record| {
+                matches!(&record.payload, Payload::DayImported(copy) if copy.original.seq.get() == original)
+            })
+            .unwrap_or_else(|| panic!("record {original} was not copied"));
         assert!(
-            event.event == id(boot) || event.aliases.contains(&id(boot)),
-            "{boot}: {event:?}"
+            receipt.cause.contains(&copy.seq),
+            "the receipt cites copied charge {original}: {:?}",
+            receipt.cause
         );
     }
-    assert!(event.aliases.len() <= 3);
-    assert!(event.provisional && event.reclassified);
-    assert!(!event.witnesses.is_empty());
     assert_eq!(replay(&successor.events).project(), projection);
     assert_eq!(snapshot(&successor.state).project(), projection);
 }
 
 /// A successor whose predecessor left only a veto of CCD 0 at `depth`, with no raw daily
 /// witness, qualified for the candidate CCD 0 at -5 and waiting at its first cold boot.
-fn veto_successor(depth: i64) -> Journal {
+pub(crate) fn veto_successor(depth: i64) -> Journal {
     let predecessor: togi_journal::SessionId = "20231101T000000Z".parse().unwrap();
     let (journal, _) = Journal::qualified_compact_after(|journal| {
         let vetoed = zero().with(

@@ -57,7 +57,7 @@ pub use projection::{
     CapEvidence, CapProjection, CapReason, DayProjection, EventProjection, EvidenceProfile,
     FirmwareValidity, HoldProjection, MappingProjection, NightProjection, Projection,
     QualificationProgress, QualificationProjection, QualificationStage, ReproductionProjection,
-    SlopeCell, UnitProjection, VetoProjection,
+    SlopeCell, UnitProjection, VetoProjection, VetoSource,
 };
 
 use crate::cap::{Beta, Rate};
