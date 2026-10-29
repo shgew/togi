@@ -31,6 +31,7 @@ mod plan;
 mod projection;
 mod qualify;
 mod reproduce;
+pub mod successor;
 mod wire;
 
 use togi_machine::CcdId;
