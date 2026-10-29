@@ -1,9 +1,9 @@
+use crate::{UnitId, UnitProfile};
 use togi_journal::Seq;
-use togi_machine::{CcdId, CcdProfile};
 
 use super::events::EventId;
 
-/// One CCD's share of an applied promotion that an escalation reverted: the cursor that moves past
+/// One unit's share of an applied promotion that an escalation reverted: the cursor that moves past
 /// the step (`docs/spec/tuner.md`, Whole-profile veto and escalation).
 #[derive(
     Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
@@ -11,7 +11,7 @@ use super::events::EventId;
 pub struct Reverted {
     /// The applied promotion, by the journal position of its application.
     pub step: Seq,
-    pub ccd: CcdId,
+    pub unit: UnitId,
 }
 
 /// Why a profile was applied. Only a successful readback commits an application, and every kind
@@ -32,7 +32,7 @@ pub enum ApplicationKind {
     Fallback {
         events: Vec<EventId>,
         reverted: Vec<Reverted>,
-        wanted: CcdProfile,
+        wanted: UnitProfile,
     },
     /// A cap shallower than D forced the profile down to the cap.
     SafetyCap,
@@ -47,7 +47,7 @@ pub enum ApplicationKind {
 pub(crate) struct RetreatRecord<'a> {
     /// The journal position of the step-back application.
     pub at: Seq,
-    pub profile: &'a CcdProfile,
+    pub profile: &'a UnitProfile,
     pub events: &'a [EventId],
     pub reverted: &'a [Reverted],
     pub outcome: RetreatOutcome<'a>,
@@ -58,7 +58,7 @@ pub(crate) enum RetreatOutcome<'a> {
     /// The retreat profile itself was applied.
     Reached,
     /// CO 0 was applied until `wanted` qualifies.
-    Fallback { wanted: &'a CcdProfile },
+    Fallback { wanted: &'a UnitProfile },
 }
 
 /// A successful application: the whole profile read back and why it was applied.
@@ -66,7 +66,7 @@ pub(crate) enum RetreatOutcome<'a> {
 pub struct DayApplication {
     /// The journal position of its commit; it orders the application against events and intervals.
     pub at: Seq,
-    pub profile: CcdProfile,
+    pub profile: UnitProfile,
     pub kind: ApplicationKind,
 }
 
@@ -75,30 +75,30 @@ pub struct DayApplication {
 pub enum HistoryError {
     #[error("application {next} does not follow application {previous}")]
     OutOfOrder { previous: Seq, next: Seq },
-    #[error("application {at} names other CCDs than the baseline")]
-    Ccds { at: Seq },
+    #[error("application {at} names other units than the baseline")]
+    Units { at: Seq },
 }
 
 /// A promotion since the latest firmware reset, with the profile it left and the one it reached.
 #[derive(Clone, Copy, Debug)]
 pub struct Promotion<'a> {
     pub at: Seq,
-    pub from: &'a CcdProfile,
-    pub to: &'a CcdProfile,
+    pub from: &'a UnitProfile,
+    pub to: &'a UnitProfile,
 }
 
 impl Promotion<'_> {
-    /// The CCDs the promotion moved (one, for a proposed step).
-    pub fn changed(&self) -> impl Iterator<Item = CcdId> + '_ {
+    /// The units the promotion moved (one, for a proposed step).
+    pub fn changed(&self) -> impl Iterator<Item = UnitId> + '_ {
         self.to
             .iter()
-            .filter(|&(ccd, offset)| self.from.get(ccd) != Some(offset))
-            .map(|(ccd, _)| ccd)
+            .filter(|&(unit, offset)| self.from.get(unit) != Some(offset))
+            .map(|(unit, _)| unit)
     }
 }
 
 /// The ordered successful applications of the day: the whole profiles D took and, derived from
-/// them, each CCD's history of applied values.
+/// them, each unit's history of applied values.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DayHistory {
     before: Vec<DayApplication>,
@@ -107,7 +107,7 @@ pub struct DayHistory {
 
 impl DayHistory {
     /// A history that starts at the verified baseline applied at `at`.
-    pub fn baseline(at: Seq, profile: CcdProfile) -> Self {
+    pub fn baseline(at: Seq, profile: UnitProfile) -> Self {
         Self {
             before: Vec::new(),
             current: DayApplication {
@@ -118,7 +118,7 @@ impl DayHistory {
         }
     }
 
-    /// Appends a successful application, later than the last and over the same CCDs.
+    /// Appends a successful application, later than the last and over the same units.
     pub fn push(&mut self, application: DayApplication) -> Result<(), HistoryError> {
         if application.at <= self.current.at {
             return Err(HistoryError::OutOfOrder {
@@ -126,8 +126,8 @@ impl DayHistory {
                 next: application.at,
             });
         }
-        if !application.profile.ccds().eq(self.current.profile.ccds()) {
-            return Err(HistoryError::Ccds { at: application.at });
+        if !application.profile.units().eq(self.current.profile.units()) {
+            return Err(HistoryError::Units { at: application.at });
         }
         let previous = std::mem::replace(&mut self.current, application);
         self.before.push(previous);

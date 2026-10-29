@@ -1,6 +1,7 @@
 //! Folding journal events into the policy state. Raw facts and the policy's own commitments fold;
 //! historical per-core kinds and every `*.carried` kind never reach the policy.
 
+use crate::{UnitId, UnitProfile};
 use togi_journal::{
     Activity, ApplyCause, CrashedBoot, DayApplied, DayEvent, DayEventId, DayFreeze, DayImported,
     DayStep, DeadEndCondition, Event, EventKind, FreezeChoice, Outcome, Payload, Provenance, Queue,
@@ -262,7 +263,7 @@ impl State {
             return Ok(());
         };
         let zero = CcdProfile::zero(topology.ccds().iter().map(|&(ccd, _)| ccd))?;
-        self.days.history = Some(DayHistory::baseline(seq, zero));
+        self.days.history = Some(DayHistory::baseline(seq, UnitProfile::of_ccd(&zero)));
         self.machine.anchor.clone_from(&self.machine.firmware);
         Ok(())
     }
@@ -562,7 +563,7 @@ impl State {
         if let Some(history) = &mut self.days.history {
             history.push(DayApplication {
                 at: event.seq,
-                profile: applied.target.ccd().clone(),
+                profile: UnitProfile::of_ccd(applied.target.ccd()),
                 kind,
             })?;
         }
@@ -597,7 +598,7 @@ impl State {
                     (_, Some(wanted)) => ApplicationKind::Fallback {
                         events,
                         reverted,
-                        wanted: wanted.ccd().clone(),
+                        wanted: UnitProfile::of_ccd(wanted.ccd()),
                     },
                     (RetreatCause::Event { .. } | RetreatCause::Completion {}, None) => {
                         ApplicationKind::Retreat { events, reverted }
@@ -643,7 +644,7 @@ impl State {
         })?;
         Some(Reverted {
             step: application.seq,
-            ccd: changed,
+            unit: UnitId::Ccd(changed),
         })
     }
 }

@@ -3,13 +3,14 @@
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
+use crate::UnitProfile;
 use jiff::Timestamp;
 use togi_journal::{
     ApplicationId, DayHold, DayInterval, DayStep, DecisionId, HoldChange, HoldReason,
     IntervalState, ObservedProfile, QualificationState, RetreatCause as JournalRetreatCause, Seq,
     StepCauses, StepKind,
 };
-use togi_machine::{BootId, CcdProfile, ObservedOffset, PerCore};
+use togi_machine::{BootId, ObservedOffset, PerCore};
 
 use super::State;
 use super::books::{Committed, Observed};
@@ -64,7 +65,7 @@ fn day_interval(commit: &Committed<DayInterval>) -> crate::day::DayInterval {
     let interval = &commit.payload;
     let kind = match (interval.state, &interval.profile) {
         (IntervalState::Applied, ObservedProfile::Ccd { ccd, .. }) => IntervalKind::Applied {
-            profile: ccd.clone(),
+            profile: UnitProfile::of_ccd(ccd),
             readback: if interval.application.is_some() {
                 Readback::Verified
             } else {
@@ -369,7 +370,7 @@ impl State {
     fn hold_reasons(
         &self,
         blockers: &[Blocker],
-        proposal_profile: Option<&CcdProfile>,
+        proposal_profile: Option<&UnitProfile>,
     ) -> Result<Vec<HoldReason>, NotReady> {
         let mut reasons = Vec::new();
         for blocker in blockers {
@@ -401,7 +402,7 @@ impl State {
                 Blocker::NotQualified { .. } => {
                     let expired = proposal_profile.is_some_and(|profile| {
                         self.qualification_records().iter().any(|record| {
-                            record.start.payload.profile.ccd() == profile
+                            profile.matches_ccd(record.start.payload.profile.ccd())
                                 && self.is_current_record(record)
                                 && matches!(
                                     record.latest.payload.state,
@@ -441,8 +442,8 @@ impl State {
         &self,
         history: &crate::day::DayHistory,
         view: &DayView,
-        caps: &CcdProfile,
-    ) -> Result<BTreeSet<CcdProfile>, NotReady> {
+        caps: &UnitProfile,
+    ) -> Result<BTreeSet<UnitProfile>, NotReady> {
         Ok(crate::day::next_proposal(history, &view.events, caps)?
             .map(|proposal| proposal.profile)
             .filter(|profile| self.qualification_blocked(profile).is_some())
@@ -456,11 +457,11 @@ impl State {
             .map(|book| book.latest.seq)
     }
 
-    fn qualification_seq(&self, profile: &CcdProfile) -> Option<Seq> {
+    fn qualification_seq(&self, profile: &UnitProfile) -> Option<Seq> {
         self.qualification_records()
             .iter()
             .filter(|record| {
-                record.start.payload.profile.ccd() == profile
+                profile.matches_ccd(record.start.payload.profile.ccd())
                     && self.is_current_record(record)
                     && matches!(
                         record.latest.payload.state,
@@ -526,10 +527,10 @@ impl State {
                 .map_or(0, |last| last + 1),
         );
         let predecessor = self.days.steps.keys().next_back().copied().map(DecisionId);
-        let changed = |to: &CcdProfile| -> Vec<togi_machine::CcdId> {
+        let changed = |to: &UnitProfile| -> Vec<togi_machine::CcdId> {
             to.iter()
                 .filter(|&(ccd, offset)| applied.get(ccd) != Some(offset))
-                .map(|(ccd, _)| ccd)
+                .filter_map(|(unit, _)| unit.ccd())
                 .collect()
         };
         let cap_commits: Vec<Seq> = self.nights.caps.values().map(|cap| cap.seq).collect();
@@ -572,7 +573,7 @@ impl State {
                         Vec::new(),
                         format!(
                             "promote CCD {} from {} to {}",
-                            proposal.ccd,
+                            proposal.unit,
                             proposal.from.get(),
                             proposal.to.get()
                         ),
@@ -597,7 +598,7 @@ impl State {
                                 .collect(),
                             format!(
                                 "restore CCD {} from {} to {}: the step back it undoes was reclassified",
-                                proposal.ccd,
+                                proposal.unit,
                                 proposal.from.get(),
                                 proposal.to.get()
                             ),
@@ -607,7 +608,7 @@ impl State {
                 (
                     self.ccd_vector(&proposal.profile)?,
                     StepKind::Promote {
-                        changed: proposal.ccd,
+                        changed: proposal.unit.ccd().ok_or(NotReady::NonCoarse)?,
                     },
                     reason,
                     StepCauses {
@@ -692,7 +693,7 @@ impl State {
                     changed: applied
                         .iter()
                         .filter(|&(_, offset)| offset != togi_machine::TargetOffset::ZERO)
-                        .map(|(ccd, _)| ccd)
+                        .filter_map(|(unit, _)| unit.ccd())
                         .collect(),
                 },
                 "the firmware context changed: reset to CO 0".to_owned(),

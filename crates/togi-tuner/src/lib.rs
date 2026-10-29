@@ -25,11 +25,11 @@ pub use class::Secs;
 pub use crash::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 pub use partial::{HonestChain, PartialBasis, UncoveredReason};
 pub use policy::{
-    Action, CapProjection, CcdProjection, Contents, DayProjection, DayQuery, Decision, EndReason,
-    EventProjection, FirmwareValidity, FoldError, HoldProjection, MappingProjection,
-    NightProjection, NightQuery, NotReady, Params, PlanError, PolicyPayload, Projection,
-    QualificationProgress, QualificationProjection, QualificationStage, ReproductionProjection,
-    State, TrialPlan, VetoProjection,
+    Action, CapProjection, Contents, DayProjection, DayQuery, Decision, EndReason, EventProjection,
+    FirmwareValidity, FoldError, HoldProjection, MappingProjection, NightProjection, NightQuery,
+    NotReady, Params, PlanError, PolicyPayload, Projection, QualificationProgress,
+    QualificationProjection, QualificationStage, ReproductionProjection, State, TrialPlan,
+    UnitProjection, VetoProjection,
 };
 pub use topology::{Topology, TopologyError};
 pub use unit::{Phase, TuningUnit, UnitId, UnitProfile, UnitProfileError, Units};

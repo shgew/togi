@@ -1,3 +1,4 @@
+use crate::{UnitProfile, UnitProfileError};
 use togi_machine::{CcdProfile, CcdProfileError, CoreInfo, ObservedOffset, PerCore};
 
 /// Why a set of per-core offsets is not a day profile.
@@ -7,6 +8,8 @@ pub enum CoreProfileError {
     Empty,
     #[error("expanding a CCD profile onto the topology")]
     Ccd(#[from] CcdProfileError),
+    #[error("expanding a unit profile onto the topology")]
+    Unit(#[from] UnitProfileError),
 }
 
 /// The per-core offsets a daily event or a veto names: what the boot actually ran at, nonuniform or
@@ -31,6 +34,17 @@ impl CoreProfile {
             observed.set(core, offset.observed());
         }
         Self::new(observed)
+    }
+
+    /// Expands the exact tuning groups onto their physical member cores.
+    pub fn of_units(profile: &UnitProfile, cores: &[CoreInfo]) -> Result<Self, CoreProfileError> {
+        Self::new(
+            profile
+                .expand_topology(cores)?
+                .iter()
+                .map(|(core, offset)| (core, offset.observed()))
+                .collect(),
+        )
     }
 
     pub fn offsets(&self) -> &PerCore<ObservedOffset> {
