@@ -598,12 +598,21 @@ impl RecoveryState {
         }
     }
 
-    /// Admits the event's boot as a tuning boot and tracks its last kind. Day events and a repaired tear record
-    /// no tuning activity: a boot with only those is never a crash, and cannot make a later tuning start in it
-    /// look like a same-boot restart.
+    /// Only a tuning-run start or trial admits a boot. Shared night planning and SMU events
+    /// can also come from the day observer, so they cannot establish tuning activity.
     fn track_boot(&mut self, event: &Event) {
         if event.kind().is_day() || event.kind() == EventKind::JournalTorn {
             return;
+        }
+        let tuning = matches!(
+            event.kind(),
+            EventKind::SessionStart
+                | EventKind::ConfigLoaded
+                | EventKind::TrialIntent
+                | EventKind::TrialStart
+        );
+        if tuning && !self.boots.contains(&event.boot) {
+            self.boots.push(event.boot.clone());
         }
         if let Some(record) = self.records.get_mut(&event.boot) {
             if !matches!(
@@ -612,8 +621,7 @@ impl RecoveryState {
             ) {
                 record.last_kind = event.kind();
             }
-        } else {
-            self.boots.push(event.boot.clone());
+        } else if tuning {
             self.records
                 .insert(event.boot.clone(), BootRecord::new(event.kind()));
         }

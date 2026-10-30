@@ -331,7 +331,8 @@ fn a_warning_or_leave_reason_never_replaces_a_shutdown() {
 fn a_boot_without_a_shutdown_crashed_unless_it_is_current_or_a_crash_was_recorded() {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
-    log.at("b1", 0).add(warning("first of the boot"), &[]);
+    log.at("b1", 0)
+        .add(Payload::ConfigLoaded(config_loaded(None, None)), &[]);
     let state = log.state();
     assert_eq!(state.boots(), [boot("b0"), boot("b1")]);
     assert_eq!(
@@ -418,7 +419,9 @@ fn a_tuning_boot_after_a_day_only_boot_is_not_a_same_boot_restart() {
         log.add(payload, &[]);
     }
     assert!(!log.state().boots().contains(&boot("b1")));
-    log.add(warning("first tuning record of the boot"), &[]);
+    log.add(warning("a warning alone does not start tuning"), &[]);
+    assert!(!log.state().boots().contains(&boot("b1")));
+    log.add(Payload::ConfigLoaded(config_loaded(None, None)), &[]);
     assert_eq!(log.state().boots(), [boot("b0"), boot("b1")]);
 }
 
