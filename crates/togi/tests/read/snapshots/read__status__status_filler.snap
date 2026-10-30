@@ -2,11 +2,11 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-night since 00:00, 50h22m elapsed: mapping (task filler #0)
+night since 00:00, 39h32m elapsed: mapping (task filler #0)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#10771] trial 1810 core 00 offset -1 R1 mprime SSE 4K-21K 90 s
+in flight: [#8662] trial 1389 core 00 offset -1 R1 mprime SSE 4K-21K 90 s
   together mapping task filler #0 night #31 testing CCD0 at -1
 
 Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
@@ -17,9 +17,9 @@ CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
            core 0 120s isolated
 1   8-15  0   0   fallback rate     fails -7     0         103     128
   bound by R9 ycruncher-bkt-sftv4-all-threads serial cpu 25 120s isolated
-  CCD 0 current cap calculation: S 0; mapping rate bound; 4.5 h eligible mapping
+  CCD 0 current cap calculation: S 0; mapping rate bound; 3.1 h eligible mapping
     witnesses; 121 coverage gaps
-  CCD 1 current cap calculation: S 0; mapping rate bound; 3.7 h eligible mapping
+  CCD 1 current cap calculation: S 0; mapping rate bound; 2.6 h eligible mapping
     witnesses; 128 coverage gaps
   CCD 0 uncovered for the cap, no observations: R9
     ycruncher-bkt-sftv4-all-threads serial cpu 4 120s isolated
@@ -86,12 +86,12 @@ freeze: off
 firmware: valid
 
 Night since 00:00
-elapsed: 50h22m
+elapsed: 39h32m
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
 qualification    75%    0%    0s
-mapping          10%    83%   41h55m
-control          5%     16%   8h27m
+mapping          10%    78%   31h05m
+control          5%     21%   8h27m
 requalification  10%    0%    0s
 current task: mapping (task filler #0)
 mapping CCD 0: next offset 0
