@@ -2137,7 +2137,6 @@ dependencies = [
  "togi-journal",
  "togi-machine",
  "togi-requests",
- "togi-session",
 ]
 
 [[package]]

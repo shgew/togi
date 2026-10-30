@@ -18,7 +18,6 @@ togi-requests.workspace = true
 
 [dev-dependencies]
 test-case.workspace = true
-togi-session.workspace = true
 
 [lints]
 workspace = true

@@ -7,7 +7,6 @@
 
 mod controls_freeze;
 mod day;
-mod defect;
 mod fixture;
 mod flow;
 mod night;
