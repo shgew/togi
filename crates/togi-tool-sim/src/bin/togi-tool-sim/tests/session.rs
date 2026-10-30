@@ -210,7 +210,7 @@ fn record(fs: MemFs, config: Config) {
         max_boots: NonZeroU32::new(1000).unwrap(),
         stop_at: Some(simulator.now() + SignedDuration::from_hours(1)),
         write_samples: false,
-        defects: &[],
+        defects: togi_defect::KNOWN_DEFECTS,
         log: None,
         renderer: Renderer::default(),
         zone: TimeZone::UTC,

@@ -68,7 +68,7 @@ fn input(sim: &Simulator, mem: &MemFs) -> RunInput<'static> {
         machine,
         publication: PublicationPolicy::OnFinish,
         bootloader: None,
-        defects: &[],
+        defects: togi_defect::KNOWN_DEFECTS,
         resume: None,
         import: None,
         log: None,
