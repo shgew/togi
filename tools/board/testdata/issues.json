@@ -529,6 +529,46 @@
         "total": 0,
         "completed": 0
        }
+      },
+      {
+       "number": 518,
+       "title": "Complete first-night acceptance",
+       "body": "Run the remaining acceptance steps after installing a release with the fix.",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "feature"
+         },
+         {
+          "name": "P2"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": [
+         {
+          "number": 511,
+          "state": "OPEN"
+         },
+         {
+          "number": 505,
+          "state": "OPEN"
+         },
+         {
+          "number": 400,
+          "state": "CLOSED"
+         }
+        ]
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
       }
      ]
     }

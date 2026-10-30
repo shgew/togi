@@ -203,6 +203,7 @@ export def build [repo: string, issues: list<record>, pulls: list<record>, limit
         interactions: (interactions $limit $now)
         waiting: ($sorted | where {|i| 'needs-decision' in $i.labels})
         hardware: ($sorted | where {|i| 'needs-hardware' in $i.labels})
+        blocked: ($sorted | where {|i| ($i.blockers | is-not-empty) and 'needs-hardware' not-in $i.labels})
         untriaged: ($sorted | where {|i| 'needs-triage' in $i.labels})
         progress: $progress
         ready: (group $ready_issues)
@@ -233,6 +234,7 @@ export def render []: record -> string {
         (section Interactions [$'  ($b.interactions)'])
         (section 'Waiting on you (needs-decision)' ($b.waiting | each {|i| '  ' + (head $i) + (assigned $i)}))
         (section 'Waiting on the target machine (needs-hardware)' ($b.hardware | each {|i| '  ' + (head $i) + (assigned $i)}))
+        (section Blocked ($b.blocked | each {|i| '  ' + (head $i) + ' — blocked by ' + ($i.blockers | each {|n| $'#($n)'} | str join ', ')}))
         (section 'Untriaged (needs-triage)' ($b.untriaged | each {|i| '  ' + (head $i)}))
         (section 'In progress' ($b.progress | each {|i|
             [
