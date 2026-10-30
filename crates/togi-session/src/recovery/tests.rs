@@ -460,6 +460,49 @@ fn day_events_do_not_hide_a_tuning_boot_that_crashed() {
     );
 }
 
+/// A day observer's run in the current boot of `log`: its start, the stock profile it applies through the SMU events it
+/// shares with tuning, and its clean stop.
+fn day_observation(log: &mut Log) {
+    log.add(day_payloads().swap_remove(0), &[]);
+    let intent = log.intent(0, 0, &[]);
+    let write = log.written(0, 0, intent);
+    log.readback(0, 0, 0, write);
+    log.add(togi_journal::DayCleanStop {}.into(), &[]);
+}
+
+#[test]
+fn day_observation_after_a_tuning_shutdown_in_the_same_boot_is_no_crash() {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    log.add(shutdown(ShutdownReason::Signal), &[]);
+    day_observation(&mut log);
+    let state = log.state();
+    assert_eq!(state.last_kind(&boot("b0")), Some(EventKind::Shutdown));
+    assert_eq!(state.crashed_boots(&boot("b1")).count(), 0);
+}
+
+#[test]
+fn a_day_only_boot_after_a_crashed_tuning_boot_is_its_successor_for_retained_machine_checks() {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    let intent = log.trial_intent("t", None, Regime::R7);
+    log.started("t", Some(0), intent);
+    log.at("b1", 0);
+    day_observation(&mut log);
+    let retained = log.at("b2", 0).mce(Mce {
+        from_boot: Some(boot("b1")),
+        monotonic_ns: Some(1_000),
+        ..mce(false)
+    });
+    let state = log.state();
+    assert_eq!(
+        state.crashed_boots(&boot("b2")).collect::<Vec<_>>(),
+        [&boot("b0")]
+    );
+    assert_eq!(state.next_boot(&boot("b0"), &boot("b2")), &boot("b1"));
+    assert_eq!(state.recorded_for(&boot("b0"), &boot("b2")), [retained]);
+}
+
 trait Prev {
     fn prev(self) -> Seq;
 }

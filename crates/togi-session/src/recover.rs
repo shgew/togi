@@ -246,7 +246,7 @@ impl Crashes<'_, '_> {
     /// Whether the kernel of any boot of the journal logged a reset reason: then it reports them, and a crash it
     /// gave no reason for is no reset the hardware would have named.
     fn any_reason(&mut self, evidence: bool) -> Result<bool, Halt> {
-        let boots = self.state().boots().to_vec();
+        let boots = self.state().journal_boots().to_vec();
         for boot in &boots {
             let reason = self.read(boot, true, evidence, |kernel| kernel.reset_reason(boot))?;
             if reason.is_some_and(|reason| reason.kind.is_some()) {

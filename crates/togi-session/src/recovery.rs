@@ -230,7 +230,11 @@ pub(crate) struct RecoveryState {
     context: Option<BiosContext>,
     topology: PerCore<Option<CcdId>>,
     baseline: Option<(Seq, PerCore<ObservedOffset>)>,
+    /// Boots admitted by a tuning-run witness, oldest first: the ones crash detection and same-boot visits judge.
     boots: Vec<BootId>,
+    /// Every boot with any event in the journal, day-only boots included, oldest first: the order of succession.
+    #[serde(default)]
+    journal_boots: Vec<BootId>,
     records: BTreeMap<BootId, BootRecord>,
     crashes: BTreeMap<BootId, (Seq, CrashDetected)>,
     backends: BTreeMap<Backend, BackendState>,
@@ -598,9 +602,15 @@ impl RecoveryState {
         }
     }
 
-    /// Only a tuning-run start or trial admits a boot. Shared night planning and SMU events
-    /// can also come from the day observer, so they cannot establish tuning activity.
+    /// Folds `event` into the boots. Every boot with any event, day events included, joins `journal_boots`, the order
+    /// of succession. Only a tuning-run witness (`session.start`, `config.loaded`, a trial intent or start) admits a
+    /// boot to `boots`: shared night planning and SMU events can also come from the day observer. Once an admitted
+    /// boot has recorded its `shutdown`, only a witness replaces it, because what follows belongs to the day
+    /// observer, which the host and writer locks make exclusive with a tuning run.
     fn track_boot(&mut self, event: &Event) {
+        if !self.journal_boots.contains(&event.boot) {
+            self.journal_boots.push(event.boot.clone());
+        }
         if event.kind().is_day() || event.kind() == EventKind::JournalTorn {
             return;
         }
@@ -615,10 +625,12 @@ impl RecoveryState {
             self.boots.push(event.boot.clone());
         }
         if let Some(record) = self.records.get_mut(&event.boot) {
+            let closed = record.last_kind == EventKind::Shutdown;
             if !matches!(
                 event.kind(),
                 EventKind::SessionWarning | EventKind::BootLeaveReason
-            ) {
+            ) && (tuning || !closed)
+            {
                 record.last_kind = event.kind();
             }
         } else if tuning {
@@ -985,13 +997,18 @@ impl RecoveryState {
         })
     }
 
-    /// The boot that followed `boot` in the journal, or `current` when none has.
+    /// The boot that followed `boot` in the journal, day-only boots included, or `current` when none has.
     pub(crate) fn next_boot<'a>(&'a self, boot: &BootId, current: &'a BootId) -> &'a BootId {
-        self.boots
+        self.journal_boots
             .iter()
             .position(|known| known == boot)
-            .and_then(|at| self.boots.get(at + 1))
+            .and_then(|at| self.journal_boots.get(at + 1))
             .unwrap_or(current)
+    }
+
+    /// Every boot with any event in the journal, oldest first.
+    pub(crate) fn journal_boots(&self) -> &[BootId] {
+        &self.journal_boots
     }
 
     /// The machine checks a crash of `boot` may cite: those recorded from `boot` and not claimed by another crash,
