@@ -142,7 +142,6 @@ impl DefectState {
         })
     }
 
-
     pub fn fold(&mut self, event: &Event) {
         self.fold_with_mapping_rewind(event, None);
     }
@@ -305,9 +304,10 @@ impl DefectState {
                 .clauses
                 .iter()
                 .any(|clause| match clause {
-                    Clause::DirectCause { decision_kind, cause_kind: expected } => {
-                        *decision_kind == event.kind() && *expected == cause_kind
-                    }
+                    Clause::DirectCause {
+                        decision_kind,
+                        cause_kind: expected,
+                    } => *decision_kind == event.kind() && *expected == cause_kind,
                     Clause::MappingRewind => false,
                 })
                 .then_some((cause, cause_kind))

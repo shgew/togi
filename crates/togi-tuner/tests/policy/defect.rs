@@ -18,10 +18,13 @@ fn pre_fix_prefix() -> (Journal, TrialIntent, TrialIntent) {
             .intent(
                 TrialId::from("synthetic-probe"),
                 &super::fixture::cores(),
-                plan.workloads().into_iter().map(|workload| togi_journal::WorkloadContent {
-                    workload,
-                    content: super::fixture::content(),
-                }).collect(),
+                plan.workloads()
+                    .into_iter()
+                    .map(|workload| togi_journal::WorkloadContent {
+                        workload,
+                        content: super::fixture::content(),
+                    })
+                    .collect(),
             )
             .unwrap();
         if intent.task.is_some_and(|task| task.queue == Queue::Mapping)
@@ -46,7 +49,10 @@ fn jsonl_roundtrip(events: &[Event]) -> Vec<Event> {
         .map(|event| serde_json::to_string(event).unwrap())
         .collect::<Vec<_>>()
         .join("\n");
-    jsonl.lines().map(|line| serde_json::from_str(line).unwrap()).collect()
+    jsonl
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
 }
 
 #[derive(Clone, Copy)]
@@ -80,14 +86,23 @@ fn pre_fix_fixture_replay_marks_only_the_narrow_rewind(case: IntentCase, expecte
     };
     intent.trial = TrialId::from("synthetic-rewind");
     if !matches!(case, IntentCase::Resumed) {
-        intent.task = Some(TaskId { queue: Queue::Mapping, ordinal: 9000 });
+        intent.task = Some(TaskId {
+            queue: Queue::Mapping,
+            ordinal: 9000,
+        });
     }
     if matches!(case, IntentCase::OtherCcd) {
         // Use a CCD absent from the layout, so CCD 0's progress cannot be borrowed.
-        intent.tested = Some(Tested::Isolated { ccd: ccd(2), offset: TargetOffset::ZERO });
+        intent.tested = Some(Tested::Isolated {
+            ccd: ccd(2),
+            offset: TargetOffset::ZERO,
+        });
     }
     if matches!(case, IntentCase::ChangedContext) {
-        journal.append(super::fixture::firmware("synthetic-changed-firmware").into(), &[]);
+        journal.append(
+            super::fixture::firmware("synthetic-changed-firmware").into(),
+            &[],
+        );
     }
     if matches!(case, IntentCase::Exact) {
         intent.tested = Some(Tested::Exact {});
@@ -95,7 +110,9 @@ fn pre_fix_fixture_replay_marks_only_the_narrow_rewind(case: IntentCase, expecte
     let rewind = journal.append(intent.into(), &[]);
     let mut events = jsonl_roundtrip(&journal.events);
     if matches!(case, IntentCase::Fixed) {
-        let Payload::SessionStart(start) = &mut events[0].payload else { panic!("session start"); };
+        let Payload::SessionStart(start) = &mut events[0].payload else {
+            panic!("session start");
+        };
         start.build.fixes = FixStamp::through(togi_journal::DefectId::new(1).unwrap());
     }
     let replay = ReadState::replay(&events).unwrap();
@@ -104,7 +121,10 @@ fn pre_fix_fixture_replay_marks_only_the_narrow_rewind(case: IntentCase, expecte
     if expected == 1 {
         assert_eq!(findings[0].entry.id.get(), 1);
         assert_eq!(findings[0].decisions, [rewind]);
-        assert_eq!(findings[0].entry.direction, togi_journal::DefectDirection::TooCautious);
+        assert_eq!(
+            findings[0].entry.direction,
+            togi_journal::DefectDirection::TooCautious
+        );
     }
 }
 
@@ -112,7 +132,10 @@ fn pre_fix_fixture_replay_marks_only_the_narrow_rewind(case: IntentCase, expecte
 fn a_pre_fix_rewind_does_not_prevent_fixed_mapping_decisions() {
     let (mut journal, mut first, _) = pre_fix_prefix();
     first.trial = TrialId::from("synthetic-rewind");
-    first.task = Some(TaskId { queue: Queue::Mapping, ordinal: 9000 });
+    first.task = Some(TaskId {
+        queue: Queue::Mapping,
+        ordinal: 9000,
+    });
     journal.append(first.into(), &[]);
     let replay = ReadState::replay(&jsonl_roundtrip(&journal.events)).unwrap();
     assert_eq!(replay.defects().new_findings().count(), 1);
@@ -120,14 +143,18 @@ fn a_pre_fix_rewind_does_not_prevent_fixed_mapping_decisions() {
     let mut continued = journal;
     for _ in 0..50 {
         match continued.next(at(100)).unwrap() {
-            Action::Decide(decision) => { continued.append(decision.payload.into(), &decision.causes); }
+            Action::Decide(decision) => {
+                continued.append(decision.payload.into(), &decision.causes);
+            }
             Action::RunTrial(plan) => {
                 continued.run(&plan, Ending::Pass);
                 let replay = ReadState::replay(&jsonl_roundtrip(&continued.events)).unwrap();
                 assert_eq!(replay.defects().new_findings().count(), 1);
                 return;
             }
-            Action::EndNight(reason) => panic!("fixed mapping stopped instead of continuing: {reason:?}"),
+            Action::EndNight(reason) => {
+                panic!("fixed mapping stopped instead of continuing: {reason:?}")
+            }
         }
     }
     panic!("fixed mapping never scheduled its continuation");

@@ -164,10 +164,12 @@ impl State {
                 return Ok(None);
             };
             let completed_offset = TargetOffset::clamped(next + 5);
-            Ok((next < 0 && offset >= completed_offset).then_some(MappingRewind {
-                ccd,
-                completed_offset,
-            }))
+            Ok(
+                (next < 0 && offset >= completed_offset).then_some(MappingRewind {
+                    ccd,
+                    completed_offset,
+                }),
+            )
         })
     }
 
