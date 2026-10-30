@@ -239,6 +239,11 @@ def test-blocked-hardware [] {
     assert equal $blocked.ready []
     assert equal $blocked.progress []
 
+    let assigned = ($pending | update assignees [someone])
+    let progress = (build example/togi [$assigned] [] {limit: '', expires: null} $now)
+    assert equal $progress.blocked []
+    assert equal ($progress.progress | get number) [1]
+
     let installed = ($pending | update labels ($pending.labels | append needs-hardware))
     let waiting = (build example/togi [$installed] [] {limit: '', expires: null} $now)
     assert equal $waiting.blocked []

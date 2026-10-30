@@ -432,7 +432,12 @@
        },
        "parent": null,
        "blockedBy": {
-        "nodes": []
+        "nodes": [
+         {
+          "number": 507,
+          "state": "OPEN"
+         }
+        ]
        },
        "subIssuesSummary": {
         "total": 0,
