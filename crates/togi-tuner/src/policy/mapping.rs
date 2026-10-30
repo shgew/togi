@@ -225,10 +225,11 @@ impl State {
                         .map(Sig::of_cell)
                         .collect();
                     let covered = self.mapping_passes(ccd, offset, Some(trial.intent_seq));
-                    let passes = covered
+                    let mut passes: Vec<_> = covered
                         .iter()
                         .filter_map(|(sig, &seq)| wanted.contains(sig).then_some(seq))
                         .collect();
+                    passes.sort_unstable();
                     slot.insert(TaskProgress {
                         ccd,
                         offset,
@@ -441,11 +442,8 @@ impl State {
             .fresh()
             .map(Sig::of_cell)
             .collect();
-        let covered: HashSet<Sig> = self
-            .mapping_passes(ccd, target.offset, None)
-            .into_keys()
-            .collect();
-        Ok(wanted.is_subset(&covered))
+        let covered = self.mapping_passes(ccd, target.offset, None);
+        Ok(wanted.iter().all(|sig| covered.contains_key(sig)))
     }
 
     /// The mapping board, every CCD's edge and cap, and the next uncovered mapping step. A step whose cells
