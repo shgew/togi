@@ -22,6 +22,13 @@ use togi_machine::{CcdId, ContentId, TargetOffset, WorkloadId};
 /// Offsets run 0 to -50, so a cursor can never need more alignment steps than this.
 const MAX_ALIGN: usize = 60;
 
+/// A new mapping task revisits an already completed coarse offset in the current evidence context.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MappingRewind {
+    pub ccd: CcdId,
+    pub completed_offset: TargetOffset,
+}
+
 /// The mapping board replayed from the journal.
 #[derive(Clone, Debug)]
 pub(super) struct Mapped {
@@ -135,6 +142,34 @@ impl MapReplay {
 }
 
 impl State {
+    /// Whether a not-yet-folded intent starts a task behind a completed coarse mapping step. Bracket
+    /// and sweep work can legitimately return to shallower offsets and is never diagnosed this way.
+    pub fn mapping_rewind(
+        &self,
+        intent: &togi_journal::TrialIntent,
+    ) -> Result<Option<MappingRewind>, NotReady> {
+        let (Some(task), Some(Tested::Isolated { ccd, offset })) = (intent.task, intent.tested)
+        else {
+            return Ok(None);
+        };
+        if task.queue != togi_journal::Queue::Mapping || self.trials.by_task.contains_key(&task) {
+            return Ok(None);
+        }
+        self.with_layout(|layout| {
+            let mapped = self.replay_mapping(layout)?;
+            let Some(mapping) = mapped.board.unit(UnitId::Ccd(ccd)) else {
+                return Ok(None);
+            };
+            let Cursor::Coarse { offset: next } = mapping.cursor() else {
+                return Ok(None);
+            };
+            Ok((next < 0 && offset.get() > next).then(|| MappingRewind {
+                ccd,
+                completed_offset: TargetOffset::clamped(next + 5),
+            }))
+        })
+    }
+
     pub(super) fn known_contents(
         &self,
         extra: Option<&BTreeMap<WorkloadId, ContentId>>,

@@ -1,11 +1,14 @@
 use togi_journal::{DefectDirection, DefectId, EventKind, FixStamp};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Clause {
-    /// The kind of the Ruleset 13 decision event: `ccd.edge`, `ccd.cap`, `night.plan`, `night.qualification` or
-    /// `night.reproduction`.
-    pub decision_kind: EventKind,
-    pub cause_kind: EventKind,
+pub enum Clause {
+    /// A decision directly attributed to an event of the named kind.
+    DirectCause {
+        decision_kind: EventKind,
+        cause_kind: EventKind,
+    },
+    /// A first mapping intent proven by tuner replay to rewind a finished coarse step.
+    MappingRewind,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
