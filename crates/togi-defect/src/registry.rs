@@ -21,7 +21,17 @@ pub struct Entry {
     pub clauses: &'static [Clause],
 }
 
-pub static KNOWN_DEFECTS: &[Entry] = &[];
+pub static KNOWN_DEFECTS: &[Entry] = &[Entry {
+    id: match DefectId::new(1) {
+        Some(id) => id,
+        None => panic!("defect id must be nonzero"),
+    },
+    title: "Mapping restarted at a shallower coarse step",
+    detail: "A new mapping task revisited an already completed coarse offset on this CCD in the same evidence context. The fixed build preserves the original mapping declaration and continues the session.",
+    pr: 1513,
+    direction: DefectDirection::TooCautious,
+    clauses: &[Clause::MappingRewind],
+}];
 
 const _: () = assert!(is_ordered(KNOWN_DEFECTS));
 

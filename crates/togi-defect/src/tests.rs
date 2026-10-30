@@ -517,7 +517,7 @@ fn known_finding_view_carries_its_entry() {
 #[test]
 fn empty_registry_fixed_stamp_zero() {
     assert_eq!(fixed_stamp(&[]), FixStamp::none());
-    assert_eq!(fixed_stamp(KNOWN_DEFECTS), FixStamp::none());
+    assert_eq!(fixed_stamp(KNOWN_DEFECTS), FixStamp::through(id(1)));
     assert_eq!(fixed_stamp(&PAIR), FixStamp::through(id(2)));
 
     let mut log = Log::default();

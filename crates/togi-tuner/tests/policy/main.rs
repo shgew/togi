@@ -5,7 +5,9 @@
     reason = "integration test fixtures and assertions panic on invalid evidence"
 )]
 
+mod controls_freeze;
 mod day;
+mod defect;
 mod fixture;
 mod flow;
 mod night;

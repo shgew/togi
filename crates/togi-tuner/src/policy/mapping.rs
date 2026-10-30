@@ -163,9 +163,10 @@ impl State {
             let Cursor::Coarse { offset: next } = mapping.cursor() else {
                 return Ok(None);
             };
-            Ok((next < 0 && offset.get() > next).then(|| MappingRewind {
+            let completed_offset = TargetOffset::clamped(next + 5);
+            Ok((next < 0 && offset >= completed_offset).then_some(MappingRewind {
                 ccd,
-                completed_offset: TargetOffset::clamped(next + 5),
+                completed_offset,
             }))
         })
     }
