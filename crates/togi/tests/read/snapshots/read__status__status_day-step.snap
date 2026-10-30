@@ -11,28 +11,31 @@ in flight: none
 Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
   prove the hazard goal. Coverage gaps remain unknown.
 CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
-0   0-7   0   -6  fallback rate     censored -50 6         114     153
-  bound by R9 ycruncher-bkt-sftv4-all-threads serial cpu 0 120s isolated
-1   8-15  0   -6  fallback rate     censored -50 6         114     142
-  bound by R9 ycruncher-snt-svt-all-threads serial cpu 25 120s isolated
-  CCD 0 current cap calculation: S -6; mapping rate bound; 2.9 h eligible
-    mapping witnesses; 153 coverage gaps
-  CCD 1 current cap calculation: S -6; mapping rate bound; 2.9 h eligible
-    mapping witnesses; 142 coverage gaps
+0   0-7   0   -1  fallback rate     censored -50 1         105     129
+  bound by R9 ycruncher-snt-svt-all-threads serial cpu 6 120s isolated
+1   8-15  0   -1  fallback rate     censored -50 1         105     119
+  bound by R9 mprime-sse-4k-21k-all-threads serial cpu 31 120s isolated
+  CCD 0 current cap calculation: S -1; mapping rate bound; 2.7 h eligible
+    mapping witnesses; 129 coverage gaps
+  CCD 1 current cap calculation: S -1; mapping rate bound; 2.7 h eligible
+    mapping witnesses; 119 coverage gaps
   CCD 0 uncovered for the cap, no observations: R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 0 120s
-    isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
-    core 1 120s isolated; R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 2 120s
-    isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
-    core 3 120s isolated; R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 4 120s
-    isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
-    core 5 120s isolated; R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 6 120s
-    isolated; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light
-    core 7 120s isolated; R9 ycruncher-bkt-sftv4-all-threads serial cpu 19 120s
-    isolated
+    ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light core 0
+    120s isolated; R8
+    ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light core 1
+    120s isolated; R8
+    ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light core 2
+    120s isolated; R8
+    ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light core 3
+    120s isolated; R8
+    ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light core 4
+    120s isolated; R8
+    ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light core 5
+    120s isolated; R8
+    ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light core 6
+    120s isolated; R8
+    ycruncher-bkt-sftv4-steps-neighbours+mprime-avx512-36k-248k light core 7
+    120s isolated; R9 mprime-sse-4k-21k-all-threads serial cpu 23 120s isolated
   CCD 0 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
     90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
     exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
@@ -52,20 +55,7 @@ CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
     exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 6
     120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
     7 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
-    core 0 600s exact; R5 ycruncher-bkt-sftv4-smt 120s exact x8; R7
-    mprime-avx512-36k-248k-allcore 120s exact x7; R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 0 120s
-    exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core
-    1 120s exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k
-    light core 2 120s exact; R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 3 120s
-    exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core
-    4 120s exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k
-    light core 5 120s exact; R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 6 120s
-    exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core
-    7 120s exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k
-    light core 1 600s exact
+    core 0 600s exact
   CCD 1 uncovered for the cap, non-mapping exposure only: R1 mprime-sse-4k-21k
     90s exact x8; R1 ycruncher-bkt-sftv4 90s exact x8; R1 ycruncher-snt-svt 90s
     exact x8; R2 mprime-avx2-36k-248k 90s exact x8; R2 mprime-avx512-36k-248k
@@ -84,18 +74,6 @@ CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
     R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 13 120s
     exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 14
     120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
-    15 120s exact; R5 ycruncher-bkt-sftv4-smt 120s exact x8; R7
-    mprime-avx512-36k-248k-allcore 120s exact x7; R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 8 120s
-    exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core
-    9 120s exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k
-    light core 10 120s exact; R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 11 120s
-    exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core
-    12 120s exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k
-    light core 13 120s exact; R8
-    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 14 120s
-    exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core
     15 120s exact
   A class is uncovered for the cap when mapping has not adequately exposed it or
     it lies outside the mapping projection; uncovered is never read as safe.
@@ -103,7 +81,7 @@ CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 Day policy
 applied profile: CCD 0 0, CCD 1 0
 hold: none recorded
-latest step [#15003] at cold boot calendar-boot-39: promotes CCD 0 to CCD 0 -3,
+latest step [#12695] at cold boot calendar-boot-33: promotes CCD 0 to CCD 0 -1,
   CCD 1 0
 freeze: off
 firmware: valid
@@ -112,25 +90,23 @@ Last night 08:00–16:00
 elapsed: 8h00m
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
-qualification    75%    28%   2h19m
-mapping          10%    71%   5h41m
+qualification    75%    71%   5h41m
+mapping          10%    28%   2h19m
 control          5%     0%    0s
 requalification  10%    0%    0s
 current task: none
-mapping CCD 0: next offset -39
-mapping CCD 1: next offset -39
+mapping CCD 0: next offset -41
+mapping CCD 1: next offset -41
 qualification: CCD 0 -1, CCD 1 0 (next step) complete, 7.8 h eligible witnessed
-  exposure
-qualification: CCD 0 -3, CCD 1 0 (next step) complete, 7.9 h eligible witnessed
   exposure
 
 Day
-boots observed: 27; clean ends: 26; unclean ends: 0
+boots observed: 23; clean ends: 22; unclean ends: 0
 hardware watchdog at the last observer check: not recorded
 Applied hours per read-back profile (changed intervals excluded):
   00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0
-    15:0: 208.000 h
-all profiles: 208.0h observed, 0 crashes (14 unknown intervals)
-stock (CO 0): 208.0h observed, 0 crashes
+    15:0: 176.000 h
+all profiles: 176.0h observed, 0 crashes (12 unknown intervals)
+stock (CO 0): 176.0h observed, 0 crashes
 totals are observations, not a bound
 last unclean end: none
