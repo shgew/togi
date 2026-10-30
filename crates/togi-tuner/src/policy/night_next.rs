@@ -1,6 +1,6 @@
 //! `State::next`: drains the commitments the night owes, then asks the scheduler for the next trial.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use crate::UnitProfile;
 use togi_journal::{
@@ -12,7 +12,7 @@ use togi_machine::{BootId, ContentId, WorkloadId};
 
 use super::State;
 use super::decision::{Decision, PolicyPayload};
-use super::ledger::{Sig, is_adequate};
+use super::ledger::Sig;
 use super::mapping::MappingPlan;
 use super::night_query::{Action, EndReason, NightQuery, NotReady, runnable};
 use super::plan::TrialPlan;
@@ -20,7 +20,7 @@ use super::qualify::QualWork;
 use super::reproduce::{Open, ReproView};
 use crate::night::{
     AttemptScope, Cell, Consumed, Inputs, Layout, Matrix, NightTask, Queue, Reason, Reproduction,
-    ReproductionStage, Stock, WallSecs, Work, mapping_cells, next_task,
+    ReproductionStage, Stock, WallSecs, Work, next_task,
 };
 
 const fn activity_of(queue: Queue) -> Activity {
@@ -460,18 +460,12 @@ impl State {
             queue: JournalQueue::Mapping,
             ordinal,
         };
-        let matrix = mapping_cells(layout, target.unit, target.offset, ordinal)?;
-        let done: HashSet<Sig> = self
-            .task_exposures(task)
-            .filter(|record| {
-                record.observed.outcome == togi_journal::Outcome::Pass
-                    && is_adequate(&record.observed, &self.machine.cores)
-            })
-            .map(|record| Sig::of_class(&record.observed.class))
-            .collect();
+        let ccd = target.unit.ccd().ok_or(NotReady::NonCoarse)?;
+        let matrix = self.mapping_matrix(layout, ccd, target.offset, ordinal)?;
+        let done = self.mapping_passes(ccd, target.offset, None);
         let cells: Vec<_> = matrix
             .fresh()
-            .filter(|cell| !done.contains(&Sig::of_cell(cell)))
+            .filter(|cell| !done.contains_key(&Sig::of_cell(cell)))
             .copied()
             .collect();
         if cells.is_empty() {
