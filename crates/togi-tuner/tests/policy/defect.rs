@@ -16,7 +16,7 @@ fn pre_fix_prefix() -> (Journal, TrialIntent, TrialIntent) {
         let plan = journal.until_trial(at(100));
         let intent = plan
             .intent(
-                TrialId::from("synthetic-probe"),
+                TrialId::from("synthetic-probe".to_owned()),
                 &super::fixture::cores(),
                 plan.workloads()
                     .into_iter()
@@ -84,7 +84,7 @@ fn pre_fix_fixture_replay_marks_only_the_narrow_rewind(case: IntentCase, expecte
         | IntentCase::ChangedContext
         | IntentCase::Exact => first,
     };
-    intent.trial = TrialId::from("synthetic-rewind");
+    intent.trial = TrialId::from("synthetic-rewind".to_owned());
     if !matches!(case, IntentCase::Resumed) {
         intent.task = Some(TaskId {
             queue: Queue::Mapping,
@@ -131,7 +131,7 @@ fn pre_fix_fixture_replay_marks_only_the_narrow_rewind(case: IntentCase, expecte
 #[test]
 fn a_pre_fix_rewind_does_not_prevent_fixed_mapping_decisions() {
     let (mut journal, mut first, _) = pre_fix_prefix();
-    first.trial = TrialId::from("synthetic-rewind");
+    first.trial = TrialId::from("synthetic-rewind".to_owned());
     first.task = Some(TaskId {
         queue: Queue::Mapping,
         ordinal: 9000,

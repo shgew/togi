@@ -134,17 +134,17 @@ fn a_stock_failure_after_completed_controls_still_stops_the_night(cold: bool) {
     if cold {
         refold(&mut journal);
     }
-    let rerun = (0..5_000_i64)
-        .find_map(|step| {
-            let plan = journal.until_trial(at(20_000 + step));
-            if plan.task.queue == Queue::Control {
-                return Some(plan);
-            }
-            assert_ne!(plan.task.queue, Queue::Filler, "the night never reran it");
-            journal.run(&plan, Ending::Pass);
-            None
-        })
-        .expect("the night never reran the failed cell");
+    let Some(rerun) = (0..5_000_i64).find_map(|step| {
+        let plan = journal.until_trial(at(20_000 + step));
+        if plan.task.queue == Queue::Control {
+            return Some(plan);
+        }
+        assert_ne!(plan.task.queue, Queue::Filler, "the night never reran it");
+        journal.run(&plan, Ending::Pass);
+        None
+    }) else {
+        panic!("the night never reran the failed cell");
+    };
     assert!(rerun.profile.is_zero());
     assert_eq!(rerun.cell, failed.cell);
     journal.run(&rerun, Ending::Fail(None));
