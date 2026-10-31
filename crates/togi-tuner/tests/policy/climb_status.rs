@@ -53,7 +53,7 @@ fn a_night_that_maps_the_edges_after_a_hold_replaces_its_unknown_edge_blockers()
 
     // The night maps both CCDs' edges; no new decision has been committed yet.
     journal.reboot("night1");
-    journal.until_filler(|_| Ending::Pass);
+    let _ = journal.until_filler(|_| Ending::Pass);
     let projection = journal.state.project();
     let shown = held_reasons(&projection);
     assert!(

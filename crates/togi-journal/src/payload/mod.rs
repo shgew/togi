@@ -57,7 +57,7 @@ pub use session::{
     CommandReset, ConfigLoaded, DeadEnd, DefectAnswered, DefectFound, JournalTorn, PreflightCheck,
     ProfileApplied, ProfileChange, ProfileRestored, Provenance, ResetTarget, SessionArchived,
     SessionBaseline, SessionCarried, SessionContext, SessionNotice, SessionStart, SessionWarning,
-    Shutdown, StateRebuilt,
+    Shutdown, StateRebuilt, StockAttested,
 };
 pub use smu::{SmuCommand, SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord};
 pub use trial::{
@@ -215,6 +215,7 @@ payloads! {
     FirmwareRestoration(FirmwareRestoration) = "firmware.restoration",
     SuccessorImported(SuccessorImported) = "successor.imported",
     DayPause(DayPause) = "day.pause",
+    StockAttested(StockAttested) = "stock.attested",
 }
 
 impl Payload {
@@ -237,6 +238,7 @@ impl Payload {
             Self::ExposureObserved(p) => p.source.trial.as_ref(),
             Self::SessionStart(_)
             | Self::SessionContext(_)
+            | Self::StockAttested(_)
             | Self::SessionBaseline(_)
             | Self::SessionNotice(_)
             | Self::SessionArchived(_)
@@ -362,6 +364,7 @@ impl Payload {
             Self::FirmwareRestoration(p) => p.saved.cores.get(core).is_some(),
             Self::SessionStart(_)
             | Self::SessionContext(_)
+            | Self::StockAttested(_)
             | Self::SessionBaseline(_)
             | Self::SessionWarning(_)
             | Self::SessionArchived(_)

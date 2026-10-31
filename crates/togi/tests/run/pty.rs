@@ -31,8 +31,8 @@ const BOUND: Duration = Duration::from_mins(5);
 /// The file in [`DIR`] that lets a `real-panic` trial panic.
 const GO: &str = "panic-now";
 
-/// Trials that run until the run is cancelled, or panic as [`Panic`] says, from the first one at an offset the run
-/// wrote; the night's stock controls before it run as the machine runs them.
+/// Trials that run until the run is cancelled, or panic as [`Panic`] says, from the first
+/// nonzero mapping trial.
 struct Endless(Box<dyn Trials>, Panic);
 
 struct EndlessRunning(Box<dyn Running>, Panic);
@@ -124,6 +124,7 @@ fn real_process_helper() {
     }
     let dir = PathBuf::from(std::env::var_os(DIR).unwrap());
     let mut fake = Fake::in_dir(simulator(1000), &dir);
+    fake.attest_stock();
     fake.real_stderr = true;
     fake.interactive = true;
     let scenario = std::env::var(SCENARIO).unwrap_or_default();

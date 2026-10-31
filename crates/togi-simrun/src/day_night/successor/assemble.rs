@@ -899,7 +899,6 @@ fn summaries(
                             qualification.is_some_and(|qualification| {
                                 qualification.fresh_witnesses.contains(id)
                                     || qualification.reused_witnesses.contains(id)
-                                    || qualification.stock_controls.contains(id)
                             })
                         }) || restorations
                             .iter()
@@ -908,7 +907,6 @@ fn summaries(
                                 RestorationOutcome::Applied { qualification, .. } => {
                                     qualification.fresh_witnesses.contains(id)
                                         || qualification.reused_witnesses.contains(id)
-                                        || qualification.stock_controls.contains(id)
                                 }
                             })
                     });

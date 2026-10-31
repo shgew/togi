@@ -36,6 +36,7 @@ pub enum Control {
         uid: u32,
     },
     Reapply,
+    AttestStock,
 }
 
 /// The observer acknowledges a control only after its durable transaction succeeds.
@@ -83,6 +84,8 @@ pub enum Request {
     },
     /// Root only: reapply the day profile after resume; answered only once the transaction succeeded.
     Reapply,
+    /// Root only: record the confirmation against the observer's current firmware in this session.
+    AttestStock { session: SessionId },
 }
 
 object_only! {
@@ -439,6 +442,17 @@ pub fn respond(
                 },
             )?;
             Ok(Reply::Answered)
+        }
+        Request::AttestStock { session } => {
+            if uid != 0 {
+                return Ok(Reply::Refused { reason: "attesting stock stability needs root".into() });
+            }
+            if journal.session() != Some(session) {
+                return Ok(Reply::Refused { reason: "the day service has a different session".into() });
+            }
+            Ok(Reply::Controlled {
+                status: control(journal, clock, Control::AttestStock)?,
+            })
         }
         Request::Reapply => {
             // Reapply is reserved for the system sleep hook, unlike user-session controls.

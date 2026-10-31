@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
+use togi_journal::{Payload, SessionStart, Stamp, StockAttested};
 use togi_tuningboot::night::{BootSelection, SETUP_PATH, Selection, Setup};
 
 use crate::cli::{Context, examples};
@@ -21,9 +22,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 
 /// Reboot into the tuning boot for the night
 ///
-/// Shows what the night will do, as `togi status` plans it, then asks to reboot. On yes it says
-/// good night, points the boot loader at the tuning entry, remembering the selection it replaces,
-/// and reboots. Anything but yes changes nothing.
+/// Shows what the night will do, as `togi status` plans it, then asks to reboot and confirm
+/// stability at CO 0 with BIOS at stock. Yes durably records that assertion once per firmware
+/// context before changing the boot selection or rebooting. Anything but yes changes nothing.
 ///
 /// The night has no time limit: it runs until you end it with F10 on the tuning dashboard or the
 /// power button, or until the tuner stops on its own at a dead end or its restart limit. Each
@@ -129,6 +130,10 @@ pub fn begin(ctx: &mut Context<'_>, confirmation: Confirmation) -> Exit {
             Err(exit) => return exit,
         }
     }
+    let _host = match attest(ctx) {
+        Ok(lock) => lock,
+        Err(exit) => return exit,
+    };
     let bootloader = match ctx.system.bootloader(setup.boot_path()) {
         Ok(bootloader) => bootloader,
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
@@ -150,6 +155,101 @@ pub fn begin(ctx: &mut Context<'_>, confirmation: Confirmation) -> Exit {
     Exit::Ok
 }
 
+/// The normal mutation lifecycle also makes confirmation durable before the first tuning boot.
+/// Starting the envelope here leaves baseline readback and context observation to `run`.
+fn attest(ctx: &mut Context<'_>) -> Result<Option<togi_hostlock::HostLock>, Exit> {
+    let system = ctx.system;
+    if let Some(recorded) = system
+        .recorded_build(ctx.state_dir)
+        .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?
+        && crate::report::current_build().verdict(&recorded, togi_journal::Operation::Append)
+            == togi_journal::Verdict::Use
+    {
+        let recording = system.recording(&ctx.state_dir.join("events.jsonl"))
+            .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;
+        if let Some(Payload::SessionStart(start)) = recording.events().first().map(|event| &event.payload) {
+            use crate::day::socket::{Error, Reply, Request};
+            match system.day_request(&Request::AttestStock { session: start.session }) {
+                Ok(Reply::Controlled { .. }) => return Ok(None),
+                Err(Error::Absent(_)) => {}
+                Ok(Reply::Refused { reason }) => return Err(fail(ctx, COMMAND, reason)),
+                Ok(Reply::Questions { .. } | Reply::State { .. } | Reply::Answered
+                    | Reply::Recorded { .. } | Reply::Reapplied) => {
+                    return Err(fail(ctx, COMMAND, "unexpected day service reply"));
+                }
+                Err(error) => return Err(fail(ctx, COMMAND, togi_render::error_chain(&error))),
+            }
+        }
+    }
+    let lock = system.acquire_host_lock().map_err(|error| {
+        let exit = if matches!(error, togi_hostlock::Error::Busy { .. }) {
+            Exit::Locked
+        } else {
+            Exit::Error
+        };
+        crate::report::exit_with(ctx, COMMAND, togi_render::error_chain(&error), exit)
+    })?;
+    let firmware = system
+        .firmware_context(&lock)
+        .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;
+    let boot = system
+        .boot_id()
+        .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;
+    let dir = system.lock_state_dir(ctx.state_dir).map_err(|error| {
+        let exit = if matches!(error, togi_journal::LockError::Held { .. }) {
+            Exit::Locked
+        } else {
+            Exit::Error
+        };
+        crate::report::exit_with(ctx, COMMAND, togi_render::error_chain(&error), exit)
+    })?;
+    let build = crate::report::current_build();
+    let prepared = togi_session::prepare(dir, &build, boot, system.now())
+        .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;
+    let mut journal = prepared.journal;
+    if journal.events().is_empty() {
+        let session = match prepared.import {
+            Some(import) => import.destination(),
+            None => journal
+                .state_dir()
+                .session_id(system.now())
+                .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?,
+        };
+        let cores = system
+            .topology()
+            .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;
+        journal
+            .append(
+                stamp(ctx)?,
+                SessionStart { build, session, cores }.into(),
+                &[],
+            )
+            .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;
+    }
+    if !journal.events().iter().any(|event| {
+        matches!(&event.payload, Payload::StockAttested(attested) if attested.firmware == firmware)
+    }) {
+        journal
+            .append(stamp(ctx)?, StockAttested { firmware }.into(), &[])
+            .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;
+    }
+    journal
+        .close()
+        .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;
+    Ok(Some(lock))
+}
+
+fn stamp(ctx: &mut Context<'_>) -> Result<Stamp, Exit> {
+    Ok(Stamp {
+        time: ctx.system.now(),
+        mono: Some(
+            ctx.system
+                .monotonic()
+                .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?,
+        ),
+    })
+}
+
 /// Gives the tuning selection back after the night failed to start, so no later reboot enters a night the command
 /// reported as failed.
 fn restore_day(ctx: &mut Context<'_>, selection: &mut impl Selection, after: &str) {
@@ -164,7 +264,7 @@ fn restore_day(ctx: &mut Context<'_>, selection: &mut impl Selection, after: &st
 
 /// Asks whether to reboot into the night and reads the answer typed after the question.
 fn ask(ctx: &mut Context<'_>) -> Result<bool, Exit> {
-    if write!(ctx.out, "Reboot into the night now? [y/N] ")
+    if write!(ctx.out, "Confirm the machine is stable at CO 0 with BIOS at stock, and reboot into the night now? [y/N] ")
         .and_then(|()| ctx.out.flush())
         .is_err()
     {

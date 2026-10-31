@@ -305,7 +305,14 @@ impl State {
                     self.machine
                         .cores
                         .iter()
-                        .any(|info| info.core == core && info.ccd == tested)
+                        .any(|info| {
+                            info.core == core
+                                && (info.ccd == tested
+                                    || (trial.intent.activity
+                                        == Some(togi_journal::Activity::Mapping)
+                                        && trial.intent.profile.get(core)
+                                            == Some(TargetOffset::ZERO)))
+                        })
                 });
                 Some(IsolatedResult::Fail {
                     location: if on_tested {

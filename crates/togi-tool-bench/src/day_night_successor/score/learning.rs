@@ -927,11 +927,10 @@ impl Audit<'_> {
             );
         }
         if qualification.epoch != restoration.epoch
-            || qualification.stock_controls.is_empty()
             || qualification.fresh_witnesses.is_empty()
             || !qualification.reused_witnesses.is_empty()
         {
-            self.violate("restoration-new-context", id, "the restoration needs new-context stock controls and fresh qualification witnesses only");
+            self.violate("restoration-new-context", id, "the restoration needs matching-context fresh qualification witnesses only");
         }
         if !qualification.safety_checks_satisfied {
             self.violate("restoration-safety", id, "safety checks were not satisfied");

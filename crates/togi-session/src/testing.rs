@@ -246,6 +246,31 @@ impl Bench {
 
     /// What a run on the simulator's current boot is given, with no bootloader, terminal or carry.
     pub(crate) fn input(&self) -> RunInput<'static> {
+        let mut input = self.input_unattested();
+        let firmware = input.machine.host.bios_context().unwrap();
+        if input.journal.events().is_empty() {
+            let session = input.journal.state_dir().session_id(self.sim.now()).unwrap();
+            let cores = input.machine.host.topology().unwrap();
+            input.journal.append(
+                togi_journal::Stamp { time: self.sim.now(), mono: None },
+                SessionStart { build: build(), session, cores }.into(),
+                &[],
+            ).unwrap();
+        }
+        if !input.journal.events().iter().any(|event| {
+            matches!(&event.payload, Payload::StockAttested(value) if value.firmware == firmware)
+        }) {
+            input.journal.append(
+                togi_journal::Stamp { time: self.sim.now(), mono: None },
+                togi_journal::StockAttested { firmware }.into(),
+                &[],
+            ).unwrap();
+        }
+        input
+    }
+
+    /// A real unattended run cannot manufacture the operator's answer.
+    pub(crate) fn input_unattested(&self) -> RunInput<'static> {
         let mut machine = self.sim.seams();
         let boot = machine.host.boot_id().unwrap();
         let journal = simulated(&self.mem)
@@ -272,7 +297,7 @@ impl Bench {
         }
     }
 
-    /// When the operator ends a short night: room for one control trial (104 s) and not for a second.
+    /// When the operator ends a short night: room for one mapping trial and not for a second.
     pub(crate) fn short_night(&self) -> Timestamp {
         self.sim.now() + SignedDuration::from_secs(150)
     }

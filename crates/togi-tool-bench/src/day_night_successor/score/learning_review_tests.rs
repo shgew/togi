@@ -433,7 +433,6 @@ fn a_restoration_must_save_the_profile_deployed_before_the_reset() {
 }
 
 #[test_case(|record| qualification(record).fresh_witnesses.clear(), &["restoration-new-context"]; "no fresh witness")]
-#[test_case(|record| qualification(record).stock_controls.clear(), &["restoration-new-context"]; "no stock control")]
 #[test_case(|record| qualification(record).reused_witnesses.push("old".into()), &["restoration-new-context"]; "a reused witness")]
 #[test_case(|record| qualification(record).epoch = "before".into(), &["restoration-new-context"]; "the old context")]
 #[test_case(|record| qualification(record).safety_checks_satisfied = false, &["restoration-safety"]; "unsatisfied safety checks")]
@@ -660,7 +659,6 @@ fn promote_unit_zero_again(
                     day: qualified,
                     epoch: epoch.into(),
                     profile: after,
-                    stock_controls: vec!["control-0b".into()],
                     fresh_witnesses: vec!["fresh-0b".into()],
                     reused_witnesses: vec![],
                     safety_checks_satisfied: true,

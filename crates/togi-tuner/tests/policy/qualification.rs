@@ -36,7 +36,9 @@ fn next_proposal_cycle(journal: &mut Journal) -> Vec<CcdProfile> {
     let completed = completed_proposals(journal);
     let mut qualified = Vec::new();
     for _ in 0..3_500 {
-        let plan = journal.until_trial(journal.now());
+        let Ok(plan) = journal.until_end(journal.now(), &std::collections::BTreeMap::new()) else {
+            return qualified;
+        };
         if completed_proposals(journal) > completed || plan.task.queue == Queue::Filler {
             return qualified;
         }
@@ -71,6 +73,35 @@ fn failed_commitments(journal: &Journal, profile: &CcdProfile) -> usize {
                     && matches!(record.state, QualificationState::Failed { .. }))
         })
         .count()
+}
+
+#[test]
+fn a_qualification_failure_on_a_stock_core_blocks_the_exact_profile_without_a_stock_rerun() {
+    let mut journal = Journal::ready();
+    for _ in 0..3_500 {
+        let plan = journal.until_trial(journal.now());
+        if !qualifies_proposal(&plan) {
+            journal.run(&plan, Ending::Pass);
+            continue;
+        }
+        let profile = plan.profile.to_ccd().unwrap();
+        assert_eq!(profile.get(ccd(1)), Some(togi_machine::TargetOffset::ZERO));
+        let edge = journal.state.project().climb.units[0].edge.clone();
+        let from = journal.events.len();
+        journal.run(&plan, Ending::Fail(Some(2)));
+        assert!(next_proposal_cycle(&mut journal).is_empty());
+        assert_eq!(failed_commitments(&journal, &profile), 1);
+        assert_eq!(journal.state.project().climb.units[0].edge, edge);
+        assert!(journal.events[from..].iter().all(|event| match &event.payload {
+            Payload::TrialIntent(intent) => {
+                intent.activity != Some(Activity::Control)
+                    && intent.profile.iter().any(|(_, offset)| offset.get() != 0)
+            }
+            _ => true,
+        }));
+        return;
+    }
+    panic!("no exact proposed-profile trial");
 }
 
 #[test]
@@ -136,7 +167,7 @@ fn a_fresh_session_may_qualify_a_proposal_an_earlier_session_failed() {
     let mut journal = Journal::ready();
     let failed = fail_first_proposal(&mut journal, &content());
     // The next query commits the failure before it asks for a trial.
-    journal.until_trial(journal.now());
+    let _ = journal.until_end(journal.now(), &std::collections::BTreeMap::new());
     assert_eq!(failed_commitments(&journal, &failed), 1);
     journal.reboot("fresh");
     journal.start_session("20240101T000000Z");

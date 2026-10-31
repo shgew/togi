@@ -145,7 +145,6 @@ fn ruleset13_promotions_keep_their_journal_witnesses() {
                     .fresh_witnesses
                     .iter()
                     .chain(&qualification.reused_witnesses)
-                    .chain(&qualification.stock_controls)
             })
             .collect();
         assert!(
@@ -1090,7 +1089,6 @@ fn reclassified_restoration_witnesses_qualify_only_restored_units_without_promot
                 day: 2.0,
                 epoch: "initial".to_owned(),
                 profile: deployed,
-                stock_controls: Vec::new(),
                 fresh_witnesses: vec![witness],
                 reused_witnesses: Vec::new(),
                 safety_checks_satisfied: true,

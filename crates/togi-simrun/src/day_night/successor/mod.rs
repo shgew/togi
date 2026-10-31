@@ -335,7 +335,6 @@ object_only! {
         pub epoch: String,
         #[serde(deserialize_with = "profile::deserialize")]
         pub profile: PerCore<u8>,
-        pub stock_controls: Vec<String>,
         pub fresh_witnesses: Vec<String>,
         pub reused_witnesses: Vec<String>,
         pub safety_checks_satisfied: bool,

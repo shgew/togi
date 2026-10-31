@@ -410,7 +410,6 @@ fn restored() -> Script {
                 day: qualified_day,
                 epoch: "firmware-1".to_owned(),
                 profile: depths(1),
-                stock_controls: Vec::new(),
                 fresh_witnesses: vec!["qualifying".to_owned()],
                 reused_witnesses: Vec::new(),
                 safety_checks_satisfied: true,

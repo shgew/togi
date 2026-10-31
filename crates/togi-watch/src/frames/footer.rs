@@ -164,7 +164,10 @@ fn offer_clause(direction: Direction, colours: Colours) -> Clause {
 /// puts, then `y/N`, then the answer keys alone.
 fn asking_line(direction: Direction, width: usize, colours: Colours) -> Line<'static> {
     let (question, short) = match direction {
-        Direction::Night => ("Reboot into the night tuning?", "Reboot into the night?"),
+        Direction::Night => (
+            "Confirm stable at CO 0 with BIOS at stock; reboot into the night?",
+            "CO0 stable, BIOS stock; reboot?",
+        ),
         Direction::Day => ("Reboot into the day cycle?", "Reboot into the day?"),
     };
     let amber = |text: String| Line::styled(text, Paint::Warn.style(colours));

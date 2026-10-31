@@ -19,7 +19,46 @@ fn samples_cover_every_kind_once() {
     let kinds: BTreeSet<_> = samples().iter().map(Payload::kind).collect();
     assert_eq!(kinds.len(), samples().len());
     assert_eq!(kinds, EventKind::ALL.iter().copied().collect());
-    assert_eq!(EventKind::ALL.len(), 84);
+    assert_eq!(EventKind::ALL.len(), 85);
+}
+
+#[test_case::test_case("/data"; "payload")]
+#[test_case::test_case("/data/firmware"; "firmware")]
+fn stock_attestation_is_additive_and_strict(path: &str) {
+    let expected = super::fixtures::at(
+        2,
+        "boot-a",
+        0,
+        &[1],
+        StockAttested { firmware: super::fixtures::bios() }.into(),
+    );
+    let encoded = expected.encode().unwrap();
+    assert_eq!(Event::decode(&encoded).unwrap(), expected);
+    assert_eq!(expected.kind().as_str(), "stock.attested");
+    assert_eq!(SCHEMA, 1);
+    let mut unknown: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    unknown.pointer_mut(path).unwrap()["extra"] = serde_json::json!(true);
+    assert!(matches!(
+        Event::decode(&unknown.to_string()),
+        Err(DecodeError::UnknownField { .. })
+    ));
+    let header = super::fixtures::at(
+        1, "boot-a", 0, &[], super::fixtures::sample(EventKind::SessionStart),
+    ).encode().unwrap();
+    let journal = format!("{header}\n{unknown}\n");
+    let mut reader = EventReader::lenient(journal.as_bytes());
+    reader.next().unwrap().unwrap();
+    assert_eq!(reader.next().unwrap().unwrap(), expected);
+    assert!(reader.next().is_none());
+    let legacy = super::fixtures::sample(EventKind::SessionContext);
+    let legacy = Event::new(seq(2), stamp(None), boot(), vec![seq(1)], legacy);
+    let mut legacy_json = serde_json::to_value(&legacy).unwrap();
+    assert!(legacy_json["data"].get("firmware").is_none());
+    legacy_json["data"]["firmware"] = serde_json::json!({});
+    assert!(matches!(
+        Event::decode(&legacy_json.to_string()),
+        Err(DecodeError::UnknownField { .. })
+    ));
 }
 
 #[test]

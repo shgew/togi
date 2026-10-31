@@ -19,7 +19,6 @@ mod climb_fold;
 mod climb_import;
 mod climb_projection;
 mod climb_view;
-mod controls;
 mod day_climb;
 mod day_events;
 mod day_query;
@@ -37,6 +36,7 @@ mod projection;
 mod qualify;
 mod reproduce;
 mod statistical;
+mod stock;
 pub mod successor;
 pub(crate) mod wire;
 
@@ -87,7 +87,6 @@ impl Params {
         hold: DayParams::SPEC,
         budgets: Budgets {
             mapping: crate::night::MAPPING_SHARE_PCT,
-            controls: crate::night::CONTROLS_SHARE_PCT,
             requalification: crate::night::REQUALIFICATION_SHARE_PCT,
             reproduction: crate::night::REPRODUCTION_SHARE_PCT,
             qualification: crate::night::QUALIFICATION_SHARE_PCT,

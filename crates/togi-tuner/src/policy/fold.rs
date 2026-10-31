@@ -78,6 +78,11 @@ impl State {
                 self.machine.topology = Topology::new(&p.cores).ok();
             }
             Payload::SessionContext(p) => self.machine.set_firmware(seq, p.bios_context()),
+            Payload::StockAttested(p) => {
+                if !self.machine.stock_attestations.contains(&p.firmware) {
+                    self.machine.stock_attestations.push(p.firmware.clone());
+                }
+            }
             Payload::SessionBaseline(_) => self.baseline(seq)?,
             Payload::TrialIntent(p) => self.intent(event, p),
             Payload::TrialStart(p) => {

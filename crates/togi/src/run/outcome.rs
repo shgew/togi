@@ -197,6 +197,7 @@ impl HiddenClosing {
             | EventKind::DayFreeze
             | EventKind::DayInterval
             | EventKind::DayPause
+            | EventKind::StockAttested
             | EventKind::DayImported
             | EventKind::CommandReset
             | EventKind::DefectFound

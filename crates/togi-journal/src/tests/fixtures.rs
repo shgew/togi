@@ -1027,6 +1027,7 @@ pub(crate) fn samples() -> Vec<Payload> {
             source: PauseSource::Command { uid: 1000 },
         }
         .into(),
+        StockAttested { firmware: bios() }.into(),
     ]
     .into_iter()
     .chain(super::ruleset14::samples())

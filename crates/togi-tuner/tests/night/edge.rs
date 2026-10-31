@@ -40,12 +40,12 @@ fn pass_until(mapping: &mut UnitMapping, until: i64, ceiling: i64) {
 }
 
 #[test]
-fn a_new_ccd_has_an_unknown_edge_and_starts_at_stock() {
+fn a_new_ccd_has_an_unknown_edge_and_starts_five_counts_below_stock() {
     let mapping = UnitMapping::default();
     assert_eq!(mapping.edge(), EdgeU::Unknown);
     assert_eq!(mapping.edge().offset(), None);
     assert_eq!(mapping.edge().ceiling(), None);
-    assert_eq!(target(&mapping, 0), Some((0, MappingKind::Coarse)));
+    assert_eq!(target(&mapping, 0), Some((-5, MappingKind::Coarse)));
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn coarse_descent_completes_a_step_before_going_five_counts_deeper() {
         seen.push(target(&mapping, 0).unwrap().0);
         mapping.finish(StepResult::Passed);
     }
-    assert_eq!(seen, [0, -5, -10, -15]);
+    assert_eq!(seen, [-5, -10, -15, -20]);
 }
 
 #[test]
@@ -148,11 +148,17 @@ fn adverse_edge_evidence_extends_the_uncovered_sweep_toward_its_new_ceiling() {
 }
 
 #[test]
-fn a_failure_at_stock_has_nothing_to_bracket() {
+fn a_failure_at_the_first_step_brackets_from_the_implicit_zero_pass_without_mapping_zero() {
     let mut mapping = UnitMapping::default();
     mapping.finish(fail(1));
-    assert_eq!(mapping.edge().offset(), Some(offset(0)));
-    assert_eq!(target(&mapping, 0), None);
+    assert_eq!(mapping.edge().offset(), Some(offset(-5)));
+    let mut bracket = Vec::new();
+    while let Some((o, MappingKind::Bracket)) = target(&mapping, 0) {
+        bracket.push(o);
+        mapping.finish(StepResult::Passed);
+    }
+    assert_eq!(bracket, [-1, -2, -3, -4]);
+    assert_eq!(mapping.cursor(), Cursor::Sweep { next: -4 });
 }
 
 #[test]
@@ -238,7 +244,7 @@ fn an_outside_failure_inside_the_unmapped_gap_turns_the_descent_into_a_bracket()
     // A failure deeper than the step in progress leaves the descent alone.
     let mut deeper = UnitMapping::default();
     deeper.observe(offset(-30), charged(8));
-    assert_eq!(target(&deeper, 0), Some((0, MappingKind::Coarse)));
+    assert_eq!(target(&deeper, 0), Some((-5, MappingKind::Coarse)));
 }
 
 #[test]
@@ -269,11 +275,11 @@ fn ccds_are_visited_round_robin_one_offset_each() {
     assert_eq!(
         visits,
         [
-            (unit(0), 0),
-            (unit(1), 0),
             (unit(0), -5),
             (unit(1), -5),
-            (unit(0), -10)
+            (unit(0), -10),
+            (unit(1), -10),
+            (unit(0), -15)
         ]
     );
 }
@@ -281,18 +287,30 @@ fn ccds_are_visited_round_robin_one_offset_each() {
 #[test]
 fn a_ccd_with_nothing_to_map_is_skipped_and_the_rotation_wraps() {
     let mut board = MappingBoard::new([unit(0), unit(1), unit(2)]);
-    // CCD 1 fails at stock: nothing to bracket, sweep range empty at C = 0.
+    // CCD 1 failed at -1: nothing to bracket, and its sweep would start at stock, which is never mapped.
+    board.observe(IsolatedObservation {
+        unit: unit(1),
+        offset: offset(-1),
+        result: charged(1),
+    });
     board.finish_step(unit(0), StepResult::Passed);
-    board.finish_step(unit(1), fail(1));
-    let next = board.next_target(&caps(&[])).unwrap();
-    assert_eq!((next.unit, next.offset.get()), (unit(2), 0));
+    let next = board.next_target(&caps(&[(1, 0)])).unwrap();
+    assert_eq!((next.unit, next.offset.get()), (unit(2), -5));
     board.finish_step(unit(2), StepResult::Passed);
-    let next = board.next_target(&caps(&[])).unwrap();
-    assert_eq!((next.unit, next.offset.get()), (unit(0), -5));
+    let next = board.next_target(&caps(&[(1, 0)])).unwrap();
+    assert_eq!((next.unit, next.offset.get()), (unit(0), -10));
     assert_eq!(
         board.unit(unit(1)).unwrap().edge().offset(),
-        Some(offset(0))
+        Some(offset(-1))
     );
+}
+
+#[test]
+fn no_sweep_target_is_ever_zero() {
+    let mut mapping = UnitMapping::default();
+    mapping.observe(offset(-1), charged(1));
+    assert_eq!(mapping.cursor(), Cursor::Sweep { next: 0 });
+    assert_eq!(target(&mapping, 0), None);
 }
 
 #[test]

@@ -16,7 +16,7 @@
   "climb": {
     "campaign": {
       "campaign": {
-        "seq": 36,
+        "seq": 37,
         "session": "20231114T221320Z"
       },
       "consumed": 1,
@@ -72,7 +72,7 @@
           "reclassified": false,
           "unit_phase": "Coarse",
           "witnesses": [
-            40
+            41
           ]
         }
       ],
@@ -131,7 +131,7 @@
         }
       },
       "witnesses": [
-        41
+        42
       ]
     },
     "firmware_restoration": null,
@@ -264,14 +264,14 @@
               "kind": "fallback"
             },
             "uncovered": [],
-            "witness": 16
+            "witness": 17
           }
         },
         "edge": {
           "kind": "censored",
           "limit": -50,
           "witnesses": [
-            13
+            14
           ]
         },
         "hold": {
@@ -322,7 +322,7 @@
             }
           },
           "application": 1,
-          "at": "2023-11-17T00:13:58Z",
+          "at": "2023-11-17T00:13:59Z",
           "before": {
             "cores": {
               "0": 0,
@@ -355,8 +355,8 @@
             }
           },
           "witnesses": [
-            37,
-            38
+            38,
+            39
           ]
         },
         "next": null,
@@ -364,7 +364,7 @@
         "phase": "Coarse",
         "remaining": 40,
         "state": {
-          "at": "2023-11-17T00:14:00Z",
+          "at": "2023-11-17T00:14:01Z",
           "kind": "finished",
           "last_clean": 0,
           "profile": {
@@ -407,9 +407,9 @@
             "kind": "first_backstep"
           },
           "witnesses": [
-            15,
-            41,
-            38
+            16,
+            42,
+            39
           ]
         },
         "unit": {
@@ -472,14 +472,14 @@
               "kind": "fallback"
             },
             "uncovered": [],
-            "witness": 22
+            "witness": 23
           }
         },
         "edge": {
           "kind": "censored",
           "limit": -50,
           "witnesses": [
-            19
+            20
           ]
         },
         "hold": {
@@ -563,7 +563,7 @@
         ]
       ],
       "required_s": 180000,
-      "witness": 43
+      "witness": 44
     },
     "last_step": null,
     "pending_questions": []
@@ -603,11 +603,6 @@
       },
       {
         "consumed_s": 0,
-        "queue": "control",
-        "share_pct": 5
-      },
-      {
-        "consumed_s": 0,
         "queue": "requalification",
         "share_pct": 10
       },
@@ -617,9 +612,9 @@
         "share_pct": 0
       }
     ],
-    "closed_by": 29,
+    "closed_by": 30,
     "filler": 0,
-    "night": 10,
+    "night": 11,
     "unavailable": []
   },
   "stopped": false,

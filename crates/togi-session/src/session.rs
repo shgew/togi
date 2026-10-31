@@ -767,7 +767,9 @@ impl<'machine> Session<'machine> {
         let reason = match stop {
             Stop::Signal => ShutdownReason::Signal,
             Stop::DeadEnd { .. } | Stop::Night(EndReason::DeadEnd) => ShutdownReason::DeadEnd,
-            Stop::Night(EndReason::Unavailable) => ShutdownReason::DeadEnd,
+            Stop::Night(
+                EndReason::Unavailable | EndReason::StockUnattested | EndReason::NoNonzeroWork,
+            ) => ShutdownReason::DeadEnd,
         };
         self.shutdown = Some(Shutdown {
             reason,

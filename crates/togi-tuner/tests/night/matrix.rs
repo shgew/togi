@@ -4,8 +4,7 @@ use test_case::test_case;
 use togi_machine::{ALL_REGIMES, CcdId, CpuId, PerCore, Regime, WorkloadId, pick_workload};
 use togi_tuner::night::{
     AttemptScope, Cell, HostPool, Matrix, PackageLoad, Purpose, Reuse, Roles, Source, Workloads,
-    control_cells, mapping_cells, minimum_position_seconds, qualification_cells,
-    reproduction_cells, zeroed,
+    mapping_cells, minimum_position_seconds, qualification_cells, reproduction_cells,
 };
 use togi_tuner::{HonestChain, UncoveredReason};
 
@@ -404,10 +403,16 @@ fn a_tied_measured_chain_without_a_partial_runs_the_subset_fallback() {
 }
 
 #[test]
-fn control_cells_are_the_full_matrix_at_all_zero_fresh() {
+fn an_all_fresh_qualification_matrix_keeps_its_nonzero_profile_and_launches_every_cell() {
     let machine = two_ccds();
-    let matrix = control_cells(&machine.layout(), &profile(&[-10, -5]), 3).unwrap();
-    assert_eq!(matrix.profile, profile(&[0, 0]));
+    let matrix = qualification_cells(
+        &machine.layout(),
+        &profile(&[-10, -5]),
+        3,
+        &Reuse::AllFresh,
+    )
+    .unwrap();
+    assert_eq!(matrix.profile, profile(&[-10, -5]));
     assert_eq!(matrix.fresh_launches(), 259);
     assert!(matrix.cells.iter().all(|p| p.source == Source::Fresh));
 }
@@ -543,11 +548,6 @@ fn a_ccd_at_zero_has_nothing_to_isolate() {
             unit: crate::fixture::unit(0)
         }
     );
-}
-
-#[test]
-fn zeroed_clears_every_ccd() {
-    assert_eq!(zeroed(&profile(&[-10, -5])), profile(&[0, 0]));
 }
 
 #[test]

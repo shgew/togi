@@ -82,7 +82,7 @@ fn backends_of(intent: &TrialIntent) -> Vec<Backend> {
 }
 
 #[test]
-fn a_night_runs_its_controls_then_maps_until_the_operator_ends_it() {
+fn an_attested_night_maps_from_minus_five_without_an_all_zero_trial() {
     let bench = bench();
     let ended = crate::run(bench.input_ending_at(a_night(&bench)));
 
@@ -91,17 +91,31 @@ fn a_night_runs_its_controls_then_maps_until_the_operator_ends_it() {
         .iter()
         .filter_map(|intent| intent.task.map(|task| task.queue))
         .collect();
-    assert_eq!(queues.first(), Some(&Queue::Control), "{queues:?}");
-    let first_mapping = queues
-        .iter()
-        .position(|queue| *queue == Queue::Mapping)
-        .expect("the night maps");
-    assert!(
-        queues[first_mapping..]
-            .iter()
-            .all(|queue| *queue != Queue::Control),
-        "{queues:?}"
-    );
+    assert_eq!(queues.first(), Some(&Queue::Mapping), "{queues:?}");
+    assert!(queues.iter().all(|queue| *queue != Queue::Control), "{queues:?}");
+    let trials = intents(ended.journal.events());
+    assert_eq!(trials.first().unwrap().offset.get(), -5);
+    assert!(trials.iter().all(|trial| {
+        trial.profile.iter().any(|(_, offset)| offset.get() != 0)
+    }));
+}
+
+#[test]
+fn unattended_run_without_operator_attestation_ends_named_and_at_stock() {
+    let bench = bench();
+    let ended = crate::run(bench.input_unattested());
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let Some(Stop::DeadEnd { dead_end, .. }) = &ended.stop else {
+        panic!("{:?}", ended.stop);
+    };
+    assert_eq!(dead_end.condition, DeadEndCondition::NoEvidence);
+    assert!(dead_end.detail.starts_with("stock_unattested:"));
+    assert!(intents(ended.journal.events()).is_empty());
+    assert_eq!(count(ended.journal.events(), "stock.attested"), 0);
+    let mut smu = bench.sim.seams().smu;
+    for core in 0..8 {
+        assert_eq!(smu.offset(crate::testing::core(core)).unwrap().0, 0, "core {core}");
+    }
 }
 
 #[test]

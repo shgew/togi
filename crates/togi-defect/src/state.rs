@@ -232,6 +232,7 @@ impl DefectState {
             | Payload::DayFreeze(_)
             | Payload::DayInterval(_)
             | Payload::DayPause(_)
+            | Payload::StockAttested(_)
             | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::TunerDecision(_)

@@ -180,6 +180,21 @@ impl State {
                     )?));
                 }
             };
+            // Stock is observation-only; no workload can reproduce an all-zero profile.
+            if ccd_profile.is_zero() {
+                let Some(night) = current else {
+                    continue;
+                };
+                return Ok(ReproView::Commit(self.close_reproduction(
+                    &source,
+                    ordinal,
+                    night,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    ReproductionState::Untestable,
+                )?));
+            }
             let committed = self.reproduction_of(&source);
             let Some(attempt_night) = committed.map(|commit| commit.payload.night).or(current)
             else {

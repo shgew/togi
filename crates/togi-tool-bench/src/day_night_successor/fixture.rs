@@ -272,7 +272,6 @@ fn qualification(
         day,
         epoch: epoch.into(),
         profile,
-        stock_controls: vec![format!("control-{tag}")],
         fresh_witnesses: vec![format!("fresh-{tag}")],
         reused_witnesses: vec![],
         safety_checks_satisfied: true,

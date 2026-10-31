@@ -1,19 +1,21 @@
 //! The night model: a night opens at its first plan, runs until it closes, ends on its own only at a dead
-//! end or when no runnable cell is left, and owes its closure to the next query.
+//! end, an unattested stock, an excluded backend or an empty nonzero queue, and owes its closure to the
+//! next query. Stock is observation-only: no night ever runs an all-zero trial.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use test_case::test_case;
 use togi_journal::{
     Activity, CommandReset, NightId, Payload, QualificationState, Queue, ResetTarget, Seq,
-    Shutdown, ShutdownReason, TaskId, Tested, UnavailableBackend,
+    SessionContext, Shutdown, ShutdownReason, TaskId, Tested, UnavailableBackend,
 };
-use togi_machine::{Backend, BootId, CoreId, CoreSet, PerCore, Regime};
+use togi_machine::{Backend, BootId, Regime};
 use togi_tuner::day::{Invocation, Pause};
-use togi_tuner::night::{PackageLoad, Roles};
+use togi_tuner::night::Roles;
 use togi_tuner::policy::{DayQuery, EndReason, Params, TrialPlan};
 
-use crate::fixture::{Ending, Journal, at, cores, cores_per_ccd};
+use crate::fixture::{Ending, Journal, at, context, cores, cores_per_ccd, firmware};
+use crate::flow::promoted;
 
 /// Runs `trials` passing trials, returning the night they ran in.
 fn run_trials(journal: &mut Journal, trials: i64) -> NightId {
@@ -270,9 +272,11 @@ fn an_excluded_backend_leaves_the_night_running_on_the_other() {
 
 #[test]
 fn the_filler_repeats_exact_current_cells_and_never_probes_below_the_cap() {
-    let mut journal = Journal::ready();
-    let mut plan = journal.until_filler(|_| Ending::Pass);
+    let (mut journal, _) = promoted();
+    journal.reboot("tuning2");
+    let mut plan = journal.until_filler(|_| Ending::Pass).unwrap();
     let current = journal.state.project().applied.unwrap();
+    assert!(!current.is_zero());
     for step in 0..6_i64 {
         assert!(!plan.retry);
         assert_eq!(plan.task.queue, Queue::Filler);
@@ -354,11 +358,13 @@ fn unknown_edges_are_committed_without_a_ceiling_before_the_descent_completes() 
 #[test]
 fn a_backend_change_invalidates_edges_without_repeating_unknown_commitments() {
     let mut journal = Journal::ready();
-    journal.until_filler(|_| Ending::Pass);
+    let _ = journal.until_filler(|_| Ending::Pass);
     let from = journal.events.len();
     journal.rebuild(crate::fixture::rebuilt());
+    // The rebuilt backends restart the nonzero mapping at its first step; no stock control precedes it.
     let plan = journal.until_trial(journal.now());
-    assert_eq!(plan.activity, Activity::Control);
+    assert_eq!(plan.activity, Activity::Mapping);
+    assert!(!plan.profile.is_zero(), "{plan:?}");
     let edges: Vec<_> = journal.events[from..]
         .iter()
         .filter_map(|event| {
@@ -380,7 +386,7 @@ fn a_backend_change_invalidates_edges_without_repeating_unknown_commitments() {
 #[test_case(-4, 0; "observed_near_stock_edge")]
 fn isolated_failures_commit_the_observed_unit_edge_and_its_ceiling(u: i64, c: i64) {
     let mut journal = Journal::ready();
-    journal.until_filler(|plan| match plan.tested {
+    let _ = journal.until_filler(|plan| match plan.tested {
         Tested::Isolated { offset, .. }
             if plan.task.queue == Queue::Mapping && offset.get() <= u =>
         {
@@ -407,13 +413,16 @@ fn isolated_failures_commit_the_observed_unit_edge_and_its_ceiling(u: i64, c: i6
 
 #[test]
 fn each_filler_trial_advances_the_durable_rotation_across_nights() {
-    let mut journal = Journal::ready();
-    let mut plan = journal.until_filler(|_| Ending::Pass);
+    let (mut journal, _) = promoted();
+    journal.reboot("tuning2");
+    let mut plan = journal.until_filler(|_| Ending::Pass).unwrap();
     let first_night = plan.night;
+    let first_ordinal = plan.task.ordinal;
     let mut cells = Vec::new();
     for step in 0..6_i64 {
         assert_eq!(plan.task.queue, Queue::Filler);
         assert_eq!(plan.night, first_night);
+        assert!(!plan.profile.is_zero());
         cells.push(plan.cell);
         journal.run(&plan, Ending::Pass);
         assert_eq!(
@@ -436,16 +445,17 @@ fn each_filler_trial_advances_the_durable_rotation_across_nights() {
         .into(),
         &[],
     );
-    let next = journal.until_filler(|_| Ending::Pass);
+    let next = journal.until_filler(|_| Ending::Pass).unwrap();
     assert_ne!(next.night, first_night);
-    assert_eq!(next.task.ordinal, 1);
+    assert_eq!(next.task.ordinal, first_ordinal + 1);
     assert_eq!(journal.state.project().night.unwrap().filler, 6);
 }
 
 #[test]
-fn observed_edges_leave_the_filler_repeating_ds_exact_cells_round_robin() {
+fn observed_edges_at_the_stock_ceiling_leave_no_nonzero_work_and_name_it() {
     let mut journal = Journal::ready();
-    // Isolated mapping failures bracket U; filler still repeats exact D, not a probe.
+    // Isolated mapping failures bracket U at the stock ceiling: no nonzero step is admissible, and stock
+    // is observation-only, so the night ends for want of nonzero work rather than running a filler.
     let mapping_fails = |plan: &TrialPlan| match plan.tested {
         Tested::Isolated { offset, .. }
             if plan.task.queue == Queue::Mapping && offset.get() <= -5 =>
@@ -454,8 +464,10 @@ fn observed_edges_leave_the_filler_repeating_ds_exact_cells_round_robin() {
         }
         Tested::Isolated { .. } | Tested::Exact {} => Ending::Pass,
     };
-    let mut plan = journal.until_filler(mapping_fails);
-
+    assert_eq!(
+        journal.until_night_end(mapping_fails),
+        EndReason::NoNonzeroWork
+    );
     for ccd in 0..2_u8 {
         assert!(journal.events.iter().any(|event| matches!(&event.payload,
             Payload::UnitEdge(change) if change.unit == togi_journal::UnitId::Ccd(crate::fixture::ccd(ccd))
@@ -466,18 +478,13 @@ fn observed_edges_leave_the_filler_repeating_ds_exact_cells_round_robin() {
             Payload::CcdCap(cap) if cap.ccd.get() == ccd
                 && matches!(cap.edge, togi_journal::Edge::Observed { .. }))));
     }
-    let mut cells = Vec::new();
-    for step in 0..4_i64 {
-        assert_eq!(plan.task.queue, Queue::Filler);
-        assert_eq!(plan.activity, Activity::Qualification);
-        assert_eq!(plan.tested, Tested::Exact {});
-        assert!(plan.profile.is_zero(), "D is still all-zero: {plan:?}");
-        cells.push(format!("{:?}", plan.cell));
-        journal.run(&plan, Ending::Pass);
-        plan = journal.until_trial(at(10_000 + step));
-    }
-    let distinct: BTreeSet<&String> = cells.iter().collect();
-    assert!(distinct.len() > 1, "{cells:?}");
+    // The end is not an excluded backend's, and asked again it stands without another commitment.
+    let before = journal.events.len();
+    assert_eq!(
+        journal.until_end(at(20_000), &BTreeMap::new()).unwrap_err(),
+        EndReason::NoNonzeroWork
+    );
+    assert_eq!(journal.events.len(), before);
 }
 
 #[test]
@@ -487,7 +494,9 @@ fn switching_away_from_a_qualification_task_commits_its_progress_first() {
     let mut switches = 0;
     for step in 0..3_500_i64 {
         let from = journal.events.len();
-        let plan = journal.until_trial(at(100 + step));
+        let Ok(plan) = journal.until_end(at(100 + step), &BTreeMap::new()) else {
+            break;
+        };
         if let Some(previous) = previous
             && matches!(
                 previous.queue,
@@ -535,7 +544,9 @@ fn an_isolated_all_thread_trial_loads_only_the_tested_ccd() {
     let cores = cores();
     let mut checked = 0;
     for step in 0..3_500_i64 {
-        let plan = journal.until_trial(at(100 + step));
+        let Ok(plan) = journal.until_end(at(100 + step), &BTreeMap::new()) else {
+            break;
+        };
         if plan.task.queue == Queue::Filler {
             break;
         }
@@ -583,48 +594,181 @@ fn until_mapping_of_ccd0(journal: &mut Journal) -> TrialPlan {
     panic!("the night never mapped CCD0");
 }
 
+/// Drives the night to its end, each trial ending as `ending` says, and returns why it ended. Every trial
+/// must carry a nonzero profile, none may be a control, and the night never reaches a filler.
+fn drive_without_zero(journal: &mut Journal, ending: impl Fn(&TrialPlan) -> Ending) -> EndReason {
+    for step in 0..6_000_i64 {
+        let plan = match journal.until_end(at(100 + step), &BTreeMap::new()) {
+            Ok(plan) => plan,
+            Err(reason) => return reason,
+        };
+        assert!(!plan.profile.is_zero(), "an all-zero trial: {plan:?}");
+        assert_ne!(plan.activity, Activity::Control, "{plan:?}");
+        assert_ne!(plan.task.queue, Queue::Control, "{plan:?}");
+        assert_ne!(plan.task.queue, Queue::Filler, "{plan:?}");
+        journal.run(&plan, ending(&plan));
+    }
+    panic!("the night never ended");
+}
+
 #[test]
-fn a_failure_on_a_co_zero_core_owes_an_all_zero_rerun_that_charges_no_ccd() {
+fn the_first_trial_of_a_fresh_night_maps_nonzero_minus_five() {
+    let mut journal = Journal::ready();
+    let plan = journal.until_trial(at(100));
+    assert_eq!(plan.task.queue, Queue::Mapping);
+    assert_eq!(plan.activity, Activity::Mapping);
+    assert!(!plan.profile.is_zero(), "{plan:?}");
+    let Tested::Isolated { offset, .. } = plan.tested else {
+        panic!("mapping must isolate a CCD: {plan:?}");
+    };
+    assert_eq!(offset.get(), -5);
+}
+
+#[test_case(0; "every trial passes")]
+#[test_case(1; "mapping fails at minus five")]
+#[test_case(2; "a located failure on the other CCD's core")]
+fn a_night_never_runs_an_all_zero_trial_and_ends_for_want_of_nonzero_work(mode: u8) {
+    let mut journal = Journal::ready();
+    let ending = move |plan: &TrialPlan| match plan.tested {
+        Tested::Isolated { ccd, offset }
+            if mode > 0 && plan.task.queue == Queue::Mapping && offset.get() <= -5 =>
+        {
+            Ending::Fail((mode == 2).then_some(if ccd.get() == 0 { 2 } else { 0 }))
+        }
+        Tested::Isolated { .. } | Tested::Exact {} => Ending::Pass,
+    };
+    assert_eq!(
+        drive_without_zero(&mut journal, ending),
+        EndReason::NoNonzeroWork
+    );
+    assert!(journal.events.iter().all(|event| match &event.payload {
+        Payload::TrialIntent(intent) => intent.activity != Some(Activity::Control),
+        _ => true,
+    }));
+}
+
+/// Whether the projection's CCD `ccd` edge has been observed by a mapping failure.
+fn edge_observed(journal: &Journal, ccd: usize) -> bool {
+    let projection = serde_json::to_value(journal.state.project()).unwrap();
+    projection["climb"]["units"][ccd]["edge"]["kind"] == "observed"
+}
+
+#[test]
+fn a_located_failure_on_a_co_zero_core_charges_the_tested_ccd_and_runs_no_zero_trial() {
     let mut journal = Journal::ready();
     let failed = until_mapping_of_ccd0(&mut journal);
     // Core 2 is on CCD1, which an isolated CCD0 trial holds at CO 0.
     journal.run(&failed, Ending::Fail(Some(2)));
-    let is_rerun = |plan: &TrialPlan| {
-        plan.activity == Activity::Control && plan.profile.is_zero() && plan.cell == failed.cell
-    };
-    // The rerun is the failed class at its duration, every CCD at CO 0, once; the conclusive pass
-    // discharges it, so the night reaches its filler without a second one.
-    let mut reruns = 0;
-    for step in 0..3_500_i64 {
-        let plan = journal.until_trial(at(5_000 + step));
-        if plan.task.queue == Queue::Filler {
-            break;
-        }
-        if is_rerun(&plan) {
-            assert_eq!(plan.task.queue, Queue::Control, "{plan:?}");
-            reruns += 1;
-        }
-        journal.run(&plan, Ending::Pass);
-    }
-    assert_eq!(reruns, 1);
-    // Neither CCD was charged with the failure.
-    let projection = serde_json::to_value(journal.state.project()).unwrap();
-    for ccd in 0..2 {
-        let edge = &projection["units"][ccd]["edge"];
-        assert_ne!(edge["kind"], "observed", "CCD{ccd}: {edge}");
-    }
+    assert_eq!(
+        drive_without_zero(&mut journal, |_| Ending::Pass),
+        EndReason::NoNonzeroWork
+    );
+    // The tested CCD carries the failure; the CCD held at stock does not.
+    assert!(edge_observed(&journal, 0));
+    assert!(!edge_observed(&journal, 1));
 }
 
-fn core_at(id: i64) -> CoreId {
-    CoreId::new(id).unwrap()
+#[test]
+fn a_night_without_the_operators_attestation_runs_nothing_and_ends_unattested() {
+    let mut journal = Journal::ready_unattested();
+    assert_eq!(
+        journal.until_end(at(100), &BTreeMap::new()).unwrap_err(),
+        EndReason::StockUnattested
+    );
+    let before = journal.events.len();
+    assert_eq!(
+        journal.until_end(at(101), &BTreeMap::new()).unwrap_err(),
+        EndReason::StockUnattested
+    );
+    assert_eq!(journal.events.len(), before);
+    assert!(
+        !journal
+            .events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::TrialIntent(_)))
+    );
+    // The operator's attestation under the current context lets the night run, nonzero.
+    journal.attest(&context());
+    let plan = journal.until_trial(at(102));
+    assert_eq!(plan.activity, Activity::Mapping);
+    assert!(!plan.profile.is_zero(), "{plan:?}");
 }
 
-/// What a full-CCD R7 load of the four cores 0–3 measures: core `i` requests `volts[i]`.
-fn requests_of(volts: [f64; 4]) -> PerCore<f64> {
-    (0..4_i64)
-        .zip(volts)
-        .map(|(id, volts)| (core_at(id), volts))
-        .collect()
+#[test]
+fn an_attestation_folds_independently_of_the_current_context() {
+    let mut journal = Journal::ready_unattested();
+    // An attestation of another context does not attest the current one.
+    journal.attest(&firmware("2"));
+    assert_eq!(
+        journal.until_end(at(100), &BTreeMap::new()).unwrap_err(),
+        EndReason::StockUnattested
+    );
+    // It stands for that context when it later becomes current.
+    journal.append(firmware("2").into(), &[]);
+    let plan = journal.until_trial(at(101));
+    assert!(!plan.profile.is_zero(), "{plan:?}");
+}
+
+fn changed_context(field: &str, value: &str) -> SessionContext {
+    let mut changed = context();
+    match field {
+        "bios_version" => changed.bios_version = value.into(),
+        "microcode" => changed.microcode = value.into(),
+        other => panic!("unknown context field {other}"),
+    }
+    changed
+}
+
+#[test_case("bios_version", "2"; "BIOS version")]
+#[test_case("bios_version", "1.2.0.7 AGESA ComboAM5PI 1.2.0.2"; "AGESA")]
+#[test_case("microcode", "mc2"; "microcode")]
+fn a_changed_firmware_context_invalidates_the_attestation(field: &str, value: &str) {
+    let mut journal = Journal::ready();
+    run_trials(&mut journal, 3);
+    let changed = changed_context(field, value);
+    journal.append(changed.clone().into(), &[]);
+    let from = journal.events.len();
+    assert_eq!(
+        journal.until_end(at(5_000), &BTreeMap::new()).unwrap_err(),
+        EndReason::StockUnattested
+    );
+    let ended = journal.events.len();
+    assert_eq!(
+        journal.until_end(at(5_001), &BTreeMap::new()).unwrap_err(),
+        EndReason::StockUnattested
+    );
+    assert_eq!(journal.events.len(), ended);
+    assert!(
+        !journal.events[from..]
+            .iter()
+            .any(|event| matches!(event.payload, Payload::TrialIntent(_)))
+    );
+    journal.attest(&changed);
+    let plan = journal.until_trial(at(5_002));
+    assert!(!plan.profile.is_zero(), "{plan:?}");
+}
+
+#[test]
+fn an_attestation_is_durable_when_its_firmware_context_returns() {
+    let mut journal = Journal::ready();
+    run_trials(&mut journal, 3);
+    journal.append(firmware("2").into(), &[]);
+    assert_eq!(
+        journal.until_end(at(5_000), &BTreeMap::new()).unwrap_err(),
+        EndReason::StockUnattested
+    );
+    journal.append(context().into(), &[]);
+    let plan = journal.until_trial(at(5_001));
+    assert!(!plan.profile.is_zero(), "{plan:?}");
+}
+
+#[test]
+fn a_backend_rebuild_does_not_invalidate_the_attestation() {
+    let mut journal = Journal::ready();
+    run_trials(&mut journal, 3);
+    journal.rebuild(crate::fixture::rebuilt());
+    let plan = journal.until_trial(at(5_000));
+    assert!(!plan.profile.is_zero(), "{plan:?}");
 }
 
 /// Whether `plan` is a mapping trial of CCD0 at a nonzero offset.
@@ -637,78 +781,6 @@ fn is_isolated_ccd0_mapping(plan: &TrialPlan) -> bool {
 /// A night on two CCDs of four cores, so every CCD derives honest R7 partials.
 fn eight_core_night() -> Journal {
     Journal::ready_on(Params::SPEC, cores_per_ccd(4))
-}
-
-/// Drives a night of passing trials until its isolated CCD0 mapping step asks for its first R7 partial. The
-/// step's full-CCD R7 load measures `requests` on the way; the partial fails on core 4, a CO-0 core of CCD1.
-/// Returns that full-CCD plan and the failed partial.
-fn fail_first_r7_partial_of_ccd0(
-    journal: &mut Journal,
-    requests: &PerCore<f64>,
-) -> (TrialPlan, TrialPlan) {
-    let mut full = None;
-    for step in 0..5_000_i64 {
-        let plan = journal.until_trial(at(100 + step));
-        assert_ne!(
-            plan.task.queue,
-            Queue::Filler,
-            "the night never failed an R7 partial of CCD0"
-        );
-        let roles = plan.cell.roles;
-        match roles {
-            Roles::Package(PackageLoad::FullCcd { ccd }) if is_isolated_ccd0_mapping(&plan) => {
-                assert_eq!(ccd.get(), 0, "{plan:?}");
-                journal.run_requesting(&plan, requests);
-                full = Some(plan);
-            }
-            Roles::Package(PackageLoad::Partial { .. }) if is_isolated_ccd0_mapping(&plan) => {
-                let Some(full) = full else {
-                    panic!("the step runs its full-CCD load before its partials");
-                };
-                journal.run(&plan, Ending::Fail(Some(4)));
-                return (full, plan);
-            }
-            Roles::Package(_)
-            | Roles::SingleCore { .. }
-            | Roles::SmtPair { .. }
-            | Roles::AllCoresIdle
-            | Roles::Neighbours { .. }
-            | Roles::AllThreads { .. } => {
-                journal.run(&plan, Ending::Pass);
-            }
-        }
-    }
-    panic!("the night never failed an R7 partial of CCD0");
-}
-
-/// Drives the night with passing trials until it asks for the all-zero rerun of `failed`'s cell.
-fn rerun_of(journal: &mut Journal, failed: &TrialPlan) -> TrialPlan {
-    for step in 0..5_000_i64 {
-        let plan = journal.until_trial(at(20_000 + step));
-        if plan.activity == Activity::Control && plan.profile.is_zero() && plan.cell == failed.cell
-        {
-            return plan;
-        }
-        assert_ne!(plan.task.queue, Queue::Filler, "the night never reran it");
-        journal.run(&plan, Ending::Pass);
-    }
-    panic!("the night never reran the failed cell");
-}
-
-#[test]
-fn a_full_ccd_load_that_reorders_the_partials_leaves_the_failed_partials_rerun_scheduled() {
-    let mut journal = eight_core_night();
-    let (full, failed) =
-        fail_first_r7_partial_of_ccd0(&mut journal, &requests_of([1.0, 1.1, 1.2, 1.3]));
-    // The highest requests idle first: the failed partial loads cores 0–2.
-    let loaded: CoreSet = [0, 1, 2].map(core_at).into_iter().collect();
-    assert_eq!(failed.cell.loaded, loaded);
-    // The same load measures the opposite order, so CCD0's partials are now cores 1–3 and 2–3: the failed
-    // cell is no longer among today's partials.
-    journal.run_requesting(&full, &requests_of([1.3, 1.2, 1.1, 1.0]));
-    let rerun = rerun_of(&mut journal, &failed);
-    assert_eq!(rerun.task.queue, Queue::Control);
-    assert_eq!(rerun.cell, failed.cell);
 }
 
 /// Drives a night of passing trials until its isolated CCD0 mapping step asks for a cell of `regime`, and
@@ -735,61 +807,15 @@ fn fail_first_isolated_ccd0_cell_of(journal: &mut Journal, regime: Regime) -> Tr
 #[test_case(Regime::R7; "full CCD package")]
 #[test_case(Regime::R8; "light neighbours")]
 #[test_case(Regime::R9; "all threads with a serial CPU")]
-fn a_zero_core_failure_reruns_the_cell_rebuilt_from_its_recorded_class(regime: Regime) {
+fn a_co_zero_core_failure_of_any_regime_charges_the_tested_ccd_and_reruns_nothing(regime: Regime) {
     let mut journal = eight_core_night();
-    let failed = fail_first_isolated_ccd0_cell_of(&mut journal, regime);
-    let rerun = rerun_of(&mut journal, &failed);
-    assert_eq!(rerun.task.queue, Queue::Control);
-    assert_eq!(rerun.cell, failed.cell);
-    assert_eq!(rerun.workloads(), failed.workloads());
-}
-
-/// Drives the stock controls with passing trials until they ask for the first cell of `regime` and
-/// `sustained`, and fails it conclusively.
-fn fail_first_control_cell(journal: &mut Journal, regime: Regime, sustained: bool) {
-    for step in 0..5_000_i64 {
-        let plan = journal.until_trial(at(100 + step));
-        assert_eq!(
-            plan.task.queue,
-            Queue::Control,
-            "the controls never asked for {regime:?} (sustained: {sustained})"
-        );
-        if plan.cell.regime() == regime && plan.cell.sustained == sustained {
-            journal.run(&plan, Ending::Fail(None));
-            return;
-        }
-        journal.run(&plan, Ending::Pass);
-    }
-    panic!("the controls never asked for {regime:?} (sustained: {sustained})");
-}
-
-#[test_case(Regime::R5, false; "SMT pair")]
-#[test_case(Regime::R6, false; "idle then burst")]
-#[test_case(Regime::R7, true; "sustained package")]
-#[test_case(Regime::R8, true; "sustained neighbours")]
-#[test_case(Regime::R9, true; "sustained all threads")]
-fn a_conclusive_failure_of_any_stock_control_cell_is_a_dead_end_naming_its_regime(
-    regime: Regime,
-    sustained: bool,
-) {
-    let mut journal = eight_core_night();
-    fail_first_control_cell(&mut journal, regime, sustained);
+    fail_first_isolated_ccd0_cell_of(&mut journal, regime);
     assert_eq!(
-        journal.until_end(at(30_000), &BTreeMap::new()).unwrap_err(),
-        EndReason::DeadEnd
+        drive_without_zero(&mut journal, |_| Ending::Pass),
+        EndReason::NoNonzeroWork
     );
-    let detail = journal
-        .events
-        .iter()
-        .find_map(|event| {
-            if let Payload::DeadEnd(dead_end) = &event.payload {
-                Some(dead_end.detail.clone())
-            } else {
-                None
-            }
-        })
-        .unwrap();
-    assert!(detail.contains(&format!("{regime:?}")), "{detail}");
+    assert!(edge_observed(&journal, 0));
+    assert!(!edge_observed(&journal, 1));
 }
 
 #[test]

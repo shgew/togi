@@ -138,7 +138,7 @@ fn promoted_with(params: Params) -> (Journal, CcdProfile) {
 fn promoted_ending(params: Params, ending: impl Fn(&TrialPlan) -> Ending) -> (Journal, CcdProfile) {
     let mut journal = Journal::ready_with(params);
     journal.hold_stock();
-    journal.until_filler(ending);
+    let _ = journal.until_filler(ending);
     let qualified = qualifications(&journal)
         .into_iter()
         .rev()
@@ -173,8 +173,8 @@ fn a_qualified_proposal_is_promoted_at_the_cold_boot_and_its_application_commits
     );
 }
 
-/// The firmware scenario up to the applied restoration: the firmware update zeroes D, the tuning night runs the
-/// controls and re-qualifies the retained D exactly, a stock hold passes, and the restoration of D is
+/// The firmware scenario up to the applied restoration: the firmware update zeroes D, the operator
+/// attests stock and the night re-qualifies retained D exactly, a stock hold passes, and D is
 /// applied as application 3 in the boot `restoration`. Returns the journal, D and the applied restoration.
 fn firmware_restored() -> (Journal, CcdProfile, ClimbDecision) {
     let (mut journal, d) = promoted();
@@ -192,19 +192,21 @@ fn firmware_restored() -> (Journal, CcdProfile, ClimbDecision) {
         journal.state.project().applied,
         Some(togi_tuner::UnitProfile::of_ccd(&zero()))
     );
-    // The tuning night runs the stock controls first, then re-qualifies the retained D exactly.
+    // The operator attests the new context; the first trial qualifies retained D, never stock.
     journal.reboot("tuning2");
     journal.append(firmware("2").into(), &[]);
+    journal.attest(&firmware("2"));
     for step in 0..3_000_i64 {
         let plan = journal.until_trial(at(62_000 + step));
         if step == 0 {
-            assert_eq!(plan.activity, Activity::Control, "{plan:?}");
+            assert_eq!(plan.activity, Activity::Qualification, "{plan:?}");
+            assert_eq!(plan.profile.to_ccd().unwrap(), d);
         }
         if qualifications(&journal).iter().any(|record| {
             record.purpose == QualificationPurpose::Firmware && *record.profile.ccd() == d
         }) {
             assert_eq!(plan.tested, Tested::Exact {});
-            journal.until_filler(|_| Ending::Pass);
+            let _ = journal.until_filler(|_| Ending::Pass);
             assert!(qualifications(&journal).iter().any(|record| {
                 record.purpose == QualificationPurpose::Firmware
                     && *record.profile.ccd() == d
@@ -244,7 +246,7 @@ fn firmware_restored() -> (Journal, CcdProfile, ClimbDecision) {
 }
 
 #[test]
-fn a_firmware_change_zeroes_d_requalifies_it_after_controls_and_restores_it_after_a_stock_hold() {
+fn a_firmware_change_zeroes_d_requalifies_it_without_controls_and_restores_it_after_a_stock_hold() {
     let (journal, d, _) = firmware_restored();
     assert_eq!(
         journal.state.project().applied,
@@ -512,7 +514,9 @@ fn a_reproduction_gets_one_night_even_across_a_crash_and_is_unreproduced_when_it
     // The next night never returns to that event.
     journal.reboot("tuning3");
     for step in 0..30_i64 {
-        let plan = journal.until_trial(at(64_000 + step));
+        let Ok(plan) = journal.until_end(at(64_000 + step), &BTreeMap::new()) else {
+            break;
+        };
         assert_ne!(plan.night, night);
         assert_ne!(plan.task.queue, Queue::Reproduction, "{plan:?}");
         journal.run(&plan, Ending::Pass);
@@ -520,11 +524,55 @@ fn a_reproduction_gets_one_night_even_across_a_crash_and_is_unreproduced_when_it
 }
 
 #[test]
-fn a_conclusive_failure_of_the_stock_controls_is_a_dead_end() {
+fn exact_reproduction_failure_on_a_stock_core_stays_a_profile_failure_without_zero_trials() {
+    let (mut journal, d) = promoted();
+    unexplained_end(&mut journal, &d);
+    let committed = journal.settle_day(&cold_boot("day2", 61_000));
+    let retreat = step_of(&committed, |action| matches!(action, ClimbAction::Retreat { .. }));
+    apply(&mut journal, &retreat, 2, "day2");
+    journal.reboot("tuning2");
+    let from = journal.events.len();
+    let plan = journal.until_trial(at(62_000));
+    assert_eq!(plan.task.queue, Queue::Reproduction);
+    assert_eq!(plan.tested, Tested::Exact {});
+    assert_eq!(plan.profile.to_ccd().unwrap(), d);
+    journal.run(&plan, Ending::Fail(Some(2)));
+    night_until_filler(&mut journal, "tuning2");
+    assert!(journal.events[from..].iter().any(|event| {
+        matches!(&event.payload, Payload::ExposureObserved(observed)
+            if observed.activity == Activity::Reproduction
+                && observed.tested == Tested::Exact {}
+                && observed.outcome == togi_journal::Outcome::Failure
+                && observed.profile.ccd() == &d)
+    }));
+    assert!(journal.events[from..].iter().any(|event| {
+        matches!(&event.payload, Payload::NightReproduction(record)
+            if record.state == ReproductionState::Reproduced)
+    }));
+    assert!(journal.events[from..].iter().all(|event| match &event.payload {
+        Payload::TrialIntent(intent) => {
+            intent.activity != Some(Activity::Control)
+                && intent.profile.iter().any(|(_, offset)| offset.get() != 0)
+        }
+        _ => true,
+    }));
+}
+
+/// A released all-zero control recorded by an older policy, not a trial selected by this scheduler.
+fn historical_stock_plan(journal: &mut Journal) -> TrialPlan {
+    let mut plan = journal.until_trial(at(100));
+    plan.activity = Activity::Control;
+    plan.task.queue = Queue::Control;
+    plan.tested = Tested::Exact {};
+    plan.profile = togi_tuner::UnitProfile::of_ccd(&zero());
+    plan.cell.purpose = togi_machine::Purpose::Exact;
+    plan
+}
+
+#[test]
+fn a_historical_conclusive_stock_failure_remains_a_dead_end() {
     let mut journal = Journal::ready();
-    let plan = journal.until_trial(at(100));
-    assert_eq!(plan.activity, Activity::Control);
-    assert!(plan.profile.is_zero());
+    let plan = historical_stock_plan(&mut journal);
     journal.run(&plan, Ending::Fail(Some(0)));
     assert_eq!(
         journal.until_end(at(200), &BTreeMap::new()).unwrap_err(),
@@ -545,9 +593,9 @@ fn a_conclusive_failure_of_the_stock_controls_is_a_dead_end() {
 }
 
 #[test]
-fn a_stock_failure_whose_commitments_are_still_owed_already_establishes_the_dead_end() {
+fn a_historical_stock_failure_with_owed_commitments_already_establishes_the_dead_end() {
     let mut journal = Journal::ready();
-    let plan = journal.until_trial(at(100));
+    let plan = historical_stock_plan(&mut journal);
     assert_eq!(journal.stock_dead_end(at(150)).unwrap(), None);
     journal.run(&plan, Ending::Fail(Some(0)));
     // The failure and its exposure are still owed: the night would commit them before its dead end.
@@ -695,7 +743,9 @@ fn night_until_filler(journal: &mut Journal, boot: &str) -> Vec<TrialPlan> {
     journal.reboot(boot);
     let mut plans = Vec::new();
     for _ in 0..3_500 {
-        let plan = journal.until_trial(journal.now());
+        let Ok(plan) = journal.until_end(journal.now(), &BTreeMap::new()) else {
+            return plans;
+        };
         if plan.task.queue == Queue::Filler {
             return plans;
         }
@@ -1026,8 +1076,11 @@ fn a_firmware_change_restarts_the_slopes_and_rebuilds_the_caps_from_new_evidence
     apply(&mut journal, &step, 2, "day2");
     journal.reboot("tuning2");
     journal.append(firmware("2").into(), &[]);
+    journal.attest(&firmware("2"));
     for _ in 0..1_500 {
-        let plan = journal.until_trial(journal.now());
+        let Ok(plan) = journal.until_end(journal.now(), &BTreeMap::new()) else {
+            break;
+        };
         journal.run(&plan, Ending::Pass);
     }
     assert_eq!(slope_kind(&journal, 0), "fallback");
@@ -1053,16 +1106,22 @@ fn a_rebuilt_backend_restarts_the_slopes_and_rebuilds_the_caps_from_new_evidence
 #[test]
 fn a_failure_is_warned_of_once_its_class_passes_deeper() {
     let mut journal = Journal::ready();
-    // CCD 0's first descent step fails on a core of CCD 1: the step goes on, and nothing deeper has passed.
-    let failed = loop {
+    // An isolated failure stops descent. A later recorded deeper pass still warns about
+    // nonmonotonic raw evidence; the scheduler never probes through that failure to obtain it.
+    let (failed, mut deeper) = loop {
         let plan = journal.until_trial(journal.now());
         if plan.activity == Activity::Mapping
             && matches!(plan.tested, Tested::Isolated { ccd: tested, offset } if tested == ccd(0) && offset.get() < 0)
         {
-            break journal.run(&plan, Ending::Fail(Some(2)));
+            break (journal.run(&plan, Ending::Fail(Some(2))), plan);
         }
         journal.run(&plan, Ending::Pass);
     };
+    let offset = togi_machine::TargetOffset::new(-10).unwrap();
+    deeper.task.ordinal = 50_000;
+    deeper.tested = Tested::Isolated { ccd: ccd(0), offset };
+    deeper.profile = togi_tuner::UnitProfile::of_ccd(&zero().with(ccd(0), offset));
+    journal.run(&deeper, Ending::Pass);
     let warnings = |journal: &Journal| -> Vec<(Seq, Vec<Seq>, Vec<Seq>)> {
         journal
             .events
@@ -1082,7 +1141,9 @@ fn a_failure_is_warned_of_once_its_class_passes_deeper() {
         if !warnings(&journal).is_empty() {
             break;
         }
-        let plan = journal.until_trial(journal.now());
+        let Ok(plan) = journal.until_end(journal.now(), &BTreeMap::new()) else {
+            break;
+        };
         journal.run(&plan, Ending::Pass);
     }
     let warnings = warnings(&journal);
@@ -1096,7 +1157,7 @@ fn a_failure_is_warned_of_once_its_class_passes_deeper() {
 #[test]
 fn a_cap_says_why_each_class_is_uncovered() {
     let mut journal = Journal::ready();
-    journal.until_filler(|_| Ending::Pass);
+    let _ = journal.until_filler(|_| Ending::Pass);
     let first = journal
         .events
         .iter()
@@ -1137,7 +1198,9 @@ fn uncovered_by_cap(crash: bool) -> Vec<Vec<ExposureClass>> {
     let mut journal = Journal::ready();
     let mut crashed = !crash;
     for step in 0..3_500_i64 {
-        let plan = journal.until_trial(at(100 + step));
+        let Ok(plan) = journal.until_end(at(100 + step), &BTreeMap::new()) else {
+            break;
+        };
         if plan.task.queue == Queue::Filler {
             break;
         }

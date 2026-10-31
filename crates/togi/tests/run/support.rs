@@ -35,7 +35,7 @@ const CONFIG: &str = "config.json";
 pub(crate) const CORES: i64 = 4;
 
 /// A four-core machine, two cores on each of two CCDs, whose cores all hold to CO -30 alone and together and fail
-/// only past it: its stock controls never fail, so a run reaches the night's first written profile in a few trials.
+/// only past it: operator-attested stock lets the first mapping trial write a nonzero profile.
 pub(crate) fn simulator(seed: u64) -> Simulator {
     let core = (0..CORES)
         .map(|id| CoreDef {
@@ -68,8 +68,7 @@ pub(crate) fn simulator(seed: u64) -> Simulator {
     .unwrap()
 }
 
-/// Whether `spec` runs a core at an offset the run wrote: a night's stock controls run at the all-zero baseline, so
-/// a run stopped during one has nothing to restore.
+/// Whether `spec` contains a nonzero profile that gives a stopped run something to restore.
 pub(crate) fn written(spec: &TrialSpec) -> bool {
     spec.offsets
         .iter()
@@ -299,6 +298,34 @@ impl Fake {
             lock_error: RefCell::default(),
             listen_error: RefCell::default(),
         }
+    }
+
+    /// Stages the durable consent a preceding confirmed `night` command supplies.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "run fixtures use memory or the explicitly unsynced subprocess filesystem"
+    )]
+    pub(crate) fn attest_stock(&self) {
+        let mut machine = self.sim.seams();
+        let firmware = machine.host.bios_context().unwrap();
+        let boot = machine.host.boot_id().unwrap();
+        let mut journal = togi_journal::StateDir::lock_with_fs(self.fs.clone(), &self.state_dir())
+            .unwrap().open_at(boot, self.sim.now()).unwrap();
+        let stamp = togi_journal::Stamp { time: self.sim.now(), mono: None };
+        if journal.events().is_empty() {
+            let session = journal.state_dir().session_id(self.sim.now()).unwrap();
+            journal.append(stamp, togi_journal::SessionStart {
+                build: togi_cli::report::current_build(),
+                session,
+                cores: machine.host.topology().unwrap(),
+            }.into(), &[]).unwrap();
+        }
+        if !journal.events().iter().any(|event| {
+            matches!(&event.payload, togi_journal::Payload::StockAttested(value) if value.firmware == firmware)
+        }) {
+            journal.append(stamp, togi_journal::StockAttested { firmware }.into(), &[]).unwrap();
+        }
+        journal.close().unwrap();
     }
 
     pub(crate) fn state_dir(&self) -> PathBuf {

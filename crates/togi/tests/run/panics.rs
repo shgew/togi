@@ -162,8 +162,7 @@ struct Faults {
     unconfirmed_stop: bool,
 }
 
-/// Trials that panic once one runs at an offset the run wrote: a night starts with stock controls, which leave
-/// nothing to restore.
+/// Trials that panic once one runs at a nonzero profile the run wrote.
 struct PanickingTrials {
     inner: Box<dyn Trials>,
     order: Order,
@@ -506,6 +505,9 @@ fn real_process_helper() {
     let dir = PathBuf::from(std::env::var_os(DIR).unwrap());
     let order = Order::open(&dir);
     let mut fake = Fake::in_dir(simulator(1000), &dir);
+    if scenario != "before_the_host_lock" {
+        fake.attest_stock();
+    }
     fake.real_stderr = true;
     match scenario.as_str() {
         "before_the_host_lock" => fake.panic_in_platform = true,
@@ -914,19 +916,18 @@ fn real_process_a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run
         "{}",
         child.stderr
     );
-    // The run was stopped only after the fallback line had been read, at its first write, which follows the
-    // night's stock controls: the last trial's end and everything after it came after the fallback, and every
-    // trial's end is printed once as an event line by the gate. The trial's end is an event the summary of a
-    // clean stop never prints: only the gate can have printed it.
+    // The first nonzero mapping preparation waits for the fallback line, then stops. Its completed application
+    // and everything after it came after the fallback. A profile.applied line is not part of the clean-stop
+    // summary, so only the event gate can have printed it.
     let fallback = child.at(FALLBACK);
     let ended = child
         .events()
         .iter()
-        .filter(|kind| **kind == EventKind::TrialEnd)
+        .filter(|kind| **kind == EventKind::ProfileApplied)
         .count();
     assert!(ended > 0, "{}", child.stderr);
-    assert_eq!(child.count(" trial.end "), ended, "{}", child.stderr);
-    assert!(fallback < child.last_at(" trial.end "), "{}", child.stderr);
+    assert_eq!(child.count(" profile.applied "), ended, "{}", child.stderr);
+    assert!(fallback < child.last_at(" profile.applied "), "{}", child.stderr);
     assert_eq!(child.count(" profile.restored "), 1, "{}", child.stderr);
     assert!(
         fallback < child.at(" profile.restored "),

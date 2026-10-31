@@ -80,7 +80,7 @@ fn a_later_query_continues_the_open_night() {
 }
 
 #[test]
-fn the_scheduler_starts_with_the_stock_controls() {
+fn the_scheduler_starts_with_nonzero_mapping() {
     let mut journal = Journal::ready();
     let plan = journal.next(at(100)).unwrap();
     journal.commit(plan);
@@ -92,7 +92,9 @@ fn the_scheduler_starts_with_the_stock_controls() {
     let Action::RunTrial(trial) = action else {
         panic!("expected a trial, got {action:?}");
     };
-    assert_eq!(trial.activity, togi_journal::Activity::Control);
+    assert_eq!(trial.activity, togi_journal::Activity::Mapping);
+    assert!(!trial.profile.is_zero());
+    assert!(matches!(trial.tested, togi_journal::Tested::Isolated { offset, .. } if offset.get() == -5));
 }
 
 #[test]
@@ -149,15 +151,11 @@ fn order_until(journal: &mut Journal, activity: Activity) -> Vec<Activity> {
 }
 
 #[test]
-fn the_scheduler_orders_controls_then_mapping_then_qualification() {
+fn the_scheduler_orders_mapping_then_qualification() {
     let mut journal = Journal::ready();
     assert_eq!(
         order_until(&mut journal, Activity::Qualification),
-        [
-            Activity::Control,
-            Activity::Mapping,
-            Activity::Qualification
-        ]
+        [Activity::Mapping, Activity::Qualification]
     );
 }
 
@@ -192,7 +190,7 @@ fn an_interrupted_trial_is_observed_and_a_restart_continues_the_task() {
 }
 
 #[test]
-fn a_firmware_change_puts_the_controls_back_in_front() {
+fn a_firmware_change_requires_an_attestation_before_mapping() {
     let mut journal = Journal::ready();
     order_until(&mut journal, Activity::Mapping);
     journal.append(
@@ -206,12 +204,18 @@ fn a_firmware_change_puts_the_controls_back_in_front() {
         .into(),
         &[],
     );
-    let plan = journal.until_trial(at(5_000));
-    assert_eq!(plan.activity, Activity::Control);
+    assert_eq!(
+        journal.until_end(at(5_000), &BTreeMap::new()).unwrap_err(),
+        togi_tuner::policy::EndReason::StockUnattested
+    );
+    journal.attest(&fixture::firmware("2"));
+    let plan = journal.until_trial(at(5_001));
+    assert_eq!(plan.activity, Activity::Mapping);
+    assert!(!plan.profile.is_zero());
 }
 
 #[test]
-fn a_new_backend_build_puts_the_controls_back_in_front() {
+fn a_new_backend_build_restarts_mapping_without_stock_controls() {
     let mut journal = Journal::ready();
     order_until(&mut journal, Activity::Mapping);
     let plan = journal.until_trial(at(4_000));
@@ -227,8 +231,8 @@ fn a_new_backend_build_puts_the_controls_back_in_front() {
         },
     );
     let plan = journal.until_trial(at(5_000));
-    assert_eq!(plan.activity, Activity::Control);
-    assert!(plan.profile.is_zero());
+    assert_eq!(plan.activity, Activity::Mapping);
+    assert!(!plan.profile.is_zero());
 }
 
 #[test]
@@ -392,17 +396,22 @@ fn comparable_exposures_use_the_latest_distinct_stock_witness() {
     let plan = journal.until_trial(journal.now());
     journal.run(&plan, Ending::Pass);
     journal.until_trial(journal.now());
-    let (first, stock) = journal
+    let mut stock = journal
         .events
         .iter()
         .find_map(|event| {
             if let Payload::ExposureObserved(observed) = &event.payload {
-                Some((event.seq, observed.clone()))
+                Some(observed.clone())
             } else {
                 None
             }
         })
         .unwrap();
+    // Historical stock exposure remains comparable evidence, not runnable stock work.
+    stock.profile =
+        togi_journal::CcdVector::expand(fixture::zero(), &fixture::cores()).unwrap();
+    stock.source.seq = togi_journal::Seq::new(1002).unwrap();
+    let first = journal.append(stock.clone().into(), &[]);
     let profile = fixture::zero().with(
         fixture::ccd(0),
         togi_machine::TargetOffset::new(-10).unwrap(),

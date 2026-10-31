@@ -102,8 +102,6 @@ struct Scripted {
     stock: PerCore<u8>,
     previous: PerCore<u8>,
     witnesses: Vec<Witness>,
-    old_controls: Vec<String>,
-    new_controls: Vec<String>,
     old_qualification: Option<Qualification>,
     new_qualification: Option<Qualification>,
     firmware: Option<FirmwareWitness>,
@@ -126,8 +124,6 @@ impl Scripted {
             stock: PerCore::default(),
             previous: PerCore::default(),
             witnesses: Vec::new(),
-            old_controls: Vec::new(),
-            new_controls: Vec::new(),
             old_qualification: None,
             new_qualification: None,
             firmware: None,
@@ -445,11 +441,6 @@ impl Policy for Scripted {
 
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
         match night.day {
-            178 => {
-                let (controls, passed) = self.cells(night, machine, "old-control", self.stock)?;
-                assert!(passed, "stock controls cannot have CO failures");
-                self.old_controls = controls;
-            }
             179 => {
                 let (fresh_witnesses, safety_checks_satisfied) =
                     self.cells(night, machine, "old-vector", self.previous)?;
@@ -458,18 +449,12 @@ impl Policy for Scripted {
                     day: day(machine)?,
                     epoch: "initial".into(),
                     profile: self.previous,
-                    stock_controls: self.old_controls.clone(),
                     fresh_witnesses,
                     reused_witnesses: Vec::new(),
                     safety_checks_satisfied,
                 });
             }
             180 => self.deploy_previous(machine)?,
-            181 => {
-                let (controls, passed) = self.cells(night, machine, "new-control", self.stock)?;
-                assert!(passed);
-                self.new_controls = controls;
-            }
             182 => {
                 let (fresh_witnesses, safety_checks_satisfied) =
                     self.cells(night, machine, "new-vector", self.previous)?;
@@ -478,7 +463,6 @@ impl Policy for Scripted {
                     day: day(machine)?,
                     epoch: FIRMWARE_EPOCH.into(),
                     profile: self.previous,
-                    stock_controls: self.new_controls.clone(),
                     fresh_witnesses,
                     reused_witnesses: Vec::new(),
                     safety_checks_satisfied,
@@ -982,8 +966,8 @@ fn firmware_restoration_records_real_full_vector_crash_and_recomputes_without_gr
     let scenario = togi_sim::day_night::successor::Scenario::builtin(SCENARIO, SEED)
         .expect("frozen truth scenario");
     let expected_cells = scenario.night_classes().len();
-    assert_eq!(qualification.stock_controls.len(), expected_cells);
-    assert_eq!(policy.witnesses.len(), 4 * expected_cells);
+    assert_eq!(qualification.fresh_witnesses.len(), expected_cells);
+    assert_eq!(policy.witnesses.len(), 2 * expected_cells);
     let new_vector: Vec<_> = policy
         .witnesses
         .iter()
@@ -1006,16 +990,8 @@ fn firmware_restoration_records_real_full_vector_crash_and_recomputes_without_gr
         qualification.fresh_witnesses.len(),
         new_vector.iter().filter(|witness| witness.passed).count()
     );
-    let old_ids: BTreeSet<_> = old
-        .stock_controls
-        .iter()
-        .chain(&old.fresh_witnesses)
-        .collect();
-    for id in qualification
-        .stock_controls
-        .iter()
-        .chain(&qualification.fresh_witnesses)
-    {
+    let old_ids: BTreeSet<_> = old.fresh_witnesses.iter().collect();
+    for id in &qualification.fresh_witnesses {
         assert!(
             !old_ids.contains(id),
             "old-context evidence was not reused: {id}"
@@ -1029,14 +1005,7 @@ fn firmware_restoration_records_real_full_vector_crash_and_recomputes_without_gr
         assert_eq!(witness.context, firmware.context);
         assert_eq!(witness.ran, witness.intended);
         assert!(witness.passed);
-        assert_eq!(
-            witness.profile,
-            if qualification.stock_controls.contains(id) {
-                policy.stock
-            } else {
-                policy.previous
-            }
-        );
+        assert_eq!(witness.profile, policy.previous);
     }
     assert!(
         policy

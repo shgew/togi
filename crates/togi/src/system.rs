@@ -197,6 +197,11 @@ pub trait System {
         lock: &'lock HostLock,
     ) -> Result<Box<dyn togi_hardware::day::Observer + 'lock>, Error>;
 
+    /// Reads the current firmware identity under the same exclusion as hardware access.
+    fn firmware_context(&self, lock: &HostLock) -> Result<BiosContext, Error> {
+        self.day_observer(lock)?.bios_context()
+    }
+
     /// Opens the day question listener; in-memory command hosts have no external socket.
     fn day_socket(&self) -> Result<Option<crate::day::socket::Server>, crate::day::socket::Error> {
         Ok(None)

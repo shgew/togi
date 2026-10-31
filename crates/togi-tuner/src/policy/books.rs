@@ -35,16 +35,13 @@ pub(super) struct Machine {
     pub(super) topology: Option<Topology>,
     /// The latest firmware context any record reported.
     pub(super) firmware: Option<BiosContext>,
-    /// Every firmware context seen, in order of first appearance.
-    pub(super) contexts: Vec<BiosContext>,
+    /// Firmware contexts whose stock stability the operator has durably attested.
+    pub(super) stock_attestations: Vec<BiosContext>,
     /// The context the applied profile was last set under; a different current context owes a firmware
     /// zero.
     pub(super) anchor: Option<BiosContext>,
     /// The event that switched the latest firmware context in.
     pub(super) changed_at: Option<Seq>,
-    /// How many times the firmware context or a workload's content changed: the durable ordinal of the
-    /// controls the current evidence context owes.
-    pub(super) evidence_changes: u32,
     /// The first seq of the current evidence context: what was committed before it belongs to an earlier
     /// one.
     pub(super) context_since: Option<Seq>,
@@ -63,15 +60,11 @@ impl Machine {
             .is_some_and(|known| known != *content);
         if changed {
             self.context_since = Some(seq);
-            self.evidence_changes = self.evidence_changes.saturating_add(1);
         }
     }
 
-    /// Records the latest context and remembers each distinct one.
+    /// Records the latest firmware context, invalidating incompatible evidence.
     pub(super) fn set_firmware(&mut self, seq: Seq, context: BiosContext) {
-        if !self.contexts.contains(&context) {
-            self.contexts.push(context.clone());
-        }
         if self
             .firmware
             .as_ref()
@@ -79,7 +72,6 @@ impl Machine {
         {
             self.changed_at = Some(seq);
             self.context_since = Some(seq);
-            self.evidence_changes = self.evidence_changes.saturating_add(1);
         }
         self.firmware = Some(context);
     }

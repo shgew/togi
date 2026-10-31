@@ -61,16 +61,8 @@ pub(super) struct Group {
     /// The classes with an adequate mapping exposure at an offset of a CCD.
     #[serde(with = "super::wire::pairs_of_sets")]
     pub(super) mapping_covered: HashMap<(CcdId, TargetOffset), HashSet<Sig>>,
-    /// The classes an adequate all-zero control passed.
-    #[serde(serialize_with = "togi_machine::serde_pairs::serialize_set")]
-    pub(super) control_passed: HashSet<Sig>,
     /// The first failure at the all-zero profile, as a ledger index.
     pub(super) zero_failure: Option<usize>,
-    /// The ledger indexes of nonzero-profile failures that named a core at CO 0.
-    pub(super) zero_core_failures: Vec<usize>,
-    /// The latest conclusive all-zero control of each class: an adequate pass or a failure.
-    #[serde(with = "togi_machine::serde_pairs")]
-    pub(super) zero_control_latest: HashMap<Sig, Seq>,
     /// The adequate isolated passes of a class on a CCD, with their offsets.
     #[serde(with = "togi_machine::serde_pairs")]
     pub(super) isolated_passes: HashMap<(CcdId, Sig), Vec<(TargetOffset, Seq)>>,
@@ -120,10 +112,7 @@ impl Group {
             key,
             cap: BTreeMap::new(),
             mapping_covered: HashMap::new(),
-            control_passed: HashSet::new(),
             zero_failure: None,
-            zero_core_failures: Vec::new(),
-            zero_control_latest: HashMap::new(),
             isolated_passes: HashMap::new(),
             scoped_failures: BTreeMap::new(),
             latest_scoped: BTreeMap::new(),
@@ -165,31 +154,6 @@ impl Group {
             {
                 self.zero_failure = Some(index);
             }
-            if observed.activity == Activity::Control {
-                let conclusive = match observed.outcome {
-                    Outcome::Pass => adequate,
-                    Outcome::Failure => !observed.failures.is_empty(),
-                    Outcome::Inconclusive => false,
-                };
-                if conclusive {
-                    self.zero_control_latest.insert(sig.clone(), seq);
-                }
-                if observed.tested == (Tested::Exact {}) && adequate {
-                    self.control_passed.insert(sig.clone());
-                }
-            }
-        } else if observed.outcome == Outcome::Failure
-            && observed.failures.iter().any(|failure| {
-                failure.core.is_some_and(|core| {
-                    cores
-                        .iter()
-                        .find(|info| info.core == core)
-                        .and_then(|info| observed.profile.ccd().get(info.ccd))
-                        .is_some_and(|offset| offset == TargetOffset::ZERO)
-                })
-            })
-        {
-            self.zero_core_failures.push(index);
         }
         for &ccd in ccds {
             let Some(offset) = cap_scope(cores, observed, ccd) else {

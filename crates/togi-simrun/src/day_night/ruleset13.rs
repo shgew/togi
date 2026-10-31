@@ -13,8 +13,8 @@ use togi_journal::{
     ApplicationId, ApplyCause, Build, CcdVector, DayAnswer, DayAnswerKind, DayApplied,
     DayBootStart, DayCheckpoint, DayCleanStop, DayEventId, DayOffsetsChanged, DayUncleanEnd, Event,
     FixStamp, Payload, SCHEMA, Seq, SessionBaseline, SessionContext, SessionId, SessionStart,
-    Shutdown, ShutdownReason, Stamp, TrialId, TrialInstance, TrialIntent, TrialSignal, TrialStart,
-    WorkloadContent,
+    Shutdown, ShutdownReason, Stamp, StockAttested, TrialId, TrialInstance, TrialIntent,
+    TrialSignal, TrialStart, WorkloadContent,
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, ControllerMode, CoreInfo, EndEvidence, Machine,
@@ -207,8 +207,7 @@ impl Ruleset13 {
             .into(),
             &[],
         )?;
-        let context = SessionContext::from(machine.host.bios_context()?);
-        self.append(machine, context.into(), &[])?;
+        self.record_firmware(machine)?;
         let offsets = read_offsets(machine, &cores)?;
         self.append(machine, SessionBaseline { offsets }.into(), &[])?;
         self.started = Some(Started {
@@ -611,8 +610,21 @@ impl Policy for Ruleset13 {
             // The session's own context record already carries the new firmware.
             return self.start(machine);
         }
-        let context = SessionContext::from(machine.host.bios_context()?);
+        self.record_firmware(machine)?;
+        Ok(())
+    }
+
+    /// Records the firmware context the session meets and the simulated operator's stock attestation of it, as the
+    /// confirmation of `togi night` does before tuning on that context.
+    fn record_firmware(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        let firmware = machine.host.bios_context()?;
+        let context = SessionContext::from(firmware.clone());
         self.append(machine, context.into(), &[])?;
+        self.append(
+            machine,
+            Payload::StockAttested(StockAttested { firmware }),
+            &[],
+        )?;
         Ok(())
     }
 

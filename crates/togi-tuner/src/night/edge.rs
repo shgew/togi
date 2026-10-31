@@ -109,11 +109,12 @@ pub enum MappingKind {
     Sweep,
 }
 
-/// Where a unit's mapping goes next, in counts (0 to -50, `Sweep` up toward C).
+/// Where a unit's mapping goes next, in counts (-5 to -50, `Sweep` up toward C, never 0).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "cursor", rename_all = "snake_case")]
 pub enum Cursor {
-    /// Descending by five counts from 0; `offset` is the step in progress.
+    /// Descending by five counts from the implicit zero last pass; `offset` is the step in
+    /// progress, first -5.
     Coarse { offset: i64 },
     /// Descending by one count from the last passing coarse step toward `failed`, the first
     /// failing coarse step; `next` is the offset in progress.
@@ -133,7 +134,9 @@ impl Default for UnitMapping {
     fn default() -> Self {
         Self {
             edge: EdgeU::Unknown,
-            cursor: Cursor::Coarse { offset: 0 },
+            cursor: Cursor::Coarse {
+                offset: -COARSE_STEP,
+            },
         }
     }
 }
@@ -159,7 +162,8 @@ impl UnitMapping {
             Cursor::Bracket { next, .. } => Some((offset_of(next), MappingKind::Bracket)),
             Cursor::Sweep { next } => {
                 let offset = TargetOffset::new(next).ok()?;
-                (offset <= ceiling).then_some((offset, MappingKind::Sweep))
+                (offset < TargetOffset::ZERO && offset <= ceiling)
+                    .then_some((offset, MappingKind::Sweep))
             }
         }
     }
@@ -201,8 +205,7 @@ impl UnitMapping {
             }
             (Cursor::Coarse { offset }, StepResult::Failed { witness }) => {
                 self.edge = self.edge.with_failure(offset_of(offset), witness);
-                let passed = (offset < 0).then_some(offset + COARSE_STEP);
-                self.after_failure(offset, passed);
+                self.after_failure(offset, Some(offset + COARSE_STEP));
             }
             (Cursor::Bracket { failed, next }, StepResult::Passed) => {
                 let following = next - BRACKET_STEP;
@@ -250,8 +253,7 @@ impl UnitMapping {
         let edge = self.edge_counts();
         match self.cursor {
             Cursor::Coarse { offset: step } if edge >= step => {
-                let passed = (step < 0).then_some(step + COARSE_STEP);
-                self.after_failure(edge, passed);
+                self.after_failure(edge, Some(step + COARSE_STEP));
             }
             Cursor::Coarse { .. } => {}
             Cursor::Bracket { .. } => {

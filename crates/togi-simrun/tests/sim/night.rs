@@ -4,9 +4,10 @@
 use jiff::SignedDuration;
 use test_case::test_case;
 use togi_journal::{
-    DeadEndCondition, Event, EventKind, Payload, Queue, ShutdownReason, TrialIntent,
+    DeadEndCondition, Event, EventKind, Payload, Queue, ShutdownReason, StockAttested,
+    TrialIntent,
 };
-use togi_machine::{Backend, CoreId, Signal};
+use togi_machine::{Backend, BiosContext, CoreId, Signal};
 use togi_session::{SessionError, Stop};
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ScriptDef;
@@ -53,29 +54,48 @@ fn all_zero(bench: &Bench, cores: u32) {
     }
 }
 
+fn attestations(events: &[Event]) -> Vec<&StockAttested> {
+    events
+        .iter()
+        .filter_map(|event| {
+            if let Payload::StockAttested(attested) = &event.payload {
+                Some(attested)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// No trial of a night runs every core at CO 0.
+fn assert_no_zero_trial(events: &[Event]) {
+    for intent in intents(events) {
+        assert!(
+            intent.profile.iter().any(|(_, offset)| offset.get() != 0),
+            "trial {} ran all-zero",
+            intent.trial.as_str()
+        );
+    }
+}
+
 #[test]
-fn a_first_night_runs_its_controls_then_maps_until_the_operator_ends_it() {
+fn a_first_night_is_attested_once_and_maps_nonzero_until_the_operator_ends_it() {
     let bench = Bench::new(&MachineDefinition::default(), 1);
     let finished = finish(bench.input());
 
     assert_eq!(finished.stop, Some(Stop::Signal));
     assert!(finished.errors.is_empty(), "{:?}", finished.errors);
     let events = bench.events();
+    assert_eq!(events[0].kind(), EventKind::SessionStart);
+    assert_eq!(events[1].kind(), EventKind::StockAttested);
+    assert_eq!(count(&events, EventKind::StockAttested), 1);
     let queues: Vec<Queue> = intents(&events)
         .iter()
         .filter_map(|intent| intent.task.map(|task| task.queue))
         .collect();
-    assert_eq!(queues.first(), Some(&Queue::Control), "{queues:?}");
-    let first_mapping = queues
-        .iter()
-        .position(|queue| *queue == Queue::Mapping)
-        .expect("the night maps");
-    assert!(
-        queues[first_mapping..]
-            .iter()
-            .all(|queue| *queue != Queue::Control),
-        "{queues:?}"
-    );
+    assert!(queues.contains(&Queue::Mapping), "{queues:?}");
+    assert!(!queues.contains(&Queue::Control), "{queues:?}");
+    assert_no_zero_trial(&events);
     assert_eq!(shutdown_reasons(&events), [ShutdownReason::Signal]);
     let nights: Vec<_> = intents(&events).iter().map(|intent| intent.night).collect();
     assert!(
@@ -83,6 +103,42 @@ fn a_first_night_runs_its_controls_then_maps_until_the_operator_ends_it() {
         "{nights:?}"
     );
     all_zero(&bench, 8);
+}
+
+#[test]
+fn a_changed_firmware_is_attested_again_and_an_unchanged_one_is_not() {
+    let definition = MachineDefinition::default();
+    let night = SignedDuration::from_mins(20);
+    let first = Bench::new(&definition, 1);
+    let mut input = first.input();
+    input.stop_at = Some(first.sim.now() + night);
+    finish(input);
+
+    let second = first.resumed(&definition, 1);
+    let mut input = second.input();
+    input.stop_at = Some(second.sim.now() + night);
+    finish(input);
+    assert_eq!(attestations(&second.events()).len(), 1);
+
+    let third = second.resumed(&definition, 1);
+    let recorded = third.sim.seams().host.bios_context().unwrap();
+    let changed = BiosContext {
+        bios_version: "SIM.2".to_owned(),
+        ..recorded.clone()
+    };
+    third.sim.set_bios_context(changed.clone());
+    let mut input = third.input();
+    input.stop_at = Some(third.sim.now() + night);
+    let finished = finish(input);
+    assert!(finished.errors.is_empty(), "{:?}", finished.errors);
+
+    let events = third.events();
+    let attested: Vec<_> = attestations(&events)
+        .into_iter()
+        .map(|attested| &attested.firmware)
+        .collect();
+    assert_eq!(attested, [&recorded, &changed]);
+    assert_no_zero_trial(&events);
 }
 
 #[test_case(Replay::Warm; "warm")]
@@ -154,7 +210,7 @@ fn an_operator_signal_ends_the_night_and_a_restart_opens_a_new_one() {
 }
 
 #[test]
-fn a_stock_unstable_machine_dead_ends_at_zero_before_the_operator_ends_the_night() {
+fn a_failure_on_the_first_mapping_trial_is_a_mapping_failure_not_a_stock_dead_end() {
     let mut definition = hunt_machine(4);
     definition.script = vec![ScriptDef {
         trial: "0001".into(),
@@ -165,24 +221,26 @@ fn a_stock_unstable_machine_dead_ends_at_zero_before_the_operator_ends_the_night
     let finished = finish(bench.input());
 
     assert!(finished.errors.is_empty(), "{:?}", finished.errors);
-    match &finished.stop {
-        Some(Stop::DeadEnd { dead_end, .. }) => {
-            assert_eq!(dead_end.condition, DeadEndCondition::FailureAtZero);
-        }
-        Some(Stop::Night(EndReason::DeadEnd)) => {}
-        other => panic!("the night did not dead end: {other:?}"),
-    }
-    let events = bench.events();
     assert!(
-        events
+        !matches!(
+            &finished.stop,
+            Some(Stop::DeadEnd { dead_end, .. }) if dead_end.condition == DeadEndCondition::FailureAtZero
+        ),
+        "{:?}",
+        finished.stop
+    );
+    let events = bench.events();
+    let failure = events
+        .iter()
+        .position(|event| matches!(&event.payload, Payload::Failure(failure) if failure.signal == Signal::Crash))
+        .expect("the crash has no failure");
+    assert!(
+        events[failure..]
             .iter()
-            .any(|event| matches!(&event.payload, Payload::Failure(failure) if failure.signal == Signal::Crash)),
-        "the dead end has no failure"
+            .any(|event| event.kind() == EventKind::TrialIntent),
+        "the night stopped at the first failure"
     );
-    assert_eq!(
-        shutdown_reasons(&events).last(),
-        Some(&ShutdownReason::DeadEnd)
-    );
+    assert_no_zero_trial(&events);
     all_zero(&bench, 4);
 }
 
@@ -206,7 +264,7 @@ fn an_exhausted_backend_is_left_and_the_night_continues_on_the_other() {
     let mut failed = false;
     let mut excluded = false;
     let mut input = bench.input();
-    // The first night's stock controls need both backends, so the backend fails after the first mapping trial.
+    // The backend fails after the first mapping trial.
     input.observer = Some(Box::new(move |event| {
         if let Payload::NightPlan(plan) = &event.payload {
             excluded = plan
@@ -253,9 +311,7 @@ fn an_exhausted_backend_is_left_and_the_night_continues_on_the_other() {
 
 #[test_case(Backend::Mprime; "mprime")]
 #[test_case(Backend::Ycruncher; "ycruncher")]
-fn first_night_controls_that_need_an_exhausted_backend_end_the_night_without_evidence(
-    backend: Backend,
-) {
+fn a_night_whose_backend_is_exhausted_from_the_start_runs_no_zero_trial_on_it(backend: Backend) {
     let bench = Bench::new(&MachineDefinition::default(), 1);
     bench.sim.fail_backend_setup(backend);
     let finished = finish(bench.input());
@@ -268,10 +324,20 @@ fn first_night_controls_that_need_an_exhausted_backend_end_the_night_without_evi
         "{:?}",
         finished.errors
     );
-    let Some(Stop::DeadEnd { dead_end, .. }) = &finished.stop else {
-        panic!("the night did not dead end: {:?}", finished.stop);
-    };
-    assert_eq!(dead_end.condition, DeadEndCondition::NoEvidence);
+    assert!(
+        matches!(
+            finished.stop,
+            Some(
+                Stop::Signal
+                    | Stop::Night(EndReason::Unavailable | EndReason::NoNonzeroWork)
+            )
+        ),
+        "{:?}",
+        finished.stop
+    );
+    let events = bench.events();
+    assert_eq!(ran_on(&events, backend), 0);
+    assert_no_zero_trial(&events);
 }
 
 #[test]

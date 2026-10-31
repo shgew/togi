@@ -815,6 +815,9 @@ impl State {
         purpose: QualificationPurpose,
         now: jiff::Timestamp,
     ) -> Result<QualWork, NotReady> {
+        if profile.is_zero() {
+            return Ok(QualWork::None);
+        }
         // A failed proposal stays failed for the session and firmware; a failed re-qualification of D is
         // the day's to answer.
         let failed = match purpose {
