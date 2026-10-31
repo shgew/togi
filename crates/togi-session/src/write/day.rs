@@ -46,7 +46,7 @@ pub enum DayWriteError {
     Write {
         #[source]
         failure: ProfileFailure,
-        recovery: DayRecovery,
+        recovery: Box<DayRecovery>,
     },
 }
 
@@ -206,7 +206,10 @@ pub fn apply_day_profile(
                 &mut hardware,
                 cores,
             );
-            Err(DayWriteError::Write { failure, recovery })
+            Err(DayWriteError::Write {
+                failure,
+                recovery: Box::new(recovery),
+            })
         }
     }
 }

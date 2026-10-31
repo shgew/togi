@@ -121,8 +121,10 @@ fn readback(event: &Event) -> (i64, Option<i64>) {
 
 fn failure(error: DayWriteError) -> (ProfileFailure, DayRecovery) {
     match error {
-        DayWriteError::Write { failure, recovery } => (failure, recovery),
-        other => panic!("{other:?}"),
+        DayWriteError::Write { failure, recovery } => (failure, *recovery),
+        other @ (DayWriteError::Profile(_) | DayWriteError::Expansion { .. }) => {
+            panic!("{other:?}")
+        }
     }
 }
 

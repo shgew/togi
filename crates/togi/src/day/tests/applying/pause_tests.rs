@@ -854,7 +854,13 @@ fn the_live_control_seam_brackets_a_pause_with_checkpoints_and_acknowledges_afte
     // Pausing and resuming settle their new readbacks at zero elapsed time.
     assert_eq!(
         closed,
-        [(true, 600), (false, 0), (false, 600), (false, 0), (true, 600)]
+        [
+            (true, 600),
+            (false, 0),
+            (false, 600),
+            (false, 0),
+            (true, 600)
+        ]
     );
     assert_eq!(
         Ledger::of(journal.events()).profiles.values().sum::<u64>(),

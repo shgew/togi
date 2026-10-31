@@ -302,7 +302,9 @@ fn a_nonzero_permitted_proposal_commits_the_applied_step_and_stop_zeroes() {
         ]
     );
     assert_eq!(
-        Ledger::of(journal.events()).profiles.get(&vec![(CoreId::new(0).unwrap(), -5)]),
+        Ledger::of(journal.events())
+            .profiles
+            .get(&vec![(CoreId::new(0).unwrap(), -5)]),
         Some(&120),
     );
     let mut policy = togi_tuner::policy::State::new(togi_tuner::policy::Params::SPEC);
@@ -764,4 +766,5 @@ fn stock_applied_hours_exclude_suspended_wall_time() {
     assert_eq!(hold.required_s, 50 * 3600);
 }
 
+mod control_tests;
 mod pause_tests;
