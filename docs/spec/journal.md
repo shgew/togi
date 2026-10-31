@@ -157,6 +157,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Evidence | `failure` (signal, location, raw evidence sequences and actual profile), `mce`, `crash.detected` (previous boot, interrupted action, reset reason and optional pstore); these remain observations, not per-core blame decisions |
 | Ruleset 13 | [New policy kinds](#ruleset-13-events): exposure, edge/cap, night planning/qualification, day steps/events/vetoes and raw day imports |
 | Ruleset 14 | Unit mappings/edges/stops, climb decisions, campaign allowance/reclassification, firmware restoration and successor import commitments (typed kinds below; adding them does not activate the policy) |
+| Stock attestation | `stock.attested` (`firmware`: complete BIOS context), the operator's confirmed stock-stability assertion; [Stock attestation](#stock-attestation) |
 | Other plans | `host.ranking`, `tuner.warning`; ranking is descriptive, never per-core tuning policy |
 | Recovery | `backend.retry` |
 | Defects | `defect.found` (known defect, direction, affected cores and decision sequences), `defect.answered` (reset answer and cores) |
@@ -164,6 +165,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Commands | `command.reset` (all; historical per-core records retain their original meaning) |
 | Journal | `journal.torn`, `state.rebuilt` |
 | Day | `day.boot_start` (`build` stamp, BIOS context as in `session.context`, `offsets`: every core's offset read back as observation began, optional `watchdog`), `day.checkpoint` (`applied_secs`, `load_mix`, optional `watchdog`), `day.fault` (`fault`, `monotonic_ns`, `offsets`, `lines`), `day.offsets_changed` (`offsets`), `day.clean_stop` (no fields), `day.unclean_end` (`boot`, optional `last_checkpoint`, `offsets`, `reset_reason`, `evidence`), `day.answer` (`boot`, `offsets`, `answer`, `uid`), `day.record` (`boot`, `offsets`, `source`, `running`, optional `note`), `day.pause` (`state`, `source`; [Day pause](#day-pause)) |
+
 
 `crash.detected.pstore`, when present, contains `path` (the absolute location of the archived dmesg record) and `lines` (its bounded tail). Recovery reads at most 128 prefix bytes per candidate to identify its full dump count and chunk part, then at most the final 3968 bytes of the selected record, keeping each record's raw reads within 4096 bytes and retaining at most 32 lines. It discards a partial first tail line when a newline follows it, otherwise keeps the bounded suffix of a long line without splitting a UTF-8 rune. Lines retain raw diagnostic text in JSON, escaped by JSON encoding like MCE lines; terminal renderers escape the message's path like other raw diagnostics. The message names the record but does not repeat its lines; `togi events --json --kind crash.detected` exposes them. This optional diagnostic never changes crash classification, attribution or replay decisions. No matching record leaves `pstore` absent. Archive or boot-span read failures append `session.warning` with `operation: "read saved pstore"` and the failed operation, then recovery continues without `pstore`; failure to append that warning remains fatal under the journal-write rules.
 
@@ -260,6 +262,24 @@ Climb hold blockers are tagged `hold{credited_s,required_s}`, `certificate`, `ce
 
 Ruleset 13 trial activities are `mapping`, `qualification`, `reproduction` and `control`. The intent names its night/task, exact requirement, class and actual applied profile. A re-qualification is qualification with its recorded purpose; filler is a distinct night task retaining its underlying mapping or qualification activity under [the filler rule](tuner.md#filler). An inconclusive retry keeps the same task/class and records `retry: true`; it does not erase consumed task time or unavailable-backend state. No intent carries a hunt, cycle or round. Stop/cleanup and recovery continue through the ordinary trial and transaction events.
 
+## Stock attestation
+
+`stock.attested { firmware }` is a new additive event kind. It records the yes
+to the existing night confirmation: the operator confirms the machine is
+stable at CO 0 with BIOS at stock. Its `firmware` uses the same complete
+`BiosContext` as session context and daily observations. No released event
+changes shape and `SCHEMA` stays 1.
+
+Write the attestation once per firmware context before switching into tuning.
+Firmware identity, not workload content or evidence epoch, scopes the answer;
+a BIOS, AGESA or microcode change needs a matching new-context attestation.
+Reopening a context already attested does not append a duplicate. The answer
+is not measured stock exposure, a qualification, a day hold or permission for
+a different firmware context. Missing current attestation refuses nonzero
+tuning under [runtime's night contract](runtime.md#night-and-day).
+A reset or ruleset transition starts a new session and requires a new answer;
+operator consent is not imported from archived sessions.
+
 ## Day observation
 
 `togi day` records raw daily observations in the existing session journal. These additive kinds retain their original observation meanings; Ruleset 13 consumes them through explicit [day events and intervals](#ruleset-13-events), never by pretending a daily boot was a tuning trial.
@@ -307,7 +327,7 @@ The three recorded freezes identified by [#1215 Q16](https://github.com/shgew/to
 
 ### Decisions in the new session
 
-Initialize applied D at verified stock with no imported hold or qualification conclusion. Recompute compatible raw night evidence under Ruleset 14; old-context facts remain history/hints and cannot bypass current controls. Reconstruct campaign events, stops and vetoes before nonzero exploration. `SCHEMA` remains 1 because the new kinds are additive; production reducer changes rebuild snapshots through their source-build fingerprint.
+Initialize applied D at verified stock with no imported hold or qualification conclusion. Recompute compatible raw night evidence under Ruleset 14; old-context facts remain history/hints and cannot bypass the current operator stock attestation. Reconstruct campaign events, stops and vetoes before nonzero exploration. `SCHEMA` remains 1 because the new kinds are additive; production reducer changes rebuild snapshots through their source-build fingerprint.
 
 ## Defects
 

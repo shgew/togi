@@ -6,7 +6,13 @@ Pending entries live in `changes/`, one file per pull request named by its numbe
 
 Releasing needs permission to start workflows in the repository ([release policy](development.md#releases-and-changelog)). The workflow pushes the release commit with a deploy key that has write access: its private key is the repository secret `RELEASE_DEPLOY_KEY`, and the `main` ruleset lists deploy keys as a bypass actor, since it otherwise requires a pull request and a passing `check`.
 
-Before releasing a compatibility switch, simulate the transition on a copy of recorded state as [Inspecting a transition](reviewing.md#inspecting-a-transition-on-recorded-state) describes. For Ruleset 14, archive the Ruleset 13 source unchanged, verify the successor's stock baseline, original-identity daily and compatible night observations, `successor.imported` and `campaign.start {origin, history}`. Check reconstructed allowance, stops, vetoes and pending questions, including unreconstructible-history blocking and campaign preservation across reset. The first night must complete [stock controls](spec/tuner.md#co-0-controls) without a dead end. Fresh-session benchmarks cannot prove imported-state behavior.
+Before releasing a compatibility switch, simulate the transition on a copy of recorded state as [Inspecting a transition](reviewing.md#inspecting-a-transition-on-recorded-state) describes. For Ruleset 14, archive the Ruleset 13 source unchanged, verify the successor's stock baseline, original-identity daily and compatible night observations, `successor.imported` and `campaign.start {origin, history}`. Check reconstructed allowance, stops, vetoes and pending questions, including unreconstructible-history blocking and campaign preservation across reset.
+
+The first night must run **no all-zero trial**, begin mapping at −5 and journal
+the current firmware's [`stock.attested`](spec/journal.md#stock-attestation)
+from the normal night confirmation. Starting without that attestation must
+stop at stock before nonzero work. Fresh-session benchmarks cannot prove
+imported-state behavior.
 
 No release is cut while work waits on the target machine ([policy and rationale](development.md#work-that-waits-on-the-target-machine)): an issue labeled `needs-hardware` holds a change merged before its run on the target machine, and `just board` lists such issues under "Waiting on the target machine". Run each issue's steps on the machine first; the agent there removes the label once they pass, and closes the issue when its Acceptance is met. The release workflow enforces this: when it would commit a new release, it lists the issues labeled `needs-hardware`, open or closed, and refuses while there is any, naming each by number and title and marking the closed ones. `just release-preview` reads nothing from GitHub and does not show this refusal. Publishing again a release whose commit is already on `main` is not refused.
 

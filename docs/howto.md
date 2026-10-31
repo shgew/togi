@@ -270,7 +270,16 @@ This is a **destructive reset test**, not a routine health check or a stability 
 
 ## 4. Overnight: the tuning boot
 
-Enable `services.togi.tuning.enable = true;` with exactly one supported boot loader, GRUB or systemd-boot, and rebuild. Switch from the day with `sudo togi night`. It shows what the night will do, as `togi status` plans it, then asks `Reboot into the night now? [y/N]`. Only `y` or `yes` goes on: it says good night, persistently selects the current generation's tuning entry, remembers the boot selection it replaces and reboots. Any other answer changes nothing. In a normal boot, `sudo togi watch` offers the same switch on `n`, with a confirmation.
+Enable `services.togi.tuning.enable = true;` with exactly one supported boot
+loader, GRUB or systemd-boot, and rebuild. Switch from the day with
+`sudo togi night`. It shows the plan, then its existing reboot confirmation
+also asks you to confirm that the machine is stable at CO 0 with BIOS at
+stock. Only `y` or `yes` goes on: togi journals that attestation once per
+firmware context, selects the current generation's tuning entry, remembers
+the boot selection it replaces and reboots. A BIOS, AGESA or microcode change
+requires a new current-context attestation. Any other answer changes nothing.
+In a normal boot, `sudo togi watch` offers the same switch on `n`, with the
+same stock-stability confirmation and no second prompt.
 
 The tuning entry boots to a console with no desktop. tty1 shows `togi watch --tuning-boot`, a dashboard that ignores `q`, `Q`, Ctrl-C and Ctrl-D; `systemctl stop togi-watch.service` still ends it. Its log and the kernel's messages are on tty3 (Alt+F3); tty2 has a login prompt. `togi.service` tunes unattended. A night begun with `togi night` has no time limit, and crash reboots stay in tuning with either loader.
 
@@ -307,7 +316,14 @@ A night works through its queues (reproduction, qualification, mapping, controls
 
 Mapping descends one CCD at a time with only that CCD tuned, so a failure is charged to that CCD ([Night edge U](spec/tuner.md#night-edge-u)). Failures at a nonzero whole profile stay profile-level evidence until isolated testing locates them.
 
-A conclusive failure at CO 0 stops togi on its own: it records a `platform unstable at stock` dead end naming the class, rather than tuning around it. A failure at a nonzero profile that names a CO 0 core first gets one rerun of the same class with every CCD at CO 0. [Dead ends](spec/tuner.md#dead-ends) and [CO-0 controls](spec/tuner.md#co-0-controls) say what each result means, and [section 6](#6-dead-ends) covers the dead end.
+Togi never runs a trial with every core at CO 0: there are no first-night or
+changed-firmware stock controls, stock-confirmation reruns, or all-zero
+filler/requalification. Mapping begins at −5 with the other CCDs at stock.
+A failure located on a CO-0 core during isolated mapping counts against the
+tested CCD; whole-profile qualification or reproduction retains the exact
+failed profile. [Operator-attested stock stability](spec/tuner-ruleset14.md#operator-attested-stock-stability)
+owns these rules. Day observation at stock and the 50 clean stock daily hours
+before the first promotion or firmware restoration remain.
 
 ## 5. In the morning
 
@@ -332,7 +348,15 @@ The first observed day boot after a night has a Morning report in `status`; `tog
 
 `doctor --day` checks the day prerequisites rather than stress-workload availability. Its baseline row asks whether this boot has a complete, verified CO-0 baseline witness, separately from the journal's applied D or a current zero readback. Missing proof is not silently filled in. Like ordinary `doctor`, it writes no journal event and changes no offset; root hardware checks still require the host lock, so stop a competing hardware process first. See [day diagnostics](spec/runtime.md#day-diagnostics) for the exact checks.
 
-A night has no end time: `sudo togi run` tunes until you end it with Ctrl-C, F10 in the dashboard or a reboot (the power button included), and restores every core to CO 0 when it stops. A crash reboot into the tuning boot continues the same night; the next run after you end it opens a new one. The other stopping conditions are the tuner's [DeadEnd and Unavailable results](spec/tuner.md#night-query-results), including blocked stock controls with no other admissible work, and runtime safety dead ends.
+A night has no end time: `sudo togi run` tunes until you end it with Ctrl-C,
+F10 in the dashboard or a reboot (the power button included), and restores
+every core to CO 0 when it stops. A crash reboot into the tuning boot continues
+the same night; the next run after you end it opens a new one. A direct run
+or menu-started tuning boot without the current stock attestation stops at
+stock with `stock_unattested` (exit 12): use the normal `togi night`
+confirmation. An empty admissible nonzero queue stops with `no_nonzero_work`
+(exit 12), not a stock trial. Excluded backends and runtime safety stops
+retain their [named stopping conditions](spec/tuner.md#night-query-results).
 
 A night's mapping and qualification are evidence, not proof of stability. Qualification runs the [coverage matrix](spec/workloads.md#coverage-matrix) on the exact profile under test; classes that do not bound the cap are listed as uncovered, never as safe.
 
@@ -355,7 +379,16 @@ If `togi.service` instead fails without a dead end or lock contention, systemd r
 
 After an abnormal service exit, inspect `journalctl -u togi.service` for the emergency cleanup and each core's zero readback before the restart ([Tuning boot](spec/runtime.md#tuning-boot)). To repeat that bounded zero-only cleanup after a crashed manual run, with no other togi process running, use `sudo togi emergency-stop`; a failure is reported instead of claiming that offsets were restored.
 
-`togi status` shows the dead end, and the end of `togi events` shows it after the trial, failure, crash or SMU events it cites as evidence. Fix the cause, then run `sudo togi run` or pick the tuning boot again. Follow [stock-control failure handling](spec/tuner.md#co-0-controls), not a per-core blacklist or reset command. A BIOS/AGESA/microcode change continues the session under [firmware invalidation](spec/tuner.md#firmware); it does not seed a new one. [runtime.md](spec/runtime.md#dead-end-actions) and [tuner.md](spec/tuner.md#dead-ends) describe the stop conditions.
+`togi status` shows the dead end, and the end of `togi events` shows it after
+the evidence it cites. Fix the named cause before starting again. For
+`stock_unattested`, return to the normal boot and confirm through
+`sudo togi night`; do not bypass the answer with a direct run. For
+`no_nonzero_work`, continue daily observation at stock rather than looking
+for an all-zero workload to run. A BIOS/AGESA/microcode change continues the
+session under [firmware invalidation](spec/tuner.md#firmware), requiring a
+new-context attestation rather than seeding a new session.
+[runtime.md](spec/runtime.md#dead-end-actions) and
+[tuner.md](spec/tuner.md#dead-ends) describe the stop conditions.
 
 Leave reasons survive outside the tuning journal as one pending `togi_leave_reason` record: GRUB's environment block or systemd-boot's persistent `/var/lib/togi-boot/backend.json`. With GRUB, inspect it from the normal system with `sudo grub-editenv <grubenv> list` (`<grubenv>` is described in [section 8](#8-when-the-tuning-boot-does-not-reach-togi)); with systemd-boot, inspect that JSON file. Normal in-session runs and `status`/`events` do not import it. View it after the next tuning-boot run with `togi events --kind boot.leave_reason` ([retry state](spec/runtime.md#restart-limit-retry-boots-and-leave-reasons)).
 

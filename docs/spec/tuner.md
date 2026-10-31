@@ -12,6 +12,11 @@ The replaced per-core policy is removed, not left selectable: constraints, cores
 
 [Ruleset 14](tuner-ruleset14.md) is the sole normative tuning policy. It owns D/C/U, exact-profile holds and qualification, permanent stops, campaign allowance, transition and reporting. The remaining sections preserve Ruleset 13 for historical interpretation and explicitly retained contracts; conflicting Ruleset 14 rules take precedence. Nonzero activation remains separately gated.
 
+Ruleset 14 removes the historical all-zero controls and CO-0 rerun below.
+Its [operator-attestation rule](tuner-ruleset14.md#operator-attested-stock-stability)
+also replaces the old mapping offset-0 step and all-zero filler/requalification.
+Retained scheduling is subject to that no-all-zero-trial invariant.
+
 ## Invariants
 
 1. Targets are in [-50, 0]; smaller is deeper. Every core of a CCD receives that CCD's offset. Per-core refinement is outside this ruleset.
@@ -73,9 +78,9 @@ S is the shallower (numerically larger) of that rate-limited offset and `min(U +
 
 ## Night edge U
 
-U is the shallowest actually observed failing offset in controlled **isolated CCD** mapping/reproduction: the tested CCD is uniform, other CCDs are CO 0, and managed placement is valid. Count computation errors, trial-window MCEs, crashes and [process faults](workloads.md#trial-outcome) on the tested CCD, including togi's controller, dashboard and workers. A fault located outside the tested CCD is visible but not charged to it. An unattributed controlled isolated failure belongs to the tested CCD, not a core. All-CCD failures remain profile-level unless isolated testing reproduces them.
+U is the shallowest actually observed failing offset in controlled **isolated CCD** mapping/reproduction: the tested CCD is uniform and nonzero, other CCDs are CO 0, and managed placement is valid. Count computation errors, trial-window MCEs, crashes and [process faults](workloads.md#trial-outcome) on the tested CCD, including togi's controller, dashboard and workers. A failure located on a CO-0 core during isolated mapping also counts against the tested CCD; it causes no stock rerun. An unattributed controlled isolated failure belongs to the tested CCD, not a core. All-CCD failures remain profile-level unless isolated testing reproduces them.
 
-Bracket the first observed failure against the preceding passing mapping step using unit counts; retain the shallowest actual failure as U even when a later pass occurs there. No failure at the write limit produces a **censored edge at -50**, not an invented failure; its numeric boundary may enter the edge-margin calculation with that label. Before reaching that limit without a failure, U remains unknown. A stock failure follows [controls](#co-0-controls), never a negative-offset tuning workaround.
+Bracket the first observed failure against the preceding passing mapping step using unit counts; treat 0 as the implicit last passing step, never a trial or measured pass. Retain the shallowest actual failure as U even when a later pass occurs there. No failure at the write limit produces a **censored edge at -50**, not an invented failure; its numeric boundary may enter the edge-margin calculation with that label. Before reaching that limit without a failure, U remains unknown.
 
 ## Scheduling
 
@@ -89,28 +94,55 @@ Visit work in this order:
 
 1. **Reproduce** the oldest CPU-suspect daily event with an open reproduction task, exact failed profile first, then each CCD alone in ascending CCD-ID order. Use the qualification matrix's classes in their deterministic order, stopping a profile's attempt at its first conclusive failure. One event receives one night only; a crash reboot into tuning continues that same night. Record remaining cells and mark an uncompleted or all-clean attempt **unreproduced** when that night closes under [runtime's boundary](runtime.md#night-declaration). A nonuniform failed profile, whether imported or manually recorded, cannot be a night target: at its first reproduction opportunity in an open night, close the task as **untestable**, with no target and no trial. Do not approximate it by a uniform CCD vector; its veto and event resolution still follow [the daily-event rules](#whole-profile-veto-and-escalation). Clean trials do not clear the event or veto and earn no qualification credit. Isolated failures may move U; an exact-profile-only failure stays profile-level.
 2. **Qualify** the next admissible exact day profile through the [composite coverage matrix](workloads.md#coverage-matrix), excluding [failed proposed profiles](#failed-next-step-qualification). That matrix alone owns same-offset unchanged-CCD reuse; fresh package cells always use the complete proposed profile, and no componentwise-deeper pass substitutes.
-3. **Map** CCDs in ascending ID, taking one mapping offset per CCD before returning to the first. Descend from 0 by five counts, rotating every R1/R2 core position and catalog, R8 light positions, R7 full/partials and R9 serial positions. At each offset complete the mapping matrix before descending, or stop that step at its first failure. Bracket the first failure in one-count steps from the last passing coarse step, then sweep each integer from U toward S on later nights. If S changes, retain raw facts and schedule the still-uncovered shallower sweep cells.
-4. **Controls and re-qualification** as below.
-5. **Fill** otherwise idle work with the [filler task](#filler); an empty primary queue is not an end-of-night condition.
+3. **Map** CCDs in ascending ID, taking one mapping offset per CCD before returning to the first. Descend from −5 by five counts, rotating every R1/R2 core position and catalog, R8 light positions, R7 full/partials and R9 serial positions. At each offset complete the mapping matrix before descending, or stop that step at its first failure. Bracket the first failure in one-count steps from the last passing coarse step, implicitly 0 before the first −5 step. Ruleset 14 then sweeps uncovered cells from U toward C.
+4. **Re-qualify** nonzero D as below; all-zero D needs no trial.
+5. **Fill** otherwise idle work with exact-current-D qualification only when D is nonzero; otherwise an empty nonzero queue ends the night.
 
-The former reservations are **soft shares of E**, not fractions of a predicted night: mapping 10%, due stock controls 5%, due monthly re-qualification 10%, reproduction 25% and next-step qualification 75%. A due queue at or over its share yields only while another due queue is under its own share. Choose the first under-share due queue in the priority order above when one exists; otherwise choose the first due queue. At E = 0 none is below its share, so ordinary priority chooses the first task. Work may cross a share in one cell, and an uncontested queue can run beyond it; shares are neither cell-fit tests nor simultaneous guaranteed allocations. First-night/changed-firmware stock controls remain a prerequisite: nonzero queues are inadmissible until they complete, regardless of shares.
+The reservations are **soft shares of E**, not fractions of a predicted night:
+mapping 10%, due monthly requalification 10%, reproduction 25% and next-step
+qualification 75%. A due queue at or over its share yields only while another
+due queue is under its own share. Choose the first under-share due queue in
+the priority order above when one exists; otherwise choose the first due queue.
+At E = 0 ordinary priority chooses the first task. Work may cross a share in
+one cell, and an uncontested queue can run beyond it; shares are neither
+cell-fit tests nor simultaneous guaranteed allocations. No stock-control
+queue remains; the current firmware's operator attestation is the prerequisite.
 
-D re-qualification is due 30 elapsed calendar days after its last complete qualification, or immediately when that identity is invalidated. Thirty days is a conservative fixed monthly interval that avoids calendar-month ambiguity. Re-qualify the exact current D using the full matrix; qualification may span nights. Expiry blocks promotions, not observation at D. Any conclusive failure becomes a CPU-suspect daily event at D through the same event rules.
+Nonzero D requalification is due 30 elapsed calendar days after its last complete qualification, or immediately when that identity is invalidated. Thirty days is a conservative fixed monthly interval that avoids calendar-month ambiguity. Requalify the exact current nonzero D using the full matrix; qualification may span nights. Expiry blocks promotions, not observation at D. Any conclusive failure becomes a CPU-suspect daily event at D through the same event rules. All-zero D is observed by day but never requalified with a trial.
 
 ### Filler
 
-Filler is its own night task kind, selected only when no runnable mapping, qualification, reproduction or due control/re-qualification cell remains. It first probes **one count deeper than S** on the admissible CCD furthest from its limit: maximize `S-U`, breaking ties by ascending CCD ID, and rotate the mapping matrix's cells by a durable filler ordinal. An unknown U permits no cap probe. In depth magnitudes the admissibility rule is `depth(candidate) <= depth(U) - EDGE_MARGIN`, where `depth(o) = -o` and `EDGE_MARGIN = 5`; equivalently for signed CO, `candidate >= U + 5`. This notation keeps the owner's edge-margin condition consistent with the signed offsets used here; a probe must not bypass the existing edge margin or write limit.
-
-A filler cap probe uses the isolated mapping contract and records mapping activity/exposure, including eligible U and slope evidence. It **never finishes a MappingBoard step** or supplies an exact-profile qualification. If no cap probe is admissible, re-run D's exact qualification cells round-robin with a durable cursor, retaining the normal exact-profile contract; a failure follows the [current-D re-qualification event path](#whole-profile-veto-and-escalation). Skip unavailable-backend cells without marking them complete; they remain uncovered/outstanding. The two filler forms retain their underlying mapping or qualification trial activity while `night.plan` records the distinct filler task kind.
+Ruleset 14 filler repeats exact-current-D qualification cells round-robin with
+the durable cursor only when D is nonzero and no primary nonzero cell is
+admissible. A failure follows the
+[current-D requalification event path](#whole-profile-veto-and-escalation).
+Skip unavailable-backend cells without marking them complete; they remain
+uncovered/outstanding. Filler retains qualification trial activity while
+`night.plan` records the distinct filler task kind. No S−1 cap probe remains.
 
 ### Night query results
 
-`next()` returns a runnable task whenever any cell is runnable, including filler; there is no deadline, completed-work or insufficient-budget `EndNight`. Its policy `EndReason` is exactly `DeadEnd` (confirmed stock instability) or `Unavailable` (**no runnable cell remains without an excluded backend**). The latter includes every configured backend being exhausted, or required first-night/firmware stock controls still needing an excluded backend with nothing else admissible. The session separately enforces [runtime safety stops](runtime.md#run-recovery), including a thermal trip (exit 18), an unresolved too-aggressive defect (exit 17), and inherited dead ends. A stuck backend makes only that backend unavailable for the rest of the night under runtime's retry/exhaustion rule; another usable backend prevents an end only while it has an admissible cell to run.
+`next()` returns a runnable nonzero task whenever one is admissible, including
+nonzero filler. There is no deadline or insufficient-budget end. A missing
+current-context attestation yields `StockUnattested`; an empty admissible
+nonzero queue yields `NoNonzeroWork`. `Unavailable` means no admissible cell
+remains without an excluded backend. Every end restores all cores to stock.
+The session separately enforces [runtime safety stops](runtime.md#run-recovery),
+including thermal trip (exit 18), unresolved too-aggressive defects (exit 17)
+and inherited dead ends. A stuck backend excludes only that backend for the
+rest of the night; another usable backend prevents an end only while it has
+an admissible nonzero cell.
 
 
 ## CO-0 controls
 
-On the first night and after every firmware-context change, run the entire coverage matrix at all-zero before a nonzero test. A conclusive failure at all-zero is already confirmation at stock: stop with `platform unstable at stock under <class>`, naming the class and evidence. Do not keep tuning around it, attribute it to a nonzero CCD, or claim CO caused it. A failure at a nonzero profile that names a CO-0 core instead requires one conclusive rerun of the same class and duration with **every** CCD at CO 0; the rerun's cell is rebuilt from the failed trial's recorded class and the topology, never regenerated from the current matrix, whose R7 partial chain a later full-CCD load may have changed. A passing rerun is not proof of causation and the original failure remains profile-level unless isolated testing locates it. Inconclusive controls give no clearance. A new run cannot ignore an unresolved stock-failure stop; it needs an explicit reset and fresh controls.
+**Historical Ruleset 13 behavior, removed by
+[ADR 0095](../adr/0095-operator-attested-stock-stability.md).** First-night,
+changed-firmware and pre-restoration all-zero matrices and the all-zero rerun
+after a nonzero failure naming a CO-0 core no longer run. The
+[Ruleset 14 attestation](tuner-ruleset14.md#operator-attested-stock-stability)
+replaces these controls. Historical stock-failure evidence remains visible
+and does not become permission to tune around stock instability.
 
 ## Day steps
 
@@ -144,7 +176,7 @@ This is a failed proposed-profile disposition, not a crash at D: it does not cre
 
 ### Firmware
 
-A BIOS, AGESA or microcode change invalidates active qualifications, slopes and caps. Set D to CO 0 at the next application opportunity; retain the previous profile as a re-qualification target and old raw observations as mapping hints only. Complete new-context stock controls and an exact-profile night qualification before restoring a nonzero profile, also satisfying the recomputed cap and vetoes. Old facts never contribute current hours, rate or qualification. This reset is not undone by a same-boot restart.
+A BIOS, AGESA or microcode change invalidates active qualifications, slopes and ceilings. Set D to CO 0 at the next application opportunity; retain the previous profile as a requalification target and old raw observations as mapping hints only. Require a new operator stock attestation, exact previous-profile qualification and the fresh stock hold before [Ruleset 14 restoration](tuner-ruleset14.md#7-reconcile-every-current-decision-path). No all-zero controls run. Old facts never contribute current hours or qualification. This reset is not undone by a same-boot restart.
 
 ## Daily events
 
@@ -175,7 +207,7 @@ Every [`day.record`](journal.md#ruleset-13-events) is a CPU-suspect manual event
 
 ## Session start
 
-Require a verified all-zero starting baseline and record topology, firmware context and workload content. Nonzero or incomplete baseline readback is a refusal, not clamping or advice. The first night establishes controls and mapping; the first day proposal follows the pure rules above. The [journal transition](journal.md#transitions) owns imports of pre-13 daily observations, including stock hours and the recorded freezes.
+Require a verified all-zero starting baseline and record topology, firmware context and workload content. Nonzero or incomplete baseline readback is a refusal, not clamping or advice. A current operator stock attestation permits the first night to begin mapping at −5 with no all-zero trial. The first day proposal follows Ruleset 14's initial hold and exact-profile qualification. The [journal transition](journal.md#transitions) owns imports of earlier daily observations.
 
 ## Dead ends
 

@@ -19,13 +19,41 @@ The eventual CO-added-hazard goal remains `λ* = 1 crash per 3,000 machine-hours
 Use signed offsets in [−50, 0], with smaller values deeper. For each unit i:
 
 - `U_i = unknown` until a controlled isolated mapping/reproduction failure is observed or the complete mapping descent reaches the write limit without failure.
-- `observed(u)` means the shallowest actually failing isolated offset in the current firmware/evidence context. Later passes never erase that failure. The tested unit alone is nonzero; all other units are at CO 0. Placement, outcome precedence, process-fault handling and stock confirmation retain their existing contracts. A joint failure never becomes an isolated edge by guessing its culprit.
+- `observed(u)` means the shallowest actually failing isolated offset in the current firmware/evidence context. Later passes never erase that failure. The tested unit alone is nonzero; all other units are at CO 0. Placement, outcome precedence and process-fault handling retain their existing contracts. A joint failure never becomes an isolated edge by guessing its culprit.
 - `censored(-50)` means complete required mapping at the write limit without a failure, not an invented failure at −50. Before completing that descent, U stays unknown. Qualification alone cannot manufacture a censored edge.
 - Retain the fixed five-count edge margin for both observed and censored edges: `C_i = min(u + 5, 0)`. Thus observed U = −30 permits C = −25, observed U = −4 permits only stock, and censored U = −50 permits C = −45. Unknown U gives no ordinary nonzero promotion permission for that unit. C is the hard night ceiling, separate from statistical S; the narrowly specified firmware-restoration exception is in §7.
 
 A proposal may not be deeper than any applicable C. A newly observed shallower edge is genuinely adverse evidence: if it makes `D_i < C_i`, retreat to a componentwise shallower permitted profile without waiting for a hold. Apply that target only if its exact qualification is valid; otherwise use CO 0 until it qualifies. A unit whose applied step is undone by this adverse retreat stops climbing under §5. Unknown or incompatible evidence after firmware change takes the reset path, not an assumed edge of zero.
 
 The U+5 choice is a margin, not proof about daily hazard. The successor gate must show the physical −50 frontier and the operational −45 ceiling separately on censored write-limit cases. Neither design changes that margin after seeing scores.
+
+### Operator-attested stock stability
+
+No trial may run with every core at CO 0. The existing `togi night`
+confirmation includes the operator's assertion that the machine is stable at
+CO 0 with BIOS at stock; there is no separate prompt. A confirmed answer is
+durably recorded as [`stock.attested`](journal.md#stock-attestation) once per
+firmware context. A BIOS, AGESA or microcode change requires a new answer for
+the new context. An absent current attestation ends tuning before nonzero work;
+[runtime](runtime.md#night-and-day) owns the refusal and stock restoration.
+A reset or ruleset transition requires a new answer in the new session; archived
+consent is not imported.
+
+Mapping begins at −5, descending by five counts. Offset 0 is the implicit last
+passing step when bracketing the first failure, not a tested step or measured
+passing exposure. A located failure on a CO-0 core in an isolated nonzero
+mapping trial counts against the tested CCD. A whole-profile qualification or
+reproduction failure remains a failure of that exact profile; never schedule
+an all-zero rerun to adjudicate it.
+
+First-night, changed-firmware and pre-restoration stock controls are removed.
+Isolated mapping still leaves every other CCD at CO 0. Reproduction skips
+all-zero targets; all-zero D receives neither filler nor requalification.
+When no nonzero cell is admissible, end the night with a named reason and
+restore every core to stock. Day observation at CO 0 and the initial or
+post-firmware 50-hour clean stock hold remain required; neither loads the
+machine with a trial. [ADR 0095](../adr/0095-operator-attested-stock-stability.md)
+records this reversal of retained controls.
 
 ## 3. What exactly qualifies the next profile
 
@@ -35,7 +63,7 @@ The unchanged [coverage matrix](workloads.md#coverage-matrix) owns every require
 
 The workload spec continues to own catalogs, exact subset construction, SMT-position rotation, controller exclusion/repeats and class identity. A core-phase step **does not shrink** the changed CCD's R1–R5 requirements merely because one core moved; per-core savings must come from starting closer and legal reuse, not dropping coverage. R7's physical layouts remain topology-defined, not sixteen fabricated independent power domains.
 
-Use only the matrix’s same-offset unchanged-CCD local reuse, with its complete compatibility and intervening-failure conditions. Package/interaction cells are fresh at the exact candidate; deeper-vector passes and additive component certificates do not certify it. First controls, changed-firmware invalidation, monthly full requalification and warm-up/exposure exclusions remain owned by [workloads](workloads.md) and [Ruleset 13 scheduling](tuner.md#scheduling).
+Use only the matrix’s same-offset unchanged-CCD local reuse, with its complete compatibility and intervening-failure conditions. Package/interaction cells are fresh at the exact candidate; deeper-vector passes and additive component certificates do not certify it. Changed-firmware invalidation, monthly full requalification of nonzero D and warm-up/exposure exclusions remain owned by [workloads](workloads.md) and [retained scheduling](tuner.md#scheduling).
 
 For two eight-core CCDs and up to twelve partials, a normal changed-CCD certificate schedules 155 launches / 19,380 s ≈ 5.38 h, before hardware overhead, placement repeats and interruptions. **[INFERENCE: matrix arithmetic, not a measured real-night timing promise.]** Cells span nights rather than being shortened to fit.
 
@@ -45,7 +73,7 @@ A conclusive failure of a proposed, unapplied P durably blocks that exact vector
 
 At each eligible cold boot, perform safety decisions first. A restart, resume or pause expiry can re-apply a permitted result, never promote. For ordinary promotion:
 
-1. Start from verified all-zero in a fresh D session, then observe the **current exact applied profile** for 50 clean daily hours. The rule is that the initial stock profile must earn these hours too; remove Ruleset 13's first-step exemption. Stock controls and candidate qualification can run while this hold accumulates.
+1. Start from verified all-zero in a fresh D session, then observe the **current exact applied profile** for 50 clean daily hours. The initial stock profile must earn these hours too; remove Ruleset 13's first-step exemption. Nonzero mapping and candidate qualification can run while this hold accumulates, after the current stock attestation.
 2. Count only checkpointed observed intervals with verified unchanged readbacks and active observation after successful application and after the latest applicable CPU-suspect event. Exclude sleep, pause, tuning, unknown-profile intervals and service downtime. A profile change starts a fresh hold, even if that vector was used before. Non-CPU faults do not reset it; recompute valid intervals after an answer changes classification.
 3. Among unfinished units with `D_i > C_i`, choose maximum distance `r_i = D_i − C_i`, ties by ascending topology unit ID. One unit moves. Retain upward integer rounding of the half distance: `step_i = min(5, max(1, ceil(r_i / 2)))`; set `P_i = D_i − step_i`, other units unchanged. For r = 0 there is no step. Since r is a positive integer, this never passes C.
 4. Apply P only after the 50-hour hold, its exact qualification, no pending question, no unresolved event/safety work, no active veto violation, valid firmware, freeze off, available machine allowance, the nonzero hardware activation gate, and the existing safe-apply prerequisites all hold. A boot starting paused cannot promote later in that boot.
@@ -98,12 +126,12 @@ Use **`experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate mod
 |---|---|
 | Statistical cap S gates promotion and chooses its destination | **Replace.** C and the hold/qualification/allowance contract govern promotion. S may remain an explicitly non-authorizing diagnostic projection for #1221, with its assumptions, witnesses and gaps; no code path may consult low S as an implicit permission block. Do not merge B′. |
 | A shallower S forces retreat | **Replace.** Low S, sparse exposure, a changed fitted slope or missing projected coverage alone cannot undo an otherwise permitted D step. Actual shallower U/C, current-D qualification failure, active veto, invalid context and runtime safety stops still retreat/zero through their explicit paths. No generic “night data changed” reason may secretly restore the S constraint. |
-| Night mapping, reproduction, soft shares, controls, monthly requalification | **Keep** [the scheduling contract](tuner.md#scheduling): deterministic operator-ended nights, measured-time accounting, queue shares, bounded reproduction, first/changed-firmware all-zero controls and 30-day requalification. **Replace** S-directed shallower sweep/filler intent: map/bracket U, sweep uncovered cells from U toward C; when primary work is empty, repeat exact-current-D qualification cells with the durable cursor. Remove S−1 filler; it cannot unlock permission. |
+| Night mapping, reproduction, soft shares, controls, monthly requalification | **Keep** deterministic operator-ended nights, measured-time accounting, queue shares, bounded reproduction and 30-day nonzero requalification from [the scheduling contract](tuner.md#scheduling). **Remove** every all-zero trial and replace stock controls with the operator attestation above. **Replace** S-directed sweep/filler: map/bracket U, sweep uncovered cells from U toward C; when primary work is empty and D is nonzero, repeat exact-current-D qualification cells with the durable cursor. Remove S−1 filler; it cannot unlock permission. |
 | Failed next-profile certificate | **Keep** the exact-vector block specified in §3. |
 | Whole-profile veto and escalating retreat | **Keep and extend** through §5's unit-generic history, permanent stops and machine allowance. |
 | First step exempt from hold; half distance to S | **Replace** with §4's initial hold, bounded half-distance-to-C rule and deterministic unit order. |
 | Freeze | **Keep** D and stop promotion only. Required retreat/reset still wins. Freeze is not pause-to-stock. |
-| Firmware change | **Keep zeroing and incompatibility; retain #1214's restoration direction.** BIOS/AGESA/microcode change resets the applied profile to stock and invalidates active qualifications, slopes and holds. New-context stock controls and night qualification of the **exact previous full profile**, followed by **50 clean observed stock hours**, permit restoring that profile in **one day step**, not an ordinary multi-step re-climb. This is an explicit exception to the ordinary one-unit/step-size rule. Old positive facts supply no current qualification/hours; genuinely adverse current-context evidence and active vetoes still block restoration. Preserve allowance, permanent unit stops and prior history. Restoring previously stopped units' saved permission does not reopen their climb. |
+| Firmware change | **Keep zeroing and incompatibility; retain #1214's restoration direction.** BIOS/AGESA/microcode change resets the applied profile to stock and invalidates active qualifications, slopes and holds. A new operator stock attestation and night qualification of the **exact previous full profile**, followed by **50 clean observed stock hours**, permit restoring that profile in **one day step**, not an ordinary multi-step re-climb. No new-context all-zero controls run. Old positive facts supply no current qualification/hours; genuinely adverse current-context evidence and active vetoes still block restoration. Preserve allowance, permanent unit stops and prior history. Restoring stopped units' saved permissible depth does not reopen their climb. |
 | Pause (#1235) | **Keep all forms, lifetime and notices.** Zero every core and read back; preserve learning; paused hours never count. A paused cold boot cannot promote, and safety decisions apply to the saved D before resume. Resume/expiry re-applies only a still-permitted profile through the full transaction. A crash actually at paused CO 0 is platform/background evidence, not a charge against a saved nonzero step. |
 | Watchdog/apply (#1218) | **Keep** [runtime's safe-apply contract](runtime.md#offset-types-and-the-write-transaction) and its [policy boundary](runtime.md#ruleset-13-policy-boundary): verified stock baseline, PID1's armed/counting 60 s hardware watchdog, no lockup panics by day, defect/topology refusals, full transaction, emergency zeroing and no-promotion restart/resume. D changes the tuner's risk policy, not the applier's authority. |
 | Raw exposure, warm-up, stock failure and runtime dead ends | **Keep** [workload outcome/exposure and containment rules](workloads.md) and [runtime safety rules](runtime.md); daily holds in §4 never become synthetic class exposure or permission to tune around stock instability. |
@@ -149,7 +177,7 @@ D deliberately permits exploratory profiles whose daily CO-added hazard may exce
 
 Hardware acceptance must be recorded against the exact approved revision/configuration, with BIOS CO 0 and no invented measured-time claims:
 
-- Finish the applicable outstanding observer/watchdog/placement checks, including per-core/slot mapping, counting watchdog, persistent day evidence and supported sleep modes. Verify the all-zero baseline and clean stock controls.
+- Finish the applicable outstanding observer/watchdog/placement checks, including per-core/slot mapping, counting watchdog, persistent day evidence and supported sleep modes. Verify the all-zero baseline and current operator stock attestation; run no all-zero trial.
 - Demonstrate night mapping/bracketing and labelled U/C; demonstrate an exact proposed-profile matrix and its outstanding/failure handling. Record launch/teardown overhead and required repeats rather than assuming an eight-hour simulated night fits.
 - Under a separately explicitly authorized **supervised acceptance procedure**, apply a small already-qualified profile through intent/write/readback; stop/abnormal-exit/emergency-zero, restart without promotion, suspend/resume and pause/expiry must match #1218/#1235. This supervised procedure is not automatic day exploration and cannot bypass the stock-only activation gate by calling it a demonstration. Fake injection tests prove crash/firmware paths; do not induce a real daily-use crash or flash firmware to spend the allowance.
 - Show a real verified daily hold, an eligible cold-boot decision, correct evidence/allowance notices and retained state after restart. Keep autonomous nonzero rollout disabled until the complete acceptance record passes; document exactly what the supervised procedure authorized and what it did not.
