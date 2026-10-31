@@ -169,25 +169,60 @@
             "togi-session"
             "togi-simrun"
           ];
-          recoveryCheck = craneLib.cargoNextest (
-            cargoCheck
-              (cargoSources.source {
-                code = cargoSources.closureWithDev recoveryCrates;
-                full = recoveryCrates;
-                files = testFixtures recoveryCrates;
-              })
-              {
-                pname = "togi-recovery";
-                cargoExtraArgs = "--locked ${lib.concatMapStringsSep " " (crate: "-p ${crate}") recoveryCrates}";
-                # Run every recovery shard, with at most two single-worker campaigns at a time.
-                cargoNextestExtraArgs = "--profile ci --ignore-default-filter --test-threads 2 -E 'not default()'";
-                passthru.tier = "ci";
-                nativeCheckInputs = [
-                  pkgs.gitMinimal
-                  pkgs.bashInteractive
-                  pkgs.nushell
-                ];
-              }
+          recoveryPartitions = lib.range 1 8;
+          recoveryCargoArgs = "--locked ${lib.concatMapStringsSep " " (crate: "-p ${crate}") recoveryCrates}";
+          # Pair the two campaigns' existing shards; run the warm/cold matrix only in partition 1.
+          recoveryFilter =
+            partition:
+            "not default() & ((package(togi-session) & test(/::test_case_${toString partition}_shard_${toString partition}$/))"
+            + lib.optionalString (partition == 1) " | package(togi-simrun)"
+            + ")";
+          recoverySelectionTest = ''
+            echo "Checking recovery selections cover every original test exactly once"
+            list_recovery() {
+              cargo nextest list ''${CARGO_PROFILE:+--cargo-profile "$CARGO_PROFILE"} ${recoveryCargoArgs} \
+                --profile ci --ignore-default-filter -E "$1" --message-format json |
+                jq -r '."rust-suites" | to_entries[] | .key as $binary |
+                  .value.testcases | to_entries[] |
+                  select(.value."filter-match".status == "matches") | [$binary, .key] | @tsv'
+            }
+            list_recovery 'not default()' | sort > recovery-expected
+            test -s recovery-expected
+            {
+              ${lib.concatMapStringsSep "\n" (
+                partition: "list_recovery ${lib.escapeShellArg (recoveryFilter partition)}"
+              ) recoveryPartitions}
+            } | sort > recovery-scheduled
+            if ! diff -u recovery-expected recovery-scheduled; then
+              echo "Recovery selections omit or duplicate tests; each binary/name key must appear exactly once" >&2
+              exit 1
+            fi
+          '';
+          recoveryChecks = lib.listToAttrs (
+            map (partition: {
+              name = "nextest-recovery-${toString partition}";
+              value = craneLib.cargoNextest (
+                cargoCheck
+                  (cargoSources.source {
+                    code = cargoSources.closureWithDev recoveryCrates;
+                    full = recoveryCrates;
+                    files = testFixtures recoveryCrates;
+                  })
+                  {
+                    pname = "togi-recovery-${toString partition}";
+                    cargoExtraArgs = recoveryCargoArgs;
+                    cargoNextestExtraArgs = "--profile ci --ignore-default-filter -E ${lib.escapeShellArg (recoveryFilter partition)}";
+                    preCheck = lib.optionalString (partition == 1) recoverySelectionTest;
+                    passthru.tier = "ci";
+                    nativeCheckInputs = [
+                      pkgs.gitMinimal
+                      pkgs.bashInteractive
+                      pkgs.nushell
+                      pkgs.jq
+                    ];
+                  }
+              );
+            }) recoveryPartitions
           );
           # Tools that read code or manifests and no data.
           codeSource = cargoSources.source { rs = allCrates; };
@@ -422,7 +457,6 @@
           );
 
           checks = {
-            nextest-recovery = recoveryCheck;
             quality = pkgs.linkFarm "togi-quality" (
               lib.mapAttrsToList (name: path: { inherit name path; }) qualityMembers
             );
@@ -479,6 +513,7 @@
               '';
           }
           // nextestChecks
+          // recoveryChecks
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
             let
               vm = import ./nix/vm-test.nix {

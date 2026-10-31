@@ -1,7 +1,7 @@
 [profile.default]
 slow-timeout = { period = "30s", terminate-after = 4 }
 fail-fast = false
-# Exhaustive recovery campaigns run in the dedicated CI-tier check, not the local loop.
+# Exhaustive recovery campaigns run in dedicated CI-tier partition checks, not the local gate.
 default-filter = '''
 not (
   (package(togi-session) & (
