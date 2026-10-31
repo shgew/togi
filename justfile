@@ -165,9 +165,14 @@ check: _dev-shell
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
 
-# Run the exhaustive recovery campaigns explicitly; ordinary nextest keeps their bounded witnesses
+# Run every exhaustive recovery partition; required before pushing session, journal or recovery changes
 [group('nix')]
-recovery: (check-one "nextest-recovery")
+recovery: _dev-shell
+    #!/usr/bin/env bash
+    set -euo pipefail
+    names=$(nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: builtins.match "nextest-recovery-[0-9]+" name != null) (builtins.attrNames checks))')
+    read -r -a checks <<< "$names"
+    just check-one "${checks[@]}"
 
 # Run a simulated session, flags as `togi-tool-sim` takes them (`just sim --seed 7 --max-boots 20`)
 [group('run')]
