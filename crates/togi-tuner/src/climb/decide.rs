@@ -59,6 +59,8 @@ pub struct ClimbInputs<'a> {
     pub ceilings: &'a Ceilings,
     pub events: &'a [DailyEvent],
     pub vetoes: &'a [Veto],
+    /// Veto identities from before enrollment: binding on profiles, never permanent unit blame.
+    pub historical_vetoes: &'a [crate::day::EventId],
     /// Exact full vectors with valid complete certificates in the current context.
     pub qualified: &'a BTreeSet<UnitProfile>,
     /// Includes raw conclusive failures whose derived commitment has not yet been written.
@@ -108,18 +110,6 @@ impl ClimbDecision {
 
 fn qualified(inputs: &ClimbInputs<'_>, profile: &UnitProfile) -> bool {
     !inputs.failed.contains(profile) && inputs.qualified.contains(profile)
-}
-
-fn safety_target(inputs: &ClimbInputs<'_>, mut plan: Retreat) -> Retreat {
-    if !plan.wanted.is_zero() && !qualified(inputs, &plan.wanted) {
-        plan.profile = UnitProfile::zero(inputs.history.units());
-        for (unit, depth) in inputs.history.current().iter() {
-            if depth != togi_machine::TargetOffset::ZERO && !plan.stopped.contains(&unit) {
-                plan.stopped.push(unit);
-            }
-        }
-    }
-    plan
 }
 
 fn completion(inputs: &ClimbInputs<'_>) -> Result<Option<Retreat>, ClimbError> {
@@ -265,9 +255,11 @@ pub fn decide(inputs: &ClimbInputs<'_>) -> Result<ClimbDecision, ClimbError> {
         inputs.history,
         inputs.events,
         inputs.vetoes,
+        inputs.historical_vetoes,
         inputs.ceilings,
+        |profile| qualified(inputs, profile),
     )? {
-        ClimbAction::Retreat(safety_target(inputs, plan))
+        ClimbAction::Retreat(plan)
     } else if let Some(plan) = completion(inputs)? {
         ClimbAction::Retreat(plan)
     } else if let Some(proposal) = restore::candidate(inputs.history, inputs.events)? {

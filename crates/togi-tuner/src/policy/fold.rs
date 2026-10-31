@@ -255,6 +255,18 @@ impl State {
                     .iter()
                     .any(|known| known.original == p.original)
                 {
+                    if p.original_kind == togi_journal::EventKind::CampaignStart
+                        && self
+                            .climb
+                            .original_enrollment
+                            .as_ref()
+                            .is_none_or(|held| p.time < held.time)
+                    {
+                        self.climb.original_enrollment = Some(super::enrollment::Enrollment {
+                            time: p.time,
+                            boot: p.boot.clone(),
+                        });
+                    }
                     self.climb.imports.push(p.clone());
                     self.climb.import_sequences.insert(p.original, seq);
                 }

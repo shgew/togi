@@ -2,6 +2,7 @@
 
 use super::{
     FoldError, State,
+    enrollment::Enrollment,
     fold::committed,
     permission::{ceiling, mapping},
 };
@@ -93,6 +94,7 @@ impl State {
             .day_view()
             .map_err(|_| FoldError::ClimbRecord("invalid daily history"))?;
         let vetoes = self.active_vetoes(&view);
+        let historical_vetoes = self.historical_vetoes(&vetoes);
         let action = match &recorded.decision {
             journal::ClimbAction::Hold { .. } => climb::ClimbAction::Hold {
                 blocked_by: Vec::new(),
@@ -144,7 +146,31 @@ impl State {
                 })
             }
             journal::ClimbAction::Retreat { cause, wanted, .. } => {
-                let pending = climb::retreat_plan(history, &view.events, &vetoes, &ceilings)?;
+                if let journal::ClimbRetreatCause::Veto { event: id } = cause {
+                    let id = self
+                        .policy_event_id(id)
+                        .ok_or(FoldError::ClimbRecord("missing retreat veto identity"))?;
+                    let veto = vetoes
+                        .iter()
+                        .find(|veto| veto.event == id)
+                        .ok_or(FoldError::ClimbRecord("missing active retreat veto"))?;
+                    if !veto.profile.forbids(&history.actual(&before)?)
+                        || veto.profile.forbids(&history.actual(&target)?)
+                    {
+                        return Err(FoldError::ClimbRecord("retreat does not escape its veto"));
+                    }
+                }
+                let qualified = self.qualified_profiles(event.time);
+                let pending = climb::retreat_plan(
+                    history,
+                    &view.events,
+                    &vetoes,
+                    &historical_vetoes,
+                    &ceilings,
+                    |profile| {
+                        qualified.contains(profile) && self.qualification_blocked(profile).is_none()
+                    },
+                )?;
                 let mut retreat = pending.unwrap_or_else(|| climb::Retreat {
                     profile: target.clone(),
                     wanted: target.clone(),
@@ -164,13 +190,6 @@ impl State {
                         .retreats()
                         .last()
                         .map_or_else(Vec::new, |record| record.events.clone());
-                }
-                for (unit, depth) in target.iter() {
-                    if before.get(unit).is_some_and(|old| old < depth)
-                        && !retreat.stopped.contains(&unit)
-                    {
-                        retreat.stopped.push(unit);
-                    }
                 }
                 climb::ClimbAction::Retreat(retreat)
             }
@@ -209,7 +228,14 @@ impl State {
                 .get_or_insert_with(|| reason.clone());
         }
         self.climb.start = Some(committed(event, start.clone()));
+        self.climb.enrollment = Some(Enrollment {
+            time: event.time,
+            boot: event.boot.clone(),
+        });
         self.reconstruct_campaign(event.time)?;
+        // Enrolling judges every earlier observation at once: those before the first enrollment
+        // are vetoes only, the rest are this campaign's events.
+        self.observe_raw_campaign(event.time)?;
         let events = self
             .days
             .event_commits
@@ -224,8 +250,12 @@ impl State {
     }
 
     /// Capture classifications at raw prefixes, including provisional events whose derived
-    /// receipt is interrupted or whose answer arrives before the next policy query.
+    /// receipt is interrupted or whose answer arrives before the next policy query. Nothing is
+    /// charged or stopped before the campaign enrolls.
     pub(super) fn observe_raw_campaign(&mut self, at: jiff::Timestamp) -> Result<(), FoldError> {
+        if self.climb.enrollment.is_none() {
+            return Ok(());
+        }
         let Some(history) = self.climb.history.as_ref() else {
             return Ok(());
         };
@@ -247,7 +277,14 @@ impl State {
         }
         // A classification irreversibly stops its blamed unit even if the safety write or its
         // derived receipt is interrupted. Planning here consumes no transition or cursor.
-        let retreat = climb::retreat_plan(history, &view.events, &[], &climb::Ceilings::new())?;
+        let retreat = climb::retreat_plan(
+            history,
+            &view.events,
+            &[],
+            &[],
+            &climb::Ceilings::new(),
+            |_| true,
+        )?;
         if let Some(retreat) = retreat
             && let Some(event) = retreat.events.last()
         {
@@ -307,6 +344,12 @@ impl State {
         let Some(id) = self.policy_event_id(&recorded.event) else {
             return;
         };
+        if self
+            .first_enrollment()
+            .is_none_or(|enrollment| self.precedes_enrollment(Some(enrollment), &id))
+        {
+            return;
+        }
         let profile = match &recorded.profile {
             journal::ObservedProfile::Ccd { cores, .. }
             | journal::ObservedProfile::PerCore { cores } => day::CoreProfile::new(*cores),

@@ -63,7 +63,7 @@ impl State {
                 let closed = self
                     .reproduction_of(id)
                     .is_some_and(|commit| commit.payload.state != ReproductionState::Pending);
-                (suspect && !closed).then(|| {
+                (suspect && !closed && !self.is_historical_event(id)).then(|| {
                     (
                         super::ledger::saturating_u32(u64::try_from(index).unwrap_or(u64::MAX)),
                         book.first,

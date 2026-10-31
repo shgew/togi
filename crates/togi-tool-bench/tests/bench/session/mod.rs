@@ -69,6 +69,7 @@ fn session_with(
         cancel: CancellationToken::new(),
         observer,
         dump_to: None,
+        adapt_trials: None,
     })
     .unwrap();
     Session {

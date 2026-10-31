@@ -140,6 +140,7 @@ impl State {
             .filter(|profile| self.qualification_blocked(profile).is_some())
             .collect();
         let vetoes = self.active_vetoes(view);
+        let historical_vetoes = self.historical_vetoes(&vetoes);
         let statuses = self.statuses(view)?.unwrap_or_default();
         let (_, seconds) = self.credited();
         Ok(climb::decide(&climb::ClimbInputs {
@@ -152,6 +153,7 @@ impl State {
             ceilings: &permission.ceilings,
             events: &view.events,
             vetoes: &vetoes,
+            historical_vetoes: &historical_vetoes,
             qualified: &qualified,
             failed: &failed,
             hold: climb::HoldInput {
