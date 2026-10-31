@@ -1,5 +1,5 @@
 //! A warm simulated reboot keeps the crashed boot's journal and folds instead of reading them back, and leaves
-//! `state.json` pending until the simulation ends; a cold one reads everything back and publishes at every crash.
+//! the initial attestation snapshot unchanged until the simulation ends. Cold boots publish at every crash.
 
 use std::path::Path;
 
@@ -92,25 +92,25 @@ fn a_cold_simulation_reads_the_journal_at_every_boot() {
 }
 
 #[test]
-fn a_warm_simulation_publishes_state_json_once_at_its_stop_or_its_cap() {
+fn a_warm_simulation_publishes_attestation_then_once_at_its_stop_or_cap() {
     let stopped = simulated(&hunt_machine(2), 1, Replay::Warm, 1000, 3);
     assert!(stopped.boots > 1 && !stopped.capped);
-    assert_eq!(stopped.state_publications, 1);
+    assert_eq!(stopped.state_publications, 2, "attestation and final state");
 
     let capped = simulated(&machine_file("flat-hazard"), 102, Replay::Warm, 24, EVERY);
     assert!(capped.capped);
-    assert_eq!(capped.state_publications, 1);
+    assert_eq!(capped.state_publications, 2, "attestation and capped state");
 }
 
 #[test]
-fn a_cold_simulation_publishes_state_json_at_every_crash_and_at_its_stop() {
+fn a_cold_simulation_publishes_attestation_every_crash_and_its_final_state() {
     let stopped = simulated(&hunt_machine(2), 1, Replay::Cold, 1000, 3);
     assert!(stopped.boots > 1 && !stopped.capped);
-    assert_eq!(stopped.state_publications, stopped.boots);
+    assert_eq!(stopped.state_publications, stopped.boots + 1);
 
     let capped = simulated(&machine_file("flat-hazard"), 102, Replay::Cold, 24, EVERY);
     assert!(capped.capped);
-    assert_eq!(capped.state_publications, capped.boots);
+    assert_eq!(capped.state_publications, capped.boots + 1);
 }
 
 #[test]

@@ -119,6 +119,14 @@ impl Payload {
             Self::FirmwareRestoration(p) => ruleset14::firmware_restoration(p),
             Self::SuccessorImported(p) => ruleset14::successor_imported(p),
             Self::DayPause(p) => day_pause(p),
+            Self::StockAttested(p) => format!(
+                "operator confirmed the machine is stable at CO 0 with BIOS at stock: BIOS {} on {}, {}, microcode {}, boost limit {} MHz",
+                p.firmware.bios_version,
+                p.firmware.board,
+                p.firmware.cpu_model,
+                p.firmware.microcode,
+                p.firmware.boost_limit_mhz
+            ),
         }
     }
 }

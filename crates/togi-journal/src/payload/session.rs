@@ -79,6 +79,14 @@ impl From<BiosContext> for SessionContext {
 object_only! {
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
+    pub struct StockAttested {
+        pub firmware: BiosContext,
+    }
+}
+
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
     pub struct SessionBaseline {
         pub offsets: PerCore<ObservedOffset>,
     }

@@ -274,8 +274,21 @@ fn a_crash_leaves_the_state_unwritten_and_the_capsule_holding_what_the_boot_fold
         .unwrap()
         .verify(ended.journal.events())
         .unwrap();
-    let saved: Option<crate::publication::StateDocument> = ended.journal.read_state().unwrap();
-    assert!(saved.is_none());
+    // Consent was durably recorded before this run, so opening it published that prefix.
+    // The crash must leave that bootstrap snapshot untouched, not publish its pending trial.
+    let (prefix, saved): (_, StateDocument) = ended.journal.dir().read_snapshot().unwrap().unwrap();
+    let attested = ended
+        .journal
+        .events()
+        .iter()
+        .find(|event| matches!(event.payload, Payload::StockAttested(_)))
+        .unwrap();
+    assert_eq!(prefix.last_seq, Some(attested.seq));
+    assert_eq!(saved.facts.last_seq, Some(attested.seq));
+    assert_ne!(
+        saved.facts.last_seq,
+        ended.journal.events().last().map(|event| event.seq)
+    );
 }
 
 #[test]
@@ -309,6 +322,7 @@ fn a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuil
     let mut crashed = crashed(&deferred);
     let capsule = crashed.capsule.take().unwrap();
     let text = journal_text(&crashed);
+    let before_resume = crashed.journal.events().len();
     let mut dir = crashed.journal.close().unwrap();
     capsule.publish(&mut dir).unwrap();
     let (_, published): (_, StateDocument) = dir.read_snapshot().unwrap().unwrap();
@@ -327,6 +341,7 @@ fn a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuil
             .journal
             .events()
             .iter()
+            .skip(before_resume)
             .all(|event| !matches!(event.payload, Payload::StateRebuilt(_)))
     );
 }
@@ -337,12 +352,12 @@ fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_
     let bench = bench();
     let mut ended = crashed(&bench);
     let capsule = ended.capsule.take().unwrap();
-    assert!(
-        ended
-            .journal
-            .read_state::<StateDocument>()
-            .unwrap()
-            .is_none()
+    let before_resume = ended.journal.events().len();
+    let (prefix, saved): (_, StateDocument) = ended.journal.dir().read_snapshot().unwrap().unwrap();
+    assert_eq!(saved.facts.last_seq, prefix.last_seq);
+    assert_ne!(
+        saved.facts.last_seq,
+        ended.journal.events().last().map(|event| event.seq)
     );
     drop(ended);
     bench.sim.reboot().unwrap();
@@ -353,6 +368,7 @@ fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_
         .journal
         .events()
         .iter()
+        .skip(before_resume)
         .filter_map(|event| {
             if let Payload::StateRebuilt(rebuilt) = &event.payload {
                 Some(rebuilt.fields.clone())
@@ -361,7 +377,16 @@ fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_
             }
         })
         .collect();
-    assert_eq!(rebuilt, [vec!["state.json".to_string()]]);
+    assert_eq!(
+        rebuilt,
+        [vec![
+            "session".to_string(),
+            "cores".to_string(),
+            "last_seq".to_string(),
+            "open".to_string(),
+            "tuner".to_string(),
+        ]]
+    );
     let (_, saved): (_, StateDocument) = resumed.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(
         saved.facts,
@@ -396,18 +421,31 @@ fn state_publications(bench: &Bench) -> usize {
 fn a_run_that_adopts_a_capsule_neither_reads_nor_rebuilds_the_state_a_crash_left_pending() {
     let bench = bench();
     bench.mem.record_history();
-    let capsule = crashed(&bench).capsule.unwrap();
-    assert_eq!(state_publications(&bench), 0);
+    let ended = crashed(&bench);
+    let before_resume = ended.journal.events().len();
+    let capsule = ended.capsule.unwrap();
+    drop(ended.journal.close().unwrap());
+    assert_eq!(
+        state_publications(&bench),
+        1,
+        "the consent bootstrap prefix"
+    );
+    let reads_before_resume = state_reads(&bench);
     bench.sim.reboot().unwrap();
     let resumed = one_cycle(&bench, Some(capsule));
     assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
-    assert_eq!(state_reads(&bench), 0);
-    assert_eq!(state_publications(&bench), 1, "only the run's own end");
+    assert_eq!(state_reads(&bench), reads_before_resume);
+    assert_eq!(
+        state_publications(&bench),
+        2,
+        "bootstrap and the run's own end"
+    );
     assert!(
         resumed
             .journal
             .events()
             .iter()
+            .skip(before_resume)
             .all(|event| !matches!(event.payload, Payload::StateRebuilt(_)))
     );
 }
@@ -417,9 +455,15 @@ fn a_run_that_cannot_adopt_a_capsule_reads_the_state_and_rebuilds_what_a_crash_l
     let bench = bench();
     bench.mem.record_history();
     let capsule = crashed(&bench).capsule.unwrap();
+    let publications_before_resume = state_publications(&bench);
+    let reads_before_resume = state_reads(&bench);
     bench.sim.reboot().unwrap();
     let resumed = one_cycle(&bench, None);
     assert!(capsule.adopt(&resumed.journal, bench.defects).is_none());
-    assert!(state_reads(&bench) > 0);
-    assert_eq!(state_publications(&bench), 2, "the rebuild and the end");
+    assert!(state_reads(&bench) > reads_before_resume);
+    assert_eq!(
+        state_publications(&bench),
+        publications_before_resume + 2,
+        "the rebuild and the end"
+    );
 }

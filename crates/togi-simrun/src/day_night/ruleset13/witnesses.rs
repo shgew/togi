@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
 use togi_journal::{
-    Activity, ApplicationId, ApplyCause, CcdVector, CellEvidence, ClimbAction, ClimbDecision,
+    ApplicationId, ApplyCause, CcdVector, CellEvidence, ClimbAction, ClimbDecision,
     ClimbRetreatCause, DayApplied, DayEventId, DecisionId, Event, ObservedProfile, Outcome,
     Payload, QualificationState, RestorationKind, Seq, SessionContext, UnitId as JournalUnit,
     VetoState,
@@ -38,7 +38,6 @@ pub(super) struct Witnesses {
     exposures: BTreeMap<Seq, String>,
     failures: BTreeMap<Seq, String>,
     requalifications: HashMap<DayEventId, String>,
-    controls: Vec<String>,
     qualifications: BTreeMap<Seq, Qualification>,
 }
 
@@ -94,7 +93,6 @@ impl Witnesses {
             if self.context.as_ref().is_some_and(|old| old != context) {
                 self.firmware_changes += 1;
                 self.transition_day = Some(day);
-                self.controls.clear();
             }
             self.context = Some(context.clone());
         }
@@ -134,13 +132,10 @@ impl Witnesses {
             && let Some(trial) = &exposure.source.trial
         {
             let id = trial.as_str().to_owned();
-            self.exposures.insert(event.seq, id.clone());
+            self.exposures.insert(event.seq, id);
             if exposure.outcome == Outcome::Failure {
                 self.failures
                     .insert(event.seq, format!("ruleset13-failure-{}", trial.as_str()));
-            }
-            if exposure.activity == Activity::Control && exposure.outcome == Outcome::Pass {
-                self.controls.push(id);
             }
         }
         if let Payload::NightQualification(qualification) = &event.payload
@@ -167,12 +162,6 @@ impl Witnesses {
                     day,
                     epoch: self.epoch(),
                     profile,
-                    stock_controls: self
-                        .controls
-                        .iter()
-                        .filter(|id| !fresh.contains(id) && !reused.contains(id))
-                        .cloned()
-                        .collect(),
                     fresh_witnesses: fresh,
                     reused_witnesses: reused,
                     // Only emitted on application of a promotion citing this completed certificate.

@@ -57,7 +57,7 @@ pub use session::{
     CommandReset, ConfigLoaded, DeadEnd, DefectAnswered, DefectFound, JournalTorn, PreflightCheck,
     ProfileApplied, ProfileChange, ProfileRestored, Provenance, ResetTarget, SessionArchived,
     SessionBaseline, SessionCarried, SessionContext, SessionNotice, SessionStart, SessionWarning,
-    Shutdown, StateRebuilt,
+    Shutdown, StateRebuilt, StockAttested,
 };
 pub use smu::{SmuCommand, SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord};
 pub use trial::{
@@ -215,6 +215,7 @@ payloads! {
     FirmwareRestoration(FirmwareRestoration) = "firmware.restoration",
     SuccessorImported(SuccessorImported) = "successor.imported",
     DayPause(DayPause) = "day.pause",
+    StockAttested(StockAttested) = "stock.attested",
 }
 
 impl Payload {
@@ -237,6 +238,7 @@ impl Payload {
             Self::ExposureObserved(p) => p.source.trial.as_ref(),
             Self::SessionStart(_)
             | Self::SessionContext(_)
+            | Self::StockAttested(_)
             | Self::SessionBaseline(_)
             | Self::SessionNotice(_)
             | Self::SessionArchived(_)
@@ -362,6 +364,7 @@ impl Payload {
             Self::FirmwareRestoration(p) => p.saved.cores.get(core).is_some(),
             Self::SessionStart(_)
             | Self::SessionContext(_)
+            | Self::StockAttested(_)
             | Self::SessionBaseline(_)
             | Self::SessionWarning(_)
             | Self::SessionArchived(_)
@@ -427,8 +430,8 @@ pub enum Writer {
     Run,
     /// Only the `togi day` observer or the day policy appends it.
     Day,
-    /// Both append it: the night commitments the day observer owes when it closes a night, and the SMU write
-    /// transaction chain of its stock profile.
+    /// A tuning run and non-run writers append it: night commitments, the day observer's SMU chain,
+    /// and the session envelope a confirmed night command can create before tuning starts.
     Shared,
     /// Neither: the journal's own torn-tail marker and the reset and archive commands, which close a session
     /// without being a boot's tuning activity.
@@ -461,16 +464,19 @@ impl EventKind {
             | Self::CampaignReclassified
             | Self::FirmwareRestoration
             | Self::DayPause => Writer::Day,
-            Self::NightPlan
+            Self::SessionStart
+            | Self::NightPlan
             | Self::NightQualification
             | Self::NightReproduction
             | Self::SmuIntent
             | Self::SmuWrite
             | Self::SmuReadback
             | Self::SmuError => Writer::Shared,
-            Self::JournalTorn | Self::CommandReset | Self::SessionArchived => Writer::Outside,
-            Self::SessionStart
-            | Self::SessionContext
+            Self::JournalTorn
+            | Self::CommandReset
+            | Self::SessionArchived
+            | Self::StockAttested => Writer::Outside,
+            Self::SessionContext
             | Self::SessionBaseline
             | Self::SessionNotice
             | Self::SessionWarning

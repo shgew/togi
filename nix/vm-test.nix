@@ -583,9 +583,11 @@ let
       '';
     };
 
-    # The night switch under real systemd and GRUB, with the shipped `togi` and a tuner that only sleeps: `togi night`
-    # declines and confirms, points the next boot at the tuning entry and remembers the day's selection; a crash reboot
-    # stays in the night; the power button ends a night through the leave hook and selects the day's entry again
+    # The night switch under real systemd and GRUB, with the shipped `togi night` CLI and a tuner that only sleeps.
+    # Only the hardware seam is the test helper's: it answers the firmware context the VM has no SMU to read, so the
+    # confirmation records `stock.attested` through the production path. `togi night` declines and confirms, points
+    # the next boot at the tuning entry and remembers the day's selection; a crash reboot stays in the night and keeps
+    # the attestation; the power button ends a night through the leave hook and selects the day's entry again
     # exactly. A tuning boot picked from the menu is a night too, and ending it boots the boot loader's default.
     night = {
       name = "togi-night";
@@ -601,7 +603,7 @@ let
             if [ "$1" = run ]; then
               exec ${pkgs.coreutils}/bin/sleep infinity
             fi
-            exec ${lib.getExe package} "$@"
+            exec ${vmRecovery}/bin/togi-vm-recovery --exact vm_recovery::helper --nocapture -- togi "$@"
           '';
         };
 
@@ -623,6 +625,17 @@ let
             machine.connected = False
             machine.wait_for_unit("multi-user.target")
 
+
+        journal = "/var/lib/togi/events.jsonl"
+
+
+        def attested():
+            status, raw = machine.execute(f"cat {journal}")
+            events = [json.loads(line) for line in raw.splitlines() if line.strip()] if status == 0 else []
+            return [e for e in events if e["kind"] == "stock.attested"], [e["kind"] for e in events]
+
+
+        simulated = {"bios_version": "vm", "board": "vm", "cpu_model": "vm", "microcode": "vm", "boost_limit_mhz": 0}
 
         machine.start(allow_reboot=True)
         machine.wait_for_unit("multi-user.target")
@@ -650,6 +663,7 @@ let
         machine.succeed("echo n | togi night")
         machine.succeed("togi night </dev/null")
         assert grubenv() == before, (before, grubenv())
+        assert attested()[0] == [], "declining must record no attestation"
 
         # Confirming selects the tuning entry, remembers the day, marks the night begun and reboots.
         machine.succeed("touch /run/togi-test-night-output")
@@ -665,6 +679,10 @@ let
         assert env["togi_day_entry"] == day, env
         assert env["togi_night"] == "1", env
         machine.wait_until_succeeds("systemctl is-active togi.service")
+        # The confirmation opened the session envelope and attested the stock firmware once, before the reboot.
+        events, kinds = attested()
+        assert len(events) == 1 and events[0]["data"]["firmware"] == simulated, events
+        assert kinds.index("session.start") < kinds.index("stock.attested"), kinds
 
         # A crash reboot stays in the night: nothing ends it but the operator or the tuner's own stops.
         machine.crash()
@@ -674,6 +692,7 @@ let
         night = {name: grubenv().get(name) for name in ("saved_entry", "togi_day_entry", "togi_night")}
         assert night == {"saved_entry": "NixOS - togi", "togi_day_entry": day, "togi_night": "1"}, night
         machine.wait_until_succeeds("systemctl is-active togi.service")
+        assert len(attested()[0]) == 1, "the crash reboot must keep the one attestation"
 
         # The power button ends a night through the leave hook and selects the day's entry again exactly.
         machine.send_monitor_command("system_powerdown")
@@ -718,8 +737,9 @@ let
       '';
     };
 
-    # Real EFI firmware and systemd-boot: only the tuner sleeps; night selection, persistence and restoration use
-    # the shipped CLI and backend. Both an explicit default and an absent override must survive a night exactly.
+    # Real EFI firmware and systemd-boot: only the tuner sleeps and the firmware context is the test helper's
+    # simulated one (the VM has no SMU); night selection, persistence, attestation and restoration use the shipped
+    # CLI and backend. Both an explicit default and an absent override must survive a night exactly.
     night-systemd-boot = {
       name = "togi-night-systemd-boot";
 
@@ -747,7 +767,7 @@ let
               if [ "$1" = run ]; then
                 exec ${pkgs.coreutils}/bin/sleep infinity
               fi
-              exec ${lib.getExe package} "$@"
+              exec ${vmRecovery}/bin/togi-vm-recovery --exact vm_recovery::helper --nocapture -- togi "$@"
             '';
           };
           hardware.cpu.amd.ryzen-smu.enable = false;
@@ -838,6 +858,15 @@ let
             machine.wait_until_succeeds("systemctl is-active togi.service")
 
 
+        journal = "/var/lib/togi/events.jsonl"
+
+
+        def attested():
+            status, raw = machine.execute(f"cat {journal}")
+            events = [json.loads(line) for line in raw.splitlines() if line.strip()] if status == 0 else []
+            return [e for e in events if e["kind"] == "stock.attested"]
+
+
         machine.start(allow_reboot=True)
         machine.wait_for_unit("multi-user.target")
         machine.succeed("test -d /sys/firmware/efi/efivars")
@@ -871,6 +900,7 @@ let
             machine.succeed("togi night </dev/null")
             assert efi("LoaderEntryDefault") == before
             assert efi("LoaderEntryOneShot") is None
+            assert attested() == [], "declining must record no attestation"
 
         with subtest("a hard reset stays in the persistent tuning entry"):
             enter_night()
@@ -880,6 +910,7 @@ let
             assert current_system() == tuning_system
             assert value("LoaderEntryDefault") == tuning_entry
             machine.wait_until_succeeds("systemctl is-active togi.service")
+            assert len(attested()) == 1, "the confirmed night attests once and the crash reboot keeps it"
 
         with subtest("night-end restores the exact explicit default and is idempotent"):
             machine.succeed("togi night-end")
@@ -948,6 +979,10 @@ let
             assert current_system() == normal_system
             assert efi("LoaderEntryDefault") == saved_default
             assert efi("LoaderEntryLastBooted") == saved_last
+
+        with subtest("later nights on the same firmware context attest nothing new"):
+            events = attested()
+            assert len(events) == 1 and events[0]["data"]["firmware"]["bios_version"] == "vm", events
       '';
     };
 

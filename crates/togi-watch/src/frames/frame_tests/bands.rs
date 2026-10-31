@@ -190,7 +190,7 @@ fn a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running() {
 #[test_case(Scenario::Mapping, 240, 67; "mapping wide")]
 #[test_case(Scenario::Mapping, 160, 45; "mapping medium")]
 #[test_case(Scenario::Mapping, 120, 33; "mapping compact")]
-#[test_case(Scenario::Controls, 160, 45; "controls")]
+#[test_case(Scenario::Nonzero, 160, 45; "nonzero")]
 #[test_case(Scenario::Filler, 160, 45; "filler")]
 fn event_redraws_keep_every_counter_on_the_same_second(
     scenario: Scenario,

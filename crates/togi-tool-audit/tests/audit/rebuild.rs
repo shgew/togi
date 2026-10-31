@@ -111,3 +111,87 @@ fn config_loaded(seq: u64, fixes: u32) -> togi_journal::Event {
 fn a_rebuild_disagreeing_with_a_current_snapshot_is_a_violation(case: Case) {
     run(case);
 }
+
+fn attested(seq: u64) -> togi_journal::Event {
+    attested_under(seq, "F31")
+}
+
+fn attested_under(seq: u64, version: &str) -> togi_journal::Event {
+    event(
+        seq,
+        "stock.attested",
+        json!({"firmware": firmware(version)}),
+    )
+}
+
+#[test_case::test_case(case(
+            "the first run after the confirmation publishes its snapshot",
+            vec![attested(2), rebuilt(3, &["state.json"]), stop(4)],
+            InProgress,
+            &[],
+        ); "the first run after the confirmation publishes its snapshot")]
+#[test_case::test_case(case(
+            "the first publication also passes an unfinished read",
+            vec![attested(2), rebuilt(3, &["state.json"]), phase(4, 0)],
+            InProgress,
+            &[],
+        ); "the first publication also passes an unfinished read")]
+#[test_case::test_case(case(
+            "the first publication of a finished journal",
+            vec![attested(2), rebuilt(3, &["state.json"]), stop(4)],
+            Finished,
+            &[],
+        ); "the first publication of a finished journal")]
+#[test_case::test_case(case(
+            "a missing snapshot with no confirmation before it",
+            vec![rebuilt(2, &["state.json"]), stop(3)],
+            InProgress,
+            &[(2, Replay)],
+        ); "a missing snapshot with no confirmation before it")]
+#[test_case::test_case(case(
+            "a missing snapshot after the run began is corruption",
+            vec![attested(2), phase(3, 0), rebuilt(4, &["state.json"]), stop(5)],
+            InProgress,
+            &[(4, Replay)],
+        ); "a missing snapshot after the run began is corruption")]
+#[test_case::test_case(case(
+            "a second missing snapshot after the first publication is corruption",
+            vec![attested(2), rebuilt(3, &["state.json"]), rebuilt(4, &["state.json"]), stop(5)],
+            InProgress,
+            &[(4, Replay)],
+        ); "a second missing snapshot after the first publication is corruption")]
+#[test_case::test_case(case(
+            "every firmware confirmed before any run is still the bootstrap",
+            vec![attested(2), attested_under(3, "F32"), rebuilt(4, &["state.json"]), stop(5)],
+            InProgress,
+            &[],
+        ); "every firmware confirmed before any run is still the bootstrap")]
+#[test_case::test_case(case(
+            "a missing snapshot after the run recorded its context is corruption",
+            vec![attested(2), context(3, "F31"), rebuilt(4, &["state.json"]), stop(5)],
+            InProgress,
+            &[(4, Replay)],
+        ); "a missing snapshot after the run recorded its context is corruption")]
+#[test_case::test_case(case(
+            "a confirmation after the run began does not reopen the bootstrap",
+            vec![attested(2), phase(3, 0), attested_under(4, "F32"), rebuilt(5, &["state.json"]), stop(6)],
+            InProgress,
+            &[(5, Replay)],
+        ); "a confirmation after the run began does not reopen the bootstrap")]
+#[test_case::test_case(case(
+            "a corrupt snapshot names its disagreement beside the missing file",
+            vec![attested(2), rebuilt(3, &["state.json", "cores"]), stop(4)],
+            InProgress,
+            &[(3, Replay)],
+        ); "a corrupt snapshot names its disagreement beside the missing file")]
+#[test_case::test_case(case(
+            "a snapshot of another build is no first publication",
+            vec![attested(2), rebuilt(3, &["build"]), stop(4)],
+            InProgress,
+            &[(3, Replay)],
+        ); "a snapshot of another build is no first publication")]
+fn the_first_attested_run_publishes_its_snapshot_without_a_finding_and_later_corruption_still_is_one(
+    case: Case,
+) {
+    run(case);
+}

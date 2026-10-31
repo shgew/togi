@@ -11,11 +11,13 @@ use crate::support::{CORES, Fake, interrupt_at_first_trial, interrupt_on_first_w
 
 fn interrupted() -> Fake {
     let mut fake = Fake::new();
+    fake.attest_stock();
     fake.wrap = Box::new(interrupt_on_first_write);
     fake
 }
 
 fn seed_newer_epoch(fake: &mut Fake) {
+    fake.attest_stock();
     let wrap = std::mem::replace(&mut fake.wrap, Box::new(interrupt_on_first_write));
     let (exit, _, stderr) = fake.run(&["run", "--no-tui"]);
     fake.wrap = wrap;
@@ -93,13 +95,47 @@ fn assert_stopped_by_a_signal_with_the_offsets_restored(fake: &Fake, what: &str)
 #[test]
 fn cancellation_stops_a_run_cleanly_with_the_offsets_restored_and_the_shutdown_recorded() {
     let mut fake = Fake::new();
+    fake.attest_stock();
     fake.wrap = Box::new(interrupt_on_first_write);
     let (exit, out, err) = fake.run(&["run", "--no-tui"]);
     assert_eq!(exit, Exit::Ok, "{err}");
     assert_eq!(out, "");
-    assert!(err.contains("session.start"), "{err}");
+    assert!(err.contains("config.loaded"), "{err}");
     assert_stopped_by_a_signal_with_the_offsets_restored(&fake, "SIGINT");
     assert_eq!(fake.opened.get(), 1);
+}
+
+#[test]
+fn an_unattended_fresh_run_refuses_nonzero_tuning_without_stock_attestation() {
+    let fake = Fake::new();
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::NoEvidence, "{err}");
+    let events = fake.events();
+    let dead_end = events
+        .iter()
+        .find_map(|event| {
+            if let Payload::DeadEnd(value) = &event.payload {
+                Some(value)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert!(
+        dead_end.detail.starts_with("stock_unattested:"),
+        "{dead_end:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::TrialIntent(_)))
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::StockAttested(_)))
+    );
+    assert_eq!(offsets(&fake), vec![0; usize::try_from(CORES).unwrap()]);
 }
 
 #[test]
@@ -380,6 +416,7 @@ fn a_journal_close_failure_keeps_its_cause_and_changes_the_exit_status() {
         let fs = togi_journal::MemFs::new();
         fs.put(fake.dir.join("config.json"), b"{}".to_vec());
         fake.fs = std::sync::Arc::new(fs.clone());
+        fake.attest_stock();
         (fake, fs)
     };
     let (baseline, fs) = on_memory();
@@ -409,6 +446,7 @@ fn a_journal_close_failure_keeps_its_cause_and_changes_the_exit_status() {
 #[test]
 fn a_failed_smu_write_is_the_smu_dead_end_and_exits_eleven() {
     let fake = Fake::new();
+    fake.attest_stock();
     fake.sim.fail_write(1);
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     assert_eq!(exit, Exit::Smu, "{err}");
@@ -452,6 +490,7 @@ fn replace_the_journal_at_the_host_lock(fake: &Fake, text: String) {
 }
 
 fn first_run(fake: &mut Fake) {
+    fake.attest_stock();
     let wrap = std::mem::replace(&mut fake.wrap, Box::new(interrupt_on_first_write));
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     fake.wrap = wrap;
@@ -782,6 +821,7 @@ fn a_topology_with_four_ccds_is_refused_with_the_preflight_status_and_no_journal
 #[test]
 fn the_dashboard_hides_event_lines_and_the_clean_stop_prints_the_restoration_and_shutdown() {
     let mut fake = Fake::new();
+    fake.attest_stock();
     fake.interactive = true;
     fake.wrap = Box::new(interrupt_on_first_write);
     let (exit, _, err) = fake.run(&["run"]);
@@ -879,7 +919,7 @@ fn the_dashboard_starts_after_the_journal_is_open() {
     });
     assert!(!fake.exists(fake.state_dir().join("events.jsonl")));
     let (exit, _, err) = fake.run(&["run"]);
-    assert_eq!(exit, Exit::Ok, "{err}");
+    assert_eq!(exit, Exit::NoEvidence, "{err}");
     let (since, journal_existed) = seen.lock().unwrap().unwrap();
     assert_eq!(since, 0);
     assert!(
@@ -926,6 +966,7 @@ fn position(events: &[togi_journal::Event], wanted: impl Fn(&Payload) -> bool) -
 fn a_missing_watchdog_is_journaled_as_a_warning_before_the_first_offset_write_with_the_dashboard_up()
  {
     let mut fake = Fake::new();
+    fake.attest_stock();
     fake.interactive = true;
     fake.sim.fail_check("watchdog", "no /dev/watchdog");
     fake.wrap = Box::new(interrupt_on_first_write);
@@ -952,6 +993,7 @@ fn a_missing_watchdog_is_journaled_as_a_warning_before_the_first_offset_write_wi
 fn the_tuning_boot_waits_for_the_watchdog_and_a_manual_run_does_not() {
     let manual = {
         let mut fake = Fake::new();
+        fake.attest_stock();
         fake.sim.fail_check("watchdog", "no /dev/watchdog");
         fake.wrap = Box::new(interrupt_on_first_write);
         let (exit, _, err) = fake.run(&["run", "--no-tui"]);
@@ -973,6 +1015,7 @@ fn the_tuning_boot_waits_for_the_watchdog_and_a_manual_run_does_not() {
     );
 
     let mut boot = Fake::new();
+    boot.attest_stock();
     boot.sim.fail_check("watchdog", "no /dev/watchdog");
     boot.wrap = Box::new(interrupt_on_first_write);
     let before = boot.sim.monotonic();
@@ -1110,6 +1153,7 @@ impl std::io::Write for NotesFirstWrite {
 #[test]
 fn a_failure_after_the_dashboard_showed_stops_and_joins_it_before_the_diagnostic_prints() {
     let mut fake = Fake::new();
+    fake.attest_stock();
     fake.interactive = true;
     fake.sim.fail_write(1);
     let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -1172,6 +1216,7 @@ fn a_journal_that_cannot_be_opened_never_shows_the_dashboard() {
 /// Leaves `fake`'s state directory with a journal of an earlier boot that ended in a boot-loop dead end whose
 /// action clears the saved entry and reboots, not yet carried out, and puts the machine on a new boot.
 fn seed_a_pending_boot_loop_dead_end(fake: &mut Fake) {
+    fake.attest_stock();
     fake.sim.fail_write(1);
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     assert_eq!(exit, Exit::Smu, "{err}");

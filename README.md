@@ -5,7 +5,7 @@
 
 Moves a Zen 5 desktop CPU towards deeper per-CCD Curve Optimizer offsets, as far as its own test evidence supports: nights test, days observe. A night runs until you end it (Ctrl-C, F10 in the dashboard, or a reboot); a crash reboot continues it, and the next run after you end it opens the next night.
 
-- Nights [map](docs/spec/tuner.md#night-edge-u) each CCD's failure edge alone, derive each CCD's [cap](docs/spec/tuner.md#cap-s-margin-from-measured-slope) from the measured failure rate, run [CO-0 controls](docs/spec/tuner.md#co-0-controls) and qualify the exact next day profile across the whole [coverage matrix](docs/spec/workloads.md#coverage-matrix).
+- Nights [map](docs/spec/tuner.md#night-edge-u) each CCD's failure edge alone, derive each CCD's [cap](docs/spec/tuner.md#cap-s-margin-from-measured-slope) from the measured failure rate and qualify the exact next day profile across the whole [coverage matrix](docs/spec/workloads.md#coverage-matrix). No trial runs an all-zero profile: the `togi night` confirmation that the machine is stable at CO 0 with BIOS at stock is journaled as the [stock attestation](docs/spec/runtime.md#night-and-day), and without it a night ends before nonzero work.
 - Days apply the committed permitted [Ruleset 14 profile D](docs/spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step), with exact-profile qualification, clean holds and [event retreats](docs/spec/tuner.md#whole-profile-veto-and-escalation). Nonzero profiles remain bounded experiments, not reliability guarantees.
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
 - Survives crashes: the next run reads its journal, attributes the crash and continues.
@@ -41,8 +41,8 @@ Not yet:
 togi --version                         # version and git revision of this build
 sudo togi doctor                       # check this machine is ready for a run, without starting a session or writing the journal
 sudo togi doctor --day                 # check day prerequisites and this boot's recorded stock-baseline proof
-sudo togi run                          # tune tonight; Ctrl-C ends the night, the next run opens the next
-sudo togi night                        # GRUB or systemd-boot: confirm, remember the day's selection and reboot into tuning
+sudo togi run                          # tune tonight; needs the current stock attestation from `togi night` (exit 12 otherwise); Ctrl-C ends the night, the next run opens the next
+sudo togi night                        # GRUB or systemd-boot: confirm stock stability, remember the day's selection and reboot into tuning
 sudo togi day                          # apply permitted D and observe; needs verified CO 0 and PID 1's counting watchdog
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
 sudo togi day record                   # record a missed crash through the live service; no stop needed

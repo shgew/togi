@@ -8,7 +8,10 @@ use test_case::test_case;
 
 use jiff::tz::TimeZone;
 use togi_journal::fs::{Fault, Op};
-use togi_journal::{Build, FixStamp, Journal, MemFs, Payload, ResetTarget, SCHEMA, StateDir};
+use togi_journal::{
+    Build, FixStamp, Journal, MemFs, Payload, ResetTarget, SCHEMA, SessionStart, Stamp, StateDir,
+    StockAttested,
+};
 use togi_machine::{CancellationToken, CoreId};
 use togi_render::Renderer;
 use togi_session::{CommandError, ConfigSource, PublicationPolicy, RunInput, reset_all, run};
@@ -55,10 +58,40 @@ fn simulator_of(definition: &MachineDefinition) -> Simulator {
     .unwrap()
 }
 
+/// A run on the simulator's current boot whose session already holds the operator's stock attestation for the
+/// machine's firmware, as `togi night` records it before the tuning boot starts.
 fn input(sim: &Simulator, mem: &MemFs) -> RunInput<'static> {
     let mut machine = sim.seams();
     let boot = machine.host.boot_id().unwrap();
-    let journal = dir(mem).open_at(boot.clone(), sim.now()).unwrap();
+    let mut journal = dir(mem).open_at(boot.clone(), sim.now()).unwrap();
+    let stamp = Stamp {
+        time: sim.now(),
+        mono: None,
+    };
+    if journal.events().is_empty() {
+        let session = journal.state_dir().session_id(sim.now()).unwrap();
+        let cores = machine.host.topology().unwrap();
+        journal
+            .append(
+                stamp,
+                SessionStart {
+                    build: build(),
+                    session,
+                    cores,
+                }
+                .into(),
+                &[],
+            )
+            .unwrap();
+    }
+    let firmware = machine.host.bios_context().unwrap();
+    if !journal.events().iter().any(
+        |event| matches!(&event.payload, Payload::StockAttested(held) if held.firmware == firmware),
+    ) {
+        journal
+            .append(stamp, StockAttested { firmware }.into(), &[])
+            .unwrap();
+    }
     RunInput {
         config: togi_config::Config::default(),
         source: ConfigSource::default(),
@@ -1048,8 +1081,8 @@ fn a_backend_missing_at_preflight_is_excluded_from_the_night_without_a_launch_or
     // Only the scheduler's `Unavailable` ends the night, never a failed preflight.
     assert_eq!(dead_ends, [togi_journal::DeadEndCondition::NoEvidence]);
     if missing.len() == 1 {
-        // The other backend runs its cells, but the stock controls that need the missing one never pass, so no
-        // offset is ever mapped.
+        // The other backend runs its cells, but a mapping step needs every class and the missing backend's never
+        // run, so no offset is ever mapped.
         assert!(intents_of(events, Backend::Ycruncher) > 0);
         assert!(
             !events
@@ -1062,7 +1095,9 @@ fn a_backend_missing_at_preflight_is_excluded_from_the_night_without_a_launch_or
 }
 
 #[test]
-fn a_stop_after_a_conclusive_stock_failure_keeps_the_failure_at_zero_dead_end() {
+fn a_stop_after_a_failed_first_mapping_trial_is_not_a_failure_at_zero_dead_end() {
+    // Ruleset 14 runs no stock trial: the first trial is a nonzero mapping step, so its failure is mapping
+    // evidence and an operator stop right after it never reads as an unstable stock platform.
     let sim = simulator_of(&MachineDefinition {
         cores: 2,
         script: vec![togi_sim::definition::ScriptDef {
@@ -1082,21 +1117,24 @@ fn a_stop_after_a_conclusive_stock_failure_keeps_the_failure_at_zero_dead_end() 
     }));
     let ended = run(input);
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
-    let dead_ends: Vec<_> = ended
-        .journal
-        .events()
-        .iter()
-        .filter_map(|event| {
-            if let Payload::DeadEnd(dead_end) = &event.payload {
-                Some(dead_end.condition)
+    let events = ended.journal.events();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::TrialEnd(_))),
+        "{:?}",
+        kinds(&ended.journal)
+    );
+    assert!(
+        events.iter().all(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                intent.profile.iter().any(|(_, offset)| offset.get() != 0)
+            } else if let Payload::DeadEnd(dead_end) = &event.payload {
+                dead_end.condition != togi_journal::DeadEndCondition::FailureAtZero
             } else {
-                None
+                true
             }
-        })
-        .collect();
-    assert_eq!(
-        dead_ends,
-        [togi_journal::DeadEndCondition::FailureAtZero],
+        }),
         "{:?}",
         kinds(&ended.journal)
     );

@@ -440,9 +440,8 @@ impl<'machine> Session<'machine> {
         matches!(self.visit, Visit::Same { reconciled: false })
     }
 
-    /// Refuses changed session cores before finishing an earlier boot's dead end; then refuses configured cores the
-    /// machine lacks and, unless a dead end stays pending until reconciliation, records the startup kernel boundary
-    /// and the configuration.
+    /// Refuses changed session cores before recovery; then, unless a dead end stays pending until recovery and
+    /// reconciliation, records the startup kernel boundary and the configuration.
     pub(crate) fn start(&mut self) -> Outcome {
         let cores: CoreSet = self.topology.iter().map(|info| info.core).collect();
         let recorded = self.appender.recovery();
@@ -454,11 +453,6 @@ impl<'machine> Session<'machine> {
                     removed: known.iter().filter(|&core| !cores.contains(core)).collect(),
                 });
             }
-        }
-        if !self.same_boot()
-            && let Some(stop) = self.resume_dead_end()?
-        {
-            return Ok(Control::Stop(stop));
         }
         self.hardware = Hardware::new(cores);
         if self.appender.recovery().pending_dead_end().is_some() {
@@ -767,7 +761,9 @@ impl<'machine> Session<'machine> {
         let reason = match stop {
             Stop::Signal => ShutdownReason::Signal,
             Stop::DeadEnd { .. } | Stop::Night(EndReason::DeadEnd) => ShutdownReason::DeadEnd,
-            Stop::Night(EndReason::Unavailable) => ShutdownReason::DeadEnd,
+            Stop::Night(
+                EndReason::Unavailable | EndReason::StockUnattested | EndReason::NoNonzeroWork,
+            ) => ShutdownReason::DeadEnd,
         };
         self.shutdown = Some(Shutdown {
             reason,

@@ -204,6 +204,7 @@ fn write(dir: &Path, events: &[Event], fs: Option<Arc<dyn Fs>>) -> Result<Build,
                 | Payload::DayFreeze(_)
                 | Payload::DayInterval(_)
                 | Payload::DayPause(_)
+                | Payload::StockAttested(_)
                 | Payload::DayImported(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_)) => {

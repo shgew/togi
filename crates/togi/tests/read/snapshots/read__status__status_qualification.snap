@@ -2,16 +2,16 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-night since 08:00, 4h52m elapsed: qualification (task qualification #0)
+night since 08:00, 59m00s elapsed: qualification (task qualification #0)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#7299] trial night-trial-1605 core 00 offset -5 R1 mprime SSE 4K-21K
-  90 s together qualification task qualification #0 night #6394
+in flight: [#5722] trial night-trial-1220 core 00 offset -5 R1 mprime SSE 4K-21K
+  90 s together qualification task qualification #0 night #5546
 
 UNIT   CORES                  D  C        D-C  HOLD h  STATE
-CCD 0  0,1,2,3,4,5,6,7        0  -45      45   88/50   held
-CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    88/50   held
+CCD 0  0,1,2,3,4,5,6,7        0  -45      45   72/50   held
+CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    72/50   held
 
 Day policy
 permission: experimental hold + exact night qualification
@@ -28,12 +28,12 @@ proposed profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
 paused-saved profile: none
 allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
-  U: censored -50 [#6977 #6982 #6987 #6992 #6997 #7002 #7007 #7012 #7017 #7022
-  #7027 #7032 #7037 #7042 #7047 #7052 #7057 #7062 #7067 #7072 #7077 #7082 #7087
-  #7092 #7097 #7102 #7107 #7112 #7117 #7122 #7127 #7132 #7137 #7142 #7147 #7152
-  #7157 #7162 #7167 #7172 #7177 #7182 #7187 #7192 #7197 #7202 #7207 #7212 #7217
-  #7222 #7227 #7232 #7237 #7242 #7247 #7252 #7257 #7262 #7267 #7272 #7277 #7282
-  #7287 #7292]
+  U: censored -50 [#5365 #5370 #5375 #5380 #5385 #5390 #5395 #5400 #5405 #5410
+  #5415 #5420 #5425 #5430 #5435 #5440 #5445 #5450 #5455 #5460 #5465 #5470 #5475
+  #5480 #5485 #5490 #5495 #5500 #5505 #5510 #5550 #5555 #5560 #5565 #5570 #5575
+  #5580 #5585 #5590 #5595 #5600 #5605 #5610 #5615 #5620 #5625 #5630 #5635 #5640
+  #5645 #5650 #5655 #5660 #5665 #5670 #5675 #5680 #5685 #5690 #5695 #5700 #5705
+  #5710 #5715]
   state: held: exact-profile qualification required
   next proposal: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
   -5, core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
@@ -332,17 +332,16 @@ unit: CCD 0, phase coarse, parent none, inherited start 0
   0-15
     outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 0 600s exact cores
   0-15
-  diagnostic S (non-authorizing): 0 [#7295]
+  diagnostic S (non-authorizing): 0 [#5718]
 unit: CCD 1, phase coarse, parent none, inherited start 0
   U: unknown
   state: held: exact-profile qualification required
-  diagnostic S (non-authorizing): 0 [#7296]
-current exact profile daily evidence: 88 h; 0 crashes [#1020 #1021 #1022 #1023
-  #1033 #1034 #1035 #1036 #2379 #2380 #2381 #2382 #2392 #2393 #2394 #2395 #3628
-  #3629 #3630 #3631 #3641 #3642 #3643 #3644 #3655 #3656 #3657 #3658 #4880 #4881
-  #4882 #4883 #4893 #4894 #4895 #4896 #6367 #6368 #6369 #6370 #6380 #6381 #6382
-  #6383]
-experimental: 88 clean hours; at most 1 crash per 29.4 h (95%, fixed-rate model)
+  diagnostic S (non-authorizing): 0 [#5719]
+current exact profile daily evidence: 72 h; 0 crashes [#1384 #1385 #1386 #1387
+  #1397 #1398 #1399 #1400 #2636 #2637 #2638 #2639 #2649 #2650 #2651 #2652 #3985
+  #3986 #3987 #3988 #3998 #3999 #4000 #4001 #4012 #4013 #4014 #4015 #5519 #5520
+  #5521 #5522 #5532 #5533 #5534 #5535]
+experimental: 72 clean hours; at most 1 crash per 24.0 h (95%, fixed-rate model)
 firmware restoration: none
 
 Daily safety
@@ -350,12 +349,11 @@ freeze: off
 firmware: valid
 
 Night since 08:00
-elapsed: 4h52m
+elapsed: 59m00s
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
 qualification    75%    0%    0s
-mapping          10%    100%  4h52m
-control          5%     0%    0s
+mapping          10%    100%  59m00s
 requalification  10%    0%    0s
 current task: qualification (task qualification #0)
 mapping CCD 0: next offset -49
@@ -411,12 +409,12 @@ qualifying CCD 0 -5, CCD 1 0: 0 h eligible witnessed exposure, 259 outstanding
     mprime-sse-4k-21k-all-threads serial cpu 0 600s exact
 
 Day
-boots observed: 12; clean ends: 12; unclean ends: 0
+boots observed: 10; clean ends: 10; unclean ends: 0
 hardware watchdog at the last observer check: not recorded
 Applied hours per read-back profile (changed intervals excluded):
   00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0
-    15:0: 96.000 h
-all profiles: 96.0h observed, 0 crashes (6 unknown intervals)
-stock (CO 0): 96.0h observed, 0 crashes
+    15:0: 80.000 h
+all profiles: 80.0h observed, 0 crashes (5 unknown intervals)
+stock (CO 0): 80.0h observed, 0 crashes
 totals are observations, not a bound
 last unclean end: none

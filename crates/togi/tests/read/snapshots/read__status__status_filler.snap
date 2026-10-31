@@ -2,79 +2,112 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-night since 00:00, 45h52m elapsed: qualification (task filler #0)
+night since 08:00, 6h54m elapsed: qualification (task filler #7)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#9525] trial 1530 core 00 offset 0 R1 mprime SSE 4K-21K 90 s
-  together qualification task filler #0 night #34
+in flight: [#10367] trial night-trial-2222 core 00 offset -5 R1 mprime SSE
+  4K-21K 90 s together qualification task filler #7 night #9331
 
-UNIT   CORES                  D  C   D-C  HOLD h  STATE
-CCD 0  0,1,2,3,4,5,6,7        0  -4  4    0/50    held
-CCD 1  8,9,10,11,12,13,14,15  0  -2  2    0/50    held
+UNIT   CORES                  D   C    D-C  HOLD h  STATE
+CCD 0  0,1,2,3,4,5,6,7        -5  -45  40   32/50   held
+CCD 1  8,9,10,11,12,13,14,15  0   -45  45   32/50   held
 
 Day policy
 permission: experimental hold + exact night qualification
 S: diagnostic, non-authorizing; finishing is not a safety certificate
-applied profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
-  core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core
-  13 0, core 14 0, core 15 0
-read-back profile: unavailable
-proposed profile: none
+applied profile: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
+  -5, core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
+  core 13 0, core 14 0, core 15 0
+read-back profile: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
+  -5, core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
+  core 13 0, core 14 0, core 15 0
+proposed profile: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
+  -5, core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
+  core 13 0, core 14 0, core 15 0
 paused-saved profile: none
 allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
-  U: observed -9 [#6521]
-  state: held: hold 0/50 h
-  next proposal: core 0 -2, core 1 -2, core 2 -2, core 3 -2, core 4 -2, core 5
-  -2, core 6 -2, core 7 -2, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
-  core 13 0, core 14 0, core 15 0
-  qualification: complete [#7515]; 0 outstanding [#6559 #6564 #6569 #6574 #6579
-  #6584 #6589 #6594 #3204 #3209 #3214 #3219 #3224 #3229 #3234 #3239 #6599 #6604
-  #6609 #6614 #6619 #6624 #6629 #6634 #3284 #3289 #3294 #3299 #3304 #3309 #3314
-  #3319 #6639 #6644 #6649 #6654 #6659 #6664 #6669 #6674 #3364 #3369 #3374 #3379
-  #3384 #3389 #3394 #3399 #6679 #6684 #6689 #6694 #6699 #6704 #6709 #6714 #3444
-  #3449 #3454 #3459 #3464 #3469 #3474 #3479 #6719 #6724 #6729 #6734 #6739 #6744
-  #6749 #6754 #3524 #3529 #3534 #3539 #3544 #3549 #3554 #3559 #6759 #6764 #6769
-  #6774 #6779 #6784 #6789 #6794 #3604 #3609 #3614 #3619 #3624 #3629 #3634 #3639
-  #6801 #6808 #6815 #6822 #6829 #6836 #6843 #6850 #3702 #3709 #3716 #3723 #3730
-  #3737 #3744 #3751 #6857 #6864 #6871 #6878 #6885 #6892 #6899 #6906 #3814 #3821
-  #3828 #3835 #3842 #3849 #3856 #3863 #6913 #6920 #6927 #6934 #6941 #6948 #6955
-  #6962 #3926 #3933 #3940 #3947 #3954 #3961 #3968 #3975 #6969 #6976 #6983 #6990
-  #6997 #7004 #7011 #7018 #4038 #4045 #4052 #4059 #4066 #4073 #4080 #4087 #7025
-  #7032 #7039 #7046 #7053 #7060 #7067 #7074 #4150 #4157 #4164 #4171 #4178 #4185
-  #4192 #4199 #7081 #7088 #7095 #7102 #7109 #7116 #7123 #7130 #4262 #4269 #4276
-  #4283 #4290 #4297 #4304 #4311 #7135 #7141 #7147 #7153 #7159 #7165 #7171 #7177
-  #7183 #7189 #7195 #7201 #7207 #7213 #7219 #7225 #7233 #7238 #7244 #7250 #7256
-  #7262 #7268 #7274 #7280 #7286 #7292 #7298 #7304 #7310 #7316 #7322 #7327 #7332
-  #7338 #7344 #7350 #7356 #7362 #7368 #7374 #7380 #7386 #7392 #7398 #7404 #7410
-  #7416 #7422 #7428 #7434 #7439 #7444 #7449 #7454 #7459 #7464 #7469 #7474 #7479
-  #7484 #7489 #7494 #7499 #7504 #7509 #7514]
-  diagnostic S (non-authorizing): 0 [#9496]
+  U: censored -50 [#5365 #5370 #5375 #5380 #5385 #5390 #5395 #5400 #5405 #5410
+  #5415 #5420 #5425 #5430 #5435 #5440 #5445 #5450 #5455 #5460 #5465 #5470 #5475
+  #5480 #5485 #5490 #5495 #5500 #5505 #5510 #5550 #5555 #5560 #5565 #5570 #5575
+  #5580 #5585 #5590 #5595 #5600 #5605 #5610 #5615 #5620 #5625 #5630 #5635 #5640
+  #5645 #5650 #5655 #5660 #5665 #5670 #5675 #5680 #5685 #5690 #5695 #5700 #5705
+  #5710 #5715]
+  state: held: hold 32/50 h
+  latest applied step: promotion of CCD 0 from 0 to -5 (5 counts) at 00:00; core
+  0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0, core 6 0, core 7 0,
+  core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core 13 0, core 14 0,
+  core 15 0 -> core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5 -5,
+  core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
+  core 13 0, core 14 0, core 15 0 [#8130 #8131]
+  diagnostic S (non-authorizing): 0 [#10364]
 unit: CCD 1, phase coarse, parent none, inherited start 0
-  U: observed -7 [#5902]
-  state: held: hold 0/50 h
-  diagnostic S (non-authorizing): 0 [#9497]
-current exact profile daily evidence: 0 h; 0 crashes []
-experimental: rate bound unavailable (95%, fixed-rate model)
+  U: censored -50 [#6884 #6902 #6945 #6988 #7009 #7041 #7077 #7093 #7098 #7103
+  #7108 #7113 #7118 #7123 #7128 #7133 #7138 #7143 #7148 #7153 #7158 #7163 #7168
+  #7173 #7178 #7183 #7188 #7193 #7198 #7203 #7208 #7213 #7218 #7223 #7228 #7233
+  #7238 #7243 #7248 #7253 #7258 #7263 #7268 #7273 #7278 #7283 #7288 #7293 #7298
+  #7303 #7308 #7313 #7318 #7323 #7328 #7333 #7338 #7343 #7348 #7353 #7358 #7363
+  #7368 #7373]
+  state: held: hold 32/50 h
+  next proposal: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
+  -5, core 6 -5, core 7 -5, core 8 -5, core 9 -5, core 10 -5, core 11 -5, core
+  12 -5, core 13 -5, core 14 -5, core 15 -5
+  qualification: complete [#9026]; 0 outstanding [#5725 #5730 #5735 #5740 #5745
+  #5750 #5755 #5760 #8174 #8186 #8190 #8194 #8198 #8202 #8206 #8210 #5805 #5810
+  #5815 #5820 #5825 #5830 #5835 #5840 #8214 #8218 #8222 #8226 #8230 #8242 #8246
+  #8250 #5885 #5890 #5895 #5900 #5905 #5910 #5915 #5920 #8254 #8258 #8262 #8266
+  #8270 #8274 #8278 #8282 #5965 #5970 #5975 #5980 #5985 #5990 #5995 #6000 #8286
+  #8298 #8302 #8306 #8310 #8314 #8318 #8322 #6045 #6050 #6055 #6060 #6065 #6070
+  #6075 #6080 #8326 #8330 #8334 #8338 #8342 #8354 #8358 #8362 #6125 #6130 #6135
+  #6140 #6145 #6150 #6155 #6160 #8366 #8370 #8374 #8378 #8382 #8386 #8390 #8394
+  #6205 #6210 #6215 #6220 #6225 #6230 #6235 #6240 #8398 #8410 #8414 #8418 #8422
+  #8426 #8430 #8434 #6285 #6290 #6295 #6300 #6305 #6310 #6315 #6320 #8438 #8442
+  #8454 #8458 #8462 #8466 #8470 #8474 #6365 #6370 #6375 #6380 #6385 #6390 #6395
+  #6400 #8478 #8482 #8486 #8498 #8502 #8506 #8510 #8514 #6445 #6450 #6455 #6460
+  #6465 #6470 #6475 #6480 #8518 #8522 #8526 #8530 #8542 #8546 #8550 #8554 #6525
+  #6530 #6535 #6540 #6545 #6550 #6555 #6560 #8558 #8562 #8566 #8570 #8574 #8586
+  #8590 #8594 #6605 #6610 #6615 #6620 #6625 #6630 #6635 #6640 #8598 #8602 #8606
+  #8610 #8614 #8618 #8630 #8634 #8638 #8643 #8648 #8653 #8658 #8663 #8668 #8681
+  #8686 #8691 #8696 #8701 #8706 #8711 #8716 #8721 #8734 #8738 #8751 #8756 #8761
+  #8766 #8771 #8776 #8781 #8786 #8791 #8804 #8809 #8814 #8819 #8824 #8828 #8841
+  #8846 #8851 #8856 #8861 #8866 #8871 #8876 #8888 #8893 #8898 #8903 #8908 #8913
+  #8918 #8930 #8935 #8940 #8951 #8955 #8959 #8963 #8967 #8971 #8982 #8986 #8990
+  #8994 #8998 #9002 #9006 #9017 #9021 #9025]
+  diagnostic S (non-authorizing): 0 [#10365]
+current exact profile daily evidence: 32 h; 0 crashes [#8139 #8140 #8141 #8142
+  #8153 #8154 #8155 #8156 #9304 #9305 #9306 #9307 #9317 #9318 #9319 #9320]
+experimental: 32 clean hours; at most 1 crash per 10.7 h (95%, fixed-rate model)
 firmware restoration: none
 
 Daily safety
 freeze: off
 firmware: valid
 
-Night since 00:00
-elapsed: 45h52m
+Night since 08:00
+elapsed: 6h54m
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
-qualification    75%    30%   14h06m
-mapping          10%    50%   23h19m
-control          5%     18%   8h27m
+qualification    75%    0%    0s
+mapping          10%    100%  6h54m
 requalification  10%    0%    0s
-current task: qualification (task filler #0)
-mapping CCD 0: next offset -3
-mapping CCD 1: next offset -1
-qualification: CCD 0 -3, CCD 1 0 (next step) complete, 7.8 h eligible witnessed
+current task: qualification (task filler #7)
+mapping CCD 0: next offset -44
+mapping CCD 1: next offset -44
+qualification: CCD 0 -5, CCD 1 0 (next step) complete, 7.8 h eligible witnessed
   exposure
-qualification: CCD 0 -2, CCD 1 0 (next step) complete, 7.8 h eligible witnessed
+qualification: CCD 0 -5, CCD 1 -5 (next step) complete, 7.8 h eligible witnessed
   exposure
+
+Day
+boots observed: 17; clean ends: 17; unclean ends: 0
+hardware watchdog at the last observer check: not recorded
+Applied hours per read-back profile (changed intervals excluded):
+  00:-5 01:-5 02:-5 03:-5 04:-5 05:-5 06:-5 07:-5 08:0 09:0 10:0 11:0 12:0 13:0
+    14:0 15:0: 38.000 h
+  00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0
+    15:0: 96.000 h
+all profiles: 134.0h observed, 0 crashes (9 unknown intervals)
+stock (CO 0): 96.0h observed, 0 crashes
+totals are observations, not a bound
+last unclean end: none

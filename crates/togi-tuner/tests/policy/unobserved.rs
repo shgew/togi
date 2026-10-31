@@ -182,7 +182,10 @@ fn an_unobserved_crash_record_gets_one_reproduction_night_that_closes_under_its_
     assert_eq!(reproduction.state, ReproductionState::Unreproduced);
     journal.reboot("tuning3");
     for step in 0..30_i64 {
-        let plan = journal.until_trial(at(64_000 + step));
+        let Ok(plan) = journal.until_end(at(64_000 + step), &std::collections::BTreeMap::new())
+        else {
+            break;
+        };
         assert_ne!(plan.task.queue, Queue::Reproduction, "{plan:?}");
         journal.run(&plan, Ending::Pass);
     }

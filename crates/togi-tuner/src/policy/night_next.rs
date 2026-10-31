@@ -20,7 +20,7 @@ use super::qualify::QualWork;
 use super::reproduce::{Open, ReproView};
 use crate::night::{
     AttemptScope, Cell, Consumed, Inputs, Layout, Matrix, NightTask, Queue, Reason, Reproduction,
-    ReproductionStage, Stock, WallSecs, Work, next_task,
+    ReproductionStage, WallSecs, Work, next_task,
 };
 
 const fn activity_of(queue: Queue) -> Activity {
@@ -28,16 +28,14 @@ const fn activity_of(queue: Queue) -> Activity {
         Queue::Reproduction => Activity::Reproduction,
         Queue::Qualification | Queue::Requalification => Activity::Qualification,
         Queue::Mapping => Activity::Mapping,
-        Queue::Controls => Activity::Control,
     }
 }
 
 /// The plan's queues, the filler last, with the scheduler queue each one's share belongs to.
-const PLAN_QUEUES: [(JournalQueue, Option<Queue>); 6] = [
+const PLAN_QUEUES: [(JournalQueue, Option<Queue>); 5] = [
     (JournalQueue::Reproduction, Some(Queue::Reproduction)),
     (JournalQueue::Qualification, Some(Queue::Qualification)),
     (JournalQueue::Mapping, Some(Queue::Mapping)),
-    (JournalQueue::Control, Some(Queue::Controls)),
     (JournalQueue::Requalification, Some(Queue::Requalification)),
     (JournalQueue::Filler, None),
 ];
@@ -63,9 +61,8 @@ impl NightTally {
             reproduction: of(JournalQueue::Reproduction),
             qualification: of(JournalQueue::Qualification),
             mapping: of(JournalQueue::Mapping),
-            controls: of(JournalQueue::Control),
             requalification: of(JournalQueue::Requalification),
-            filler: of(JournalQueue::Filler),
+            filler: of(JournalQueue::Filler).saturating_add(of(JournalQueue::Control)),
         }
     }
 }
@@ -76,6 +73,9 @@ fn runnable_work(
     unavailable: &BTreeMap<togi_machine::Backend, Vec<Seq>>,
 ) -> Option<Work> {
     let mut work = work?;
+    if work.profile.is_zero() {
+        return None;
+    }
     work.cells.retain(|cell| runnable(cell, unavailable));
     (!work.cells.is_empty()).then_some(work)
 }
@@ -178,10 +178,8 @@ impl State {
         }
     }
 
-    /// The `FailureAtZero` dead end the journal already establishes once the failure and exposure
-    /// commitments it owes are folded, for a caller that must stop before draining them: a conclusive
-    /// failure of the stock controls still ends the run as a dead end. `None` when the stock controls stand
-    /// or a dead end is already recorded. It appends nothing; the decision cites the journal as it is.
+    /// Historical all-zero failure safety, including an ended trial whose exposure is still owed.
+    /// This query never requests a new stock trial.
     pub fn stock_dead_end(&self, query: &NightQuery<'_>) -> Result<Option<Decision>, NotReady> {
         if self.stop.is_some() {
             return Ok(None);
@@ -205,10 +203,7 @@ impl State {
             );
             view.fold(&event)?;
         }
-        view.with_layout(|layout| match view.stock(layout)? {
-            Stock::Unstable { class } => Ok(Some(self.dead_end(&class))),
-            Stock::Pending { .. } | Stock::Cleared { .. } => Ok(None),
-        })
+        Ok(view.stock_failure()?.map(|class| self.dead_end(&class)))
     }
 
     fn next_in(&self, query: &NightQuery<'_>) -> Result<Action, NotReady> {
@@ -234,6 +229,12 @@ impl State {
         .next()
         {
             return Ok(Action::Decide(owed));
+        }
+        if let Some(class) = self.stock_failure()? {
+            return Ok(Action::Decide(self.dead_end(&class)));
+        }
+        if !self.stock_attested() {
+            return Ok(Action::EndNight(EndReason::StockUnattested));
         }
         let known = self.known_contents(Some(query.contents.map()));
         self.with_layout(|layout| {
@@ -530,32 +531,24 @@ impl State {
                 causes,
             )));
         };
-        let stock = self.stock(layout)?;
-        if let Stock::Unstable { class } = &stock {
-            return Ok(Action::Decide(self.dead_end(class)));
-        }
         let (next, requal, due) = self.qualification_work(query.now)?;
-        if matches!(stock, Stock::Cleared { .. }) {
-            for work in [&next, &requal] {
-                if let QualWork::NeedStart { profile, purpose } = work {
-                    return Ok(Action::Decide(
-                        self.start_qualification(profile, *purpose, known)?,
-                    ));
-                }
+        for work in [&next, &requal] {
+            if let QualWork::NeedStart { profile, purpose } = work {
+                return Ok(Action::Decide(
+                    self.start_qualification(profile, *purpose, known)?,
+                ));
             }
         }
         let unavailable = query.unavailable;
-        let stock = match stock {
-            Stock::Pending { cause, work } => match runnable_work(Some(work), unavailable) {
-                Some(work) => Stock::Pending { cause, work },
-                // Controls must complete before any nonzero work, and none of theirs can run.
-                None => return Ok(self.end_unavailable(night, excluded)),
-            },
-            Stock::Cleared { rerun } => Stock::Cleared {
-                rerun: runnable_work(rerun, unavailable),
-            },
-            Stock::Unstable { class } => Stock::Unstable { class },
-        };
+        let has_nonzero_work = mapping.target.is_some()
+            || matches!(&next, QualWork::Open { .. })
+            || matches!(&requal, QualWork::Open { .. })
+            || open.as_ref().is_some_and(|open| {
+                matches!(&open.reproduction.stage, ReproductionStage::Open(work) if !work.profile.is_zero())
+            })
+            || self.days.history.as_ref().is_some_and(|history| {
+                !history.current().profile.is_zero()
+            });
         let qualification_of = |work: &QualWork, reason: Reason| match work {
             QualWork::Open { record, remaining } => runnable_work(
                 Some(Work {
@@ -591,7 +584,6 @@ impl State {
         let inputs = Inputs {
             budgets: self.params.budgets,
             consumed: self.consumed(night),
-            stock,
             reproduction,
             qualification: qualification.as_ref().map(|(work, _)| work.clone()),
             mapping: mapping_work.as_ref().map(|(work, _)| work.clone()),
@@ -649,13 +641,6 @@ impl State {
                             .ok_or(NotReady::UnmatchedCell)?,
                         Tested::Exact {},
                     ),
-                    (Queue::Controls, _) => (
-                        TaskId {
-                            queue: JournalQueue::Control,
-                            ordinal: self.control_ordinal()?,
-                        },
-                        Tested::Exact {},
-                    ),
                     (Queue::Reproduction | Queue::Mapping, _) => {
                         return Err(NotReady::UnmatchedCell);
                     }
@@ -674,12 +659,13 @@ impl State {
                     retry,
                 }
             }
-            NightTask::StockUnstable { class } => return Ok(Action::Decide(self.dead_end(&class))),
             // A lapsed reproduction is closed before scheduling; with nothing due the filler runs.
             NightTask::Unreproduced { .. } | NightTask::Idle => {
                 match self.filler(layout, night, unavailable)? {
                     Some(chosen) => chosen,
-                    None => return Ok(self.end_unavailable(night, excluded)),
+                    None => {
+                        return Ok(self.end_empty(night, excluded, has_nonzero_work));
+                    }
                 }
             }
         };
@@ -716,11 +702,20 @@ impl State {
         }))
     }
 
-    /// The end of a night whose every runnable cell needs an excluded backend, once its plan records them.
-    fn end_unavailable(&self, night: NightId, excluded: Vec<UnavailableBackend>) -> Action {
+    /// Commit the final plan before ending an empty or backend-excluded nonzero queue.
+    fn end_empty(
+        &self,
+        night: NightId,
+        excluded: Vec<UnavailableBackend>,
+        has_nonzero_work: bool,
+    ) -> Action {
         match self.plan_owed(night, None, false, excluded) {
             Some(owed) => Action::Decide(owed),
-            None => Action::EndNight(EndReason::Unavailable),
+            None => Action::EndNight(if has_nonzero_work {
+                EndReason::Unavailable
+            } else {
+                EndReason::NoNonzeroWork
+            }),
         }
     }
 

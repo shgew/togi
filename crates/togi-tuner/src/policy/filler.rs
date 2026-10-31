@@ -11,7 +11,7 @@ impl State {
     /// Repeat the exact current D's qualification cells while no queue has due work. The durable
     /// filler cursor counts trials across every night, rotating the matrix and picking cells
     /// round-robin while skipping excluded backends. Filler never finishes a mapping step.
-    /// `None` when every cell needs an excluded backend.
+    /// `None` at stock, or when every cell needs an excluded backend.
     pub(super) fn filler(
         &self,
         layout: &Layout<'_>,
@@ -26,6 +26,9 @@ impl State {
         let Some(history) = self.days.history.as_ref() else {
             return Ok(None);
         };
+        if history.current().profile.is_zero() {
+            return Ok(None);
+        }
         let matrix =
             qualification_cells(layout, &history.current().profile, cursor, &Reuse::AllFresh)?;
         Ok(rotated(&matrix, cursor, unavailable).map(|cell| Chosen {

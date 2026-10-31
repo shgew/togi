@@ -503,6 +503,7 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
             }
             Payload::SessionStart(_)
             | Payload::SessionContext(_)
+            | Payload::StockAttested(_)
             | Payload::SessionBaseline(_)
             | Payload::SessionNotice(_)
             | Payload::SessionWarning(_)

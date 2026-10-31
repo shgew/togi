@@ -31,7 +31,7 @@ fn a_missing_journal_prints_no_session_yet_and_exits_zero() {
 
 #[test]
 fn without_a_terminal_one_frame_of_the_requested_size_is_printed() {
-    let dir = session(Scenario::Controls);
+    let dir = session(Scenario::Nonzero);
     let ran = togi(&dir, &["watch", "--width", "100", "--height", "30"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
@@ -43,7 +43,7 @@ fn without_a_terminal_one_frame_of_the_requested_size_is_printed() {
 
 #[test]
 fn without_a_terminal_the_default_frame_is_240_by_67() {
-    let dir = session(Scenario::Controls);
+    let dir = session(Scenario::Nonzero);
     let default = togi(&dir, &["watch"]);
     let explicit = togi(&dir, &["watch", "--width", "240", "--height", "67"]);
     assert_eq!(default.status.code(), Some(0));
@@ -246,7 +246,7 @@ fn real_process_a_tuning_boot_watch_ignores_the_quit_keys_and_still_stops_on_sig
 
 fn a_live_watch_ends_with_the_terminal_restored(tuning_boot: bool, ending: Ending) {
     let dir = tempfile::tempdir().unwrap();
-    togi_watchtest::install(dir.path(), Scenario::Controls).unwrap();
+    togi_watchtest::install(dir.path(), Scenario::Nonzero).unwrap();
     let (master, slave) = open_pty().unwrap();
     tcsetwinsize(
         &slave,

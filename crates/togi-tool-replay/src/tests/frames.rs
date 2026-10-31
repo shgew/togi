@@ -101,7 +101,7 @@ fn logged(events: &[Event], shown: usize) -> String {
 
 #[test]
 fn a_frame_is_the_state_as_of_the_event_not_the_end_of_the_recording() {
-    let events = scenario(Scenario::Controls);
+    let events = scenario(Scenario::Nonzero);
     let early = events.len() / 2;
     let wide = frame(View::Log, (240, 67));
     let at_early = text(&events, early, &wide);
@@ -122,7 +122,7 @@ fn a_frame_is_the_state_as_of_the_event_not_the_end_of_the_recording() {
 #[test_case(3; "a third of the recording")]
 #[test_case(1; "the whole recording")]
 fn the_log_view_follows_the_end_of_the_prefix(fraction: usize) {
-    let events = scenario(Scenario::Controls);
+    let events = scenario(Scenario::Nonzero);
     let shown = events.len() / fraction;
     let log = text(&events, shown, &frame(View::Log, (240, 67)));
     assert!(log.contains(&logged(&events, shown)), "{shown}");
@@ -131,7 +131,7 @@ fn the_log_view_follows_the_end_of_the_prefix(fraction: usize) {
 #[test_case(SignedDuration::ZERO; "no delay")]
 #[test_case(SignedDuration::from_secs(40); "forty seconds")]
 fn the_frame_is_drawn_at_the_last_events_wall_time_plus_after(after: SignedDuration) {
-    let events = scenario(Scenario::Controls);
+    let events = scenario(Scenario::Nonzero);
     let shown = events.len() / 2;
     let last = events[shown - 1].time;
     let main = Frame {
@@ -149,7 +149,7 @@ fn the_frame_is_drawn_at_the_last_events_wall_time_plus_after(after: SignedDurat
 
 #[test]
 fn colour_keeps_ansi_that_strips_back_to_the_plain_frame() {
-    let events = scenario(Scenario::Controls);
+    let events = scenario(Scenario::Nonzero);
     let plain = text(&events, events.len(), &frame(View::Main, (240, 67)));
     let coloured = text(
         &events,
@@ -200,7 +200,7 @@ fn rich_frames_keep_unicode_and_emit_the_existing_palette_as_truecolour(size: (u
 #[test_case((2, 2); "2x2")]
 #[test_case((1, 1); "1x1")]
 fn a_frame_stays_inside_the_screen_at_any_size(size: (u16, u16)) {
-    let events = scenario(Scenario::Controls);
+    let events = scenario(Scenario::Nonzero);
     for view in [View::Main, View::Help, View::Log] {
         let body = text(&events, events.len(), &frame(view, size));
         let rows = body.lines().count();
@@ -216,7 +216,7 @@ fn a_frame_stays_inside_the_screen_at_any_size(size: (u16, u16)) {
 
 #[test]
 fn a_prefix_is_held_inside_the_recording() {
-    let events = scenario(Scenario::Controls);
+    let events = scenario(Scenario::Nonzero);
     let main = frame(View::Main, (120, 33));
     assert_eq!(text(&events, 0, &main), text(&events, 1, &main));
     assert_eq!(
@@ -228,7 +228,7 @@ fn a_prefix_is_held_inside_the_recording() {
 
 #[test]
 fn a_recording_the_dashboard_cannot_fold_names_the_event_that_breaks_it() {
-    let mut events = scenario(Scenario::Controls);
+    let mut events = scenario(Scenario::Nonzero);
     let mut second_start = events[0].clone();
     second_start.seq = events[1].seq;
     events.truncate(1);
@@ -357,7 +357,7 @@ fn a_started_idle_trial_is_drawn_the_same_however_long_after_the_event() {
 
 #[test]
 fn a_running_trial_shows_the_time_that_has_passed() {
-    let events = scenario(Scenario::Controls);
+    let events = scenario(Scenario::Nonzero);
     let at = |after| {
         let frame = Frame {
             after: SignedDuration::from_secs(after),

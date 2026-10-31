@@ -7,10 +7,10 @@ use togi_machine::{ResetKind, Signal};
 use togi_session::Stop;
 use togi_sim::definition::ScriptDef;
 
-use crate::common::{Bench, finish, hunt_machine};
+use crate::common::{Bench, finish, hunt_machine, until_kind};
 use togi_simrun::{Observe, Observer};
 
-fn scripted_crash(reset: ResetKind) -> (Option<Stop>, Vec<Event>) {
+fn scripted_crash(reset: ResetKind, observer: Option<Observer>) -> (Option<Stop>, Vec<Event>) {
     let mut definition = hunt_machine(4);
     definition.script = vec![ScriptDef {
         trial: "0001".into(),
@@ -19,7 +19,9 @@ fn scripted_crash(reset: ResetKind) -> (Option<Stop>, Vec<Event>) {
         ..ScriptDef::default()
     }];
     let bench = Bench::new(&definition, 1);
-    let finished = finish(bench.input());
+    let mut input = bench.input();
+    input.observer = observer;
+    let finished = finish(input);
     assert!(finished.errors.is_empty(), "{:?}", finished.errors);
     (finished.stop, bench.events())
 }
@@ -41,11 +43,9 @@ fn reset_once_at(bench: &Bench, kind: EventKind, reset: ResetKind) -> (Rc<Cell<b
 
 #[test]
 fn a_power_button_reset_during_a_trial_is_a_conclusive_failure() {
-    let (stop, events) = scripted_crash(ResetKind::PowerButton);
-    let Some(Stop::DeadEnd { dead_end, .. }) = stop else {
-        panic!("stop {stop:?}");
-    };
-    assert_eq!(dead_end.condition, DeadEndCondition::FailureAtZero);
+    let (stop, events) =
+        scripted_crash(ResetKind::PowerButton, Some(until_kind(EventKind::Failure)));
+    assert_eq!(stop, Some(Stop::Signal));
     let crash = find!(events, CrashDetected, |p| p.reset_reason
         == Some(ResetKind::PowerButton))
     .expect("no crash with the power-button reset reason");
@@ -53,15 +53,21 @@ fn a_power_button_reset_during_a_trial_is_a_conclusive_failure() {
         !crash.inconclusive,
         "power button during a trial was inconclusive"
     );
-    assert!(
-        find!(events, Failure, |p| p.signal == Signal::Crash).is_some(),
-        "the power-button crash has no failure"
-    );
+    let intent =
+        find!(events, TrialIntent, |p| p.trial.as_str() == "0001").expect("no scripted trial");
+    assert!(intent.profile.iter().any(|(_, offset)| offset.get() != 0));
+    let end =
+        find!(events, TrialEnd, |p| p.trial == intent.trial).expect("the crash was not recovered");
+    assert_eq!(end.outcome, Outcome::Failure);
+    assert_eq!(end.signal, Some(Signal::Crash));
+    let failure = find!(events, Failure, |p| p.trial.as_ref() == Some(&intent.trial))
+        .expect("the power-button crash has no failure");
+    assert_eq!(failure.signal, Signal::Crash);
 }
 
 #[test]
 fn a_thermal_trip_reset_during_a_trial_dead_ends_without_a_failure() {
-    let (stop, events) = scripted_crash(ResetKind::ThermalTrip);
+    let (stop, events) = scripted_crash(ResetKind::ThermalTrip, None);
     let Some(Stop::DeadEnd { dead_end, .. }) = stop else {
         panic!("stop {stop:?}");
     };

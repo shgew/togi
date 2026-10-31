@@ -221,7 +221,7 @@ fn a_state_file_holding_the_document_as_an_array_is_rebuilt() {
 #[test]
 fn deferred_state_is_written_before_the_journal_leaves_the_run() {
     let bench = Bench::new(2);
-    let mut input = bench.input();
+    let mut input = bench.input_unattested();
     input.cancel.cancel();
     input.publication = PublicationPolicy::OnFinish;
     let ended = crate::run(input);
@@ -256,7 +256,7 @@ fn publications(bench: &Bench) -> usize {
 fn on_finish_publishes_the_state_once_after_the_final_event() {
     let bench = Bench::new(2);
     bench.mem.record_history();
-    let mut input = bench.input();
+    let mut input = bench.input_unattested();
     input.cancel.cancel();
     input.publication = PublicationPolicy::OnFinish;
     let ended = crate::run(input);
@@ -277,7 +277,7 @@ fn on_finish_publishes_the_state_once_after_the_final_event() {
 fn live_publishes_after_every_append_and_the_last_state_covers_the_final_event() {
     let bench = Bench::new(2);
     bench.mem.record_history();
-    let mut input = bench.input();
+    let mut input = bench.input_unattested();
     input.cancel.cancel();
     input.publication = PublicationPolicy::Live;
     let ended = crate::run(input);
@@ -298,7 +298,7 @@ fn live_publishes_after_every_append_and_the_last_state_covers_the_final_event()
 #[test]
 fn a_failed_final_publication_warns_after_the_shutdown_and_the_run_ends_clean() {
     let bench = Bench::new(2);
-    let mut input = bench.input();
+    let mut input = bench.input_unattested();
     input.cancel.cancel();
     input.publication = PublicationPolicy::OnFinish;
     bench.mem.fail_state_publication();

@@ -1,5 +1,5 @@
 //! The coverage matrix as typed cells (`docs/spec/workloads.md`, Coverage matrix): qualification,
-//! mapping, control and reproduction generators, plus the single-CCD host credit rules.
+//! mapping and reproduction generators, plus the single-CCD host credit rules.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
@@ -192,7 +192,7 @@ impl Matrix {
 /// Which unchanged-CCD R1–R5 cells may be reused.
 #[derive(Clone, Copy, Debug)]
 pub enum Reuse<'a> {
-    /// First qualification, controls, firmware invalidation and monthly re-qualification.
+    /// First qualification, firmware invalidation and monthly re-qualification.
     AllFresh,
     /// An unchanged CCD's cell is reused when it is in `witnesses`.
     Unchanged {
@@ -610,14 +610,6 @@ fn fresh(cells: impl IntoIterator<Item = Cell>) -> impl Iterator<Item = PlannedC
     })
 }
 
-/// `profile` with every tuning group at CO 0.
-#[must_use]
-pub fn zeroed(profile: &UnitProfile) -> UnitProfile {
-    profile.iter().fold(profile.clone(), |zero, (ccd, _)| {
-        zero.with(ccd, TargetOffset::ZERO)
-    })
-}
-
 /// `profile` zeroed except the selected tuning group at `offset`.
 fn isolated_profile(layout: &Layout<'_>, unit: UnitId, offset: TargetOffset) -> UnitProfile {
     let units = match unit {
@@ -691,16 +683,6 @@ pub fn qualification_cells(
     })
 }
 
-/// The whole matrix at all-zero for first-night and changed-firmware stock controls: every cell
-/// fresh, no reuse.
-pub fn control_cells(
-    layout: &Layout<'_>,
-    profile: &UnitProfile,
-    ordinal: u32,
-) -> Result<Matrix, MatrixError> {
-    qualification_cells(layout, &zeroed(profile), ordinal, &Reuse::AllFresh)
-}
-
 /// One mapping step of `unit` at `offset`, other units at zero: R1, R2, the rotating R8 pair at
 /// every light position, R7 full and honest partials of the unit's CCD, and the selected R9 serial
 /// position, in that order. `ordinal` is the mapping-step ordinal. Mapping has no sustained blocks
@@ -733,7 +715,8 @@ pub fn mapping_cells(
 }
 
 /// A reproduction night's attempts for the failed `profile`, in order: the exact profile, then each
-/// unit alone at its failed offset in ascending unit order (a unit at CO 0 has nothing to isolate).
+/// unit alone at its failed offset in ascending unit order. An all-zero attempt is never listed: a
+/// unit at CO 0 has nothing to isolate and an entirely zero profile has nothing to reproduce.
 /// Every attempt lists the qualification matrix's classes in qualification order, all fresh; the
 /// caller stops an attempt at its first conclusive failure.
 pub fn reproduction_cells(
@@ -741,10 +724,13 @@ pub fn reproduction_cells(
     profile: &UnitProfile,
     ordinal: u32,
 ) -> Result<Vec<Attempt>, MatrixError> {
-    let mut attempts = vec![Attempt {
-        scope: AttemptScope::Exact,
-        matrix: qualification_cells(layout, profile, ordinal, &Reuse::AllFresh)?,
-    }];
+    let mut attempts = Vec::new();
+    if !profile.is_zero() {
+        attempts.push(Attempt {
+            scope: AttemptScope::Exact,
+            matrix: qualification_cells(layout, profile, ordinal, &Reuse::AllFresh)?,
+        });
+    }
     for (unit, offset) in profile
         .iter()
         .filter(|(_, offset)| *offset != TargetOffset::ZERO)

@@ -133,7 +133,7 @@ fn play(terminal: &Terminal, state: &str, speed: &str) -> Replay {
 #[test]
 fn real_process_playing_on_a_terminal_draws_the_dashboard_and_q_quits() {
     let dir = tempdir().unwrap();
-    install(dir.path(), Scenario::Controls).unwrap();
+    install(dir.path(), Scenario::Nonzero).unwrap();
     let mut terminal = Terminal::open();
     let mut replay = play(&terminal, dir.path().to_str().unwrap(), "1000000");
     terminal.wait_for("NIGHT");
@@ -162,7 +162,7 @@ fn real_process_playing_a_recording_with_an_unknown_kind_says_so_in_the_dashboar
 #[test]
 fn real_process_sigterm_ends_the_dashboard_cleanly_and_restores_the_cursor() {
     let dir = tempdir().unwrap();
-    install(dir.path(), Scenario::Controls).unwrap();
+    install(dir.path(), Scenario::Nonzero).unwrap();
     let mut terminal = Terminal::open();
     let mut replay = play(&terminal, dir.path().to_str().unwrap(), "1");
     terminal.wait_for("togi");

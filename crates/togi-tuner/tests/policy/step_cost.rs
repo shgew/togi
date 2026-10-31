@@ -50,7 +50,9 @@ fn a_qualification_query_late_in_its_matrix_costs_what_an_early_one_costs() {
     let mut trials = 0_u32;
     for step in 0..3_500_i64 {
         let now = at(100 + step);
-        let plan = journal.until_trial(now);
+        let Ok(plan) = journal.until_end(now, &BTreeMap::new()) else {
+            break;
+        };
         match plan.task.queue {
             Queue::Qualification => {
                 trials += 1;
@@ -132,8 +134,8 @@ fn a_night_query_after_many_days_costs_what_one_after_a_few_costs() {
 /// The state at the filler trial of night `nights`: the first night ran to its filler, and each later one
 /// was stopped by the operator and reopened straight into its filler.
 fn filler_state_of_night(nights: u32) -> ((State, Timestamp), u32) {
-    let mut journal = Journal::ready();
-    journal.until_filler(|_| Ending::Pass);
+    let (mut journal, _) = Journal::promoted_compact();
+    let _ = journal.until_filler(|_| Ending::Pass);
     for _ in 1..nights {
         journal.append(
             Shutdown {
@@ -172,8 +174,8 @@ fn a_filler_query_in_a_late_night_costs_what_one_in_an_early_night_costs() {
 /// The state at the filler trial after `fillers` filler trials of a night whose mapping failed at -10 and
 /// deeper, where no deeper pass ever warns of those failures.
 fn filler_state_after(fillers: u32) -> (State, Timestamp) {
-    let mut journal = Journal::ready();
-    journal.until_filler(|plan| {
+    let (mut journal, _) = Journal::promoted_compact();
+    let _ = journal.until_filler(|plan| {
         if matches!(plan.tested, Tested::Isolated { offset, .. } if offset.get() <= -10) {
             Ending::Fail(None)
         } else {

@@ -393,7 +393,7 @@ fn a_configuration_error_exits_2(malformed: bool) {
     fixture.write(&bad, "{").unwrap();
     let missing = cfg.path().join("missing.json");
     let path = if malformed { &bad } else { &missing };
-    let session = Session::with_fs(fixture.fs.clone(), togi_watchtest::Scenario::Controls);
+    let session = Session::with_fs(fixture.fs.clone(), togi_watchtest::Scenario::Nonzero);
     let host = host_with(ready(), fixture.fs);
     let ran = doctor(&host, session.path(), &["--config", path.to_str().unwrap()]);
     assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);

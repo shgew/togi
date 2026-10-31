@@ -214,7 +214,7 @@ pub(crate) fn keep_only_the_unterminated_first_line(fs: &dyn Fs, state: &Path) {
 pub(crate) fn keep_only_a_truncated_journal_header(fs: &dyn Fs, state: &Path, newline: bool) {
     let scratch = std::sync::Arc::new(togi_journal::fs::MemFs::new());
     let path = Path::new("/header");
-    togi_watchtest::install_with_fs(scratch.clone(), path, togi_watchtest::Scenario::Controls)
+    togi_watchtest::install_with_fs(scratch.clone(), path, togi_watchtest::Scenario::Nonzero)
         .unwrap();
     let bytes = scratch.read(&path.join("events.jsonl")).unwrap();
     let first = bytes.split(|byte| *byte == b'\n').next().unwrap();

@@ -599,8 +599,8 @@ impl State {
     }
 }
 
-/// An exposure's failures that count against `ccd`: those on one of its cores, and those that name no
-/// core, which a controlled isolated failure charges to the tested CCD.
+/// An exposure's failures charged to `ccd`. An isolated mapping failure on a stock core is
+/// charged to the tested CCD, not rerun at stock; exact-profile failures retain their scope.
 pub(super) fn failures_on(
     observed: &ExposureObserved,
     ccd: CcdId,
@@ -611,9 +611,14 @@ pub(super) fn failures_on(
         .iter()
         .filter(|failure| match failure.core {
             None => true,
-            Some(core) => cores
-                .iter()
-                .any(|info| info.core == core && info.ccd == ccd),
+            Some(core) => cores.iter().any(|info| {
+                info.core == core
+                    && (info.ccd == ccd
+                        || (observed.activity == Activity::Mapping
+                            && matches!(observed.tested, Tested::Isolated { ccd: tested, .. } if tested == ccd)
+                            && observed.profile.ccd().get(info.ccd)
+                                == Some(TargetOffset::ZERO)))
+            }),
         })
         .count();
     saturating_u32(u64::try_from(count).unwrap_or(u64::MAX))

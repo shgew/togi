@@ -2,5 +2,5 @@
 source: crates/togi/tests/read/events.rs
 expression: text(&ran.stdout)
 ---
-00:00:00 trial.intent   trial 0001 core 00 offset 0 R1 mprime SSE 4K-21K 90 s together control task control #0 night #34
+00:00:00 trial.intent   trial 0001 core 00 offset -5 R1 mprime SSE 4K-21K 90 s together mapping task mapping #0 night #36 testing CCD0 at -5
 00:00:00 trial.start    trial 0001 started pid 1001 in scope togi-trial-0001 on cpu 0

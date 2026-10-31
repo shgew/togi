@@ -5,10 +5,13 @@ use std::path::Path;
 use std::rc::Rc;
 
 use togi_journal::{
-    Event, FileError, Journal, LockError, LookupError, MemFs, ReadError, Recording, StateDir,
+    Build, Event, FileError, Journal, LockError, LookupError, MemFs, Payload, ReadError, Recording,
+    SessionStart, Stamp, StateDir, StockAttested,
 };
+use togi_machine::Machine;
 use togi_session::{
-    Ended, PublicationPolicy, ResumeCapsule, RunInput, SessionError, prepare, prepare_kept,
+    AppendHook, Ended, PendingImport, PublicationPolicy, ResumeCapsule, RunInput, SessionError,
+    prepare, prepare_kept,
 };
 
 use crate::input::{Finished, Persistence, Replay, SimInput, SimOutcome};
@@ -138,7 +141,7 @@ fn simulate_with_dump(
                 _ => error,
             }
         })?;
-        let journal = prepared.journal;
+        let mut journal = prepared.journal;
         let opened = journal.events().len();
         if journal.events().is_empty() {
             simulator.forget_last_trial();
@@ -147,9 +150,32 @@ fn simulate_with_dump(
             user.borrow_mut().write_event(renderer, event, &zone);
         }
         let run_cancel = cancel.child_token();
+        let mut observed = hook(Rc::clone(&slot), run_cancel.clone(), stop_at);
         if resume.is_none() && replay == Replay::Warm {
             resume = ResumeCapsule::read_snapshot(&journal, defects);
         }
+        if let Err(error) = confirm(
+            &mut journal,
+            &mut machine,
+            &build,
+            prepared.import.as_ref(),
+            number,
+        ) {
+            return Err(abandon(Some(journal), None, error));
+        }
+        // The observer and the run's cancellation see the operator's records when the run first appends, as a run
+        // that records its own start would show them: an observer that crashes or stops the machine on
+        // `session.start` then does so inside the run, which has a resume state to verify, not before it opens.
+        let mut earlier: Vec<Event> = journal.events()[opened..].to_vec();
+        for event in &earlier {
+            user.borrow_mut().write_event(renderer, event, &zone);
+        }
+        let on_append: AppendHook = Box::new(move |event| {
+            for operator in earlier.drain(..) {
+                observed(&operator);
+            }
+            observed(event);
+        });
         let mut ended = togi_session::run(RunInput {
             config: config.clone(),
             source: source.clone(),
@@ -163,7 +189,7 @@ fn simulate_with_dump(
             resume: resume.take(),
             import: prepared.import,
             log: Some(Box::new(Tee(Rc::clone(&user)))),
-            on_append: Some(hook(Rc::clone(&slot), run_cancel.clone(), stop_at)),
+            on_append: Some(on_append),
             renderer,
             zone: zone.clone(),
             cancel: run_cancel,
@@ -300,6 +326,62 @@ fn close(journal: Journal, boot: u32) -> Result<StateDir, SimError> {
     journal
         .close()
         .map_err(|source| SimError::Close { boot, source })
+}
+
+/// What the simulated operator's `yes` records before the run, as `togi night` does under the state lock: a
+/// `session.start` when the journal is fresh, then one `stock.attested` for the machine's current firmware unless
+/// the journal already holds it. A firmware change under a kept journal is a new context and is attested again.
+/// The run's own `session.context` follows; the attestation precedes it, as the session's fold does not depend on
+/// their order.
+fn confirm(
+    journal: &mut Journal,
+    machine: &mut Machine<'_>,
+    build: &Build,
+    import: Option<&PendingImport>,
+    boot: u32,
+) -> Result<(), SimError> {
+    let host = |source| SimError::Host { boot, source };
+    let firmware = machine.host.bios_context().map_err(host)?;
+    let attested = journal.events().iter().any(
+        |event| matches!(&event.payload, Payload::StockAttested(held) if held.firmware == firmware),
+    );
+    let fresh = journal.events().is_empty();
+    if attested && !fresh {
+        return Ok(());
+    }
+    let cores = machine.host.topology().map_err(host)?;
+    let now = machine.clock.now();
+    let stamp = Stamp {
+        time: now,
+        mono: Some(machine.clock.monotonic().map_err(host)?),
+    };
+    if fresh {
+        let session = match import {
+            Some(import) => import.destination(),
+            None => journal
+                .dir()
+                .session_id(now)
+                .map_err(|source| SimError::SessionId { boot, source })?,
+        };
+        let start = SessionStart {
+            build: build.clone(),
+            session,
+            cores,
+        };
+        journal
+            .append(stamp, Payload::SessionStart(start), &[])
+            .map_err(|source| SimError::Confirm { boot, source })?;
+    }
+    if !attested {
+        journal
+            .append(
+                stamp,
+                Payload::StockAttested(StockAttested { firmware }),
+                &[],
+            )
+            .map_err(|source| SimError::Confirm { boot, source })?;
+    }
+    Ok(())
 }
 
 /// Ends a simulation on an error: closes the open journal, if any, after publishing the state its crashed boot left

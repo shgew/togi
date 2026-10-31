@@ -191,18 +191,11 @@ fn firmware_restoration_projects_saved_stock_qualified_profile_and_crash(backste
         .unwrap();
     exposure.firmware = certificate.firmware.clone();
     exposure.epoch = certificate.epoch;
-    exposure.profile = stock_receipt.target.clone();
-    exposure.activity = journal::Activity::Control;
+    exposure.profile = restored_receipt.target.clone();
+    exposure.activity = journal::Activity::Qualification;
     exposure.outcome = journal::Outcome::Pass;
     exposure.failures.clear();
     exposure.exclusions.clear();
-    exposure.source.trial = Some(journal::TrialId::from(
-        "restoration-stock-control".to_owned(),
-    ));
-    let control_trial = exposure.source.trial.as_ref().unwrap().as_str().to_owned();
-    fixture.push(Payload::ExposureObserved(exposure.clone()));
-    exposure.profile = restored_receipt.target.clone();
-    exposure.activity = journal::Activity::Qualification;
     exposure.source.trial = Some(journal::TrialId::from(
         "restoration-qualification".to_owned(),
     ));
@@ -235,7 +228,6 @@ fn firmware_restoration_projects_saved_stock_qualified_profile_and_crash(backste
         day: day(certificate_seq),
         epoch: "firmware-1".to_owned(),
         profile: previous_profile,
-        stock_controls: vec![control_trial],
         fresh_witnesses: vec![fresh_trial],
         reused_witnesses: Vec::new(),
         safety_checks_satisfied: true,

@@ -13,8 +13,8 @@ use togi_journal::{
     ApplicationId, ApplyCause, Build, CcdVector, DayAnswer, DayAnswerKind, DayApplied,
     DayBootStart, DayCheckpoint, DayCleanStop, DayEventId, DayOffsetsChanged, DayUncleanEnd, Event,
     FixStamp, Payload, SCHEMA, Seq, SessionBaseline, SessionContext, SessionId, SessionStart,
-    Shutdown, ShutdownReason, Stamp, TrialId, TrialInstance, TrialIntent, TrialSignal, TrialStart,
-    WorkloadContent,
+    Shutdown, ShutdownReason, Stamp, StockAttested, TrialId, TrialInstance, TrialIntent,
+    TrialSignal, TrialStart, WorkloadContent,
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, ControllerMode, CoreInfo, EndEvidence, Machine,
@@ -212,8 +212,7 @@ impl Ruleset13 {
             .into(),
             &[],
         )?;
-        let context = SessionContext::from(machine.host.bios_context()?);
-        self.append(machine, context.into(), &[])?;
+        self.record_firmware(machine)?;
         let offsets = read_offsets(machine, &cores)?;
         self.append(machine, SessionBaseline { offsets }.into(), &[])?;
         self.started = Some(Started {
@@ -616,8 +615,7 @@ impl Policy for Ruleset13 {
             // The session's own context record already carries the new firmware.
             return self.start(machine);
         }
-        let context = SessionContext::from(machine.host.bios_context()?);
-        self.append(machine, context.into(), &[])?;
+        self.record_firmware(machine)?;
         Ok(())
     }
 
@@ -726,6 +724,21 @@ impl Policy for Ruleset13 {
 }
 
 impl Ruleset13 {
+    /// Records the firmware context and the simulated operator's confirmed stock stability.
+    fn record_firmware(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        let firmware = machine.host.bios_context()?;
+        let context = SessionContext::from(firmware.clone());
+        self.append(machine, context.into(), &[])?;
+        if !self.state.stock_attested() {
+            self.append(
+                machine,
+                Payload::StockAttested(StockAttested { firmware }),
+                &[],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Runs a night until its budget ends or `stop` selects a trial whose start should end the run.
     ///
     /// A selected trial is started and stopped through the machine seams, but no outcome or shutdown
@@ -793,7 +806,10 @@ impl Ruleset13 {
                 }
                 Action::EndNight(reason) => {
                     stop = match reason {
-                        EndReason::DeadEnd | EndReason::Unavailable => ShutdownReason::DeadEnd,
+                        EndReason::DeadEnd
+                        | EndReason::Unavailable
+                        | EndReason::StockUnattested
+                        | EndReason::NoNonzeroWork => ShutdownReason::DeadEnd,
                     };
                     break;
                 }

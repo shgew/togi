@@ -31,7 +31,7 @@ fn one_frame_watch<'a>(extra: &[&'a str]) -> Vec<&'a str> {
 #[test_case::test_case(&["watch", "--config", "x", "--help"]; "watch trailing help")]
 #[test_case::test_case(&["--config", "x", "watch", "--help"]; "watch leading help")]
 fn config_is_a_usage_error_before_or_after_the_command_name(args: &[&str]) {
-    let dir = session(Scenario::Controls);
+    let dir = session(Scenario::Nonzero);
     let ran = togi(&dir, args);
     assert_eq!(ran.status.code(), Some(2), "{args:?}");
     assert_eq!(text(&ran.stdout), "", "{args:?}");
@@ -48,7 +48,7 @@ fn config_is_a_usage_error_before_or_after_the_command_name(args: &[&str]) {
 #[test_case::test_case(&["--config", "x", "watch", "--width", "0"]; "watch leading")]
 #[test_case::test_case(&["watch", "--width", "0", "--config", "x"]; "watch trailing")]
 fn the_config_error_comes_before_the_arguments_of_the_command(args: &[&str]) {
-    let dir = session(Scenario::Controls);
+    let dir = session(Scenario::Nonzero);
     let ran = togi(&dir, args);
     assert_eq!(ran.status.code(), Some(2), "{args:?}");
     assert_eq!(text(&ran.stdout), "", "{args:?}");
@@ -74,7 +74,7 @@ fn skipped_report(kind: &str, kind_line: usize, field_line: usize) -> String {
 
 #[test]
 fn the_read_only_commands_skip_an_unknown_kind_and_ignore_an_unknown_field_and_say_so() {
-    let dir = session(Scenario::Controls);
+    let dir = session(Scenario::Nonzero);
     let known = super::support::lines(&dir).len();
     let kind_line = insert_unknown_kind_before_last(&dir, UNKNOWN_KIND);
     let field_line = append_unknown_field(&dir, "extra");
@@ -121,7 +121,7 @@ fn an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say
     args: &[&str],
     dashboard: bool,
 ) {
-    let dir = session(Scenario::Controls);
+    let dir = session(Scenario::Nonzero);
     let line = append_unknown_kind(&dir, HOSTILE_KIND);
     let ran = togi(&dir, args);
     assert_eq!(ran.status.code(), Some(0), "{command}");
@@ -149,7 +149,7 @@ fn an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say
 #[test_case::test_case("events"; "events")]
 #[test_case::test_case("watch"; "watch")]
 fn an_unknown_kind_as_the_first_event_is_never_skipped(command: &str) {
-    let dir = session(Scenario::Controls);
+    let dir = session(Scenario::Nonzero);
     super::support::rewrite_first_line(&dir, |event| {
         event["kind"] = UNKNOWN_KIND.into();
     });
@@ -174,7 +174,7 @@ fn an_unknown_kind_as_the_first_event_is_never_skipped(command: &str) {
 #[test_case::test_case("status"; "status")]
 #[test_case::test_case("events"; "events")]
 fn a_schema_refusal_is_red_bold_priority_3_when_stderr_is_the_system_journal(command: &str) {
-    let dir = session(Scenario::Controls);
+    let dir = session(Scenario::Nonzero);
     super::support::rewrite_first_line(&dir, |event| {
         event["data"]["build"]["schema"] = 99.into();
     });
@@ -197,7 +197,7 @@ fn the_read_only_commands_succeed_while_the_host_lock_is_held_and_never_take_it(
     command: &str,
     args: &[&str],
 ) {
-    let session = session(Scenario::Controls);
+    let session = session(Scenario::Nonzero);
     let before = state_files(&session);
     let host = session.host();
     {

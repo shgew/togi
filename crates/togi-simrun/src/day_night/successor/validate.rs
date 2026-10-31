@@ -616,9 +616,8 @@ impl Record {
         require(
             unique_text(
                 qualification
-                    .stock_controls
+                    .fresh_witnesses
                     .iter()
-                    .chain(&qualification.fresh_witnesses)
                     .chain(&qualification.reused_witnesses)
                     .map(String::as_str),
             ),

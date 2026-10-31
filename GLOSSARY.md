@@ -82,13 +82,17 @@ The testing period the operator ends: identified by its opening `night.plan` seq
 Normal-boot use under the day offset, observed without workloads ([Day steps](docs/spec/tuner.md#day-steps)).
 
 **Night queue**:
-One of the kinds of work a night runs: mapping, control, qualification, requalification and reproduction, with the filler when none is due ([Scheduling](docs/spec/tuner.md#scheduling)).
+One of the kinds of work a night runs: mapping, qualification, requalification and reproduction, with the filler when none is due ([Scheduling](docs/spec/tuner.md#scheduling)). No queue runs an all-zero profile.
 
 **Mapping**:
 A night queue that explores each tuning unit alone, brackets its edge U and sweeps toward its hard ceiling C ([Night edge and hard ceiling](docs/spec/tuner-ruleset14.md#2-night-edge-and-hard-ceiling)).
 
+**Stock attestation**:
+The operator's yes to `togi night`'s confirmation that the machine is stable at CO 0 with BIOS at stock, journaled once per firmware context; a session has to have one for the current firmware before any nonzero night work, and a reset or ruleset transition needs a new one ([Operator-attested stock stability](docs/spec/tuner-ruleset14.md#operator-attested-stock-stability)).
+_Avoid_: stock control, baseline run
+
 **Control**:
-A night queue that runs the whole coverage matrix at all-zero, on the first night and after a firmware change ([CO-0 controls](docs/spec/tuner.md#co-0-controls)).
+Historical, Ruleset 13 only: a night queue that ran the whole coverage matrix at all-zero on the first night and after a firmware change. Ruleset 14 runs no all-zero trial; the stock attestation replaces controls ([CO-0 controls](docs/spec/tuner.md#co-0-controls)).
 _Avoid_: baseline run
 
 **Qualification**:
@@ -101,7 +105,7 @@ The qualification of the current day offset when its certificate is due for rene
 A night queue that re-runs a CPU-suspect daily event's failed profile, then each CCD alone, for one night. It never qualifies; it ends reproduced, unreproduced or untestable.
 
 **Filler**:
-The work a night does when no queue has due work: repeats of exact-current-D qualification cells ([Night scheduling](docs/spec/tuner-ruleset14.md#7-reconcile-every-current-decision-path)).
+The work a night does when no queue has due work and D is nonzero: repeats of exact-current-D qualification cells ([Night scheduling](docs/spec/tuner-ruleset14.md#7-reconcile-every-current-decision-path)).
 
 **Share**:
 A queue's soft percentage of the night's elapsed observed time. A queue at or over its share yields only while another with due work is under its own; it is neither a cap nor a guarantee.

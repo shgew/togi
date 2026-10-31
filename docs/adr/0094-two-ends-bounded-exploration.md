@@ -2,6 +2,10 @@
 
 Status: accepted and implemented by [Ruleset 14](../spec/tuner-ruleset14.md), the sole normative tuning policy. Consolidates and takes current-policy ownership from [0079](0079-day-observer-night-tester.md)–[0084](0084-a-fresh-ruleset-transition.md); see [the index](README.md). The successor-score and supervised-procedure activation gate below is amended by [0096](0096-activate-permitted-day-profiles.md), accepted 2026-10-31; its first-live-step check replaces prior hardware acceptance as an activation gate. Other decisions stand as amended by their own records.
 
+Amended by [0095](0095-operator-attested-stock-stability.md): the operator's
+stock-stability attestation replaces the all-zero controls retained below.
+The rest of this record remains the history of the original decision.
+
 ## Context
 
 Ruleset 13 was decided in [#1214](https://github.com/shgew/togi/issues/1214) and [#1215](https://github.com/shgew/togi/issues/1215) and recorded as six decisions: days observe and nights test ([0079](0079-day-observer-night-tester.md)), one offset per CCD first ([0080](0080-per-ccd-first.md)), a cap from measured slope ([0081](0081-margin-from-measured-slope.md)), BIOS Curve Optimizer at zero ([0082](0082-bios-stays-at-zero.md)), questions after unclean daily ends ([0083](0083-ask-after-unclean-ends.md)) and a fresh transition ([0084](0084-a-fresh-ruleset-transition.md)). It shipped in v0.12.0. **Its registered day/night gate ([#1216](https://github.com/shgew/togi/issues/1216), [#1217](https://github.com/shgew/togi/issues/1217)) failed: Ruleset 13 was shipped, not gate-accepted.** That registration and its failing results stay frozen as a failed experiment; nothing here rewrites them as a pass or reopens them for retrospective editing.

@@ -1,14 +1,19 @@
 #![cfg(target_os = "linux")]
 //! The helper the `togi-emergency-stop` NixOS VM test installs as `togi`.
 //!
-//! The VM has no SMU, so this executable is `togi` with one seam replaced: its `System` opens a machine whose SMU
-//! is a persistent file and whose trials are the shipped `togi-trial` runner on real systemd scopes. Everything else
-//! is production code: the host lock, the `emergency-stop` command with its sweep, validation, zero-only write and
-//! readback, and the module's `ExecStopPost` hook that calls it. The production executable has no such switches.
+//! The VM has no SMU, so this executable is `togi` with the hardware seam replaced: its `System` opens a machine
+//! whose SMU is a persistent file and whose trials are the shipped `togi-trial` runner on real systemd scopes, and
+//! it reports a fixed simulated firmware context and topology where production needs a validated SMU. That
+//! simulated context is the only fabricated night input: `togi night` otherwise runs production code on the real
+//! boot loader, systemd and journal, so a confirmed night records `stock.attested` through the same command path.
+//! Everything else is production code too: the host lock, the `emergency-stop` command with its sweep, validation,
+//! zero-only write and readback, and the module's `ExecStopPost` hook that calls it. The production executable has
+//! no such switches.
 //!
 //! The wrapper `togi` in the VM test runs this test binary as
 //! `<binary> --exact vm_recovery::helper --nocapture -- togi <togi arguments>`; `workload` stands in for a stress
-//! program. Under `cargo test` the `helper` test finds no `--` and returns.
+//! program, and `togi run` is the `mode` below (the night VM tests use their own sleeping wrapper instead). Under
+//! `cargo test` the `helper` test finds no `--` and returns.
 //!
 //! The VM test steers it through files in `/var/lib/togi-vm`:
 //!
@@ -63,6 +68,18 @@ mod vm_recovery {
     /// least-deep unloaded core is unambiguous: core 2 at -10 on a four-core machine.
     const TRIAL_OFFSET: i64 = -30;
     const LOADED: usize = 2;
+
+    /// The firmware context the VM reports, with no SMU behind it. Every field is fixed, so a second night on the
+    /// same VM sees the same context and has nothing new to attest.
+    fn simulated_firmware() -> BiosContext {
+        BiosContext {
+            bios_version: "vm".to_owned(),
+            board: "vm".to_owned(),
+            cpu_model: "vm".to_owned(),
+            microcode: "vm".to_owned(),
+            boost_limit_mhz: 0,
+        }
+    }
 
     fn trial_offsets() -> Vec<i64> {
         (0..cores())
@@ -376,13 +393,7 @@ mod vm_recovery {
         }
 
         fn bios_context(&mut self) -> Result<BiosContext, Error> {
-            Ok(BiosContext {
-                bios_version: "vm".to_owned(),
-                board: "vm".to_owned(),
-                cpu_model: "vm".to_owned(),
-                microcode: "vm".to_owned(),
-                boost_limit_mhz: 0,
-            })
+            Ok(simulated_firmware())
         }
 
         fn offsets(&mut self) -> Result<PerCore<ObservedOffset>, Error> {
@@ -854,6 +865,13 @@ mod vm_recovery {
             Ok(Box::new(VmObserver {
                 kernel: togi_detect::Kernel::new(&topology()).ok(),
             }))
+        }
+
+        /// `togi night` attests the stock firmware through this seam. Production reads the validated SMU; the VM has
+        /// none, so it answers the fixed simulated context. The decision to attest, the prompt, the journal write
+        /// and the reboot all stay production code.
+        fn firmware_context(&self, _: &HostLock) -> Result<BiosContext, Error> {
+            Ok(simulated_firmware())
         }
 
         fn day_socket(

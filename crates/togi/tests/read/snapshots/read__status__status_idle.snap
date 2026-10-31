@@ -2,16 +2,16 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-night since 00:00, 0s elapsed: control (task control #0)
+night since 00:00, 3h35m elapsed: qualification (task qualification #0)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#1270] trial 0209 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
+in flight: [#2438] trial 0343 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
   11, 12, 13, 14, 15 R6 mprime SSE 4K-21K idle then bursts 900 s together
-  control task control #0 night #34
+  qualification task qualification #0 night #36
 
 UNIT   CORES                  D  C        D-C  HOLD h  STATE
-CCD 0  0,1,2,3,4,5,6,7        0  unknown  -    0/50    held
+CCD 0  0,1,2,3,4,5,6,7        0  -5       5    0/50    held
 CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    held
 
 Day policy
@@ -25,11 +25,118 @@ proposed profile: none
 paused-saved profile: none
 allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
-  U: unknown
-  state: held: unknown edge for CCD 0; unknown edge for CCD 1
+  U: observed -10 [#962]
+  state: held: hold 0/50 h; exact-profile qualification required
+  next proposal: core 0 -3, core 1 -3, core 2 -3, core 3 -3, core 4 -3, core 5
+  -3, core 6 -3, core 7 -3, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
+  core 13 0, core 14 0, core 15 0
+  qualification: in progress; 51 outstanding [#1001 #1007 #1013 #1019 #1025
+  #1031 #1037 #1043 #1049 #1055 #1061 #1067 #1073 #1079 #1085 #1091 #1097 #1103
+  #1109 #1115 #1121 #1127 #1133 #1139 #1145 #1151 #1157 #1163 #1169 #1175 #1181
+  #1187 #1193 #1199 #1205 #1211 #1217 #1223 #1229 #1235 #1241 #1247 #1253 #1259
+  #1265 #1271 #1277 #1283 #1289 #1295 #1301 #1307 #1313 #1319 #1325 #1331 #1337
+  #1343 #1349 #1355 #1361 #1367 #1373 #1379 #1385 #1391 #1397 #1403 #1409 #1415
+  #1421 #1427 #1433 #1439 #1445 #1451 #1457 #1463 #1469 #1475 #1481 #1487 #1493
+  #1499 #1505 #1511 #1517 #1523 #1529 #1535 #1541 #1547 #1553 #1559 #1565 #1571
+  #1579 #1587 #1595 #1603 #1611 #1619 #1627 #1635 #1643 #1651 #1659 #1667 #1675
+  #1683 #1691 #1699 #1707 #1715 #1723 #1731 #1739 #1747 #1755 #1763 #1771 #1779
+  #1787 #1795 #1803 #1811 #1819 #1827 #1835 #1843 #1851 #1859 #1867 #1875 #1883
+  #1891 #1899 #1907 #1915 #1923 #1931 #1939 #1947 #1955 #1963 #1971 #1979 #1987
+  #1995 #2003 #2011 #2019 #2027 #2035 #2043 #2051 #2059 #2067 #2075 #2083 #2091
+  #2099 #2107 #2115 #2123 #2131 #2139 #2147 #2155 #2163 #2171 #2179 #2187 #2195
+  #2203 #2211 #2219 #2227 #2235 #2243 #2251 #2259 #2267 #2275 #2283 #2291 #2299
+  #2307 #2315 #2323 #2331 #2339 #2345 #2351 #2357 #2363 #2369 #2375 #2381 #2387
+  #2393 #2399 #2405 #2411 #2417 #2423 #2429 #2435]
+    outstanding: R6 mprime-sse-4k-21k-idle 900s exact cores 0-15
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 0-7
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 8-15
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 0-6
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 0-5
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 0-4
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 0-3
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 0-2
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 0-1
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 8-14
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 8-13
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 8-12
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 8-11
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 8-10
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 8-9
+    outstanding: R7 mprime-avx2-36k-248k-allcore 120s exact cores 0-15
+    outstanding: R7 mprime-avx2-36k-248k-allcore 600s exact cores 0-15
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  0 120s exact cores 0-7
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  1 120s exact cores 0-7
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  2 120s exact cores 0-7
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  3 120s exact cores 0-7
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  4 120s exact cores 0-7
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  5 120s exact cores 0-7
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  6 120s exact cores 0-7
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  7 120s exact cores 0-7
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  8 120s exact cores 8-15
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  9 120s exact cores 8-15
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  10 120s exact cores 8-15
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  11 120s exact cores 8-15
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  12 120s exact cores 8-15
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  13 120s exact cores 8-15
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  14 120s exact cores 8-15
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  15 120s exact cores 8-15
+    outstanding: R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+  0 600s exact cores 0-7
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 0 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 1 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 2 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 3 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 4 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 5 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 6 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 7 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 8 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 9 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 10 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 11 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 12 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 13 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 14 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 15 120s exact cores
+  0-15
+    outstanding: R9 mprime-sse-4k-21k-all-threads serial cpu 0 600s exact cores
+  0-15
+  diagnostic S (non-authorizing): 0 [#2388]
 unit: CCD 1, phase coarse, parent none, inherited start 0
   U: unknown
-  state: held: unknown edge for CCD 0; unknown edge for CCD 1
+  state: held: hold 0/50 h; exact-profile qualification required
+  diagnostic S (non-authorizing): 0 [#2436]
 current exact profile daily evidence: 0 h; 0 crashes []
 experimental: rate bound unavailable (95%, fixed-rate model)
 firmware restoration: none
@@ -39,13 +146,54 @@ freeze: off
 firmware: valid
 
 Night since 00:00
-elapsed: 0s
+elapsed: 3h35m
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
 qualification    75%    0%    0s
-mapping          10%    0%    0s
-control          5%     0%    0s
+mapping          10%    100%  3h35m
 requalification  10%    0%    0s
-current task: control (task control #0)
-mapping CCD 0: next offset 0
-mapping CCD 1: next offset 0
+current task: qualification (task qualification #0)
+mapping CCD 0: next offset -6, bracketing the failure at -10
+mapping CCD 1: next offset -10
+qualification: CCD 0 -3, CCD 1 0 (next step) started, 5.8 h eligible witnessed
+  exposure
+qualifying CCD 0 -3, CCD 1 0: 5.8 h eligible witnessed exposure, 51 outstanding
+  outstanding R6 mprime-sse-4k-21k-idle 900s exact; R7
+    mprime-avx2-36k-248k-allcore 120s exact x15; R7 mprime-avx2-36k-248k-allcore
+    600s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    0 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 1 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 2 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 3 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 4 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 5
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    6 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 7 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 8 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 9 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 10 120s
+    exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 11
+    120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core
+    12 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light
+    core 13 120s exact; R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k
+    light core 14 120s exact; R8
+    mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 15 120s exact;
+    R8 mprime-sse-4k-21k-neighbours+mprime-avx2-36k-248k light core 0 600s
+    exact; R9 mprime-sse-4k-21k-all-threads serial cpu 0 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 1 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 2 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 3 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 4 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 5 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 6 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 7 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 8 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 9 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 10 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 11 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 12 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 13 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 14 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 15 120s exact; R9
+    mprime-sse-4k-21k-all-threads serial cpu 0 600s exact

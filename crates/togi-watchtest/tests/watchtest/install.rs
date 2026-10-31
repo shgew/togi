@@ -8,7 +8,7 @@ use togi_watchtest::{Error, InstallError, Scenario, install_with_fs};
 
 use crate::support::lines;
 
-#[test_case(Scenario::Controls; "controls")]
+#[test_case(Scenario::Nonzero; "nonzero")]
 #[test_case(Scenario::Mapping; "mapping")]
 #[test_case(Scenario::Recovering; "recovering")]
 #[test_case(Scenario::Filler; "filler")]
@@ -61,7 +61,7 @@ fn installing_where_no_state_directory_can_be_made_is_an_error() {
     let fs = MemFs::new();
     let file = Path::new("/file");
     fs.create_new(file).expect("a file");
-    let error = install_with_fs(Arc::new(fs), file, Scenario::Controls)
+    let error = install_with_fs(Arc::new(fs), file, Scenario::Nonzero)
         .expect_err("a file is not a directory");
     assert!(matches!(error, Error::Install { dir, .. } if dir == file));
 }
@@ -70,10 +70,10 @@ fn installing_where_no_state_directory_can_be_made_is_an_error() {
 fn installing_over_a_journal_is_refused_and_leaves_it_as_it_was() {
     let fs = MemFs::new();
     let dir = Path::new("/session");
-    install_with_fs(Arc::new(fs.clone()), dir, Scenario::Controls).expect("the scenario installs");
+    install_with_fs(Arc::new(fs.clone()), dir, Scenario::Nonzero).expect("the scenario installs");
     let journal = dir.join("events.jsonl");
     let before = fs.contents(&journal).expect("the journal reads");
-    let error = install_with_fs(Arc::new(fs.clone()), dir, Scenario::Controls)
+    let error = install_with_fs(Arc::new(fs.clone()), dir, Scenario::Nonzero)
         .expect_err("a journal is already there");
     assert!(
         matches!(&error, Error::Install { dir: named, source: InstallError::NotEmpty } if named == dir),

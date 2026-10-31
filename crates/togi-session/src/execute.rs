@@ -16,6 +16,12 @@ impl Session<'_> {
                 Ok(self.shut_down(Stop::Night(EndReason::DeadEnd)))
             }
             Action::EndNight(EndReason::Unavailable) => self.unavailable_dead_end(),
+            Action::EndNight(EndReason::StockUnattested) => self.no_nonzero_work(
+                "stock_unattested: confirm the machine is stable at CO 0 with BIOS at stock using togi night",
+            ),
+            Action::EndNight(EndReason::NoNonzeroWork) => self.no_nonzero_work(
+                "no_nonzero_work: no nonzero cell is admissible; ending the night at stock",
+            ),
         };
         let outcome = self.settle(step);
         if let Err(error) = &outcome
@@ -56,6 +62,24 @@ impl Session<'_> {
         Ok(Control::Stop(self.dead_end(dead_end, &causes)?))
     }
 
+    fn no_nonzero_work(&mut self, detail: &str) -> Step<Control> {
+        let causes = self
+            .appender
+            .journal()
+            .events()
+            .last()
+            .map(|event| event.seq)
+            .into_iter()
+            .collect::<Vec<_>>();
+        let dead_end = DeadEnd {
+            condition: DeadEndCondition::NoEvidence,
+            core: None,
+            detail: detail.to_owned(),
+            action: None,
+        };
+        Ok(Control::Stop(self.dead_end(dead_end, &causes)?))
+    }
+
     /// Appends the commitment with the events it cites. A dead end goes through the dead-end path instead, which
     /// records it, leaves the tuning boot and ends the run.
     fn decide(&mut self, decision: Decision) -> Step<Control> {
@@ -70,8 +94,7 @@ impl Session<'_> {
         Ok(Control::Continue)
     }
 
-    /// A stop signal shuts the run down, unless a conclusive stock failure is already durable: the stock-control
-    /// dead end it established stands, though the commitments that would have led the policy to it are not appended.
+    /// A durable historical stock failure still stands when an operator stops the run.
     pub(crate) fn signal_stop(&mut self) -> Step<Control> {
         if let Some(Decision {
             payload: PolicyPayload::DeadEnd(dead_end),

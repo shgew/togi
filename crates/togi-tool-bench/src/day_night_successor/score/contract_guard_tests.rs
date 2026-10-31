@@ -381,7 +381,6 @@ fn a_finished_unit_cannot_be_promoted_again_without_a_charged_event(reason: Fini
             day: LATE,
             epoch: "only".into(),
             profile: after,
-            stock_controls: vec![],
             fresh_witnesses: vec!["fresh-1b".into()],
             reused_witnesses: vec![],
             safety_checks_satisfied: true,

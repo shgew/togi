@@ -15,13 +15,13 @@ pub use exposure::{Conclusion, Credit, Launch, PlacementValidity, adequately_exp
 pub use matrix::{
     Attempt, AttemptScope, Cell, HostPool, IDLE_DURATION, Layout, Matrix, MatrixError, PackageLoad,
     PlannedCell, Reuse, Roles, SEARCH_DURATION, SHORT_DURATION, SUSTAINED_DURATION, Source,
-    Uncovered, Workloads, control_cells, mapping_cells, minimum_position_seconds,
-    qualification_cells, reproduction_cells, zeroed,
+    Uncovered, Workloads, mapping_cells, minimum_position_seconds, qualification_cells,
+    reproduction_cells,
 };
 pub use reproduction::{AttemptLog, AttemptNight, reproduction_stage};
 pub use schedule::{
-    Budgets, CONTROLS_SHARE_PCT, Consumed, ControlCause, Inputs, MAPPING_SHARE_PCT, NightTask,
-    QUALIFICATION_SHARE_PCT, Queue, REPRODUCTION_SHARE_PCT, REQUALIFICATION_SHARE_PCT, Reason,
-    Reproduction, ReproductionStage, RequalificationDue, Stock, WallSecs, Work, next_task,
+    Budgets, Consumed, Inputs, MAPPING_SHARE_PCT, NightTask, QUALIFICATION_SHARE_PCT, Queue,
+    REPRODUCTION_SHARE_PCT, REQUALIFICATION_SHARE_PCT, Reason, Reproduction, ReproductionStage,
+    RequalificationDue, WallSecs, Work, next_task,
 };
 pub use togi_machine::Purpose;
