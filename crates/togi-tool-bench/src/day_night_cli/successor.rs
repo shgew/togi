@@ -15,7 +15,7 @@ use togi_simrun::day_night::successor::{
 };
 use togi_simrun::day_night::{CalendarConfig, Policy, PolicyKind, RunError};
 use togi_tool_bench::day_night_successor::registration::{
-    self, PolicyRole, REDUCED_DEV_LABEL, Registration, SourceIdentity,
+    self, REDUCED_DEV_LABEL, Registration, SourceIdentity,
 };
 use togi_tool_bench::day_night_successor::{render, score};
 
@@ -58,9 +58,26 @@ pub(super) enum Error {
     Score(#[from] score::ScoreError),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RunPolicy {
+    Comparator(PolicyKind),
+    Successor { fallback_slope: f64 },
+}
+
+impl RunPolicy {
+    fn build(self, calendar: &CalendarConfig) -> Result<Box<dyn Policy>, RunError> {
+        match self {
+            Self::Comparator(kind) => kind.build(calendar),
+            Self::Successor { fallback_slope } => Ok(Box::new(
+                togi_simrun::day_night::SuccessorPolicy::new(fallback_slope)?,
+            )),
+        }
+    }
+}
+
 struct Plan {
     configs: Vec<RunConfig>,
-    policy: PolicyKind,
+    policy: RunPolicy,
     budget: Duration,
     started: Instant,
     jobs: u32,
@@ -191,7 +208,7 @@ pub(super) fn execute(args: &DayNightArgs, bytes: &[u8]) -> Result<bool, Error> 
     }
     writeln!(
         stdout,
-        "Comparator run: per-criterion diagnostics; no candidate gate verdict"
+        "Single-slope run: per-criterion tables; combine both registered slopes for a candidate verdict"
     )?;
     let mut output = io::BufWriter::new(File::create(path)?);
     let execution = execute_plan(
@@ -444,11 +461,6 @@ fn plan(args: &DayNightArgs, registration: &Registration, bytes: &[u8]) -> Resul
     let source = registration
         .policy(name)
         .ok_or(Error::Invalid("policy is not registered"))?;
-    if source.role != PolicyRole::Comparator {
-        return Err(Error::Invalid(
-            "candidate execution is not implemented; select co-zero or ruleset13",
-        ));
-    }
     let (source_revision, source_sha256) = match &source.source {
         SourceIdentity::Pinned { revision, sha256 } => (revision, sha256),
         SourceIdentity::Pending {} => {
@@ -457,26 +469,32 @@ fn plan(args: &DayNightArgs, registration: &Registration, bytes: &[u8]) -> Resul
     };
     let (policy, slope) = match name.as_str() {
         "co-zero" => (
-            PolicyKind::CoZero,
+            RunPolicy::Comparator(PolicyKind::CoZero),
             args.slope.unwrap_or(registration.slopes[0]),
         ),
-        "ruleset13" => {
+        "ruleset13" | "successor" => {
             let slope = args
                 .slope
-                .ok_or(Error::Invalid("ruleset13 requires --slope"))?;
+                .ok_or(Error::Invalid("tuner policy requires --slope"))?;
             if !registration.slopes.contains(&slope) {
                 return Err(Error::Invalid("slope is not registered"));
             }
             (
-                PolicyKind::Ruleset13 {
-                    fallback_slope: slope,
+                if name == "successor" {
+                    RunPolicy::Successor {
+                        fallback_slope: slope,
+                    }
+                } else {
+                    RunPolicy::Comparator(PolicyKind::Ruleset13 {
+                        fallback_slope: slope,
+                    })
                 },
                 slope,
             )
         }
         _ => {
             return Err(Error::Invalid(
-                "successor supports co-zero and ruleset13 only; fixed-margin is frozen-registration only",
+                "successor supports co-zero, ruleset13 and successor; fixed-margin is frozen-registration only",
             ));
         }
     };
@@ -665,7 +683,7 @@ fn execute_plan(
         slope: Some(plan.slope),
         label: match plan.profile {
             RunProfile::ReducedDev => REDUCED_DEV_LABEL,
-            RunProfile::Registered => "REGISTERED PROFILE — SINGLE-SLOPE COMPARATOR CRITERIA",
+            RunProfile::Registered => "REGISTERED PROFILE — SINGLE-SLOPE CRITERIA",
         }
         .to_owned(),
         jobs: plan.jobs,
