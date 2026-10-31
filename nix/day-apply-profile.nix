@@ -87,12 +87,13 @@ pkgs.testers.runNixOSTest {
 
     def assert_profile():
         # The helper's historical application is not a transaction performed by
-        # the installed service. Every new application must cite real receipts.
-        applied = [row for row in events("day.applied") if row["data"]["transactions"]]
+        # the installed service. Every other application must cite real receipts.
+        applied = [row for row in events("day.applied") if row["seq"] != seeded_seq]
         assert applied, events()
         by_seq = {row["seq"]: row for row in events()}
         for row in applied:
             data = row["data"]
+            assert data["transactions"], data
             assert data["target"] == {"ccd": {"0": -5}, "cores": profile}, data
             assert data["readbacks"] == profile, data
             transaction = [by_seq[seq] for seq in data["transactions"]]
@@ -130,6 +131,8 @@ pkgs.testers.runNixOSTest {
     fixture_commands = len(protocol())
     seeded = len(events("day.applied"))
     assert seeded == 1, events("day.applied")
+    seeded_seq = events("day.applied")[0]["seq"]
+    assert not events("day.applied")[0]["data"]["transactions"], events("day.applied")
     steps = events("day.step")
     caps = events("day.cap")
     machine.succeed("systemctl start togi-day.service")
