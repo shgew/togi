@@ -218,16 +218,38 @@ def test-group [] {
 def test-hardware-exclusivity [] {
     for assignees in [[] [shgew]] {
         let issues = [
-            ($base | merge {number: 1, labels: [feature P1 needs-hardware], assignees: $assignees, body: 'Touches: `internal/tuner`'})
+            ($base | merge {number: 1, labels: [feature P1 needs-hardware], assignees: $assignees, blockers: [7], body: 'Touches: `internal/tuner`'})
             ($base | merge {number: 2, body: 'Touches: `internal/tuner`'})
             ($base | merge {number: 3, assignees: [shgew], body: 'Touches: `internal/tuner/hunt.go`'})
         ]
         let b = (build shgew/togi $issues [] {limit: '', expires: null} $now)
         assert equal ($b.hardware | get number) [1]
+        assert equal ($b.blocked | get number) []
         assert equal ($b.progress | get number) [3]
         assert equal ($b.overlaps | each {|o| [$o.ready $o.progress]} | flatten) [2 3]
         assert equal ($b.ready | each {|g| $g.issues | get number} | flatten) [2]
     }
+}
+
+def test-blocked-hardware [] {
+    let pending = ($base | merge {number: 1, title: 'Pending hardware acceptance', blockers: [7]})
+    let blocked = (build example/togi [$pending] [] {limit: '', expires: null} $now)
+    assert equal ($blocked.blocked | get number) [1]
+    assert equal $blocked.hardware []
+    assert equal $blocked.ready []
+    assert equal $blocked.progress []
+
+    let assigned = ($pending | update assignees [someone])
+    let progress = (build example/togi [$assigned] [] {limit: '', expires: null} $now)
+    assert equal $progress.blocked []
+    assert equal ($progress.progress | get number) [1]
+
+    let installed = ($pending | update labels ($pending.labels | append needs-hardware))
+    let waiting = (build example/togi [$installed] [] {limit: '', expires: null} $now)
+    assert equal $waiting.blocked []
+    assert equal ($waiting.hardware | get number) [1]
+    assert equal $waiting.ready []
+    assert equal $waiting.progress []
 }
 
 def main [] {
@@ -245,8 +267,9 @@ def main [] {
     test-work
     test-group
     test-hardware-exclusivity
+    test-blocked-hardware
     test-hidden-blockers
     test-ascii-issue-patterns
     test-parent-number-grouping
-    print 'board: 15 tests passed'
+    print 'board: 16 tests passed'
 }
