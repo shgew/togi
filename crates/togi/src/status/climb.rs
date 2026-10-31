@@ -112,7 +112,7 @@ fn blocker(reason: &ClimbBlocker) -> String {
         }
         ClimbBlocker::HoldProfile {} => "exact applied profile hold required".to_owned(),
         ClimbBlocker::SafeApply {} => "safe-apply prerequisites incomplete".to_owned(),
-        ClimbBlocker::ActivationClosed {} => "nonzero activation closed; stock only".to_owned(),
+        ClimbBlocker::ActivationClosed {} => "nonzero application is not authorized".to_owned(),
     }
 }
 

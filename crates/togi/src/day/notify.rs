@@ -83,7 +83,7 @@ fn pause_ended() -> Invocation {
         .output_limit(4096)
         .args([
             "Day pause ended",
-            "Stock was reapplied and verified; daily observation has resumed.",
+            "The committed profile was reapplied and verified; daily observation has resumed.",
         ])
 }
 
@@ -731,7 +731,7 @@ mod tests {
     fn a_morning_report_is_notified_once_per_boot_without_question_actions() {
         let report = crate::morning::Report {
             boot: boot("morning"),
-            text: "No automatic nonzero change; restricted to stock (CO 0).".into(),
+            text: "The day service applies the permitted committed profile.".into(),
         };
         let reply = || Reply::Questions {
             pending: Vec::new(),
@@ -917,7 +917,7 @@ mod tests {
     ) {
         let report = crate::morning::Report {
             boot: boot("morning"),
-            text: "Day application is restricted to stock (CO 0).".into(),
+            text: "The day service applies the permitted committed profile.".into(),
         };
         let desktop = Desktop {
             actions: true,

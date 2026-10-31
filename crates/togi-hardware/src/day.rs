@@ -1,4 +1,4 @@
-//! Hardware and kernel evidence for the stock-only day service.
+//! Hardware and kernel evidence for the applying day service.
 
 use std::marker::PhantomData;
 use std::path::Path;

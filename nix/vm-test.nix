@@ -1218,8 +1218,10 @@ let
         stop_readbacks = [e for e in events() if e["kind"] == "smu.readback"][-4:]
         assert len(stop_readbacks) == 4 and all(e["data"]["offset"] == 0 for e in stop_readbacks), stop_readbacks
         assert stop_readbacks[-1]["seq"] < day("day.checkpoint")[-1]["seq"] < day("day.clean_stop")[-1]["seq"]
-        checkpoint = day("day.checkpoint")[0]
-        assert checkpoint["data"]["applied_secs"] > 0, checkpoint
+        # Application is checkpointed at once, before active time accrues; the stop checkpoints count the time observed.
+        checkpoints = day("day.checkpoint")
+        assert len(checkpoints) >= 3 and checkpoints[0]["seq"] > applied[0]["seq"], checkpoints
+        assert checkpoints[-1]["data"]["applied_secs"] > 0, checkpoints
         # The helper records only stock commands; both application and stop wrote and read all cores.
         machine.succeed("grep -q '^pid=[0-9]* set-all 0 0 0 0$' /var/lib/togi-vm/smu.log")
         machine.succeed("! grep -E '^pid=[0-9]+ (set|set-all|emergency-zero wrote).* -[0-9]+' /var/lib/togi-vm/smu.log")
@@ -1486,7 +1488,7 @@ in
       ];
     }
   ];
-  day-apply-stock = import ./day-apply-stock.nix { inherit pkgs package vmRecovery; };
+  day-apply-profile = import ./day-apply-profile.nix { inherit pkgs package vmRecovery; };
   display = oneScenario "display" "kmscon-display";
   efi = oneScenario "efi" "night-systemd-boot";
 }

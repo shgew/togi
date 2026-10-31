@@ -16,9 +16,29 @@ Closure commitments, including unreproduced marking and outstanding qualificatio
 
 **Night.** After normal preflight, recovery and verified all-zero baseline, fold raw observations and query the [night scheduler](tuner.md#night-order-and-reserved-budgets) with `now`, available contents and the backends unavailable for this night. Nonzero work requires the current firmware's operator stock attestation; no trial runs an all-zero profile. Execute its typed task through the existing transaction, managed controller and trial seams. Append the actual outcome, consumed task time, exposure and resulting edge/cap/qualification commitments before querying again. A restart continues the same open night and recorded consumption. An operator cancellation stops work with containment and zero restoration; an incomplete matrix is never marked qualified. Existing boot-selection machinery owns the operator's return to day, not the tuner.
 
-**Cold-boot day decision.** Read every core and refuse unless all recorded cores read CO 0 and PID 1's hardware watchdog is armed and counting. Confirm no stale togi workloads remain. Resolve the previous observed boot and its current answers/fault evidence, fold interval credit, campaign history and firmware identity, then query [Ruleset 14](tuner-ruleset14.md#4-a-clean-hold-earns-one-step). Journal the hold/promotion/retreat/restoration/firmware-zero proposal. The applying capability currently forces every target to **stock (CO 0)** through the session's normal SMU intent → write → readback chain; nonzero day offsets remain disabled until the successor rules, gate and hardware acceptance clear them. Before any write, refuse a decoded target whose per-core offsets differ from its CCD profile expanded over the recorded topology, and refuse a nonzero proposal while a journaled `DeadEnd{Defect}` stands. Only verified success writes `day.applied`, always with the actual stock target and readbacks. A withheld nonzero proposal is not marked promoted: use existing `ApplyCause::Reset`, citing that proposal (or the previous nonzero application on restart), so the fold commits stock, starts its hold and consumes no promotion. The message explains why stock was applied. A failed or interrupted write never commits a promotion or credits hours at the proposed profile.
+**Cold-boot day decision.** Read every core and refuse unless all recorded cores read CO 0 and PID 1's
+hardware watchdog is armed and counting. Confirm no stale togi workloads remain. Resolve the previous
+observed boot and its current answers/fault evidence, fold interval credit, campaign history and
+firmware identity, then query [Ruleset 14](tuner-ruleset14.md#4-a-clean-hold-earns-one-step). Journal the
+hold/promotion/retreat/restoration/firmware-zero proposal. Apply the exact permitted target through the
+session's normal durable SMU intent → write → all-core readback chain. Before any write, refuse a
+decoded target whose per-core offsets differ from its CCD profile expanded over the recorded topology,
+and refuse a nonzero proposal while a journaled `DeadEnd{Defect}` stands. Only verified success writes
+`day.applied`, with the actual requested target, matching readbacks and transaction receipts. A failed
+or interrupted write never commits a promotion or credits hours at the proposed profile; recovery
+attempts all-core zeroing and readback, recording the original failure and recovery outcome when the
+journal remains writable. Journal failure uses the separate zero-only emergency path. Neither a
+journaled failure nor verified zero recovery can be promised when the required journal or hardware
+operations themselves fail.
 
-**Same boot.** A service restart, configuration-switch restart or resume queries with `SameBoot`, never cold-boot promotion permission, and reapplies stock through the full transaction. Reapplication of an unchanged committed stock D preserves its hold; a stock-only reset from historical nonzero D starts a new hold. The tuner owns [freeze, pause and firmware eligibility](tuner-ruleset14.md#7-reconcile-every-current-decision-path); firmware changes apply CO 0. The applying layer owns stop/error zeroing and readback; no pure policy function obtains a hardware capability. Ending a pause is a same-boot reapplication, never a second cold-boot promotion opportunity.
+**Same boot.** A service restart, configuration-switch restart or resume queries with `SameBoot`, never
+cold-boot promotion permission, and reapplies the still-permitted committed D through the full
+transaction. Reapplication of unchanged D preserves its hold and does not consume another step;
+unobserved downtime earns no hours. The tuner owns
+[freeze, pause and firmware eligibility](tuner-ruleset14.md#7-reconcile-every-current-decision-path);
+safety decisions may require a shallower result and firmware changes apply CO 0. The applying layer
+owns stop/error zeroing and readback; no pure policy function obtains a hardware capability. Ending a
+pause is a same-boot reapplication, never a second cold-boot promotion opportunity.
 
 **Daily evidence.** Raw boot ends, live faults, manual records and revised answers feed [daily-event classification and escalation](tuner.md#daily-events). An answered question and a resolved event are separate states. Daily-only boots remain excluded from tuning crash recovery, even though their observations now affect day decisions. The day service never starts test workloads.
 
@@ -40,21 +60,31 @@ The running day service accepts these controls over the same credential-checked 
 | `togi day pause` | Zero every core and verify readback; remain paused through service restarts and sleep, until the next cold boot. |
 | `togi day pause <duration>` | Pause until the absolute deadline computed from the command's duration, for example `3h`. |
 | `togi day pause --until <time>` | Pause until the next occurrence of the specified local `HH:MM` time, for example `18:30`. |
-| `togi day resume` | End any pause early, acknowledging only after a verified stock-only reapplication through the normal transaction. |
+| `togi day resume` | End any pause early, acknowledging only after verified reapplication of the still-permitted committed D through the normal transaction. |
 | `togi day freeze` / `togi day unfreeze` | Persist or lift the promotion-only freeze; keep D and learning, never block a required retreat or firmware reset. |
 
-The pause lifetime is durable before zeroing, in [`day.pause`](journal.md#ruleset-13-events). A timed deadline survives a reboot, service restart and resume; wall time, not active observation time, determines expiry. At expiry the service reapplies through the existing SMU intent → write → readback transaction, then records that the pause ended. Failure never records a successful end. The applier still forces **CO 0**, including early resume, expiry and any historical nonzero D; these commands do not enable nonzero restoration.
+The pause lifetime is durable before zeroing, in [`day.pause`](journal.md#ruleset-13-events). A timed
+deadline survives a reboot, service restart and resume; wall time, not active observation time,
+determines expiry. At expiry or early resume the service reapplies the still-permitted committed D
+through the existing SMU intent → write → all-core readback transaction, then records that the pause
+ended. Failure never records a successful end. This can restore nonzero D, but never promotes or
+bypasses a required safety retreat or firmware reset.
 
-At a cold boot the service feeds the tuner's existing paused-boot eligibility flag before applying. A boot starting paused cannot promote later in that boot. The tuner still computes required step-backs, vetoes and firmware resets; ending the pause applies the committed result through the stock-only capability. A crash while paused is observed at its verified CO-0 readbacks and remains platform/background evidence. Learned night observations are not reset.
+At a cold boot the service feeds the tuner's existing paused-boot eligibility flag before applying
+stock. A boot starting paused cannot promote later in that boot, even after the pause expires or ends
+early. The tuner still computes required step-backs, vetoes and firmware resets against saved D;
+ending the pause applies the committed permitted result through the full transaction. A crash while
+paused is observed at its verified CO-0 readbacks and remains platform/background evidence. Learned
+night observations are not reset.
 
 The service checkpoints at control boundaries. The raw pause fold excludes paused time from applied exposure; the tuner derives explicit `day.interval` spans tagged `paused` from those checkpoints, so paused hours earn no holds without changing the tuner's rules. Suspend and unobserved downtime stay excluded independently.
 
-`togi day notify` polls pause state as well as questions. Once a timed pause has at most five minutes left, it warns with the deadline in local time and offers an action to extend that deadline by one hour; dismissal changes nothing. The extension names the `day.pause` revision the warning was raised for, and the service refuses it when a resume, expiry or replacement has since superseded that pause, so a stale action never resurrects an ended pause or overwrites a newer one. A deadline that passes while the service checkpoints for any pause or extension is likewise refused, never an error that stops the service. After a verified ending it notifies that stock was reapplied. Notifications never claim that nonzero offsets were restored. On the dashboard's main view, `p` toggles untimed pause/resume and `f` toggles freeze/unfreeze through the same credential-checked socket controls.
+`togi day notify` polls pause state as well as questions. Once a timed pause has at most five minutes left, it warns with the deadline in local time and offers an action to extend that deadline by one hour; dismissal changes nothing. The extension names the `day.pause` revision the warning was raised for, and the service refuses it when a resume, expiry or replacement has since superseded that pause, so a stale action never resurrects an ended pause or overwrites a newer one. A deadline that passes while the service checkpoints for any pause or extension is likewise refused, never an error that stops the service. After a verified ending it reports the reapplied profile, never an unverified restoration. On the dashboard's main view, `p` toggles untimed pause/resume and `f` toggles freeze/unfreeze through the same credential-checked socket controls.
 
 
 ## Day observation
 
-`togi day` requires Linux, root, an all-core verified CO-0 baseline and PID 1's armed, counting hardware watchdog. Its stock-only writing capability borrows the host lock and never starts a workload. At each invocation it records `day.boot_start` with the envelope's boot ID, current BIOS context, build, every online core's SMU readback and the watchdog check ([Day watchdog](#day-watchdog)), then follows the [day decision](#ruleset-13-policy-boundary). A restart in the same boot reopens observation without inventing an unclean boot; cumulative time resumes at the last durable checkpoint and excludes unobserved downtime.
+`togi day` requires Linux, root, an all-core verified CO-0 baseline and PID 1's armed, counting hardware watchdog. Its profile-writing capability borrows the host lock and never starts a workload. At each invocation it records `day.boot_start` with the envelope's boot ID, current BIOS context, build, every online core's SMU readback and the watchdog check ([Day watchdog](#day-watchdog)), then follows the [day decision](#ruleset-13-policy-boundary). A restart in the same boot reopens observation without inventing an unclean boot; cumulative time resumes at the last durable checkpoint and excludes unobserved downtime.
 
 Every ten minutes of active monotonic time (`CLOCK_MONOTONIC`, not boot-time or wall time), it re-reads every offset and records `day.checkpoint` with cumulative whole active seconds for this boot. Suspend-to-idle, suspend-to-RAM and hibernation do not add exposure while the monotonic clock is stopped. A changed readback first records `day.offsets_changed`. The change time within that interval is unknown: the whole interval remains in the boot's cumulative active time but is excluded from both profiles' applied hours. No crash tail or time after the last checkpoint is extrapolated.
 
@@ -98,13 +128,35 @@ Evidence has three parts. The reset reason comes from `togi-detect`'s proven imm
 
 Each `day.unclean_end` opens one question about its crashed boot: what happened. The four answers are `frozen` (it froze), `graphics` (graphics died but sound went on), `power-off` (I turned it off while it was working normally) and `unsure` (not sure). An answer is journaled as `day.answer` with the boot, the offsets that boot last recorded (its profile), the answer and the answering user's uid. A later answer for the same boot replaces the earlier one, so an answer can be changed at any time; an unclean end already recorded can be answered whether or not it was ever pending. The question is pending until its first answer. `togi status` and `togi watch` show every pending question with what togi saw, the four choices and the `togi day answer` command, and show an answered question's current answer.
 
-`togi day answer <boot> <frozen|graphics|power-off|unsure>` needs no root shell. It connects to the day service's Unix socket `/run/togi/day.sock` and runs before the root, platform and journal checks of `togi day` itself; the service appends the answer. The socket lives in a root-owned directory that is not group or world writable. The service accepts root and users it identifies through `SO_PEERCRED`: peers whose primary group is the socket's group, and explicit members of that group, re-read from the account files on each connection of such a peer, so membership changes take effect without restarting the service. Each request and reply is one JSON line. Questions and answers retain `"questions"`, `{"answer":{"boot":"<boot>","answer":"<kind>"}}`, `{"questions":{"pending":[...]}}` and `"answered"`; refusals are `{"refused":{"reason":"..."}}`. Root alone may send `{"record":{"record":<existing day.record payload>}}`, acknowledged as `{"recorded":{"seq":N}}`, or `"reapply"`, acknowledged as `"reapplied"` only after verified stock readback. These are socket extensions, not new journal fields or event kinds. The service serves one client per second, bounds requests at 16 KiB and bounds an exchange at one second. Without a day service there is no answer socket; answer clients never write the journal.
+`togi day answer <boot> <frozen|graphics|power-off|unsure>` needs no root shell. It connects to the day
+service's Unix socket `/run/togi/day.sock` and runs before the root, platform and journal checks of
+`togi day` itself; the service appends the answer. The socket lives in a root-owned directory that is
+not group or world writable. The service accepts root and users it identifies through `SO_PEERCRED`:
+peers whose primary group is the socket's group, and explicit members of that group, re-read from the
+account files on each connection of such a peer, so membership changes take effect without
+restarting the service. Each request and reply is one JSON line. Questions and answers retain
+`"questions"`, `{"answer":{"boot":"<boot>","answer":"<kind>"}}`, `{"questions":{"pending":[...]}}` and
+`"answered"`; refusals are `{"refused":{"reason":"..."}}`. Root alone may send
+`{"record":{"record":<existing day.record payload>}}`, acknowledged as `{"recorded":{"seq":N}}`, or
+`"reapply"`, acknowledged as `"reapplied"` only after verified readback of the still-permitted
+committed D, or stock while paused. These are socket extensions, not new journal fields or event
+kinds. The service serves one client per second, bounds requests at 16 KiB and bounds an exchange at
+one second. Without a day service there is no answer socket; answer clients never write the journal.
 
 In a request, `answer` is the journal's wire name (`frozen`, `graphics`, `power_off`, `unsure`); the command line spells the third `power-off`.
 
 `togi day notify` is the desktop notifier. It polls the socket every ten seconds and sends one notification per pending boot per process lifetime. It invokes the installed `notify-send` (libnotify), adding no notification library; a dismissed or expired notification answers nothing. When `XDG_CURRENT_DESKTOP` (colon-separated) contains `KDE`, it passes `--wait` with four `--action` flags and a 120-second expiry, and the chosen action is the answer. Other desktops get a plain notification naming the command; togi does not query the notification server's capabilities. The question stays in `status` and `watch` until answered.
 
-The Questions socket reply also carries an optional morning report, reconstructed without appending a journal event. It exists only in the first observed day boot after the latest night, identified by its `night.plan` opening and the first later-boot `day.boot_start`; a same-boot observer restart preserves it, a subsequent day boot or reset removes it. The report counts recorded trial ends and shows the latest plan's observed queue consumption, not eligible exposure or a duration forecast. `status` prints the same report. `day notify` sends it once per reported boot per notifier process lifetime, without question actions; restarting the notifier may notify again. It says no automatic nonzero change is made at this boot and day application is restricted to stock, without claiming to have verified current offsets or stability.
+The Questions socket reply also carries an optional morning report, reconstructed without appending a
+journal event. It exists only in the first observed day boot after the latest night, identified by its
+`night.plan` opening and the first later-boot `day.boot_start`; a same-boot observer restart preserves
+it, a subsequent day boot or reset removes it. The report counts recorded trial ends and shows the
+latest plan's observed queue consumption, not eligible exposure or a duration forecast. `status`
+prints the same report. `day notify` sends it once per reported boot per notifier process lifetime,
+without question actions; restarting the notifier may notify again. It says the day service applies
+the permitted committed profile and only an eligible cold boot may promote. The report does not
+verify the current hardware readback or establish stability; `status --evidence` supplies ceiling
+reasons, hours and coverage gaps.
 
 The Day section of `status` appears when observations exist. It reports distinct boots observed, boots with clean and unclean ends, whether PID 1's hardware watchdog was armed at the newest observer check (`not recorded` when the newest start predates checking), checkpointed hours per exact read-back profile, and the last unclean end with its reset reason. Hours are a lower bound, truncated to three decimal places for display, and make no stability claim. A Day questions section follows when unclean ends exist: a pending question lists what togi saw, its reading, and the four choices with their commands; an answered one gives its current answer and the command that changes it. `watch` narrates the oldest pending question when no trial is in flight, and its footer counts pending questions on every view.
 
@@ -116,13 +168,23 @@ firmware context and acknowledges only after the attestation is durable;
 it does not stop observation, reapply D or write offsets. Only an absent
 service permits the command's direct host-lock then writer-lock path.
 
-`services.togi.day.enable` defaults to false. Enabled, `togi-day.service` runs `togi day --state-dir /var/lib/togi` as root in normal boots after local filesystems and kernel modules are ready, restarting after a failure with a 60-second delay. Its abnormal-exit hook runs `togi emergency-stop`, which has only zero authority and needs no working journal. `togi-day-resume.service` requests a verified stock reapplication from the active service after systemd-managed sleep; reverse stop ordering restores the watchdog before that request. The internal `togi day reapply` socket command accepts root only and acknowledges only verified success. The tuning specialisation explicitly disables the day option and has no day service. Normal-boot journald defaults to `Storage=persistent` and `SyncIntervalSec=5s`; the tuning boot retains its existing one-second sync policy. Shutdown uses ordinary systemd stop ordering, so final zero/readback and journal records precede filesystem unmount.
+`services.togi.day.enable` defaults to false. Enabled, `togi-day.service` runs
+`togi day --state-dir /var/lib/togi` as root in normal boots after local filesystems and kernel modules
+are ready, restarting after a failure with a 60-second delay. Its abnormal-exit hook runs
+`togi emergency-stop`, which has only zero authority and needs no working journal.
+`togi-day-resume.service` requests verified reapplication of the still-permitted committed D from the
+active service after systemd-managed sleep; reverse stop ordering restores the watchdog before that
+request. The internal `togi day reapply` socket command accepts root only and acknowledges only
+verified success. The tuning specialisation explicitly disables the day option and has no day
+service. Normal-boot journald defaults to `Storage=persistent` and `SyncIntervalSec=5s`; the tuning boot
+retains its existing one-second sync policy. Shutdown uses ordinary systemd stop ordering, so final
+zero/readback and journal records precede filesystem unmount.
 
 `services.togi.day.users` (default none) names users, of any account type the configuration declares, who may answer and control pause/freeze without root: each joins the `togi` group, which owns `/run/togi` (mode 0750, created by tmpfiles so it outlives a service restart), and each gets the systemd user service `togi-day-notify` (`wantedBy`, `partOf` and `bindsTo` `graphical-session.target`, ordered after `graphical-session-pre.target` because ordering after `graphical-session.target` itself would form a cycle), running `togi day notify` with `libnotify` on its `PATH`, only for users on the list (an exact-list `ExecCondition`), and retrying every ten seconds (`Restart=on-failure`, `RestartSec=10`, no start limit) while the day service's socket is down. Group membership starts at the user's next login. The internal sleep-hook reapplication remains root-only.
 
 ### Day watchdog
 
-`services.togi.day.watchdog` defaults to false and takes effect only with day observation enabled in a normal boot. Opting in loads `sp5100_tco` in the initrd and sets PID 1's `RuntimeWatchdogSec=60s`; it adds no lockup-panic kernel parameters or sysctls. It neither changes the tuning boot's existing 30-second watchdog nor promises that a watchdog device is available on every platform. The stock-only applying day service requires PID 1's watchdog armed and counting whether this option or another system configuration supplies it.
+`services.togi.day.watchdog` defaults to false and takes effect only with day observation enabled in a normal boot. Opting in loads `sp5100_tco` in the initrd and sets PID 1's `RuntimeWatchdogSec=60s`; it adds no lockup-panic kernel parameters or sysctls. It neither changes the tuning boot's existing 30-second watchdog nor promises that a watchdog device is available on every platform. The applying day service requires PID 1's watchdog armed and counting whether this option or another system configuration supplies it.
 
 **Armed.** PID 1's hardware watchdog is armed when PID 1 holds open at least one `/sys/class/watchdog/watchdog*` device that passes the preflight identity check and reports state `active`. When the driver exposes `timeleft`, it and `timeout` must be readable numeric values with `timeleft <= timeout`. An all-ones MMIO read or any reading greater than the timeout is **open but not counting**, not armed; a present but unreadable or malformed counter is also not armed. A driver without `timeleft` keeps the state-only answer; missing support is not a failed read of a present counter. A single plausible reading rules out the lost-decode failure, not every possible timer failure. PID 1 must hold `/dev/watchdogN` for `watchdogN` or the legacy `/dev/watchdog` node, which the kernel registers for `watchdog0` only, so systemd is what feeds it. Every such device is a candidate, not only the first. An inactive device is not armed, nor is an active hardware device while PID 1 feeds only a different one, such as the software watchdog. The day service records its initial check in `day.boot_start.watchdog` and checks again at every load-sampling tick (including the first scheduled tick after resume), at checkpoints and on stop. A changed result immediately triggers a checkpoint; every new checkpoint includes the latest `watchdog`, with the same `{"state":"armed"|"unarmed","detail":...}` shape. Older records may omit it; an older checkpoint preserves the preceding check. `togi_hardware::day::Observer::watchdog` is the live reading the applying service gates on; an unreadable `/proc/1/fd` is unarmed, with the cause in `detail`.
 
@@ -144,7 +206,7 @@ The modes a machine offers are in `/sys/power/state` and `/sys/power/mem_sleep` 
 
 | Command | Writes journal | Purpose |
 |---|---|---|
-| `togi day` | yes | Apply stock through intent/write/readback and observe normal boots: checkpointed active hours, load mix, live faults, clean stops and unclean ends. Requires an existing compatible session, verified all-core CO 0 and PID 1's armed, counting watchdog; see [Day observation](#day-observation). Stop zeroes and verifies before the clean marker. `togi day answer <boot> <answer>` and `togi day notify` need no root; root `togi day record` uses the live writer when running. |
+| `togi day` | yes | Apply the tuner's permitted committed day profile D (stock when the day decision permits only stock or the boot starts paused) through durable intent, write and all-core readback under the [day decision](#ruleset-13-policy-boundary), and observe normal boots: checkpointed active hours, load mix, live faults, clean stops and unclean ends. Requires an existing compatible session, verified all-core CO 0 and PID 1's armed, counting watchdog; a start refused for these writes no offset itself; see [Day observation](#day-observation). Stop zeroes and verifies before the clean marker. `togi day answer <boot> <answer>` and `togi day notify` need no root; root `togi day record` uses the live writer when running. |
 | `togi run [--tuning-boot <selection>] [--no-tui]` | yes | Start or resume the operator-ended night in the foreground under [night declaration](#night-declaration) and [scheduler results](tuner.md#night-query-results). It has no time-, cycle- or first-result stopping option. The tuning boot passes `--tuning-boot` with GRUB's environment file or `/etc/togi/night.json` for systemd-boot, which requires an armed hardware watchdog before tuning; on a terminal a dashboard replaces event lines unless `--no-tui` is given. |
 | `togi night` | yes | Select the tuning boot after showing the plan and confirming stock stability with BIOS at stock, then reboot under [Night and day](#night-and-day). Journal the attestation once per firmware context before changing the boot selection. No morning time or deadline is selected. |
 | `togi night-end` | no | Restore the previous normal boot selection under [Night and day](#night-and-day). The standalone command does not stop the run or reboot; [night declaration](#night-declaration) still owns journal-night closure. F10 combines stopping the run, restoring this selection and rebooting. |
@@ -600,7 +662,7 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 | `services.togi.settings` | Freeform attrset rendered to `/etc/togi/config.json`; `backend_user` defaults to the module-declared `togi-trial` system user. An override must name an existing unprivileged account |
 | `services.togi.backends.mprime.enable` | Set `settings.backends.mprime` to the nixpkgs `mprime` package (unfree) |
 | `services.togi.backends.ycruncher.enable` | Set `settings.backends.ycruncher` to the nixpkgs `y-cruncher` package (unfree) |
-| `services.togi.day.enable` | Default `false`: run stock-only application and day observation in normal boots, with zero-only abnormal-exit cleanup, resume reapplication, persistent journald and a five-second sync interval; requires an existing session and armed, counting watchdog |
+| `services.togi.day.enable` | Default `false`: apply the permitted committed profile and observe normal boots, with zero-only abnormal-exit cleanup, no-promotion resume reapplication, persistent journald and a five-second sync interval; requires an existing session and armed, counting watchdog |
 | `services.togi.day.watchdog` | Default `false`: with day enabled, load the watchdog driver, ask PID 1 for a 60-second runtime watchdog in normal boots without lockup panics, and stop and restart it around every sleep through `togi-day-watchdog-sleep.service` ([Day watchdog](#day-watchdog)) |
 | `services.togi.day.users` | Default none: users who may answer day questions over `/run/togi/day.sock`; they join the `togi` group and get the notifier user service |
 

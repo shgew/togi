@@ -168,8 +168,7 @@ impl State {
                 .iter()
                 .any(|event| event.question == QuestionState::Pending),
             unresolved_event: statuses.iter().any(|status| !status.is_resolved()),
-            // Activation and the hardware transaction are enforced by the stock-only applier,
-            // not by hiding a permitted experimental proposal from the pure tuner.
+            // The applying capability enforces the hardware transaction, not another tuning policy.
             apply: climb::ApplyPrerequisites {
                 firmware_valid: self.machine.firmware.is_some() && self.stop.is_none(),
                 activation_open: true,

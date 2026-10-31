@@ -63,7 +63,7 @@ impl Report {
                 budget.consumed_s
             );
         }
-        text.push_str(" No automatic nonzero change is made at this boot; day application is restricted to stock (CO 0). This report does not verify the current hardware readback or establish stability. See togi status --evidence for cap reasons, hours and coverage gaps.");
+        text.push_str(" The day service applies the permitted committed profile; only an eligible cold boot may promote. This report does not verify the current hardware readback or establish stability. See togi status --evidence for ceiling reasons, hours and coverage gaps.");
         Some(Self {
             boot: first_day.boot.clone(),
             text,
@@ -128,7 +128,11 @@ mod tests {
         let report = Report::of(&events).unwrap();
         assert_eq!(report.boot.as_str(), "morning");
         assert!(report.text.contains("mapping: 120s observed task time"));
-        assert!(report.text.contains("restricted to stock (CO 0)"));
+        assert!(
+            report
+                .text
+                .contains("only an eligible cold boot may promote")
+        );
         events.push(day(3, "morning"));
         assert_eq!(Report::of(&events), Some(report));
         events.push(day(4, "later"));

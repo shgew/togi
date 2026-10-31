@@ -30,7 +30,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     ])
 });
 
-/// Show the session dashboard with rootless stock-only day controls
+/// Show the session dashboard with rootless day controls
 ///
 /// It redraws when the journal changes and on whole-second boundaries for the clock. During an idle trial it
 /// holds still, clock included, until the journal changes, a key is pressed or the terminal is
@@ -43,7 +43,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Up/Down and PageUp/PageDown scroll both, Esc returns, and `q` exits the dashboard. A journal scrolled back holds its list still
 /// and counts new events until End. It is rendered from the journal, which it reloads only when
 /// it changes.
-/// On the normal main view, `p` toggles a stock-only pause until cold boot and `f` toggles freeze.
+/// On the normal main view, `p` toggles a stock pause until cold boot and `f` toggles freeze.
 /// These controls use the credential-checked day socket without root; `f` still scrolls help and log.
 ///
 /// The screen's words are explained by `?` on the screen itself; the rules behind them are in

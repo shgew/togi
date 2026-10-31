@@ -1,4 +1,4 @@
-//! `togi day`: stock-only application and durable observation of normal boots.
+//! `togi day`: permitted-profile application and durable observation of normal boots.
 
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
@@ -40,12 +40,15 @@ const FAULT_POLL: Duration = Duration::from_secs(30);
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     crate::cli::examples(&[
-        ("sudo togi day", "Apply stock and observe this boot"),
+        (
+            "sudo togi day",
+            "Apply the permitted profile and observe this boot",
+        ),
         ("togi events --kind day", "Read recorded day observations"),
         ("togi day pause 3h", "Keep stock through a timed pause"),
         (
             "togi day resume",
-            "End the pause with verified stock reapplication",
+            "End the pause with verified profile reapplication",
         ),
         (
             "togi day answer <boot> frozen",
@@ -58,18 +61,18 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     ])
 });
 
-/// Apply stock, observe daily use, pause or freeze, and report crashes
+/// Apply the permitted profile, observe daily use, pause or freeze, and report crashes
 ///
 /// With no subcommand, requires an all-core CO-0 baseline and PID1's armed, counting watchdog,
-/// then applies stock through durable intent, write and readback. It records active hours excluding
+/// then applies the committed profile through durable intent, write and readback. It records active hours excluding
 /// suspend and journals kernel faults. Stop signals zero and verify every core before the final
 /// checkpoint and clean marker. It requires root and an existing compatible session journal.
 /// The service holds the host and writer locks: stop it before tuning; status/watch stay lock-free.
 ///
 /// Answer, notify, pause/resume and freeze/unfreeze use the credential-checked day socket without
-/// root or journal access. Pauses zero and verify; ending them still reapplies stock only.
+/// root or journal access. Pauses zero and verify; ending them reapplies the committed profile without promotion.
 /// Record requires root and hands the record to the live writer, opening the writer itself only
-/// when no day service runs. Nonzero day offsets are not enabled.
+/// when no day service runs.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -90,13 +93,13 @@ pub enum Command {
     },
     /// Send pending questions and the morning evidence report to this graphical session.
     Notify,
-    /// Reapply stock after system resume; used by the system sleep hook.
+    /// Reapply the committed profile after system resume; used by the system sleep hook.
     #[command(hide = true)]
     Reapply,
     Record(record::Args),
     /// Keep every core at stock until the next cold boot or a deadline.
     Pause(control_cli::Args),
-    /// End the pause early and verify a stock-only reapplication.
+    /// End the pause early and verify committed-profile reapplication.
     Resume,
     /// Keep the committed profile and prevent promotions, never safety retreats.
     Freeze,
@@ -164,13 +167,15 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(error) => return exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error),
     };
     let mut clock = crate::system::SystemClock(ctx.system);
-    let result = serve_with_socket(
+    let result = serve_with_controls(
         &mut journal,
         &mut *observer,
         &mut clock,
         &cancel,
         &build,
-        socket.as_ref(),
+        socket
+            .as_ref()
+            .map(|server| server as &dyn socket::ControlSource),
     );
     // Close before dropping hardware and its borrowed exclusion lock.
     let closed = journal.close();
@@ -280,7 +285,7 @@ pub enum Error {
     PolicyFold(#[from] togi_tuner::policy::FoldError),
     #[error("query daily policy")]
     PolicyQuery(#[from] togi_tuner::policy::NotReady),
-    #[error("apply stock day profile")]
+    #[error("apply the permitted day profile")]
     Apply(#[from] togi_session::DayWriteError),
     #[error("this observation has no applying capability")]
     NotApplying,
@@ -328,7 +333,7 @@ pub fn observe(
     observe_with_socket(journal, observer, clock, cancel, build, None, None)
 }
 
-/// Applies stock and observes through the same seams used by the running service.
+/// Applies the committed permitted profile and observes through the running service's seams.
 ///
 /// # Errors
 /// Refuses an unverified stock baseline or watchdog. A later error takes the journal-independent
@@ -340,16 +345,20 @@ pub fn serve(
     cancel: &CancellationToken,
     build: &Build,
 ) -> Result<(), Error> {
-    serve_with_socket(journal, observer, clock, cancel, build, None)
+    serve_with_controls(journal, observer, clock, cancel, build, None)
 }
 
-fn serve_with_socket(
+/// Applies and observes while processing controls from the supplied source.
+///
+/// # Errors
+/// Uses the same preflight, durable application and emergency cleanup contract as [`serve`].
+pub fn serve_with_controls(
     journal: &mut Journal,
     observer: &mut dyn Observer,
     clock: &mut dyn Clock,
     cancel: &CancellationToken,
     build: &Build,
-    socket: Option<&socket::Server>,
+    socket: Option<&dyn socket::ControlSource>,
 ) -> Result<(), Error> {
     let mut live = apply::Live::preflight(journal, observer)?;
     let result = observe_with_socket(
@@ -379,7 +388,7 @@ fn observe_with_socket(
     clock: &mut dyn Clock,
     cancel: &CancellationToken,
     build: &Build,
-    socket: Option<&socket::Server>,
+    socket: Option<&dyn socket::ControlSource>,
     mut live: Option<&mut apply::Live>,
 ) -> Result<(), Error> {
     let ledger = Ledger::of(journal.events());
@@ -425,6 +434,10 @@ fn observe_with_socket(
             watchdog: Some(watchdog.clone()),
         },
     )?;
+    // The first read takes the whole boot. Its faults were logged under the profile read at start,
+    // so it runs before application can change the offsets later reads attribute faults to.
+    let mut faults = Faults::of(journal.events(), journal.boot());
+    faults.poll(journal, observer, clock, offsets)?;
     let mut pause = pause::Pause::of(journal);
     let starts_paused = pause.starts_paused(journal.boot(), clock);
     let expired_at_start = pause.expired(journal.boot(), clock);
@@ -444,6 +457,11 @@ fn observe_with_socket(
             pause.ended(journal, clock, source)?;
         }
     }
+    let applied_offsets = if live.is_some() {
+        observer.offsets()?
+    } else {
+        offsets
+    };
     let mut sampler = Sampler::new(
         session_cores(journal.events())?,
         ledger
@@ -452,8 +470,6 @@ fn observe_with_socket(
             .map_or_else(LoadMix::default, |boot| boot.load_mix),
     );
     sampler.record(started, observer.cpu_times()?)?;
-    let mut faults = Faults::of(journal.events(), journal.boot());
-    faults.poll(journal, observer, clock, offsets)?;
     let mut progress = Progress {
         started,
         accumulated,
@@ -461,8 +477,8 @@ fn observe_with_socket(
         offsets,
         watchdog,
     };
-    if expired_at_start.is_some() && live.is_some() {
-        progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
+    if live.is_some() {
+        progress.checkpoint(journal, clock, &sampler, applied_offsets)?;
     }
     let mut sampled = started;
     let mut polled = started;
@@ -525,6 +541,7 @@ fn observe_with_socket(
             continue;
         }
         let readback = if stopping && let Some(live) = live.as_deref_mut() {
+            progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
             live.zero(journal, observer, clock)?
         } else {
             observer.offsets()?
@@ -554,7 +571,13 @@ impl Controls<'_> {
         clock: &dyn Clock,
         control: socket::Control,
     ) -> Result<socket::ControlStatus, Error> {
-        let resuming = matches!(control, socket::Control::Resume { .. });
+        let changes_profile = matches!(
+            control,
+            socket::Control::Pause { .. }
+                | socket::Control::Extend { .. }
+                | socket::Control::Resume { .. }
+                | socket::Control::Reapply
+        );
         if !matches!(control, socket::Control::Status) {
             self.progress
                 .checkpoint(journal, clock, self.sampler, self.observer.offsets()?)?;
@@ -566,7 +589,7 @@ impl Controls<'_> {
             self.live.as_deref_mut().ok_or(Error::NotApplying)?,
             control,
         )?;
-        if resuming {
+        if changes_profile {
             self.progress
                 .checkpoint(journal, clock, self.sampler, self.observer.offsets()?)?;
         }

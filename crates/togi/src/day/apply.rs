@@ -1,4 +1,4 @@
-//! Stock-only applying capability. The tuner retains ownership of every decision.
+//! Applying capability for the committed profile. The tuner owns every decision.
 
 use togi_hardware::day::Observer;
 use togi_journal::{ApplicationId, ApplyCause, CcdVector, DayApplied, Event, Payload, Seq, Stamp};
@@ -8,10 +8,11 @@ use togi_tuner::policy::{DayQuery, Params, State};
 
 use super::Error;
 
-/// A running invocation may only apply stock, including when history requests a nonzero D.
+/// A running invocation applies the tuner's committed profile or a pause's stock override.
 pub(super) struct Live {
     target: CcdVector,
     stopped: Stopped,
+    validated: togi_machine::SmuValidated,
     topology: Vec<togi_machine::CoreInfo>,
 }
 
@@ -38,6 +39,7 @@ impl Live {
             target: CcdVector::expand(profile, topology)?,
             topology: topology.to_vec(),
             stopped: observer.stop_workloads()?,
+            validated: observer.validated()?,
         })
     }
 
@@ -71,6 +73,10 @@ impl Live {
                 policy.fold(event)?;
             }
         }
+        if pause == Pause::Paused {
+            self.zero(journal, observer, clock)?;
+            return Ok(());
+        }
         let step = journal
             .events()
             .iter()
@@ -78,7 +84,19 @@ impl Live {
             .rev()
             .find_map(|(index, event)| {
                 if let Payload::ClimbDecision(step) = &event.payload {
-                    return (step.cold_boot == *journal.boot() && (!same_boot || index >= before))
+                    let safety = matches!(
+                        step.decision,
+                        togi_journal::ClimbAction::Retreat { .. }
+                            | togi_journal::ClimbAction::FirmwareZero {}
+                    );
+                    let applied = journal.events().iter().any(|later| {
+                        matches!(&later.payload, Payload::DayApplied(value)
+                        if value.cause == ApplyCause::Step {
+                            decision: togi_journal::DecisionId(event.seq.get()),
+                        })
+                    });
+                    return (step.cold_boot == *journal.boot()
+                        && (!same_boot || index >= before || (safety && !applied)))
                         .then(|| {
                             let profile =
                                 CcdProfile::of_cores(&step.proposed.cores, &self.topology)
@@ -110,19 +128,9 @@ impl Live {
             }
         });
         let (requested, cause, causes) = if let Some((seq, decision, proposed)) = step {
-            let cause = if is_stock(&proposed) {
-                ApplyCause::Step { decision }
-            } else {
-                ApplyCause::Reset { cause: seq }
-            };
-            (proposed, cause, vec![seq])
+            (proposed, ApplyCause::Step { decision }, vec![seq])
         } else if let Some((seq, target)) = previous {
-            let cause = if is_stock(&target) {
-                ApplyCause::Reapplication {}
-            } else {
-                ApplyCause::Reset { cause: seq }
-            };
-            (target, cause, vec![seq])
+            (target, ApplyCause::Reapplication {}, vec![seq])
         } else {
             (
                 self.target.clone(),
@@ -147,7 +155,6 @@ impl Live {
         }) {
             return Err(Error::Defect);
         }
-        // Q34 is enforced by apply_day_stock, not by rewriting any tuner rule.
         let next = journal
             .events()
             .iter()
@@ -161,10 +168,11 @@ impl Live {
             })
             .map_or(Some(0), |value| value.checked_add(1))
             .ok_or(Error::ApplicationOverflow)?;
-        let verified = togi_session::apply_day_stock(
+        let verified = togi_session::apply_day_profile(
             journal,
             clock,
             observer,
+            self.validated,
             &self.stopped,
             &self.topology,
             requested,
@@ -208,10 +216,11 @@ impl Live {
         observer: &mut dyn Observer,
         clock: &dyn Clock,
     ) -> Result<PerCore<ObservedOffset>, Error> {
-        let verified = togi_session::apply_day_stock(
+        let verified = togi_session::apply_day_profile(
             journal,
             clock,
             observer,
+            self.validated,
             &self.stopped,
             &self.topology,
             &self.target,

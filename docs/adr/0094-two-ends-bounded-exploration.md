@@ -1,6 +1,6 @@
 # Two ends: clean daily holds earn bounded, night-qualified steps
 
-Status: accepted and implemented by [Ruleset 14](../spec/tuner-ruleset14.md), the sole normative tuning policy. Consolidates and takes current-policy ownership from [0079](0079-day-observer-night-tester.md)–[0084](0084-a-fresh-ruleset-transition.md); see [the index](README.md). Nonzero activation remains separately gated.
+Status: accepted and implemented by [Ruleset 14](../spec/tuner-ruleset14.md), the sole normative tuning policy. Consolidates and takes current-policy ownership from [0079](0079-day-observer-night-tester.md)–[0084](0084-a-fresh-ruleset-transition.md); see [the index](README.md). The successor-score and supervised-procedure activation gate below is amended by [0096](0096-activate-permitted-day-profiles.md), accepted 2026-10-31; its first-live-step check replaces prior hardware acceptance as an activation gate. Other decisions stand as amended by their own records.
 
 Amended by [0095](0095-operator-attested-stock-stability.md): the operator's
 stock-stability attestation replaces the all-zero controls retained below.
@@ -53,6 +53,8 @@ The stop is paired with a durable machine-wide allowance of two unique CPU-suspe
 **D specifies its own transition** ([§10](../spec/tuner-ruleset14.md#10-journal-schema-and-architectural-record)): archive the Ruleset 13 session unchanged and start at verified stock; keep original-identity raw daily observations, applicable whole-profile vetoes and compatible night observations for explicitly checked recomputation; never carry S, a qualification conclusion or nonzero D as permission. Campaign allowance and unit stops are reconstructed across the transition so session freshness cannot renew risk. When required campaign history cannot be reconstructed, new nonzero exploration is blocked rather than assumed unused. The supersession of [0019](0019-a-ruleset-change-starts-a-seeded-session.md)'s seeded session and [0027](0027-carry-trial-facts.md)'s carried trial facts, recorded by 0084 for Ruleset 13, applies equally to this transition. Old-context facts remain history and hints.
 
 ### Gate and activation
+
+Historical activation gate, amended by [0096](0096-activate-permitted-day-profiles.md); [Ruleset 14 §9](../spec/tuner-ruleset14.md#9-safety-and-activation) owns the current activation route.
 
 Ruleset 14 is the only policy; this record assigns no compatibility number. Automatic nonzero offsets remain disabled until the exact policy meets the successor registration's acceptance or failures are explicitly disposed of, and [§9 hardware acceptance](../spec/tuner-ruleset14.md#9-safety-and-activation) passes. Running a gate is not permission to enable nonzero use, and no D score retroactively accepts Ruleset 13.
 

@@ -479,7 +479,7 @@ mod vm_recovery {
 
     /// Seeds a current-build session and its stock baseline, as `togi run` would.
     /// Only this helper does it: the production `togi day` never creates a session.
-    fn seed_session(shipped: bool) -> i32 {
+    fn seed_session(shipped: bool, day_profile: bool) -> i32 {
         std::fs::create_dir_all(STATE_DIR).unwrap();
         let dir = StateDir::lock(STATE_DIR).unwrap();
         let now = Timestamp::now();
@@ -510,9 +510,19 @@ mod vm_recovery {
             .iter()
             .map(|info| (info.core, ObservedOffset(0)))
             .collect();
+        let topology = start.cores.clone();
         journal
             .append(stamp, Payload::SessionStart(start), &[])
             .unwrap();
+        if day_profile {
+            journal
+                .append(
+                    stamp,
+                    togi_journal::SessionContext::from(shipped_bios()).into(),
+                    &[],
+                )
+                .unwrap();
+        }
         journal
             .append(
                 stamp,
@@ -520,8 +530,120 @@ mod vm_recovery {
                 &[],
             )
             .unwrap();
+        if day_profile {
+            seed_day_profile(&mut journal, stamp, &topology);
+        }
         journal.close().unwrap();
         0
+    }
+
+    fn shipped_bios() -> BiosContext {
+        BiosContext {
+            bios_version: "vm".into(),
+            board: "VM VM".into(),
+            cpu_model: "Zen VM".into(),
+            microcode: "0x1".into(),
+            boost_limit_mhz: 5000,
+        }
+    }
+
+    fn seed_day_profile(journal: &mut togi_journal::Journal, stamp: Stamp, topology: &[CoreInfo]) {
+        use togi_journal::{
+            ApplicationId, ApplyCause, CcdVector, ClimbAction, ClimbDecision, ClimbHold,
+            DayApplied, DayBootStart, DecisionId, UnitId, UnitMapping, UnitMembership, UnitPhase,
+            UnitVector,
+        };
+        use togi_machine::CcdProfile;
+
+        let bios = shipped_bios();
+        let ccd = CcdId::new(0).unwrap();
+        let unit = UnitId::Ccd(ccd);
+        let mapping = UnitMapping {
+            phase: UnitPhase::Coarse,
+            units: vec![UnitMembership {
+                unit,
+                cores: topology.iter().map(|info| info.core).collect(),
+                parent: None,
+            }],
+        };
+        let zero = CcdVector::expand(CcdProfile::zero([ccd]).unwrap(), topology).unwrap();
+        let target = CcdVector::expand(
+            CcdProfile::uniform([ccd], TargetOffset::new(-5).unwrap()).unwrap(),
+            topology,
+        )
+        .unwrap();
+        let decision = journal
+            .append(
+                stamp,
+                ClimbDecision {
+                    decision: ClimbAction::Promote {
+                        unit,
+                        from: TargetOffset::ZERO,
+                        to: TargetOffset::new(-5).unwrap(),
+                        step: 5,
+                    },
+                    cold_boot: journal.boot().clone(),
+                    before: UnitVector {
+                        cores: *zero.cores(),
+                        mapping: mapping.clone(),
+                    },
+                    proposed: UnitVector {
+                        cores: *target.cores(),
+                        mapping,
+                    },
+                    hold: ClimbHold {
+                        application: ApplicationId(0),
+                        credited: Vec::new(),
+                        eligible_s: 50 * 3600,
+                    },
+                    certificate: None,
+                    ceilings: Vec::new(),
+                    events: Vec::new(),
+                }
+                .into(),
+                &[],
+            )
+            .unwrap()
+            .seq;
+        journal
+            .append(
+                stamp,
+                DayApplied {
+                    application: ApplicationId(0),
+                    cause: ApplyCause::Step {
+                        decision: DecisionId(decision.get()),
+                    },
+                    readbacks: target
+                        .cores()
+                        .iter()
+                        .map(|(core, offset)| (core, offset.observed()))
+                        .collect(),
+                    target,
+                    transactions: Vec::new(),
+                    boot: journal.boot().clone(),
+                    mono_ns: u64::try_from(stamp.mono.unwrap().as_nanos()).unwrap(),
+                }
+                .into(),
+                &[decision],
+            )
+            .unwrap();
+        journal
+            .append(
+                stamp,
+                DayBootStart {
+                    build: togi_cli::report::current_build(),
+                    bios,
+                    offsets: zero
+                        .cores()
+                        .iter()
+                        .map(|(core, offset)| (core, offset.observed()))
+                        .collect(),
+                    watchdog: None,
+                }
+                .into(),
+                &[],
+            )
+            .unwrap();
     }
 
     /// The shipped trial runner with a stable controller identity for the VM fixture's journal.
@@ -883,9 +1005,12 @@ mod vm_recovery {
         let system = VmSystem::default();
         if matches!(
             arguments.get(1).map(String::as_str),
-            Some("seed-session" | "seed-shipped-session")
+            Some("seed-session" | "seed-shipped-session" | "seed-shipped-day-profile")
         ) {
-            return seed_session(arguments[1] == "seed-shipped-session");
+            return seed_session(
+                arguments[1] != "seed-session",
+                arguments[1] == "seed-shipped-day-profile",
+            );
         }
         if arguments.get(1).map(String::as_str) == Some("run") {
             return serve(&system);
