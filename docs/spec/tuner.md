@@ -144,6 +144,8 @@ after a nonzero failure naming a CO-0 core no longer run. The
 replaces these controls. Historical stock-failure evidence remains visible
 and does not become permission to tune around stock instability.
 
+Once the entire stock-control matrix first completes in a firmware and evidence context, freeze that completed declaration: later partial-chain changes do not reopen controls, while stock failures, pending CO-0 reruns and new contexts remain subject to the rules above.
+
 ## Day steps
 
 The pure policy returns hold, promote, retreat or firmware-zero with its reason and witnesses; it never writes hardware. [Runtime](runtime.md#ruleset-13-policy-boundary) owns invocation and successful-application commits.

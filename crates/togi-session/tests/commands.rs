@@ -1,5 +1,8 @@
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
+#[path = "commands/defect.rs"]
+mod defect;
+
 use std::io;
 use test_case::test_case;
 
@@ -65,7 +68,7 @@ fn input(sim: &Simulator, mem: &MemFs) -> RunInput<'static> {
         machine,
         publication: PublicationPolicy::OnFinish,
         bootloader: None,
-        defects: &[],
+        defects: togi_defect::KNOWN_DEFECTS,
         resume: None,
         import: None,
         log: None,
@@ -91,6 +94,130 @@ fn kinds(journal: &Journal) -> Vec<&'static str> {
         .iter()
         .map(|event| event.kind().as_str())
         .collect()
+}
+
+#[test]
+fn a_tuning_boot_that_crashes_before_any_trial_is_still_detected() {
+    let (sim, mem) = (simulator(), MemFs::new());
+    let journal = started(&sim, &mem);
+    let previous_boot = journal.events()[0].boot.clone();
+    let loaded = journal
+        .events()
+        .iter()
+        .position(|event| matches!(event.payload, Payload::ConfigLoaded(_)))
+        .unwrap();
+    drop(journal.close().unwrap());
+    let bytes = mem.contents("/state/events.jsonl").unwrap();
+    let kept: usize = bytes
+        .split_inclusive(|byte| *byte == b'\n')
+        .take(loaded + 1)
+        .map(<[u8]>::len)
+        .sum();
+    mem.put("/state/events.jsonl", bytes[..kept].to_vec());
+    sim.reboot().unwrap();
+    let journal = started(&sim, &mem);
+    let crashes: Vec<_> = journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::CrashDetected(crash) = &event.payload {
+                Some(&crash.previous_boot)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(crashes, [&previous_boot]);
+}
+
+#[test]
+fn a_clean_day_only_boot_with_shared_events_is_not_a_tuning_crash() {
+    use togi_journal::{DayBootStart, DayCleanStop, NightPlan, SmuCommand, SmuReadback};
+    use togi_machine::{BiosContext, ObservedOffset, PerCore, TargetOffset};
+
+    let (sim, mem) = (simulator(), MemFs::new());
+    let journal = started(&sim, &mem);
+    assert!(matches!(
+        &journal.events().last().unwrap().payload,
+        Payload::Shutdown(stop) if stop.reason == togi_journal::ShutdownReason::Signal
+    ));
+    drop(journal.close().unwrap());
+    sim.reboot().unwrap();
+    let day_boot = sim.seams().host.boot_id().unwrap();
+    let mut journal = dir(&mem).open_at(day_boot.clone(), sim.now()).unwrap();
+    let stamp = togi_journal::Stamp {
+        time: sim.now(),
+        mono: None,
+    };
+    journal
+        .append(
+            stamp,
+            Payload::DayBootStart(DayBootStart {
+                build: build(),
+                bios: BiosContext::default(),
+                offsets: PerCore::default(),
+                watchdog: None,
+            }),
+            &[],
+        )
+        .unwrap();
+    journal
+        .append(
+            stamp,
+            Payload::NightPlan(NightPlan {
+                night: None,
+                budgets: Vec::new(),
+                tasks: Vec::new(),
+                unavailable: Vec::new(),
+            }),
+            &[],
+        )
+        .unwrap();
+    let offset = TargetOffset::new(-5).unwrap();
+    let receipt = journal
+        .append_smu_intent(
+            stamp,
+            SmuCommand::Set {
+                core: core(0),
+                offset,
+            },
+            &[],
+        )
+        .unwrap();
+    let written = journal.append_smu_write(stamp, receipt).unwrap();
+    journal
+        .append(
+            stamp,
+            Payload::SmuReadback(SmuReadback {
+                core: core(0),
+                offset: ObservedOffset(-5),
+                expected: Some(offset),
+            }),
+            &[written.seq()],
+        )
+        .unwrap();
+    journal
+        .append(stamp, Payload::DayCleanStop(DayCleanStop {}), &[])
+        .unwrap();
+    drop(journal.close().unwrap());
+    sim.reboot().unwrap();
+    let journal = started(&sim, &mem);
+    let crashes: Vec<_> = journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::CrashDetected(crash) = &event.payload {
+                Some(crash.previous_boot.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        crashes,
+        Vec::new(),
+        "day-only boot {day_boot} is not tuning activity"
+    );
 }
 
 #[test]

@@ -5,7 +5,7 @@ use togi_journal::{
 };
 use togi_machine::{CcdId, CoreSet};
 
-use crate::registry::{Entry, KNOWN_DEFECTS, is_ordered};
+use crate::registry::{Clause, Entry, KNOWN_DEFECTS, is_ordered};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Matches {
@@ -93,8 +93,10 @@ impl DefectState {
         );
         let mut watched = Vec::new();
         for clause in registry.iter().flat_map(|entry| entry.clauses) {
-            if !watched.contains(&clause.cause_kind) {
-                watched.push(clause.cause_kind);
+            if let Clause::DirectCause { cause_kind, .. } = clause
+                && !watched.contains(cause_kind)
+            {
+                watched.push(*cause_kind);
             }
         }
         Self {
@@ -133,8 +135,20 @@ impl DefectState {
     pub(crate) fn retained_kinds(&self) -> usize {
         self.kinds.len()
     }
+    /// Whether an unstamped payload matcher needs the tuner's pre-event mapping evidence.
+    pub fn needs_mapping_rewind(&self) -> bool {
+        self.registry.iter().any(|entry| {
+            !self.fixes.fixes(entry.id) && entry.clauses.contains(&Clause::MappingRewind)
+        })
+    }
 
     pub fn fold(&mut self, event: &Event) {
+        self.fold_with_mapping_rewind(event, None);
+    }
+
+    /// Folds an event with the CCD of a mapping rewind proven by the tuner's pre-event replay.
+    /// The proof must concern this event's first intent, not a resumed task.
+    pub fn fold_with_mapping_rewind(&mut self, event: &Event, rewind: Option<CcdId>) {
         let kind = event.kind();
         if self.watched.contains(&kind) {
             self.kinds.insert(event.seq, kind);
@@ -167,6 +181,11 @@ impl DefectState {
             Payload::NightPlan(_)
             | Payload::NightQualification(_)
             | Payload::NightReproduction(_) => self.fold_decision(event, None),
+            Payload::TrialIntent(_) => {
+                if let Some(ccd) = rewind {
+                    self.fold_mapping_rewind(event, ccd);
+                }
+            }
             Payload::DefectFound(found) => self.fold_found(event.seq, found),
             // Older per-core answers and resets are archived history: no Ruleset 13 finding is resolved by them.
             Payload::DefectAnswered(_)
@@ -185,7 +204,6 @@ impl DefectState {
             | Payload::ProfileApplied(_)
             | Payload::ProfileChange(_)
             | Payload::ProfileRestored(_)
-            | Payload::TrialIntent(_)
             | Payload::TrialStart(_)
             | Payload::TrialProgress(_)
             | Payload::TrialSignal(_)
@@ -278,6 +296,25 @@ impl DefectState {
         }
     }
 
+    fn fold_mapping_rewind(&mut self, event: &Event, ccd: CcdId) {
+        let cores = self
+            .ccds
+            .iter()
+            .find(|(known, _)| *known == ccd)
+            .map(|(_, cores)| *cores)
+            .unwrap_or_default();
+        for entry in self.registry {
+            if !self.fixes.fixes(entry.id)
+                && entry.clauses.contains(&Clause::MappingRewind)
+                && !self.findings.contains_key(&entry.id)
+            {
+                let matches = self.unrecorded.entry(entry.id).or_default();
+                matches.cores.extend(cores);
+                matches.decisions.push(event.seq);
+            }
+        }
+    }
+
     fn matched_causes<'a>(
         kinds: &'a BTreeMap<Seq, EventKind>,
         entry: &'a Entry,
@@ -288,8 +325,12 @@ impl DefectState {
             entry
                 .clauses
                 .iter()
-                .any(|clause| {
-                    clause.decision_kind == event.kind() && clause.cause_kind == cause_kind
+                .any(|clause| match clause {
+                    Clause::DirectCause {
+                        decision_kind,
+                        cause_kind: expected,
+                    } => *decision_kind == event.kind() && *expected == cause_kind,
+                    Clause::MappingRewind => false,
                 })
                 .then_some((cause, cause_kind))
         })

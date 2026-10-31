@@ -240,7 +240,7 @@ impl Bench {
             sim,
             mem: MemFs::new(),
             config: Config::default(),
-            defects: &[],
+            defects: togi_defect::KNOWN_DEFECTS,
         }
     }
 

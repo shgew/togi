@@ -110,12 +110,25 @@ impl Folds {
     }
 
     fn apply_after_presentation(&mut self, event: &Event) -> Result<(), FoldError> {
+        let rewind = if self.defects.needs_mapping_rewind()
+            && let Payload::TrialIntent(intent) = &event.payload
+        {
+            self.tuner
+                .mapping_rewind(intent)
+                .map_err(|error| FoldError::MappingReplay {
+                    seq: event.seq,
+                    error: std::sync::Arc::new(error),
+                })?
+                .map(|proof| proof.ccd)
+        } else {
+            None
+        };
         self.recovery.apply(event)?;
         self.tuner.fold(event).map_err(|error| FoldError::Tuner {
             seq: event.seq,
             error,
         })?;
-        self.defects.fold(event);
+        self.defects.fold_with_mapping_rewind(event, rewind);
         self.facts.apply(event)?;
         self.presentation
             .after_event(event, &self.facts, &self.tuner);

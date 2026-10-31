@@ -215,3 +215,83 @@ fn a_day_smu_power_cut_resumes_with_the_nonzero_applied_profile() {
         "the resumed day must retain a nonzero applied profile"
     );
 }
+
+/// A short tuning history with a known reset reported only by a day boot, followed by a fresh tuning boot.
+fn tuning_after_observed_days() -> (Model, Played) {
+    let bench = Bench::defined(&small_definition());
+    let mut phases = Vec::new();
+    step(&bench, &mut phases, Phase::Run { trials: 1 });
+    step(&bench, &mut phases, Phase::Boot);
+    step(&bench, &mut phases, Phase::Crash { hours: 1 });
+    step(&bench, &mut phases, Phase::Day { hours: 1 });
+    step(&bench, &mut phases, Phase::Boot);
+    step(&bench, &mut phases, Phase::Run { trials: 1 });
+    let phase = phases.pop().unwrap();
+    assert!(matches!(phase.own()[0].payload, Payload::StateRebuilt(_)));
+    assert!(matches!(phase.own()[1].payload, Payload::ConfigLoaded(_)));
+    (bench.sim.model(), phase)
+}
+
+#[test]
+fn a_power_cut_after_state_rebuilt_before_config_loaded_is_detected() {
+    let (model, phase) = tuning_after_observed_days();
+    resume(&phase, &model, phase.start + 1, Fate::PowerLoss);
+}
+
+#[test]
+fn a_day_only_reset_report_does_not_make_a_crashed_trial_inconclusive() {
+    let (model, phase) = tuning_after_observed_days();
+    let (after, trial) = phase
+        .events
+        .iter()
+        .enumerate()
+        .skip(phase.start)
+        .find_map(|(at, event)| {
+            if let Payload::TrialStart(start) = &event.payload {
+                Some((at + 1, start.trial.clone()))
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let bench = phase.before.bench(&model);
+    let (_, events) = play(
+        &bench,
+        phase.phase,
+        phase.start,
+        Some((after, Fate::PowerLoss)),
+    );
+    assert_eq!(&events[..after], &phase.events[..after]);
+    let detected = events[after..]
+        .iter()
+        .find(|event| {
+            matches!(&event.payload, Payload::CrashDetected(crash)
+            if crash.previous_boot == phase.events[after - 1].boot)
+        })
+        .unwrap();
+    let Payload::CrashDetected(crash) = &detected.payload else {
+        unreachable!();
+    };
+    assert_eq!(crash.reset_reason, None);
+    assert!(!crash.inconclusive);
+    let ends: Vec<_> = events[after..]
+        .iter()
+        .filter_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload
+                && end.trial == trial
+            {
+                Some((event, end))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(ends.len(), 1);
+    let (event, end) = ends[0];
+    assert_eq!(end.outcome, Outcome::Failure);
+    assert_eq!(end.signal, Some(Signal::Crash));
+    assert!(!end.interrupted);
+    assert_eq!(end.duration_s, 0);
+    assert!(event.cause.contains(&detected.seq));
+    assert_settled(&bench, phase.phase, &events);
+}

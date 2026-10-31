@@ -63,6 +63,12 @@ pub enum FoldError {
         #[source]
         error: togi_tuner::policy::FoldError,
     },
+    #[error("event #{seq} cannot be checked against mapping replay")]
+    MappingReplay {
+        seq: Seq,
+        #[source]
+        error: std::sync::Arc<togi_tuner::policy::NotReady>,
+    },
     #[error("event does not fold into the shared journal facts")]
     Facts(#[from] togi_journal::FoldError),
 }

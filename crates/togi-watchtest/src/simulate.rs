@@ -75,7 +75,7 @@ pub fn simulate(
         max_boots: MAX_BOOTS,
         stop_at: Some(stop_at),
         write_samples: false,
-        defects: &[],
+        defects: togi_defect::KNOWN_DEFECTS,
         log: None,
         renderer: Renderer::default(),
         zone: TimeZone::UTC,

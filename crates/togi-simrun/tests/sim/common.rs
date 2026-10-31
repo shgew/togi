@@ -103,7 +103,7 @@ pub(crate) fn input(simulator: Simulator, persistence: Persistence) -> SimInput 
         max_boots: nz(1000),
         stop_at,
         write_samples: false,
-        defects: &[],
+        defects: togi_defect::KNOWN_DEFECTS,
         log: None,
         renderer: Renderer::default(),
         zone: TimeZone::UTC,

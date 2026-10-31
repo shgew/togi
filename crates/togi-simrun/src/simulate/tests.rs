@@ -63,7 +63,7 @@ fn sim_input(
         max_boots: nz(3),
         stop_at,
         write_samples: false,
-        defects: &[],
+        defects: togi_defect::KNOWN_DEFECTS,
         log: None,
         renderer: Renderer::default(),
         zone: TimeZone::UTC,

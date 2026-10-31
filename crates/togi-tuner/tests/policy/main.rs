@@ -7,6 +7,7 @@
 
 mod climb;
 mod climb_status;
+mod controls_freeze;
 mod day;
 mod fixture;
 mod flow;
