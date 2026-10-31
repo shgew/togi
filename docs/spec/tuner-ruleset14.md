@@ -2,7 +2,9 @@
 
 Normative rules for the only tuning policy, two-ends D, approved in [#1458](https://github.com/shgew/togi/issues/1458) and tracked by [#1460](https://github.com/shgew/togi/issues/1460). This supersedes Ruleset 13's statistical-cap permission rules in [tuner.md](tuner.md); S remains a labelled, non-authorizing diagnostic.
 
-Sections 1–11 preserve the design's numbering. [Workloads](workloads.md), [journal](journal.md) and [runtime](runtime.md) own execution, durability and application; retained scheduling rules are linked explicitly below. §9 records the nonzero activation decision and first-live-step hardware check.
+Sections 1–11 preserve the design's numbering. [Workloads](workloads.md), [journal](journal.md) and
+[runtime](runtime.md) own execution, durability and application; retained scheduling rules are linked
+explicitly below. §9 records the nonzero activation decision and first-live-step hardware check.
 
 ## 1. Scope, compatibility and terminology
 
@@ -145,9 +147,19 @@ At the existing 5.38 h certificate size, fourteen coarse steps schedule about 75
 
 D deliberately permits exploratory profiles whose daily CO-added hazard may exceed λ*. A 50-hour survival can occur with about 61% probability even at a true rate of one failure per 100 h. **[INFERENCE: `exp(−50/100)` under a stationary Poisson model.]** U+5, qualification and stopping are safeguards, not rare-event guarantees. Hidden workloads, tail flattening, thermal history, misleading locality, shared voltage, interactions, firmware changes, missing evidence and incorrect answers can defeat transfer from nights. Newest-step blame can stop an innocent unit while an older one remains hazardous. A watchdog aids recovery; it does not prevent data corruption, a freeze or every failed reset.
 
-**Nonzero day application is activated on Ruleset 14's on-machine rules.** The activation change must prove exact permitted-profile application and the complete lifecycle with fake-SMU and VM tests. The owner decided on 2026-10-31 that the successor simulator score ([#1457](https://github.com/shgew/togi/issues/1457)) is research and gates nothing; U+5, 50-hour holds, exact-profile qualification, newest-step stopping and the two-event allowance remain the bounds. [ADR 0096](../adr/0096-activate-permitted-day-profiles.md) reverses only ADR 0094's successor-score and supervised-procedure activation gate, not the risk policy or transaction safeguards.
+**Nonzero day application is activated on Ruleset 14's on-machine rules.** The activation change must
+prove exact permitted-profile application and the complete lifecycle with fake-SMU and VM tests. The
+owner decided on 2026-10-31 that the successor simulator score
+([#1457](https://github.com/shgew/togi/issues/1457)) is research and gates nothing; U+5, 50-hour holds,
+exact-profile qualification, newest-step stopping and the two-event allowance remain the bounds.
+[ADR 0096](../adr/0096-activate-permitted-day-profiles.md) reverses only ADR 0094's successor-score and
+supervised-procedure activation gate, not the risk policy or transaction safeguards.
 
-Hardware acceptance is the on-machine check on the day of the **first live nonzero step**, recorded in that night's [run retrospective](https://github.com/shgew/togi/issues/260) against the exact revision/configuration, with BIOS CO 0 and no invented measured-time claims. It replaces the separately authorized supervised procedure and is not a prior release gate; it carries no `needs-hardware` label because it cannot run before a step is eligible. Record:
+Hardware acceptance is the on-machine check on the day of the **first live nonzero step**, recorded in
+that night's [run retrospective](https://github.com/shgew/togi/issues/260) against the exact
+revision/configuration, with BIOS CO 0 and no invented measured-time claims. It replaces the separately
+authorized supervised procedure and is not a prior release gate; it carries no `needs-hardware` label
+because it cannot run before a step is eligible. Record:
 
 - the applied profile's all-core readback;
 - service stop reading every core back at zero before its clean marker;
@@ -181,7 +193,11 @@ The journal uses additive typed kinds without changing released fields or meanin
 
 **Successor transition:** archive the Ruleset 13 session unchanged and start the durably identified successor at verified stock. Import original-identity raw daily observations, compatible `exposure.observed` observations, and CPU-suspect events, stops and veto records needed to reconstruct the campaign. Never import S, an old qualification conclusion or nonzero D as permission. A copied `night.qualification` is evidence only: a failed re-qualification of a nonzero current profile whose derived event and charge never landed marks the history unreconstructible, and no copied qualification ever qualifies, certifies or unblocks any profile. Write `successor.imported` and `campaign.start {origin, history}` with source provenance and complete/unreconstructible history. Missing or unreconstructible campaign history blocks nonzero exploration rather than assuming zero consumption. Interruption resumes the same identified import, deduplicating original identities. A permanent reset boundary ends raw tuning carry, but campaign ledger records cross that boundary: reset never renews allowance. Restart, reset, firmware change, new session and reboot do not replenish the two-event allowance.
 
-The consolidated architectural rationale and predecessor dispositions are [ADR 0094](../adr/0094-two-ends-bounded-exploration.md), with activation amended by [ADR 0096](../adr/0096-activate-permitted-day-profiles.md). The original Ruleset 13 gate remains failed; [#1457](https://github.com/shgew/togi/issues/1457) owns successor registration and scoring as research, not an activation condition.
+The consolidated architectural rationale and predecessor dispositions are
+[ADR 0094](../adr/0094-two-ends-bounded-exploration.md), with activation amended by
+[ADR 0096](../adr/0096-activate-permitted-day-profiles.md). The original Ruleset 13 gate remains failed;
+[#1457](https://github.com/shgew/togi/issues/1457) owns successor registration and scoring as research,
+not an activation condition.
 
 ## 11. Shared scoring/reporting interface
 
