@@ -49,7 +49,7 @@ pause is a same-boot reapplication, never a second cold-boot promotion opportuni
 
 ## Day journal destination
 
-Daily observation appends to the existing session's `events.jsonl`, using the same writer lock, strict decoding, compatibility check and durable append as tuning. It never creates a session or archives/transitions an incompatible one. Without a live session journal, `togi day` exits 1 with an instruction to start a session with `togi run`; this refusal creates no state directory or journal. Incompatible builds or unknown event data are refused before appending (exit 16). Compatibility is checked again under the writer lock, and an already archived session is not reopened for observation.
+Daily observation appends to the existing session's `events.jsonl`, using the same writer lock, strict decoding, compatibility check and durable append as tuning. It never creates a session or archives/transitions an incompatible one. Without a live session journal, `togi day` exits 1 with an instruction to start a session with `togi run`; this refusal creates no state directory or journal. Incompatible builds or unknown event data are refused before appending (exit 16); `togi-day.service` does not restart after it, so after `togi run` has transitioned the journal the operator starts the unit again ([NixOS module](#nixos-module)). Compatibility is checked again under the writer lock, and an already archived session is not reopened for observation.
 
 ## Day pause and freeze
 
@@ -168,17 +168,7 @@ firmware context and acknowledges only after the attestation is durable;
 it does not stop observation, reapply D or write offsets. Only an absent
 service permits the command's direct host-lock then writer-lock path.
 
-`services.togi.day.enable` defaults to false. Enabled, `togi-day.service` runs
-`togi day --state-dir /var/lib/togi` as root in normal boots after local filesystems and kernel modules
-are ready, restarting after a failure with a 60-second delay. Its abnormal-exit hook runs
-`togi emergency-stop`, which has only zero authority and needs no working journal.
-`togi-day-resume.service` requests verified reapplication of the still-permitted committed D from the
-active service after systemd-managed sleep; reverse stop ordering restores the watchdog before that
-request. The internal `togi day reapply` socket command accepts root only and acknowledges only
-verified success. The tuning specialisation explicitly disables the day option and has no day
-service. Normal-boot journald defaults to `Storage=persistent` and `SyncIntervalSec=5s`; the tuning boot
-retains its existing one-second sync policy. Shutdown uses ordinary systemd stop ordering, so final
-zero/readback and journal records precede filesystem unmount.
+`services.togi.day.enable` defaults to false. Enabled, `togi-day.service` runs `togi day --state-dir /var/lib/togi` as root in normal boots after local filesystems and kernel modules are ready, restarting after a failure with a 60-second delay except after exit 16, an incompatible journal that a restart cannot change: the unit stays failed until `togi run` has transitioned the journal and the operator starts it again (`systemctl restart togi-day`, or the next boot). Exits 1 and 3 keep restarting because they can clear on their own, such as a missing session that `togi run` later creates or a lock another writer releases. Its abnormal-exit hook runs `togi emergency-stop`, which has only zero authority and needs no working journal. `togi-day-resume.service` requests verified reapplication of the still-permitted committed D from the active service after systemd-managed sleep; reverse stop ordering restores the watchdog before that request. The internal `togi day reapply` socket command accepts root only and acknowledges only verified success. The tuning specialisation explicitly disables the day option and has no day service. Normal-boot journald defaults to `Storage=persistent` and `SyncIntervalSec=5s`; the tuning boot retains its existing one-second sync policy. Shutdown uses ordinary systemd stop ordering, so final zero/readback and journal records precede filesystem unmount.
 
 `services.togi.day.users` (default none) names users, of any account type the configuration declares, who may answer and control pause/freeze without root: each joins the `togi` group, which owns `/run/togi` (mode 0750, created by tmpfiles so it outlives a service restart), and each gets the systemd user service `togi-day-notify` (`wantedBy`, `partOf` and `bindsTo` `graphical-session.target`, ordered after `graphical-session-pre.target` because ordering after `graphical-session.target` itself would form a cycle), running `togi day notify` with `libnotify` on its `PATH`, only for users on the list (an exact-list `ExecCondition`), and retrying every ten seconds (`Restart=on-failure`, `RestartSec=10`, no start limit) while the day service's socket is down. Group membership starts at the user's next login. The internal sleep-hook reapplication remains root-only.
 
@@ -662,7 +652,7 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 | `services.togi.settings` | Freeform attrset rendered to `/etc/togi/config.json`; `backend_user` defaults to the module-declared `togi-trial` system user. An override must name an existing unprivileged account |
 | `services.togi.backends.mprime.enable` | Set `settings.backends.mprime` to the nixpkgs `mprime` package (unfree) |
 | `services.togi.backends.ycruncher.enable` | Set `settings.backends.ycruncher` to the nixpkgs `y-cruncher` package (unfree) |
-| `services.togi.day.enable` | Default `false`: apply the permitted committed profile and observe normal boots, with zero-only abnormal-exit cleanup, no-promotion resume reapplication, persistent journald and a five-second sync interval; requires an existing session and armed, counting watchdog |
+| `services.togi.day.enable` | Default `false`: apply the permitted committed profile and observe normal boots, with zero-only abnormal-exit cleanup, no-promotion resume reapplication, persistent journald and a five-second sync interval; requires an existing session and armed, counting watchdog. The unit restarts after failures except exit 16 (incompatible journal), which leaves it failed until `togi run` has transitioned the journal and the operator runs `systemctl restart togi-day` or reboots |
 | `services.togi.day.watchdog` | Default `false`: with day enabled, load the watchdog driver, ask PID 1 for a 60-second runtime watchdog in normal boots without lockup panics, and stop and restart it around every sleep through `togi-day-watchdog-sleep.service` ([Day watchdog](#day-watchdog)) |
 | `services.togi.day.users` | Default none: users who may answer day questions over `/run/togi/day.sock`; they join the `togi` group and get the notifier user service |
 
