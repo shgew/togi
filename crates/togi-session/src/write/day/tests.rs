@@ -605,11 +605,14 @@ fn a_crash_ends_all_smu_access_and_nothing_is_restored() {
     assert_eq!(day.commands(), [zero_all(), set(0, -20)]);
 }
 
+/// The SMU accesses a day made, in order, as operation and core.
+type SmuTrace = Rc<RefCell<Vec<(SimOp, Option<CoreId>)>>>;
+
 /// Every SMU access the day makes, in order, before the hook's own `fail` decides whether it goes through.
 fn trace_smu(
     day: &Day,
     mut fail: impl FnMut(&SmuOperation) -> Result<(), Error> + 'static,
-) -> Rc<RefCell<Vec<(SimOp, Option<CoreId>)>>> {
+) -> SmuTrace {
     let seen = Rc::new(RefCell::new(Vec::new()));
     let log = Rc::clone(&seen);
     day.rig.sim.interrupt_smu(move |operation: &SmuOperation| {
