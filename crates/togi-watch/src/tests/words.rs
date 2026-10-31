@@ -112,7 +112,7 @@ const RULESET13: &[(EventKind, Tag)] = &[
 
 #[test]
 fn every_kind_has_its_words_or_says_it_is_silent() {
-    assert_eq!(EventKind::ALL.len(), 84);
+    assert_eq!(EventKind::ALL.len(), 85);
     for &kind in EventKind::ALL {
         let table = words(kind);
         let silent = SILENT.contains(&kind) || UNLISTED.contains(&kind);

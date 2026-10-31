@@ -5,7 +5,7 @@ use jiff::Timestamp;
 use test_case::test_case;
 use togi_journal::{
     Event, FixStamp, Payload, Queue, Seq, SessionBaseline, SessionContext, SessionStart, Stamp,
-    TaskId, Tested, TrialEnd, TrialId, TrialIntent, TrialStart, WorkloadContent,
+    StockAttested, TaskId, Tested, TrialEnd, TrialId, TrialIntent, TrialStart, WorkloadContent,
 };
 use togi_machine::{
     Backend, BootId, CcdId, ContentId, CoreInfo, CpuId, Digest, ObservedOffset, TargetOffset,
@@ -73,6 +73,14 @@ impl Journal {
             &[],
         );
         journal.append(firmware("1").into(), &[]);
+        // The operator's session attestation of stock stability under that firmware.
+        journal.append(
+            StockAttested {
+                firmware: firmware("1").bios_context(),
+            }
+            .into(),
+            &[],
+        );
         journal.append(
             SessionBaseline {
                 offsets: cores()
@@ -161,8 +169,8 @@ impl Journal {
     }
 }
 
-/// A synthetic old journal with CCD 0's zero and -5 coarse steps finished. The saved zero
-/// intent lets the fixture reproduce the old policy's new-task rewind without running old code.
+/// A synthetic old journal with CCD 0's implicit zero and its -5 coarse step finished. The saved
+/// -5 intent lets the fixture reproduce the old policy's new-task rewind without running old code.
 fn pre_fix_prefix() -> (Journal, TrialIntent, TrialIntent) {
     let mut journal = Journal::ready();
     let mut first = None;
@@ -185,7 +193,7 @@ fn pre_fix_prefix() -> (Journal, TrialIntent, TrialIntent) {
             && let Some(Tested::Isolated { ccd: unit, offset }) = intent.tested
             && unit == ccd(0)
         {
-            if offset.get() == 0 && first.is_none() {
+            if offset.get() == -5 && first.is_none() {
                 first = Some(intent.clone());
             }
             if offset.get() == -10 {
@@ -194,7 +202,7 @@ fn pre_fix_prefix() -> (Journal, TrialIntent, TrialIntent) {
         }
         journal.run(&plan);
     }
-    panic!("mapping did not finish its first two coarse steps");
+    panic!("mapping did not finish its first coarse step");
 }
 
 fn jsonl_roundtrip(events: &[Event]) -> Vec<Event> {

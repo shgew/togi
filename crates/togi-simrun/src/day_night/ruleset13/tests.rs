@@ -260,6 +260,12 @@ fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
         at_firmware_change(events).expect("the calendar recorded no firmware change");
     let previous =
         previous_profile(before).expect("no nonzero profile was applied when the firmware changed");
+    // The operator attests the new firmware context before any night work runs on it.
+    assert!(
+        matches!(&after[1].payload, Payload::StockAttested(attested) if is_new_firmware(&attested.firmware.bios_version)),
+        "{:?}",
+        after[1].payload
+    );
     // The next cold boot commits the firmware zero and applies stock.
     let (zeroed, receipt, _, proposal) = applied_decisions(after)
         .next()

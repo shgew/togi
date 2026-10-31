@@ -586,6 +586,7 @@ mod tests {
                 Request::Answer { boot, answer } => Seen::Answer(boot.clone(), *answer),
                 Request::Record { .. }
                 | Request::Reapply
+                | Request::AttestStock(_)
                 | Request::Resume
                 | Request::Pause(_)
                 | Request::Freeze(_) => {

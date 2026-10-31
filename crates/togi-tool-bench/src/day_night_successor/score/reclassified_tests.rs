@@ -49,7 +49,6 @@ fn fixture() -> (Lab, Record) {
                 day: 29.0,
                 epoch: record.epochs[0].id.clone(),
                 profile: restored,
-                stock_controls: vec!["control".into()],
                 fresh_witnesses: vec!["matrix".into()],
                 reused_witnesses: vec![],
                 safety_checks_satisfied: true,

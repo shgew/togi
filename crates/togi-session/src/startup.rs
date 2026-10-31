@@ -17,13 +17,10 @@ const WATCHDOG_WAIT: Duration = Duration::from_secs(30);
 const WATCHDOG_STEP: Duration = Duration::from_secs(1);
 
 impl Session<'_> {
-    /// Classifies and records every crashed boot before this one. A kernel log that stays unreadable is evidence
-    /// for a no-evidence dead end, which [`Session::check_dead_end`] places after a thermal trip. A pending dead
-    /// end is finished first, so nothing is read for it.
+    /// Classifies and records every crashed boot before this one, including a crash during dead-end cleanup. A
+    /// kernel log that stays unreadable is evidence for a no-evidence dead end, which [`Session::check_dead_end`]
+    /// places after a thermal trip.
     pub(crate) fn recover_prior(&mut self) -> Outcome {
-        if self.appender.recovery().pending_dead_end().is_some() {
-            return Ok(Control::Continue);
-        }
         let recovered = recover::prior_boots(Recovery {
             appender: &mut self.appender,
             kernel: &mut *self.kernel,

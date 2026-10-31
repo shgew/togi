@@ -6,7 +6,7 @@ use togi_journal::{
     DayBootStart, Edge, Event, ExposureClass, ExposureObserved, ExposureOrigin, Finite, FixStamp,
     NightQualification, OriginalSource, Outcome, Payload, Placement, QualificationPurpose,
     QualificationState, Rate, SCHEMA, Seq, SessionBaseline, SessionContext, SessionStart, Slope,
-    Stamp, TaskId, Tested, TrialEnd, TrialId, TrialStart, WorkloadContent,
+    Stamp, StockAttested, TaskId, Tested, TrialEnd, TrialId, TrialStart, WorkloadContent,
 };
 use togi_machine::{
     Backend, BootId, CcdId, CcdProfile, ContentId, CoreId, CoreInfo, CpuId, Digest, ObservedOffset,
@@ -63,7 +63,7 @@ fn offsets_on(machine: &[CoreInfo], profile: &CcdProfile) -> PerCore<ObservedOff
         .collect()
 }
 
-fn context() -> SessionContext {
+pub(crate) fn context() -> SessionContext {
     firmware("1")
 }
 
@@ -205,6 +205,7 @@ impl Journal {
         self.append(context().into(), &[]);
     }
 
+    /// A journal with its session context, and the operator's attestation of stock stability under it.
     pub(crate) fn contextual() -> Self {
         Self::contextual_with(Params::SPEC)
     }
@@ -214,9 +215,31 @@ impl Journal {
     }
 
     fn contextual_on(params: Params, machine: Vec<CoreInfo>) -> Self {
+        let mut journal = Self::contextual_unattested_on(params, machine);
+        journal.attest(&context());
+        journal
+    }
+
+    /// A journal with its session context but no stock attestation under it.
+    pub(crate) fn contextual_unattested() -> Self {
+        Self::contextual_unattested_on(Params::SPEC, cores())
+    }
+
+    fn contextual_unattested_on(params: Params, machine: Vec<CoreInfo>) -> Self {
         let mut journal = Self::started_on(params, machine);
         journal.append(context().into(), &[]);
         journal
+    }
+
+    /// Appends the operator's durable attestation of stock stability under the firmware `context`.
+    pub(crate) fn attest(&mut self, context: &SessionContext) -> Seq {
+        self.append(
+            StockAttested {
+                firmware: context.bios_context(),
+            }
+            .into(),
+            &[],
+        )
     }
 
     /// Reboots into the normal boot `boot` and appends its observer start, at all-zero offsets.
@@ -312,10 +335,19 @@ impl Journal {
 
     /// A journal of the machine `machine` ready for its first night, folded by a policy with `params`.
     pub(crate) fn ready_on(params: Params, machine: Vec<CoreInfo>) -> Self {
-        let mut journal = Self::contextual_on(params, machine);
-        let offsets = offsets_on(&journal.machine, &zero());
-        journal.append(SessionBaseline { offsets }.into(), &[]);
-        journal
+        let journal = Self::contextual_on(params, machine);
+        journal.baselined()
+    }
+
+    /// A ready journal whose current firmware context the operator has not attested.
+    pub(crate) fn ready_unattested() -> Self {
+        Self::contextual_unattested().baselined()
+    }
+
+    fn baselined(mut self) -> Self {
+        let offsets = offsets_on(&self.machine, &zero());
+        self.append(SessionBaseline { offsets }.into(), &[]);
+        self
     }
 
     /// The stock dead end the journal establishes before its owed commitments are drained.
@@ -503,19 +535,38 @@ impl Journal {
         }
     }
 
-    /// Drives the night, each trial ending as `ending` says, until it asks for its first filler trial.
-    pub(crate) fn until_filler(&mut self, ending: impl Fn(&TrialPlan) -> Ending) -> TrialPlan {
+    /// Drives the night, each trial ending as `ending` says, until it asks for its first filler trial. A
+    /// night at stock has no filler: it returns `None` once the night ends for want of nonzero work.
+    pub(crate) fn until_filler(
+        &mut self,
+        ending: impl Fn(&TrialPlan) -> Ending,
+    ) -> Option<TrialPlan> {
         for step in 0..3_500_i64 {
             let plan = match self.until_end(at(100 + step), &BTreeMap::new()) {
                 Ok(plan) => plan,
+                Err(EndReason::NoNonzeroWork) => return None,
                 Err(reason) => panic!("the night ended at trial {step}: {reason:?}"),
             };
             if plan.task.queue == togi_journal::Queue::Filler {
-                return plan;
+                return Some(plan);
             }
             self.run(&plan, ending(&plan));
         }
         panic!("the filler never ran");
+    }
+
+    /// Drives the night, each trial ending as `ending` says, until it ends, and returns why. Panics if
+    /// the filler is reached.
+    pub(crate) fn until_night_end(&mut self, ending: impl Fn(&TrialPlan) -> Ending) -> EndReason {
+        for step in 0..3_500_i64 {
+            let plan = match self.until_end(at(100 + step), &BTreeMap::new()) {
+                Ok(plan) => plan,
+                Err(reason) => return reason,
+            };
+            assert_ne!(plan.task.queue, togi_journal::Queue::Filler, "{plan:?}");
+            self.run(&plan, ending(&plan));
+        }
+        panic!("the night never ended");
     }
 
     /// Drives the night with `unavailable` excluded until it asks for a trial or ends.

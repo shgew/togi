@@ -26,7 +26,7 @@ fn same_boot(boot: &str, second: i64) -> DayQuery {
 fn the_first_step_needs_fifty_clean_stock_hours(seconds: u64, promotes: bool) {
     let mut journal = Journal::ready();
     journal.observe_stock_in("1", seconds);
-    journal.until_filler(|_| Ending::Pass);
+    let _ = journal.until_filler(|_| Ending::Pass);
     journal.boot_start("first-step");
     let mut query = cold_boot("first-step", 0);
     query.now = journal.now();
@@ -79,7 +79,7 @@ fn a_boot_that_held_never_promotes_later_in_the_same_boot() {
     );
     // A night qualifies the proposal while the boot still runs; asking again in that boot owes no promotion.
     journal.hold_stock();
-    journal.until_filler(|_| Ending::Pass);
+    let _ = journal.until_filler(|_| Ending::Pass);
     assert!(
         steps(&journal.settle_day(&cold_boot("day1", 60_000))).is_empty(),
         "a boot gets one promotion decision"
@@ -165,13 +165,16 @@ fn a_live_machine_check_is_cpu_evidence_by_its_bank(
 /// profile is P.
 fn failed_qualification(journal: &mut Journal) -> CcdProfile {
     for step in 0..3_500_i64 {
-        let plan = journal.until_trial(at(100 + step));
+        let next = journal.until_end(at(100 + step), &std::collections::BTreeMap::new());
         if let Some(failed) = qualifications(journal).into_iter().find(|record| {
             record.purpose == QualificationPurpose::NextStep
                 && matches!(record.state, QualificationState::Failed { .. })
         }) {
             return failed.profile.ccd().clone();
         }
+        let Ok(plan) = next else {
+            break;
+        };
         let ending = if plan.activity == Activity::Qualification {
             Ending::Fail(None)
         } else {

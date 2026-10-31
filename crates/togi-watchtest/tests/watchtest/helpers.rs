@@ -28,7 +28,7 @@ fn cut_at_ends_on_the_first_event_it_accepts() {
 
 #[test]
 fn a_cut_nothing_accepts_is_an_error() {
-    let events = Scenario::Controls.events().expect("the scenario builds");
+    let events = Scenario::Nonzero.events().expect("the scenario builds");
     assert!(matches!(cut_at(&events, |_| false), Err(Error::NoCut(_))));
     assert!(matches!(cut_at(&[], |_| true), Err(Error::NoCut(_))));
     assert!(matches!(
@@ -47,7 +47,7 @@ fn a_cut_nothing_accepts_is_an_error() {
 
 #[test]
 fn cut_when_hands_over_the_policy_state_after_the_event() {
-    let events = Scenario::Controls.events().expect("the scenario builds");
+    let events = Scenario::Nonzero.events().expect("the scenario builds");
     let mut seen = Vec::new();
     let cut = cut_when(&events, |state, event| {
         seen.push(event.seq);
@@ -76,7 +76,7 @@ fn cut_trial_ends_on_the_start_of_the_first_trial_it_accepts() {
 
 #[test]
 fn before_crash_detected_needs_a_crash() {
-    let events = Scenario::Controls.events().expect("the scenario builds");
+    let events = Scenario::Nonzero.events().expect("the scenario builds");
     assert!(matches!(
         before_crash_detected(&events),
         Err(Error::NoCut(_))
@@ -86,13 +86,13 @@ fn before_crash_detected_needs_a_crash() {
 #[test]
 fn cut_passed_trial_ends_on_the_first_accepted_trial_that_passed() {
     let events = Scenario::Between.events().expect("the scenario builds");
-    let cut = cut_passed_trial(&events, |intent| intent.activity == Some(Activity::Control))
-        .expect("a control trial passed");
+    let cut = cut_passed_trial(&events, |intent| intent.activity == Some(Activity::Mapping))
+        .expect("a mapping trial passed");
     let Some(Payload::TrialEnd(end)) = cut.last().map(|event| &event.payload) else {
         panic!("the cut ends on trial.end");
     };
     assert_eq!(end.outcome, Outcome::Pass);
-    assert_eq!(intent_of(cut, &end.trial).activity, Some(Activity::Control));
+    assert_eq!(intent_of(cut, &end.trial).activity, Some(Activity::Mapping));
     let earlier_pass = cut[..cut.len() - 1]
         .iter()
         .any(|event| matches!(&event.payload, Payload::TrialEnd(earlier) if earlier.outcome == Outcome::Pass));
@@ -101,16 +101,16 @@ fn cut_passed_trial_ends_on_the_first_accepted_trial_that_passed() {
 
 #[test]
 fn a_scenario_that_cannot_be_cut_names_itself_in_the_error() {
-    let error = Scenario::Controls
+    let error = Scenario::Nonzero
         .events_from(&[])
-        .expect_err("an empty journal has no control trial");
+        .expect_err("an empty journal has no nonzero trial");
     assert!(
-        matches!(&error, Error::Scenario { scenario: Scenario::Controls, source } if matches!(**source, Error::NoCut(_)))
+        matches!(&error, Error::Scenario { scenario: Scenario::Nonzero, source } if matches!(**source, Error::NoCut(_)))
     );
-    assert_eq!(error.to_string(), "scenario controls");
+    assert_eq!(error.to_string(), "scenario nonzero");
     assert_eq!(
         togi_machine::error_chain(&error),
-        "scenario controls: no cut point in the simulated journal: no event the cut accepts"
+        "scenario nonzero: no cut point in the simulated journal: no event the cut accepts"
     );
 }
 

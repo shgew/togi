@@ -244,8 +244,65 @@ impl Bench {
         }
     }
 
-    /// What a run on the simulator's current boot is given, with no bootloader, terminal or carry.
+    /// A tuning run whose operator has confirmed stock stability for the current firmware.
     pub(crate) fn input(&self) -> RunInput<'static> {
+        let mut input = self.input_unattested();
+        self.attest_stock(&mut input);
+        input
+    }
+
+    /// Records fresh operator consent at a tuning boundary, after its build and import are selected.
+    /// Like `togi night`, this writes no preparation snapshot.
+    pub(crate) fn attest_stock(&self, input: &mut RunInput<'_>) {
+        let firmware = input.machine.host.bios_context().unwrap();
+        if input.journal.events().is_empty() {
+            let session = input.import.as_ref().map_or_else(
+                || {
+                    input
+                        .journal
+                        .state_dir()
+                        .session_id(self.sim.now())
+                        .unwrap()
+                },
+                crate::prepare::PendingImport::destination,
+            );
+            let cores = input.machine.host.topology().unwrap();
+            input
+                .journal
+                .append(
+                    togi_journal::Stamp {
+                        time: self.sim.now(),
+                        mono: None,
+                    },
+                    SessionStart {
+                        build: input.build.clone(),
+                        session,
+                        cores,
+                    }
+                    .into(),
+                    &[],
+                )
+                .unwrap();
+        }
+        if !input.journal.events().iter().any(|event| {
+            matches!(&event.payload, Payload::StockAttested(value) if value.firmware == firmware)
+        }) {
+            input
+                .journal
+                .append(
+                    togi_journal::Stamp {
+                        time: self.sim.now(),
+                        mono: None,
+                    },
+                    togi_journal::StockAttested { firmware }.into(),
+                    &[],
+                )
+                .unwrap();
+        }
+    }
+
+    /// A real unattended run cannot manufacture the operator's answer.
+    pub(crate) fn input_unattested(&self) -> RunInput<'static> {
         let mut machine = self.sim.seams();
         let boot = machine.host.boot_id().unwrap();
         let journal = simulated(&self.mem)
@@ -272,7 +329,7 @@ impl Bench {
         }
     }
 
-    /// When the operator ends a short night: room for one control trial (104 s) and not for a second.
+    /// When the operator ends a short night: room for one mapping trial and not for a second.
     pub(crate) fn short_night(&self) -> Timestamp {
         self.sim.now() + SignedDuration::from_secs(150)
     }
@@ -280,7 +337,14 @@ impl Bench {
     /// What a run is given whose operator ends it, as F10 or a stop signal would, at the first event appended at
     /// or after `at`.
     pub(crate) fn input_ending_at(&self, at: Timestamp) -> RunInput<'static> {
-        let mut input = self.input();
+        let mut input = self.input_unattested_ending_at(at);
+        self.attest_stock(&mut input);
+        input
+    }
+
+    /// A bounded run before its operator's consent, so callers can select a new build or import first.
+    pub(crate) fn input_unattested_ending_at(&self, at: Timestamp) -> RunInput<'static> {
+        let mut input = self.input_unattested();
         let cancel = input.cancel.clone();
         input.on_append = Some(Box::new(move |event| {
             if event.time >= at {

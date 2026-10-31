@@ -1,5 +1,5 @@
 use super::*;
-use crate::day::socket::{self, FreezeRequest, PauseRequest, Reply, Request};
+use crate::day::socket::{self, AttestStockRequest, FreezeRequest, PauseRequest, Reply, Request};
 use crate::day::{pause::Pause, socket::Control};
 use std::cell::Cell;
 use test_case::test_case;
@@ -798,5 +798,54 @@ fn the_live_control_seam_brackets_a_pause_with_checkpoints_and_acknowledges_afte
     assert_eq!(
         Ledger::of(journal.events()).profiles.values().sum::<u64>(),
         1200
+    );
+}
+
+#[test]
+fn night_confirmation_uses_the_live_observers_current_firmware_and_is_idempotent() {
+    let mut journal = seed();
+    let mut hardware = Hardware::stock();
+    let clock = ActiveClock::one();
+    let mut pause = Pause::of(&journal);
+    let mut live = crate::day::apply::Live::preflight(&journal, &mut hardware).unwrap();
+    hardware.firmware.bios_version.push_str("-new-AGESA");
+    let firmware = hardware.firmware.clone();
+    let session = journal.session().unwrap();
+    let mut control = |journal: &mut Journal, clock: &dyn Clock, action| {
+        pause.control(journal, &mut hardware, clock, &mut live, action)
+    };
+    let first = socket::respond(
+        &mut journal,
+        &clock,
+        0,
+        Request::AttestStock(AttestStockRequest { session }),
+        &mut control,
+    )
+    .unwrap();
+    let second = socket::respond(
+        &mut journal,
+        &clock,
+        0,
+        Request::AttestStock(AttestStockRequest { session }),
+        &mut control,
+    )
+    .unwrap();
+    assert!(matches!(first, Reply::Controlled { .. }));
+    assert!(matches!(second, Reply::Controlled { .. }));
+    let recorded: Vec<_> = journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::StockAttested(value) = &event.payload {
+                Some(value.firmware.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(recorded, [firmware]);
+    assert!(
+        hardware.writes.is_empty(),
+        "attestation does not disrupt the day profile"
     );
 }

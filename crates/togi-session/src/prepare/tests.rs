@@ -287,9 +287,10 @@ fn an_import_the_live_journal_committed_clears_its_marker_and_is_not_imported_ag
     let first = prepared(&bench, &next_build());
     let import = first.import.clone().unwrap();
     drop(first.journal.close().unwrap());
-    let mut input = bench.input_ending_at(bench.short_night());
+    let mut input = bench.input_unattested_ending_at(bench.short_night());
     input.build = next_build();
     input.import = Some(import.clone());
+    bench.attest_stock(&mut input);
     let committed = run(input).journal;
     assert_eq!(session_of(&committed), import.destination());
     let imported = committed
@@ -384,9 +385,10 @@ fn a_transition_reads_campaign_history_before_the_last_committed_import() {
     let first = prepared(&bench, &next_build());
     let import = first.import.clone().unwrap();
     drop(first.journal.close().unwrap());
-    let mut input = bench.input_ending_at(bench.short_night());
+    let mut input = bench.input_unattested_ending_at(bench.short_night());
     input.build = next_build();
     input.import = Some(import.clone());
+    bench.attest_stock(&mut input);
     drop(run(input).journal.close().unwrap());
 
     let newer = Build {
@@ -424,9 +426,10 @@ fn a_live_journal_at_the_reset_boundary_is_archived_unchanged_and_the_import_mar
     let older = finished(&bench);
     let first = prepared(&bench, &next_build());
     drop(first.journal.close().unwrap());
-    let mut input = bench.input_ending_at(bench.short_night());
+    let mut input = bench.input_unattested_ending_at(bench.short_night());
     input.build = next_build();
     input.import = first.import;
+    bench.attest_stock(&mut input);
     let live = run(input).journal;
     let id = session_of(&live);
     let mut dir = live.close().unwrap();
@@ -699,9 +702,10 @@ fn scenario(kind: ScenarioKind) -> (Bench, Build) {
             let _ = finished(&settled);
             let first = prepared(&settled, &next_build());
             drop(first.journal.close().unwrap());
-            let mut input = settled.input_ending_at(settled.short_night());
+            let mut input = settled.input_unattested_ending_at(settled.short_night());
             input.build = next_build();
             input.import = first.import;
+            settled.attest_stock(&mut input);
             drop(run(input).journal.close().unwrap());
             (settled, next_build())
         }
@@ -710,9 +714,10 @@ fn scenario(kind: ScenarioKind) -> (Bench, Build) {
             let _ = finished(&reset);
             let first = prepared(&reset, &next_build());
             drop(first.journal.close().unwrap());
-            let mut input = reset.input_ending_at(reset.short_night());
+            let mut input = reset.input_unattested_ending_at(reset.short_night());
             input.build = next_build();
             input.import = first.import;
+            reset.attest_stock(&mut input);
             let mut dir = run(input).journal.close().unwrap();
             dir.mark_reset_all().unwrap();
             drop(dir);
@@ -816,9 +821,12 @@ fn a_kept_journal_this_build_refuses_is_refused_and_left_unchanged() {
 
 /// An explicit predecessor stamp exercises the transition without changing the production ruleset.
 fn predecessor(bench: &Bench) -> (SessionId, Vec<u8>) {
-    let mut input = bench.input_ending_at(bench.short_night());
+    let mut input = bench.input_unattested_ending_at(bench.short_night());
     input.build.ruleset = togi_tuner::RULESET - 1;
-    let mut journal = run(input).journal;
+    bench.attest_stock(&mut input);
+    let ended = run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let mut journal = ended.journal;
     let id = session_of(&journal);
     let bios = journal
         .events()
@@ -893,9 +901,10 @@ fn successor_build() -> Build {
 fn enroll(bench: &Bench) -> Ended {
     let ready = prepared(bench, &successor_build());
     drop(ready.journal.close().unwrap());
-    let mut input = bench.input_ending_at(bench.short_night());
+    let mut input = bench.input_unattested_ending_at(bench.short_night());
     input.build = successor_build();
     input.import = ready.import;
+    bench.attest_stock(&mut input);
     run(input)
 }
 
@@ -943,6 +952,16 @@ fn a_ruleset13_session_is_archived_and_its_raw_history_imported_without_permissi
         togi_journal::CampaignOrigin::Successor { .. }
     ));
     assert_eq!(start.history, togi_journal::CampaignHistory::Complete {});
+    assert_eq!(
+        ended
+            .journal
+            .events()
+            .iter()
+            .filter(|event| matches!(event.payload, Payload::StockAttested(_)))
+            .count(),
+        1,
+        "the successor records its own consent, never inherited consent"
+    );
 }
 
 #[test]
@@ -958,9 +977,10 @@ fn the_successor_import_deduplicates_after_a_crash() {
         .selected()
         .collect();
     drop(ready.journal.close().unwrap());
-    let mut input = bench.input_ending_at(bench.short_night());
+    let mut input = bench.input_unattested_ending_at(bench.short_night());
     input.build = successor_build();
     input.import = ready.import;
+    bench.attest_stock(&mut input);
     input.on_append = Some(Box::new(|event| {
         if matches!(event.payload, Payload::DayImported(_)) {
             panic!("interrupted successor import");
@@ -1197,9 +1217,10 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(
         togi_machine::TargetOffset::ZERO
     );
     drop(ready.journal.close().unwrap());
-    let mut input = bench.input_ending_at(bench.short_night());
+    let mut input = bench.input_unattested_ending_at(bench.short_night());
     input.build = successor_build();
     input.import = ready.import;
+    bench.attest_stock(&mut input);
     let mut end_night = input.on_append.take().unwrap();
     input.on_append = Some(Box::new(move |event| {
         end_night(event);

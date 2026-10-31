@@ -847,6 +847,7 @@ impl<'events> Names<'events> {
             | Payload::DayFault(_)
             | Payload::TaskStart(_)
             | Payload::DayImported(_)
+            | Payload::StockAttested(_)
             | Payload::DayPause(_) => return None,
         })
     }

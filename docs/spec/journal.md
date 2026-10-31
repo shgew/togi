@@ -41,7 +41,20 @@ Retention: every trial directory is kept, whatever the trial's outcome; nothing 
    On a same-boot restart, the startup `smu.readback` for a core cites that core's `smu.intent` left open by the dead process, if any. This observation resolves the inherited intent even when the observed offset needs no restoration write: the fold closes an open SMU intent on a readback that cites it, and readers no longer report it in flight. The readback records the actual offset, not a completed write or proof that the intended offset was applied. Next-boot in-flight attribution is unchanged.
 3. **Decisions name their cause.** A decision event carries `cause`: the `seq` numbers of the events it was derived from, plus a `reason` in plain words. A step-back that rests on two failures cites both, the later one first.
 4. **The journal wins.** At every boot, `run` independently folds the whole journal and checks `state.json` against it. A missing, unreadable, tampered, other-build or mismatching snapshot is rewritten; after a successful rewrite `state.rebuilt` records the difference. Its `fields` names differing top-level `facts` keys (`last_seq`, `cores`, …), `tuner` for the projection, and, at an equal sequence, `incremental`, `recovery`, `defects` or `presentation` for the full reducers. `build` identifies another build, `snapshot` identifies a wrong prefix stamp, and `state.json` identifies an absent or rejected document. `last_seq` marks a snapshot behind the journal, as after a crash between writes; the audit reads it as stale, not wrong.
+   A confirmed `night` command can create the initial session and import
+   envelope without publishing `state.json`. Before any run or day observer
+   has published state, a first `state.rebuilt` naming only `state.json` after
+   that attested envelope is expected initial publication, not an audit
+   disagreement. Further firmware-context attestations do not publish a
+   snapshot. Other differing fields and a missing snapshot after runtime
+   history remain replay findings.
 5. **One writer.** `run` takes the host lock, then the state-directory `lock`, then prepares any [fresh transition and raw-day import](#transitions), and holds both locks through the session and cleanup. The writer lock precedes every observation-source scan, archive or pending-marker change, including before the destination journal exists. `reset` follows the same lock order through boundary creation, marker changes and archive completion; it refuses while a run holds the lock. The simulator holds the state-directory lock during transition preparation and each simulated boot's session. Closing the journal returns the locked directory; dropping that directory releases the lock. `status`, `events` and `watch` only read, without the lock, and narrate recorded observations and [policy commitments](#ruleset-13-events), never inferred predecessor decisions.
+   `night` journals the confirmed stock attestation through the live day
+   writer's root-authorized control request when that service is present.
+   Only an absent service permits direct access: acquire the host lock before
+   reading firmware, then the writer lock before preparing or appending to
+   the session. Failure never falls back from an unauthorized, stale-session
+   or rejected request to another writer.
    Archiving is one recoverable transaction. First make the kind's marker durable: the permanent reset boundary for `reset --all`, or the source/destination import marker under [Transitions](#transitions). A compatible reset appends `command.reset` and `session.archived`, fsynced, and spends its writer; a fresh transition leaves its source unchanged. Remove the state file, move `trials/` to `archive/<session-id>-trials/`, then move `events.jsonl` to `archive/<session-id>.jsonl`, syncing each step before the next and using no-replace renames. A conflicting archive journal or trial directory refuses the transaction before any append. Its own reset/import/compatibility markers instead authorize resuming the interrupted operation.
    Opening a journal that records its own `session.archived` finishes that move first, even if a torn tail follows it, then continues with an empty journal. An archive without a compatible writer first fsyncs `compat-pending`, makes the moves without appending to the source, syncs both directories, then removes that marker. A subsequent open/archive resumes such a move only with its marker; a collision without one is refused. When the archive exists and the live journal is gone, remove and sync the compatibility marker under the writer lock. The import marker remains governed by the separate [import commitment](#transitions), not by archive completion alone.
    If an unreadable journal already recorded its own `session.archived`, `reset --all` completes that recorded move without creating a compatibility-pending marker, including when `trials/` was moved before the interruption, but still makes the permanent reset boundary durable at that session before the move completes.
@@ -157,6 +170,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Evidence | `failure` (signal, location, raw evidence sequences and actual profile), `mce`, `crash.detected` (previous boot, interrupted action, reset reason and optional pstore); these remain observations, not per-core blame decisions |
 | Ruleset 13 | [New policy kinds](#ruleset-13-events): exposure, edge/cap, night planning/qualification, day steps/events/vetoes and raw day imports |
 | Ruleset 14 | Unit mappings/edges/stops, climb decisions, campaign allowance/reclassification, firmware restoration and successor import commitments (typed kinds below; adding them does not activate the policy) |
+| Stock attestation | `stock.attested` (`firmware`: complete BIOS context), the operator's confirmed stock-stability assertion; [Stock attestation](#stock-attestation) |
 | Other plans | `host.ranking`, `tuner.warning`; ranking is descriptive, never per-core tuning policy |
 | Recovery | `backend.retry` |
 | Defects | `defect.found` (known defect, direction, affected cores and decision sequences), `defect.answered` (reset answer and cores) |
@@ -164,6 +178,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Commands | `command.reset` (all; historical per-core records retain their original meaning) |
 | Journal | `journal.torn`, `state.rebuilt` |
 | Day | `day.boot_start` (`build` stamp, BIOS context as in `session.context`, `offsets`: every core's offset read back as observation began, optional `watchdog`), `day.checkpoint` (`applied_secs`, `load_mix`, optional `watchdog`), `day.fault` (`fault`, `monotonic_ns`, `offsets`, `lines`), `day.offsets_changed` (`offsets`), `day.clean_stop` (no fields), `day.unclean_end` (`boot`, optional `last_checkpoint`, `offsets`, `reset_reason`, `evidence`), `day.answer` (`boot`, `offsets`, `answer`, `uid`), `day.record` (`boot`, `offsets`, `source`, `running`, optional `note`), `day.pause` (`state`, `source`; [Day pause](#day-pause)) |
+
 
 `crash.detected.pstore`, when present, contains `path` (the absolute location of the archived dmesg record) and `lines` (its bounded tail). Recovery reads at most 128 prefix bytes per candidate to identify its full dump count and chunk part, then at most the final 3968 bytes of the selected record, keeping each record's raw reads within 4096 bytes and retaining at most 32 lines. It discards a partial first tail line when a newline follows it, otherwise keeps the bounded suffix of a long line without splitting a UTF-8 rune. Lines retain raw diagnostic text in JSON, escaped by JSON encoding like MCE lines; terminal renderers escape the message's path like other raw diagnostics. The message names the record but does not repeat its lines; `togi events --json --kind crash.detected` exposes them. This optional diagnostic never changes crash classification, attribution or replay decisions. No matching record leaves `pstore` absent. Archive or boot-span read failures append `session.warning` with `operation: "read saved pstore"` and the failed operation, then recovery continues without `pstore`; failure to append that warning remains fatal under the journal-write rules.
 
@@ -260,6 +275,24 @@ Climb hold blockers are tagged `hold{credited_s,required_s}`, `certificate`, `ce
 
 Ruleset 13 trial activities are `mapping`, `qualification`, `reproduction` and `control`. The intent names its night/task, exact requirement, class and actual applied profile. A re-qualification is qualification with its recorded purpose; filler is a distinct night task retaining its underlying mapping or qualification activity under [the filler rule](tuner.md#filler). An inconclusive retry keeps the same task/class and records `retry: true`; it does not erase consumed task time or unavailable-backend state. No intent carries a hunt, cycle or round. Stop/cleanup and recovery continue through the ordinary trial and transaction events.
 
+## Stock attestation
+
+`stock.attested { firmware }` is a new additive event kind. It records the yes
+to the existing night confirmation: the operator confirms the machine is
+stable at CO 0 with BIOS at stock. Its `firmware` uses the same complete
+`BiosContext` as session context and daily observations. No released event
+changes shape and `SCHEMA` stays 1.
+
+Write the attestation once per firmware context before switching into tuning.
+Firmware identity, not workload content or evidence epoch, scopes the answer;
+a BIOS, AGESA or microcode change needs a matching new-context attestation.
+Reopening a context already attested does not append a duplicate. The answer
+is not measured stock exposure, a qualification, a day hold or permission for
+a different firmware context. Missing current attestation refuses nonzero
+tuning under [runtime's night contract](runtime.md#night-and-day).
+A reset or ruleset transition starts a new session and requires a new answer;
+operator consent is not imported from archived sessions.
+
 ## Day observation
 
 `togi day` records raw daily observations in the existing session journal. These additive kinds retain their original observation meanings; Ruleset 13 consumes them through explicit [day events and intervals](#ruleset-13-events), never by pretending a daily boot was a tuning trial.
@@ -313,7 +346,7 @@ The three recorded freezes identified by [#1215 Q16](https://github.com/shgew/to
 
 ### Decisions in the new session
 
-Initialize applied D at verified stock with no imported hold or qualification conclusion. Recompute compatible raw night evidence under Ruleset 14; old-context facts remain history/hints and cannot bypass current controls. Reconstruct campaign events, stops and vetoes before nonzero exploration. `SCHEMA` remains 1 because the new kinds are additive; production reducer changes rebuild snapshots through their source-build fingerprint.
+Initialize applied D at verified stock with no imported hold or qualification conclusion. Recompute compatible raw night evidence under Ruleset 14; old-context facts remain history/hints and cannot bypass the current operator stock attestation. Reconstruct campaign events, stops and vetoes before nonzero exploration. `SCHEMA` remains 1 because the new kinds are additive; production reducer changes rebuild snapshots through their source-build fingerprint.
 
 ## Defects
 

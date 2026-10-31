@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::io::ErrorKind;
+use std::rc::Rc;
 
 use togi_journal::{EventKind, LockError, Payload, StateDir};
 use togi_machine::CoreId;
@@ -39,8 +41,15 @@ fn a_cap_whose_last_state_cannot_be_published_is_an_error_not_a_cap() {
     input.max_boots = nz(3);
     let fs = bench.fs.clone();
     let sim = bench.sim.clone();
+    let initial = Rc::new(RefCell::new(None));
+    let snapshot = Rc::clone(&initial);
     let mut crashes = 0;
     input.observer = Some(Box::new(move |event| {
+        if event.kind() == EventKind::SessionStart {
+            *snapshot.borrow_mut() = Some(
+                state_json(&fs).expect("the operator attestation has an initial state projection"),
+            );
+        }
         if event.kind() == EventKind::TrialEnd {
             sim.crash();
         }
@@ -57,9 +66,15 @@ fn a_cap_whose_last_state_cannot_be_published_is_an_error_not_a_cap() {
         matches!(error, SimError::Publish { boot: 3, .. }),
         "{error}"
     );
-    assert!(
-        state_json(&bench.fs).is_none(),
-        "a warm simulation publishes nothing before its last boot"
+    assert_eq!(
+        state_json(&bench.fs),
+        Some(
+            initial
+                .borrow_mut()
+                .take()
+                .expect("no initial snapshot was observed")
+        ),
+        "warm crashes and a failed final publication leave the initial attestation snapshot unchanged"
     );
 }
 

@@ -35,7 +35,7 @@ The EFI power-button scenarios wait until logind watches the current boot's powe
 
 The `quality` flake check groups seven private members: `fmt`, `changes`, `doc-links`, `board-test`, `cover-test`, `sql-test` and `module`. Its output links to each member's independently cached output; failures retain the member's derivation name and logs. Both the gate and review-fix path build the whole bundle, and Nix reruns only members whose inputs changed. `just board-test`, `just cover-test` and `just sql-test` remain focused fixture commands without GitHub access; `just changes` checks changelog fragments. The documentation-link member rejects relative Markdown links to missing files or headings.
 
-The default recovery witnesses in `togi-session` cover interrupted failure attribution, between-trial downtime and day-profile register settlement; the short-night integration checks independent `ReadState` replay. `togi-simrun` also keeps a two-boot warm/cold comparison of exact journal and state bytes. These bounded checks pin selected recovery boundaries, not every position in a full recovery sweep.
+The default recovery witnesses in `togi-session` cover interrupted failure attribution, between-trial downtime, interrupted no-nonzero-work stops and day-profile register settlement; the short-night integration checks independent `ReadState` replay. Interrupted stops cover the cleanup intent/write/restoration boundaries and a shutdown that was already durable before the cut. `togi-simrun` also keeps a two-boot warm/cold comparison of exact journal and state bytes. These bounded checks pin selected recovery boundaries, not every position in a full recovery sweep.
 
 ### Nextest by concern
 

@@ -195,6 +195,8 @@ Computation errors, stalls, unexpected exits and crashes stop at the selected ti
 
 `crates/togi-sim` is the simulator library: `Model::new(&MachineDefinition, seed)` validates a machine file's document, and a `Simulator` built from a `Model` and `RunSettings { seed, history, replay }` hands the session its seams (`Simulator::seams`, a `togi_machine::Machine`) and offers the controls tests use: `jump_wall`, `crash`, `next_reset`, `power_loss`, `reboot`, the fault arms (`fail_write`, `crash_at_write`, `crash_before_apply`, `corrupt_readback`, `fail_setup`, `miss_backend`, `escape`, `fail_check`), `script_trial`, `set_bios_context`, `set_samples_dir` and `interrupt_smu`, whose hook sees every SMU access before and after its effect. `History` (boots, last event time, BIOS context) continues a recorded run: a machine starts one reboot after the last event and numbers its boots after the recorded ones.
 
+`togi-watchtest` supplies deterministic journal prefixes for dashboard, replay and command tests. Its `nonzero` scenario starts the first attested isolated mapping trial at -5; there is no stock-control scenario. `idle` starts the first R6 trial, which is an exact qualification of a nonzero profile because mapping runs no R6, and `between` ends on the first passed R2 mapping trial. `filler` uses real calendar days and nights to promote a qualified nonzero day profile before its first filler trial, while `deadend` exhausts failed nonzero probes and records named `no_nonzero_work` evidence rather than inventing a trial failure at stock.
+
 A journal does not hold everything the next boot observes. `Simulator::persisted` returns a serializable `Persisted` snapshot of the machine, and `Simulator::restore` continues the machine from it. The snapshot holds:
 
 - the seed;
@@ -287,7 +289,9 @@ session records a trial an operator's signal stopped: an inconclusive `trial.end
 before the next day boot; a policy `EndNight` closes it with `shutdown{reason: dead_end}` instead. The adapter does not
 apply day steps for a paused boot, because the calendar has no pause.
 Successor diagnostics retain applied promotion, retreat and stock-reset step witnesses from the adapter's journal,
-including the completed exact-profile qualification's fresh, reused and stock-control trial identifiers.
+including the completed exact-profile qualification's fresh and reused trial identifiers.
+The simulated operator attests stock stability once per firmware context in the session;
+this is consent, not a stock-control workload witness.
 Reclassified-event restorations are separate from promotions and firmware restorations: their report links the
 decision's cited retreat receipt and the typed campaign reclassification, retaining the consumed allowance,
 credited normal-hold observations, exact-profile qualification and later whole-profile crash vetoes. Reverted

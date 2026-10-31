@@ -920,6 +920,13 @@ pub fn words(kind: EventKind) -> Words {
                 None
             }
         }),
+        EventKind::StockAttested => Words::said(Tag::Note, |payload| {
+            if let Payload::StockAttested(_) = payload {
+                Some(line(Tag::Note, Tone::Plain, payload.message()))
+            } else {
+                None
+            }
+        }),
         EventKind::SessionImported => {
             Words::said(Tag::Import, of!(SessionImported, |d| Some(import_line(d))))
         }

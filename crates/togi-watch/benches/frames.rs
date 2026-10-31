@@ -80,16 +80,12 @@ fn benches(c: &mut Criterion) {
         &format!("{} ({} events)", longest.0.name(), longest.1.len()),
         &longest.1,
     );
-    let controls = events(Scenario::Controls);
-    frame(
-        c,
-        &format!("controls ({} events)", controls.len()),
-        &controls,
-    );
+    let nonzero = events(Scenario::Nonzero);
+    frame(c, &format!("nonzero ({} events)", nonzero.len()), &nonzero);
     c.bench_function(
-        &format!("project/controls ({} events)", controls.len()),
+        &format!("project/nonzero ({} events)", nonzero.len()),
         |b| {
-            b.iter(|| black_box(project(black_box(&controls))));
+            b.iter(|| black_box(project(black_box(&nonzero))));
         },
     );
 }

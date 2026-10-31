@@ -66,14 +66,17 @@ pub enum Action {
     EndNight(EndReason),
 }
 
-/// Why the policy ends a night. Otherwise a night runs until it closes, and the query always has a trial
-/// to run.
+/// Why the policy ends a night before the operator closes it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EndReason {
     /// A conclusive failure at all-zero ended the run.
     DeadEnd,
     /// Every cell the night could run, the filler's included, needs an excluded backend.
     Unavailable,
+    /// The operator has not attested stock stability under the current firmware context.
+    StockUnattested,
+    /// No admissible nonzero trial remains; stock is observation-only.
+    NoNonzeroWork,
 }
 
 /// Why the state cannot answer the query yet.

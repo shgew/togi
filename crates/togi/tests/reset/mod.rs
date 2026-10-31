@@ -34,7 +34,7 @@ fn archive(state: &Path, name: &str) -> std::path::PathBuf {
 #[test_case(&["--all", "extra"]; "a stray argument")]
 fn reset_takes_exactly_all(args: &[&str]) {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let before = files(&host.fs, session.path());
     let ran = reset(&host, session.path(), args);
     assert_eq!(ran.exit, Exit::Usage, "{args:?}: {}", ran.err);
@@ -118,7 +118,7 @@ fn a_malformed_first_line_is_refused_as_ambiguous_without_changing_state(args: &
 #[test]
 fn reset_all_archives_the_session_and_marks_the_boundary() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let original = session.text();
     let ran = reset(&host, session.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
@@ -162,7 +162,7 @@ fn reset_all_archives_the_session_and_marks_the_boundary() {
 #[test]
 fn reset_all_of_an_unrecognized_schema_archives_it_unread() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     session.rewrite_first_line("\"schema\":1", "\"schema\":99");
     let original = session.text();
     let ran = reset(&host, session.path(), &["--all"]);
@@ -185,7 +185,7 @@ fn reset_all_of_an_unrecognized_schema_archives_it_unread() {
 #[test]
 fn reset_all_of_another_ruleset_archives_it_normally() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     session.rewrite_first_line(&format!("\"ruleset\":{RULESET}"), "\"ruleset\":99");
     let ran = reset(&host, session.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
@@ -210,7 +210,7 @@ fn an_unreadable_journal_exits_1(args: &[&str]) {
 #[test_case(&["--all"]; "all")]
 fn a_busy_host_lock_exits_3_naming_it_before_anything_changes(args: &[&str]) {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let before = files(&host.fs, session.path());
     let text = session.text();
     let _held = host.locks.acquire(&host.lock).unwrap();
@@ -231,7 +231,7 @@ fn a_busy_host_lock_exits_3_naming_it_before_anything_changes(args: &[&str]) {
 #[test]
 fn a_host_lock_that_cannot_be_taken_exits_1_with_its_cause_before_anything_changes() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let before = files(&host.fs, session.path());
     *host.lock_error.borrow_mut() = Some(togi_hostlock::Error::Io {
         path: host.lock.clone(),
@@ -254,7 +254,7 @@ fn a_host_lock_that_cannot_be_taken_exits_1_with_its_cause_before_anything_chang
 #[test_case(&["--all"]; "all")]
 fn a_held_state_directory_lock_exits_3_and_changes_nothing(args: &[&str]) {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let text = session.text();
     let held = host.lock_state_dir(session.path()).unwrap();
     let ran = reset(&host, session.path(), args);
@@ -271,7 +271,7 @@ fn a_held_state_directory_lock_exits_3_and_changes_nothing(args: &[&str]) {
 #[test]
 fn a_reset_journal_lock_failure_prints_its_path_and_cause_once() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     host.fs.inject(Fault::before(Op::Open, 1).named("lock"));
     let ran = reset(&host, session.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Error);
@@ -387,7 +387,7 @@ fn pending_markers_are_found_in_a_state_directory_named_like_a_pattern() {
 #[test]
 fn an_incompatible_archive_refuses_a_collision_and_resumes_a_pending_move() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     session.rewrite_first_line("\"schema\":1", "\"schema\":99");
     let original = session.text();
     host.create_dir_all(session.path().join("archive")).unwrap();
@@ -417,7 +417,7 @@ fn an_incompatible_archive_refuses_a_collision_and_resumes_a_pending_move() {
 #[test]
 fn a_journal_that_already_records_its_archive_is_only_moved() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     session.rewrite_first_line("\"schema\":1", "\"schema\":99");
     let mut text = session.text();
     text = format!(
@@ -448,7 +448,7 @@ fn a_journal_that_already_records_its_archive_is_only_moved() {
 #[test_case(&["--all"]; "all")]
 fn a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone(args: &[&str]) {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let mut text = session.text();
     text = format!(
         "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"future.fact\",\"msg\":\"x\",\"data\":{{}}}}\n",
@@ -479,7 +479,7 @@ fn a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone(args: &[&st
 #[test]
 fn a_hostile_unknown_kind_is_escaped_in_the_refusal_and_the_journal_is_left_alone() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let mut text = session.text();
     text = format!(
         "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"future.\\u001b[2J\\u202e\\nforged\",\"msg\":\"x\",\"data\":{{}}}}\n",
@@ -512,7 +512,7 @@ fn a_hostile_unknown_kind_is_escaped_in_the_refusal_and_the_journal_is_left_alon
 #[test_case(&["--all"]; "all")]
 fn a_current_journal_with_an_unknown_field_exits_16_and_is_left_alone(args: &[&str]) {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let mut text = session.text();
     text = format!(
         "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"session.warning\",\"msg\":\"x\",\"data\":{{\"operation\":\"x\",\"error\":\"y\",\"future_field\":1}}}}\n",
@@ -555,7 +555,7 @@ fn real_fs_a_host_lock_that_cannot_be_opened_exits_1() {
 #[test]
 fn infrastructure_failures_exit_1() {
     let mut host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     host.boot_fails = true;
     let ran = reset(&host, session.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
@@ -569,7 +569,7 @@ fn infrastructure_failures_exit_1() {
 #[test_case(&["reset", "--all"]; "all")]
 fn a_closed_stdout_is_an_error(args: &[&str]) {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let ran = host.run_to_closed_stdout(session.path(), args);
     assert_eq!(ran.exit, Exit::Error, "{args:?}: {}", ran.err);
     assert!(ran.err.contains("write output"), "{args:?}: {}", ran.err);
@@ -588,7 +588,7 @@ fn with_unknown_kind(session: &Session) -> String {
 #[test]
 fn an_unknown_kind_keeps_a_pending_import_and_refuses_an_older_ruleset_too() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let text = with_unknown_kind(&session);
     host.create_dir_all(session.path().join("archive")).unwrap();
     let marker = archive(session.path(), "20250101T000000Z-import-pending");
@@ -605,7 +605,7 @@ fn an_unknown_kind_keeps_a_pending_import_and_refuses_an_older_ruleset_too() {
     );
     assert_eq!(session.text(), text);
 
-    let older = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let older = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     older.rewrite_first_line(&format!("\"ruleset\":{RULESET}"), "\"ruleset\":0");
     let text = with_unknown_kind(&older);
     let ran = reset(&host, older.path(), &["--all"]);
@@ -617,7 +617,7 @@ fn an_unknown_kind_keeps_a_pending_import_and_refuses_an_older_ruleset_too() {
 #[test]
 fn a_pending_import_is_dropped_with_a_live_journal_and_an_empty_one() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     host.create_dir_all(session.path().join("archive")).unwrap();
     let marker = archive(session.path(), "20250101T000000Z-import-pending");
     host.write(&marker, "20250101T000100Z\n").unwrap();
@@ -645,7 +645,7 @@ fn a_pending_import_is_dropped_with_a_live_journal_and_an_empty_one() {
 #[test]
 fn a_torn_tail_under_all_logs_the_repair_the_reset_and_the_archive() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let mut text = session.text();
     text.push_str("{\"seq\":");
     host.write(session.journal(), text).unwrap();
@@ -667,7 +667,7 @@ fn a_torn_tail_under_all_logs_the_repair_the_reset_and_the_archive() {
 #[test]
 fn a_failed_archive_still_logs_the_events_it_recorded() {
     let host = Host::new();
-    let session = Session::with_fs(host.fs.clone(), Scenario::Controls);
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     host.create_dir_all(session.path().join("archive")).unwrap();
     host.write(
         archive(session.path(), &format!("{SESSION}.jsonl")),

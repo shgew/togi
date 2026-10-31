@@ -188,6 +188,7 @@ pub fn style_for(payload: &Payload) -> Style {
         | Payload::DayFreeze(_)
         | Payload::DayInterval(_)
         | Payload::DayPause(_)
+        | Payload::StockAttested(_)
         | Payload::DayImported(_)
         | Payload::StateRebuilt(_) => Style::Plain,
     }

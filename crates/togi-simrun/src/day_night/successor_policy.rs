@@ -95,7 +95,6 @@ pub(super) struct JournalFold {
     ceilings: BTreeMap<journal::UnitId, u8>,
     mapping: Option<journal::UnitMapping>,
     epoch: String,
-    stock_controls: Vec<(togi_machine::BiosContext, u32, String)>,
     restoration: Option<usize>,
     saved_restoration: Option<(Seq, f64, journal::UnitVector)>,
     restoration_backstep: Option<journal::DayEventId>,
@@ -118,7 +117,6 @@ impl JournalFold {
             ceilings: BTreeMap::new(),
             mapping: None,
             epoch: "initial".to_owned(),
-            stock_controls: Vec::new(),
             restoration: None,
             saved_restoration: None,
             restoration_backstep: None,
@@ -185,23 +183,10 @@ impl JournalFold {
             Payload::ExposureObserved(exposure) => {
                 if let Some(trial) = &exposure.source.trial {
                     let id = trial.as_str().to_owned();
-                    self.exposures.insert(event.seq, id.clone());
+                    self.exposures.insert(event.seq, id);
                     if exposure.outcome == journal::Outcome::Failure {
                         self.failure_events
                             .insert(event.seq, format!("journal-failure-{}", trial.as_str()));
-                    }
-                    if exposure.activity == journal::Activity::Control
-                        && exposure.outcome == journal::Outcome::Pass
-                        && exposure
-                            .profile
-                            .cores()
-                            .iter()
-                            .all(|(_, offset)| offset == TargetOffset::ZERO)
-                        && exposure.exclusions.is_empty()
-                        && exposure.failures.is_empty()
-                    {
-                        self.stock_controls
-                            .push((exposure.firmware.clone(), exposure.epoch, id));
                     }
                 }
             }
@@ -258,16 +243,6 @@ impl JournalFold {
                             day,
                             epoch: self.epoch.clone(),
                             profile,
-                            // Context and evidence epoch are explicit journal identities, not a
-                            // guessed time window around the firmware transition.
-                            stock_controls: self
-                                .stock_controls
-                                .iter()
-                                .filter(|(firmware, epoch, _)| {
-                                    firmware == &certificate.firmware && *epoch == certificate.epoch
-                                })
-                                .map(|(_, _, id)| id.clone())
-                                .collect(),
                             fresh_witnesses: fresh,
                             reused_witnesses: reused,
                             safety_checks_satisfied: true,
@@ -516,6 +491,7 @@ impl JournalFold {
             | Payload::DayFreeze(_)
             | Payload::DayInterval(_)
             | Payload::DayImported(_)
+            | Payload::StockAttested(_)
             | Payload::SuccessorImported(_) => {}
         }
         Ok(())
@@ -815,7 +791,6 @@ impl JournalFold {
             journal::FirmwareRestorationState::Saved {} => {
                 if self.restoration.is_none() && self.saved_restoration.is_none() {
                     "firmware-1".clone_into(&mut self.epoch);
-                    self.stock_controls.clear();
                     self.saved_restoration = Some((event.seq, day, restoration.saved.clone()));
                 }
             }
@@ -1089,7 +1064,6 @@ mod tests {
                     .fresh_witnesses
                     .iter()
                     .chain(&qualification.reused_witnesses)
-                    .chain(&qualification.stock_controls)
                 {
                     assert!(events.iter().any(|event| {
                         matches!(&event.payload, Payload::ExposureObserved(exposure)

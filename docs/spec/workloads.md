@@ -80,7 +80,17 @@ After all instances and confinement are ready and profile readback is verified, 
 
 ### Coverage matrix
 
-The exact-profile qualification certificate is a **composite matrix**. R1–R5 per-core cells on the changed CCD run at its proposed offset; unchanged CCD cells may reuse an earlier completed qualification only at that CCD's identical offset, class, placement contract, content, epoch and firmware, with no intervening applicable failure. This is reuse of a per-CCD observation, not a pass from a deeper offset. All package/interaction cells below run freshly at the **complete proposed profile**. On first qualification, stock controls or firmware invalidation, no unchanged-CCD credit is assumed. Monthly re-qualification runs all CCDs' cells fresh. The certificate explicitly lists reused witnesses and the fresh whole-profile cells; it cannot be described as every class having run freshly at that vector.
+The exact-profile qualification certificate is a **composite matrix**.
+R1–R5 per-core cells on the changed CCD run at its proposed offset; unchanged
+CCD cells may reuse an earlier completed qualification only at that CCD's
+identical offset, class, placement contract, content, epoch and firmware,
+with no intervening applicable failure. This is reuse of a per-CCD observation,
+not a pass from a deeper offset. All package/interaction cells below run
+freshly at the **complete proposed profile**. On first qualification or
+firmware invalidation, no unchanged-CCD credit is assumed. Monthly
+re-qualification runs all CCDs' cells fresh. The certificate explicitly lists
+reused witnesses and the fresh whole-profile cells; it cannot be described
+as every class having run freshly at that vector.
 
 One full own-duration launch per listed breadth position plus each stated sustained block is required. A conclusive failure invalidates the certificate: [failed next-step qualification](tuner.md#failed-next-step-qualification) owns the durable disposition of a proposed profile, and [daily-event escalation](tuner.md#whole-profile-veto-and-escalation) owns a current-D re-qualification failure. Only incomplete, nonfailed certificates retain outstanding cells across nights. Every position means every physical core for per-core/R8 rows, and each explicit physical-core position group for R9; only the actually tested logical position gains ledger exposure.
 
@@ -98,7 +108,7 @@ One full own-duration launch per listed breadth position plus each stated sustai
 
 Use the durable qualification ordinal, starting at zero, modulo catalog/position count for rotating selections. R5 enumerates R1 then R2; R8 enumerates index-matched light/heavy pairs, sustained light then bursty light for each pair. R9 selects the serial SMT sibling by ordinal modulo sibling count; consecutive qualifications cover the other logical positions. Sustained R8/R9 position is ordinal modulo physical-core count, using the same selected workload/schedule. The declared classes are frozen when qualification starts. R7 full/all-CCD are one cell on a single-CCD machine; honest partials do not duplicate the full set.
 
-The numerical choices preserve existing 90 s search, 120 s short and 900 s idle durations and add ten-minute package blocks to expose sustained load without an exhaustive cost explosion. For two eight-core CCDs with at most twelve partials, a normal one-CCD step schedules 19,380 s (about 5.38 h) before launch/cleanup and required repeats. First controls, fresh firmware qualification, single-CCD exclusion repeats and monthly all-CCD work may take longer and span nights. Qualification does not shorten or omit a cell when the operator ends a night; an interrupted cell remains unmet.
+The numerical choices preserve existing 90 s search, 120 s short and 900 s idle durations and add ten-minute package blocks to expose sustained load without an exhaustive cost explosion. For two eight-core CCDs with at most twelve partials, a normal one-CCD step schedules 19,380 s (about 5.38 h) before launch/cleanup and required repeats. Fresh firmware qualification, single-CCD exclusion repeats and monthly nonzero-profile work may take longer and span nights. Qualification does not shorten or omit a cell when the operator ends a night; an interrupted cell remains unmet. No trial runs an all-zero profile, including at first qualification or after firmware changes; [Ruleset 14](tuner-ruleset14.md#operator-attested-stock-stability) owns operator-attested stock stability.
 
 The [registered calendar](../../tools/bench/day-night.json)'s simulated operator ends each night after eight hours, leaving an arithmetic 2 h 37 min for all other work and overhead after those 155 launches. This is a diagnostic comparison, **not a policy limit**: there is no predicted-night allocation or cell-fit check. The simulator keeps its scenario's fixed operator-end length for comparable gate scores, interrupting a running trial at that instant under the normal operator-end rules. Its gate reports convergence under the zero-setup/teardown assumption, without controller-placement exclusions or required repeats; actual overhead must come from hardware runs, not matrix arithmetic or calendar scores.
 
@@ -229,7 +239,13 @@ Failure signals:
 | Uncorrected MCE | Kernel log of the next boot, or of the crashed boot in the persistent system journal | Same rule |
 | Crash | Boot ID differs from the last journal boot with no clean shutdown; reset reason narrows its classification | Unlocated unless associated backend or core-local MCE evidence supplies a location |
 
-These locations describe the observed signal, not a culprit selected for a per-core offset change. No regime, including multi-core R7, infers blame from voltage-request rank, a sole nonzero offset or a worker's stalled CCD. [Isolated mapping](tuner.md#night-edge-u) owns charging a tested CCD; [CO-0 controls](tuner.md#co-0-controls) owns stock confirmation, including evidence naming a CO-0 core while another CCD is nonzero. Exact-profile failures remain profile-level evidence under [qualification](#coverage-matrix) and the tuner's [daily-event rules](tuner.md#daily-events), as applicable.
+These locations describe the observed signal, not a culprit selected for a
+per-core offset change. No regime, including multi-core R7, infers blame from
+voltage-request rank or a worker's stalled CCD.
+[Isolated mapping](tuner.md#night-edge-u) owns charging the tested CCD,
+including a failure located on a CO-0 core during a nonzero mapping trial.
+There is no all-zero stock-confirmation rerun. Whole-profile qualification
+and reproduction failures remain failures of their exact tested profiles.
 
 Managed process-fault observations match the recorded controller PID or known thread IDs, a saved backend instance PID or exact trial scope, and the dashboard's known process identity. An executable name alone does not prove membership. Faults without a reported CPU remain unattributed failure observations; they never inherit a made-up executing core. Recovered observations use the fault's boot-local time and the same trial window as live observations, including the unread tail of an interrupted same-boot trial. They are deduplicated on recovery. A controller fault can therefore close its interrupted trial as a failure instead of disappearing as an inconclusive interruption.
 
@@ -260,7 +276,7 @@ The `trial.end` message for a trial closed on resume says `last evidence Ns afte
 - A new error-description boundary closes orphaned continuation state, so a truncated record does not prevent attribution of the next independent record. A surplus bank continuation establishes interleaving and clears tentative attribution back to the earliest unresolved status; this can also clear independent records whose ownership the log cannot distinguish.
 - Core-local bank types are load-store, instruction fetch, L2, decode, execution and floating point. Their reporting logical CPU identifies a physical core when the topology can map it.
 - Shared bank types, including L3, memory controller and data fabric, are not core-local even when a reporting CPU or core is known. An unknown bank type is not inferred local from that location. Preserve reported CPU/core and bank information as diagnostics without confusing reporting location with bank locality.
-- Offset adjudication follows [isolated mapping](tuner.md#night-edge-u) and [CO-0 controls](tuner.md#co-0-controls), with no R7 requester-group exception.
+- Offset adjudication follows [isolated mapping](tuner.md#night-edge-u) and [whole-profile qualification](tuner-ruleset14.md#3-what-exactly-qualifies-the-next-profile), with no all-zero rerun or R7 requester-group exception.
 
 MCA bank contents survive a warm reset and the kernel logs them early in the next boot. The tuning boot keeps the system journal persistent, so the crashed boot's last kernel messages stay readable.
 

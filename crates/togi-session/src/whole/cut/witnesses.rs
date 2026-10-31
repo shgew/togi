@@ -216,6 +216,50 @@ fn a_day_smu_power_cut_resumes_with_the_nonzero_applied_profile() {
     );
 }
 
+#[test_case(Fate::PowerLoss, togi_journal::EventKind::DeadEnd; "crash after dead end")]
+#[test_case(Fate::PowerLoss, togi_journal::EventKind::SmuIntent; "crash after zero intent")]
+#[test_case(Fate::PowerLoss, togi_journal::EventKind::SmuWrite; "crash after zero write")]
+#[test_case(Fate::PowerLoss, togi_journal::EventKind::ProfileRestored; "crash after restoration")]
+#[test_case(Fate::PowerLoss, togi_journal::EventKind::Shutdown; "crash after completed stop")]
+#[test_case(Fate::Killed, togi_journal::EventKind::SmuIntent; "kill after zero intent")]
+#[test_case(Fate::Killed, togi_journal::EventKind::Shutdown; "kill after completed stop")]
+fn an_interrupted_no_nonzero_work_stop_is_recovered(fate: Fate, boundary: togi_journal::EventKind) {
+    let bench = Bench::defined(&MachineDefinition {
+        core: (0..4).map(|id| limits(id, 0)).collect(),
+        ..small_definition()
+    });
+    let mut phases = Vec::new();
+    step(&bench, &mut phases, Phase::Run { trials: 120 });
+    let phase = &phases[0];
+    let dead_end = phase
+        .events
+        .iter()
+        .position(|event| {
+            matches!(&event.payload, Payload::DeadEnd(end) if end.detail.starts_with("no_nonzero_work:"))
+        })
+        .expect("mapping reaches a no-nonzero-work stop");
+    let after = phase.events[dead_end..]
+        .iter()
+        .position(|event| event.kind() == boundary)
+        .expect("the stop records its cleanup boundary")
+        + dead_end
+        + 1;
+    let events = resume(phase, &bench.sim.model(), after, fate);
+    assert_eq!(&events[..after], &phase.events[..after]);
+    if matches!(fate, Fate::Killed) {
+        assert_eq!(projection(&events), projection(&phase.events));
+    } else {
+        assert_unchanged_decisions(
+            phase,
+            &bench.sim.model(),
+            &events,
+            after,
+            &events[after - 1].boot,
+            None,
+        );
+    }
+}
+
 /// A short tuning history with a known reset reported only by a day boot, followed by a fresh tuning boot.
 fn tuning_after_observed_days() -> (Model, Played) {
     let bench = Bench::defined(&small_definition());

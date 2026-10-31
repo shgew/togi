@@ -155,6 +155,14 @@ impl Pause {
                 self.frozen = frozen;
             }
             socket::Control::Reapply => live.reapply(journal, observer, clock)?,
+            socket::Control::AttestStock => {
+                let firmware = observer.bios_context()?;
+                if !journal.events().iter().any(|event| {
+                    matches!(&event.payload, Payload::StockAttested(attested) if attested.firmware == firmware)
+                }) {
+                    append(journal, clock, togi_journal::StockAttested { firmware })?;
+                }
+            }
         }
         Ok(self.status())
     }

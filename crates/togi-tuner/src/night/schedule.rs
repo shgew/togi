@@ -1,4 +1,4 @@
-//! The night scheduler (`docs/spec/tuner.md`, Scheduling and CO-0 controls): a pure query over the wall
+//! The night scheduler (`docs/spec/tuner.md`, Scheduling): a pure query over the wall
 //! seconds each queue consumed in the open night and the work each queue holds. A night has no deadline and
 //! no budget: the shares are soft shares of its elapsed observed time.
 
@@ -6,7 +6,7 @@ use crate::UnitProfile;
 use togi_journal::Seq;
 
 use super::edge::MappingTarget;
-use super::matrix::{AttemptScope, Cell, zeroed};
+use super::matrix::{AttemptScope, Cell};
 
 /// Whole wall-clock seconds.
 #[derive(
@@ -62,22 +62,18 @@ pub enum Queue {
     Reproduction,
     Qualification,
     Mapping,
-    Controls,
     Requalification,
 }
 
-const VISIT_ORDER: [Queue; 5] = [
+const VISIT_ORDER: [Queue; 4] = [
     Queue::Reproduction,
     Queue::Qualification,
     Queue::Mapping,
-    Queue::Controls,
     Queue::Requalification,
 ];
 
 /// Due mapping's soft share of the night's elapsed observed time E.
 pub const MAPPING_SHARE_PCT: u8 = 10;
-/// Due stock controls' soft share of E.
-pub const CONTROLS_SHARE_PCT: u8 = 5;
 /// Due monthly re-qualification's soft share of E.
 pub const REQUALIFICATION_SHARE_PCT: u8 = 10;
 /// Reproduction's soft share of E.
@@ -90,7 +86,6 @@ pub const QUALIFICATION_SHARE_PCT: u8 = 75;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Budgets {
     pub mapping: u8,
-    pub controls: u8,
     pub requalification: u8,
     pub reproduction: u8,
     pub qualification: u8,
@@ -100,7 +95,6 @@ impl Default for Budgets {
     fn default() -> Self {
         Self {
             mapping: MAPPING_SHARE_PCT,
-            controls: CONTROLS_SHARE_PCT,
             requalification: REQUALIFICATION_SHARE_PCT,
             reproduction: REPRODUCTION_SHARE_PCT,
             qualification: QUALIFICATION_SHARE_PCT,
@@ -116,7 +110,6 @@ impl Budgets {
             Queue::Reproduction => self.reproduction,
             Queue::Qualification => self.qualification,
             Queue::Mapping => self.mapping,
-            Queue::Controls => self.controls,
             Queue::Requalification => self.requalification,
         }
     }
@@ -128,7 +121,6 @@ pub struct Consumed {
     pub reproduction: WallSecs,
     pub qualification: WallSecs,
     pub mapping: WallSecs,
-    pub controls: WallSecs,
     pub requalification: WallSecs,
     pub filler: WallSecs,
 }
@@ -140,7 +132,6 @@ impl Consumed {
             Queue::Reproduction => self.reproduction,
             Queue::Qualification => self.qualification,
             Queue::Mapping => self.mapping,
-            Queue::Controls => self.controls,
             Queue::Requalification => self.requalification,
         }
     }
@@ -151,20 +142,9 @@ impl Consumed {
         self.reproduction
             .saturating_add(self.qualification)
             .saturating_add(self.mapping)
-            .saturating_add(self.controls)
             .saturating_add(self.requalification)
             .saturating_add(self.filler)
     }
-}
-
-/// Why stock controls run.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlCause {
-    FirstNight,
-    FirmwareChange,
-    /// A new workload content or evidence epoch invalidated the earlier controls.
-    EvidenceChange,
 }
 
 /// Why the exact current D is re-qualified.
@@ -181,23 +161,10 @@ pub enum RequalificationDue {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum Reason {
-    Reproduction {
-        event: Seq,
-        attempt: AttemptScope,
-    },
+    Reproduction { event: Seq, attempt: AttemptScope },
     Qualification,
-    Mapping {
-        target: MappingTarget,
-    },
-    StockControls {
-        cause: ControlCause,
-    },
-    /// A nonzero failure named a CO-0 core: the same class and duration once more with every CCD at
-    /// CO 0.
-    CoZeroRerun,
-    Requalification {
-        due: RequalificationDue,
-    },
+    Mapping { target: MappingTarget },
+    Requalification { due: RequalificationDue },
 }
 
 /// One queue's outstanding work: the cells still to launch, in order, at one whole CCD profile.
@@ -206,19 +173,6 @@ pub struct Work {
     pub profile: UnitProfile,
     pub cells: Vec<Cell>,
     pub reason: Reason,
-}
-
-impl Work {
-    /// The single all-zero rerun of `failed`'s class and duration that a nonzero-profile failure
-    /// naming a CO-0 core requires. A passing rerun is not proof of causation.
-    #[must_use]
-    pub fn co_zero_rerun(failed: &Cell, failed_profile: &UnitProfile) -> Self {
-        Self {
-            profile: zeroed(failed_profile),
-            cells: vec![*failed],
-            reason: Reason::CoZeroRerun,
-        }
-    }
 }
 
 /// Where an event's reproduction night stands.
@@ -240,24 +194,12 @@ pub struct Reproduction {
     pub stage: ReproductionStage,
 }
 
-/// Stock controls.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Stock {
-    /// Controls hold nothing back; `rerun` is a pending CO-0 rerun of a nonzero failure.
-    Cleared { rerun: Option<Work> },
-    /// First-night or changed-firmware controls are incomplete: no nonzero work runs before them.
-    Pending { cause: ControlCause, work: Work },
-    /// A conclusive all-zero failure: a dead end under `class`.
-    Unstable { class: Cell },
-}
-
 /// Everything the scheduler reads.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Inputs {
     pub budgets: Budgets,
     /// What each queue consumed in the open night.
     pub consumed: Consumed,
-    pub stock: Stock,
     pub reproduction: Option<Reproduction>,
     pub qualification: Option<Work>,
     pub mapping: Option<Work>,
@@ -274,47 +216,36 @@ pub enum NightTask {
     },
     /// Close the event's reproduction as unreproduced; no trial runs.
     Unreproduced { event: Seq },
-    /// Platform unstable at stock under `class`: stop tuning.
-    StockUnstable { class: Cell },
     /// No queue has due work: the filler runs.
     Idle,
 }
 
-fn nonempty(work: Option<&Work>) -> Option<&Work> {
-    work.filter(|work| !work.cells.is_empty())
+/// Work that can run: cells outstanding at a profile that is not all zero. An all-zero profile is never
+/// run, whatever queue holds it.
+fn runnable(work: Option<&Work>) -> Option<&Work> {
+    work.filter(|work| !work.cells.is_empty() && !work.profile.is_zero())
 }
 
-/// The queues holding work this visit, in visiting order. While incomplete stock controls are
-/// pending, only they remain: nonzero queues are skipped and their budgets go to controls.
+/// The queues holding work this visit, in visiting order.
 fn due(inputs: &Inputs) -> Vec<(Queue, &Work)> {
-    if let Stock::Pending { work, .. } = &inputs.stock
-        && !work.cells.is_empty()
-    {
-        return vec![(Queue::Controls, work)];
-    }
-    let rerun = match &inputs.stock {
-        Stock::Cleared { rerun } => nonempty(rerun.as_ref()),
-        Stock::Pending { .. } | Stock::Unstable { .. } => None,
-    };
-    let reproduction = inputs
-        .reproduction
-        .as_ref()
-        .and_then(|reproduction| match &reproduction.stage {
-            ReproductionStage::Open(work) => Some(work),
-            ReproductionStage::Concluded | ReproductionStage::Lapsed => None,
-        })
-        .filter(|work| !work.cells.is_empty());
+    let reproduction =
+        inputs
+            .reproduction
+            .as_ref()
+            .and_then(|reproduction| match &reproduction.stage {
+                ReproductionStage::Open(work) => Some(work),
+                ReproductionStage::Concluded | ReproductionStage::Lapsed => None,
+            });
     VISIT_ORDER
         .into_iter()
         .filter_map(|queue| {
             let work = match queue {
                 Queue::Reproduction => reproduction,
-                Queue::Qualification => nonempty(inputs.qualification.as_ref()),
-                Queue::Mapping => nonempty(inputs.mapping.as_ref()),
-                Queue::Controls => rerun,
-                Queue::Requalification => nonempty(inputs.requalification.as_ref()),
+                Queue::Qualification => inputs.qualification.as_ref(),
+                Queue::Mapping => inputs.mapping.as_ref(),
+                Queue::Requalification => inputs.requalification.as_ref(),
             };
-            work.map(|work| (queue, work))
+            runnable(work).map(|work| (queue, work))
         })
         .collect()
 }
@@ -332,9 +263,6 @@ fn under_share(inputs: &Inputs, queue: Queue) -> bool {
 /// deadline, and an operator end mid-cell interrupts the trial. With nothing due the filler runs.
 #[must_use]
 pub fn next_task(inputs: &Inputs) -> NightTask {
-    if let Stock::Unstable { class } = &inputs.stock {
-        return NightTask::StockUnstable { class: *class };
-    }
     if let Some(Reproduction {
         event,
         stage: ReproductionStage::Lapsed,

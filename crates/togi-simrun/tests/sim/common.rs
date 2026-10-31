@@ -18,8 +18,8 @@ use togi_simrun::{
 
 pub(crate) const STATE: &str = "/state";
 
-/// How long the simulated operator lets a night run before ending it: long enough for the controls, mapping and the
-/// first crash on the default machine.
+/// How long the simulated operator lets a night run before ending it: long enough for mapping and the first crash
+/// on the default machine.
 pub(crate) const NIGHT: SignedDuration = SignedDuration::from_hours(24);
 
 pub(crate) fn build() -> Build {

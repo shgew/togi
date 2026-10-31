@@ -18,6 +18,12 @@ Finishing the climb does not mean “stable” or “meets your goal”: evidenc
 - **Days observe.** In normal boots togi watches the day profile without running workloads: applied hours, faults, clean and unclean ends. [Daily observation](howto.md#daily-observation) says how to answer what happened after an unclean end.
 - **BIOS stays at CO 0.** The day service will apply the day profile at boot ([#1218](https://github.com/shgew/togi/issues/1218), [ADR 0082](adr/0082-bios-stays-at-zero.md)); togi never tells you to enter offsets in BIOS.
 
+The normal `togi night` confirmation also confirms that the machine is stable
+at CO 0 with BIOS at stock. Its answer is journaled once per firmware context
+and required again after a BIOS, AGESA or microcode change. No night runs an
+all-zero trial; the first mapping offset is −5. A manually started tuning run
+without that current attestation stops at stock before nonzero work.
+
 A profile is the complete ordered per-core vector and its unit mapping. Coarse tuning moves one CCD at a time; later core refinement inherits the clean coarse result and actual history rather than restarting from zero.
 
 ## D, C and U
@@ -32,17 +38,16 @@ Unknown U grants no ordinary nonzero promotion. S may remain visible only as a l
 
 ## What a night does
 
-A night works through five queues, with soft shares of elapsed observed time; [Night order and reserved budgets](spec/tuner.md#night-order-and-reserved-budgets) owns their priority, shares and when work is due.
+A night works through four queues, with soft shares of elapsed observed time; [Night order and reserved budgets](spec/tuner.md#night-order-and-reserved-budgets) owns their priority, shares and when work is due.
 
 | Queue | What it does |
 |---|---|
 | reproduction | Investigates a CPU-suspect daily event at its failed profile and with each CCD alone |
 | qualification | Completes the coverage certificate for the next day profile |
 | mapping | Finds each unit's isolated U and sweeps uncovered cells toward C |
-| control | Checks the platform at all-zero rather than attributing stock instability to tuning |
 | requalification | Refreshes the coverage certificate for the current day profile |
 
-When primary work is empty, filler repeats exact-current-D qualification cells using the durable cursor; there is no S−1 permission filler. Unavailable backends supply no credit. Work spans nights rather than shortening required cells to fit.
+When primary work is empty, filler repeats exact-current-D qualification cells using the durable cursor **only when D is nonzero**; there is no S−1 permission filler. All-zero D receives no filler or requalification. When no nonzero cell is admissible the night ends with a named reason and restores every core to stock. Unavailable backends supply no credit. Work spans nights rather than shortening required cells to fit.
 
 A **trial** is one launch of one workload under one applied profile for a stated duration. It passes, fails or is inconclusive; an inconclusive trial adds no evidence. Exposure is eligible measured execution time only, never intended time, downtime or an extrapolated crash tail. [The coverage matrix](spec/workloads.md#coverage-matrix) owns which classes a qualification needs.
 

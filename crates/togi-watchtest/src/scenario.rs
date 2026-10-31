@@ -9,11 +9,12 @@ use crate::{Base, Error};
 /// A watch golden scenario cut from a live bounded-exploration session at the named state.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Scenario {
-    /// The first night's first CO-0 control trial has started.
-    Controls,
-    /// The first R6 control trial, the idle hold, has started.
+    /// The first night's first attested nonzero mapping trial has started.
+    Nonzero,
+    /// The first R6 trial, the idle hold, has started. Mapping never runs R6, so it is the first exact
+    /// qualification of a nonzero profile on every core.
     Idle,
-    /// An R3 control trial has passed and the next has not begun.
+    /// An R2 mapping trial has passed and the next has not begun.
     Between,
     /// The first isolated mapping trial below CO 0 has started: CCD0 at CO -5.
     Mapping,
@@ -21,7 +22,7 @@ pub enum Scenario {
     Crashed,
     /// The next boot has recorded the mapping trial's crash and recovers.
     Recovering,
-    /// Mapping has nothing left to do and the first filler trial has started.
+    /// A promoted nonzero day profile has no real work due and its first filler trial has started.
     Filler,
     /// A calendar night is qualifying the next exact day profile: its first qualification trial has started.
     Qualification,
@@ -30,15 +31,15 @@ pub enum Scenario {
     /// A calendar night reproduces the CPU-suspect daily event at the promoted profile: its first reproduction trial
     /// has started.
     Reproduction,
-    /// A control trial crashed the machine at CO 0 and the session recorded the dead end.
+    /// Every isolated -5 probe failed, leaving no admissible nonzero work.
     Deadend,
-    /// The operator ended the night with work left, interrupting a control trial.
+    /// The operator ended the night with work left, interrupting a nonzero trial.
     Stopped,
 }
 
 impl Scenario {
     pub const ALL: [Self; 12] = [
-        Self::Controls,
+        Self::Nonzero,
         Self::Idle,
         Self::Between,
         Self::Mapping,
@@ -55,7 +56,7 @@ impl Scenario {
     /// The name of the scenario's golden.
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Controls => "controls",
+            Self::Nonzero => "nonzero",
             Self::Idle => "idle",
             Self::Between => "between",
             Self::Mapping => "mapping",
@@ -73,8 +74,10 @@ impl Scenario {
     /// The simulated session the scenario is cut from.
     pub const fn base(self) -> Base {
         match self {
-            Self::Controls | Self::Idle | Self::Between | Self::Stopped => Base::Night,
-            Self::Mapping | Self::Crashed | Self::Recovering => Base::Mapped,
+            Self::Nonzero | Self::Stopped => Base::Night,
+            Self::Idle | Self::Between | Self::Mapping | Self::Crashed | Self::Recovering => {
+                Base::Mapped
+            }
             Self::Filler => Base::Filler,
             Self::Qualification | Self::DayStep | Self::Reproduction => Base::Calendar,
             Self::Deadend => Base::DeadEnd,
@@ -104,12 +107,12 @@ impl Scenario {
 
     fn cut(self, events: &[Event]) -> Result<Vec<Event>, Error> {
         let cut = match self {
-            Self::Controls => {
-                cut_trial(events, |intent| intent.activity == Some(Activity::Control))?
+            Self::Nonzero => {
+                cut_trial(events, |intent| intent.activity == Some(Activity::Mapping))?
             }
             Self::Idle => cut_trial(events, |intent| intent.regime == Regime::R6)?,
             Self::Between => cut_passed_trial(events, |intent| {
-                intent.activity == Some(Activity::Control) && intent.regime == Regime::R3
+                intent.activity == Some(Activity::Mapping) && intent.regime == Regime::R2
             })?,
             Self::Mapping => cut_trial(events, |intent| {
                 intent.task.is_some_and(|task| task.queue == Queue::Mapping)

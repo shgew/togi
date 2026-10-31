@@ -1,6 +1,6 @@
 use std::io;
 
-use togi_journal::{CloseError, LockError, LookupError, StateError};
+use togi_journal::{AppendError, CloseError, DirError, LockError, LookupError, StateError};
 use togi_session::{Divergence, PrepareError, SessionError};
 
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +24,18 @@ pub enum SimError {
         boot: u32,
         #[source]
         source: togi_machine::Error,
+    },
+    #[error("allocate the session id for boot {boot}")]
+    SessionId {
+        boot: u32,
+        #[source]
+        source: DirError,
+    },
+    #[error("record the operator's stock attestation for boot {boot}")]
+    Confirm {
+        boot: u32,
+        #[source]
+        source: AppendError,
     },
     #[error("the resume state after boot {boot} differs from a fresh fold of the journal")]
     Diverged {

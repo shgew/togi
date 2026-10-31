@@ -31,7 +31,7 @@ static AGGRESSIVE: [Entry; 1] = [entry(1, DefectDirection::TooAggressive)];
 fn session_with_a_match(defects: &'static [Entry]) -> Session<'static> {
     let mut bench = Bench::new(2);
     bench.defects = defects;
-    let Ok(mut session) = Session::open(bench.input()) else {
+    let Ok(mut session) = Session::open(bench.input_unattested()) else {
         panic!("open");
     };
     assert_eq!(session.start().unwrap(), Control::Continue);

@@ -38,7 +38,7 @@ determinism! {
     dead_end_and_its_scenarios_build_byte_identical_journals_twice: DeadEnd,
 }
 
-#[test_case::test_case(Scenario::Controls; "controls")]
+#[test_case::test_case(Scenario::Nonzero; "nonzero")]
 #[test_case::test_case(Scenario::Recovering; "recovering")]
 #[test_case::test_case(Scenario::Stopped; "stopped")]
 fn every_scenario_names_the_fixed_build(scenario: Scenario) {
@@ -119,6 +119,7 @@ fn every_scenario_names_the_fixed_build(scenario: Scenario) {
         | Payload::DayFreeze(_)
         | Payload::DayInterval(_)
         | Payload::DayPause(_)
+        | Payload::StockAttested(_)
         | Payload::DayImported(_)
         | Payload::UnitMapping(_)
         | Payload::UnitEdge(_)

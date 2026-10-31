@@ -6,12 +6,12 @@ night since 08:00, 0s elapsed: reproduction (task reproduction #0)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#8977] trial night-trial-1966 core 00 offset -5 R1 mprime SSE 4K-21K
-  90 s together reproduction task reproduction #0 night #8973
+in flight: [#8185] trial night-trial-1721 core 00 offset -5 R1 mprime SSE 4K-21K
+  90 s together reproduction task reproduction #0 night #8181
 
 UNIT   CORES                  D  C    D-C  HOLD h  STATE
-CCD 0  0,1,2,3,4,5,6,7        0  -45  45   6/50    finished
-CCD 1  8,9,10,11,12,13,14,15  0  -45  45   6/50    held
+CCD 0  0,1,2,3,4,5,6,7        0  -45  45   14/50   finished
+CCD 1  8,9,10,11,12,13,14,15  0  -45  45   14/50   held
 
 Day policy
 permission: experimental hold + exact night qualification
@@ -27,36 +27,36 @@ proposed profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
   13 0, core 14 0, core 15 0
 paused-saved profile: none
 allowance: 1 consumed / 2 limit; 1 remaining; 1 provisional; 0 reclassified
-event: boot calendar-boot-23: learning, CPU-suspect, provisional true,
-  reclassified false [#8942]
+event: boot calendar-boot-19: learning, CPU-suspect, provisional true,
+  reclassified false [#8135]
 unit: CCD 0, phase coarse, parent none, inherited start 0
-  U: censored -50 [#6977 #6982 #6987 #6992 #6997 #7002 #7007 #7012 #7017 #7022
-  #7027 #7032 #7037 #7042 #7047 #7052 #7057 #7062 #7067 #7072 #7077 #7082 #7087
-  #7092 #7097 #7102 #7107 #7112 #7117 #7122 #7127 #7132 #7137 #7142 #7147 #7152
-  #7157 #7162 #7167 #7172 #7177 #7182 #7187 #7192 #7197 #7202 #7207 #7212 #7217
-  #7222 #7227 #7232 #7237 #7242 #7247 #7252 #7257 #7262 #7267 #7272 #7277 #7282
-  #7287 #7292]
-  state: finished: stopped: first backstep after boot calendar-boot-23,
-  application ApplicationId(15); last clean 0
-  finished at: 2026-01-16T02:00:00Z; core 0 0, core 1 0, core 2 0, core 3 0,
+  U: censored -50 [#5365 #5370 #5375 #5380 #5385 #5390 #5395 #5400 #5405 #5410
+  #5415 #5420 #5425 #5430 #5435 #5440 #5445 #5450 #5455 #5460 #5465 #5470 #5475
+  #5480 #5485 #5490 #5495 #5500 #5505 #5510 #5550 #5555 #5560 #5565 #5570 #5575
+  #5580 #5585 #5590 #5595 #5600 #5605 #5610 #5615 #5620 #5625 #5630 #5635 #5640
+  #5645 #5650 #5655 #5660 #5665 #5670 #5675 #5680 #5685 #5690 #5695 #5700 #5705
+  #5710 #5715]
+  state: finished: stopped: first backstep after boot calendar-boot-19,
+  application ApplicationId(12); last clean 0
+  finished at: 2026-01-13T02:00:00Z; core 0 0, core 1 0, core 2 0, core 3 0,
   core 4 0, core 5 0, core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11
-  0, core 12 0, core 13 0, core 14 0, core 15 0 [#7294 #8946 #8938]
-  latest applied step: retreat: CPU-suspect boot calendar-boot-23 at 02:00; core
+  0, core 12 0, core 13 0, core 14 0, core 15 0 [#5717 #8139 #8131]
+  latest applied step: retreat: CPU-suspect boot calendar-boot-19 at 02:00; core
   0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5 -5, core 6 -5, core 7
   -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core 13 0, core 14 0,
   core 15 0 -> core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0, core
   6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core 13 0,
-  core 14 0, core 15 0 [#8952 #8953]
-  diagnostic S (non-authorizing): 0 [#8779]
+  core 14 0, core 15 0 [#8145 #8146]
+  diagnostic S (non-authorizing): 0 [#8180]
 unit: CCD 1, phase coarse, parent none, inherited start 0
-  U: censored -50 [#7825 #7857 #7893 #7929 #7965 #7997 #8033 #8069 #8105 #8137
-  #8173 #8209 #8245 #8277 #8301 #8321 #8357 #8389 #8413 #8445 #8481 #8501 #8537
-  #8569 #8581 #8586 #8591 #8596 #8601 #8606 #8611 #8616 #8621 #8626 #8631 #8636
-  #8641 #8646 #8651 #8656 #8661 #8666 #8671 #8676 #8681 #8686 #8691 #8696 #8701
-  #8706 #8711 #8716 #8721 #8726 #8731 #8736 #8741 #8746 #8751 #8756 #8761 #8766
-  #8771 #8776]
-  state: held: hold 6/50 h; exact-profile qualification required; boot
-  calendar-boot-23 unresolved
+  U: censored -50 [#6884 #6902 #6945 #6988 #7009 #7041 #7077 #7093 #7098 #7103
+  #7108 #7113 #7118 #7123 #7128 #7133 #7138 #7143 #7148 #7153 #7158 #7163 #7168
+  #7173 #7178 #7183 #7188 #7193 #7198 #7203 #7208 #7213 #7218 #7223 #7228 #7233
+  #7238 #7243 #7248 #7253 #7258 #7263 #7268 #7273 #7278 #7283 #7288 #7293 #7298
+  #7303 #7308 #7313 #7318 #7323 #7328 #7333 #7338 #7343 #7348 #7353 #7358 #7363
+  #7368 #7373]
+  state: held: hold 14/50 h; exact-profile qualification required; boot
+  calendar-boot-19 unresolved
   next proposal: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
   core 6 0, core 7 0, core 8 -5, core 9 -5, core 10 -5, core 11 -5, core 12 -5,
   core 13 -5, core 14 -5, core 15 -5
@@ -354,23 +354,22 @@ unit: CCD 1, phase coarse, parent none, inherited start 0
   cores 0-15
     outstanding: R9 ycruncher-bkt-sftv4-all-threads serial cpu 17 600s exact
   cores 0-15
-  diagnostic S (non-authorizing): 0 [#8780]
-current exact profile daily evidence: 126 h; 0 crashes [#1020 #1021 #1022 #1023
-  #1033 #1034 #1035 #1036 #2379 #2380 #2381 #2382 #2392 #2393 #2394 #2395 #3628
-  #3629 #3630 #3631 #3641 #3642 #3643 #3644 #3655 #3656 #3657 #3658 #4880 #4881
-  #4882 #4883 #4893 #4894 #4895 #4896 #6367 #6368 #6369 #6370 #6380 #6381 #6382
-  #6383 #7774 #7775 #7776 #7777 #7787 #7788 #7789 #7790 #7801 #7802 #7803 #7804
-  #8932 #8933 #8934 #8935 #8960 #8961 #8962]
-experimental: 126 clean hours; at most 1 crash per 42.1 h (95%, fixed-rate
+  diagnostic S (non-authorizing): 0 [#7925]
+current exact profile daily evidence: 110 h; 0 crashes [#1384 #1385 #1386 #1387
+  #1397 #1398 #1399 #1400 #2636 #2637 #2638 #2639 #2649 #2650 #2651 #2652 #3985
+  #3986 #3987 #3988 #3998 #3999 #4000 #4001 #4012 #4013 #4014 #4015 #5519 #5520
+  #5521 #5522 #5532 #5533 #5534 #5535 #6847 #6848 #6849 #6850 #6860 #6861 #6862
+  #6863 #8125 #8126 #8127 #8128 #8153 #8154 #8155 #8166 #8167 #8168 #8169]
+experimental: 110 clean hours; at most 1 crash per 36.7 h (95%, fixed-rate
   model)
 firmware restoration: none
 
 Daily safety
 freeze: off
 firmware: valid
-safety event: boot calendar-boot-23: CPU-suspect, unresolved, reproduction
+safety event: boot calendar-boot-19: CPU-suspect, unresolved, reproduction
   pending
-veto: boot calendar-boot-23: active
+veto: boot calendar-boot-19: active
 
 Night since 08:00
 elapsed: 0s
@@ -378,11 +377,10 @@ QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
 qualification    75%    0%    0s
 mapping          10%    0%    0s
-control          5%     0%    0s
 requalification  10%    0%    0s
 current task: reproduction (task reproduction #0)
-mapping CCD 0: next offset -49
-mapping CCD 1: next offset -49
+mapping CCD 0: next offset -48
+mapping CCD 1: next offset -48
 qualification: CCD 0 -5, CCD 1 0 (next step) complete, 7.8 h eligible witnessed
   exposure
 qualification: CCD 0 0, CCD 1 -5 (next step) started, 0 h eligible witnessed
@@ -437,20 +435,20 @@ qualifying CCD 0 0, CCD 1 -5: 0 h eligible witnessed exposure, 259 outstanding
     ycruncher-bkt-sftv4-all-threads serial cpu 30 120s exact; R9
     ycruncher-bkt-sftv4-all-threads serial cpu 31 120s exact; R9
     ycruncher-bkt-sftv4-all-threads serial cpu 17 600s exact
-reproduction: boot calendar-boot-23: reproduction pending, 0 h consumed, 390
+reproduction: boot calendar-boot-19: reproduction pending, 0 h consumed, 390
   classes remaining
 
 Day
-boots observed: 18; clean ends: 17; unclean ends: 1
+boots observed: 16; clean ends: 15; unclean ends: 1
 hardware watchdog at the last observer check: not recorded
 Applied hours per read-back profile (changed intervals excluded):
   00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0
-    15:0: 132.000 h
-all profiles: 132.0h observed, 1 crash (9 unknown intervals)
-stock (CO 0): 132.0h observed, 0 crashes
+    15:0: 116.000 h
+all profiles: 116.0h observed, 1 crash (8 unknown intervals)
+stock (CO 0): 116.0h observed, 0 crashes
 totals are observations, not a bound
-last unclean end: calendar-boot-23 (reset reason: unknown)
+last unclean end: calendar-boot-19 (reset reason: unknown)
 
 Day questions
-boot calendar-boot-23: answered "it froze" (change it with: togi day answer
-  calendar-boot-23 <frozen|graphics|power-off|unsure>)
+boot calendar-boot-19: answered "it froze" (change it with: togi day answer
+  calendar-boot-19 <frozen|graphics|power-off|unsure>)

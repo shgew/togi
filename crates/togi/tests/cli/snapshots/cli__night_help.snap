@@ -4,7 +4,7 @@ expression: "help(\"night\")"
 ---
 Reboot into the tuning boot for the night
 
-Shows what the night will do, as `togi status` plans it, then asks to reboot. On yes it says good night, points the boot loader at the tuning entry, remembering the selection it replaces, and reboots. Anything but yes changes nothing.
+Shows what the night will do, as `togi status` plans it, then asks to reboot and confirm stability at CO 0 with BIOS at stock. Yes durably records that assertion once per firmware context before changing the boot selection or rebooting. Anything but yes changes nothing.
 
 The night has no time limit: it runs until you end it with F10 on the tuning dashboard or the power button, or until the tuner stops on its own at a dead end or its restart limit. Each restores the selection the night replaced exactly. Crash reboots stay in the night.
 

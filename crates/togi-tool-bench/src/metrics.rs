@@ -174,6 +174,7 @@ fn count_events(events: &[Event], measured: &mut Measured) {
             | Payload::DayFreeze(_)
             | Payload::DayInterval(_)
             | Payload::DayPause(_)
+            | Payload::StockAttested(_)
             | Payload::DayImported(_)
             | Payload::UnitMapping(_)
             | Payload::UnitEdge(_)

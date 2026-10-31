@@ -575,7 +575,6 @@ fn firmware_restoration_learning_overlaps_original_post_finish_exposure() {
                 day: 182.0,
                 epoch: "changed".into(),
                 profile: previous_profile,
-                stock_controls: vec!["new-stock".into()],
                 fresh_witnesses: vec!["new-positive".into()],
                 reused_witnesses: vec![],
                 safety_checks_satisfied: true,
