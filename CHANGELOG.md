@@ -2,6 +2,21 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.13.0] - 2026-10-31
+
+### Changed
+
+- **BREAKING** Ruleset 14 two-ends tuning replaces statistical-cap permission: every bounded day step needs an exact-profile 50-hour hold and night qualification beneath C; status/watch show D/C/U, holds, stops and experimental fixed-rate evidence rather than remaining permission to S. Ruleset 13 sessions are archived unchanged and successors start at verified stock, importing eligible raw observations and reconstructing campaign events, stops and vetoes; missing history blocks nonzero exploration. The two-event machine allowance includes provisional charges and is never renewed by restart, reset, firmware change, new session or reboot; reset ends raw tuning carry but preserves the campaign ledger ([#1500]).
+- Day pause preserves Ruleset 14 learning and saved D while status/watch distinguish verified stock from the saved profile. Paused intervals never earn the 50-hour hold; a cold boot starting paused cannot promote or restore after resume, and a crash observed at paused CO 0 neither consumes the campaign allowance nor stops a tuning unit ([#1500]).
+- Ruleset 14 nights never run an all-zero trial: mapping starts at −5, stock controls and CO-0 reruns are removed, and all-zero D receives no filler or requalification. The existing `togi night` confirmation attests stock stability with BIOS at stock, journaled once per firmware context and required again after firmware changes; a missing attestation or empty nonzero queue ends tuning at verified stock with a named reason. A crash during that stop's cleanup is accounted for, including any open SMU intent, before recovery completes the stop ([#1500]).
+- Status and watch explain the applied profile D, confirmed ceiling C, unit edge U, hold and blockers or stops; the statistical S remains a separate diagnostic, never permission ([#1500]).
+- A crash from before the machine's first campaign enrollment, whether recorded live, imported from a Ruleset 13 session or appended by hand after the transition, vetoes its profile and deeper ones but never consumes the campaign allowance, stops a unit or needs applied-step history; a late record still forces a safe retreat from a forbidden applied profile without stopping units solely for that veto. Crashes at or after enrollment keep the existing charge, stop and ancestry rules ([#1500]).
+
+### Fixed
+
+- `togi status` no longer advises `togi reset --all` for a too-cautious defect; it says the session continues, and a too-aggressive defect keeps the advice ([#1523]).
+- `togi-day.service` no longer restarts every minute when the session journal is incompatible (exit 16, for example a previous ruleset's journal before `togi run` transitions it); it stays failed, so start it again with `systemctl restart togi-day` or reboot after the transition ([day service](docs/howto.md#daily-observation)) ([#1534]).
+
 ## [0.12.2] - 2026-10-31
 
 ### Added
@@ -603,6 +618,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.12.2]: https://github.com/shgew/togi/releases/tag/v0.12.2
 
+[0.13.0]: https://github.com/shgew/togi/releases/tag/v0.13.0
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -842,5 +859,8 @@ All notable changes to togi are documented in this file. The format is based on 
 [#1476]: https://github.com/shgew/togi/pull/1476
 [#1477]: https://github.com/shgew/togi/pull/1477
 [#1491]: https://github.com/shgew/togi/pull/1491
+[#1500]: https://github.com/shgew/togi/pull/1500
 [#1513]: https://github.com/shgew/togi/pull/1513
 [#1515]: https://github.com/shgew/togi/pull/1515
+[#1523]: https://github.com/shgew/togi/pull/1523
+[#1534]: https://github.com/shgew/togi/pull/1534
