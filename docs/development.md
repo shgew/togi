@@ -207,10 +207,12 @@ Linux-only code has `#[cfg(target_os = "linux")]` and a non-Linux counterpart re
 
 Stack only under the merge-unit rule in [Workflow](../AGENTS.md#workflow). Use [`gh stack`](https://github.com/github/gh-stack), installed with `gh extension install github/gh-stack`, for every stack. Each layer has its own branch and pull request based on the layer below; pass that branch as BASE to `just claim` when creating the next layer. Lower layers hold their dependants' prerequisites. Every layer passes `just gate` independently.
 
-Open with `gh stack submit`, keep current with `gh stack sync`, and merge with `gh stack merge` only under the owner's merge authorization; never merge layers individually by hand. A lower-layer fix restacks and re-reviews every layer above it. During review, follow the [review command's frozen-base and restacking procedure](../.omp/commands/review-pr.md), not a routine sync onto moving `main`.
+Open with `gh stack submit`, keep current with `gh stack sync`, and merge with `gh stack merge` under the [main session's merge procedure](../.omp/commands/review-pr.md#main-session-merge); never merge layers individually by hand. A lower-layer fix restacks and re-reviews every layer above it. During review, follow the [review command's frozen-base and restacking procedure](../.omp/commands/review-pr.md), not a routine sync onto moving `main`.
 
 ## Review integration
 
 To invoke independent review in omp, use `/review-pr [PR numbers or URLs… | all]` ([review command](../.omp/commands/review-pr.md)); no arguments selects all open non-draft pull requests. The `.omp/rules/review-after-open.md` reminder runs only in the main session, not subagents or review coordinators.
 
 GitHub identities follow [Workflow](../AGENTS.md#workflow). To publish the review record and `review` check through `just bot`, set `ROBOTOGI_KEY_FILE` to the App PEM private-key path in the environment.
+
+Agents merge under [Workflow](../AGENTS.md#workflow) because the required checks, reviewed exact head and resolved threads provide the landing gates without a separate per-PR permission handoff.

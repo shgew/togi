@@ -16,14 +16,14 @@ Rust CLI that finds and keeps testing per-CCD Curve Optimizer offsets on Zen 5 d
 
 ## Workflow
 
-Every change, docs included, lands through a pull request against `main` on `github.com/shgew/togi`, directly or through a stack. Only the release workflow's release commit bypasses this. The owner merges; agents merge only with explicit authorization for that pull request. Open the finished pull request without asking unless told otherwise.
+Every change, docs included, lands through a pull request against `main` on `github.com/shgew/togi`, directly or through a stack. Only the release workflow's release commit bypasses this. Agents open and merge finished pull requests on their own, without per-pull-request authorization, unless told otherwise; releases remain a separate action.
 
 - Claim first with `just claim` ([issue workflow](docs/issues.md)); use a short descriptive branch from `main` in your own worktree.
 - Plan [merge units](REVIEW.md#merge-units) before coding: each pull request is independently acceptable and revertible. Follow that section for multi-crate designs, ruleset switches, hand-written-line estimates and the coordinator's reviewability decision. Commits separate behavior-preserving refactors and seams from the behavior they enable. Use short imperative messages.
 - Stack only independently worthwhile merge units, even if upper layers never land; follow [stack mechanics](docs/development.md#pull-request-stacks).
 - Use the owner's account through `gh`; `robotogi[bot]` only publishes reviews ([integration](docs/development.md#review-integration)).
 - Follow `.github/pull_request_template.md`: Summary, Evidence (before and after), Merge Danger (door and blast radius). Say `Closes #N` when finishing, otherwise `Refs #N`. Hardware-pending Acceptance uses `Refs #N`, merges otherwise green and retains `needs-hardware` ([queue](docs/issues.md)).
-- Start independent review immediately after opening, before reporting done. Merge requires CI, robotogi's `review` check on the head and resolved threads.
+- Start independent review immediately after opening, before reporting done. Merge requires CI's `check`, robotogi's `review` check on the exact head, resolved review threads and a branch up to date with `main` under its ruleset. The main session owns [merge ordering](.omp/commands/review-pr.md#main-session-merge) after coordinators report.
 - Address every finding on the same branch. Fix behavior, safety, security, journal, concurrency, Acceptance, inadequate behavior tests and contradictory-doc defects. Otherwise reply with reasons without edits: taste, optional tests/refactors or another layer's work do not justify changing this layer.
 - Schema/ruleset bumps (`togi_journal::SCHEMA`, `togi_tuner::RULESET`) require a `[BREAKING]` title, `breaking` label and `**BREAKING**` changelog line.
 - Decision-changing bug fixes add a defect entry and pre-fix fixture-journal replay test when decisions can be matched; otherwise the changelog tells the operator to run `togi reset --all` to archive the session and start over.

@@ -3,11 +3,11 @@ description: Review pull requests in parallel and record their merge gates
 argument-hint: "[PR numbers or URLs… | all]"
 ---
 
-Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first; a coordinator also reads `docs/review-record.md`. Keep temporary payloads outside the repository. Never merge; the owner merges.
+Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first; a coordinator also reads `docs/review-record.md`. Keep temporary payloads outside the repository. Coordinators publish review results; the main session owns the merge step below.
 
 ## GitHub identity
 
-Use the owner's account through `gh` for every GitHub action except publishing the review record and the `review` check: opening pull requests, submitting and syncing stacks, pushing, commenting, replying to and resolving threads, filing issues and any merge the owner explicitly authorizes. Only the record and check use robotogi through `just bot` or `just as-bot`. This separates the owner's authorship and conversation from the App's review certification.
+Use the owner's account through `gh` for every GitHub action except publishing the review record and the `review` check: opening pull requests, submitting and syncing stacks, pushing, commenting, replying to and resolving threads, filing issues and merging. Only the record and check use robotogi through `just bot` or `just as-bot`. This separates the owner's authorship and conversation from the App's review certification.
 
 Rejected: using the App for all agent actions puts pull requests and discussion under an identity the owner does not want for authorship. GitHub approval is not the gate: the owner cannot approve pull requests authored under the same account; the App's check certifies the reviewed commit instead.
 
@@ -89,4 +89,10 @@ Wait for all PR and stack coordinators. Report ONE table:
 
 `PR | head | reviewers | P0–P3 findings | fixed | rejected | deferred | review check | blockers`
 
-Show per-priority counts, disposition counts and check URLs. Include record links in each row's review-check cell. Report blockers rather than omitting a PR. Never merge.
+Show per-priority counts, disposition counts and check URLs. Include record links in each row's review-check cell. Report blockers rather than omitting a PR.
+
+## Main session: merge
+
+After the coordinator reports a successful published record and check, the main session merges under [Workflow's gates](../../AGENTS.md#workflow). Robotogi's check certifies review evidence; it is a gate, not a GitHub approval. Keep merge ordering in the main session so parallel coordinators do not race the strict up-to-date rule.
+
+Before each merge, fetch current `main`. If the PR is behind, rebase and push it, then have its coordinator follow [re-review a changed head](#coordinator-re-review-a-changed-head) to carry the review forward or review changed patches before proceeding. Wait for the gates on that exact new head; `just land N` reports check and thread readiness but does not merge. Merge single PRs with `gh pr merge N`; for stacks use the [stack mechanics](../../docs/development.md#pull-request-stacks), rechecking readiness as each lower layer lands. If `main` advances again, repeat the update and review handoff before merging.
