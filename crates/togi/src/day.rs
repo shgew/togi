@@ -167,13 +167,13 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(error) => return exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error),
     };
     let mut clock = crate::system::SystemClock(ctx.system);
-    let result = serve_with_socket(
+    let result = serve_with_controls(
         &mut journal,
         &mut *observer,
         &mut clock,
         &cancel,
         &build,
-        socket.as_ref(),
+        socket.as_ref().map(|server| server as &dyn socket::ControlSource),
     );
     // Close before dropping hardware and its borrowed exclusion lock.
     let closed = journal.close();
@@ -343,16 +343,20 @@ pub fn serve(
     cancel: &CancellationToken,
     build: &Build,
 ) -> Result<(), Error> {
-    serve_with_socket(journal, observer, clock, cancel, build, None)
+    serve_with_controls(journal, observer, clock, cancel, build, None)
 }
 
-fn serve_with_socket(
+/// Applies and observes while processing controls from the supplied source.
+///
+/// # Errors
+/// Uses the same preflight, durable application and emergency cleanup contract as [`serve`].
+pub fn serve_with_controls(
     journal: &mut Journal,
     observer: &mut dyn Observer,
     clock: &mut dyn Clock,
     cancel: &CancellationToken,
     build: &Build,
-    socket: Option<&socket::Server>,
+    socket: Option<&dyn socket::ControlSource>,
 ) -> Result<(), Error> {
     let mut live = apply::Live::preflight(journal, observer)?;
     let result = observe_with_socket(
@@ -382,7 +386,7 @@ fn observe_with_socket(
     clock: &mut dyn Clock,
     cancel: &CancellationToken,
     build: &Build,
-    socket: Option<&socket::Server>,
+    socket: Option<&dyn socket::ControlSource>,
     mut live: Option<&mut apply::Live>,
 ) -> Result<(), Error> {
     let ledger = Ledger::of(journal.events());

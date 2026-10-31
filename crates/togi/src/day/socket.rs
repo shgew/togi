@@ -42,6 +42,20 @@ pub enum Control {
 pub type Controller<'a> =
     &'a mut dyn FnMut(&mut Journal, &dyn Clock, Control) -> Result<ControlStatus, super::Error>;
 
+/// Incoming controls for the live observation loop.
+pub trait ControlSource {
+    /// Polls without waiting for a request and acknowledges only completed transactions.
+    ///
+    /// # Errors
+    /// Returns a durable control or transport failure that must stop the service.
+    fn poll(
+        &self,
+        journal: &mut Journal,
+        clock: &dyn Clock,
+        control: Controller<'_>,
+    ) -> Result<(), super::Error>;
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ControlStatus {
     pub pause: PauseState,
@@ -251,6 +265,17 @@ impl Server {
         // A client disconnect is not an observation failure; durable append errors above are.
         if let Err(_disconnected) = write_reply(&mut exchange, &reply) {}
         Ok(())
+    }
+}
+
+impl ControlSource for Server {
+    fn poll(
+        &self,
+        journal: &mut Journal,
+        clock: &dyn Clock,
+        control: Controller<'_>,
+    ) -> Result<(), super::Error> {
+        self.poll(journal, clock, control)
     }
 }
 
