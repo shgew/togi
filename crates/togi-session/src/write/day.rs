@@ -5,6 +5,8 @@
 //! a read of every core. The intent, the receipt-authorized write and the readbacks are the ones the night's writes
 //! make. A failure restores every core to 0.
 
+use std::{error, fmt};
+
 use togi_journal::{
     CcdVector, Journal, Payload, Seq, SmuCommand, SmuIntentReceipt, SmuOp, SmuReadback, SmuWritten,
     Stamp,
@@ -40,14 +42,10 @@ pub enum DayWriteError {
     /// profile.
     #[error("the requested per-core offsets disagree with its CCD profile on core {core:02}")]
     Expansion { core: CoreId },
-    /// The transaction failed at some step. The events it journaled stay; `recovery` says what became of the
-    /// offsets already written.
-    #[error("write the day profile")]
-    Write {
-        #[source]
-        failure: ProfileFailure,
-        recovery: Box<DayRecovery>,
-    },
+    /// The transaction failed at some step. The events it journaled stay; the failure's `recovery` says what became
+    /// of the offsets already written.
+    #[error(transparent)]
+    Write(DayFailure),
 }
 
 /// What a failed day write did to put every core back at 0.
@@ -69,6 +67,96 @@ pub enum DayRecovery {
         journal: JournalFailure,
         zeroed: Zeroed,
     },
+}
+
+/// A day write that failed after it began, with what became of the offsets already written.
+///
+/// Its error chain is the failure's own chain followed by the recovery's outcome and, when the recovery failed in
+/// turn, that failure's chain, so one rendering of the error reports both and whether the emergency zeroing and
+/// readback held. The typed `failure` and `recovery` stay for callers that branch on them.
+#[derive(Debug, thiserror::Error)]
+#[error("write the day profile")]
+pub struct DayFailure {
+    /// The transaction's own failure.
+    pub failure: ProfileFailure,
+    /// What put every core back at 0, or failed to.
+    pub recovery: Box<DayRecovery>,
+    #[source]
+    trail: Option<Trail>,
+}
+
+impl DayFailure {
+    fn new(failure: ProfileFailure, recovery: DayRecovery) -> Self {
+        let trail = Trail::of(&failure, &recovery);
+        Self {
+            failure,
+            recovery: Box::new(recovery),
+            trail,
+        }
+    }
+}
+
+/// The messages of a failure's chain, then of its recovery, linked so each is the source of the one before. The
+/// failure and the recovery are two chains of typed errors, which one source link cannot join, so the trail holds
+/// each element's own message.
+#[derive(Debug)]
+struct Trail {
+    message: String,
+    next: Option<Box<Trail>>,
+}
+
+impl Trail {
+    fn of(failure: &ProfileFailure, recovery: &DayRecovery) -> Option<Self> {
+        let mut messages = Vec::new();
+        push_chain(&mut messages, failure);
+        match recovery {
+            DayRecovery::Crashed => {
+                messages.push("the machine crashed and nothing touched the SMU afterwards".to_owned());
+            }
+            DayRecovery::Emergency(zeroed) => messages.push(zeroed.to_string()),
+            DayRecovery::Restored => {
+                messages.push("every core restored to 0 through the ordinary transaction".to_owned());
+            }
+            DayRecovery::Unrestored(restore) => {
+                messages.push("restore every core to 0".to_owned());
+                push_chain(&mut messages, restore);
+            }
+            DayRecovery::RestorePoisoned { journal, zeroed } => {
+                messages.push("restore every core to 0".to_owned());
+                push_chain(&mut messages, journal);
+                messages.push(zeroed.to_string());
+            }
+        }
+        messages.into_iter().rev().fold(None, |next, message| {
+            Some(Self {
+                message,
+                next: next.map(Box::new),
+            })
+        })
+    }
+}
+
+fn push_chain(messages: &mut Vec<String>, error: &dyn error::Error) {
+    messages.push(error.to_string());
+    let mut source = error.source();
+    while let Some(cause) = source {
+        messages.push(cause.to_string());
+        source = cause.source();
+    }
+}
+
+impl fmt::Display for Trail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl error::Error for Trail {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        self.next
+            .as_deref()
+            .map(|next| next as &(dyn error::Error + 'static))
+    }
 }
 
 /// A journal that only appends, stamped from the day's clock: a day has no run state to fold events into. The
@@ -147,7 +235,8 @@ impl Ledger for DayLedger<'_> {
 /// # Errors
 /// [`DayWriteError::Profile`] and [`DayWriteError::Expansion`] refuse the request with nothing journaled and no
 /// hardware access. [`DayWriteError::Write`] carries the transaction's own failure (a journal failure, a failed or
-/// crashed SMU command or a readback that is not the target) and the [`DayRecovery`] that followed it.
+/// crashed SMU command or a readback that is not the target) and the [`DayRecovery`] that followed it; its error chain
+/// names that failure, then the recovery's own outcome and failure.
 #[expect(
     clippy::too_many_arguments,
     reason = "the day's journal, clock, SMU and its two proofs, the recorded topology and the request are each distinct borrows with no owner to group them"
@@ -206,10 +295,7 @@ pub fn apply_day_profile(
                 &mut hardware,
                 cores,
             );
-            Err(DayWriteError::Write {
-                failure,
-                recovery: Box::new(recovery),
-            })
+            Err(DayWriteError::Write(DayFailure::new(failure, recovery)))
         }
     }
 }

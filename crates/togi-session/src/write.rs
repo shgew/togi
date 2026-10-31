@@ -108,7 +108,7 @@ use authority::execute;
 
 mod day;
 
-pub use day::{DayAppliedProfile, DayRecovery, DayWriteError, apply_day_profile};
+pub use day::{DayAppliedProfile, DayFailure, DayRecovery, DayWriteError, apply_day_profile};
 
 /// Where a write transaction's events go: the run's [`Appender`], which folds and logs each, or a day journal that
 /// only appends. One transaction chain serves both, so a day write cannot skip a step the night's takes.

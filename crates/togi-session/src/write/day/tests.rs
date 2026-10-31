@@ -1,11 +1,14 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use serde_json::json;
 use test_case::test_case;
 
 use togi_journal::{CcdVector, Event, Payload, SmuCommand, SmuOp};
 use togi_machine::{
-    CcdId, CcdProfile, CcdProfileError, Clock, CoreInfo, Error, Machine, ObservedOffset, PerCore,
+    CcdId, CcdProfile, CcdProfileError, Clock, CoreId, CoreInfo, Error, Machine, ObservedOffset,
+    PerCore,
     Smu, TargetOffset,
 };
 use togi_sim::MachineDefinition;
@@ -121,7 +124,7 @@ fn readback(event: &Event) -> (i64, Option<i64>) {
 
 fn failure(error: DayWriteError) -> (ProfileFailure, DayRecovery) {
     match error {
-        DayWriteError::Write { failure, recovery } => (failure, *recovery),
+        DayWriteError::Write(day) => (day.failure, *day.recovery),
         other @ (DayWriteError::Profile(_) | DayWriteError::Expansion { .. }) => {
             panic!("{other:?}")
         }
@@ -601,4 +604,185 @@ fn a_crash_ends_all_smu_access_and_nothing_is_restored() {
     expected.push("smu.intent");
     assert_eq!(day.rig.kinds(), expected);
     assert_eq!(day.commands(), [zero_all(), set(0, -20)]);
+}
+
+/// Every SMU access the day makes, in order, before the hook's own `fail` decides whether it goes through.
+fn trace_smu(
+    day: &Day,
+    mut fail: impl FnMut(&SmuOperation) -> Result<(), Error> + 'static,
+) -> Rc<RefCell<Vec<(SimOp, Option<CoreId>)>>> {
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let log = Rc::clone(&seen);
+    day.rig
+        .sim
+        .interrupt_smu(move |operation: &SmuOperation| {
+            if operation.phase == HookPhase::Before {
+                log.borrow_mut().push((operation.op, operation.core));
+                return fail(operation);
+            }
+            Ok(())
+        });
+    seen
+}
+
+fn reads() -> Vec<(SimOp, Option<CoreId>)> {
+    (0..4).map(|n| (SimOp::Read, Some(core(n)))).collect()
+}
+
+const EMERGENCY_CLEAN: &str = "every core set to CO 0 without an intent (readback all 0)";
+
+#[test_case(4, false; "the restoring intent")]
+#[test_case(5, true; "the record of the restoring write")]
+fn a_journal_that_fails_during_restoration_is_answered_by_the_zero_only_emergency(
+    nth: u64,
+    intent_durable: bool,
+) {
+    let mut day = Day::new();
+    // The zeroing's first readback disagrees, so the restoring zero is the transaction that follows.
+    day.rig.sim.corrupt_readback(core(0));
+    day.rig.fail_journal_write(nth);
+    let ops = trace_smu(&day, |_| Ok(()));
+    let error = day.apply(&day.vector(-20, -30)).unwrap_err();
+    let text = togi_machine::error_chain(&error);
+    let (failed, recovery) = failure(error);
+    assert!(
+        matches!(
+            failed,
+            ProfileFailure::Write(WriteFailure::Mismatch { core: bad, .. }) if bad == core(0)
+        ),
+        "{failed:?}"
+    );
+    let DayRecovery::RestorePoisoned { zeroed, .. } = recovery else {
+        panic!("{recovery:?}");
+    };
+    assert!(zeroed.is_clean(), "{zeroed:?}");
+    let read_back: Vec<_> = zeroed
+        .readbacks
+        .iter()
+        .map(|readback| readback.result.as_ref().ok().map(|offset| offset.0))
+        .collect();
+    assert_eq!(read_back, [Some(0); 4]);
+
+    // The zeroing, its disagreeing readback, the restoring zero if its command went out, then the emergency's
+    // zero without an intent and a read of every core.
+    let mut expected = vec![(SimOp::SetAll, None), (SimOp::Read, Some(core(0)))];
+    if intent_durable {
+        expected.push((SimOp::SetAll, None));
+    }
+    expected.push((SimOp::SetAll, None));
+    expected.extend(reads());
+    assert_eq!(*ops.borrow(), expected);
+
+    // Nothing follows the append that failed.
+    let mut kinds = vec!["session.start", "smu.intent", "smu.write", "smu.readback"];
+    let mut commands = vec![zero_all()];
+    if intent_durable {
+        kinds.push("smu.intent");
+        commands.push(zero_all());
+    }
+    assert_eq!(day.rig.kinds(), kinds);
+    assert_eq!(day.commands(), commands);
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
+
+    assert!(
+        text.starts_with(
+            "write the day profile: core 00 reads CO -1 after writing 0: restore every core to 0: journal write"
+        ),
+        "{text}"
+    );
+    assert!(text.ends_with(EMERGENCY_CLEAN), "{text}");
+}
+
+#[test]
+fn a_crash_during_restoration_ends_all_smu_access() {
+    let mut day = Day::new();
+    day.rig.sim.corrupt_readback(core(0));
+    let mut zeroings = 0;
+    let ops = trace_smu(&day, move |operation| {
+        if operation.op == SimOp::SetAll {
+            zeroings += 1;
+            if zeroings == 2 {
+                return Err(Error::Crashed);
+            }
+        }
+        Ok(())
+    });
+    let error = day.apply(&day.vector(-20, -30)).unwrap_err();
+    let text = togi_machine::error_chain(&error);
+    let (failed, recovery) = failure(error);
+    assert!(
+        matches!(failed, ProfileFailure::Write(WriteFailure::Mismatch { .. })),
+        "{failed:?}"
+    );
+    assert!(matches!(recovery, DayRecovery::Crashed), "{recovery:?}");
+    // The restoring zero's command is the last SMU access: no emergency zero and no read follow the crash.
+    assert_eq!(
+        *ops.borrow(),
+        [
+            (SimOp::SetAll, None),
+            (SimOp::Read, Some(core(0))),
+            (SimOp::SetAll, None)
+        ]
+    );
+    // The restoring intent is durable and nothing follows it: no error record.
+    assert_eq!(
+        day.rig.kinds(),
+        [
+            "session.start",
+            "smu.intent",
+            "smu.write",
+            "smu.readback",
+            "smu.intent"
+        ]
+    );
+    assert_eq!(
+        text,
+        "write the day profile: core 00 reads CO -1 after writing 0: the machine crashed and nothing touched the SMU afterwards"
+    );
+}
+
+#[test]
+fn a_journal_failure_is_reported_with_the_emergency_outcome() {
+    let mut day = Day::new();
+    day.rig.fail_journal_write(1);
+    let text = togi_machine::error_chain(&day.apply(&day.vector(-20, -30)).unwrap_err());
+    assert!(
+        text.starts_with("write the day profile: journal write"),
+        "{text}"
+    );
+    assert!(text.ends_with(EMERGENCY_CLEAN), "{text}");
+}
+
+#[test]
+fn a_restored_failure_is_reported_with_its_failure() {
+    let mut day = Day::new();
+    day.rig.sim.corrupt_readback(core(0));
+    let text = togi_machine::error_chain(&day.apply(&day.vector(-20, -30)).unwrap_err());
+    assert_eq!(
+        text,
+        "write the day profile: core 00 reads CO -1 after writing 0: every core restored to 0 through the ordinary transaction"
+    );
+}
+
+#[test]
+fn a_failed_restoration_is_reported_with_both_failures() {
+    let mut day = Day::new();
+    let mut zeroings = 0;
+    let _ops = trace_smu(&day, move |operation| {
+        if operation.op == SimOp::SetAll {
+            zeroings += 1;
+            if zeroings == 2 {
+                return Err(Error::Other("restore refused".into()));
+            }
+        }
+        if operation.op == SimOp::Set && operation.core == Some(core(2)) {
+            return Err(Error::Other("write refused".into()));
+        }
+        Ok(())
+    });
+    let text = togi_machine::error_chain(&day.apply(&day.vector(-20, -30)).unwrap_err());
+    let write = text.find("write refused").expect(&text);
+    let restore = text.find("restore every core to 0").expect(&text);
+    let refused = text.find("restore refused").expect(&text);
+    assert!(write < restore && restore < refused, "{text}");
 }
