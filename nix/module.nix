@@ -171,6 +171,9 @@ in
             ExecStart = "${lib.getExe cfg.package} day --state-dir /var/lib/togi";
             Restart = "on-failure";
             RestartSec = 60;
+            # Exit 16 is an incompatible journal: only `togi run` transitioning it clears the refusal, so a restart
+            # would refuse again. A missing session (1) or a held lock (3) can clear itself.
+            RestartPreventExitStatus = "16";
             StateDirectory = "togi";
           };
           # A killed process cannot run its journaled stop transaction. This hook has only zero

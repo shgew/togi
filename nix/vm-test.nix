@@ -1317,6 +1317,19 @@ let
         machine.succeed("systemctl stop togi-day.service")
         kinds = [e["kind"] for e in day()]
         assert kinds[-1] == "day.clean_stop", kinds
+
+        # An older ruleset in the header is an incompatible journal (exit 16): restarting cannot clear it, so the
+        # unit stays failed with no restart scheduled, and the abnormal-exit hook still leaves every core at 0.
+        machine.succeed(f"sed -i -E '1s/\"ruleset\": *[0-9]+/\"ruleset\":1/' {journal}")
+        machine.succeed(f"head -n 1 {journal} | grep -qE '\"ruleset\":1[,}}]'")
+        machine.succeed("printf '%s' '-5 -5 -5 -5' > /var/lib/togi-vm/offsets")
+        machine.succeed("systemctl reset-failed togi-day.service; systemctl start togi-day.service")
+        machine.wait_until_succeeds("systemctl is-failed --quiet togi-day.service")
+        day_prop = lambda name: machine.succeed(f"systemctl show togi-day.service -p {name} --value").strip()
+        assert day_prop("Result") == "exit-code" and day_prop("ExecMainStatus") == "16", day_prop("Result")
+        assert day_prop("SubState") == "failed" and day_prop("NRestarts") == "0", day_prop("SubState")
+        assert machine.succeed("cat /var/lib/togi-vm/offsets").split() == ["0"] * 4
+        machine.succeed("journalctl -b -u togi-day.service -o cat --no-pager | grep -F 'emergency-stop:'")
       '';
     };
   };
