@@ -45,6 +45,10 @@ enum Command {
     Check(CheckArgs),
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent command-line switches, not state-machine flags"
+)]
 #[derive(Debug, Args)]
 struct SessionArgs {
     /// Draw the simulated machine's limits and failures from this seed.

@@ -46,9 +46,12 @@ fn identities(events: &[Event]) -> Vec<WorkloadContent> {
 fn intents(events: &[Event]) -> Vec<WorkloadContent> {
     events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) => Some(intent.content.iter().cloned()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some(intent.content.iter().cloned())
+            } else {
+                None
+            }
         })
         .flatten()
         .collect()
@@ -176,9 +179,9 @@ fn the_adapter_answers_recorded_workloads_and_refuses_the_rest() {
     let absent = ALL_REGIMES
         .into_iter()
         .flat_map(workloads)
-        .map(|workload| workload.id())
+        .map(togi_machine::Workload::id)
         .find(|workload| !known.contains(&workload.runs()))
-        .expect("the recording names every workload of the catalog");
+        .expect("the bounded recording leaves an unseen workload");
     let ran = host.execute(
         MACHINE.into_iter().chain(["--recorded-content"]),
         |mut input| {
