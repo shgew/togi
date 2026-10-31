@@ -2,6 +2,28 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.12.2] - 2026-10-31
+
+### Added
+
+- `togi status --evidence` shows exact-profile and stock observations, rate/slope witnesses with their loaded cores, qualification hours, provenance and coverage gaps without a verdict or progress promise; a night-qualified profile is inspectable without the day service. Status and watch also explain cap reasons and the governing Ruleset 13 rule, showing the current calculation apart from the committed cap ([#1476]).
+- `togi day notify` and status show a journal-derived morning report on the first observed day boot after a night, explicitly naming the stock-only application restriction without claiming current offsets were verified ([#1476]).
+- `togi doctor --day` checks day prerequisites and this boot's complete cited CO-0 baseline/restoration receipts separately from applied D or current readback ([#1476]).
+- The day service applies stock CO 0 through durable intent, write and all-core readback transactions on normal boot, same-boot restart and resume, and verifies zero before marking a clean stop; automatic nonzero day offsets remain disabled ([#1477]).
+- `togi day pause [<duration>|--until <time>]`, `resume`, `freeze` and `unfreeze` now work through the rootless day socket, with durable timed pauses, expiry warnings and a one-hour extension action, dashboard keys and verified stock-only reapplication; paused time earns no hold ([#1491]).
+
+### Changed
+
+- `togi day record` hands a record to the running day service instead of requiring it to stop, and writes the journal directly only when no service runs. The service refuses a record drafted from another session ([#1477]).
+
+### Fixed
+
+- Emergency zeroing refuses before any SMU command when slot mapping failed, including when the day service holds the driver directly ([#1477]).
+- Night mapping keeps each step's declared partial-load subsets, continues its original task, reuses compatible completed cells and preserves CCD alternation instead of rewinding after later voltage telemetry ([#1513]).
+- Completed stock controls stay complete within their firmware and evidence context when later telemetry changes partial-load subsets ([#1513]).
+- Recognized historical mapping rewinds receive a too-cautious defect finding and can continue under the fixed policy without discarding their recorded evidence ([#1513]).
+- A boot that ran only the day observer no longer counts as a crashed tuning boot when the next night starts. Tuning crashes remain detectable before configuration is recorded, and day-only reset reports do not turn crashed tuning trials into inconclusive interruptions ([#1515]).
+
 ## [0.12.1] - 2026-10-29
 
 ### Changed
@@ -579,6 +601,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.12.1]: https://github.com/shgew/togi/releases/tag/v0.12.1
 
+[0.12.2]: https://github.com/shgew/togi/releases/tag/v0.12.2
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -815,3 +839,8 @@ All notable changes to togi are documented in this file. The format is based on 
 [#1380]: https://github.com/shgew/togi/pull/1380
 [#1409]: https://github.com/shgew/togi/pull/1409
 [#1411]: https://github.com/shgew/togi/pull/1411
+[#1476]: https://github.com/shgew/togi/pull/1476
+[#1477]: https://github.com/shgew/togi/pull/1477
+[#1491]: https://github.com/shgew/togi/pull/1491
+[#1513]: https://github.com/shgew/togi/pull/1513
+[#1515]: https://github.com/shgew/togi/pull/1515
