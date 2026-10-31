@@ -77,8 +77,21 @@ fn record(host: &mut Host, marker: u8) {
     );
 }
 
-/// Resumes the one-boot recording for one boot and returns what the trial intents it appends report. The recording
-/// holds only the workloads its own boot ran, so a longer resume could meet one it never recorded and refuse.
+/// The boots of the recording the resume tests continue. One boot is too few: mapping starts at -5 and the first
+/// boot crashes before it has journaled every workload a resumed boot asks for, and `--recorded-content` refuses a
+/// workload the journal never recorded. The second boot journals the rest.
+const RECORDED_BOOTS: usize = 2;
+
+/// A hunting machine whose journal holds [`RECORDED_BOOTS`] boots recorded with marker 7.
+fn recording() -> Host {
+    let mut host = Host::hunting();
+    for _ in 0..RECORDED_BOOTS {
+        record(&mut host, 7);
+    }
+    host
+}
+
+/// Resumes the recording for one boot and returns what the trial intents it appends report.
 fn resumed(host: &mut Host, extra: &[&str]) -> Vec<WorkloadContent> {
     let before = host.events("/state").len();
     let ran = host.run(
@@ -95,8 +108,7 @@ fn resumed(host: &mut Host, extra: &[&str]) -> Vec<WorkloadContent> {
 
 #[test]
 fn recorded_content_keeps_the_recorded_identities_when_resuming() {
-    let mut host = Host::hunting();
-    record(&mut host, 7);
+    let mut host = recording();
     for content in resumed(&mut host, &["--recorded-content"]) {
         assert_eq!(
             content.content,
@@ -108,8 +120,7 @@ fn recorded_content_keeps_the_recorded_identities_when_resuming() {
 
 #[test]
 fn without_the_option_a_resumed_run_reports_synthetic_identities() {
-    let mut host = Host::hunting();
-    record(&mut host, 7);
+    let mut host = recording();
     for content in resumed(&mut host, &[]) {
         assert_eq!(
             content.content,
