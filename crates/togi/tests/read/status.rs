@@ -817,51 +817,44 @@ fn daily_safety_stays_visible_beside_experimental_permission() {
     assert!(flat.contains("veto: boot day-a: active"), "{flat}");
 }
 
-#[test]
-fn a_defect_names_its_decisions_and_advises_a_full_reset_not_a_core_reset() {
+#[test_case::test_case(
+    "too_cautious", "too cautious", "  the session continues\n", "togi reset --all";
+    "too cautious continues without reset advice"
+)]
+#[test_case::test_case(
+    "too_aggressive", "too aggressive", "  togi reset --all\n", "the session continues";
+    "too aggressive advises a full reset"
+)]
+fn a_defect_names_its_decisions_and_advises_by_direction(
+    direction: &str,
+    shown_direction: &str,
+    advice: &str,
+    absent: &str,
+) {
     let dir = hand();
     append_event(
         &dir,
         "defect.found",
         "defect 1",
         &serde_json::json!({
-            "id": 1, "title": "step\u{1b}[31m too cautious", "detail": "why", "pr": 7,
-            "direction": "too_cautious", "cores": [3, 5], "decisions": [4, 6],
+            "id": 1, "title": "step\u{1b}[31m defect", "detail": "why", "pr": 7,
+            "direction": direction, "cores": [3, 5], "decisions": [4, 6],
         }),
     );
     let shown = status_of(&dir);
     assert!(
-        shown.contains(
-            "defect 1: step\\x1b[31m too cautious (too cautious; fixed by pull request #7)"
-        ),
+        shown.contains(&format!(
+            "defect 1: step\\x1b[31m defect ({shown_direction}; fixed by pull request #7)"
+        )),
         "{shown}"
     );
     assert!(
         shown.contains("decisions #4 #6 affected cores 03 05"),
         "{shown}"
     );
-    assert!(shown.contains("  togi reset --all\n"), "{shown}");
+    assert!(shown.contains(advice), "{shown}");
+    assert!(!shown.contains(absent), "{shown}");
     assert!(!shown.contains("--core"), "{shown}");
-}
-
-#[test]
-fn a_too_aggressive_defect_is_listed_too() {
-    let dir = hand();
-    append_event(
-        &dir,
-        "defect.found",
-        "defect 2",
-        &serde_json::json!({
-            "id": 2, "title": "too deep", "detail": "why", "pr": 9,
-            "direction": "too_aggressive", "cores": [1], "decisions": [2],
-        }),
-    );
-    let shown = status_of(&dir);
-    assert!(
-        shown.contains("defect 2: too deep (too aggressive;"),
-        "{shown}"
-    );
-    assert!(shown.contains("togi reset --all"), "{shown}");
 }
 
 #[test]
