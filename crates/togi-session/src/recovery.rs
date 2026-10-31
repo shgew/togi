@@ -8,7 +8,7 @@ use jiff::Timestamp;
 use togi_config::DeadEndThreshold;
 use togi_journal::{
     Build, CrashDetected, DeadEnd, DeadEndCondition, Event, EventKind, NightId, Outcome, Payload,
-    RetryTarget, Seq, ShutdownReason, SmuCommand, TaskId, TaskStart, TrialId, TrialIntent,
+    RetryTarget, Seq, ShutdownReason, SmuCommand, TaskId, TaskStart, TrialId, TrialIntent, Writer,
 };
 use togi_machine::{
     Backend, BiosContext, BootId, CcdId, Condition, CpuId, KernelCursor, ObservedOffset, PerCore,
@@ -230,7 +230,11 @@ pub(crate) struct RecoveryState {
     context: Option<BiosContext>,
     topology: PerCore<Option<CcdId>>,
     baseline: Option<(Seq, PerCore<ObservedOffset>)>,
+    /// Boots admitted by a tuning-run witness, oldest first: the ones crash detection and same-boot visits judge.
     boots: Vec<BootId>,
+    /// Every boot with any event in the journal, day-only boots included, oldest first: the order of succession.
+    #[serde(default)]
+    journal_boots: Vec<BootId>,
     records: BTreeMap<BootId, BootRecord>,
     crashes: BTreeMap<BootId, (Seq, CrashDetected)>,
     backends: BTreeMap<Backend, BackendState>,
@@ -598,22 +602,36 @@ impl RecoveryState {
         }
     }
 
-    /// Admits the event's boot as a tuning boot and tracks its last kind. Day events and a repaired tear record
-    /// no tuning activity: a boot with only those is never a crash, and cannot make a later tuning start in it
-    /// look like a same-boot restart.
+    /// Folds every boot into the order of succession, but admits only tuning-run events to crash recovery: every
+    /// kind only a run appends ([`Writer::Run`]), not an allow-list of witnesses, so run startup activity before
+    /// `config.loaded` (`state.rebuilt`, a startup `mce`) admits the boot. `session.warning` and
+    /// `boot.leave_reason` are notes about a boot, so they neither admit it nor replace its last event. Day kinds
+    /// and the journal's and operator commands' own markers never admit, and the kinds the day observer shares
+    /// with a run (night commitments, SMU events) are no evidence of a run. After `shutdown`, only another
+    /// run-only event reopens the boot: the observer, exclusive with a run under the host and writer locks,
+    /// cannot undo a clean stop.
     fn track_boot(&mut self, event: &Event) {
-        if event.kind().is_day() || event.kind() == EventKind::JournalTorn {
-            return;
+        if !self.journal_boots.contains(&event.boot) {
+            self.journal_boots.push(event.boot.clone());
+        }
+        let note = matches!(
+            event.kind(),
+            EventKind::SessionWarning | EventKind::BootLeaveReason
+        );
+        let tuning = match event.kind().writer() {
+            Writer::Run => !note,
+            Writer::Shared => false,
+            Writer::Day | Writer::Outside => return,
+        };
+        if tuning && !self.boots.contains(&event.boot) {
+            self.boots.push(event.boot.clone());
         }
         if let Some(record) = self.records.get_mut(&event.boot) {
-            if !matches!(
-                event.kind(),
-                EventKind::SessionWarning | EventKind::BootLeaveReason
-            ) {
+            let closed = record.last_kind == EventKind::Shutdown;
+            if !note && (tuning || !closed) {
                 record.last_kind = event.kind();
             }
-        } else {
-            self.boots.push(event.boot.clone());
+        } else if tuning {
             self.records
                 .insert(event.boot.clone(), BootRecord::new(event.kind()));
         }
@@ -977,12 +995,12 @@ impl RecoveryState {
         })
     }
 
-    /// The boot that followed `boot` in the journal, or `current` when none has.
+    /// The boot that followed `boot` in the journal, day-only boots included, or `current` when none has.
     pub(crate) fn next_boot<'a>(&'a self, boot: &BootId, current: &'a BootId) -> &'a BootId {
-        self.boots
+        self.journal_boots
             .iter()
             .position(|known| known == boot)
-            .and_then(|at| self.boots.get(at + 1))
+            .and_then(|at| self.journal_boots.get(at + 1))
             .unwrap_or(current)
     }
 

@@ -380,31 +380,107 @@ impl Payload {
 #[error("unknown event kind {0:?}")]
 pub struct UnknownKind(pub String);
 
+/// Which program appends an event kind. The day observer and the tuning run share one journal, and each consumer
+/// of a boot's events asks this to tell a tuning boot from a day-only one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Writer {
+    /// Only a tuning run appends it, including its startup before `config.loaded`.
+    Run,
+    /// Only the `togi day` observer or the day policy appends it.
+    Day,
+    /// Both append it: the night commitments the day observer owes when it closes a night, and the SMU write
+    /// transaction chain of its stock profile.
+    Shared,
+    /// Neither: the journal's own torn-tail marker and the reset and archive commands, which close a session
+    /// without being a boot's tuning activity.
+    Outside,
+}
+
 impl EventKind {
+    /// Who appends this kind, answered for every kind so a new one must choose.
+    pub const fn writer(self) -> Writer {
+        match self {
+            Self::DayBootStart
+            | Self::DayCheckpoint
+            | Self::DayOffsetsChanged
+            | Self::DayCleanStop
+            | Self::DayUncleanEnd
+            | Self::DayAnswer
+            | Self::DayRecord
+            | Self::DayFault
+            | Self::DayStep
+            | Self::DayApplied
+            | Self::DayEvent
+            | Self::DayVeto
+            | Self::DayHold
+            | Self::DayFreeze
+            | Self::DayInterval
+            | Self::DayImported
+            | Self::DayPause => Writer::Day,
+            Self::NightPlan
+            | Self::NightQualification
+            | Self::NightReproduction
+            | Self::SmuIntent
+            | Self::SmuWrite
+            | Self::SmuReadback
+            | Self::SmuError => Writer::Shared,
+            Self::JournalTorn | Self::CommandReset | Self::SessionArchived => Writer::Outside,
+            Self::SessionStart
+            | Self::SessionContext
+            | Self::SessionBaseline
+            | Self::SessionNotice
+            | Self::SessionWarning
+            | Self::SessionImported
+            | Self::SessionCarried
+            | Self::ConfigLoaded
+            | Self::PreflightCheck
+            | Self::ProfileApplied
+            | Self::ProfileChange
+            | Self::ProfileRestored
+            | Self::TrialIntent
+            | Self::TrialStart
+            | Self::TrialProgress
+            | Self::TrialSignal
+            | Self::TrialSample
+            | Self::TrialEnd
+            | Self::TrialCarried
+            | Self::Failure
+            | Self::FailureCarried
+            | Self::Mce
+            | Self::CrashDetected
+            | Self::TunerDecision
+            | Self::CorePhase
+            | Self::CheckingCycle
+            | Self::CheckingStep
+            | Self::CheckingChain
+            | Self::HostRanking
+            | Self::HuntStart
+            | Self::HuntGroup
+            | Self::HuntEnd
+            | Self::HuntSkipped
+            | Self::Combination
+            | Self::DeepeningRound
+            | Self::TunerWarning
+            | Self::BackendRetry
+            | Self::DefectFound
+            | Self::DefectAnswered
+            | Self::DeadEnd
+            | Self::BootSavedEntry
+            | Self::BootLeaveReason
+            | Self::Shutdown
+            | Self::StateRebuilt
+            | Self::ExposureObserved
+            | Self::CcdEdge
+            | Self::CcdCap
+            | Self::TaskStart => Writer::Run,
+        }
+    }
+
     /// Whether this is a day kind: a `togi day` observer event, or a Ruleset 13 day decision, event or import.
     /// Day kinds come from normal boots and the day policy, not from a tuning boot, so tuning-boot tracking such as
     /// crash detection and boot continuity skips them. The observer's raw records are inputs to the day policy.
     pub const fn is_day(self) -> bool {
-        matches!(
-            self,
-            Self::DayBootStart
-                | Self::DayCheckpoint
-                | Self::DayOffsetsChanged
-                | Self::DayCleanStop
-                | Self::DayUncleanEnd
-                | Self::DayAnswer
-                | Self::DayRecord
-                | Self::DayFault
-                | Self::DayStep
-                | Self::DayApplied
-                | Self::DayEvent
-                | Self::DayVeto
-                | Self::DayHold
-                | Self::DayFreeze
-                | Self::DayInterval
-                | Self::DayImported
-                | Self::DayPause
-        )
+        matches!(self.writer(), Writer::Day)
     }
 
     pub fn group(self) -> &'static str {
