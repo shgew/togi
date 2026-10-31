@@ -228,6 +228,53 @@ fn conflicting_recorded_identities_refuse_before_the_session_starts() {
 }
 
 #[test]
+fn a_recorded_identity_on_another_backend_refuses_before_the_session_starts() {
+    let mut host = Host::hunting();
+    let ran = host.execute(
+        MACHINE.into_iter().chain(["--max-boots", "1"]),
+        |mut input| {
+            let mut misrecorded = everything_marked(7);
+            for content in misrecorded.contents.values_mut() {
+                content.backend = match content.backend {
+                    Backend::Mprime => Backend::Ycruncher,
+                    Backend::Ycruncher => Backend::Mprime,
+                };
+            }
+            input.adapt_trials = Some(misrecorded.adapter());
+            simulate(input)
+        },
+    );
+    assert!(matches!(ran.code, Some(0 | 3)), "{}", ran.stderr);
+    let before = host.events("/state");
+    let misrecorded = identities(&before);
+    assert!(
+        !misrecorded.is_empty()
+            && misrecorded
+                .iter()
+                .all(|content| content.content.backend != content.workload.backend()),
+        "{misrecorded:?}"
+    );
+    let ran = host.execute(MACHINE.into_iter().chain(["--recorded-content"]), |_| {
+        unreachable!("the session started on identities of another backend")
+    });
+    assert_eq!(ran.code, Some(1), "{}", ran.stderr);
+    let first = &misrecorded[0];
+    assert!(
+        ran.stderr
+            .starts_with("sim: read the content identities the journal recorded: event ")
+            && ran.stderr.ends_with(&format!(
+                " records {:?} content for workload {}, which runs {:?}\n",
+                first.content.backend,
+                first.workload,
+                first.workload.backend()
+            )),
+        "{}",
+        ran.stderr
+    );
+    assert_eq!(host.events("/state").len(), before.len());
+}
+
+#[test]
 fn the_option_without_a_recording_refuses_before_the_session_starts() {
     let mut host = Host::hunting();
     let ran = host.execute(MACHINE.into_iter().chain(["--recorded-content"]), |_| {
