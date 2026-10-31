@@ -36,6 +36,15 @@ impl Hardware {
             firmware: bios(),
         }
     }
+
+    fn write(&mut self, target: TargetOffset) -> Result<(), MachineError> {
+        self.writes.push(target);
+        if matches!(self.failure, Failure::Write(at) if at == self.writes.len()) {
+            return Err(MachineError::BootMissing);
+        }
+        self.current = target.get();
+        Ok(())
+    }
 }
 
 impl Smu for Hardware {
@@ -46,17 +55,11 @@ impl Smu for Hardware {
         }
         Ok(ObservedOffset(self.current))
     }
-    fn set_offset(&mut self, _: CoreId, _: TargetOffset) -> Result<(), MachineError> {
-        panic!("day must use the all-core stock transaction")
+    fn set_offset(&mut self, _: CoreId, target: TargetOffset) -> Result<(), MachineError> {
+        self.write(target)
     }
     fn set_all_offsets(&mut self, target: TargetOffset) -> Result<(), MachineError> {
-        self.writes.push(target);
-        assert_eq!(target, TargetOffset::ZERO);
-        if matches!(self.failure, Failure::Write(at) if at == self.writes.len()) {
-            return Err(MachineError::BootMissing);
-        }
-        self.current = target.get();
-        Ok(())
+        self.write(target)
     }
     fn emergency_zero(&mut self, _: SmuValidated, _: &Stopped) -> Result<(), MachineError> {
         self.emergency += 1;
@@ -246,7 +249,7 @@ fn proposed_climb(journal: &mut Journal) -> Seq {
 }
 
 #[test]
-fn cold_boot_applies_only_stock_and_stop_verifies_before_clean_marker() {
+fn cold_boot_applies_stock_without_permission_and_stop_verifies_before_clean_marker() {
     let mut journal = seed();
     let mut hardware = Hardware::stock();
     serve(
@@ -273,7 +276,7 @@ fn cold_boot_applies_only_stock_and_stop_verifies_before_clean_marker() {
 }
 
 #[test]
-fn a_nonzero_proposal_commits_only_stock_as_a_reset_without_consuming_the_promotion() {
+fn a_nonzero_permitted_proposal_commits_the_applied_step_and_stop_zeroes() {
     let mut journal = seed();
     let proposal = proposed_climb(&mut journal);
     let mut hardware = Hardware::stock();
@@ -286,17 +289,35 @@ fn a_nonzero_proposal_commits_only_stock_as_a_reset_without_consuming_the_promot
     )
     .unwrap();
     let applied = applications(&journal)[0];
-    assert_eq!(applied.cause, ApplyCause::Reset { cause: proposal });
-    assert_eq!(applied.target, target(&journal, 0));
-    assert_eq!(applied.readbacks, offsets(0));
-    assert_eq!(hardware.writes, [TargetOffset::ZERO, TargetOffset::ZERO]);
+    assert_eq!(
+        applied.cause,
+        ApplyCause::Step {
+            decision: DecisionId(proposal.get())
+        }
+    );
+    assert_eq!(applied.target, target(&journal, -5));
+    assert_eq!(applied.readbacks, offsets(-5));
+    assert_eq!(
+        hardware.writes,
+        [
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO
+        ]
+    );
+    assert_eq!(
+        Ledger::of(journal.events())
+            .profiles
+            .get(&vec![(CoreId::new(0).unwrap(), -5)]),
+        Some(&120),
+    );
     let mut policy = togi_tuner::policy::State::new(togi_tuner::policy::Params::SPEC);
     for event in journal.events() {
         policy.fold(event).unwrap();
     }
     assert_eq!(
         policy.project().applied,
-        Some(togi_tuner::UnitProfile::of_ccd(target(&journal, 0).ccd()))
+        Some(togi_tuner::UnitProfile::of_ccd(target(&journal, -5).ccd()))
     );
     let projected = policy.project();
     assert_eq!(
@@ -308,19 +329,44 @@ fn a_nonzero_proposal_commits_only_stock_as_a_reset_without_consuming_the_promot
             .climb
             .units
             .iter()
-            .all(|unit| unit.latest_step.is_none())
+            .any(|unit| unit.latest_step.is_some())
     );
-    let event = journal
-        .events()
-        .iter()
-        .find(|event| matches!(event.payload, Payload::DayApplied(_)))
-        .unwrap();
-    assert!(
-        event
-            .msg
-            .contains("nonzero day offsets are not enabled yet")
+}
+
+#[test]
+fn a_fault_logged_before_the_service_started_keeps_the_startup_profile_not_the_applied_one() {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    hardware.reading = Reading::fixed().logging(|after| {
+        let mut read = KernelRead {
+            mces: vec![uncorrected_mce(2)],
+            cursor: KernelCursor::from("c1".to_owned()),
+            ..KernelRead::default()
+        };
+        if after.is_some() {
+            read.mces.push(uncorrected_mce(100));
+        }
+        Ok(read)
+    });
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    assert_eq!(applications(&journal)[0].target, target(&journal, -5));
+    let faults: Vec<_> = day_faults(&journal)
+        .into_iter()
+        .map(|(_, fault)| (fault.monotonic_ns, fault.offsets))
+        .collect();
+    assert_eq!(
+        faults,
+        [(2_000_000_000, offsets(0)), (100_000_000_000, offsets(-5))],
+        "the pre-start fault carries the profile read at start, the later one the applied D"
     );
-    assert!(event.msg.contains("no promotion consumed"));
 }
 
 #[test]
@@ -406,6 +452,7 @@ fn a_defect_stop_refuses_a_nonzero_proposal_and_takes_only_emergency_zero() {
 #[test]
 fn same_boot_restart_reapplies_without_another_step() {
     let mut journal = seed();
+    proposed_climb(&mut journal);
     let mut hardware = Hardware::stock();
     let mut clock = ActiveClock::one();
     serve(
@@ -419,7 +466,7 @@ fn same_boot_restart_reapplies_without_another_step() {
     let steps = journal
         .events()
         .iter()
-        .filter(|event| matches!(event.payload, Payload::DayStep(_)))
+        .filter(|event| matches!(event.payload, Payload::ClimbDecision(_)))
         .count();
     clock.sleeps = [(Duration::from_secs(5), Duration::from_secs(5))].into();
     serve(
@@ -434,7 +481,7 @@ fn same_boot_restart_reapplies_without_another_step() {
         journal
             .events()
             .iter()
-            .filter(|event| matches!(event.payload, Payload::DayStep(_)))
+            .filter(|event| matches!(event.payload, Payload::ClimbDecision(_)))
             .count(),
         steps
     );
@@ -442,12 +489,27 @@ fn same_boot_restart_reapplies_without_another_step() {
         applications(&journal).last().unwrap().cause,
         ApplyCause::Reapplication {}
     );
-    assert_eq!(hardware.writes, [TargetOffset::ZERO; 4]);
+    assert_eq!(
+        applications(&journal).last().unwrap().target,
+        target(&journal, -5)
+    );
+    assert_eq!(
+        hardware.writes,
+        [
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO,
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO
+        ]
+    );
 }
 
 #[test]
 fn resume_reapplies_with_verified_readback_and_preserves_the_step() {
     let mut journal = seed();
+    proposed_climb(&mut journal);
     let mut hardware = Hardware::stock();
     let mut clock = ActiveClock::one();
     serve(
@@ -461,11 +523,14 @@ fn resume_reapplies_with_verified_readback_and_preserves_the_step() {
     let steps = journal
         .events()
         .iter()
-        .filter(|event| matches!(event.payload, Payload::DayStep(_)))
+        .filter(|event| matches!(event.payload, Payload::ClimbDecision(_)))
         .count();
     let mut live = crate::day::apply::Live::preflight(&journal, &mut hardware).unwrap();
     live.reapply(&mut journal, &mut hardware, &clock).unwrap();
-    assert_eq!(applications(&journal).last().unwrap().readbacks, offsets(0));
+    assert_eq!(
+        applications(&journal).last().unwrap().readbacks,
+        offsets(-5)
+    );
     assert_eq!(
         applications(&journal).last().unwrap().cause,
         ApplyCause::Reapplication {}
@@ -474,7 +539,7 @@ fn resume_reapplies_with_verified_readback_and_preserves_the_step() {
         journal
             .events()
             .iter()
-            .filter(|event| matches!(event.payload, Payload::DayStep(_)))
+            .filter(|event| matches!(event.payload, Payload::ClimbDecision(_)))
             .count(),
         steps
     );
@@ -628,7 +693,7 @@ fn firmware_change_reapplies_stock_without_inventing_a_step_when_already_stock()
 #[test_case(Failure::Write(1); "failed initial write")]
 #[test_case(Failure::Read(3); "failed initial readback")]
 #[test_case(Failure::Write(2); "failed stop zero")]
-#[test_case(Failure::Read(4); "failed stop readback")]
+#[test_case(Failure::Read(6); "failed stop readback")]
 fn failed_writes_or_readbacks_never_earn_a_clean_marker(failure: Failure) {
     let mut journal = seed();
     let mut hardware = Hardware::stock();
@@ -741,4 +806,5 @@ fn stock_applied_hours_exclude_suspended_wall_time() {
     assert_eq!(hold.required_s, 50 * 3600);
 }
 
+mod control_tests;
 mod pause_tests;

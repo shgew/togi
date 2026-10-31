@@ -573,7 +573,7 @@
               );
               vm-grub = vm.grub;
               vm-runtime = vm.runtime;
-              vm-day-apply-stock = vm.day-apply-stock;
+              vm-day-apply-profile = vm.day-apply-profile;
               vm-display = vm.display;
               vm-efi = vm.efi;
             }

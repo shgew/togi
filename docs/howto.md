@@ -121,7 +121,16 @@ If the machine freezes during an in-session trial, it needs a manual reset unles
 
 ## Daily observation
 
-After a session exists, leave firmware Curve Optimizer at CO 0 and arm PID 1's hardware watchdog. `sudo togi day` refuses a nonzero all-core baseline or an unarmed/non-counting watchdog, then applies **stock (CO 0) only** and observes normal use until Ctrl-C or a stop signal. Nonzero day offsets are not enabled; the applying capability enforces this without changing tuner decisions ([day transitions](spec/runtime.md#ruleset-13-policy-boundary)). It never starts test workloads. It reads BIOS context and every core at start and checkpoints active hours excluding suspend every ten minutes. An orderly shutdown, including a short power-button shutdown handled by systemd, zeroes and verifies every core before its final checkpoint and clean-stop marker. A later start records an earlier observed boot without that marker as unclean, with its checkpoint, offsets, reset reason and available kernel evidence; unavailable evidence stays unknown.
+After a session exists, leave firmware Curve Optimizer at CO 0 and arm PID 1's hardware watchdog.
+`sudo togi day` refuses a nonzero all-core baseline or an unarmed/non-counting watchdog, then applies
+the exact permitted committed D and observes normal use until Ctrl-C or a stop signal. It never
+starts test workloads or makes a second tuning decision
+([day transitions](spec/runtime.md#ruleset-13-policy-boundary)). It reads BIOS context and every core
+at start and checkpoints active hours excluding suspend every ten minutes. An orderly shutdown,
+including a short power-button shutdown handled by systemd, zeroes and verifies every core before
+its final checkpoint and clean-stop marker. A later start records an earlier observed boot without
+that marker as unclean, with its checkpoint, offsets, reset reason and available kernel evidence;
+unavailable evidence stays unknown.
 
 `togi status` shows the Day summary; `togi events --kind day` shows the raw records. Hours are checkpointed lower bounds, not a stability guarantee. An interval whose two readbacks differ cannot identify when offsets changed, so it remains in boot hours but earns no hours for either profile.
 
@@ -138,9 +147,9 @@ togi day freeze                # retain D, block promotions only
 togi day unfreeze              # lift that promotion freeze
 ```
 
-Every pause zeroes every core and verifies readback, keeping the learned observations. An untimed pause survives a service restart and sleep, but ends at the next cold boot. A timed pause keeps its journaled deadline across all three. Five minutes before expiry, the desktop notifier offers to extend the current deadline by one hour; dismissing it changes nothing. Ending a pause, early or at its deadline, uses the full transaction and announces verified success. **The current applier still forces stock (CO 0)**: no command here restores a historical nonzero profile.
+Every pause zeroes every core and verifies readback, keeping the learned observations and saved D. An untimed pause survives a service restart and sleep, but ends at the next cold boot. A timed pause keeps its journaled deadline across all three. Five minutes before expiry, the desktop notifier offers to extend the current deadline by one hour; dismissing it changes nothing. Ending a pause, early or at its deadline, reapplies the still-permitted committed D through the full transaction and announces only verified success. This may restore nonzero offsets, never promote or bypass a safety retreat or firmware reset.
 
-On the main `togi watch` view, press `p` for pause/resume or `f` for freeze/unfreeze; help (`?`) describes the keys. Freeze is not pause: it retains D and prevents climbing, never safety retreats or a firmware reset. Paused hours do not earn a hold, and a cold boot that starts paused cannot promote later in that boot. [Day transitions](spec/runtime.md#day-pause-and-freeze) own the exact lifecycle and stock-only restriction.
+On the main `togi watch` view, press `p` for pause/resume or `f` for freeze/unfreeze; help (`?`) describes the keys. Freeze is not pause: it retains D and prevents climbing, never safety retreats or a firmware reset. Paused hours do not earn a hold, and a cold boot that starts paused applies stock and cannot promote later in that boot, even after resume or expiry. [Day transitions](spec/runtime.md#day-pause-and-freeze) own the exact lifecycle.
 
 
 ### Answering what happened
@@ -200,9 +209,11 @@ services.togi = {
 };
 ```
 
-The `togi-day.service` unit is absent from the tuning specialisation. Enabling it keeps journald persistent with a five-second sync interval. Before a manual `run` or `reset` in a normal boot, use `systemctl stop togi-day.service`; stop zeroes and verifies before recording a clean marker. Start it again with `systemctl start togi-day.service` afterward. A same-boot restart, including `nixos-rebuild switch`, reapplies stock without promoting. Systemd-managed sleep restores the watchdog before the resume hook requests another stock transaction with all-core readbacks. An abnormal exit runs zero-only emergency recovery before the delayed restart, except exit 16 (an incompatible journal, such as the previous ruleset's after an update): the unit stays failed because a restart would refuse again. After the journal has been transitioned, start it with `systemctl restart togi-day.service` or let the next boot do so. Inspect diagnostics with `journalctl -u togi-day.service`. Without a session, verified zero baseline or armed/counting watchdog, the service reports why it cannot start.
+The `togi-day.service` unit is absent from the tuning specialisation. Enabling it keeps journald persistent with a five-second sync interval. Before a manual `run` or `reset` in a normal boot, use `systemctl stop togi-day.service`; stop zeroes and verifies before recording a clean marker. Start it again with `systemctl start togi-day.service` afterward. A same-boot restart, including `nixos-rebuild switch`, reapplies the still-permitted committed D without promoting. Systemd-managed sleep restores the watchdog before the resume hook requests the same profile transaction with all-core readbacks. An abnormal exit runs zero-only emergency recovery before the delayed restart, except exit 16 (an incompatible journal, such as the previous ruleset's after an update): the unit stays failed because a restart would refuse again. After the journal has been transitioned, start it with `systemctl restart togi-day.service` or let the next boot do so. Inspect diagnostics with `journalctl -u togi-day.service`. Without a session, verified zero baseline or armed/counting watchdog, the service reports why it cannot start.
 
-The optional `services.togi.day.watchdog = true;` asks PID 1 to arm and feed a 60-second hardware watchdog in normal boots, so a frozen machine resets itself and the next day service start records why. It is **off by default**; stock-only day application still requires an armed, counting watchdog supplied by this option or another system configuration. It loads `sp5100_tco`, the AMD chipset watchdog driver, so it fits machines whose watchdog is that device. Add it next to `day.enable`:
+The first eligible live nonzero step supplies [hardware acceptance](spec/tuner-ruleset14.md#9-safety-and-activation): perform that on-machine lifecycle check and record the exact revision/configuration and observations in that night's [run retrospective](https://github.com/shgew/togi/issues/260). Do not bypass qualification, holds or a safety blocker to obtain a step. Successor simulator scoring is research, not a prerequisite or a substitute for the machine check; no separately authorized supervised application is required.
+
+The optional `services.togi.day.watchdog = true;` asks PID 1 to arm and feed a 60-second hardware watchdog in normal boots, so a frozen machine resets itself and the next day service start records why. It is **off by default**; day application still requires an armed, counting watchdog supplied by this option or another system configuration. It loads `sp5100_tco`, the AMD chipset watchdog driver, so it fits machines whose watchdog is that device. Add it next to `day.enable`:
 
 ```nix
 services.togi = {
@@ -344,7 +355,13 @@ sudo togi doctor --day
 
 The evidence view puts the selected exact profile beside stock observations, exposes rate/slope witnesses, hours and coverage gaps, and names the governing [cap rule](spec/tuner.md#cap-s-margin-from-measured-slope). “No observations”, “non-mapping exposure only” and “mapping exposure inadequate” are different gaps: daily hours and qualification hours do not become isolated mapping exposure. CO 0 is an untuned fallback, not a claim that stock meets the hazard goal. No view gives a safety verdict, an ETA or a promise that more nights will produce a nonzero profile.
 
-The first observed day boot after a night has a Morning report in `status`; `togi day notify` also sends it to the desktop. It summarizes recorded trial ends and observed task time, and says that automatic nonzero application is disabled. It is reconstructed from the existing journal and retained across a day-service restart in that boot, not repeated on the next day boot. Notification deduplication is per notifier process lifetime: restarting the notifier may show it again. A notification is not proof of current hardware offsets.
+The first observed day boot after a night has a Morning report in `status`; `togi day notify` also
+sends it to the desktop. It summarizes recorded trial ends and observed task time, and explains that
+the day service applies the permitted committed profile, with promotion only at an eligible cold
+boot. It is reconstructed from the existing journal and retained across a day-service restart in
+that boot, not repeated on the next day boot. Notification deduplication is per notifier process
+lifetime: restarting the notifier may show it again. A notification is not proof of current hardware
+offsets or stability.
 
 `doctor --day` checks the day prerequisites rather than stress-workload availability. Its baseline row asks whether this boot has a complete, verified CO-0 baseline witness, separately from the journal's applied D or a current zero readback. Missing proof is not silently filled in. Like ordinary `doctor`, it writes no journal event and changes no offset; root hardware checks still require the host lock, so stop a competing hardware process first. See [day diagnostics](spec/runtime.md#day-diagnostics) for the exact checks.
 

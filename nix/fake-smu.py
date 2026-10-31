@@ -105,17 +105,18 @@ class Smu(Operations):
                 self.record(operation="read", command=command, core=core,
                             value=self.offsets[core])
             elif command in (0x06, 0x07):
-                # Refuse non-stock commands rather than let a test pass on a fake
-                # that silently discards an unsafe production write.
-                if (command == 0x07 and argument != 0) or (
-                    command == 0x06 and (core >= 8 or argument != core << 20)
+                raw_offset = argument & 0xFFFF
+                target = raw_offset if raw_offset < 0x8000 else raw_offset - 0x10000
+                location = core << 20 if command == 0x06 else 0
+                if not -50 <= target <= 0 or argument != (location | raw_offset) or (
+                    command == 0x06 and core >= 8
                 ):
                     self.record(operation="refused-write", command=command, argument=argument)
                     raise FuseOSError(errno.EPERM)
                 if command == 0x07:
-                    self.offsets = [0] * 8
+                    self.offsets = [target] * 8
                 else:
-                    self.offsets[core] = 0
+                    self.offsets[core] = target
                 self.record(operation="write", command=command, argument=argument,
                             targets=list(self.offsets))
             elif command == 0x6E:

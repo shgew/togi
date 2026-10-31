@@ -6,11 +6,11 @@ Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More
 
 ## Two-ends D: Ruleset 14
 
-Ruleset 14 is the only tuning policy. Clean daily observation permits a bounded experiment, not a claim of reliability. The [activation gate](spec/tuner-ruleset14.md#9-safety-and-activation) still governs automatic nonzero use.
+Ruleset 14 is the only tuning policy. Clean daily observation permits a bounded experiment, not a claim of reliability. The day service applies the committed permitted D through durable intent, write and all-core readback. The [activation decision](spec/tuner-ruleset14.md#9-safety-and-activation) makes successor scoring research, not permission; hardware acceptance is the first live step's on-machine check.
 
 D makes clean daily observation permission for a bounded experiment beneath a night-derived ceiling, not statistical certification by S. Nights must qualify the exact next whole profile; each daily change earns a fresh hold, including the first change from stock. A suspect event stops the newest stepped unit, with whole-profile vetoes and further retreats; a durable machine allowance is shared across coarse and later core refinement, never automatically renewed. Firmware changes return to stock before guarded exact-profile restoration. Per-core refinement inherits real coarse history rather than restarting the climb.
 
-Finishing the climb does not mean “stable” or “meets your goal”: evidence remains experimental until current-profile observations support the stated model claim. The [successor evidence wording](spec/tuner-ruleset14.md#6-finish-steady-use-and-the-words-shown), [per-core cost contract](spec/tuner-ruleset14.md#8-per-core-refinement-is-the-end-goal-not-a-restart-from-zero) and [activation gate](spec/tuner-ruleset14.md#9-safety-and-activation) explain those limits. The original Ruleset 13 policy shipped in v0.12.0 but did not meet its registered gate; [#1457](https://github.com/shgew/togi/issues/1457) registers the successor, without retrospectively accepting the old result.
+Finishing the climb does not mean “stable” or “meets your goal”: evidence remains experimental until current-profile observations support the stated model claim. The [successor evidence wording](spec/tuner-ruleset14.md#6-finish-steady-use-and-the-words-shown), [per-core cost contract](spec/tuner-ruleset14.md#8-per-core-refinement-is-the-end-goal-not-a-restart-from-zero) and [activation decision](spec/tuner-ruleset14.md#9-safety-and-activation) explain those limits. The original Ruleset 13 policy shipped in v0.12.0 but did not meet its registered gate; [#1457](https://github.com/shgew/togi/issues/1457) registers successor research, without retrospectively accepting the old result.
 
 ## Days and nights
 
@@ -55,7 +55,7 @@ A **qualification** is a composite certificate for the proposed day profile: [th
 
 ## What a day does
 
-Day steps are decided at a cold boot and applied only after a verified readback.
+Day promotions are decided only at an eligible cold boot and committed only after verified all-core readback. A same-boot service restart, sleep resume or pause ending reapplies the still-permitted committed D, never promotes. Pause and stop verify CO 0; a cold boot starting paused applies stock and remains ineligible to promote even after the pause ends. [Runtime](spec/runtime.md#ruleset-13-policy-boundary) owns these application and recovery lifecycles.
 
 - **Hold and step.** Every promotion, including the first from verified stock, needs 50 clean observed hours at the exact applied profile and exact next-profile qualification. Move one unfinished unit toward C using the bounded half-distance rule; [§4](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) owns selection, sizing and blockers.
 - **Stop and retreat.** An in-campaign CPU-suspect event vetoes the whole profile, undoes the newest successful step and permanently stops that unit. Further in-campaign events walk every unit's actual history toward stock; [§5](spec/tuner-ruleset14.md#5-newest-step-blame-stop-and-the-machine-allowance) owns attribution, provisional events and escalation.

@@ -27,8 +27,9 @@ A new ADR adds its line here and updates the status of any ADR it supersedes. No
 - [0078](0078-controller-clock-and-rotation.md) Cap isolated controller clocks and rotate loaded hosts — in force.
 - [0092](0092-rust-native-implementation.md) togi is a native Rust program; tools follow the same language rule — in force; supersedes 0001, 0048, 0058 and 0071.
 - [0093](0093-journal-fold-and-snapshots.md) The journal is authoritative; folds drive decisions and snapshots cache reads — in force; supersedes 0003, 0059 and 0077.
-- [0094](0094-two-ends-bounded-exploration.md) Two ends: clean daily holds earn bounded, night-qualified steps — in force as Ruleset 14; replaces Ruleset 13's statistical permission and consolidates 0079–0084; stock controls partly reversed by [0095](0095-operator-attested-stock-stability.md).
+- [0094](0094-two-ends-bounded-exploration.md) Two ends: clean daily holds earn bounded, night-qualified steps — in force as Ruleset 14; replaces Ruleset 13's statistical permission and consolidates 0079–0084; stock controls partly reversed by [0095](0095-operator-attested-stock-stability.md); activation gate amended by [0096](0096-activate-permitted-day-profiles.md).
 - [0095](0095-operator-attested-stock-stability.md) The operator attests stock stability; no all-zero trial — in force with Ruleset 14; partly reverses 0094's retained controls.
+- [0096](0096-activate-permitted-day-profiles.md) Activate permitted day profiles on the on-machine rules — in force; reverses only 0094's successor-score and supervised-procedure activation gate; first live step supplies hardware acceptance.
 
 ## Historical
 

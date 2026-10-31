@@ -56,8 +56,8 @@ last unclean end: none
 
 Morning report
 Last night #5: 0 recorded trial ends. mapping: 3600s observed task time.
-  qualification: 10800s observed task time. control: 0s observed task time. No
-  automatic nonzero change is made at this boot; day application is restricted
-  to stock (CO 0). This report does not verify the current hardware readback or
-  establish stability. See togi status --evidence for cap reasons, hours and
+  qualification: 10800s observed task time. control: 0s observed task time. The
+  day service applies the permitted committed profile; only an eligible cold
+  boot may promote. This report does not verify the current hardware readback or
+  establish stability. See togi status --evidence for ceiling reasons, hours and
   coverage gaps.

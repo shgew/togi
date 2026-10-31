@@ -741,6 +741,12 @@ fn controls_are_rootless_and_never_acquire_a_writer_or_hardware(
     let command: Vec<_> = std::iter::once("day").chain(args.iter().copied()).collect();
     let ran = host.run(Path::new("/state"), &command);
     assert_eq!((ran.exit, ran.err.as_str()), (Exit::Ok, ""));
+    if args == ["resume"] {
+        assert_eq!(
+            ran.out,
+            "committed profile reapplied and verified; day resumed\n"
+        );
+    }
     assert_eq!(*host.day_controls.borrow(), [expected]);
     assert_eq!(host.lock_acquisitions.get(), 0);
     assert_eq!(host.calls.get(), 0);

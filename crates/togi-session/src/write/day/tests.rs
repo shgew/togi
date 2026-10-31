@@ -1,20 +1,22 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use serde_json::json;
 use test_case::test_case;
 
-use togi_journal::{CcdVector, Payload, SmuCommand, SmuOp};
+use togi_journal::{CcdVector, Event, Payload, SmuCommand, SmuOp};
 use togi_machine::{
-    CcdId, CcdProfile, CcdProfileError, Clock, CoreInfo, Error, Machine, ObservedOffset,
-    TargetOffset,
+    CcdId, CcdProfile, CcdProfileError, Clock, CoreId, CoreInfo, Error, Machine, ObservedOffset,
+    PerCore, Smu, TargetOffset,
 };
 use togi_sim::MachineDefinition;
 use togi_sim::faults::{HookPhase, SmuOp as SimOp, SmuOperation};
 
-use super::{DayWriteError, StockApplied, apply_day_stock};
+use super::{DayAppliedProfile, DayRecovery, DayWriteError, apply_day_profile};
 use crate::appender::Folds;
 use crate::testing::{Rig, core, target};
-use crate::write::WriteFailure;
+use crate::write::{ProfileFailure, WriteFailure};
 
 /// Four cores, cores 0 and 1 on CCD 0 and cores 2 and 3 on CCD 1, every core at a nonzero offset.
 struct Day {
@@ -41,11 +43,12 @@ impl Day {
         }
     }
 
-    fn apply(&mut self, requested: &CcdVector) -> Result<StockApplied, DayWriteError> {
-        apply_day_stock(
+    fn apply(&mut self, requested: &CcdVector) -> Result<DayAppliedProfile, DayWriteError> {
+        apply_day_profile(
             &mut self.rig.appender.journal,
             &*self.clock,
             &mut *self.rig.smu,
+            self.rig.validated,
             self.rig.lifecycle.stopped().unwrap(),
             &self.topology,
             requested,
@@ -87,66 +90,124 @@ impl Day {
     }
 }
 
-#[test]
-fn a_nonzero_request_writes_only_zero_through_intent_write_readback() {
-    let mut day = Day::new();
-    let applied = day.apply(&day.vector(-20, -30)).unwrap();
+fn zero_all() -> SmuCommand {
+    SmuCommand::SetAll {
+        offset: TargetOffset::ZERO,
+    }
+}
 
-    assert_eq!(applied.target, day.vector(0, 0));
+fn set(n: i64, offset: i64) -> SmuCommand {
+    SmuCommand::Set {
+        core: core(n),
+        offset: target(offset),
+    }
+}
+
+/// The kinds of a transaction on four cores: the zeroing, `sets` single-core writes, then `confirmed` readbacks.
+fn kinds(sets: usize, confirmed: usize) -> Vec<&'static str> {
+    let mut kinds = vec!["session.start", "smu.intent", "smu.write"];
+    kinds.extend(["smu.readback"; 4]);
+    for _ in 0..sets {
+        kinds.extend(["smu.intent", "smu.write", "smu.readback"]);
+    }
+    kinds.extend(vec!["smu.readback"; confirmed]);
+    kinds
+}
+
+fn readback(event: &Event) -> (i64, Option<i64>) {
+    let Payload::SmuReadback(record) = &event.payload else {
+        panic!("{:?}", event.payload);
+    };
+    (record.offset.0, record.expected.map(TargetOffset::get))
+}
+
+fn failure(error: DayWriteError) -> (ProfileFailure, DayRecovery) {
+    match error {
+        DayWriteError::Write(day) => (day.failure, *day.recovery),
+        other @ (DayWriteError::Profile(_) | DayWriteError::Expansion { .. }) => {
+            panic!("{other:?}")
+        }
+    }
+}
+
+#[test]
+fn a_nonzero_request_zeroes_then_writes_each_core_then_reads_every_core() {
+    let mut day = Day::new();
+    let requested = day.vector(-20, -30);
+    let applied = day.apply(&requested).unwrap();
+
+    assert_eq!(applied.target, requested);
     assert_eq!(
         applied.readbacks,
         (0..4)
-            .map(|n| (core(n), ObservedOffset(0)))
-            .collect::<togi_machine::PerCore<_>>()
+            .zip([-20, -20, -30, -30])
+            .map(|(n, offset)| (core(n), ObservedOffset(offset)))
+            .collect::<PerCore<_>>()
     );
-    assert_eq!(day.offsets(), [0, 0, 0, 0]);
+    assert_eq!(day.offsets(), [-20, -20, -30, -30]);
     assert_eq!(
         day.commands(),
-        [SmuCommand::SetAll {
-            offset: TargetOffset::ZERO
-        }]
-    );
-    assert_eq!(
-        day.rig.kinds(),
         [
-            "session.start",
-            "smu.intent",
-            "smu.write",
-            "smu.readback",
-            "smu.readback",
-            "smu.readback",
-            "smu.readback",
+            zero_all(),
+            set(0, -20),
+            set(1, -20),
+            set(2, -30),
+            set(3, -30)
         ]
     );
+    assert_eq!(day.rig.kinds(), kinds(4, 4));
 
     let events = day.rig.events();
     let chain: Vec<_> = events[1..].iter().map(|event| event.seq).collect();
     assert_eq!(applied.transactions, chain);
+
+    // The zeroing: the write cites its intent and each readback the write.
     assert_eq!(events[2].cause, [events[1].seq]);
-    for readback in &events[3..] {
-        assert_eq!(readback.cause, [events[2].seq]);
-        let Payload::SmuReadback(record) = &readback.payload else {
-            panic!("{:?}", readback.payload);
-        };
-        assert_eq!(
-            (record.offset, record.expected),
-            (ObservedOffset(0), Some(TargetOffset::ZERO))
-        );
+    for event in &events[3..7] {
+        assert_eq!(event.cause, [events[2].seq]);
+        assert_eq!(readback(event), (0, Some(0)));
+    }
+    // Each core: its own intent, a write citing it and a readback of the target citing the write.
+    for (n, offset) in [-20, -20, -30, -30].into_iter().enumerate() {
+        let base = 7 + 3 * n;
+        assert_eq!(events[base + 1].cause, [events[base].seq]);
+        assert_eq!(events[base + 2].cause, [events[base + 1].seq]);
+        assert_eq!(readback(&events[base + 2]), (offset, Some(offset)));
+    }
+    // The final pass reads every core against its target, citing the last write.
+    for (event, offset) in events[19..].iter().zip([-20, -20, -30, -30]) {
+        assert_eq!(event.cause, [events[17].seq]);
+        assert_eq!(readback(event), (offset, Some(offset)));
     }
     Folds::replay(events).unwrap();
 }
 
 #[test]
-fn a_stock_request_is_the_same_single_zero_write() {
+fn only_the_nonzero_cores_are_written_one_by_one() {
     let mut day = Day::new();
-    let applied = day.apply(&day.vector(0, 0)).unwrap();
-    assert_eq!(applied.target, day.vector(0, 0));
-    assert_eq!(
-        day.commands(),
-        [SmuCommand::SetAll {
-            offset: TargetOffset::ZERO
-        }]
-    );
+    let requested = day.vector(0, -30);
+    let applied = day.apply(&requested).unwrap();
+
+    assert_eq!(applied.target, requested);
+    assert_eq!(day.offsets(), [0, 0, -30, -30]);
+    assert_eq!(day.commands(), [zero_all(), set(2, -30), set(3, -30)]);
+    assert_eq!(day.rig.kinds(), kinds(2, 4));
+    let events = day.rig.events();
+    for (event, offset) in events[13..].iter().zip([0, 0, -30, -30]) {
+        assert_eq!(readback(event), (offset, Some(offset)));
+    }
+}
+
+#[test]
+fn a_stock_request_is_one_zero_write_and_four_readbacks() {
+    let mut day = Day::new();
+    let requested = day.vector(0, 0);
+    let applied = day.apply(&requested).unwrap();
+    assert_eq!(applied.target, requested);
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
+    assert_eq!(day.commands(), [zero_all()]);
+    assert_eq!(day.rig.kinds(), kinds(0, 0));
+    assert_eq!(applied.transactions.len(), 6);
 }
 
 /// What a decoded vector can say that no expansion produces.
@@ -189,7 +250,7 @@ fn tampered(vector: &CcdVector, tamper: Tamper) -> CcdVector {
 #[test_case(Tamper::Shifted(1), 1; "a core off its CCD's offset")]
 #[test_case(Tamper::Dropped(3), 3; "a core missing")]
 #[test_case(Tamper::Extra(9), 9; "a core the machine lacks")]
-fn a_malformed_vector_is_refused_before_any_command(tamper: Tamper, bad: i64) {
+fn a_malformed_vector_is_refused_before_anything_is_journaled_or_written(tamper: Tamper, bad: i64) {
     let mut day = Day::new();
     let malformed = tampered(&day.vector(-10, -20), tamper);
     let error = day.apply(&malformed).unwrap_err();
@@ -202,7 +263,7 @@ fn a_malformed_vector_is_refused_before_any_command(tamper: Tamper, bad: i64) {
 }
 
 #[test]
-fn a_profile_that_does_not_cover_the_topology_is_refused_before_any_command() {
+fn a_profile_that_does_not_cover_the_topology_is_refused_before_anything_is_journaled_or_written() {
     let mut day = Day::new();
     let narrow = CcdVector::expand(
         CcdProfile::uniform([CcdId::new(0).unwrap()], target(-10)).unwrap(),
@@ -217,10 +278,11 @@ fn a_profile_that_does_not_cover_the_topology_is_refused_before_any_command() {
     day.assert_untouched();
 
     let wide = day.vector(-10, -20);
-    let error = apply_day_stock(
+    let error = apply_day_profile(
         &mut day.rig.appender.journal,
         &*day.clock,
         &mut *day.rig.smu,
+        day.rig.validated,
         day.rig.lifecycle.stopped().unwrap(),
         &day.topology[..2],
         &wide,
@@ -235,72 +297,492 @@ fn a_profile_that_does_not_cover_the_topology_is_refused_before_any_command() {
 }
 
 #[test]
-fn a_failed_intent_writes_nothing_and_the_journal_stays_poisoned() {
+fn a_failed_first_intent_zeroes_without_a_journal_and_the_journal_stays_poisoned() {
     let mut day = Day::new();
     day.rig.fail_journal_write(1);
     let error = day.apply(&day.vector(-20, -30)).unwrap_err();
+    let (failed, recovery) = failure(error);
     assert!(
-        matches!(error, DayWriteError::Write(WriteFailure::Journal(_))),
-        "{error:?}"
+        matches!(failed, ProfileFailure::Write(WriteFailure::Journal(_))),
+        "{failed:?}"
     );
-    day.assert_untouched();
+    let DayRecovery::Emergency(zeroed) = recovery else {
+        panic!("{recovery:?}");
+    };
+    assert!(zeroed.is_clean(), "{zeroed:?}");
+    // Nothing was journaled, yet every core is at 0: the emergency wrote no intent.
+    assert_eq!(day.rig.kinds(), ["session.start"]);
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
 
-    let again = day.apply(&day.vector(-20, -30)).unwrap_err();
+    let (again, recovery) = failure(day.apply(&day.vector(-20, -30)).unwrap_err());
     assert!(
-        matches!(again, DayWriteError::Write(WriteFailure::Journal(_))),
+        matches!(again, ProfileFailure::Write(WriteFailure::Journal(_))),
         "{again:?}"
     );
-    day.assert_untouched();
+    assert!(
+        matches!(recovery, DayRecovery::Emergency(_)),
+        "{recovery:?}"
+    );
+    assert_eq!(day.rig.kinds(), ["session.start"]);
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
 }
 
 #[test]
-fn a_readback_that_disagrees_is_no_success() {
+fn a_nonzero_write_whose_record_cannot_be_appended_leaves_its_intent_and_is_zeroed() {
+    let mut day = Day::new();
+    // Appends 1 to 6 are the zeroing; 7 is core 0's intent and 8 the record of its write, which cannot be made
+    // durable once the journal is poisoned although the SMU already took the command.
+    day.rig.fail_journal_write(8);
+    let (failed, recovery) = failure(day.apply(&day.vector(-20, -30)).unwrap_err());
+    assert!(
+        matches!(failed, ProfileFailure::Write(WriteFailure::Journal(_))),
+        "{failed:?}"
+    );
+    let DayRecovery::Emergency(zeroed) = recovery else {
+        panic!("{recovery:?}");
+    };
+    assert!(zeroed.is_clean(), "{zeroed:?}");
+    assert_eq!(day.commands(), [zero_all(), set(0, -20)]);
+    let mut expected = kinds(0, 0);
+    expected.push("smu.intent");
+    assert_eq!(day.rig.kinds(), expected);
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
+}
+
+#[test]
+fn a_zero_readback_that_disagrees_is_no_success_and_is_restored() {
     let mut day = Day::new();
     day.rig.sim.corrupt_readback(core(0));
-    let error = day.apply(&day.vector(-20, -30)).unwrap_err();
-    let DayWriteError::Write(WriteFailure::Mismatch {
+    let (failed, recovery) = failure(day.apply(&day.vector(-20, -30)).unwrap_err());
+    let ProfileFailure::Write(WriteFailure::Mismatch {
         core: bad,
         expected,
         ..
-    }) = error
+    }) = failed
     else {
-        panic!("{error:?}");
+        panic!("{failed:?}");
     };
     assert_eq!((bad, expected), (core(0), TargetOffset::ZERO));
-    assert_eq!(day.rig.kinds().last(), Some(&"smu.readback"));
+    assert!(matches!(recovery, DayRecovery::Restored), "{recovery:?}");
     assert_eq!(
-        day.rig
-            .kinds()
-            .iter()
-            .filter(|kind| **kind == "smu.readback")
-            .count(),
-        1
+        day.rig.kinds(),
+        [
+            "session.start",
+            "smu.intent",
+            "smu.write",
+            "smu.readback",
+            "smu.intent",
+            "smu.write",
+            "smu.readback",
+            "smu.readback",
+            "smu.readback",
+            "smu.readback",
+        ]
     );
+    assert_eq!(day.commands(), [zero_all(), zero_all()]);
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
 }
 
 #[test]
-fn a_failed_readback_is_recorded_and_is_no_success() {
+fn a_nonzero_readback_that_disagrees_is_durable_no_success_and_restored() {
+    let mut day = Day::new();
+    // Once the zeroing is written, corrupt the readback of core 2's own write.
+    let sim = day.rig.sim.clone();
+    let mut armed = false;
+    day.rig.sim.interrupt_smu(move |operation: &SmuOperation| {
+        if !armed && operation.op == SimOp::SetAll && operation.phase == HookPhase::After {
+            armed = true;
+            sim.corrupt_readback(core(2));
+        }
+        Ok(())
+    });
+    let (failed, recovery) = failure(day.apply(&day.vector(-20, -30)).unwrap_err());
+    let ProfileFailure::Write(WriteFailure::Mismatch {
+        core: bad,
+        observed,
+        expected,
+    }) = failed
+    else {
+        panic!("{failed:?}");
+    };
+    assert_eq!(
+        (bad, observed, expected),
+        (core(2), ObservedOffset(-31), target(-30))
+    );
+    assert!(matches!(recovery, DayRecovery::Restored), "{recovery:?}");
+    assert_eq!(
+        day.commands(),
+        [
+            zero_all(),
+            set(0, -20),
+            set(1, -20),
+            set(2, -30),
+            zero_all()
+        ]
+    );
+    // The disagreeing readback is journaled before the restoring transaction begins.
+    let events = day.rig.events();
+    assert_eq!(readback(&events[15]), (-31, Some(-30)));
+    assert_eq!(day.rig.kinds()[16], "smu.intent");
+    Folds::replay(events).unwrap();
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
+}
+
+/// Writes core 0 behind the day's back, as firmware could.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test plays firmware changing an offset; only the write transaction writes for togi"
+)]
+fn clobber(smu: &mut dyn Smu) {
+    smu.set_offset(core(0), target(-1)).unwrap();
+}
+
+#[test]
+fn a_core_that_changes_before_the_final_readback_is_no_success_and_is_restored() {
+    let mut day = Day::new();
+    let Machine { mut smu, .. } = day.rig.sim.seams();
+    day.rig.sim.interrupt_smu(move |operation: &SmuOperation| {
+        if operation.op == SimOp::Set
+            && operation.core == Some(core(3))
+            && operation.phase == HookPhase::After
+        {
+            clobber(&mut *smu);
+        }
+        Ok(())
+    });
+    let (failed, recovery) = failure(day.apply(&day.vector(-20, -30)).unwrap_err());
+    let ProfileFailure::Write(WriteFailure::Mismatch {
+        core: bad,
+        observed,
+        expected,
+    }) = failed
+    else {
+        panic!("{failed:?}");
+    };
+    assert_eq!(
+        (bad, observed, expected),
+        (core(0), ObservedOffset(-1), target(-20))
+    );
+    assert!(matches!(recovery, DayRecovery::Restored), "{recovery:?}");
+    // Only the first of the final readbacks was made: the disagreement ended the pass.
+    let events = day.rig.events();
+    assert_eq!(readback(&events[19]), (-1, Some(-20)));
+    assert_eq!(day.rig.kinds()[20], "smu.intent");
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
+}
+
+#[test]
+fn a_failed_write_midway_is_recorded_after_its_durable_intent_and_restored() {
     let mut day = Day::new();
     day.rig.sim.interrupt_smu(|operation: &SmuOperation| {
-        if operation.op == SimOp::Read && operation.phase == HookPhase::Before {
+        if operation.op == SimOp::Set
+            && operation.core == Some(core(2))
+            && operation.phase == HookPhase::Before
+        {
             return Err(Error::Other("mailbox timeout".into()));
         }
         Ok(())
     });
-    let error = day.apply(&day.vector(-20, -30)).unwrap_err();
+    let (failed, recovery) = failure(day.apply(&day.vector(-20, -30)).unwrap_err());
     assert!(
         matches!(
-            error,
-            DayWriteError::Write(WriteFailure::Smu {
-                op: SmuOp::Read,
-                core: Some(_),
+            failed,
+            ProfileFailure::Write(WriteFailure::Smu {
+                op: SmuOp::Set,
+                core: Some(bad),
+                ..
+            }) if bad == core(2)
+        ),
+        "{failed:?}"
+    );
+    assert!(matches!(recovery, DayRecovery::Restored), "{recovery:?}");
+    // Cores 0 and 1 were written, core 2's intent was durable before the SMU refused it and the error is recorded.
+    assert_eq!(
+        day.commands(),
+        [
+            zero_all(),
+            set(0, -20),
+            set(1, -20),
+            set(2, -30),
+            zero_all()
+        ]
+    );
+    let mut expected = kinds(2, 0);
+    expected.extend(["smu.intent", "smu.error"]);
+    expected.extend(["smu.intent", "smu.write"]);
+    expected.extend(["smu.readback"; 4]);
+    assert_eq!(day.rig.kinds(), expected);
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
+    Folds::replay(day.rig.events()).unwrap();
+}
+
+#[test]
+fn a_restoration_that_fails_is_reported_and_leaves_the_offsets_unconfirmed() {
+    let mut day = Day::new();
+    let mut zeroings = 0;
+    day.rig.sim.interrupt_smu(move |operation: &SmuOperation| {
+        if operation.phase == HookPhase::Before {
+            if operation.op == SimOp::SetAll {
+                zeroings += 1;
+                if zeroings == 2 {
+                    return Err(Error::Other("mailbox timeout".into()));
+                }
+            }
+            if operation.op == SimOp::Set && operation.core == Some(core(2)) {
+                return Err(Error::Other("mailbox timeout".into()));
+            }
+        }
+        Ok(())
+    });
+    let (failed, recovery) = failure(day.apply(&day.vector(-20, -30)).unwrap_err());
+    assert!(
+        matches!(
+            failed,
+            ProfileFailure::Write(WriteFailure::Smu { op: SmuOp::Set, .. })
+        ),
+        "{failed:?}"
+    );
+    assert!(
+        matches!(
+            recovery,
+            DayRecovery::Unrestored(WriteFailure::Smu {
+                op: SmuOp::SetAll,
+                core: None,
                 ..
             })
         ),
-        "{error:?}"
+        "{recovery:?}"
     );
+    assert_eq!(day.rig.kinds().last(), Some(&"smu.error"));
+    assert_eq!(day.offsets(), [-20, -20, 0, 0]);
+}
+
+#[test]
+fn a_failed_final_readback_is_recorded_and_restored() {
+    let mut day = Day::new();
+    let mut reads = 0;
+    day.rig.sim.interrupt_smu(move |operation: &SmuOperation| {
+        if operation.op == SimOp::Read && operation.phase == HookPhase::Before {
+            reads += 1;
+            // Four readbacks of the zeroing and four after the writes come first.
+            if reads == 9 {
+                return Err(Error::Other("mailbox timeout".into()));
+            }
+        }
+        Ok(())
+    });
+    let (failed, recovery) = failure(day.apply(&day.vector(-20, -30)).unwrap_err());
+    assert!(
+        matches!(
+            failed,
+            ProfileFailure::Write(WriteFailure::Smu {
+                op: SmuOp::Read,
+                core: Some(bad),
+                ..
+            }) if bad == core(0)
+        ),
+        "{failed:?}"
+    );
+    assert!(matches!(recovery, DayRecovery::Restored), "{recovery:?}");
+    assert_eq!(day.rig.kinds()[19], "smu.error");
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
+}
+
+#[test]
+fn a_crash_ends_all_smu_access_and_nothing_is_restored() {
+    let mut day = Day::new();
+    day.rig.crash_at(SimOp::Set, HookPhase::Before);
+    let (failed, recovery) = failure(day.apply(&day.vector(-20, -30)).unwrap_err());
+    assert!(
+        matches!(failed, ProfileFailure::Write(WriteFailure::Crashed)),
+        "{failed:?}"
+    );
+    assert!(matches!(recovery, DayRecovery::Crashed), "{recovery:?}");
+    // The durable intent stays and nothing follows it: no error record, no restoring transaction.
+    let mut expected = kinds(0, 0);
+    expected.push("smu.intent");
+    assert_eq!(day.rig.kinds(), expected);
+    assert_eq!(day.commands(), [zero_all(), set(0, -20)]);
+}
+
+/// The SMU accesses a day made, in order, as operation and core.
+type SmuTrace = Rc<RefCell<Vec<(SimOp, Option<CoreId>)>>>;
+
+/// Every SMU access the day makes, in order, before the hook's own `fail` decides whether it goes through.
+fn trace_smu(
+    day: &Day,
+    mut fail: impl FnMut(&SmuOperation) -> Result<(), Error> + 'static,
+) -> SmuTrace {
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let log = Rc::clone(&seen);
+    day.rig.sim.interrupt_smu(move |operation: &SmuOperation| {
+        if operation.phase == HookPhase::Before {
+            log.borrow_mut().push((operation.op, operation.core));
+            return fail(operation);
+        }
+        Ok(())
+    });
+    seen
+}
+
+fn reads() -> Vec<(SimOp, Option<CoreId>)> {
+    (0..4).map(|n| (SimOp::Read, Some(core(n)))).collect()
+}
+
+const EMERGENCY_CLEAN: &str = "every core set to CO 0 without an intent (readback all 0)";
+
+#[test_case(4, false; "the restoring intent")]
+#[test_case(5, true; "the record of the restoring write")]
+fn a_journal_that_fails_during_restoration_is_answered_by_the_zero_only_emergency(
+    nth: u64,
+    intent_durable: bool,
+) {
+    let mut day = Day::new();
+    // The zeroing's first readback disagrees, so the restoring zero is the transaction that follows.
+    day.rig.sim.corrupt_readback(core(0));
+    day.rig.fail_journal_write(nth);
+    let ops = trace_smu(&day, |_| Ok(()));
+    let error = day.apply(&day.vector(-20, -30)).unwrap_err();
+    let text = togi_machine::error_chain(&error);
+    let (failed, recovery) = failure(error);
+    assert!(
+        matches!(
+            failed,
+            ProfileFailure::Write(WriteFailure::Mismatch { core: bad, .. }) if bad == core(0)
+        ),
+        "{failed:?}"
+    );
+    let DayRecovery::RestorePoisoned { zeroed, .. } = recovery else {
+        panic!("{recovery:?}");
+    };
+    assert!(zeroed.is_clean(), "{zeroed:?}");
+    let read_back: Vec<_> = zeroed
+        .readbacks
+        .iter()
+        .map(|readback| readback.result.as_ref().ok().map(|offset| offset.0))
+        .collect();
+    assert_eq!(read_back, [Some(0); 4]);
+
+    // The zeroing, its disagreeing readback, the restoring zero if its command went out, then the emergency's
+    // zero without an intent and a read of every core.
+    let mut expected = vec![(SimOp::SetAll, None), (SimOp::Read, Some(core(0)))];
+    if intent_durable {
+        expected.push((SimOp::SetAll, None));
+    }
+    expected.push((SimOp::SetAll, None));
+    expected.extend(reads());
+    assert_eq!(*ops.borrow(), expected);
+
+    // Nothing follows the append that failed.
+    let mut kinds = vec!["session.start", "smu.intent", "smu.write", "smu.readback"];
+    let mut commands = vec![zero_all()];
+    if intent_durable {
+        kinds.push("smu.intent");
+        commands.push(zero_all());
+    }
+    assert_eq!(day.rig.kinds(), kinds);
+    assert_eq!(day.commands(), commands);
+    assert_eq!(day.offsets(), [0, 0, 0, 0]);
+
+    assert!(
+        text.starts_with(
+            "write the day profile: core 00 reads CO -1 after writing 0: restore every core to 0: journal write"
+        ),
+        "{text}"
+    );
+    assert!(text.ends_with(EMERGENCY_CLEAN), "{text}");
+}
+
+#[test]
+fn a_crash_during_restoration_ends_all_smu_access() {
+    let mut day = Day::new();
+    day.rig.sim.corrupt_readback(core(0));
+    let mut zeroings = 0;
+    let ops = trace_smu(&day, move |operation| {
+        if operation.op == SimOp::SetAll {
+            zeroings += 1;
+            if zeroings == 2 {
+                return Err(Error::Crashed);
+            }
+        }
+        Ok(())
+    });
+    let error = day.apply(&day.vector(-20, -30)).unwrap_err();
+    let text = togi_machine::error_chain(&error);
+    let (failed, recovery) = failure(error);
+    assert!(
+        matches!(failed, ProfileFailure::Write(WriteFailure::Mismatch { .. })),
+        "{failed:?}"
+    );
+    assert!(matches!(recovery, DayRecovery::Crashed), "{recovery:?}");
+    // The restoring zero's command is the last SMU access: no emergency zero and no read follow the crash.
+    assert_eq!(
+        *ops.borrow(),
+        [
+            (SimOp::SetAll, None),
+            (SimOp::Read, Some(core(0))),
+            (SimOp::SetAll, None)
+        ]
+    );
+    // The restoring intent is durable and nothing follows it: no error record.
     assert_eq!(
         day.rig.kinds(),
-        ["session.start", "smu.intent", "smu.write", "smu.error"]
+        [
+            "session.start",
+            "smu.intent",
+            "smu.write",
+            "smu.readback",
+            "smu.intent"
+        ]
     );
+    assert_eq!(
+        text,
+        "write the day profile: core 00 reads CO -1 after writing 0: the machine crashed and nothing touched the SMU afterwards"
+    );
+}
+
+#[test]
+fn a_journal_failure_is_reported_with_the_emergency_outcome() {
+    let mut day = Day::new();
+    day.rig.fail_journal_write(1);
+    let text = togi_machine::error_chain(&day.apply(&day.vector(-20, -30)).unwrap_err());
+    assert!(
+        text.starts_with("write the day profile: journal write"),
+        "{text}"
+    );
+    assert!(text.ends_with(EMERGENCY_CLEAN), "{text}");
+}
+
+#[test]
+fn a_restored_failure_is_reported_with_its_failure() {
+    let mut day = Day::new();
+    day.rig.sim.corrupt_readback(core(0));
+    let text = togi_machine::error_chain(&day.apply(&day.vector(-20, -30)).unwrap_err());
+    assert_eq!(
+        text,
+        "write the day profile: core 00 reads CO -1 after writing 0: every core restored to 0 through the ordinary transaction"
+    );
+}
+
+#[test]
+fn a_failed_restoration_is_reported_with_both_failures() {
+    let mut day = Day::new();
+    let mut zeroings = 0;
+    let _ops = trace_smu(&day, move |operation| {
+        if operation.op == SimOp::SetAll {
+            zeroings += 1;
+            if zeroings == 2 {
+                return Err(Error::Other("restore refused".into()));
+            }
+        }
+        if operation.op == SimOp::Set && operation.core == Some(core(2)) {
+            return Err(Error::Other("write refused".into()));
+        }
+        Ok(())
+    });
+    let text = togi_machine::error_chain(&day.apply(&day.vector(-20, -30)).unwrap_err());
+    let write = text.find("write refused").expect(&text);
+    let restore = text.find("restore every core to 0").expect(&text);
+    let refused = text.find("restore refused").expect(&text);
+    assert!(write < restore && restore < refused, "{text}");
 }

@@ -8,8 +8,8 @@
 //!
 //! [`Verified`] cannot be built outside this module and [`apply`] takes the proof that no workload runs.
 //!
-//! [`apply`] appends through a [`Ledger`]: the run's [`Appender`], or the day's journal for [`apply_day_stock`], which
-//! writes only zero to every core, so a day can apply nothing but the stock profile.
+//! [`apply`] appends through a [`Ledger`]: the run's [`Appender`], or the day's journal for [`apply_day_profile`], which
+//! writes the requested day profile through the same chain.
 
 use togi_journal::{
     Payload, ProfileApplied, ProfileRestored, Seq, SmuCommand, SmuIntentReceipt, SmuOp,
@@ -108,7 +108,7 @@ use authority::execute;
 
 mod day;
 
-pub use day::{DayWriteError, StockApplied, apply_day_stock};
+pub use day::{DayAppliedProfile, DayFailure, DayRecovery, DayWriteError, apply_day_profile};
 
 /// Where a write transaction's events go: the run's [`Appender`], which folds and logs each, or a day journal that
 /// only appends. One transaction chain serves both, so a day write cannot skip a step the night's takes.

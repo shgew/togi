@@ -9,6 +9,7 @@
 //! [`zero_and_read_back`]. The hardware SMU adds one refusal to both: no zero is written before the core slots are
 //! mapped.
 
+use std::fmt;
 use std::io::{self, Write};
 
 use togi_machine::{CoreId, CoreSet, Error, ObservedOffset, Smu, SmuValidated, Stopped, Swept};
@@ -114,6 +115,34 @@ impl Zeroed {
     }
 }
 
+/// What the zeroing did, as the journal-failure report gives it: the zero's own failure, if any, and the readback.
+impl fmt::Display for Zeroed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let problems: Vec<String> = self
+            .readbacks
+            .iter()
+            .filter_map(Readback::problem)
+            .collect();
+        let status = match (problems.is_empty(), self.crashed()) {
+            (true, false) => "readback all 0".to_owned(),
+            (true, true) => "no readback after the crash".to_owned(),
+            (false, false) => format!("readback: {}", problems.join(", ")),
+            (false, true) => format!(
+                "readback: {}; no readback after the crash",
+                problems.join(", ")
+            ),
+        };
+        match &self.zero {
+            Ok(()) => write!(f, "every core set to CO 0 without an intent ({status})"),
+            Err(error) => write!(
+                f,
+                "setting every core to CO 0 without an intent failed: {} ({status})",
+                togi_render::error_chain(error)
+            ),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Response {
     Withheld(Withheld),
@@ -182,31 +211,7 @@ pub(crate) fn respond(
         }
     };
     let zeroed = zero_and_read_back(smu, access.validated, access.stopped, cores);
-    let problems: Vec<String> = zeroed
-        .readbacks
-        .iter()
-        .filter_map(Readback::problem)
-        .collect();
-    let status = match (problems.is_empty(), zeroed.crashed()) {
-        (true, false) => "readback all 0".to_owned(),
-        (true, true) => "no readback after the crash".to_owned(),
-        (false, false) => format!("readback: {}", problems.join(", ")),
-        (false, true) => format!(
-            "readback: {}; no readback after the crash",
-            problems.join(", ")
-        ),
-    };
-    let report = match &zeroed.zero {
-        Ok(()) => writeln!(
-            report,
-            "togi: {original}; every core set to CO 0 without an intent ({status})"
-        ),
-        Err(error) => writeln!(
-            report,
-            "togi: {original}; setting every core to CO 0 without an intent failed: {} ({status})",
-            togi_render::error_chain(error)
-        ),
-    };
+    let report = writeln!(report, "togi: {original}; {zeroed}");
     Outcome {
         response: Response::Zeroed(zeroed),
         report,

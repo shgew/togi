@@ -8,7 +8,7 @@ Usage: togi [OPTIONS] <COMMAND>
 
 Commands:
   run             Start or resume the night's tuning session in the foreground
-  day             Apply stock, observe daily use, pause or freeze, and report crashes
+  day             Apply the permitted profile, observe daily use, pause or freeze, and report crashes
   completion      Print a shell completion script
   doctor          Check whether this machine is ready for a run
   events          Print the journal, one readable line per event
@@ -18,7 +18,7 @@ Commands:
   restart-limit   Recover after the tuning service reaches its restart limit
   emergency-stop  Internal emergency recovery that stops leftover trials and sets every core to offset 0
   status          Show the session at a glance
-  watch           Show the session dashboard with rootless stock-only day controls
+  watch           Show the session dashboard with rootless day controls
   help            Print this message or the help of the given subcommand(s)
 
 Options:
