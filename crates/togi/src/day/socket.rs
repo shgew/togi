@@ -85,9 +85,7 @@ pub enum Request {
     /// Root only: reapply the day profile after resume; answered only once the transaction succeeded.
     Reapply,
     /// Root only: record the confirmation against the observer's current firmware in this session.
-    AttestStock {
-        session: SessionId,
-    },
+    AttestStock(AttestStockRequest),
 }
 
 object_only! {
@@ -112,6 +110,14 @@ object_only! {
     #[serde(deny_unknown_fields)]
     pub struct FreezeRequest {
         pub frozen: bool,
+    }
+}
+
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct AttestStockRequest {
+        pub session: SessionId,
     }
 }
 
@@ -445,7 +451,7 @@ pub fn respond(
             )?;
             Ok(Reply::Answered)
         }
-        Request::AttestStock { session } => {
+        Request::AttestStock(AttestStockRequest { session }) => {
             if uid != 0 {
                 return Ok(Reply::Refused {
                     reason: "attesting stock stability needs root".into(),

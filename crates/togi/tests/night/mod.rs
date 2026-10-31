@@ -309,7 +309,7 @@ impl System for Night {
         &self,
         request: &togi_cli::day::socket::Request,
     ) -> Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error> {
-        if let togi_cli::day::socket::Request::AttestStock { session } = request
+        if let togi_cli::day::socket::Request::AttestStock(attest) = request
             && let Some(journal) = &mut *self.host.day_journal.borrow_mut()
         {
             use togi_cli::day::socket::{Control, Request};
@@ -317,7 +317,7 @@ impl System for Night {
                 journal,
                 &togi_cli::system::SystemClock(self),
                 0,
-                Request::AttestStock { session: *session },
+                Request::AttestStock(*attest),
                 &mut |journal, clock, control| {
                     assert_eq!(control, Control::AttestStock);
                     let firmware = self.firmware.borrow().clone();
@@ -856,6 +856,99 @@ fn a_live_day_writer_append_failure_prevents_the_tuning_reboot() {
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
     assert_eq!(night.value("saved_entry").as_deref(), Some(DAY));
     assert_eq!(night.reboots(), 0);
+}
+
+/// A night already confirmed once, with firmware that has since changed, so a new attestation is owed.
+fn night_owing_a_new_attestation() -> (Night, support::MemoryDir) {
+    let night = Night::new();
+    let state = support::MemoryDir::new();
+    night.answer(Some("yes\n"));
+    assert_eq!(night.togi_in(state.path(), &["night"]).exit, Exit::Ok);
+    night.firmware.borrow_mut().bios_version = "TEST.2".into();
+    night.now.set(night.now.get() + Duration::from_secs(1));
+    (night, state)
+}
+
+/// Everything a refused night must leave alone: the journal, the boot selection and the reboot count.
+fn refusal_surface(
+    night: &Night,
+    state: &Path,
+) -> (usize, Vec<BiosContext>, Option<String>, Option<String>, usize) {
+    (
+        night
+            .host
+            .recording(&state.join("events.jsonl"))
+            .unwrap()
+            .events()
+            .len(),
+        attestations(night, state),
+        night.value("saved_entry"),
+        night.value(NIGHT_VARIABLE),
+        night.reboots(),
+    )
+}
+
+#[test]
+fn a_busy_host_lock_refuses_the_night_with_the_contention_status_and_changes_nothing() {
+    let (night, state) = night_owing_a_new_attestation();
+    let before = refusal_surface(&night, state.path());
+    let _held = night.host.acquire_host_lock().unwrap();
+    night.answer(Some("yes\n"));
+    let ran = night.togi_in(state.path(), &["night"]);
+    assert_eq!(ran.exit, Exit::Locked, "{}", ran.err);
+    assert!(
+        ran.err.contains("another togi process holds the host lock"),
+        "{}",
+        ran.err
+    );
+    assert_eq!(refusal_surface(&night, state.path()), before);
+}
+
+#[test]
+fn a_host_lock_that_cannot_be_taken_fails_the_night_with_its_cause_and_changes_nothing() {
+    let (night, state) = night_owing_a_new_attestation();
+    let before = refusal_surface(&night, state.path());
+    *night.host.lock_error.borrow_mut() = Some(togi_hostlock::Error::Io {
+        path: night.host.lock.clone(),
+        operation: togi_hostlock::Operation::Lock,
+        source: io::Error::other("disk gone"),
+    });
+    night.answer(Some("yes\n"));
+    let ran = night.togi_in(state.path(), &["night"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert!(ran.err.contains("disk gone"), "{}", ran.err);
+    assert_eq!(refusal_surface(&night, state.path()), before);
+}
+
+#[test]
+fn a_held_state_writer_lock_refuses_the_night_with_the_contention_status_and_changes_nothing() {
+    let (night, state) = night_owing_a_new_attestation();
+    let before = refusal_surface(&night, state.path());
+    let held = night.host.lock_state_dir(state.path()).unwrap();
+    night.answer(Some("yes\n"));
+    let ran = night.togi_in(state.path(), &["night"]);
+    assert_eq!(ran.exit, Exit::Locked, "{}", ran.err);
+    assert!(
+        ran.err.contains("another togi process holds the journal lock"),
+        "{}",
+        ran.err
+    );
+    drop(held);
+    assert_eq!(refusal_surface(&night, state.path()), before);
+}
+
+#[test]
+fn a_state_writer_lock_that_cannot_be_taken_fails_the_night_and_changes_nothing() {
+    let (night, state) = night_owing_a_new_attestation();
+    let before = refusal_surface(&night, state.path());
+    night
+        .host
+        .fs
+        .inject(togi_journal::fs::Fault::before(togi_journal::fs::Op::Open, 1).named("lock"));
+    night.answer(Some("yes\n"));
+    let ran = night.togi_in(state.path(), &["night"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert_eq!(refusal_surface(&night, state.path()), before);
 }
 
 #[test]

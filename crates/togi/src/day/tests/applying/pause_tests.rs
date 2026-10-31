@@ -1,5 +1,5 @@
 use super::*;
-use crate::day::socket::{self, FreezeRequest, PauseRequest, Reply, Request};
+use crate::day::socket::{self, AttestStockRequest, FreezeRequest, PauseRequest, Reply, Request};
 use crate::day::{pause::Pause, socket::Control};
 use std::cell::Cell;
 use test_case::test_case;
@@ -818,7 +818,7 @@ fn night_confirmation_uses_the_live_observers_current_firmware_and_is_idempotent
         &mut journal,
         &clock,
         0,
-        Request::AttestStock { session },
+        Request::AttestStock(AttestStockRequest { session }),
         &mut control,
     )
     .unwrap();
@@ -826,7 +826,7 @@ fn night_confirmation_uses_the_live_observers_current_firmware_and_is_idempotent
         &mut journal,
         &clock,
         0,
-        Request::AttestStock { session },
+        Request::AttestStock(AttestStockRequest { session }),
         &mut control,
     )
     .unwrap();

@@ -411,7 +411,7 @@ impl System for Host {
                     )))
                 })
             }
-            Request::Reapply | Request::AttestStock { .. } => Err(
+            Request::Reapply | Request::AttestStock(_) => Err(
                 togi_cli::day::socket::Error::Absent(io::Error::from(io::ErrorKind::NotFound)),
             ),
         }

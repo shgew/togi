@@ -171,10 +171,10 @@ fn attest(ctx: &mut Context<'_>) -> Result<Option<togi_hostlock::HostLock>, Exit
         if let Some(Payload::SessionStart(start)) =
             recording.events().first().map(|event| &event.payload)
         {
-            use crate::day::socket::{Error, Reply, Request};
-            match system.day_request(&Request::AttestStock {
+            use crate::day::socket::{AttestStockRequest, Error, Reply, Request};
+            match system.day_request(&Request::AttestStock(AttestStockRequest {
                 session: start.session,
-            }) {
+            })) {
                 Ok(Reply::Controlled { .. }) => return Ok(None),
                 Err(Error::Absent(_)) => {}
                 Ok(Reply::Refused { reason }) => return Err(fail(ctx, COMMAND, reason)),

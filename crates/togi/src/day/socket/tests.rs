@@ -634,6 +634,7 @@ fn a_control_the_state_no_longer_allows_is_a_refusal_not_a_service_failure(
 
 #[test_case(r#"{"pause":{"state":{"kind":"until_boot"}}}"#, r#"{"pause":[{"kind":"until_boot"}]}"#; "pause")]
 #[test_case(r#"{"extend":{"revision":7}}"#, r#"{"extend":[7]}"#; "extend")]
+#[test_case(r#"{"attest_stock":{"session":"20260101T000000Z"}}"#, r#"{"attest_stock":["20260101T000000Z"]}"#; "attest stock")]
 #[test_case(r#"{"freeze":{"frozen":true}}"#, r#"{"freeze":[true]}"#; "freeze")]
 fn control_requests_decode_from_objects_only(object: &str, array: &str) {
     serde_json::from_str::<Request>(object).unwrap();
@@ -645,7 +646,12 @@ fn control_requests_decode_from_objects_only(object: &str, array: &str) {
 fn stock_attestation_requires_root_even_for_the_day_answer_group() {
     let mut journal = crate::day::tests::journal();
     let session = journal.session().unwrap();
-    let reply = serve(&mut journal, 1000, Request::AttestStock { session }).unwrap();
+    let reply = serve(
+        &mut journal,
+        1000,
+        Request::AttestStock(AttestStockRequest { session }),
+    )
+    .unwrap();
     assert!(matches!(reply, Reply::Refused { .. }));
     assert_eq!(journal.events().len(), 1);
 }
@@ -654,7 +660,12 @@ fn stock_attestation_requires_root_even_for_the_day_answer_group() {
 fn stock_attestation_refuses_a_changed_session_before_reading_or_appending() {
     let mut journal = crate::day::tests::journal();
     let session = SessionId::new(Timestamp::UNIX_EPOCH + Duration::from_secs(1), None).unwrap();
-    let reply = serve(&mut journal, 0, Request::AttestStock { session }).unwrap();
+    let reply = serve(
+        &mut journal,
+        0,
+        Request::AttestStock(AttestStockRequest { session }),
+    )
+    .unwrap();
     assert!(matches!(reply, Reply::Refused { .. }));
     assert_eq!(journal.events().len(), 1);
 }
@@ -667,7 +678,7 @@ fn stock_attestation_failure_is_never_acknowledged() {
         &mut journal,
         &FixedClock,
         0,
-        Request::AttestStock { session },
+        Request::AttestStock(AttestStockRequest { session }),
         &mut |_, _, action| {
             assert_eq!(action, Control::AttestStock);
             Err(super::super::Error::ClockReversed)
