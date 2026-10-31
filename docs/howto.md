@@ -121,7 +121,16 @@ If the machine freezes during an in-session trial, it needs a manual reset unles
 
 ## Daily observation
 
-After a session exists, leave firmware Curve Optimizer at CO 0 and arm PID 1's hardware watchdog. `sudo togi day` refuses a nonzero all-core baseline or an unarmed/non-counting watchdog, then applies **stock (CO 0) only** and observes normal use until Ctrl-C or a stop signal. Nonzero day offsets are not enabled; the applying capability enforces this without changing tuner decisions ([day transitions](spec/runtime.md#ruleset-13-policy-boundary)). It never starts test workloads. It reads BIOS context and every core at start and checkpoints active hours excluding suspend every ten minutes. An orderly shutdown, including a short power-button shutdown handled by systemd, zeroes and verifies every core before its final checkpoint and clean-stop marker. A later start records an earlier observed boot without that marker as unclean, with its checkpoint, offsets, reset reason and available kernel evidence; unavailable evidence stays unknown.
+After a session exists, leave firmware Curve Optimizer at CO 0 and arm PID 1's hardware watchdog.
+`sudo togi day` refuses a nonzero all-core baseline or an unarmed/non-counting watchdog, then applies
+the exact permitted committed D and observes normal use until Ctrl-C or a stop signal. It never
+starts test workloads or makes a second tuning decision
+([day transitions](spec/runtime.md#ruleset-13-policy-boundary)). It reads BIOS context and every core
+at start and checkpoints active hours excluding suspend every ten minutes. An orderly shutdown,
+including a short power-button shutdown handled by systemd, zeroes and verifies every core before
+its final checkpoint and clean-stop marker. A later start records an earlier observed boot without
+that marker as unclean, with its checkpoint, offsets, reset reason and available kernel evidence;
+unavailable evidence stays unknown.
 
 `togi status` shows the Day summary; `togi events --kind day` shows the raw records. Hours are checkpointed lower bounds, not a stability guarantee. An interval whose two readbacks differ cannot identify when offsets changed, so it remains in boot hours but earns no hours for either profile.
 
@@ -330,7 +339,13 @@ sudo togi doctor --day
 
 The evidence view puts the selected exact profile beside stock observations, exposes rate/slope witnesses, hours and coverage gaps, and names the governing [cap rule](spec/tuner.md#cap-s-margin-from-measured-slope). “No observations”, “non-mapping exposure only” and “mapping exposure inadequate” are different gaps: daily hours and qualification hours do not become isolated mapping exposure. CO 0 is an untuned fallback, not a claim that stock meets the hazard goal. No view gives a safety verdict, an ETA or a promise that more nights will produce a nonzero profile.
 
-The first observed day boot after a night has a Morning report in `status`; `togi day notify` also sends it to the desktop. It summarizes recorded trial ends and observed task time, and says that automatic nonzero application is disabled. It is reconstructed from the existing journal and retained across a day-service restart in that boot, not repeated on the next day boot. Notification deduplication is per notifier process lifetime: restarting the notifier may show it again. A notification is not proof of current hardware offsets.
+The first observed day boot after a night has a Morning report in `status`; `togi day notify` also
+sends it to the desktop. It summarizes recorded trial ends and observed task time, and explains that
+the day service applies the permitted committed profile, with promotion only at an eligible cold
+boot. It is reconstructed from the existing journal and retained across a day-service restart in
+that boot, not repeated on the next day boot. Notification deduplication is per notifier process
+lifetime: restarting the notifier may show it again. A notification is not proof of current hardware
+offsets or stability.
 
 `doctor --day` checks the day prerequisites rather than stress-workload availability. Its baseline row asks whether this boot has a complete, verified CO-0 baseline witness, separately from the journal's applied D or a current zero readback. Missing proof is not silently filled in. Like ordinary `doctor`, it writes no journal event and changes no offset; root hardware checks still require the host lock, so stop a competing hardware process first. See [day diagnostics](spec/runtime.md#day-diagnostics) for the exact checks.
 

@@ -118,7 +118,7 @@ pub(super) fn resume(ctx: &mut Context<'_>) -> Exit {
         ctx,
         &Request::Resume,
         "day resume",
-        "stock reapplied and verified; day resumed",
+        "committed profile reapplied and verified; day resumed",
     )
 }
 

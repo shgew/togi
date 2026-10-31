@@ -128,7 +128,20 @@ Evidence has three parts. The reset reason comes from `togi-detect`'s proven imm
 
 Each `day.unclean_end` opens one question about its crashed boot: what happened. The four answers are `frozen` (it froze), `graphics` (graphics died but sound went on), `power-off` (I turned it off while it was working normally) and `unsure` (not sure). An answer is journaled as `day.answer` with the boot, the offsets that boot last recorded (its profile), the answer and the answering user's uid. A later answer for the same boot replaces the earlier one, so an answer can be changed at any time; an unclean end already recorded can be answered whether or not it was ever pending. The question is pending until its first answer. `togi status` and `togi watch` show every pending question with what togi saw, the four choices and the `togi day answer` command, and show an answered question's current answer.
 
-`togi day answer <boot> <frozen|graphics|power-off|unsure>` needs no root shell. It connects to the day service's Unix socket `/run/togi/day.sock` and runs before the root, platform and journal checks of `togi day` itself; the service appends the answer. The socket lives in a root-owned directory that is not group or world writable. The service accepts root and users it identifies through `SO_PEERCRED`: peers whose primary group is the socket's group, and explicit members of that group, re-read from the account files on each connection of such a peer, so membership changes take effect without restarting the service. Each request and reply is one JSON line. Questions and answers retain `"questions"`, `{"answer":{"boot":"<boot>","answer":"<kind>"}}`, `{"questions":{"pending":[...]}}` and `"answered"`; refusals are `{"refused":{"reason":"..."}}`. Root alone may send `{"record":{"record":<existing day.record payload>}}`, acknowledged as `{"recorded":{"seq":N}}`, or `"reapply"`, acknowledged as `"reapplied"` only after verified stock readback. These are socket extensions, not new journal fields or event kinds. The service serves one client per second, bounds requests at 16 KiB and bounds an exchange at one second. Without a day service there is no answer socket; answer clients never write the journal.
+`togi day answer <boot> <frozen|graphics|power-off|unsure>` needs no root shell. It connects to the day
+service's Unix socket `/run/togi/day.sock` and runs before the root, platform and journal checks of
+`togi day` itself; the service appends the answer. The socket lives in a root-owned directory that is
+not group or world writable. The service accepts root and users it identifies through `SO_PEERCRED`:
+peers whose primary group is the socket's group, and explicit members of that group, re-read from the
+account files on each connection of such a peer, so membership changes take effect without
+restarting the service. Each request and reply is one JSON line. Questions and answers retain
+`"questions"`, `{"answer":{"boot":"<boot>","answer":"<kind>"}}`, `{"questions":{"pending":[...]}}` and
+`"answered"`; refusals are `{"refused":{"reason":"..."}}`. Root alone may send
+`{"record":{"record":<existing day.record payload>}}`, acknowledged as `{"recorded":{"seq":N}}`, or
+`"reapply"`, acknowledged as `"reapplied"` only after verified readback of the still-permitted
+committed D, or stock while paused. These are socket extensions, not new journal fields or event
+kinds. The service serves one client per second, bounds requests at 16 KiB and bounds an exchange at
+one second. Without a day service there is no answer socket; answer clients never write the journal.
 
 In a request, `answer` is the journal's wire name (`frozen`, `graphics`, `power_off`, `unsure`); the command line spells the third `power-off`.
 
