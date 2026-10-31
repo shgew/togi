@@ -2,12 +2,12 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-night since 08:00, 39m30s elapsed: qualification (task qualification #0)
+night since 08:00, 5h14m elapsed: qualification (task qualification #0)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#11733] trial night-trial-2632 core 00 offset -1 R1 mprime SSE
-  4K-21K 90 s together qualification task qualification #0 night #11644
+in flight: [#11177] trial night-trial-2504 core 00 offset -1 R1 mprime SSE
+  4K-21K 90 s together qualification task qualification #0 night #10388
 
 Ruleset 13 (compatibility RULESET 3): mapping-only cap; stock fallback does not
   prove the hazard goal. Coverage gaps remain unknown.
@@ -79,17 +79,17 @@ CCD CORES D   S   SLOPE    BINDING  U            REMAINING COVERED UNCOVERED
 Day policy
 applied profile: CCD 0 0, CCD 1 0
 hold: none recorded
-latest step [#11636] at cold boot calendar-boot-31: holds, blocked by: every CCD
+latest step [#10380] at cold boot calendar-boot-27: holds, blocked by: every CCD
   is at its cap
 freeze: off
 firmware: valid
 
 Night since 08:00
-elapsed: 39m30s
+elapsed: 5h14m
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
 qualification    75%    0%    0s
-mapping          10%    100%  39m30s
+mapping          10%    100%  5h14m
 control          5%     0%    0s
 requalification  10%    0%    0s
 current task: qualification (task qualification #0)
@@ -146,12 +146,12 @@ qualifying CCD 0 -1, CCD 1 0: 0 h eligible witnessed exposure, 259 outstanding
     mprime-sse-4k-21k-all-threads serial cpu 0 600s exact
 
 Day
-boots observed: 22; clean ends: 22; unclean ends: 0
+boots observed: 19; clean ends: 19; unclean ends: 0
 hardware watchdog at the last observer check: not recorded
 Applied hours per read-back profile (changed intervals excluded):
   00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0
-    15:0: 176.000 h
-all profiles: 176.0h observed, 0 crashes (12 unknown intervals)
-stock (CO 0): 176.0h observed, 0 crashes
+    15:0: 152.000 h
+all profiles: 152.0h observed, 0 crashes (10 unknown intervals)
+stock (CO 0): 152.0h observed, 0 crashes
 totals are observations, not a bound
 last unclean end: none

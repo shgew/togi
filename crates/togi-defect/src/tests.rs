@@ -10,11 +10,11 @@ use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CoreSet, CpuId, Signal, Targ
 
 use crate::{Clause, DefectState, Entry, KNOWN_DEFECTS, fixed_stamp, is_ordered};
 
-const BACKOFF_ON_FAILURE: Clause = Clause {
+const BACKOFF_ON_FAILURE: Clause = Clause::DirectCause {
     decision_kind: EventKind::CcdEdge,
     cause_kind: EventKind::Failure,
 };
-const DEEPER_ON_WARNING: Clause = Clause {
+const DEEPER_ON_WARNING: Clause = Clause::DirectCause {
     decision_kind: EventKind::CcdCap,
     cause_kind: EventKind::SessionWarning,
 };
@@ -53,7 +53,7 @@ static NONE: [Entry; 0] = [];
 static NOT_TUNER: [Entry; 1] = [entry(
     1,
     DefectDirection::TooCautious,
-    &[Clause {
+    &[Clause::DirectCause {
         decision_kind: EventKind::SessionWarning,
         cause_kind: EventKind::Failure,
     }],
@@ -517,7 +517,7 @@ fn known_finding_view_carries_its_entry() {
 #[test]
 fn empty_registry_fixed_stamp_zero() {
     assert_eq!(fixed_stamp(&[]), FixStamp::none());
-    assert_eq!(fixed_stamp(KNOWN_DEFECTS), FixStamp::none());
+    assert_eq!(fixed_stamp(KNOWN_DEFECTS), FixStamp::through(id(1)));
     assert_eq!(fixed_stamp(&PAIR), FixStamp::through(id(2)));
 
     let mut log = Log::default();

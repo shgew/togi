@@ -1,5 +1,8 @@
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
+#[path = "commands/defect.rs"]
+mod defect;
+
 use std::io;
 use test_case::test_case;
 
@@ -65,7 +68,7 @@ fn input(sim: &Simulator, mem: &MemFs) -> RunInput<'static> {
         machine,
         publication: PublicationPolicy::OnFinish,
         bootloader: None,
-        defects: &[],
+        defects: togi_defect::KNOWN_DEFECTS,
         resume: None,
         import: None,
         log: None,

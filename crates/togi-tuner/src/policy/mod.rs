@@ -40,6 +40,7 @@ use togi_machine::CcdId;
 pub use day_query::DayQuery;
 pub use decision::{Decision, PolicyPayload};
 pub use fold::FoldError;
+pub use mapping::MappingRewind;
 pub use night_query::{Action, Contents, EndReason, NightQuery, NotReady};
 pub use plan::{PlanError, TrialPlan};
 pub use projection::{
@@ -133,6 +134,7 @@ struct Caches {
     nights: cache::Cache<night_next::NightTallies>,
     intervals: cache::Cache<day_query::IntervalCache>,
     warnings: cache::Cache<ledger::Monotonicity>,
+    controls: cache::Cache<controls::ControlsFreeze>,
 }
 
 impl State {

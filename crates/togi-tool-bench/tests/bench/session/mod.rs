@@ -62,7 +62,7 @@ fn session_with(
         max_boots: NonZeroU32::new(max_boots).unwrap(),
         stop_at: Some(night_end),
         write_samples: false,
-        defects: &[],
+        defects: togi_defect::KNOWN_DEFECTS,
         log: None,
         renderer: Renderer::default(),
         zone: TimeZone::UTC,
