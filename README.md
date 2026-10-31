@@ -6,11 +6,11 @@
 Moves a Zen 5 desktop CPU towards deeper per-CCD Curve Optimizer offsets, as far as its own test evidence supports: nights test, days observe. A night runs until you end it (Ctrl-C, F10 in the dashboard, or a reboot); a crash reboot continues it, and the next run after you end it opens the next night.
 
 - Nights [map](docs/spec/tuner.md#night-edge-u) each CCD's failure edge alone, derive each CCD's [cap](docs/spec/tuner.md#cap-s-margin-from-measured-slope) from the measured failure rate, run [CO-0 controls](docs/spec/tuner.md#co-0-controls) and qualify the exact next day profile across the whole [coverage matrix](docs/spec/workloads.md#coverage-matrix).
-- Days calculate [steps](docs/spec/tuner.md#day-steps), holds and [event retreats](docs/spec/tuner.md#whole-profile-veto-and-escalation), but the applying capability currently enforces **stock (CO 0) only**. Automatic nonzero day offsets await the successor rules, gate and hardware acceptance.
+- Days apply the committed permitted [Ruleset 14 profile D](docs/spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step), with exact-profile qualification, clean holds and [event retreats](docs/spec/tuner.md#whole-profile-veto-and-escalation). Nonzero profiles remain bounded experiments, not reliability guarantees.
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
 - Survives crashes: the next run reads its journal, attributes the crash and continues.
 - Records every action in a plain-text journal you can read to see what it did and why.
-- BIOS stays at CO 0, and a nonzero starting baseline is refused. The day service applies stock at each normal boot, restart and resume, with an armed, counting PID 1 watchdog and verified readback ([day transitions](docs/spec/runtime.md#ruleset-13-policy-boundary)).
+- BIOS stays at CO 0, and a nonzero starting baseline is refused. The day service applies the permitted D at normal boot and reapplies it without promotion on restart or resume, with an armed, counting PID 1 watchdog and verified readback ([day transitions](docs/spec/runtime.md#ruleset-13-policy-boundary)).
 
 *togi* (研ぎ) is Japanese for polishing a blade: coarse stones first, then fine ones, until the edge shows.
 
@@ -22,7 +22,7 @@ Works today, on a simulated 16-core machine:
 - a durable two-event machine allowance, including provisional charges, never renewed by restart, reset, firmware change, new session or reboot; missing campaign history blocks nonzero exploration;
 - status/watch D/C/U, qualification, hold and finish reasons, allowance and experimental evidence (`experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`); S is diagnostic only, never permission;
 - console-compatible dashboard rendering and a [rich truecolour profile](docs/spec/runtime.md#dashboard) using the same colours with Unicode gauges and text;
-- normal-boot stock application and observation with `togi day`: durable intent/write/readback, zero-before-clean-stop ordering, checkpointed hours, clean/unclean ends and questions you answer without root. Answers and evidence classify [daily events](docs/spec/tuner.md#daily-events); nonzero application remains disabled.
+- normal-boot profile application and observation with `togi day`: durable intent/write/all-core readback, zero-before-clean-stop ordering, checkpointed hours, clean/unclean ends and questions you answer without root. Answers and evidence classify [daily events](docs/spec/tuner.md#daily-events).
 
 Built for real hardware, a Granite Ridge desktop running NixOS, and tested piece by piece on one with GRUB:
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
@@ -31,7 +31,6 @@ Built for real hardware, a Granite Ridge desktop running NixOS, and tested piece
 - the NixOS module and unattended tuning boot support GRUB and systemd-boot, with two service restart-limit retry boots before returning to the normal system and durable leave reasons; VM checks cover switching between day and night without tuning hardware.
 
 Not yet:
-- nonzero day application: the safe path currently applies stock only ([#1218](https://github.com/shgew/togi/issues/1218)).
 - a full night-and-day cycle on real hardware.
 
 `just sim` runs a simulated session from a source checkout, for development; see [docs/simulating.md](docs/simulating.md).
@@ -44,12 +43,12 @@ sudo togi doctor                       # check this machine is ready for a run, 
 sudo togi doctor --day                 # check day prerequisites and this boot's recorded stock-baseline proof
 sudo togi run                          # tune tonight; Ctrl-C ends the night, the next run opens the next
 sudo togi night                        # GRUB or systemd-boot: confirm, remember the day's selection and reboot into tuning
-sudo togi day                          # apply stock and observe; needs verified CO 0 and PID 1's counting watchdog
+sudo togi day                          # apply permitted D and observe; needs verified CO 0 and PID 1's counting watchdog
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
 sudo togi day record                   # record a missed crash through the live service; no stop needed
 togi day pause                         # verify stock until the next cold boot
 togi day pause 3h                      # or use --until 18:30; timed pauses survive restart and reboot
-togi day resume                        # end the pause with a verified stock-only transaction
+togi day resume                        # end the pause and verify the still-permitted committed D
 togi day freeze                        # stop promotions; use unfreeze to lift it, safety retreats still run
 togi status                            # activity, each CCD's D, S and U, night queues, day policy and observations
 togi status --evidence                 # cap reasons, hours, coverage gaps and profile/stock evidence; no verdict
@@ -63,11 +62,11 @@ source <(togi completion bash)         # shell completions; the Nix package inst
 
 The dashboard adapts to wide and compact terminals. It shows the stage line, one table per CCD with its D, S and U, and the night and day panels beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. [Commands](docs/spec/runtime.md#commands) describes when the screen redraws.
 
-`status --evidence` explains the current [cap rules](docs/spec/tuner.md#cap-s-margin-from-measured-slope), including why a cap remains zero. Recorded hours and incomplete coverage are evidence, not a promise of another step or a completion estimate. On the first observed day boot after a night, `status` and `togi day notify` report the night's recorded work and the stock-only application restriction; they do not claim that a nonzero profile was applied.
+`status --evidence` explains the current [ceiling and qualification rules](docs/spec/tuner-ruleset14.md#2-night-edge-and-hard-ceiling), including why a profile remains at zero. Recorded hours and incomplete coverage are evidence, not a promise of another step or a completion estimate. On the first observed day boot after a night, `status` and `togi day notify` report the night's recorded work and the verified applied profile, not merely a proposal.
 
-With the day service running and your user in `services.togi.day.users`, pause/resume and freeze/unfreeze need no root shell. On the main `watch` view, `p` toggles pause and `f` toggles freeze. Timed pauses warn five minutes before expiry and offer a one-hour extension. Expiry and early resume still reapply **CO 0 only**, not historical nonzero offsets; [pause and freeze](docs/howto.md#pausing-for-important-work) explain the lifetimes.
+With the day service running and your user in `services.togi.day.users`, pause/resume and freeze/unfreeze need no root shell. On the main `watch` view, `p` toggles pause and `f` toggles freeze. Timed pauses warn five minutes before expiry and offer a one-hour extension. Expiry and early resume reapply the still-permitted committed D without promotion; [pause and freeze](docs/howto.md#pausing-for-important-work) explain the lifetimes.
 
-`status` adds a Day section after observations exist: observed boots, checkpointed hours per read-back offset profile, clean and unclean ends, and the latest unclean boot's reset reason. Each unclean end becomes a question that `status` and `watch` show, with what togi saw, until you answer it with `togi day answer <boot> <frozen|graphics|power-off|unsure>`; no root shell is needed. The answer counts: `frozen` makes the end CPU-suspect, which vetoes that profile and retreats the day step, and a later answer can reclassify it ([Daily events](docs/spec/tuner.md#daily-events)). `togi day notify` raises desktop notifications through the installed `notify-send`, with answer buttons on KDE Plasma, pause-expiry warnings and verified stock-reapplication notices. See [day observation](docs/howto.md#daily-observation) for service setup and [answering](docs/howto.md#answering-what-happened).
+`status` adds a Day section after observations exist: observed boots, checkpointed hours per read-back offset profile, clean and unclean ends, and the latest unclean boot's reset reason. Each unclean end becomes a question that `status` and `watch` show, with what togi saw, until you answer it with `togi day answer <boot> <frozen|graphics|power-off|unsure>`; no root shell is needed. The answer counts: `frozen` makes the end CPU-suspect, which vetoes that profile and retreats the day step, and a later answer can reclassify it ([Daily events](docs/spec/tuner.md#daily-events)). `togi day notify` raises desktop notifications through the installed `notify-send`, with answer buttons on KDE Plasma, pause-expiry warnings and verified profile-reapplication notices. See [day observation](docs/howto.md#daily-observation) for service setup and [answering](docs/howto.md#answering-what-happened).
 
 The NixOS tuning specialisation supports exactly one of GRUB or systemd-boot. `sudo togi night` selects it persistently, so crash reboots stay in the night; F10 on its dashboard or the power button restores the previous boot selection. See [Night and day](docs/spec/runtime.md#night-and-day) for saved defaults and menu-started nights.
 
