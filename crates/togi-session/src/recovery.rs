@@ -602,11 +602,10 @@ impl RecoveryState {
         }
     }
 
-    /// Folds `event` into the boots. Every boot with any event, day events included, joins `journal_boots`, the order
-    /// of succession. Only a tuning-run witness (`session.start`, `config.loaded`, a trial intent or start) admits a
-    /// boot to `boots`: shared night planning and SMU events can also come from the day observer. Once an admitted
-    /// boot has recorded its `shutdown`, only a witness replaces it, because what follows belongs to the day
-    /// observer, which the host and writer locks make exclusive with a tuning run.
+    /// Folds every boot into the order of succession, but admits only tuning-run witnesses to crash recovery.
+    /// `state.rebuilt` is run-only startup activity that can precede `config.loaded`; shared night planning and
+    /// SMU events can also come from the day observer. After `shutdown`, only another tuning witness reopens
+    /// the boot: the observer, exclusive with a run under the host and writer locks, cannot undo a clean stop.
     fn track_boot(&mut self, event: &Event) {
         if !self.journal_boots.contains(&event.boot) {
             self.journal_boots.push(event.boot.clone());
@@ -617,6 +616,7 @@ impl RecoveryState {
         let tuning = matches!(
             event.kind(),
             EventKind::SessionStart
+                | EventKind::StateRebuilt
                 | EventKind::ConfigLoaded
                 | EventKind::TrialIntent
                 | EventKind::TrialStart
@@ -1004,11 +1004,6 @@ impl RecoveryState {
             .position(|known| known == boot)
             .and_then(|at| self.journal_boots.get(at + 1))
             .unwrap_or(current)
-    }
-
-    /// Every boot with any event in the journal, oldest first.
-    pub(crate) fn journal_boots(&self) -> &[BootId] {
-        &self.journal_boots
     }
 
     /// The machine checks a crash of `boot` may cite: those recorded from `boot` and not claimed by another crash,

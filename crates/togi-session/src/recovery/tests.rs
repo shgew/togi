@@ -348,6 +348,26 @@ fn a_boot_without_a_shutdown_crashed_unless_it_is_current_or_a_crash_was_recorde
     assert_eq!(log.state().crash_of(&boot("b0")), Some(log.next().prev()));
 }
 
+#[test_case(false; "new boot")]
+#[test_case(true; "same boot after shutdown")]
+fn rebuilding_state_admits_tuning_before_configuration_is_recorded(same_boot: bool) {
+    let mut log = Log::new();
+    log.add(shutdown(ShutdownReason::Signal), &[]);
+    let name = if same_boot { "b0" } else { "b1" };
+    log.at(name, 0).add(
+        Payload::StateRebuilt(togi_journal::StateRebuilt {
+            fields: vec!["last_seq".into()],
+        }),
+        &[],
+    );
+    let state = log.state();
+    assert_eq!(state.last_kind(&boot(name)), Some(EventKind::StateRebuilt));
+    assert_eq!(
+        state.crashed_boots(&boot("b2")).collect::<Vec<_>>(),
+        [&boot(name)]
+    );
+}
+
 fn day_payloads() -> Vec<Payload> {
     vec![
         togi_journal::DayBootStart {
