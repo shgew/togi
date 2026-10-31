@@ -434,6 +434,10 @@ fn observe_with_socket(
             watchdog: Some(watchdog.clone()),
         },
     )?;
+    // The first read takes the whole boot. Its faults were logged under the profile read at start,
+    // so it runs before application can change the offsets later reads attribute faults to.
+    let mut faults = Faults::of(journal.events(), journal.boot());
+    faults.poll(journal, observer, clock, offsets)?;
     let mut pause = pause::Pause::of(journal);
     let starts_paused = pause.starts_paused(journal.boot(), clock);
     let expired_at_start = pause.expired(journal.boot(), clock);
@@ -466,8 +470,6 @@ fn observe_with_socket(
             .map_or_else(LoadMix::default, |boot| boot.load_mix),
     );
     sampler.record(started, observer.cpu_times()?)?;
-    let mut faults = Faults::of(journal.events(), journal.boot());
-    faults.poll(journal, observer, clock, applied_offsets)?;
     let mut progress = Progress {
         started,
         accumulated,

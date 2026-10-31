@@ -334,6 +334,45 @@ fn a_nonzero_permitted_proposal_commits_the_applied_step_and_stop_zeroes() {
 }
 
 #[test]
+fn a_fault_logged_before_the_service_started_keeps_the_startup_profile_not_the_applied_one() {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    hardware.reading = Reading::fixed().logging(|after| {
+        let mut read = KernelRead {
+            mces: vec![uncorrected_mce(2)],
+            cursor: KernelCursor::from("c1".to_owned()),
+            ..KernelRead::default()
+        };
+        if after.is_some() {
+            read.mces.push(uncorrected_mce(100));
+        }
+        Ok(read)
+    });
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    assert_eq!(applications(&journal)[0].target, target(&journal, -5));
+    let faults: Vec<_> = day_faults(&journal)
+        .into_iter()
+        .map(|(_, fault)| (fault.monotonic_ns, fault.offsets))
+        .collect();
+    assert_eq!(
+        faults,
+        [
+            (2_000_000_000, offsets(0)),
+            (100_000_000_000, offsets(-5))
+        ],
+        "the pre-start fault carries the profile read at start, the later one the applied D"
+    );
+}
+
+#[test]
 fn nonzero_baseline_is_refused_without_a_write_or_application() {
     let mut journal = seed();
     let mut hardware = Hardware::stock();
