@@ -1451,7 +1451,7 @@ in
       ];
     }
   ];
-  day-apply-stock = import ./day-apply-stock.nix { inherit pkgs package vmRecovery; };
+  day-apply-profile = import ./day-apply-profile.nix { inherit pkgs package vmRecovery; };
   display = oneScenario "display" "kmscon-display";
   efi = oneScenario "efi" "night-systemd-boot";
 }
