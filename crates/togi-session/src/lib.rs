@@ -51,5 +51,6 @@ pub use run::run;
 pub use session::{ConfigSource, Ended, Panic, RunInput, Stop};
 pub use snapshot::{ReadState, SnapshotError, SnapshotStatus, verify_snapshot};
 pub use write::{
-    DayWriteError, ProfileFailure, Refused, StockApplied, WriteFailure, apply_day_stock,
+    DayAppliedProfile, DayRecovery, DayWriteError, ProfileFailure, Refused, WriteFailure,
+    apply_day_profile,
 };

@@ -136,8 +136,18 @@ fn timed_pause_survives_cold_boot_restart_and_resume() {
 }
 
 #[test]
-fn resume_early_acknowledges_only_after_the_stock_transaction_and_keeps_learning() {
+fn resume_early_acknowledges_only_after_the_profile_transaction_and_keeps_learning() {
     let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
     paused(
         &mut journal,
         PauseState::Until {
@@ -145,7 +155,7 @@ fn resume_early_acknowledges_only_after_the_stock_transaction_and_keeps_learning
         },
     );
     let before = journal.events().len();
-    let mut hardware = Hardware::stock();
+    hardware.writes.clear();
     let mut live = crate::day::apply::Live::preflight(&journal, &mut hardware).unwrap();
     let mut state = Pause::of(&journal);
     let status = state
@@ -168,8 +178,14 @@ fn resume_early_acknowledges_only_after_the_stock_transaction_and_keeps_learning
         .position(|event| matches!(event.payload, Payload::DayPause(_)))
         .unwrap();
     assert!(application < ended);
-    assert_eq!(hardware.writes, [TargetOffset::ZERO]);
-    assert_eq!(applications(&journal).last().unwrap().readbacks, offsets(0));
+    assert_eq!(
+        hardware.writes,
+        [TargetOffset::ZERO, TargetOffset::new(-5).unwrap()]
+    );
+    assert_eq!(
+        applications(&journal).last().unwrap().readbacks,
+        offsets(-5)
+    );
     assert!(
         journal
             .events()
@@ -240,6 +256,22 @@ fn extending_replaces_the_deadline_and_zeroes_with_readback_again() {
 #[test]
 fn deadline_after_suspended_wall_time_reapplies_before_ending_pause() {
     let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    hardware.writes.clear();
+    let decisions = journal
+        .events()
+        .iter()
+        .filter(|event| matches!(event.payload, Payload::ClimbDecision(_)))
+        .count();
     paused(
         &mut journal,
         PauseState::Until {
@@ -255,7 +287,9 @@ fn deadline_after_suspended_wall_time_reapplies_before_ending_pause() {
         ]
         .into(),
     };
-    let mut hardware = Hardware::stock();
+    journal
+        .reboot("paused-cold-boot".to_owned().into())
+        .unwrap();
     serve(
         &mut journal,
         &mut hardware,
@@ -284,7 +318,12 @@ fn deadline_after_suspended_wall_time_reapplies_before_ending_pause() {
     ));
     assert_eq!(
         hardware.writes,
-        [TargetOffset::ZERO, TargetOffset::ZERO, TargetOffset::ZERO]
+        [
+            TargetOffset::ZERO,
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO
+        ]
     );
     assert_eq!(
         Ledger::of(journal.events())
@@ -292,8 +331,28 @@ fn deadline_after_suspended_wall_time_reapplies_before_ending_pause() {
             .values()
             .copied()
             .sum::<u64>(),
-        5
+        125
     );
+    assert_eq!(
+        applications(&journal).last().unwrap().target,
+        target(&journal, -5)
+    );
+    let new_decisions: Vec<_> = journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::ClimbDecision(value) = &event.payload {
+                Some(&value.decision)
+            } else {
+                None
+            }
+        })
+        .skip(decisions)
+        .collect();
+    assert!(new_decisions.iter().all(|decision| !matches!(
+        decision,
+        togi_journal::ClimbAction::Promote { .. } | togi_journal::ClimbAction::Restore { .. }
+    )));
 }
 
 #[test]
@@ -792,9 +851,11 @@ fn the_live_control_seam_brackets_a_pause_with_checkpoints_and_acknowledges_afte
             })
         })
         .collect();
-    // Running before the pause is credited; the paused span and the resume's closing checkpoint are
-    // excluded; running after the resume is credited again.
-    assert_eq!(closed, [(true, 600), (false, 600), (false, 0), (true, 600)]);
+    // Pausing and resuming settle their new readbacks at zero elapsed time.
+    assert_eq!(
+        closed,
+        [(true, 600), (false, 0), (false, 600), (false, 0), (true, 600)]
+    );
     assert_eq!(
         Ledger::of(journal.events()).profiles.values().sum::<u64>(),
         1200

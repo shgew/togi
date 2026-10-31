@@ -79,7 +79,7 @@ impl Pause {
         Ok(())
     }
 
-    /// Called only after the startup application or the ending transaction has verified stock.
+    /// Called only after the startup application or the ending transaction verified its target.
     pub(super) fn ended(
         &mut self,
         journal: &mut Journal,
@@ -154,7 +154,13 @@ impl Pause {
                 )?;
                 self.frozen = frozen;
             }
-            socket::Control::Reapply => live.reapply(journal, observer, clock)?,
+            socket::Control::Reapply => {
+                if self.starts_paused(journal.boot(), clock) {
+                    live.zero(journal, observer, clock)?;
+                } else {
+                    live.reapply(journal, observer, clock)?;
+                }
+            }
         }
         Ok(self.status())
     }

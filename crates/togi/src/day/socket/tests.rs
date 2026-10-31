@@ -221,7 +221,7 @@ fn the_morning_report_is_read_only_socket_data() {
 
     let report = crate::morning::Report {
         boot: "morning".to_owned().into(),
-        text: "Day application is restricted to stock (CO 0).".into(),
+        text: "The day service applies the permitted committed profile.".into(),
     };
     let mut wire = Vec::new();
     write_reply(

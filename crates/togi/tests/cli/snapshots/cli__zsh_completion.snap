@@ -387,7 +387,7 @@ esac
 _togi_commands() {
     local commands; commands=(
 'run:Start or resume the night'\''s tuning session in the foreground' \
-'day:Apply stock, observe daily use, pause or freeze, and report crashes' \
+'day:Apply the permitted profile, observe daily use, pause or freeze, and report crashes' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -397,7 +397,7 @@ _togi_commands() {
 'restart-limit:Recover after the tuning service reaches its restart limit' \
 'emergency-stop:Internal emergency recovery that stops leftover trials and sets every core to offset 0' \
 'status:Show the session at a glance' \
-'watch:Show the session dashboard with rootless stock-only day controls' \
+'watch:Show the session dashboard with rootless day controls' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'togi commands' commands "$@"
@@ -412,10 +412,10 @@ _togi__subcmd__day_commands() {
     local commands; commands=(
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions and the morning evidence report to this graphical session' \
-'reapply:Reapply stock after system resume; used by the system sleep hook' \
+'reapply:Reapply the committed profile after system resume; used by the system sleep hook' \
 'record:Record a crash togi did not observe' \
 'pause:Keep every core at stock until the next cold boot or a deadline' \
-'resume:End the pause early and verify a stock-only reapplication' \
+'resume:End the pause early and verify committed-profile reapplication' \
 'freeze:Keep the committed profile and prevent promotions, never safety retreats' \
 'unfreeze:Lift the promotion freeze' \
 'help:Print this message or the help of the given subcommand(s)' \
@@ -437,10 +437,10 @@ _togi__subcmd__day__subcmd__help_commands() {
     local commands; commands=(
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions and the morning evidence report to this graphical session' \
-'reapply:Reapply stock after system resume; used by the system sleep hook' \
+'reapply:Reapply the committed profile after system resume; used by the system sleep hook' \
 'record:Record a crash togi did not observe' \
 'pause:Keep every core at stock until the next cold boot or a deadline' \
-'resume:End the pause early and verify a stock-only reapplication' \
+'resume:End the pause early and verify committed-profile reapplication' \
 'freeze:Keep the committed profile and prevent promotions, never safety retreats' \
 'unfreeze:Lift the promotion freeze' \
 'help:Print this message or the help of the given subcommand(s)' \
@@ -541,7 +541,7 @@ _togi__subcmd__events_commands() {
 _togi__subcmd__help_commands() {
     local commands; commands=(
 'run:Start or resume the night'\''s tuning session in the foreground' \
-'day:Apply stock, observe daily use, pause or freeze, and report crashes' \
+'day:Apply the permitted profile, observe daily use, pause or freeze, and report crashes' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -551,7 +551,7 @@ _togi__subcmd__help_commands() {
 'restart-limit:Recover after the tuning service reaches its restart limit' \
 'emergency-stop:Internal emergency recovery that stops leftover trials and sets every core to offset 0' \
 'status:Show the session at a glance' \
-'watch:Show the session dashboard with rootless stock-only day controls' \
+'watch:Show the session dashboard with rootless day controls' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'togi help commands' commands "$@"
@@ -566,10 +566,10 @@ _togi__subcmd__help__subcmd__day_commands() {
     local commands; commands=(
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions and the morning evidence report to this graphical session' \
-'reapply:Reapply stock after system resume; used by the system sleep hook' \
+'reapply:Reapply the committed profile after system resume; used by the system sleep hook' \
 'record:Record a crash togi did not observe' \
 'pause:Keep every core at stock until the next cold boot or a deadline' \
-'resume:End the pause early and verify a stock-only reapplication' \
+'resume:End the pause early and verify committed-profile reapplication' \
 'freeze:Keep the committed profile and prevent promotions, never safety retreats' \
 'unfreeze:Lift the promotion freeze' \
     )
