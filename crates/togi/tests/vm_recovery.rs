@@ -503,6 +503,15 @@ mod vm_recovery {
         journal
             .append(stamp, Payload::SessionStart(start), &[])
             .unwrap();
+        if day_profile {
+            journal
+                .append(
+                    stamp,
+                    togi_journal::SessionContext::from(shipped_bios()).into(),
+                    &[],
+                )
+                .unwrap();
+        }
         journal
             .append(
                 stamp,
@@ -517,24 +526,25 @@ mod vm_recovery {
         0
     }
 
-    fn seed_day_profile(journal: &mut togi_journal::Journal, stamp: Stamp, topology: &[CoreInfo]) {
-        use togi_journal::{
-            ApplicationId, ApplyCause, CcdVector, ClimbAction, ClimbDecision, ClimbHold,
-            DayApplied, DayBootStart, DecisionId, SessionContext, UnitId, UnitMapping,
-            UnitMembership, UnitPhase, UnitVector,
-        };
-        use togi_machine::CcdProfile;
-
-        let bios = BiosContext {
+    fn shipped_bios() -> BiosContext {
+        BiosContext {
             bios_version: "vm".into(),
             board: "VM VM".into(),
             cpu_model: "Zen VM".into(),
             microcode: "0x1".into(),
             boost_limit_mhz: 5000,
+        }
+    }
+
+    fn seed_day_profile(journal: &mut togi_journal::Journal, stamp: Stamp, topology: &[CoreInfo]) {
+        use togi_journal::{
+            ApplicationId, ApplyCause, CcdVector, ClimbAction, ClimbDecision, ClimbHold,
+            DayApplied, DayBootStart, DecisionId, UnitId, UnitMapping, UnitMembership, UnitPhase,
+            UnitVector,
         };
-        journal
-            .append(stamp, SessionContext::from(bios.clone()).into(), &[])
-            .unwrap();
+        use togi_machine::CcdProfile;
+
+        let bios = shipped_bios();
         let ccd = CcdId::new(0).unwrap();
         let unit = UnitId::Ccd(ccd);
         let mapping = UnitMapping {
