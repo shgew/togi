@@ -117,7 +117,7 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_sample
         max_boots: NonZeroU32::new(10).unwrap(),
         stop_at: Some(simulator.now() + SignedDuration::from_hours(8)),
         write_samples,
-        defects: &[],
+        defects: togi_defect::KNOWN_DEFECTS,
         log: None,
         renderer: Renderer::default(),
         zone: TimeZone::UTC,

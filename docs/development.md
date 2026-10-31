@@ -136,7 +136,7 @@ Rejected:
 
 ## Work that waits on the target machine
 
-Record target-machine verification still owed; never quietly declare it verified. VM tests cannot exercise the SMU mailbox, the accepted physical CPU or the real mprime and y-cruncher backends. Otherwise-green changes may merge while that evidence is pending, but the obligation remains visible and blocks a new release and updating the target machine's togi input. [Issues, Work that waits on the target machine](issues.md#work-that-waits-on-the-target-machine) owns the label, exact run instructions, merge wording, board queue and failure/closure mechanics; [Releasing](releasing.md) owns the workflow's refusal and publication retry.
+Record target-machine verification still owed; never quietly declare it verified. VM tests cannot exercise the SMU mailbox, the accepted physical CPU or the real mprime and y-cruncher backends. Otherwise-green changes may merge while that evidence is pending, but the obligation remains visible and, while labeled `needs-hardware`, blocks a new release and updating the target machine's togi input. A run blocked by an open bugfix drops that label until a release containing the fix is installed, retaining the GitHub "blocked by" relation and remaining steps in a comment. The target machine runs only release tags, so keeping the label while waiting for a fix would block the release that ships it. [Issues, Work that waits on the target machine](issues.md#work-that-waits-on-the-target-machine) owns the label, exact run instructions, merge wording, board queue and failure/closure mechanics; [Releasing](releasing.md) owns the workflow's refusal and publication retry.
 
 Rejected: a separate pinned checklist duplicates issue state and needs manual updates; a run-retrospective issue hides obligations among history and cannot drive the queue or release refusal. Holding every PR open until hardware is available blocks reviewed changes and dependent work. A VM backend check cannot supply the missing SMU or CPU, hosted runners do not guarantee AVX-512, and mprime's license does not clearly allow publishing its binaries in the public check cache. Manually unlinking an issue before merge can silently lose the obligation; querying the label even on closed issues fails safe.
 
@@ -207,10 +207,12 @@ Linux-only code has `#[cfg(target_os = "linux")]` and a non-Linux counterpart re
 
 Stack only under the merge-unit rule in [Workflow](../AGENTS.md#workflow). Use [`gh stack`](https://github.com/github/gh-stack), installed with `gh extension install github/gh-stack`, for every stack. Each layer has its own branch and pull request based on the layer below; pass that branch as BASE to `just claim` when creating the next layer. Lower layers hold their dependants' prerequisites. Every layer passes `just gate` independently.
 
-Open with `gh stack submit`, keep current with `gh stack sync`, and merge with `gh stack merge` only under the owner's merge authorization; never merge layers individually by hand. A lower-layer fix restacks and re-reviews every layer above it. During review, follow the [review command's frozen-base and restacking procedure](../.omp/commands/review-pr.md), not a routine sync onto moving `main`.
+Open with `gh stack submit`, keep current with `gh stack sync`, and merge with `gh stack merge` under the [main session's merge procedure](../.omp/commands/review-pr.md#main-session-merge); never merge layers individually by hand. A lower-layer fix restacks and re-reviews every layer above it. During review, follow the [review command's frozen-base and restacking procedure](../.omp/commands/review-pr.md), not a routine sync onto moving `main`.
 
 ## Review integration
 
 To invoke independent review in omp, use `/review-pr [PR numbers or URLs… | all]` ([review command](../.omp/commands/review-pr.md)); no arguments selects all open non-draft pull requests. The `.omp/rules/review-after-open.md` reminder runs only in the main session, not subagents or review coordinators.
 
 GitHub identities follow [Workflow](../AGENTS.md#workflow). To publish the review record and `review` check through `just bot`, set `ROBOTOGI_KEY_FILE` to the App PEM private-key path in the environment.
+
+Agents merge under [Workflow](../AGENTS.md#workflow) because the required checks, reviewed exact head and resolved threads provide the landing gates without a separate per-PR permission handoff.

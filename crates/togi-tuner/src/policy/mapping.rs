@@ -11,7 +11,7 @@ use super::statistical::CapOutcome;
 use crate::UnitId;
 use crate::night::{
     Cursor, EdgeU, IsolatedObservation, IsolatedResult, Layout, Location, MappingBoard,
-    MappingTarget, StepResult, mapping_cells,
+    MappingTarget, Matrix, StepResult, mapping_cells,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -22,6 +22,13 @@ use togi_machine::{CcdId, ContentId, TargetOffset, WorkloadId};
 /// Offsets run 0 to -50, so a cursor can never need more alignment steps than this.
 const MAX_ALIGN: usize = 60;
 
+/// A new mapping task revisits an already completed coarse offset in the current evidence context.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MappingRewind {
+    pub ccd: CcdId,
+    pub completed_offset: TargetOffset,
+}
+
 /// The mapping board replayed from the journal.
 #[derive(Clone, Debug)]
 pub(super) struct Mapped {
@@ -29,8 +36,8 @@ pub(super) struct Mapped {
     ccds: Vec<CcdId>,
     /// The passing trial ends of the step that censored a CCD's edge.
     pub(super) censored: BTreeMap<CcdId, Vec<Seq>>,
-    /// Each CCD's latest mapping task still without a finished step.
-    pub(super) open: BTreeMap<CcdId, (u32, TargetOffset)>,
+    /// The earliest unfinished task at each CCD offset, including tasks a defective build abandoned.
+    pub(super) open: BTreeMap<(CcdId, TargetOffset), u32>,
     pub(super) next_ordinal: u32,
 }
 
@@ -63,7 +70,6 @@ struct TaskProgress {
 /// The layout and evidence context a mapping replay is valid for.
 #[derive(Clone, Debug, PartialEq)]
 struct ReplayKey {
-    partials: BTreeMap<CcdId, crate::HonestChain>,
     cores: Vec<togi_machine::CoreInfo>,
     context_since: Option<Seq>,
 }
@@ -104,7 +110,6 @@ impl MapReplay {
     fn new(layout: &Layout<'_>, ccds: Vec<CcdId>, context_since: Option<Seq>) -> Self {
         Self {
             key: Some(ReplayKey {
-                partials: layout.partials.clone(),
                 cores: layout.cores.to_vec(),
                 context_since,
             }),
@@ -120,28 +125,54 @@ impl MapReplay {
     }
 
     fn fits(&self, layout: &Layout<'_>, context_since: Option<Seq>) -> bool {
-        self.key.as_ref().is_some_and(|key| {
-            key.partials == *layout.partials
-                && key.cores == layout.cores
-                && key.context_since == context_since
-        })
+        self.key
+            .as_ref()
+            .is_some_and(|key| key.cores == layout.cores && key.context_since == context_since)
     }
 
-    /// Each CCD's latest task still without a finished step.
+    /// A later task at another offset cannot hide the original unfinished step.
     fn refresh_open(&mut self) {
-        self.mapped.open = self
-            .unfinished
-            .iter()
-            .filter_map(|(&ccd, tasks)| {
-                tasks
-                    .last_key_value()
-                    .map(|(&ordinal, &offset)| (ccd, (ordinal, offset)))
-            })
-            .collect();
+        self.mapped.open.clear();
+        for (&ccd, tasks) in &self.unfinished {
+            for (&ordinal, &offset) in tasks {
+                self.mapped.open.entry((ccd, offset)).or_insert(ordinal);
+            }
+        }
     }
 }
 
 impl State {
+    /// Whether a not-yet-folded intent starts a task behind a completed coarse mapping step. Bracket
+    /// and sweep work can legitimately return to shallower offsets and is never diagnosed this way.
+    pub fn mapping_rewind(
+        &self,
+        intent: &togi_journal::TrialIntent,
+    ) -> Result<Option<MappingRewind>, NotReady> {
+        let (Some(task), Some(Tested::Isolated { ccd, offset })) = (intent.task, intent.tested)
+        else {
+            return Ok(None);
+        };
+        if task.queue != togi_journal::Queue::Mapping || self.trials.by_task.contains_key(&task) {
+            return Ok(None);
+        }
+        self.with_layout(|layout| {
+            let mapped = self.replay_mapping(layout)?;
+            let Some(mapping) = mapped.board.unit(UnitId::Ccd(ccd)) else {
+                return Ok(None);
+            };
+            let Cursor::Coarse { offset: next } = mapping.cursor() else {
+                return Ok(None);
+            };
+            let completed_offset = TargetOffset::clamped(next + 5);
+            Ok(
+                (next < 0 && offset >= completed_offset).then_some(MappingRewind {
+                    ccd,
+                    completed_offset,
+                }),
+            )
+        })
+    }
+
     pub(super) fn known_contents(
         &self,
         extra: Option<&BTreeMap<WorkloadId, ContentId>>,
@@ -171,9 +202,9 @@ impl State {
 
     /// The mapping board as the current evidence context's mapping tasks and isolated reproduction failures
     /// replay it, in the order the trials ended: an earlier firmware or content leaves the board unmapped
-    /// (`docs/spec/tuner.md`, Firmware). Each query folds only the trials that ended since the last one; a
-    /// changed layout, which can change what a task's cells are, or a new evidence context replays from the
-    /// start.
+    /// (`docs/spec/tuner.md`, Firmware). Each query folds only the trials that ended since the last one.
+    /// A topology or evidence-context change replays from the start; later request telemetry cannot
+    /// change the declaration frozen at a task's first intent.
     pub(super) fn replay_mapping(&self, layout: &Layout<'_>) -> Result<Mapped, NotReady> {
         let mut replay = self.caches.mapping.lock();
         let since = self.machine.context_since;
@@ -226,17 +257,23 @@ impl State {
                 }
                 if let std::collections::hash_map::Entry::Vacant(slot) = replay.tasks.entry(ordinal)
                 {
-                    let wanted: HashSet<Sig> =
-                        mapping_cells(layout, UnitId::Ccd(ccd), offset, ordinal)?
-                            .fresh()
-                            .map(Sig::of_cell)
-                            .collect();
+                    let wanted: HashSet<Sig> = self
+                        .mapping_matrix(layout, ccd, offset, ordinal)?
+                        .fresh()
+                        .map(Sig::of_cell)
+                        .collect();
+                    let covered = self.mapping_passes(ccd, offset, Some(trial.intent_seq));
+                    let mut passes: Vec<_> = covered
+                        .iter()
+                        .filter_map(|(sig, &seq)| wanted.contains(sig).then_some(seq))
+                        .collect();
+                    passes.sort_unstable();
                     slot.insert(TaskProgress {
                         ccd,
                         offset,
                         wanted,
-                        passed: HashSet::new(),
-                        passes: Vec::new(),
+                        passed: covered.into_keys().collect(),
+                        passes,
                     });
                     replay
                         .unfinished
@@ -366,14 +403,69 @@ impl Mapped {
 
     /// The ordinal a step at `target` runs under: its open task's, or the next one.
     pub(super) fn ordinal_for(&self, target: &MappingTarget) -> u32 {
-        match target.unit.ccd().and_then(|ccd| self.open.get(&ccd)) {
-            Some(&(ordinal, offset)) if offset == target.offset => ordinal,
-            Some(_) | None => self.next_ordinal,
-        }
+        target
+            .unit
+            .ccd()
+            .and_then(|ccd| self.open.get(&(ccd, target.offset)))
+            .copied()
+            .unwrap_or(self.next_ordinal)
     }
 }
 
 impl State {
+    /// The matrix declared by the first intent of this mapping-step ordinal. Before its first intent,
+    /// the prospective step uses today's layout; afterwards even its full-CCD load cannot change it.
+    pub(super) fn mapping_matrix(
+        &self,
+        layout: &Layout<'_>,
+        ccd: CcdId,
+        offset: TargetOffset,
+        ordinal: u32,
+    ) -> Result<Matrix, NotReady> {
+        let task = togi_journal::TaskId {
+            queue: togi_journal::Queue::Mapping,
+            ordinal,
+        };
+        let cutoff = self
+            .trials
+            .by_task
+            .get(&task)
+            .and_then(|trials| trials.first())
+            .and_then(|&at| self.trials.all.get(at))
+            .map(|trial| trial.intent_seq);
+        match cutoff {
+            Some(cutoff) => self.layout_at(Some(cutoff), |frozen| {
+                Ok(mapping_cells(frozen, UnitId::Ccd(ccd), offset, ordinal)?)
+            }),
+            None => Ok(mapping_cells(layout, UnitId::Ccd(ccd), offset, ordinal)?),
+        }
+    }
+
+    /// Compatible adequate isolated passes at this exact profile, irrespective of their task. The
+    /// historical cutoff keeps a later pass from completing a step before that pass happened.
+    pub(super) fn mapping_passes(
+        &self,
+        ccd: CcdId,
+        offset: TargetOffset,
+        cutoff: Option<Seq>,
+    ) -> HashMap<Sig, Seq> {
+        let mut passes = HashMap::new();
+        for group in self.current_groups() {
+            for ((tested, sig), witnesses) in &group.isolated_passes {
+                if *tested != ccd {
+                    continue;
+                }
+                if let Some((_, seq)) = witnesses
+                    .iter()
+                    .find(|&&(at, seq)| at == offset && cutoff.is_none_or(|cutoff| seq <= cutoff))
+                {
+                    passes.insert(sig.clone(), *seq);
+                }
+            }
+        }
+        passes
+    }
+
     /// Whether every class of the target's mapping step already has an adequate mapping exposure there.
     fn step_covered(
         &self,
@@ -383,17 +475,13 @@ impl State {
     ) -> Result<bool, NotReady> {
         let ordinal = mapped.ordinal_for(target);
         let ccd = target.unit.ccd().ok_or(NotReady::NonCoarse)?;
-        let wanted: HashSet<Sig> = mapping_cells(layout, target.unit, target.offset, ordinal)?
+        let wanted: HashSet<Sig> = self
+            .mapping_matrix(layout, ccd, target.offset, ordinal)?
             .fresh()
             .map(Sig::of_cell)
             .collect();
-        let covered: HashSet<Sig> = self
-            .current_groups()
-            .filter_map(|group| group.mapping_covered.get(&(ccd, target.offset)))
-            .flatten()
-            .cloned()
-            .collect();
-        Ok(wanted.is_subset(&covered))
+        let covered = self.mapping_passes(ccd, target.offset, None);
+        Ok(wanted.iter().all(|sig| covered.contains_key(sig)))
     }
 
     /// The mapping board, each CCD's edge and diagnostic cap, and the next uncovered mapping step.

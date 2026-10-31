@@ -639,6 +639,109 @@ fn eight_core_night() -> Journal {
     Journal::ready_on(Params::SPEC, cores_per_ccd(4))
 }
 
+#[test_case(false; "incremental queries")]
+#[test_case(true; "cold journal fold")]
+fn mapping_steps_keep_their_declared_partials_and_alternate_ccds(cold: bool) {
+    let mut journal = eight_core_night();
+    let mut tasks = Vec::new();
+    let mut exposed = Vec::new();
+    let mut changed = false;
+    for _ in 0..2_000 {
+        let plan = journal.until_trial(journal.now());
+        if plan.task.queue == Queue::Mapping {
+            let Tested::Isolated { ccd, offset } = plan.tested else {
+                panic!("mapping must isolate a CCD");
+            };
+            if tasks.last().map(|(task, _, _)| *task) != Some(plan.task) {
+                tasks.push((plan.task, ccd.get(), offset.get()));
+            }
+            assert!(
+                !exposed.contains(&(plan.profile.clone(), plan.cell)),
+                "mapping repeated an adequate cell at the same profile: {plan:?}"
+            );
+            exposed.push((plan.profile.clone(), plan.cell));
+            if tasks.len() == 5 {
+                assert!(changed);
+                assert_eq!(
+                    tasks
+                        .iter()
+                        .map(|(_, ccd, offset)| (*ccd, *offset))
+                        .collect::<Vec<_>>(),
+                    vec![(0, 0), (1, 0), (0, -5), (1, -5), (0, -10)]
+                );
+                return;
+            }
+        }
+        if !changed
+            && is_isolated_ccd0_mapping(&plan)
+            && matches!(plan.cell.roles, Roles::Package(PackageLoad::FullCcd { .. }))
+        {
+            journal.run_requesting(&plan, &requests_of([1.3, 1.2, 1.1, 1.0]));
+            changed = true;
+        } else {
+            journal.run(&plan, Ending::Pass);
+        }
+        if cold {
+            let mut state = togi_tuner::policy::State::new(Params::SPEC);
+            for event in &journal.events {
+                state.fold(event).unwrap();
+            }
+            journal.state = state;
+        }
+        if changed {
+            let mapping = journal.state.project().night.unwrap().mapping;
+            assert!(
+                mapping[0].cursor.is_none_or(|offset| offset.get() <= -5),
+                "later full-CCD telemetry rewound a finished step: {mapping:?}"
+            );
+            assert_eq!(tasks[2].0.ordinal, 2, "the original mapping task continues");
+        }
+    }
+    panic!("mapping did not alternate through five steps");
+}
+
+#[test]
+fn mapping_reuses_compatible_adequate_cells_from_another_task() {
+    let mut journal = eight_core_night();
+    let original = until_mapping_of_ccd0(&mut journal);
+    let mut filler = original.clone();
+    filler.task = TaskId {
+        queue: Queue::Filler,
+        ordinal: 0,
+    };
+    journal.run(&filler, Ending::Pass);
+    let continued = journal.until_trial(journal.now());
+    assert_eq!(continued.task, original.task);
+    assert_eq!(continued.profile, original.profile);
+    assert_ne!(
+        continued.cell, original.cell,
+        "the filler already passed this cell"
+    );
+}
+
+#[test]
+fn an_abandoned_rewound_task_does_not_hide_the_original_mapping_step() {
+    let mut journal = eight_core_night();
+    let original = until_mapping_of_ccd0(&mut journal);
+    journal.run(&original, Ending::Pass);
+    // Replay a defective build's later task at CO 0. It must not replace the still-open -5 task.
+    let mut rewound = original.clone();
+    rewound.task.ordinal += 1;
+    let Tested::Isolated { ccd, .. } = rewound.tested else {
+        panic!("mapping must isolate a CCD");
+    };
+    rewound.tested = Tested::Isolated {
+        ccd,
+        offset: togi_machine::TargetOffset::new(0).unwrap(),
+    };
+    rewound.profile = togi_tuner::UnitProfile::of_ccd(&crate::fixture::zero());
+    journal.run(&rewound, Ending::Pass);
+    let continued = journal.until_trial(journal.now());
+    assert_eq!(continued.task, original.task);
+    assert_eq!(continued.profile, original.profile);
+    assert_ne!(continued.cell, original.cell);
+}
+
 /// Drives a night of passing trials until its isolated CCD0 mapping step asks for its first R7 partial. The
 /// step's full-CCD R7 load measures `requests` on the way; the partial fails on core 4, a CO-0 core of CCD1.
 /// Returns that full-CCD plan and the failed partial.

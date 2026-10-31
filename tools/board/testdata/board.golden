@@ -8,6 +8,10 @@ Waiting on the target machine (needs-hardware)
   #515 Name the hardware layer by what it does (@shgew)
   #516 Read the PM table through the driver
 
+Blocked
+  #509 Colour the failed regimes — blocked by #507
+  #518 Complete first-night acceptance — blocked by #511, #505
+
 Untriaged (needs-triage)
   #504 Show the BIOS context
 

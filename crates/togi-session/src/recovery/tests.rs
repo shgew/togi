@@ -331,7 +331,8 @@ fn a_warning_or_leave_reason_never_replaces_a_shutdown() {
 fn a_boot_without_a_shutdown_crashed_unless_it_is_current_or_a_crash_was_recorded() {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
-    log.at("b1", 0).add(warning("first of the boot"), &[]);
+    log.at("b1", 0)
+        .add(Payload::ConfigLoaded(config_loaded(None, None)), &[]);
     let state = log.state();
     assert_eq!(state.boots(), [boot("b0"), boot("b1")]);
     assert_eq!(
@@ -345,6 +346,43 @@ fn a_boot_without_a_shutdown_crashed_unless_it_is_current_or_a_crash_was_recorde
     log.crashed("b0", &[]);
     assert_eq!(log.state().crashed_boots(&boot("b1")).count(), 0);
     assert_eq!(log.state().crash_of(&boot("b0")), Some(log.next().prev()));
+}
+
+#[test_case(false; "new boot")]
+#[test_case(true; "same boot after shutdown")]
+fn rebuilding_state_admits_tuning_before_configuration_is_recorded(same_boot: bool) {
+    let mut log = Log::new();
+    log.add(shutdown(ShutdownReason::Signal), &[]);
+    let name = if same_boot { "b0" } else { "b1" };
+    log.at(name, 0).add(
+        Payload::StateRebuilt(togi_journal::StateRebuilt {
+            fields: vec!["last_seq".into()],
+        }),
+        &[],
+    );
+    let state = log.state();
+    assert_eq!(state.last_kind(&boot(name)), Some(EventKind::StateRebuilt));
+    assert_eq!(
+        state.crashed_boots(&boot("b2")).collect::<Vec<_>>(),
+        [&boot(name)]
+    );
+}
+
+/// A resumed run whose snapshot matched writes no `state.rebuilt`; its startup kernel boundary can record a machine
+/// check before `config.loaded`, and a crash right after it is still a crashed tuning boot.
+#[test_case(false; "new boot")]
+#[test_case(true; "same boot after shutdown")]
+fn a_startup_machine_check_admits_tuning_before_configuration_is_recorded(same_boot: bool) {
+    let mut log = Log::new();
+    log.add(shutdown(ShutdownReason::Signal), &[]);
+    let name = if same_boot { "b0" } else { "b1" };
+    log.at(name, 0).mce(mce(true));
+    let state = log.state();
+    assert_eq!(state.last_kind(&boot(name)), Some(EventKind::Mce));
+    assert_eq!(
+        state.crashed_boots(&boot("b2")).collect::<Vec<_>>(),
+        [&boot(name)]
+    );
 }
 
 fn day_payloads() -> Vec<Payload> {
@@ -418,7 +456,9 @@ fn a_tuning_boot_after_a_day_only_boot_is_not_a_same_boot_restart() {
         log.add(payload, &[]);
     }
     assert!(!log.state().boots().contains(&boot("b1")));
-    log.add(warning("first tuning record of the boot"), &[]);
+    log.add(warning("a warning alone does not start tuning"), &[]);
+    assert!(!log.state().boots().contains(&boot("b1")));
+    log.add(Payload::ConfigLoaded(config_loaded(None, None)), &[]);
     assert_eq!(log.state().boots(), [boot("b0"), boot("b1")]);
 }
 
@@ -455,6 +495,49 @@ fn day_events_do_not_hide_a_tuning_boot_that_crashed() {
         state.crashed_boots(&boot("b1")).collect::<Vec<_>>(),
         [&boot("b0")]
     );
+}
+
+/// A day observer's run in the current boot of `log`: its start, the stock profile it applies through the SMU events it
+/// shares with tuning, and its clean stop.
+fn day_observation(log: &mut Log) {
+    log.add(day_payloads().swap_remove(0), &[]);
+    let intent = log.intent(0, 0, &[]);
+    let write = log.written(0, 0, intent);
+    log.readback(0, 0, 0, write);
+    log.add(togi_journal::DayCleanStop {}.into(), &[]);
+}
+
+#[test]
+fn day_observation_after_a_tuning_shutdown_in_the_same_boot_is_no_crash() {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    log.add(shutdown(ShutdownReason::Signal), &[]);
+    day_observation(&mut log);
+    let state = log.state();
+    assert_eq!(state.last_kind(&boot("b0")), Some(EventKind::Shutdown));
+    assert_eq!(state.crashed_boots(&boot("b1")).count(), 0);
+}
+
+#[test]
+fn a_day_only_boot_after_a_crashed_tuning_boot_is_its_successor_for_retained_machine_checks() {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    let intent = log.trial_intent("t", None, Regime::R7);
+    log.started("t", Some(0), intent);
+    log.at("b1", 0);
+    day_observation(&mut log);
+    let retained = log.at("b2", 0).mce(Mce {
+        from_boot: Some(boot("b1")),
+        monotonic_ns: Some(1_000),
+        ..mce(false)
+    });
+    let state = log.state();
+    assert_eq!(
+        state.crashed_boots(&boot("b2")).collect::<Vec<_>>(),
+        [&boot("b0")]
+    );
+    assert_eq!(state.next_boot(&boot("b0"), &boot("b2")), &boot("b1"));
+    assert_eq!(state.recorded_for(&boot("b0"), &boot("b2")), [retained]);
 }
 
 trait Prev {

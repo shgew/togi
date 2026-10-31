@@ -1,11 +1,14 @@
 use togi_journal::{DefectDirection, DefectId, EventKind, FixStamp};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Clause {
-    /// The kind of the Ruleset 13 decision event: `ccd.edge`, `ccd.cap`, `night.plan`, `night.qualification` or
-    /// `night.reproduction`.
-    pub decision_kind: EventKind,
-    pub cause_kind: EventKind,
+pub enum Clause {
+    /// A decision directly attributed to an event of the named kind.
+    DirectCause {
+        decision_kind: EventKind,
+        cause_kind: EventKind,
+    },
+    /// A first mapping intent proven by tuner replay to rewind a finished coarse step.
+    MappingRewind,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -18,7 +21,17 @@ pub struct Entry {
     pub clauses: &'static [Clause],
 }
 
-pub static KNOWN_DEFECTS: &[Entry] = &[];
+pub static KNOWN_DEFECTS: &[Entry] = &[Entry {
+    id: match DefectId::new(1) {
+        Some(id) => id,
+        None => panic!("defect id must be nonzero"),
+    },
+    title: "Mapping restarted at a shallower coarse step",
+    detail: "A new mapping task revisited an already completed coarse offset on this CCD in the same evidence context. The fixed build preserves the original mapping declaration and continues the session.",
+    pr: 1513,
+    direction: DefectDirection::TooCautious,
+    clauses: &[Clause::MappingRewind],
+}];
 
 const _: () = assert!(is_ordered(KNOWN_DEFECTS));
 
