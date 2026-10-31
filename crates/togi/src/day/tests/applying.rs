@@ -364,10 +364,7 @@ fn a_fault_logged_before_the_service_started_keeps_the_startup_profile_not_the_a
         .collect();
     assert_eq!(
         faults,
-        [
-            (2_000_000_000, offsets(0)),
-            (100_000_000_000, offsets(-5))
-        ],
+        [(2_000_000_000, offsets(0)), (100_000_000_000, offsets(-5))],
         "the pre-start fault carries the profile read at start, the later one the applied D"
     );
 }

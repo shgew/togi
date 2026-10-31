@@ -111,11 +111,13 @@ impl Trail {
         push_chain(&mut messages, failure);
         match recovery {
             DayRecovery::Crashed => {
-                messages.push("the machine crashed and nothing touched the SMU afterwards".to_owned());
+                messages
+                    .push("the machine crashed and nothing touched the SMU afterwards".to_owned());
             }
             DayRecovery::Emergency(zeroed) => messages.push(zeroed.to_string()),
             DayRecovery::Restored => {
-                messages.push("every core restored to 0 through the ordinary transaction".to_owned());
+                messages
+                    .push("every core restored to 0 through the ordinary transaction".to_owned());
             }
             DayRecovery::Unrestored(restore) => {
                 messages.push("restore every core to 0".to_owned());

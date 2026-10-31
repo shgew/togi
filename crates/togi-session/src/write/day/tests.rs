@@ -8,8 +8,7 @@ use test_case::test_case;
 use togi_journal::{CcdVector, Event, Payload, SmuCommand, SmuOp};
 use togi_machine::{
     CcdId, CcdProfile, CcdProfileError, Clock, CoreId, CoreInfo, Error, Machine, ObservedOffset,
-    PerCore,
-    Smu, TargetOffset,
+    PerCore, Smu, TargetOffset,
 };
 use togi_sim::MachineDefinition;
 use togi_sim::faults::{HookPhase, SmuOp as SimOp, SmuOperation};
@@ -613,15 +612,13 @@ fn trace_smu(
 ) -> Rc<RefCell<Vec<(SimOp, Option<CoreId>)>>> {
     let seen = Rc::new(RefCell::new(Vec::new()));
     let log = Rc::clone(&seen);
-    day.rig
-        .sim
-        .interrupt_smu(move |operation: &SmuOperation| {
-            if operation.phase == HookPhase::Before {
-                log.borrow_mut().push((operation.op, operation.core));
-                return fail(operation);
-            }
-            Ok(())
-        });
+    day.rig.sim.interrupt_smu(move |operation: &SmuOperation| {
+        if operation.phase == HookPhase::Before {
+            log.borrow_mut().push((operation.op, operation.core));
+            return fail(operation);
+        }
+        Ok(())
+    });
     seen
 }
 
