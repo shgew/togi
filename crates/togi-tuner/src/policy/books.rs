@@ -357,6 +357,13 @@ pub(super) struct Climb {
     /// Missing history blocks permission without erasing the charges that are known.
     pub(super) history_error: Option<String>,
     pub(super) start: Option<Committed<togi_journal::CampaignStart>>,
+    /// Where this journal recorded its first `campaign.start`; an earlier imported original start
+    /// moves the machine's enrollment back (see `State::first_enrollment`).
+    #[serde(default)]
+    pub(super) enrollment: Option<super::enrollment::Enrollment>,
+    /// The earliest original `campaign.start` an import carried, kept as imports fold.
+    #[serde(default)]
+    pub(super) original_enrollment: Option<super::enrollment::Enrollment>,
     pub(super) mapping: Option<Committed<togi_journal::UnitMapping>>,
     #[serde(with = "super::wire::pairs")]
     pub(super) decisions: BTreeMap<Seq, Committed<togi_journal::ClimbDecision>>,
@@ -395,6 +402,8 @@ impl Default for Climb {
             campaign: crate::climb::Campaign::approved_fresh(),
             history_error: None,
             start: None,
+            enrollment: None,
+            original_enrollment: None,
             mapping: None,
             decisions: BTreeMap::new(),
             plans: BTreeMap::new(),

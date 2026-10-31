@@ -153,6 +153,47 @@ fn status_lists_the_predecessor_veto_the_tuner_enforces_under_its_original_ident
     assert_eq!(journal.state.project().vetoes, vec![expected]);
 }
 
+#[test]
+fn daily_evidence_witnesses_stay_in_journal_order_across_snapshot_and_cold_replay() {
+    let mut journal = Journal::ready();
+    journal.hold_stock();
+    let mut expected = Vec::new();
+    // Generated distinct non-CPU events exercise ordering independently of hash-map iteration.
+    for index in 0..16 {
+        let time = journal.now();
+        expected.push(
+            journal.append(
+                togi_journal::DayEvent {
+                    event: DayEventId::Boot {
+                        boot: format!("recorded-{index}").into(),
+                    },
+                    profile: togi_journal::ObservedProfile::PerCore {
+                        cores: crate::fixture::offsets_of(&crate::fixture::zero()),
+                    },
+                    boot: None,
+                    from: time,
+                    to: time,
+                    witnesses: Vec::new(),
+                    classification: togi_journal::Classification::NonCpu {},
+                    resolution: togi_journal::Resolution::Resolved { retreat: None },
+                    reason: "recorded non-CPU end".into(),
+                    predecessor: None,
+                    escalation: None,
+                    cursors: Vec::new(),
+                    consumed: Vec::new(),
+                    reproduction: togi_journal::ReproductionState::Untestable,
+                }
+                .into(),
+                &[],
+            ),
+        );
+    }
+    let projection = journal.state.project();
+    assert_eq!(projection.climb.daily.as_ref().unwrap().witnesses, expected);
+    assert_eq!(crate::climb::snapshot(&journal.state).project(), projection);
+    assert_eq!(crate::climb::replay(&journal.events).project(), projection);
+}
+
 /// A certified candidate promoted at its cold boot, then a later boot whose record lands `age_s` after the
 /// certificate completed, with no decision between them.
 fn aged_certificate(age_s: i64) -> Journal {

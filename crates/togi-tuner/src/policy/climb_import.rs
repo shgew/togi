@@ -2,7 +2,12 @@
 
 use togi_journal::{self as journal, Event, Payload, Provenance};
 
-use super::{FoldError, State, fold::committed, successor};
+use super::{
+    FoldError, State,
+    enrollment::{CrashTime, Enrollment, precedes},
+    fold::committed,
+    successor,
+};
 use crate::{
     climb,
     day::{self, EventId},
@@ -123,13 +128,20 @@ impl State {
 
     /// The vetoes the classified events stand for plus the predecessor's, which survive the
     /// transition under their original identity unless raw evidence now classifies that event.
+    /// Crashes before the first enrollment veto exactly as any other event does.
     pub(super) fn active_vetoes(&self, view: &super::day_events::DayView) -> Vec<day::Veto> {
         let mut vetoes = day::vetoes(&view.events);
+        vetoes.extend(day::vetoes(&view.historical));
         vetoes.extend(
             self.climb
                 .imported_vetoes
                 .iter()
-                .filter(|(id, _)| view.events.iter().all(|event| &event.id != *id))
+                .filter(|(id, _)| {
+                    view.events
+                        .iter()
+                        .chain(&view.historical)
+                        .all(|event| &event.id != *id)
+                })
                 .filter_map(|(id, profile)| {
                     let (journal::ObservedProfile::Ccd { cores, .. }
                     | journal::ObservedProfile::PerCore { cores }) = profile;
@@ -141,6 +153,105 @@ impl State {
                 }),
         );
         vetoes
+    }
+
+    /// The veto-only identities, using the same enrollment rule as charges and raw-event stops.
+    pub(super) fn historical_vetoes(&self, vetoes: &[day::Veto]) -> Vec<EventId> {
+        let enrollment = self.first_enrollment();
+        vetoes
+            .iter()
+            .filter(|veto| self.precedes_enrollment(enrollment, &veto.event))
+            .map(|veto| veto.event.clone())
+            .collect()
+    }
+
+    /// The machine's first campaign enrollment: this journal's first `campaign.start`, or the
+    /// earlier original one an import carries. `None` until this journal enrolls, so no event is
+    /// judged, charged or stopped on before then; enrolling judges them all at once.
+    pub(super) fn first_enrollment(&self) -> Option<&Enrollment> {
+        let own = self.climb.enrollment.as_ref()?;
+        Some(
+            self.climb
+                .original_enrollment
+                .as_ref()
+                .filter(|original| original.time < own.time)
+                .unwrap_or(own),
+        )
+    }
+
+    /// What the journal knows of when `id` happened. A named boot keeps its original timeline
+    /// across imports: its observer records and the records that observed its crash.
+    fn crash_time(&self, id: &EventId) -> CrashTime {
+        match id {
+            EventId::Unobserved(at) => CrashTime::At(*at),
+            EventId::Boot(boot) => {
+                let unclean = self
+                    .days
+                    .unclean
+                    .iter()
+                    .filter(|unclean| &unclean.end.boot == boot)
+                    .map(|unclean| unclean.time);
+                let manual = self
+                    .days
+                    .manual
+                    .iter()
+                    .filter(|manual| {
+                        matches!(&manual.record.boot,
+                            journal::CrashedBoot::UncleanEnd { boot: named } if named == boot)
+                    })
+                    .map(|manual| manual.time);
+                let checks = self
+                    .days
+                    .mces
+                    .iter()
+                    .filter(|record| &record.boot == boot)
+                    .map(|record| record.time);
+                let own = self
+                    .days
+                    .boots
+                    .get(boot)
+                    .into_iter()
+                    .flat_map(|records| records.records.iter())
+                    .map(|record| record.time);
+                let imported = self
+                    .climb
+                    .imports
+                    .iter()
+                    .filter(|record| {
+                        &record.boot == boot
+                            && matches!(
+                                record.original_kind,
+                                journal::EventKind::DayBootStart
+                                    | journal::EventKind::DayCheckpoint
+                                    | journal::EventKind::DayOffsetsChanged
+                                    | journal::EventKind::DayCleanStop
+                            )
+                    })
+                    .map(|record| record.time);
+                CrashTime::Boot {
+                    boot: boot.clone(),
+                    observed: unclean.chain(manual).chain(checks).min(),
+                    last: own.chain(imported).max(),
+                }
+            }
+            EventId::Requalification(_) | EventId::Imported(_) => CrashTime::Unknown,
+        }
+    }
+
+    /// Whether `id` crashed before `enrollment`: a whole-profile veto and nothing else.
+    pub(super) fn precedes_enrollment(
+        &self,
+        enrollment: Option<&Enrollment>,
+        id: &EventId,
+    ) -> bool {
+        enrollment.is_some() && precedes(enrollment, &self.crash_time(id))
+    }
+
+    /// Whether a committed event crashed before the first enrollment, so it owes no reproduction.
+    pub(super) fn is_historical_event(&self, id: &journal::DayEventId) -> bool {
+        let enrollment = self.first_enrollment();
+        self.policy_event_id(id)
+            .is_some_and(|id| self.precedes_enrollment(enrollment, &id))
     }
 
     pub(super) fn reconstruct_campaign(&mut self, at: jiff::Timestamp) -> Result<(), FoldError> {

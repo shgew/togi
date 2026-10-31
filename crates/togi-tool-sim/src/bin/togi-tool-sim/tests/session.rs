@@ -217,6 +217,7 @@ fn record(fs: MemFs, config: Config) {
         cancel: CancellationToken::new(),
         observer: None,
         dump_to: None,
+        adapt_trials: None,
     })
     .unwrap();
 }

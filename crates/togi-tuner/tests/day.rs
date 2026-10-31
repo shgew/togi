@@ -198,6 +198,7 @@ mod day {
                 ceilings: &self.ceilings,
                 events: &events,
                 vetoes: &vetoes,
+                historical_vetoes: &[],
                 qualified: &self.qualified,
                 failed: &self.failed,
                 hold: HoldInput {

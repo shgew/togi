@@ -103,10 +103,19 @@ copy=$(mktemp -d)
 trap 'rm -rf "$copy"' EXIT
 sudo nix develop --command just copy-state /var/lib/togi "$copy"
 sudo chown -R "$(id -u):$(id -g)" "$copy"
-just sim --state-dir "$copy"
+just sim --state-dir "$copy" --recorded-content
 just togi --state-dir "$copy" events --kind session.imported,day.imported
 just togi --state-dir "$copy" events --kind stock.attested,trial.intent
 ```
+
+Without `--recorded-content` the simulator reports synthetic content
+identities, so the copy's recorded observations do not match the simulated
+session's workloads and the dry run cannot show whether the recorded raw
+evidence stays compatible. With it, the simulated trials report the
+identities the copy's journal recorded ([`--recorded-content`](simulating.md));
+that assumes those executables are what the real machine runs and verifies
+nothing about them. The option refuses a copy whose journal records no
+identity, or two for one workload.
 
 The first night after the transition records the simulated operator's
 [stock-stability attestation](spec/tuner-ruleset14.md#operator-attested-stock-stability)

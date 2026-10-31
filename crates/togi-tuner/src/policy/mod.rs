@@ -23,6 +23,7 @@ mod day_climb;
 mod day_events;
 mod day_query;
 mod decision;
+mod enrollment;
 mod evidence;
 mod filler;
 mod fold;

@@ -330,6 +330,12 @@ Under the host lock then writer lock, durably record an archive/import-pending m
 
 Create the successor with its build, actual context and verified all-zero baseline. Import original-identity raw daily observations and compatible `exposure.observed`, plus CPU-suspect events, stops and veto records needed to reconstruct the campaign. Preserve source identities and raw provenance; write `successor.imported` and `campaign.start {origin, history}` with complete/unreconstructible history. Missing history blocks nonzero exploration. A kill resumes the same manifest and appends only missing original identities; remove the pending marker only after durable commitment.
 
+A daily crash whose identity precedes the machine's first `campaign.start` keeps its
+original whole-profile veto, even if recorded after the transition. It produces no
+`campaign.charge` or `unit.stop` and needs no applied-step ancestry. Events at or
+after the start retain those requirements; [the Ruleset 14 transition](tuner-ruleset14.md#10-journal-schema-and-architectural-record)
+defines the identity boundary and replay contract.
+
 ### Fact eligibility
 
 Import only decodable eligible observations; unknown kinds/fields stay archived and are reported, never guessed into evidence. Deduplicate copies by original identity. Permanent reset boundaries stop raw tuning carry, but campaign ledger records are carried across them to preserve charges, stops and vetoes. Reset never renews allowance; missing reconstruction blocks nonzero exploration rather than supplying an unused ledger.

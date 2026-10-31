@@ -496,6 +496,8 @@ impl State {
             crashes = crashes.saturating_add(1);
             witnesses.push(event.latest.seq);
         }
+        // Event books are identity-keyed; publication and cold replay must share journal order.
+        witnesses.sort_unstable();
         let poisson_upper_per_h = Hours::new(f64::from(saturating_u32(observed_s)) / 3600.0)
             .ok()
             .and_then(|hours| match poisson_upper(crashes, hours) {

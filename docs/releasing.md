@@ -6,7 +6,16 @@ Pending entries live in `changes/`, one file per pull request named by its numbe
 
 Releasing needs permission to start workflows in the repository ([release policy](development.md#releases-and-changelog)). The workflow pushes the release commit with a deploy key that has write access: its private key is the repository secret `RELEASE_DEPLOY_KEY`, and the `main` ruleset lists deploy keys as a bypass actor, since it otherwise requires a pull request and a passing `check`.
 
-Before releasing a compatibility switch, simulate the transition on a copy of recorded state as [Inspecting a transition](reviewing.md#inspecting-a-transition-on-recorded-state) describes. For Ruleset 14, archive the Ruleset 13 source unchanged, verify the successor's stock baseline, original-identity daily and compatible night observations, `successor.imported` and `campaign.start {origin, history}`. Check reconstructed allowance, stops, vetoes and pending questions, including unreconstructible-history blocking and campaign preservation across reset.
+Before releasing a compatibility switch, simulate the transition on a copy
+of recorded state as [Inspecting a transition](reviewing.md#inspecting-a-transition-on-recorded-state)
+describes, with `--recorded-content` so the simulated session carries the
+recorded content identities and the raw evidence stays compatible
+(synthetic identities would make it look incompatible). For Ruleset 14,
+archive the Ruleset 13 source unchanged, verify the successor's stock
+baseline, original-identity daily and compatible night observations,
+`successor.imported` and `campaign.start {origin, history}`. Check
+reconstructed allowance, stops, vetoes and pending questions, including
+unreconstructible-history blocking and campaign preservation across reset.
 
 The first night must run **no all-zero trial**, begin mapping at −5 and journal
 the current firmware's [`stock.attested`](spec/journal.md#stock-attestation)

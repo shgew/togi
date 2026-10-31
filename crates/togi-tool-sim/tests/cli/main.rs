@@ -130,6 +130,7 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_sample
             }
         })),
         dump_to: None,
+        adapt_trials: None,
     })
     .unwrap();
     assert!(matches!(outcome, SimOutcome::Stopped(_)));

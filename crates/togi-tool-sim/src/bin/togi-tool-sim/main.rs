@@ -1,6 +1,7 @@
 //! `togi-tool-sim`: one seeded simulated tuning session without hardware or root, or the suite check that runs
 //! every session of `tools/bench/suite.json` by shard and proves each ran once and ended clean.
 
+mod content;
 mod log;
 mod machine;
 mod session;
@@ -44,6 +45,10 @@ enum Command {
     Check(CheckArgs),
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent command-line switches, not state-machine flags"
+)]
 #[derive(Debug, Args)]
 struct SessionArgs {
     /// Draw the simulated machine's limits and failures from this seed.
@@ -55,6 +60,12 @@ struct SessionArgs {
     /// Answer exact class and profile matches from the machine's same-BIOS facts extract.
     #[arg(long)]
     replay_facts: bool,
+    /// Report the workload content identities the state directory's journal recorded, not the simulator's
+    /// synthetic ones, so a recorded night can be continued without invalidating its evidence. The identities are
+    /// assumed, not verified: nothing checks that the executables they name ran. Refused when the journal
+    /// records none, records two for one workload, or lacks one for a workload the session runs.
+    #[arg(long)]
+    recorded_content: bool,
     /// The simulated operator ends the night after this many hours of simulated time, counted from the machine's
     /// clock when the command starts.
     #[arg(long, value_name = "HOURS", default_value = "8")]

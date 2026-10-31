@@ -6,7 +6,7 @@ use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_defect::Entry;
 use togi_journal::{Build, Event, MemFs};
-use togi_machine::CancellationToken;
+use togi_machine::{CancellationToken, Trials};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, Emergency, ResumeCapsule, SessionError, Stop};
 use togi_sim::Simulator;
@@ -42,6 +42,9 @@ pub enum Observe {
 /// Called with every event a run appends, once and in order, after it is durable.
 pub type Observer = Box<dyn FnMut(&Event) -> Observe>;
 
+/// Wraps the simulated machine's trial runner at every boot, before the session sees it.
+pub type TrialsAdapter = Box<dyn FnMut(Box<dyn Trials>) -> Box<dyn Trials>>;
+
 pub struct SimInput {
     pub config: Config,
     pub source: ConfigSource,
@@ -70,6 +73,8 @@ pub struct SimInput {
     pub observer: Option<Observer>,
     /// Write the in-memory state directory here when the simulation ends.
     pub dump_to: Option<PathBuf>,
+    /// Wraps each boot's trial runner; `None` leaves the simulator's own.
+    pub adapt_trials: Option<TrialsAdapter>,
 }
 
 /// How the run that did not crash ended; its journal is closed and left in the state directory.
