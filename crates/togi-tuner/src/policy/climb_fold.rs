@@ -2,6 +2,7 @@
 
 use super::{
     FoldError, State,
+    enrollment::Enrollment,
     fold::committed,
     permission::{ceiling, mapping},
 };
@@ -209,7 +210,14 @@ impl State {
                 .get_or_insert_with(|| reason.clone());
         }
         self.climb.start = Some(committed(event, start.clone()));
+        self.climb.enrollment = Some(Enrollment {
+            time: event.time,
+            boot: event.boot.clone(),
+        });
         self.reconstruct_campaign(event.time)?;
+        // Enrolling judges every earlier observation at once: those before the first enrollment
+        // are vetoes only, the rest are this campaign's events.
+        self.observe_raw_campaign(event.time)?;
         let events = self
             .days
             .event_commits
@@ -224,8 +232,12 @@ impl State {
     }
 
     /// Capture classifications at raw prefixes, including provisional events whose derived
-    /// receipt is interrupted or whose answer arrives before the next policy query.
+    /// receipt is interrupted or whose answer arrives before the next policy query. Nothing is
+    /// charged or stopped before the campaign enrolls.
     pub(super) fn observe_raw_campaign(&mut self, at: jiff::Timestamp) -> Result<(), FoldError> {
+        if self.climb.enrollment.is_none() {
+            return Ok(());
+        }
         let Some(history) = self.climb.history.as_ref() else {
             return Ok(());
         };
@@ -307,6 +319,12 @@ impl State {
         let Some(id) = self.policy_event_id(&recorded.event) else {
             return;
         };
+        if !self
+            .first_enrollment()
+            .is_some_and(|enrollment| !self.precedes_enrollment(Some(enrollment), &id))
+        {
+            return;
+        }
         let profile = match &recorded.profile {
             journal::ObservedProfile::Ccd { cores, .. }
             | journal::ObservedProfile::PerCore { cores } => day::CoreProfile::new(*cores),

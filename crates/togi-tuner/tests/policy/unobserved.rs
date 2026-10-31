@@ -15,9 +15,10 @@ use crate::flow::{apply, cold_boot, promoted, steps};
 /// Records, in the cold boot `boot`, a crash at D that no day observer saw; returns the record's identity.
 fn unobserved_crash_at(journal: &mut Journal, boot: &str, d: &CcdProfile) -> DayEventId {
     journal.boot_start(boot);
+    let crashed = journal.now();
     let seq = journal.append(
         DayRecord {
-            boot: CrashedBoot::Unobserved { at: at(50_000) },
+            boot: CrashedBoot::Unobserved { at: crashed },
             offsets: RecordedOffsets::new(offsets_of(d)).unwrap(),
             source: OffsetSource::Entered { at: at(50_100) },
             running: Running::Build,
@@ -85,12 +86,13 @@ fn an_unobserved_crash_record_commits_a_cpu_suspect_event_an_active_veto_and_a_r
 fn an_imported_unobserved_crash_keeps_its_original_record_identity_for_event_and_veto() {
     let (mut journal, d) = promoted();
     journal.boot_start("day2");
+    let crashed = journal.now();
     let original = Provenance {
         session: "20231113T221320Z".parse().unwrap(),
         seq: Seq::new(7).unwrap(),
     };
     let record = DayRecord {
-        boot: CrashedBoot::Unobserved { at: at(50_000) },
+        boot: CrashedBoot::Unobserved { at: crashed },
         offsets: RecordedOffsets::new(offsets_of(&d)).unwrap(),
         source: OffsetSource::Entered { at: at(50_100) },
         running: Running::Build,

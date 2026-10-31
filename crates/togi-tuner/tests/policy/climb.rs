@@ -5,7 +5,7 @@ use togi_journal::{
     CampaignHistory, ClimbAction, ClimbBlocker, DayAnswer, DayAnswerKind, DayUncleanEnd, Event,
     Payload, Seq, Stamp,
 };
-use togi_machine::{BootId, EndEvidence, ResetReason};
+use togi_machine::{BootId, CcdProfile, EndEvidence, ResetReason};
 use togi_tuner::policy::{Action, Contents, DayQuery, NightQuery, Params, State};
 
 use crate::{
@@ -762,6 +762,11 @@ fn an_imported_veto_without_a_raw_witness_forbids_its_profile_and_deeper(
 /// A successor of `source`: its records imported under their original identities, then the
 /// campaign start enrolling the successor.
 fn successor_of(source: &[Event]) -> Journal {
+    successor_importing(source, 1)
+}
+
+/// [`successor_of`] where an interrupted import resumed and copied every record `copies` times.
+fn successor_importing(source: &[Event], copies: usize) -> Journal {
     let start = source
         .iter()
         .find_map(|event| {
@@ -774,13 +779,22 @@ fn successor_of(source: &[Event]) -> Journal {
         .unwrap();
     let mut successor = Journal::ready();
     successor.start_session("20231120T221320Z");
-    for event in source.iter().filter(|event| crosses_reset(event)) {
-        successor.append(imported(event).into(), &[]);
+    for _ in 0..copies {
+        for event in source.iter().filter(|event| crosses_reset(event)) {
+            successor.append(imported(event).into(), &[]);
+        }
     }
     let mut start = start;
     start.origin = togi_journal::CampaignOrigin::Successor {
         sources: Vec::new(),
     };
+    // The successor enrolls after everything it imported, as a real one does.
+    if let Some(last) = source.last() {
+        let lag = last.time.as_second() - successor.now().as_second() + 1;
+        if lag > 0 {
+            successor.advance(lag);
+        }
+    }
     successor.append(start.into(), &[]);
     successor
 }
@@ -844,6 +858,387 @@ fn a_reset_after_a_denied_nonzero_proposal_stays_reconstructible_with_no_step() 
     );
     assert_eq!(projection.climb.campaign.as_ref().unwrap().consumed, 0);
     assert_eq!(replay(&successor.events).project(), projection);
+}
+
+/// CPU evidence at stock is platform evidence: the live campaign and the successor that imports its
+/// raw records agree it consumes nothing and needs no applied-step ancestry.
+#[test]
+fn a_stock_cpu_evidence_crash_charges_neither_the_live_campaign_nor_its_successor() {
+    let (mut source, _) = Journal::promoted_compact();
+    source.boot_start("stock-crash");
+    source.boot_start("after-stock-crash");
+    source.append(
+        DayUncleanEnd {
+            boot: BootId::from("stock-crash".to_owned()),
+            last_checkpoint: None,
+            offsets: offsets_of(&zero()),
+            reset_reason: ResetReason {
+                kind: Some(togi_machine::ResetKind::SyncFlood),
+                raw: Vec::new(),
+                supported: true,
+            },
+            evidence: EndEvidence::unknown(),
+        }
+        .into(),
+        &[],
+    );
+    source.append(
+        DayAnswer {
+            boot: BootId::from("stock-crash".to_owned()),
+            offsets: offsets_of(&zero()),
+            answer: DayAnswerKind::Frozen,
+            uid: 1000,
+        }
+        .into(),
+        &[],
+    );
+    source.append(
+        togi_journal::DayRecord {
+            boot: togi_journal::CrashedBoot::Unobserved { at: source.now() },
+            offsets: togi_journal::RecordedOffsets::new(offsets_of(&zero())).unwrap(),
+            source: togi_journal::OffsetSource::Entered { at: source.now() },
+            running: togi_journal::Running::Idle,
+            note: None,
+        }
+        .into(),
+        &[],
+    );
+    let mut query = cold_boot("after-stock-crash", 60_000);
+    query.now = source.now();
+    source.settle_day(&query);
+    assert_eq!(source.state.project().climb.campaign.unwrap().consumed, 0);
+    let successor = successor_of(&source.events);
+    let campaign = successor.state.project().climb.campaign.unwrap();
+    assert!(
+        matches!(campaign.history, CampaignHistory::Complete {}),
+        "{:?}",
+        campaign.history
+    );
+    assert_eq!(campaign.consumed, 0);
+}
+
+/// A frozen crash of `crashed` that the machine recorded: `boot` ran at the profile, the next boot
+/// found it ended without a clean stop, and the owner called it a freeze.
+fn frozen_crash(journal: &mut Journal, boot: &str, crashed: &CcdProfile) {
+    journal.boot_start_at(boot, "1", crashed);
+    journal.boot_start(&format!("after-{boot}"));
+    journal.append(
+        DayUncleanEnd {
+            boot: BootId::from(boot.to_owned()),
+            last_checkpoint: None,
+            offsets: offsets_of(crashed),
+            reset_reason: ResetReason {
+                kind: Some(togi_machine::ResetKind::SyncFlood),
+                raw: Vec::new(),
+                supported: true,
+            },
+            evidence: EndEvidence::unknown(),
+        }
+        .into(),
+        &[],
+    );
+    journal.append(
+        DayAnswer {
+            boot: BootId::from(boot.to_owned()),
+            offsets: offsets_of(crashed),
+            answer: DayAnswerKind::Frozen,
+            uid: 1000,
+        }
+        .into(),
+        &[],
+    );
+}
+
+fn on_ccd0(depth: i64) -> CcdProfile {
+    zero().with(
+        crate::fixture::ccd(0),
+        togi_machine::TargetOffset::new(depth).unwrap(),
+    )
+}
+
+#[test_case(-5, false; "a crash at the candidate holds it")]
+#[test_case(-3, false; "a shallower crash holds the deeper candidate")]
+#[test_case(-6, true; "a deeper crash leaves the shallower candidate")]
+fn a_crash_before_the_campaign_enrolled_vetoes_its_profile_without_a_charge(
+    depth: i64,
+    promotes: bool,
+) {
+    let (mut journal, _) = Journal::qualified_compact_after(|journal| {
+        frozen_crash(journal, "before-enrollment", &on_ccd0(depth));
+    });
+    let committed = journal.settle_day(&cold_boot("day1", 60_000));
+    assert_eq!(
+        committed.iter().any(|payload| matches!(payload, Payload::ClimbDecision(record) if matches!(record.decision, ClimbAction::Promote { .. }))),
+        promotes
+    );
+    assert!(
+        !committed
+            .iter()
+            .any(|payload| matches!(payload, Payload::CampaignCharge(_)))
+    );
+    let projection = journal.state.project();
+    assert_eq!(projection.climb.campaign.as_ref().unwrap().consumed, 0);
+    assert_eq!(replay(&journal.events).project(), projection);
+    assert_eq!(snapshot(&journal.state).project(), projection);
+}
+
+/// Three crashes before enrollment would exhaust a two-event allowance if they were charged; they are
+/// vetoes, so the successor keeps the whole allowance, a complete history and the vetoes.
+#[test]
+fn crashes_before_the_first_enrollment_keep_the_whole_allowance_across_a_successor() {
+    let (source, _) = Journal::promoted_compact_after(|journal| {
+        for boot in ["early-1", "early-2", "early-3"] {
+            frozen_crash(journal, boot, &on_ccd0(-6));
+        }
+    });
+    assert_eq!(source.state.project().climb.campaign.unwrap().consumed, 0);
+    let successor = successor_of(&source.events);
+    let projection = successor.state.project();
+    let campaign = projection.climb.campaign.as_ref().unwrap();
+    assert!(
+        matches!(campaign.history, CampaignHistory::Complete {}),
+        "{:?}",
+        campaign.history
+    );
+    assert_eq!(campaign.consumed, 0);
+    assert!(!projection.vetoes.is_empty());
+    assert_eq!(replay(&successor.events).project(), projection);
+    assert_eq!(snapshot(&successor.state).project(), projection);
+}
+
+/// The boundary is the enrollment: a crash after it is still the campaign's learning event.
+#[test]
+fn a_crash_after_the_campaign_enrolled_is_still_charged() {
+    let (mut journal, target) = Journal::promoted_compact();
+    frozen_crash(&mut journal, "after-enrollment", &target);
+    let mut query = cold_boot("after-after-enrollment", 60_000);
+    query.now = journal.now();
+    journal.settle_day(&query);
+    assert_eq!(journal.state.project().climb.campaign.unwrap().consumed, 1);
+}
+
+/// A journal whose campaign enrolled after a crash at `crashed` and then received the manual record
+/// of that crash: the record is appended after enrollment, but the crash it names is older. `named`
+/// picks a named boot whose observer record is imported from a predecessor session over an unobserved
+/// crash. The candidate waits qualified at its first cold boot.
+fn late_record_journal(crashed: &CcdProfile, named: bool) -> Journal {
+    let predecessor: togi_journal::SessionId = "20231101T000000Z".parse().unwrap();
+    let (journal, _) = Journal::qualified_compact_after(|journal| {
+        let early = journal.now();
+        if named {
+            // The observer records arrive with the session that wrote them, so their topology
+            // arrives too; an import without it could not be reconstructed at all.
+            let mut old = Journal::ready();
+            old.boot_start_at("old", "1", crashed);
+            for event in old.events.iter().filter(|event| {
+                matches!(
+                    event.payload,
+                    Payload::SessionStart(_) | Payload::DayBootStart(_)
+                )
+            }) {
+                journal.append(imported(event).into(), &[]);
+            }
+        }
+        journal.advance(3_600);
+        journal.append(
+            togi_journal::CampaignStart {
+                campaign: togi_journal::CampaignId(togi_journal::Provenance {
+                    session: predecessor,
+                    seq: Seq::FIRST,
+                }),
+                allowance: 2,
+                origin: togi_journal::CampaignOrigin::Fresh {},
+                history: CampaignHistory::Complete {},
+            }
+            .into(),
+            &[],
+        );
+        let entered = journal.now();
+        journal.append(
+            togi_journal::DayRecord {
+                boot: if named {
+                    togi_journal::CrashedBoot::UncleanEnd {
+                        boot: BootId::from("old".to_owned()),
+                    }
+                } else {
+                    togi_journal::CrashedBoot::Unobserved { at: early }
+                },
+                offsets: togi_journal::RecordedOffsets::new(offsets_of(crashed)).unwrap(),
+                source: togi_journal::OffsetSource::Entered { at: entered },
+                running: togi_journal::Running::Idle,
+                note: None,
+            }
+            .into(),
+            &[],
+        );
+    });
+    journal
+}
+
+#[test_case(-5, false, false; "an unobserved crash at the candidate holds it")]
+#[test_case(-3, false, false; "a shallower unobserved crash holds the deeper candidate")]
+#[test_case(-6, false, true; "a deeper unobserved crash leaves the shallower candidate")]
+#[test_case(-5, true, false; "a named old boot at the candidate holds it")]
+#[test_case(-3, true, false; "a shallower named old boot holds the deeper candidate")]
+#[test_case(-6, true, true; "a deeper named old boot leaves the shallower candidate")]
+fn a_record_of_a_crash_older_than_the_enrollment_is_a_veto_without_charge_or_stop(
+    depth: i64,
+    named: bool,
+    promotes: bool,
+) {
+    let mut journal = late_record_journal(&on_ccd0(depth), named);
+    let committed = journal.settle_day(&cold_boot("day1", 60_000));
+    assert_eq!(
+        committed.iter().any(|payload| matches!(payload, Payload::ClimbDecision(record) if matches!(record.decision, ClimbAction::Promote { .. }))),
+        promotes
+    );
+    assert!(
+        !committed
+            .iter()
+            .any(|payload| matches!(payload, Payload::CampaignCharge(_) | Payload::UnitStop(_)))
+    );
+    let projection = journal.state.project();
+    let campaign = projection.climb.campaign.as_ref().unwrap();
+    assert_eq!((campaign.consumed, campaign.remaining), (0, 2));
+    assert_eq!(replay(&journal.events).project(), projection);
+    assert_eq!(snapshot(&journal.state).project(), projection);
+}
+
+/// Three distinct old crashes recorded after enrollment would exhaust a two-event allowance if they
+/// were learning events. They are three original vetoes, so the whole allowance remains, live and in
+/// the successor that imports them.
+#[test]
+fn three_old_crashes_recorded_after_the_enrollment_are_three_vetoes_and_no_charge() {
+    let crashed = on_ccd0(-6);
+    let predecessor: togi_journal::SessionId = "20231101T000000Z".parse().unwrap();
+    let (mut source, _) = Journal::qualified_compact_after(|journal| {
+        let mut old = Vec::new();
+        for _ in 0..3 {
+            old.push(journal.now());
+            journal.advance(60);
+        }
+        journal.advance(3_600);
+        journal.append(
+            togi_journal::CampaignStart {
+                campaign: togi_journal::CampaignId(togi_journal::Provenance {
+                    session: predecessor,
+                    seq: Seq::FIRST,
+                }),
+                allowance: 2,
+                origin: togi_journal::CampaignOrigin::Fresh {},
+                history: CampaignHistory::Complete {},
+            }
+            .into(),
+            &[],
+        );
+        for at in old {
+            let entered = journal.now();
+            journal.append(
+                togi_journal::DayRecord {
+                    boot: togi_journal::CrashedBoot::Unobserved { at },
+                    offsets: togi_journal::RecordedOffsets::new(offsets_of(&crashed)).unwrap(),
+                    source: togi_journal::OffsetSource::Entered { at: entered },
+                    running: togi_journal::Running::Idle,
+                    note: None,
+                }
+                .into(),
+                &[],
+            );
+        }
+    });
+    source.settle_day(&cold_boot("day1", 60_000));
+    assert_eq!(
+        source
+            .events
+            .iter()
+            .filter(|event| matches!(event.payload, Payload::DayVeto(_)))
+            .count(),
+        3
+    );
+    assert!(!source.events.iter().any(|event| matches!(
+        event.payload,
+        Payload::CampaignCharge(_) | Payload::UnitStop(_)
+    )));
+    let live = source.state.project();
+    let campaign = live.climb.campaign.as_ref().unwrap();
+    assert_eq!((campaign.consumed, campaign.remaining), (0, 2));
+    assert_eq!(live.vetoes.len(), 3);
+    assert_eq!(replay(&source.events).project(), live);
+    assert_eq!(snapshot(&source.state).project(), live);
+
+    let successor = successor_of(&source.events);
+    let projection = successor.state.project();
+    let campaign = projection.climb.campaign.as_ref().unwrap();
+    assert!(
+        matches!(campaign.history, CampaignHistory::Complete {}),
+        "{:?}",
+        campaign.history
+    );
+    assert_eq!((campaign.consumed, campaign.remaining), (0, 2));
+    assert_eq!(projection.vetoes.len(), 3);
+    assert_eq!(replay(&successor.events).project(), projection);
+    assert_eq!(snapshot(&successor.state).project(), projection);
+    for events in [&source.events, &successor.events] {
+        let expected = replay(events).project();
+        for cut in 0..=events.len() {
+            let mut rebuilt = snapshot(&replay(&events[..cut]));
+            for event in &events[cut..] {
+                rebuilt.fold(event).unwrap();
+            }
+            assert_eq!(rebuilt.project(), expected, "snapshot cut {cut}");
+        }
+    }
+}
+
+/// A resumed import copies the same original records again; one crash is one veto, never a charge.
+#[test]
+fn a_repeated_import_of_a_crash_older_than_the_enrollment_keeps_one_veto_and_the_whole_allowance() {
+    let mut source = late_record_journal(&on_ccd0(-5), false);
+    source.settle_day(&cold_boot("day1", 60_000));
+    let once = successor_importing(&source.events, 1).state.project();
+    let twice = successor_importing(&source.events, 2);
+    let projection = twice.state.project();
+    let campaign = projection.climb.campaign.as_ref().unwrap();
+    assert!(
+        matches!(campaign.history, CampaignHistory::Complete {}),
+        "{:?}",
+        campaign.history
+    );
+    assert_eq!((campaign.consumed, campaign.remaining), (0, 2));
+    assert_eq!(projection.vetoes.len(), once.vetoes.len());
+    assert!(!projection.vetoes.is_empty());
+    assert_eq!(replay(&twice.events).project(), projection);
+    assert_eq!(snapshot(&twice.state).project(), projection);
+}
+
+/// The boundary is the enrollment: a nonzero crash after it with no applied step behind it cannot be
+/// charged faithfully, so a successor refuses the history instead of assuming it consumed nothing.
+#[test]
+fn a_crash_after_the_original_enrollment_without_step_history_is_unreconstructible() {
+    let predecessor: togi_journal::SessionId = "20231101T000000Z".parse().unwrap();
+    let (source, _) = Journal::qualified_compact_after(|journal| {
+        journal.append(
+            togi_journal::CampaignStart {
+                campaign: togi_journal::CampaignId(togi_journal::Provenance {
+                    session: predecessor,
+                    seq: Seq::FIRST,
+                }),
+                allowance: 2,
+                origin: togi_journal::CampaignOrigin::Fresh {},
+                history: CampaignHistory::Complete {},
+            }
+            .into(),
+            &[],
+        );
+        frozen_crash(journal, "after-start", &on_ccd0(-5));
+    });
+    let successor = successor_of(&source.events);
+    let campaign = successor.state.project().climb.campaign.unwrap();
+    assert!(
+        matches!(campaign.history, CampaignHistory::Unreconstructible { .. }),
+        "{:?}",
+        campaign.history
+    );
 }
 
 /// An event as the session importer copies it: an exposure keeps the identity of its trial, not its

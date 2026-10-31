@@ -13,7 +13,10 @@ use togi_journal::{
 };
 use togi_machine::{BootId, TargetOffset};
 
-use super::{Params, State};
+use super::{
+    Params, State,
+    enrollment::{CrashTime, Enrollment, precedes},
+};
 use crate::day::EventId;
 
 /// A machine event, independent of the session that copied its witnesses.
@@ -243,6 +246,18 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
             );
         }
     }
+    // A crash before the machine's first campaign enrollment is a veto and nothing else. Without an
+    // original `campaign.start` among the records the history precedes its successor's enrollment.
+    let enrollment = decoded
+        .iter()
+        .filter(|(_, event)| matches!(event.payload, Payload::CampaignStart(_)))
+        .map(|(_, event)| Enrollment {
+            time: event.time,
+            boot: event.boot.clone(),
+        })
+        .min_by_key(|enrollment| enrollment.time);
+    let timelines = Timelines::of(&decoded, &identities);
+    let before = |identity: &Identity| precedes(enrollment.as_ref(), &timelines.crash(identity));
     // A failed re-qualification of a nonzero current profile is a CPU-suspect event even when the
     // session ended before its derived `day.event` was written. The raw qualification and
     // exposure records are not enough to recharge it faithfully here, so it fails closed.
@@ -349,19 +364,23 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                 if matches!(event.classification, Classification::CpuSuspect { .. })
                     && nonzero(&event.profile)
                 {
-                    charge(
-                        &mut history,
-                        identity,
-                        Vec::new(),
-                        event.profile.clone(),
-                        matches!(
-                            event.classification,
-                            Classification::CpuSuspect {
-                                certainty: togi_journal::Certainty::Provisional
-                            }
-                        ),
-                        *original,
-                    );
+                    if before(&identity) {
+                        veto_only(&mut history, identity, event.profile.clone(), *original);
+                    } else {
+                        charge(
+                            &mut history,
+                            identity,
+                            Vec::new(),
+                            event.profile.clone(),
+                            matches!(
+                                event.classification,
+                                Classification::CpuSuspect {
+                                    certainty: togi_journal::Certainty::Provisional
+                                }
+                            ),
+                            *original,
+                        );
+                    }
                 }
             }
             Payload::CampaignCharge(charged) => {
@@ -546,19 +565,24 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                     },
                 );
                 if event.class.is_cpu_suspect() {
-                    charge(
-                        &mut history,
-                        id,
-                        Vec::new(),
-                        ObservedProfile::PerCore {
-                            cores: *event.profile.offsets(),
-                        },
-                        matches!(
-                            event.class,
-                            crate::day::Classification::ProvisionalCpuSuspect(_)
-                        ),
-                        *original,
-                    );
+                    let profile = ObservedProfile::PerCore {
+                        cores: *event.profile.offsets(),
+                    };
+                    if before(&id) {
+                        veto_only(&mut history, id, profile, *original);
+                    } else {
+                        charge(
+                            &mut history,
+                            id,
+                            Vec::new(),
+                            profile,
+                            matches!(
+                                event.class,
+                                crate::day::Classification::ProvisionalCpuSuspect(_)
+                            ),
+                            *original,
+                        );
+                    }
                 }
             }
         }
@@ -1086,6 +1110,101 @@ fn charge(
     }
 }
 
+/// A crash before the first campaign enrollment vetoes its whole profile and nothing else: it is no
+/// charge, so it stops no unit and needs no applied-step ancestry.
+fn veto_only(
+    history: &mut History,
+    event: Identity,
+    profile: ObservedProfile,
+    witness: Provenance,
+) {
+    if !history.vetoes.iter().any(|held| held.event == event) {
+        history.vetoes.push(Veto {
+            event,
+            profile,
+            witness,
+        });
+    }
+}
+
+/// When the imported records place each crash identity, whatever order or session they came in.
+#[derive(Default)]
+struct Timelines {
+    /// The earliest record that observed the identity's crash or machine checks.
+    observed: HashMap<Identity, Timestamp>,
+    /// The latest record of each boot's own observer.
+    last: HashMap<BootId, Timestamp>,
+}
+
+impl Timelines {
+    fn of(records: &[(Provenance, Event)], identities: &HashMap<Provenance, Identity>) -> Self {
+        let mut timelines = Self::default();
+        for (original, event) in records {
+            if let Some(identity) = Self::observing(original, event, identities) {
+                timelines
+                    .observed
+                    .entry(identity)
+                    .and_modify(|first| *first = (*first).min(event.time))
+                    .or_insert(event.time);
+            } else if matches!(
+                event.payload,
+                Payload::DayBootStart(_)
+                    | Payload::DayCheckpoint(_)
+                    | Payload::DayOffsetsChanged(_)
+                    | Payload::DayCleanStop(_)
+            ) {
+                timelines
+                    .last
+                    .entry(event.boot.clone())
+                    .and_modify(|last| *last = (*last).max(event.time))
+                    .or_insert(event.time);
+            }
+        }
+        timelines
+    }
+
+    /// The identity whose crash a record observed; a crash cannot be later than its record, so a
+    /// derived `day.event` or charge receipt is an upper bound even when its raw evidence is lost.
+    fn observing(
+        original: &Provenance,
+        event: &Event,
+        identities: &HashMap<Provenance, Identity>,
+    ) -> Option<Identity> {
+        if let Payload::DayEvent(classified) = &event.payload {
+            Some(identity(&classified.event, original.session, identities))
+        } else if let Payload::CampaignCharge(charged) = &event.payload {
+            Some(identity(&charged.event, original.session, identities))
+        } else if let Payload::DayUncleanEnd(end) = &event.payload {
+            Some(Identity::Boot(end.boot.clone()))
+        } else if let Payload::DayRecord(record) = &event.payload {
+            Some(match &record.boot {
+                togi_journal::CrashedBoot::UncleanEnd { boot } => Identity::Boot(boot.clone()),
+                togi_journal::CrashedBoot::Unobserved { at } => Identity::Unobserved(*at),
+            })
+        } else if let Payload::Mce(mce) = &event.payload
+            && mce.trial.is_none()
+        {
+            Some(Identity::Boot(
+                mce.from_boot.clone().unwrap_or_else(|| event.boot.clone()),
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn crash(&self, identity: &Identity) -> CrashTime {
+        match identity {
+            Identity::Unobserved(at) => CrashTime::At(*at),
+            Identity::Boot(boot) => CrashTime::Boot {
+                boot: boot.clone(),
+                observed: self.observed.get(identity).copied(),
+                last: self.last.get(boot).copied(),
+            },
+            Identity::Record(_) | Identity::Requalification { .. } => CrashTime::Unknown,
+        }
+    }
+}
+
 fn merge_aliases(charges: &mut Vec<Charge>) {
     let mut index = 0;
     while index < charges.len() {
@@ -1229,7 +1348,61 @@ mod tests {
         applied.original.seq = Seq::new(3).unwrap();
         step.time = "2026-09-01T00:00:00Z".parse().unwrap();
         applied.time = step.time;
-        vec![header(), step, applied]
+        vec![header(), step, applied, enrollment()]
+    }
+
+    /// The original campaign's first start, before every crash a test charges.
+    fn enrollment() -> DayImported {
+        let start = togi_journal::CampaignStart {
+            campaign: togi_journal::CampaignId(Provenance {
+                session: "20261001T000000Z".parse().unwrap(),
+                seq: Seq::new(14).unwrap(),
+            }),
+            allowance: 2,
+            origin: togi_journal::CampaignOrigin::Fresh {},
+            history: togi_journal::CampaignHistory::Complete {},
+        };
+        let mut enrollment = record("campaign.start", 4, &serde_json::to_value(start).unwrap());
+        enrollment.time = "2026-09-01T00:00:00Z".parse().unwrap();
+        enrollment
+    }
+
+    fn unobserved(seq: u64, at: &str) -> DayImported {
+        record(
+            "day.record",
+            seq,
+            &json!({
+                "boot":{"kind":"unobserved","at":at},
+                "offsets":{"0":-5},"source":{"kind":"entered","at":"2026-10-01T00:00:00Z"},
+                "running":"idle"
+            }),
+        )
+    }
+
+    #[test]
+    fn a_crash_before_the_original_campaign_start_is_a_veto_without_charge_or_stop() {
+        let history = complete(&[unobserved(1, "2026-08-31T23:00:00Z")]);
+        assert!(history.charges.is_empty());
+        assert!(history.stops.is_empty());
+        assert_eq!(history.vetoes.len(), 1);
+    }
+
+    #[test]
+    fn a_crash_at_the_original_campaign_start_is_still_charged() {
+        let history = complete(&[unobserved(1, "2026-09-01T00:00:00Z")]);
+        assert_eq!(history.charges.len(), 1);
+        assert_eq!(history.vetoes.len(), 1);
+    }
+
+    #[test]
+    fn a_source_with_no_campaign_start_holds_only_vetoes_for_crashes_it_dates() {
+        let Reconstruction::Complete(history) =
+            reconstruct(&[header(), unobserved(1, "2026-09-30T23:00:00Z")], &[])
+        else {
+            panic!("a dated crash without a campaign needs no ancestry");
+        };
+        assert!(history.charges.is_empty());
+        assert_eq!(history.vetoes.len(), 1);
     }
 
     #[test]
@@ -1354,7 +1527,7 @@ mod tests {
     fn missing_campaign_topology_is_unreconstructible() {
         let event = classified(1, &json!({"kind":"cpu_suspect","certainty":"definite"}));
         assert!(
-            matches!(reconstruct(&[event], &[]), Reconstruction::Unreconstructible { reason } if reason.contains("topology"))
+            matches!(reconstruct(&[enrollment(), event], &[]), Reconstruction::Unreconstructible { reason } if reason.contains("topology"))
         );
     }
 
@@ -1371,7 +1544,7 @@ mod tests {
     #[test]
     fn a_nonzero_event_without_successful_step_history_is_unreconstructible() {
         let event = classified(1, &json!({"kind":"cpu_suspect","certainty":"definite"}));
-        assert!(matches!(reconstruct(&[header(), event], &[]),
+        assert!(matches!(reconstruct(&[header(), enrollment(), event], &[]),
             Reconstruction::Unreconstructible { reason } if reason.contains("applied-step ancestry")));
     }
 }

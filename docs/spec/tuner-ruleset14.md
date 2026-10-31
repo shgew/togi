@@ -59,6 +59,8 @@ Retain the existing classification: an orderly shutdown is not a crash; core-loc
 
 A CPU-suspect event vetoes its **whole applied profile** P and every day profile Q at least as deep on every physical core. Vetoes do not expire, and a clean night cannot clear one. Only source-event reclassification can clear that event's veto. Controlled reproduction retains its explicit one-night exception and earns no qualification credit.
 
+A crash before the machine's first campaign enrollment is a veto only: it is no learning event, so it charges no allowance, stops no unit and needs no step ancestry. Events at or after the enrollment keep the rules below; section 10 defines the boundary across a successor transition. A zero-profile event is never charged, whether it is observed live or imported.
+
 At the next cold boot:
 
 - Revert the newest successfully applied promotion to its preceding profile. The changed unit **stops climbing permanently**; its last clean depth is its result, not a new invitation to explore from there. Newest-step blame is a conservative stopping heuristic, not causal localization. A successful hold cannot exonerate an older unit.
@@ -171,7 +173,19 @@ The durable journal and reporting contract requires:
 
 The journal uses additive typed kinds without changing released fields or meanings, so `SCHEMA` stays 1. The [journal catalog](journal.md) owns their payloads. Snapshots are caches: the production source-build fingerprint rejects stale reducers and replay rebuilds them. A future core-phase applier must validate the complete core vector against topology, not pretend a nonuniform profile expands from a CCD offset. Evidence epoch changes only when workload/credit contracts change.
 
-**Successor transition:** archive the Ruleset 13 session unchanged and start the durably identified successor at verified stock. Import original-identity raw daily observations, compatible `exposure.observed` observations, and CPU-suspect events, stops and veto records needed to reconstruct the campaign. Never import S, an old qualification conclusion or nonzero D as permission. A copied `night.qualification` is evidence only: a failed re-qualification of a nonzero current profile whose derived event and charge never landed marks the history unreconstructible, and no copied qualification ever qualifies, certifies or unblocks any profile. Write `successor.imported` and `campaign.start {origin, history}` with source provenance and complete/unreconstructible history. Missing or unreconstructible campaign history blocks nonzero exploration rather than assuming zero consumption. Interruption resumes the same identified import, deduplicating original identities. A permanent reset boundary ends raw tuning carry, but campaign ledger records cross that boundary: reset never renews allowance. Restart, reset, firmware change, new session and reboot do not replenish the two-event allowance.
+**Successor transition:** archive the Ruleset 13 session unchanged and start the durably identified successor at verified stock. Import original-identity raw daily observations, compatible `exposure.observed` observations, and CPU-suspect events, stops and veto records needed to reconstruct the campaign. Never import S, an old qualification conclusion or nonzero D as permission.
+
+A copied `night.qualification` is evidence only: a failed re-qualification of a nonzero current profile whose derived event and charge never landed marks the history unreconstructible, and no copied qualification ever qualifies, certifies or unblocks any profile.
+
+Write `successor.imported` and `campaign.start {origin, history}` with source provenance and complete/unreconstructible history. Missing or unreconstructible campaign history blocks nonzero exploration rather than assuming zero consumption. Interruption resumes the same identified import, deduplicating original identities.
+
+A permanent reset boundary ends raw tuning carry, but campaign ledger records cross that boundary: reset never renews allowance. Restart, reset, firmware change, new session and reboot do not replenish the two-event allowance.
+
+**Crashes before the first enrollment:** a daily event whose crash happened before the machine's first campaign enrollment or start is a whole-profile veto and nothing else. It consumes no allowance, stops no unit and needs no applied-step ancestry, so a history made only of such events stays complete with the full allowance. This includes a manual record appended after the transition whose `Unobserved.at`, or whose named crashed boot's own timeline, precedes that start.
+
+The boundary is the earliest `campaign.start` of the machine, original or fresh, never a successor's restart. With no original start among the imported records, every imported crash that carries a timeline precedes it. A named boot's crash cannot be later than the first record that observed it, however late a copy of that record is written, and a boot other than the enrolling one with no record at or after the start ended before it.
+
+Identities with no recoverable timeline, such as a failed re-qualification, stay inside the campaign and are charged as before; events at or after the start keep every campaign rule. Imports keep the original provenance and deduplicate by original identity, and the first hold still starts at zero.
 
 The consolidated architectural rationale and predecessor dispositions are [ADR 0094](../adr/0094-two-ends-bounded-exploration.md). The original Ruleset 13 gate remains failed; [#1457](https://github.com/shgew/togi/issues/1457) owns successor registration.
 

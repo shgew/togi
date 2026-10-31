@@ -30,10 +30,14 @@ pub(super) struct EventMeta {
     pub(super) witnesses: Vec<Seq>,
 }
 
-/// The daily events as the day policy classifies them now.
+/// The daily events as the day policy classifies them now. Events that crashed before the machine's
+/// first campaign enrollment are `historical`: they veto their whole profile and are visible, and
+/// nothing else reads them, so they charge no allowance, stop no unit and owe no retreat,
+/// reproduction or question.
 #[derive(Clone, Debug)]
 pub(super) struct DayView {
     pub(super) events: Vec<DailyEvent>,
+    pub(super) historical: Vec<DailyEvent>,
     pub(super) meta: HashMap<EventId, EventMeta>,
 }
 
@@ -373,7 +377,15 @@ impl State {
                 },
             );
         }
-        Ok(DayView { events, meta })
+        let enrollment = self.first_enrollment();
+        let (historical, events): (Vec<_>, Vec<_>) = events
+            .into_iter()
+            .partition(|event| self.precedes_enrollment(enrollment, &event.id));
+        Ok(DayView {
+            events,
+            historical,
+            meta,
+        })
     }
 
     /// The closed reproductions, by the day policy's event identity.
@@ -583,7 +595,7 @@ impl State {
             None => HashMap::new(),
         };
         let mut owed = Vec::new();
-        for event in &view.events {
+        for event in view.events.iter().chain(&view.historical) {
             let (Some(id), Some(meta)) =
                 (self.journal_event_id(&event.id), view.meta.get(&event.id))
             else {
@@ -593,7 +605,9 @@ impl State {
             let status = statuses
                 .as_ref()
                 .and_then(|statuses| statuses.iter().find(|status| status.id == event.id));
-            let resolution = if status.is_some_and(EventStatus::is_resolved) {
+            let resolution = if status.is_some_and(EventStatus::is_resolved)
+                || view.historical.iter().any(|held| held.id == event.id)
+            {
                 Resolution::Resolved {
                     retreat: self.retreat_application(&event.id),
                 }
@@ -645,7 +659,8 @@ impl State {
     /// event's veto is not committed cleared.
     pub(super) fn owed_day_vetoes(&self) -> Result<Vec<Decision>, NotReady> {
         let view = self.day_view()?;
-        let active = vetoes(&view.events);
+        let mut active = vetoes(&view.events);
+        active.extend(vetoes(&view.historical));
         let mut owed = Vec::new();
         for veto in &active {
             let (Some(id), Some(meta)) = (
