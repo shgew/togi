@@ -26,16 +26,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: nix develop --command cargo run --locked -p togi-tool-release -- -commit
-      - name: Build the package and run quality and tests
-        # One derivation at a time: the nextest checks run their tests in parallel, and building them
-        # together on one runner starved the recovery partitions past their test timeout.
-        run: |
-          set -o pipefail
-          names=$(nix eval --json .#checks.x86_64-linux \
-            --apply 'c: builtins.filter (n: n == "quality" || builtins.match "nextest(-.*)?" n != null) (builtins.attrNames c)' |
-            jq -er '.[] | ".#checks.x86_64-linux.\(.)"')
-          mapfile -t checks <<< "$names"
-          nix build --max-jobs 1 --no-link --print-build-logs .#packages.x86_64-linux.default "${checks[@]}"
+      - name: Build the package and run quality
+        # The tests already passed in the exact-head dispatch on this commit's parent; the release commit
+        # changes only version.txt, CHANGELOG.md and the assembled fragments.
+        run: nix build --no-link --print-build-logs .#packages.x86_64-linux.default .#checks.x86_64-linux.quality
       - name: Push to main
         env:
           RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
