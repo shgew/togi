@@ -410,7 +410,8 @@ fn confirming_selects_the_tuning_entry_remembers_the_day_and_reboots() {
     assert_eq!(night.reboots(), 1);
     assert!(ran.out.contains("no tuning session yet"), "{}", ran.out);
     assert!(
-        ran.out.contains("stable at CO 0 with BIOS at stock, and reboot into the night now? [y/N]"),
+        ran.out
+            .contains("stable at CO 0 with BIOS at stock, and reboot into the night now? [y/N]"),
         "{}",
         ran.out
     );
@@ -642,14 +643,20 @@ fn a_host_without_a_tuning_boot_set_up_offers_no_switch(args: &[&str]) {
 }
 
 fn attestations(night: &Night, state: &Path) -> Vec<BiosContext> {
-    night.host.recording(&state.join("events.jsonl")).unwrap()
-        .into_events().into_iter().filter_map(|event| {
+    night
+        .host
+        .recording(&state.join("events.jsonl"))
+        .unwrap()
+        .into_events()
+        .into_iter()
+        .filter_map(|event| {
             if let togi_journal::Payload::StockAttested(attested) = event.payload {
                 Some(attested.firmware)
             } else {
                 None
             }
-        }).collect()
+        })
+        .collect()
 }
 
 #[test]
@@ -659,13 +666,57 @@ fn a_fresh_night_durably_attests_once_per_firmware_context() {
     let expected = night.firmware.borrow().clone();
     night.answer(Some("yes\n"));
     assert_eq!(night.togi_in(state.path(), &["night"]).exit, Exit::Ok);
-    assert_eq!(attestations(&night, state.path()), [expected.clone()]);
-    let recording = night.host.recording(&state.path().join("events.jsonl")).unwrap();
-    assert!(matches!(recording.events()[0].payload, togi_journal::Payload::SessionStart(_)));
-    assert_eq!(recording.events().len(), 2, "run still owns context and baseline observation");
+    assert_eq!(
+        attestations(&night, state.path()),
+        std::slice::from_ref(&expected)
+    );
+    let recording = night
+        .host
+        .recording(&state.path().join("events.jsonl"))
+        .unwrap();
+    assert!(matches!(
+        recording.events()[0].payload,
+        togi_journal::Payload::SessionStart(_)
+    ));
+    assert_eq!(
+        recording.events().len(),
+        2,
+        "run still owns context and baseline observation"
+    );
     night.answer(Some("yes\n"));
     assert_eq!(night.togi_in(state.path(), &["night"]).exit, Exit::Ok);
     assert_eq!(attestations(&night, state.path()), [expected]);
+}
+
+#[test]
+fn a_reset_requires_a_fresh_stock_attestation_even_with_unchanged_firmware() {
+    let night = Night::new();
+    let state = support::MemoryDir::new();
+    let path = state.path().join("events.jsonl");
+    night.answer(Some("yes\n"));
+    assert_eq!(night.togi_in(state.path(), &["night"]).exit, Exit::Ok);
+    let original = night.host.recording(&path).unwrap();
+    assert_eq!(attestations(&night, state.path()).len(), 1);
+
+    let reset = night.togi_in(state.path(), &["reset", "--all"]);
+    assert_eq!(reset.exit, Exit::Ok, "{}", reset.err);
+    night.now.set(night.now.get() + Duration::from_secs(1));
+    night.answer(Some("no\n"));
+    let declined = night.togi_in(state.path(), &["night"]);
+    assert_eq!(declined.exit, Exit::Ok, "{}", declined.err);
+    assert!(declined.out.contains("stable at CO 0 with BIOS at stock"));
+    assert!(night.host.fs.kind(&path).unwrap().is_none());
+
+    night.answer(Some("yes\n"));
+    let confirmed = night.togi_in(state.path(), &["night"]);
+    assert_eq!(confirmed.exit, Exit::Ok, "{}", confirmed.err);
+    let current = night.host.recording(&path).unwrap();
+    assert_ne!(current.events()[0].payload, original.events()[0].payload);
+    assert_eq!(
+        attestations(&night, state.path()),
+        [night.firmware.borrow().clone()]
+    );
+    assert_eq!(current.events().len(), 2, "old consent was not imported");
 }
 
 #[test_case::test_case("bios"; "BIOS or AGESA change")]
@@ -677,7 +728,11 @@ fn changed_firmware_requires_and_records_the_confirmation_again(field: &str) {
     assert_eq!(night.togi_in(state.path(), &["night"]).exit, Exit::Ok);
     let before = night.firmware.borrow().clone();
     match field {
-        "bios" => night.firmware.borrow_mut().bios_version.push_str("-next-AGESA"),
+        "bios" => night
+            .firmware
+            .borrow_mut()
+            .bios_version
+            .push_str("-next-AGESA"),
         "microcode" => night.firmware.borrow_mut().microcode.push_str("-next"),
         _ => unreachable!("test cases name a firmware field"),
     }
@@ -685,18 +740,28 @@ fn changed_firmware_requires_and_records_the_confirmation_again(field: &str) {
     let declined = night.togi_in(state.path(), &["night"]);
     assert_eq!(declined.exit, Exit::Ok, "{}", declined.err);
     assert!(declined.out.contains("stable at CO 0 with BIOS at stock"));
-    assert_eq!(attestations(&night, state.path()), [before.clone()]);
+    assert_eq!(
+        attestations(&night, state.path()),
+        std::slice::from_ref(&before)
+    );
     assert_eq!(night.reboots(), 1);
     night.answer(Some("yes\n"));
     let confirmed = night.togi_in(state.path(), &["night"]);
     assert_eq!(confirmed.exit, Exit::Ok, "{}", confirmed.err);
     assert!(confirmed.out.contains("stable at CO 0 with BIOS at stock"));
-    assert_eq!(attestations(&night, state.path()), [before.clone(), night.firmware.borrow().clone()]);
+    assert_eq!(
+        attestations(&night, state.path()),
+        [before.clone(), night.firmware.borrow().clone()]
+    );
     assert_eq!(night.reboots(), 2);
     *night.firmware.borrow_mut() = before;
     night.answer(Some("yes\n"));
     assert_eq!(night.togi_in(state.path(), &["night"]).exit, Exit::Ok);
-    assert_eq!(attestations(&night, state.path()).len(), 2, "returning firmware reuses its original attestation");
+    assert_eq!(
+        attestations(&night, state.path()).len(),
+        2,
+        "returning firmware reuses its original attestation"
+    );
 }
 
 #[test_case::test_case(togi_journal::fs::Op::Write, 2; "attestation write")]
@@ -709,7 +774,10 @@ fn failed_attestation_recording_never_selects_or_reboots_the_tuning_boot(
     let state = support::MemoryDir::new();
     night.day_is(DAY);
     night.answer(Some("yes\n"));
-    night.host.fs.inject(togi_journal::fs::Fault::before(operation, nth).named("events.jsonl"));
+    night
+        .host
+        .fs
+        .inject(togi_journal::fs::Fault::before(operation, nth).named("events.jsonl"));
     let ran = night.togi_in(state.path(), &["night"]);
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
     assert_eq!(night.value("saved_entry").as_deref(), Some(DAY));
@@ -722,7 +790,10 @@ fn dashboard_confirmation_records_the_same_attestation_without_another_question(
     let night = Night::new();
     let (exit, ran) = night.with_context(|ctx| {
         let result = togi_cli::night::begin(ctx, togi_cli::night::Confirmation::Given);
-        assert_eq!(attestations(&night, ctx.state_dir), [night.firmware.borrow().clone()]);
+        assert_eq!(
+            attestations(&night, ctx.state_dir),
+            [night.firmware.borrow().clone()]
+        );
         result
     });
     assert_eq!(exit, Exit::Ok, "{}", ran.err);
@@ -745,15 +816,22 @@ fn a_live_day_writer_records_the_night_confirmation_without_competing_for_its_lo
     let night = Night::on(session.host());
     night.host.write(SETUP_PATH, SETUP).unwrap();
     let _host_lock = night.host.acquire_host_lock().unwrap();
-    let journal = night.host.lock_state_dir(session.path()).unwrap()
-        .open_at(night.boot_id().unwrap(), night.now()).unwrap();
+    let journal = night
+        .host
+        .lock_state_dir(session.path())
+        .unwrap()
+        .open_at(night.boot_id().unwrap(), night.now())
+        .unwrap();
     *night.host.day_journal.borrow_mut() = Some(journal);
     night.answer(Some("yes\n"));
     let ran = night.togi_in(session.path(), &["night"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert!(attestations(&night, session.path()).contains(&night.firmware.borrow().clone()));
     assert_eq!(night.reboots(), 1);
-    assert!(night.host.day_journal.borrow().is_some(), "observer keeps ownership through reboot");
+    assert!(
+        night.host.day_journal.borrow().is_some(),
+        "observer keeps ownership through reboot"
+    );
 }
 
 #[test]
@@ -762,11 +840,17 @@ fn a_live_day_writer_append_failure_prevents_the_tuning_reboot() {
     let night = Night::on(session.host());
     night.host.write(SETUP_PATH, SETUP).unwrap();
     let _host_lock = night.host.acquire_host_lock().unwrap();
-    let journal = night.host.lock_state_dir(session.path()).unwrap()
-        .open_at(night.boot_id().unwrap(), night.now()).unwrap();
+    let journal = night
+        .host
+        .lock_state_dir(session.path())
+        .unwrap()
+        .open_at(night.boot_id().unwrap(), night.now())
+        .unwrap();
     *night.host.day_journal.borrow_mut() = Some(journal);
     night.day_is(DAY);
-    night.host.fs.inject(togi_journal::fs::Fault::before(togi_journal::fs::Op::Write, 1).named("events.jsonl"));
+    night.host.fs.inject(
+        togi_journal::fs::Fault::before(togi_journal::fs::Op::Write, 1).named("events.jsonl"),
+    );
     night.answer(Some("yes\n"));
     let ran = night.togi_in(session.path(), &["night"]);
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
@@ -779,8 +863,12 @@ fn a_fresh_night_confirmation_is_used_by_the_later_run_after_verified_stock_star
     let definition = togi_sim::MachineDefinition::default();
     let sim = togi_sim::Simulator::new(
         togi_sim::Model::new(&definition, 1).unwrap(),
-        togi_sim::RunSettings { seed: 1, ..togi_sim::RunSettings::default() },
-    ).unwrap();
+        togi_sim::RunSettings {
+            seed: 1,
+            ..togi_sim::RunSettings::default()
+        },
+    )
+    .unwrap();
     let mut machine = sim.seams();
     let mut host = Host::new();
     host.topology = machine.host.topology().unwrap();
@@ -792,8 +880,12 @@ fn a_fresh_night_confirmation_is_used_by_the_later_run_after_verified_stock_star
     let confirmed = night.togi_in(state.path(), &["night"]);
     assert_eq!(confirmed.exit, Exit::Ok, "{}", confirmed.err);
     let boot = machine.host.boot_id().unwrap();
-    let journal = night.host.lock_state_dir(state.path()).unwrap()
-        .open_at(boot.clone(), sim.now()).unwrap();
+    let journal = night
+        .host
+        .lock_state_dir(state.path())
+        .unwrap()
+        .open_at(boot.clone(), sim.now())
+        .unwrap();
     let cancel = togi_machine::CancellationToken::new();
     let stop = cancel.clone();
     let ended = togi_session::run(togi_session::RunInput {
@@ -810,7 +902,9 @@ fn a_fresh_night_confirmation_is_used_by_the_later_run_after_verified_stock_star
         import: None,
         log: None,
         on_append: Some(Box::new(move |event| {
-            if matches!(event.payload, togi_journal::Payload::TrialEnd(_)) { stop.cancel(); }
+            if matches!(event.payload, togi_journal::Payload::TrialEnd(_)) {
+                stop.cancel();
+            }
         })),
         renderer: togi_render::Renderer::default(),
         zone: TimeZone::UTC,
@@ -819,17 +913,51 @@ fn a_fresh_night_confirmation_is_used_by_the_later_run_after_verified_stock_star
     });
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
     let events = ended.journal.events();
-    let attested = events.iter().position(|event| matches!(event.payload, togi_journal::Payload::StockAttested(_))).unwrap();
-    let context = events.iter().position(|event| matches!(event.payload, togi_journal::Payload::SessionContext(_))).unwrap();
-    let baseline = events.iter().position(|event| matches!(event.payload, togi_journal::Payload::SessionBaseline(_))).unwrap();
-    let first = events.iter().position(|event| matches!(event.payload, togi_journal::Payload::TrialIntent(_))).unwrap();
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event.payload, togi_journal::Payload::CrashDetected(_))),
+        "the normal boot's session envelope and stock confirmation are not tuning activity"
+    );
+    let attested = events
+        .iter()
+        .position(|event| matches!(event.payload, togi_journal::Payload::StockAttested(_)))
+        .unwrap();
+    let context = events
+        .iter()
+        .position(|event| matches!(event.payload, togi_journal::Payload::SessionContext(_)))
+        .unwrap();
+    let baseline = events
+        .iter()
+        .position(|event| matches!(event.payload, togi_journal::Payload::SessionBaseline(_)))
+        .unwrap();
+    let first = events
+        .iter()
+        .position(|event| matches!(event.payload, togi_journal::Payload::TrialIntent(_)))
+        .unwrap();
     assert!(attested < context && context < baseline && baseline < first);
-    let togi_journal::Payload::SessionBaseline(recorded) = &events[baseline].payload else { unreachable!() };
+    let togi_journal::Payload::SessionBaseline(recorded) = &events[baseline].payload else {
+        unreachable!()
+    };
     assert!(recorded.offsets.iter().all(|(_, offset)| offset.0 == 0));
-    let trials: Vec<_> = events.iter().filter_map(|event| {
-        if let togi_journal::Payload::TrialIntent(trial) = &event.payload { Some(trial) } else { None }
-    }).collect();
-    assert_eq!(trials[0].offset.get(), -5);
-    assert!(trials.iter().all(|trial| trial.profile.iter().any(|(_, offset)| offset.get() != 0)));
-    assert_eq!(attestations(&night, state.path()), [night.firmware.borrow().clone()]);
+    let trials: Vec<_> = events
+        .iter()
+        .filter_map(|event| {
+            if let togi_journal::Payload::TrialIntent(trial) = &event.payload {
+                Some(trial)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(trials[0].offset.unwrap().get(), -5);
+    assert!(
+        trials
+            .iter()
+            .all(|trial| trial.profile.iter().any(|(_, offset)| offset.get() != 0))
+    );
+    assert_eq!(
+        attestations(&night, state.path()),
+        [night.firmware.borrow().clone()]
+    );
 }

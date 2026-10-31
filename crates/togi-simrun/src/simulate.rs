@@ -370,7 +370,11 @@ fn confirm(
     }
     if !attested {
         journal
-            .append(stamp, Payload::StockAttested(StockAttested { firmware }), &[])
+            .append(
+                stamp,
+                Payload::StockAttested(StockAttested { firmware }),
+                &[],
+            )
             .map_err(|source| SimError::Confirm { boot, source })?;
     }
     Ok(())

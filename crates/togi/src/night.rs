@@ -165,16 +165,26 @@ fn attest(ctx: &mut Context<'_>) -> Result<Option<togi_hostlock::HostLock>, Exit
         && crate::report::current_build().verdict(&recorded, togi_journal::Operation::Append)
             == togi_journal::Verdict::Use
     {
-        let recording = system.recording(&ctx.state_dir.join("events.jsonl"))
+        let recording = system
+            .recording(&ctx.state_dir.join("events.jsonl"))
             .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;
-        if let Some(Payload::SessionStart(start)) = recording.events().first().map(|event| &event.payload) {
+        if let Some(Payload::SessionStart(start)) =
+            recording.events().first().map(|event| &event.payload)
+        {
             use crate::day::socket::{Error, Reply, Request};
-            match system.day_request(&Request::AttestStock { session: start.session }) {
+            match system.day_request(&Request::AttestStock {
+                session: start.session,
+            }) {
                 Ok(Reply::Controlled { .. }) => return Ok(None),
                 Err(Error::Absent(_)) => {}
                 Ok(Reply::Refused { reason }) => return Err(fail(ctx, COMMAND, reason)),
-                Ok(Reply::Questions { .. } | Reply::State { .. } | Reply::Answered
-                    | Reply::Recorded { .. } | Reply::Reapplied) => {
+                Ok(
+                    Reply::Questions { .. }
+                    | Reply::State { .. }
+                    | Reply::Answered
+                    | Reply::Recorded { .. }
+                    | Reply::Reapplied,
+                ) => {
                     return Err(fail(ctx, COMMAND, "unexpected day service reply"));
                 }
                 Err(error) => return Err(fail(ctx, COMMAND, togi_render::error_chain(&error))),
@@ -221,7 +231,12 @@ fn attest(ctx: &mut Context<'_>) -> Result<Option<togi_hostlock::HostLock>, Exit
         journal
             .append(
                 stamp(ctx)?,
-                SessionStart { build, session, cores }.into(),
+                SessionStart {
+                    build,
+                    session,
+                    cores,
+                }
+                .into(),
                 &[],
             )
             .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?;

@@ -15,6 +15,30 @@ struct Conclusion {
     dead_end_pending: bool,
 }
 
+/// How much of the journal is still only the operator's night confirmations: `session.start`, then one
+/// `stock.attested` per firmware context confirmed (`togi night` repeats it when the firmware changes before any run).
+/// Those confirmations publish no `state.json` and the import a first run commits is written by the run itself, after
+/// its `state.rebuilt`; so the first run's `state.rebuilt` naming only `state.json` records the snapshot's first
+/// publication, not a disagreement with a current one. Any other event ends the bootstrap.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum Bootstrap {
+    #[default]
+    Fresh,
+    Started,
+    Attested,
+    Over,
+}
+
+impl Bootstrap {
+    fn after(self, payload: &Payload) -> Self {
+        match (self, payload) {
+            (Self::Fresh, Payload::SessionStart(_)) => Self::Started,
+            (Self::Started | Self::Attested, Payload::StockAttested(_)) => Self::Attested,
+            _ => Self::Over,
+        }
+    }
+}
+
 /// `skipped` names the events a lenient read passed over: a gap they fill is no sequence violation, and a cause
 /// naming one of them is an existing earlier sequence.
 pub(crate) fn audit(events: &[Event], skipped: &Skipped, completion: Completion) -> Vec<Violation> {
@@ -54,6 +78,7 @@ struct Auditor<'a> {
     conclusion: Conclusion,
     build: Option<&'a Build>,
     rebuilt: Option<Seq>,
+    bootstrap: Bootstrap,
 }
 
 impl<'a> Auditor<'a> {
@@ -259,6 +284,8 @@ impl<'a> Auditor<'a> {
     }
 
     fn fold_build(&mut self, event: &'a Event) {
+        let attested_only = self.bootstrap == Bootstrap::Attested;
+        self.bootstrap = self.bootstrap.after(&event.payload);
         match &event.payload {
             Payload::ConfigLoaded(loaded) => {
                 if self.rebuilt.is_some() && self.build == Some(&loaded.build) {
@@ -268,7 +295,8 @@ impl<'a> Auditor<'a> {
                 self.build = Some(&loaded.build);
             }
             Payload::StateRebuilt(rebuilt) => {
-                if !rebuilt.fields.iter().any(|field| field == "last_seq") {
+                let first_publication = attested_only && rebuilt.fields == ["state.json"];
+                if !first_publication && !rebuilt.fields.iter().any(|field| field == "last_seq") {
                     self.flush_rebuild();
                     self.rebuilt = Some(event.seq);
                 }
