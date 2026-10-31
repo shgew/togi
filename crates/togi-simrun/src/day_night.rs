@@ -4,6 +4,7 @@ mod machine;
 mod policy;
 mod ruleset13;
 pub mod successor;
+mod successor_policy;
 
 use std::time::Duration;
 
@@ -13,6 +14,7 @@ use togi_sim::day_night::{FailureCause, Scenario, TrialClass, TruthError};
 
 pub use policy::{CoZero, FixedMargin};
 pub use ruleset13::Ruleset13;
+pub use successor_policy::SuccessorPolicy;
 
 /// One policy the runner can build afresh for every scenario and seed. Each variant carries the
 /// parameters its construction needs, so a run is reproducible from its `PolicyKind` alone.

@@ -292,12 +292,76 @@ fn stock_comparator_accepts_registered_evaluation_slope_without_a_policy_paramet
     let stock_plan = plan(&args, &registration, &bytes).expect("stock evaluation cell");
     assert_eq!(
         stock_plan.policy,
-        togi_simrun::day_night::PolicyKind::CoZero
+        super::RunPolicy::Comparator(togi_simrun::day_night::PolicyKind::CoZero)
     );
     assert_eq!(stock_plan.slope, 2.0);
     assert_eq!(stock_plan.configs[0].provenance.slope, 2.0);
     args.slope = Some(1.7);
     assert!(plan(&args, &registration, &bytes).is_err());
+}
+
+#[test]
+fn pinned_candidate_builds_the_production_successor_adapter() {
+    let (mut registration, bytes) = fixture();
+    registration.calendar.days = 30;
+    let candidate = registration
+        .sources
+        .policies
+        .iter_mut()
+        .find(|source| source.name == "successor")
+        .expect("candidate source");
+    candidate.source = registration::SourceIdentity::Pinned {
+        revision: "candidate-test".to_owned(),
+        sha256: "a".repeat(64),
+    };
+    let mut args = args("successor");
+    args.slope = Some(1.5);
+    let plan = plan(&args, &registration, &bytes).expect("candidate resolves");
+    assert_eq!(
+        plan.policy,
+        super::RunPolicy::Successor {
+            fallback_slope: 1.5
+        }
+    );
+    let policy = plan
+        .policy
+        .build(&plan.configs[0].calendar)
+        .expect("production adapter");
+    assert!(
+        policy.report().allowance.is_none(),
+        "an unopened journal supplies no campaign receipt"
+    );
+    let mut output = Vec::new();
+    let execution = execute_plan(
+        plan,
+        &registration,
+        &togi_simrun::day_night::successor::run,
+        &Instant::now,
+        &mut output,
+    )
+    .expect("candidate executes through the CLI");
+    assert_eq!(execution.manifest.completion_count, 1);
+    let record = togi_simrun::day_night::successor::Record::parse(&output)
+        .expect("candidate retains a valid record");
+    assert_eq!(
+        record
+            .policy
+            .allowance
+            .as_ref()
+            .expect("journaled campaign")
+            .limit,
+        2
+    );
+    assert!(record.steps.iter().any(|step| matches!(
+        step.kind,
+        togi_simrun::day_night::successor::StepKind::Climb { .. }
+    )));
+    assert!(
+        record
+            .units
+            .iter()
+            .any(|unit| unit.qualification_launches > 0)
+    );
 }
 
 #[test]

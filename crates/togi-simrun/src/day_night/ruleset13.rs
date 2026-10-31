@@ -86,6 +86,7 @@ pub struct Ruleset13 {
     trials: u64,
     report_events: Vec<(DayEventId, super::successor::LearningEvent)>,
     witnesses: witnesses::Witnesses,
+    pub(super) successor: Option<super::successor_policy::JournalFold>,
 }
 
 impl Ruleset13 {
@@ -120,6 +121,7 @@ impl Ruleset13 {
             trials: 0,
             report_events: Vec::new(),
             witnesses: witnesses::Witnesses::default(),
+            successor: None,
         }
     }
 
@@ -166,6 +168,9 @@ impl Ruleset13 {
         );
         self.state.fold(&event)?;
         self.witnesses.observe(&event);
+        if let Some(successor) = &mut self.successor {
+            successor.fold(&event)?;
+        }
         self.appended = seq.get();
         if let Some(recorded) = &mut self.recorded {
             recorded.push(event);
