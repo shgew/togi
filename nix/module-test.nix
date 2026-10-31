@@ -268,6 +268,8 @@ assert
   day.systemd.services.togi-day.serviceConfig.ExecStart
   == "${lib.getExe package} day --state-dir /var/lib/togi";
 assert day.systemd.services.togi-day.serviceConfig.StateDirectory == "togi";
+assert day.systemd.services.togi-day.serviceConfig.Restart == "on-failure";
+assert day.systemd.services.togi-day.serviceConfig.RestartPreventExitStatus == "16";
 assert day.systemd.services.togi-day.wantedBy == [ "multi-user.target" ];
 assert builtins.elem "systemd-modules-load.service" day.systemd.services.togi-day.after;
 assert day.systemd.units ? "togi-day.service";
