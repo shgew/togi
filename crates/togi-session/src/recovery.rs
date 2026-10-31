@@ -8,7 +8,7 @@ use jiff::Timestamp;
 use togi_config::DeadEndThreshold;
 use togi_journal::{
     Build, CrashDetected, DeadEnd, DeadEndCondition, Event, EventKind, NightId, Outcome, Payload,
-    RetryTarget, Seq, ShutdownReason, SmuCommand, TaskId, TaskStart, TrialId, TrialIntent,
+    RetryTarget, Seq, ShutdownReason, SmuCommand, TaskId, TaskStart, TrialId, TrialIntent, Writer,
 };
 use togi_machine::{
     Backend, BiosContext, BootId, CcdId, Condition, CpuId, KernelCursor, ObservedOffset, PerCore,
@@ -602,35 +602,33 @@ impl RecoveryState {
         }
     }
 
-    /// Folds every boot into the order of succession, but admits only tuning-run witnesses to crash recovery.
-    /// `state.rebuilt` is run-only startup activity that can precede `config.loaded`; shared night planning and
-    /// SMU events can also come from the day observer. After `shutdown`, only another tuning witness reopens
-    /// the boot: the observer, exclusive with a run under the host and writer locks, cannot undo a clean stop.
+    /// Folds every boot into the order of succession, but admits only tuning-run events to crash recovery: every
+    /// kind only a run appends ([`Writer::Run`]), not an allow-list of witnesses, so run startup activity before
+    /// `config.loaded` (`state.rebuilt`, a startup `mce`) admits the boot. `session.warning` and
+    /// `boot.leave_reason` are notes about a boot, so they neither admit it nor replace its last event. Day kinds
+    /// and the journal's and operator commands' own markers never admit, and the kinds the day observer shares
+    /// with a run (night commitments, SMU events) are no evidence of a run. After `shutdown`, only another
+    /// run-only event reopens the boot: the observer, exclusive with a run under the host and writer locks,
+    /// cannot undo a clean stop.
     fn track_boot(&mut self, event: &Event) {
         if !self.journal_boots.contains(&event.boot) {
             self.journal_boots.push(event.boot.clone());
         }
-        if event.kind().is_day() || event.kind() == EventKind::JournalTorn {
-            return;
-        }
-        let tuning = matches!(
+        let note = matches!(
             event.kind(),
-            EventKind::SessionStart
-                | EventKind::StateRebuilt
-                | EventKind::ConfigLoaded
-                | EventKind::TrialIntent
-                | EventKind::TrialStart
+            EventKind::SessionWarning | EventKind::BootLeaveReason
         );
+        let tuning = match event.kind().writer() {
+            Writer::Run => !note,
+            Writer::Shared => false,
+            Writer::Day | Writer::Outside => return,
+        };
         if tuning && !self.boots.contains(&event.boot) {
             self.boots.push(event.boot.clone());
         }
         if let Some(record) = self.records.get_mut(&event.boot) {
             let closed = record.last_kind == EventKind::Shutdown;
-            if !matches!(
-                event.kind(),
-                EventKind::SessionWarning | EventKind::BootLeaveReason
-            ) && (tuning || !closed)
-            {
+            if !note && (tuning || !closed) {
                 record.last_kind = event.kind();
             }
         } else if tuning {

@@ -368,6 +368,23 @@ fn rebuilding_state_admits_tuning_before_configuration_is_recorded(same_boot: bo
     );
 }
 
+/// A resumed run whose snapshot matched writes no `state.rebuilt`; its startup kernel boundary can record a machine
+/// check before `config.loaded`, and a crash right after it is still a crashed tuning boot.
+#[test_case(false; "new boot")]
+#[test_case(true; "same boot after shutdown")]
+fn a_startup_machine_check_admits_tuning_before_configuration_is_recorded(same_boot: bool) {
+    let mut log = Log::new();
+    log.add(shutdown(ShutdownReason::Signal), &[]);
+    let name = if same_boot { "b0" } else { "b1" };
+    log.at(name, 0).mce(mce(true));
+    let state = log.state();
+    assert_eq!(state.last_kind(&boot(name)), Some(EventKind::Mce));
+    assert_eq!(
+        state.crashed_boots(&boot("b2")).collect::<Vec<_>>(),
+        [&boot(name)]
+    );
+}
+
 fn day_payloads() -> Vec<Payload> {
     vec![
         togi_journal::DayBootStart {
