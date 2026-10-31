@@ -6,11 +6,13 @@ use std::ffi::OsString;
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use rustix::process::{Pid, Signal, kill_process};
+#[cfg(target_os = "linux")]
+use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process, waitid};
 use rustix::termios::{LocalModes, tcgetattr};
 use tempfile::TempDir;
 use togi_cli::dashboard::Stop;
@@ -104,7 +106,8 @@ impl Running for EndlessRunning {
             Panic::Never => {}
             Panic::Now => panic!("injected panic while the dashboard shows"),
             Panic::Once(go) => {
-                wait_until("the test to see the dashboard", || go.exists());
+                Changes::new(go.parent().unwrap())
+                    .wait_until("the test to see the dashboard", || go.exists());
                 panic!("injected panic while the dashboard shows");
             }
         }
@@ -162,10 +165,26 @@ fn real_process_helper() {
     std::process::exit(i32::from(exit.code()));
 }
 
+#[derive(Default)]
+struct Output {
+    bytes: Mutex<Vec<u8>>,
+    changed: Condvar,
+}
+
+impl Output {
+    fn wait_until(&self, what: &str, mut ready: impl FnMut(&[u8]) -> bool) {
+        let (seen, _) = self
+            .changed
+            .wait_timeout_while(self.bytes.lock().unwrap(), BOUND, |seen| !ready(seen))
+            .unwrap();
+        assert!(ready(&seen), "timed out waiting for {what}");
+    }
+}
+
 /// Everything the child writes to the terminal, read while it runs: macOS discards what is still queued once the
 /// last slave descriptor closes. The reader ends at that close.
-fn record(master: &OwnedFd) -> (Arc<Mutex<Vec<u8>>>, JoinHandle<()>) {
-    let seen = Arc::new(Mutex::new(Vec::new()));
+fn record(master: &OwnedFd) -> (Arc<Output>, JoinHandle<()>) {
+    let seen = Arc::new(Output::default());
     let master = rustix::io::dup(master).unwrap();
     let reader = {
         let seen = seen.clone();
@@ -175,7 +194,8 @@ fn record(master: &OwnedFd) -> (Arc<Mutex<Vec<u8>>>, JoinHandle<()>) {
                 if read == 0 {
                     break;
                 }
-                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
+                seen.bytes.lock().unwrap().extend_from_slice(&chunk[..read]);
+                seen.changed.notify_all();
             }
         })
     };
@@ -188,11 +208,56 @@ fn events_of(dir: &Path) -> Vec<togi_journal::Event> {
         .unwrap_or_default()
 }
 
-fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    let deadline = Instant::now() + BOUND;
-    while !ready() {
-        assert!(Instant::now() < deadline, "timed out waiting for {what}");
-        std::thread::sleep(Duration::from_millis(20));
+/// The journal and panic-release file announce changes through inotify on Linux. Other supported
+/// platforms retain their polling fallback: rustix's kqueue registration requires unsafe code.
+struct Changes {
+    #[cfg(target_os = "linux")]
+    fd: OwnedFd,
+    #[cfg(not(target_os = "linux"))]
+    interval: Duration,
+}
+
+impl Changes {
+    fn new(directory: &Path) -> Self {
+        std::fs::create_dir_all(directory).unwrap();
+        #[cfg(target_os = "linux")]
+        {
+            use rustix::fs::inotify::{self, CreateFlags, WatchFlags};
+
+            let fd = inotify::init(CreateFlags::CLOEXEC).unwrap();
+            inotify::add_watch(
+                &fd,
+                directory,
+                WatchFlags::MODIFY | WatchFlags::CREATE | WatchFlags::MOVED_TO,
+            )
+            .unwrap();
+            Self { fd }
+        }
+        #[cfg(not(target_os = "linux"))]
+        Self {
+            interval: Duration::from_millis(20),
+        }
+    }
+
+    fn wait_until(&self, what: &str, mut ready: impl FnMut() -> bool) {
+        let deadline = Instant::now() + BOUND;
+        while !ready() {
+            assert!(Instant::now() < deadline, "timed out waiting for {what}");
+            #[cfg(target_os = "linux")]
+            {
+                let timeout =
+                    Timespec::try_from(deadline.saturating_duration_since(Instant::now())).unwrap();
+                let mut fds = [PollFd::new(&self.fd, PollFlags::IN)];
+                assert!(
+                    poll(&mut fds, Some(&timeout)).unwrap() > 0,
+                    "timed out waiting for {what}"
+                );
+                let mut changes = [0_u8; 4096];
+                rustix::io::read(&self.fd, &mut changes).unwrap();
+            }
+            #[cfg(not(target_os = "linux"))]
+            std::thread::sleep(self.interval);
+        }
     }
 }
 
@@ -204,6 +269,7 @@ fn real_process_ctrl_c_reaches_runs_own_listener_after_the_dashboard_closed_and_
 
 pub(super) fn stopped_by_signal(signal: Signal) {
     let dir = TempDir::new().unwrap();
+    let changes = Changes::new(&dir.path().join("state"));
     let (master, slave) = open_pty().unwrap();
     #[expect(
         clippy::disallowed_methods,
@@ -224,7 +290,7 @@ pub(super) fn stopped_by_signal(signal: Signal) {
         .spawn()
         .unwrap();
 
-    wait_until("a trial at a written offset to run", || {
+    changes.wait_until("a trial at a written offset to run", || {
         let events = events_of(dir.path());
         events
             .iter()
@@ -270,17 +336,31 @@ pub(super) fn stopped_by_signal(signal: Signal) {
 }
 
 fn wait_for_exit(child: &mut std::process::Child) -> std::process::ExitStatus {
-    let deadline = Instant::now() + BOUND;
-    loop {
-        if let Some(status) = child.try_wait().unwrap() {
-            return status;
-        }
-        if Instant::now() >= deadline {
+    let pid = Pid::from_child(child);
+    std::thread::scope(|scope| {
+        let (exited, exit) = mpsc::channel();
+        scope.spawn(move || {
+            // Leave the child waitable so only Child::wait reaps it, including after a timeout.
+            let status = loop {
+                match waitid(
+                    WaitId::Pid(pid),
+                    WaitIdOptions::EXITED | WaitIdOptions::NOWAIT,
+                ) {
+                    Err(rustix::io::Errno::INTR) => {}
+                    result => break result.map(|status| status.is_some()),
+                }
+            };
+            let _ = exited.send(status);
+        });
+        if let Ok(status) = exit.recv_timeout(BOUND) {
+            assert!(status.unwrap(), "waitid returned without an exit");
+        } else {
             child.kill().unwrap();
-            panic!("run did not stop after SIGINT");
+            child.wait().unwrap();
+            panic!("run did not stop within {BOUND:?}");
         }
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    });
+    child.wait().unwrap()
 }
 
 #[test]
@@ -317,7 +397,7 @@ fn real_process_a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_
             && restored.local_modes.contains(LocalModes::ICANON),
         "the previous input settings are back"
     );
-    let seen = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+    let seen = String::from_utf8_lossy(&seen.bytes.lock().unwrap()).into_owned();
     assert!(
         seen.contains("panic: injected panic while the dashboard shows"),
         "{seen}"
@@ -336,6 +416,7 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 #[test]
 fn real_process_ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back() {
     let dir = TempDir::new().unwrap();
+    let changes = Changes::new(&dir.path().join("state"));
     let (master, slave) = open_pty().unwrap();
     #[expect(
         clippy::disallowed_methods,
@@ -358,14 +439,12 @@ fn real_process_ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_
         .spawn()
         .unwrap();
     let (seen, reader) = record(&master);
-    wait_until("a trial to run", || {
+    changes.wait_until("a trial to run", || {
         events_of(dir.path())
             .iter()
             .any(|event| event.kind() == EventKind::TrialStart)
     });
-    wait_until("the dashboard to draw", || {
-        contains(&seen.lock().unwrap(), HIDE_CURSOR)
-    });
+    seen.wait_until("the dashboard to draw", |seen| contains(seen, HIDE_CURSOR));
 
     kill_process(Pid::from_child(&child), Signal::INT).unwrap();
     let status = wait_for_exit(&mut child);
@@ -373,7 +452,7 @@ fn real_process_ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_
     drop(child);
     reader.join().unwrap();
 
-    let seen = seen.lock().unwrap();
+    let seen = seen.bytes.lock().unwrap();
     let hidden = seen
         .windows(HIDE_CURSOR.len())
         .rposition(|window| window == HIDE_CURSOR)
@@ -432,12 +511,9 @@ fn real_process_a_session_panic_over_the_real_linux_console_dashboard_restores_t
         .spawn()
         .unwrap();
     let (seen, reader) = record(&master);
-    wait_until(
+    seen.wait_until(
         "the dashboard to hide the cursor and set the palette",
-        || {
-            let seen = seen.lock().unwrap();
-            contains(&seen, HIDE_CURSOR) && contains(&seen, PALETTE_SET)
-        },
+        |seen| contains(seen, HIDE_CURSOR) && contains(seen, PALETTE_SET),
     );
     std::fs::write(dir.path().join(GO), b"").unwrap();
     let status = wait_for_exit(&mut child);
@@ -445,7 +521,7 @@ fn real_process_a_session_panic_over_the_real_linux_console_dashboard_restores_t
     drop(child);
     reader.join().unwrap();
 
-    let seen = seen.lock().unwrap();
+    let seen = seen.bytes.lock().unwrap();
     let text = String::from_utf8_lossy(&seen);
     assert!(
         last(&seen, SHOW_CURSOR) > last(&seen, HIDE_CURSOR),

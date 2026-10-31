@@ -13,10 +13,11 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError, mpsc};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use tempfile::TempDir;
 use togi_journal::EventKind;
 use togi_machine::{
@@ -30,7 +31,6 @@ use crate::support::{Fake, simulator, written};
 const SCENARIO: &str = "TOGI_RUN_TEST_SCENARIO";
 const DIR: &str = "TOGI_RUN_TEST_DIR";
 const ORDER: &str = "order.log";
-const RELEASE: &str = "release";
 const FALLBACK: &str = "printing events instead";
 /// What the hook prints for the probe panic the cases raise while the dashboard still owns the screen: it holds
 /// the line back until the dashboard has let go, so it comes after the fallback line and only once event lines
@@ -301,7 +301,7 @@ fn panicking(machine: Machine<'static>, order: &Order, faults: Faults) -> Machin
 
 /// Blocks on the host lock from another descriptor, and when it is released notes whether the journal's lock
 /// was already free: the journal must be closed before the host lock goes.
-fn watch_the_locks(dir: &Path, order: &Order) {
+fn watch_the_locks(dir: &Path, order: &Order, released: mpsc::Sender<()>) {
     let host = File::open(dir.join("togi.lock")).unwrap();
     let journal = dir.join("state/lock");
     let order = order.clone();
@@ -312,6 +312,7 @@ fn watch_the_locks(dir: &Path, order: &Order) {
             Err(_) => "journal_held_when_host_lock_released",
         };
         order.note(line);
+        released.send(()).unwrap();
     });
 }
 
@@ -330,16 +331,20 @@ impl togi_cli::dashboard::Surface for PanicsAtOnce {
 }
 
 /// Waits until the parent says the dashboard's fallback was seen on stderr.
-fn wait_for_release(dir: &Path) {
-    let release = dir.join(RELEASE);
-    let end = Instant::now() + Duration::from_secs(30);
-    while !release.exists() {
-        assert!(
-            Instant::now() < end,
-            "the fallback to event lines never reached stderr"
-        );
-        thread::sleep(Duration::from_millis(1));
-    }
+fn wait_for_release() {
+    let stdin = rustix::stdio::stdin();
+    let mut fds = [PollFd::new(&stdin, PollFlags::IN)];
+    let timeout = Timespec::try_from(Duration::from_secs(30)).unwrap();
+    assert!(
+        poll(&mut fds, Some(&timeout)).unwrap() > 0,
+        "the fallback to event lines never reached stderr"
+    );
+    let mut release = [0_u8; 1];
+    assert_eq!(
+        rustix::io::read(stdin, &mut release).unwrap(),
+        1,
+        "the parent closed the release pipe without seeing the fallback"
+    );
 }
 
 /// A dashboard that says on stderr when it is told to stop.
@@ -358,8 +363,14 @@ impl togi_cli::dashboard::Surface for SaysWhenItStops {
     }
 }
 
+#[derive(Default)]
+struct Cue {
+    failed: Mutex<bool>,
+    changed: Condvar,
+}
+
 /// A dashboard that draws until `cue`, then fails as a drawing that returns an error does.
-struct FailsOnCue(Arc<AtomicBool>);
+struct FailsOnCue(Arc<Cue>);
 
 impl togi_cli::dashboard::Surface for FailsOnCue {
     fn draw(
@@ -368,28 +379,47 @@ impl togi_cli::dashboard::Surface for FailsOnCue {
         _: u64,
         stop: &togi_cli::dashboard::Stop,
     ) -> Result<(), togi_watch::terminal::Error> {
-        while !self.0.load(Ordering::SeqCst) {
-            if stop.is_stopped() {
-                return Ok(());
-            }
-            thread::sleep(Duration::from_millis(1));
+        let failed = thread::scope(|scope| {
+            // The surface must wake for either its failure cue or the real dashboard stop.
+            scope.spawn(|| {
+                stop.wait();
+                let _failed = self.0.failed.lock().unwrap();
+                self.0.changed.notify_all();
+            });
+            let failed = {
+                let failed = self
+                    .0
+                    .changed
+                    .wait_while(self.0.failed.lock().unwrap(), |failed| {
+                        !*failed && !stop.is_stopped()
+                    })
+                    .unwrap();
+                *failed
+            };
+            stop.stop();
+            failed
+        });
+        if failed {
+            Err(togi_watch::terminal::Error::Output(std::io::Error::other(
+                "the dashboard fell over",
+            )))
+        } else {
+            Ok(())
         }
-        Err(togi_watch::terminal::Error::Output(std::io::Error::other(
-            "the dashboard fell over",
-        )))
     }
 }
 
 /// Fails the dashboard and returns once the parent has seen the probe line, which the hook prints only after
 /// the dashboard has let go of the screen: event lines flow again from then on, and the fallback line is out.
-fn fail_the_dashboard(cue: &AtomicBool, dir: &Path) {
+fn fail_the_dashboard(cue: &Cue) {
     let probe = thread::Builder::new()
         .name("probe".to_owned())
         .spawn(|| panic!("the dashboard has let go"))
         .unwrap();
     assert!(probe.join().is_err());
-    cue.store(true, Ordering::SeqCst);
-    wait_for_release(dir);
+    *cue.failed.lock().unwrap() = true;
+    cue.changed.notify_all();
+    wait_for_release();
 }
 
 /// The kernel log of a run whose dashboard fails once the journal holds `kind`: on the first read after that,
@@ -399,8 +429,7 @@ struct FailsTheDashboard {
     journal: PathBuf,
     kind: &'static str,
     at_drop: bool,
-    cue: Arc<AtomicBool>,
-    dir: PathBuf,
+    cue: Arc<Cue>,
     failed: bool,
 }
 
@@ -412,7 +441,7 @@ impl FailsTheDashboard {
         let text = fs::read_to_string(&self.journal).unwrap_or_default();
         if text.contains(self.kind) {
             self.failed = true;
-            fail_the_dashboard(&self.cue, &self.dir);
+            fail_the_dashboard(&self.cue);
         }
     }
 }
@@ -505,6 +534,7 @@ fn real_process_helper() {
     };
     let dir = PathBuf::from(std::env::var_os(DIR).unwrap());
     let order = Order::open(&dir);
+    let (lock_released, lock_release) = mpsc::channel();
     let mut fake = Fake::in_dir(simulator(1000), &dir);
     fake.real_stderr = true;
     match scenario.as_str() {
@@ -533,7 +563,7 @@ fn real_process_helper() {
         "lock_order" => {
             let dir = dir.clone();
             fake.wrap = Box::new(move |machine, _| {
-                watch_the_locks(&dir, &order);
+                watch_the_locks(&dir, &order, lock_released.clone());
                 panicking(machine, &order, Faults::default())
             });
         }
@@ -583,11 +613,9 @@ fn real_process_helper() {
         "dashboard" => {
             fake.interactive = true;
             fake.surface = Arc::new(PanicsAtOnce);
-            let dir = dir.clone();
             fake.wrap = Box::new(move |machine, _| {
-                let dir = dir.clone();
                 let action: Box<dyn FnMut()> = Box::new(move || {
-                    wait_for_release(&dir);
+                    wait_for_release();
                     interrupt();
                 });
                 logging(machine, &order, Some(action))
@@ -605,7 +633,7 @@ fn real_process_helper() {
         }
         "fallback_between_the_closing_events" | "fallback_after_the_closing_events" => {
             let after = scenario == "fallback_after_the_closing_events";
-            let cue = Arc::new(AtomicBool::new(false));
+            let cue = Arc::new(Cue::default());
             fake.interactive = true;
             fake.surface = Arc::new(FailsOnCue(Arc::clone(&cue)));
             let dir = dir.clone();
@@ -622,7 +650,6 @@ fn real_process_helper() {
                         },
                         at_drop: after,
                         cue: Arc::clone(&cue),
-                        dir: dir.clone(),
                         failed: false,
                     }),
                     ..machine
@@ -641,13 +668,8 @@ fn real_process_helper() {
         allow_growth_again();
         fs::write(dir.join(GROWN_AFTER_THE_FAILURE), vec![0_u8; GROWN_LEN]).unwrap();
     }
-    let end = Instant::now() + Duration::from_secs(10);
-    while scenario == "lock_order"
-        && !fs::read_to_string(dir.join(ORDER))
-            .is_ok_and(|text| text.contains("host_lock_released"))
-        && Instant::now() < end
-    {
-        thread::sleep(Duration::from_millis(1));
+    if scenario == "lock_order" {
+        lock_release.recv_timeout(Duration::from_secs(10)).unwrap();
     }
     std::process::exit(i32::from(exit.code()));
 }
@@ -745,6 +767,7 @@ fn run(scenario: &str) -> Child {
 fn run_released_by(scenario: &str, line: &str) -> Child {
     let dir = TempDir::new().unwrap();
     let mut child = command(scenario, dir.path())
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -755,7 +778,7 @@ fn run_released_by(scenario: &str, line: &str) -> Child {
         let text = text.unwrap();
         if !released && text.contains(line) {
             released = true;
-            fs::write(dir.path().join(RELEASE), "").unwrap();
+            child.stdin.take().unwrap().write_all(b"1").unwrap();
         }
         stderr.push_str(&text);
         stderr.push('\n');
