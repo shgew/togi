@@ -13,8 +13,8 @@
 //! boot; directly compared exposures keep it exact. These bounded anchors do not recursively compare target
 //! citations. Policy commitments compare as a multiset; trial identities compare only by first-mention aliasing.
 //!
-//! A killed trial with observed wall time is compared against a control charged with that same interruption:
-//! it ends inconclusive, supplies no passing exposure and still consumes its queue's wall-time share.
+//! A killed trial is compared against a control given the same interruption, even with zero wall time:
+//! it ends inconclusive, supplies no passing exposure and still consumes any observed queue wall time.
 //! Every kill cut also checks its live folds and persisted snapshot against full replay;
 //! no cut or field is omitted.
 //!
@@ -436,7 +436,13 @@ fn segment(
         .filter(|event| ended_whole(event))
         .count();
     let cancel = input.cancel.clone();
-    if whole >= trials {
+    // A durable shutdown already ended this phase, even if the cut prevented `run` from returning. Keep its
+    // stop requested on restart: otherwise a dead end before the trial quota would open an unrelated new night.
+    if whole >= trials
+        || input.journal.events()[base..]
+            .iter()
+            .any(|event| matches!(event.payload, Payload::Shutdown(_)))
+    {
         cancel.cancel();
     }
     let power = trigger
@@ -1189,9 +1195,9 @@ fn projection(events: &[Event]) -> Vec<String> {
     compared_projection(events, &folded(events).project())
 }
 
-/// A killed open trial is an independently checked raw observation, not free execution. Charge the same
-/// interruption in a control that has no pending trial to recover; no policy commitment is copied into it.
-/// Zero-wall-time kills still compare against the original uninterrupted scenario.
+/// A killed open trial is an independently checked raw observation, not free execution. Give a control that has
+/// no pending trial to recover the same interruption, including one with zero wall time: even that observation
+/// can change coverage diagnostics or a queue's next cell. No policy commitment is copied into the control.
 fn charged_kill_control(
     played: &Played,
     model: &Model,
@@ -1273,9 +1279,6 @@ fn charged_kill_control(
         assert_eq!(observed.eligible_s, 0);
         assert_eq!(observed.uninterrupted_s, 0);
         assert!(observed.failures.is_empty());
-    }
-    if prefix.last().unwrap().time == intent.task_start.unwrap_or(intended.time) {
-        return None;
     }
 
     let control = played.before.bench(model);
@@ -1485,15 +1488,14 @@ fn an_interruption_compares_against_identically_charged_observations(measured: b
     assert_eq!(
         projection(&resumed) != projection(&reference.events),
         measured,
-        "only charged interruption wall time changes the soft-share schedule",
+        "the selected measured interruption changes the soft-share schedule",
     );
-    let control = charged_kill_control(reference, &model, after, &resumed);
-    assert_eq!(control.is_some(), measured);
-    let expected = control.as_deref().unwrap_or(&reference.events);
-    assert_lines_equal(&projection(&resumed), &projection(expected), "projection");
+    let control = charged_kill_control(reference, &model, after, &resumed)
+        .expect("every interrupted trial has an independently ended control");
+    assert_lines_equal(&projection(&resumed), &projection(&control), "projection");
     assert_lines_equal(
         &commitments(&resumed, after, true),
-        &commitments(expected, after, true),
+        &commitments(&control, after, true),
         "commitments",
     );
 }
