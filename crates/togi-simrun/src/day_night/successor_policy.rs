@@ -909,6 +909,9 @@ fn observed_depths(
 }
 
 #[cfg(test)]
+mod seam_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::day_night::{CalendarConfig, DayStart, EndAnswer, run_controlled};
@@ -961,8 +964,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn seeded_report_and_applications_are_exactly_the_journal_fold() {
+    pub(super) fn interrupted_run() -> SuccessorPolicy {
         let mut run = Interrupted {
             policy: SuccessorPolicy::new(1.5).unwrap().recording(),
             interrupted: false,
@@ -985,9 +987,15 @@ mod tests {
         )
         .unwrap();
         assert!(run.interrupted);
-        let report = run.policy.report();
-        let applications = run.policy.applications();
-        let events = run.policy.events().unwrap();
+        run.policy
+    }
+
+    #[test]
+    fn seeded_report_and_applications_are_exactly_the_journal_fold() {
+        let policy = interrupted_run();
+        let report = policy.report();
+        let applications = policy.applications();
+        let events = policy.events().unwrap();
         let mut replay = JournalFold::new();
         for event in events {
             replay.fold(event).unwrap();
@@ -1060,21 +1068,6 @@ mod tests {
             u64::try_from(report.events.iter().filter(|event| event.charged).count()).unwrap(),
             consumed
         );
-        for event in events {
-            if let Payload::TrialEnd(end) = &event.payload
-                && end.outcome == journal::Outcome::Failure
-            {
-                let id = format!("journal-failure-{}", end.trial.as_str());
-                assert_eq!(
-                    report
-                        .events
-                        .iter()
-                        .filter(|reported| reported.id == id)
-                        .count(),
-                    1
-                );
-            }
-        }
         for step in &applications.steps {
             let applied = events
                 .iter()
