@@ -319,9 +319,9 @@ impl State {
         let Some(id) = self.policy_event_id(&recorded.event) else {
             return;
         };
-        if !self
+        if self
             .first_enrollment()
-            .is_some_and(|enrollment| !self.precedes_enrollment(Some(enrollment), &id))
+            .is_none_or(|enrollment| self.precedes_enrollment(Some(enrollment), &id))
         {
             return;
         }
