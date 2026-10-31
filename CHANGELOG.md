@@ -2,6 +2,13 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.13.1] - 2026-10-31
+
+### Changed
+
+- The day service now applies the committed permitted Ruleset 14 profile, including nonzero offsets, through durable intent, write and all-core readback instead of forcing stock. Same-boot restart, sleep resume and pause expiry or early resume reapply the still-permitted profile without promotion; pause, stop and emergency recovery retain zeroing. Successor scores are research, not an activation gate; hardware acceptance is the first live step's on-machine check ([#1524]).
+- A cold boot that starts paused applies stock and, after resume, reapplies the committed profile but cannot promote in that boot, including a guarded learning-step restoration ([#1524]).
+
 ## [0.13.0] - 2026-10-31
 
 ### Changed
@@ -620,6 +627,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.13.0]: https://github.com/shgew/togi/releases/tag/v0.13.0
 
+[0.13.1]: https://github.com/shgew/togi/releases/tag/v0.13.1
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -863,4 +872,5 @@ All notable changes to togi are documented in this file. The format is based on 
 [#1513]: https://github.com/shgew/togi/pull/1513
 [#1515]: https://github.com/shgew/togi/pull/1515
 [#1523]: https://github.com/shgew/togi/pull/1523
+[#1524]: https://github.com/shgew/togi/pull/1524
 [#1534]: https://github.com/shgew/togi/pull/1534
