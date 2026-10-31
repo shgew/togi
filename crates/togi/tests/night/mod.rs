@@ -935,8 +935,7 @@ fn a_held_state_writer_lock_refuses_the_night_with_the_contention_status_and_cha
     let ran = night.togi_in(state.path(), &["night"]);
     assert_eq!(ran.exit, Exit::Locked, "{}", ran.err);
     assert!(
-        ran.err
-            .contains("another togi process holds the journal lock"),
+        ran.err.contains("is locked by another writer"),
         "{}",
         ran.err
     );
