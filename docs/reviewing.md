@@ -103,10 +103,12 @@ copy=$(mktemp -d)
 trap 'rm -rf "$copy"' EXIT
 sudo nix develop --command just copy-state /var/lib/togi "$copy"
 sudo chown -R "$(id -u):$(id -g)" "$copy"
-just sim --state-dir "$copy" --night-hours 24
+just sim --state-dir "$copy" --night-hours 24 --recorded-content
 just togi --state-dir "$copy" events --kind session.imported,day.imported
 just togi --state-dir "$copy" events --kind task.start
 ```
+
+Without `--recorded-content` the simulator reports synthetic content identities, so the copy's recorded observations do not match the simulated session's workloads and the dry run cannot show whether the recorded raw evidence stays compatible. With it, the simulated trials report the identities the copy's journal recorded ([`--recorded-content`](simulating.md)); that assumes those executables are what the real machine runs and verifies nothing about them. The option refuses a copy whose journal records no identity, or two for one workload.
 
 The first night after the transition runs the [CO-0 controls](spec/tuner.md#co-0-controls), the whole coverage matrix at all-zero. On the default simulator machine they take about 8.5 simulated hours, longer than the default 8-hour night ([`--night-hours`](simulating.md)), so the recipe sets a 24-hour night. `togi events --kind task.start` shows whether they completed: the night's `night #N: control task K started` lines are followed by the first task of another queue, such as `night #N: mapping task 0 started`, and `sim` reported no dead end before it.
 

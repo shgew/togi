@@ -72,6 +72,7 @@ fn simulate_with_dump(
         cancel,
         observer,
         dump_to,
+        mut adapt_trials,
     } = input;
     let memory = match &persistence {
         Persistence::Memory(fs) => Some(fs.clone()),
@@ -91,6 +92,9 @@ fn simulate_with_dump(
     let mut superseded = false;
     for number in 1..=max_boots.get() {
         let mut machine = simulator.seams();
+        if let Some(adapt) = adapt_trials.as_mut() {
+            machine.trials = adapt(machine.trials);
+        }
         let identity = machine.host.boot_id();
         let boot = match identity {
             Ok(boot) => boot,
