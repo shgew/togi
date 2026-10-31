@@ -27,6 +27,18 @@ pub(super) fn forbidden(
     Ok(vetoes.iter().any(|veto| veto.profile.forbids(&actual)))
 }
 
+fn forbidden_in_campaign(
+    history: &ClimbHistory,
+    profile: &UnitProfile,
+    vetoes: &[Veto],
+    historical: &[EventId],
+) -> Result<bool, ClimbError> {
+    let actual = history.actual(profile)?;
+    Ok(vetoes
+        .iter()
+        .any(|veto| !historical.contains(&veto.event) && veto.profile.forbids(&actual)))
+}
+
 fn backstep(
     history: &ClimbHistory,
     current: &UnitProfile,
@@ -68,11 +80,15 @@ fn backstep(
 }
 
 /// Compute safety from actual applications and durable cursors, never from plans or current charges.
+/// Historical vetoes still cut the profile, but only campaign safety work permanently stops units.
+/// Qualification fallback belongs here too, so live decisions and replay derive the same stops.
 pub fn plan(
     history: &ClimbHistory,
     events: &[DailyEvent],
     vetoes: &[Veto],
+    historical: &[EventId],
     ceilings: &Ceilings,
+    qualified: impl Fn(&UnitProfile) -> bool,
 ) -> Result<Option<Retreat>, ClimbError> {
     let mut wanted = history.current().clone();
     let mut consumed = history.consumed().clone();
@@ -130,7 +146,35 @@ pub fn plan(
             })
             .collect::<Vec<_>>(),
     )?;
-    while !wanted.is_zero() && forbidden(history, &wanted, vetoes)? {
+    while !wanted.is_zero() && forbidden_in_campaign(history, &wanted, vetoes, historical)? {
+        let (next, reverted) = backstep(history, &wanted, &mut consumed, true)?;
+        cursors.extend(reverted);
+        wanted = if next == wanted {
+            UnitProfile::zero(history.units())
+        } else {
+            next
+        };
+    }
+    let campaign_retreat = wanted != *history.current() || !answered.is_empty();
+    let mut fallback = campaign_retreat && !wanted.is_zero() && !qualified(&wanted);
+    let stopped = if campaign_retreat {
+        wanted
+            .iter()
+            .filter(|&(unit, depth)| {
+                history
+                    .current()
+                    .get(unit)
+                    .is_some_and(|old| old < if fallback { TargetOffset::ZERO } else { depth })
+            })
+            .map(|(unit, _)| unit)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    // A veto-only safety cut cannot add blame, including when its target needs stock fallback.
+    let mut historical_retreat = false;
+    while !historical.is_empty() && !wanted.is_zero() && forbidden(history, &wanted, vetoes)? {
+        historical_retreat = true;
         let (next, reverted) = backstep(history, &wanted, &mut consumed, true)?;
         cursors.extend(reverted);
         wanted = if next == wanted {
@@ -142,11 +186,14 @@ pub fn plan(
     if wanted == *history.current() && answered.is_empty() {
         return Ok(None);
     }
-    let stopped = wanted
-        .iter()
-        .filter(|&(unit, depth)| history.current().get(unit).is_some_and(|old| old < depth))
-        .map(|(unit, _)| unit)
-        .collect();
+    if historical_retreat {
+        fallback = !wanted.is_zero() && !qualified(&wanted);
+    }
+    let profile = if fallback {
+        UnitProfile::zero(history.units())
+    } else {
+        wanted.clone()
+    };
     // Any transition actually undone by a safety cut is consumed too.
     for (unit, depth) in wanted.iter() {
         for link in history.ancestry(unit) {
@@ -161,7 +208,7 @@ pub fn plan(
         }
     }
     Ok(Some(Retreat {
-        profile: wanted.clone(),
+        profile,
         wanted,
         events: answered,
         cursors,

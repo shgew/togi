@@ -155,6 +155,16 @@ impl State {
         vetoes
     }
 
+    /// The veto-only identities, using the same enrollment rule as charges and raw-event stops.
+    pub(super) fn historical_vetoes(&self, vetoes: &[day::Veto]) -> Vec<EventId> {
+        let enrollment = self.first_enrollment();
+        vetoes
+            .iter()
+            .filter(|veto| self.precedes_enrollment(enrollment, &veto.event))
+            .map(|veto| veto.event.clone())
+            .collect()
+    }
+
     /// The machine's first campaign enrollment: this journal's first `campaign.start`, or the
     /// earlier original one an import carries. `None` until this journal enrolls, so no event is
     /// judged, charged or stopped on before then; enrolling judges them all at once.

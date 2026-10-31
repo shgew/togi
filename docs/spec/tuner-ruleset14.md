@@ -183,6 +183,8 @@ A permanent reset boundary ends raw tuning carry, but campaign ledger records cr
 
 **Crashes before the first enrollment:** a daily event whose crash happened before the machine's first campaign enrollment or start is a whole-profile veto and nothing else. It consumes no allowance, stops no unit and needs no applied-step ancestry, so a history made only of such events stays complete with the full allowance. This includes a manual record appended after the transition whose `Unobserved.at`, or whose named crashed boot's own timeline, precedes that start.
 
+If a late record makes the current applied D forbidden, retreat to a non-forbidden profile, using stock while the exact target is unqualified. Units shallowed only by that pre-enrollment veto, including its qualification fallback, do not stop; independently required in-campaign or adverse-evidence stops remain unchanged.
+
 The boundary is the earliest `campaign.start` of the machine, original or fresh, never a successor's restart. With no original start among the imported records, every imported crash that carries a timeline precedes it. A named boot's crash cannot be later than the first record that observed it, however late a copy of that record is written, and a boot other than the enrolling one with no record at or after the start ended before it.
 
 Identities with no recoverable timeline, such as a failed re-qualification, stay inside the campaign and are charged as before; events at or after the start keep every campaign rule. Imports keep the original provenance and deduplicate by original identity, and the first hold still starts at zero.

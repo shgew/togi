@@ -126,6 +126,7 @@ impl Fixture {
             ceilings: &self.ceilings,
             events: &self.events,
             vetoes: &vetoes,
+            historical_vetoes: &[],
             qualified: &self.qualified,
             failed: &self.failed,
             hold: HoldInput {

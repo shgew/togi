@@ -1017,6 +1017,187 @@ fn a_crash_after_the_campaign_enrolled_is_still_charged() {
     assert_eq!(journal.state.project().climb.campaign.unwrap().consumed, 1);
 }
 
+/// Append a manual record now, while retaining the instant (or named boot timeline) of the crash.
+fn record_crash_at(journal: &mut Journal, crashed: &CcdProfile, at: jiff::Timestamp, named: bool) {
+    if named {
+        let mut old = Journal::ready();
+        let predecessor: togi_journal::SessionId = "20231101T000000Z".parse().unwrap();
+        old.start_session("20231101T000000Z");
+        old.boot_start_at("boundary-crash", "1", crashed);
+        for event in old.events.iter().filter(|event| {
+            matches!(&event.payload, Payload::SessionStart(start) if start.session == predecessor)
+                || (matches!(event.payload, Payload::DayBootStart(_))
+                    && event.boot == BootId::from("boundary-crash".to_owned()))
+        }) {
+            let mut record = imported(event);
+            record.original.session = predecessor;
+            record.time = at;
+            journal.append(record.into(), &[]);
+        }
+    }
+    let entered = journal.now();
+    journal.append(
+        togi_journal::DayRecord {
+            boot: if named {
+                togi_journal::CrashedBoot::UncleanEnd {
+                    boot: BootId::from("boundary-crash".to_owned()),
+                }
+            } else {
+                togi_journal::CrashedBoot::Unobserved { at }
+            },
+            offsets: togi_journal::RecordedOffsets::new(offsets_of(crashed)).unwrap(),
+            source: togi_journal::OffsetSource::Entered { at: entered },
+            running: togi_journal::Running::Idle,
+            note: None,
+        }
+        .into(),
+        &[],
+    );
+}
+
+fn enrollment_time(journal: &Journal) -> jiff::Timestamp {
+    journal
+        .events
+        .iter()
+        .find(|event| matches!(event.payload, Payload::CampaignStart(_)))
+        .unwrap()
+        .time
+}
+
+#[test_case(-1, false, 0; "unobserved before enrollment")]
+#[test_case(0, false, 1; "unobserved at enrollment")]
+#[test_case(1, false, 1; "unobserved after enrollment")]
+#[test_case(-1, true, 0; "named boot before enrollment")]
+#[test_case(0, true, 1; "named boot at enrollment")]
+#[test_case(1, true, 1; "named boot after enrollment")]
+fn the_crash_identity_pins_the_strict_enrollment_boundary(
+    seconds: i64,
+    named: bool,
+    consumed: u32,
+) {
+    let (mut journal, target) = Journal::promoted_compact();
+    let at = jiff::Timestamp::from_second(enrollment_time(&journal).as_second() + seconds).unwrap();
+    record_crash_at(&mut journal, &target, at, named);
+    let mut query = cold_boot("day1", 60_000);
+    query.now = journal.now();
+    journal.settle_day(&query);
+    let projection = journal.state.project();
+    assert_eq!(
+        projection.climb.campaign.as_ref().unwrap().consumed,
+        consumed
+    );
+    assert_eq!(
+        projection.climb.units.iter().any(|unit| matches!(
+            unit.state,
+            togi_tuner::policy::ClimbUnitState::Finished { .. }
+        )),
+        consumed != 0
+    );
+    assert_eq!(projection.vetoes.len(), 1);
+    assert_eq!(replay(&journal.events).project(), projection);
+    assert_eq!(snapshot(&journal.state).project(), projection);
+}
+
+fn historical_retreat(named: bool) -> Journal {
+    let (mut source, target) = Journal::promoted_compact();
+    assert_eq!(
+        source.state.project().applied,
+        Some(togi_tuner::UnitProfile::of_ccd(&target))
+    );
+    let at = jiff::Timestamp::from_second(enrollment_time(&source).as_second() - 1).unwrap();
+    record_crash_at(&mut source, &target, at, named);
+    let mut query = cold_boot("day1", 60_000);
+    query.now = source.now();
+    let committed = source.settle_day(&query);
+    let retreat = steps(&committed)
+        .into_iter()
+        .find(|step| matches!(step.decision, ClimbAction::Retreat { .. }))
+        .unwrap()
+        .clone();
+    assert_eq!(crate::flow::profile(&retreat.proposed), zero());
+    assert!(matches!(
+        &retreat.decision,
+        ClimbAction::Retreat {
+            cause: togi_journal::ClimbRetreatCause::Veto { .. },
+            ..
+        }
+    ));
+    apply(&mut source, &retreat, 2, "day1");
+    source.settle_day(&query);
+    source
+}
+
+#[test_case(false; "an unobserved old crash")]
+#[test_case(true; "a named old boot")]
+fn a_late_historical_veto_retreats_an_applied_promotion_without_stopping_units(named: bool) {
+    let source = historical_retreat(named);
+    assert_eq!(
+        source
+            .events
+            .iter()
+            .filter(|event| matches!(
+                event.payload,
+                Payload::CampaignCharge(_) | Payload::UnitStop(_)
+            ))
+            .count(),
+        0
+    );
+    let successor = successor_importing(&source.events, 2);
+    for journal in [&source, &successor] {
+        let projection = journal.state.project();
+        let campaign = projection.climb.campaign.as_ref().unwrap();
+        assert_eq!(campaign.history, CampaignHistory::Complete {});
+        assert_eq!((campaign.consumed, campaign.remaining), (0, 2));
+        assert_eq!(
+            projection.applied,
+            Some(togi_tuner::UnitProfile::of_ccd(&zero()))
+        );
+        assert_eq!(
+            projection
+                .climb
+                .units
+                .iter()
+                .filter(|unit| matches!(
+                    unit.state,
+                    togi_tuner::policy::ClimbUnitState::Finished { .. }
+                ))
+                .count(),
+            0
+        );
+        assert_eq!(projection.vetoes.len(), 1);
+        assert_eq!(replay(&journal.events).project(), projection);
+        for cut in 0..=journal.events.len() {
+            let mut rebuilt = snapshot(&replay(&journal.events[..cut]));
+            for event in &journal.events[cut..] {
+                rebuilt.fold(event).unwrap();
+            }
+            assert_eq!(rebuilt.project(), projection, "snapshot cut {cut}");
+        }
+    }
+}
+
+#[test]
+fn a_retreat_without_stops_and_without_its_historical_veto_is_not_reconstructible() {
+    let source = historical_retreat(false);
+    let events: Vec<_> = source
+        .events
+        .into_iter()
+        .filter(|event| {
+            !matches!(
+                event.payload,
+                Payload::DayRecord(_) | Payload::DayEvent(_) | Payload::DayVeto(_)
+            )
+        })
+        .collect();
+    let successor = successor_of(&events);
+    assert_eq!(
+        successor.state.project().climb.campaign.unwrap().history,
+        CampaignHistory::Unreconstructible {
+            reason: "successful predecessor retreat is missing its permanent-stop evidence".into(),
+        }
+    );
+}
+
 /// A journal whose campaign enrolled after a crash at `crashed` and then received the manual record
 /// of that crash: the record is appended after enrollment, but the crash it names is older. `named`
 /// picks a named boot whose observer record is imported from a predecessor session over an unobserved
@@ -1244,6 +1425,9 @@ fn a_crash_after_the_original_enrollment_without_step_history_is_unreconstructib
 /// An event as the session importer copies it: an exposure keeps the identity of its trial, not its
 /// own journal seq.
 pub(crate) fn imported(event: &Event) -> togi_journal::DayImported {
+    if let Payload::DayImported(record) = &event.payload {
+        return record.clone();
+    }
     let wire: serde_json::Value = serde_json::from_str(&event.encode().unwrap()).unwrap();
     let original = if let Payload::ExposureObserved(observed) = &event.payload {
         togi_journal::Provenance {

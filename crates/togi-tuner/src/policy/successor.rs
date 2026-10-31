@@ -290,6 +290,7 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
     let mut raw = State::new(Params::SPEC);
     let mut steps = HashMap::new();
     let mut climbs = HashMap::new();
+    let mut historical_retreats = BTreeSet::new();
     let mut recorded_consumed = 0;
     for (index, (original, event)) in decoded.iter().enumerate() {
         validate_profile(original.session, &event.payload, &topologies)?;
@@ -322,6 +323,57 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
                     ),
                     decision,
                 );
+                if let togi_journal::ClimbAction::Retreat {
+                    cause: togi_journal::ClimbRetreatCause::Veto { event: id },
+                    ..
+                } = &decision.decision
+                {
+                    let named = identity(id, original.session, &identities);
+                    let actual = crate::day::CoreProfile::new(
+                        decision
+                            .before
+                            .cores
+                            .iter()
+                            .map(|(core, offset)| (core, offset.observed()))
+                            .collect(),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let target = crate::day::CoreProfile::new(
+                        decision
+                            .proposed
+                            .cores
+                            .iter()
+                            .map(|(core, offset)| (core, offset.observed()))
+                            .collect(),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let mut historical = false;
+                    let mut campaign = false;
+                    let mut escaped = true;
+                    for veto in &history.vetoes {
+                        if matches!(latest.get(&veto.event), Some(Classification::NonCpu {})) {
+                            continue;
+                        }
+                        let (ObservedProfile::Ccd { cores, .. }
+                        | ObservedProfile::PerCore { cores }) = &veto.profile;
+                        let profile = crate::day::CoreProfile::new(*cores)
+                            .map_err(|error| error.to_string())?;
+                        if profile.forbids(&actual) {
+                            if before(&veto.event) {
+                                historical |= veto.event == named;
+                            } else {
+                                campaign = true;
+                            }
+                        }
+                        escaped &= !profile.forbids(&target);
+                    }
+                    // A missing stop is justified by positive prefix evidence, never by the
+                    // absence of a receipt: the named historical veto binds and the cut escapes
+                    // every active veto, with no in-campaign veto requiring permanent blame.
+                    if historical && !campaign && escaped {
+                        historical_retreats.insert((original.session, original.seq.get()));
+                    }
+                }
             }
             Payload::DayApplied(applied) => {
                 if let ApplyCause::Step { decision } = applied.cause {
@@ -627,6 +679,7 @@ fn recover(records: &[DayImported], unknown: &[ImportedRecordRef]) -> Result<His
             && let Some(step) = climbs.get(&(original.session, decision))
             && let togi_journal::ClimbAction::Retreat { units, .. } = &step.decision
             && units.iter().any(|unit| !history.stops.contains_key(unit))
+            && !historical_retreats.contains(&(original.session, decision.0))
         {
             return Err(
                 "successful predecessor retreat is missing its permanent-stop evidence".into(),
@@ -1403,6 +1456,67 @@ mod tests {
         };
         assert!(history.charges.is_empty());
         assert_eq!(history.vetoes.len(), 1);
+    }
+
+    #[test]
+    fn a_named_crash_without_a_campaign_start_or_application_ancestry_is_only_one_veto() {
+        let crash = record(
+            "day.record",
+            1,
+            &json!({
+                "boot":{"kind":"unclean_end","boot":"legacy-crash"},
+                "offsets":{"0":-5},"source":{"kind":"entered","at":"2026-10-01T00:00:00Z"},
+                "running":"idle"
+            }),
+        );
+        let Reconstruction::Complete(history) = reconstruct(&[header(), crash.clone(), crash], &[])
+        else {
+            panic!("a named crash without a campaign needs no application ancestry");
+        };
+        assert_eq!(history.charges.len(), 0);
+        assert_eq!(history.stops.len(), 0);
+        assert_eq!(history.vetoes.len(), 1);
+        assert_eq!(
+            history.vetoes[0].event,
+            Identity::Boot(BootId::from("legacy-crash".to_owned()))
+        );
+    }
+
+    #[test_case::test_case(-1, false; "a named crash observed before enrollment")]
+    #[test_case::test_case(0, true; "a named crash observed at enrollment")]
+    #[test_case::test_case(1, true; "a named crash observed after enrollment")]
+    fn a_named_crash_observations_enrollment_boundary_is_strict(
+        seconds: i64,
+        needs_ancestry: bool,
+    ) {
+        let start = enrollment();
+        let mut crash = record(
+            "day.record",
+            5,
+            &json!({
+                "boot":{"kind":"unclean_end","boot":"unobserved-legacy-boot"},
+                "offsets":{"0":-5},"source":{"kind":"entered","at":"2026-10-01T00:00:00Z"},
+                "running":"idle"
+            }),
+        );
+        // No observer timeline exists for this boot: only the receipt dates its crash.
+        crash.time = Timestamp::from_second(start.time.as_second() + seconds).unwrap();
+        let refusal = match reconstruct(&[header(), start, crash], &[]) {
+            Reconstruction::Complete(history) => {
+                assert_eq!(history.charges.len(), 0);
+                assert_eq!(history.stops.len(), 0);
+                assert_eq!(history.vetoes.len(), 1);
+                None
+            }
+            Reconstruction::Unreconstructible { reason } => Some(reason),
+        };
+        assert_eq!(refusal.is_some(), needs_ancestry);
+        if let Some(reason) = refusal {
+            assert_eq!(
+                reason,
+                "CPU-suspect event is missing successful applied-step ancestry"
+            );
+        }
     }
 
     #[test]

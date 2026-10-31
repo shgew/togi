@@ -579,25 +579,36 @@ impl State {
                 },
                 units: changed,
             },
-            climb::ClimbAction::Retreat(retreat) => journal::ClimbAction::Retreat {
-                units: changed,
-                cause: if !retreat.adverse_units.is_empty() {
-                    journal::ClimbRetreatCause::AdverseCeiling {
-                        edges: edges.clone(),
-                    }
-                } else if let Some(event) = retreat
-                    .events
-                    .first()
-                    .and_then(|event| self.journal_event_id(event))
-                {
-                    journal::ClimbRetreatCause::Event { event }
-                } else {
-                    journal::ClimbRetreatCause::Completion {}
-                },
-                wanted: (retreat.profile != retreat.wanted)
-                    .then(|| vector(&retreat.wanted, history.units()))
-                    .transpose()?,
-            },
+            climb::ClimbAction::Retreat(retreat) => {
+                let actual = history.actual(&plan.before)?;
+                let veto = self.active_vetoes(view).iter().find_map(|veto| {
+                    veto.profile
+                        .forbids(&actual)
+                        .then(|| self.journal_event_id(&veto.event))
+                        .flatten()
+                });
+                journal::ClimbAction::Retreat {
+                    units: changed,
+                    cause: if !retreat.adverse_units.is_empty() {
+                        journal::ClimbRetreatCause::AdverseCeiling {
+                            edges: edges.clone(),
+                        }
+                    } else if let Some(event) = retreat
+                        .events
+                        .first()
+                        .and_then(|event| self.journal_event_id(event))
+                    {
+                        journal::ClimbRetreatCause::Event { event }
+                    } else if let Some(event) = veto {
+                        journal::ClimbRetreatCause::Veto { event }
+                    } else {
+                        journal::ClimbRetreatCause::Completion {}
+                    },
+                    wanted: (retreat.profile != retreat.wanted)
+                        .then(|| vector(&retreat.wanted, history.units()))
+                        .transpose()?,
+                }
+            }
         };
         let certificate = self.qualification_seq_for_vector(&proposed);
         let hold = self.climb_hold()?;
