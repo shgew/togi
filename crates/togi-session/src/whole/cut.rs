@@ -806,7 +806,7 @@ fn cuts(played: &[Played], from: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// Each nextest test owns one partition; the recovery runner bounds concurrent shards to two.
+/// Each nextest test owns one partition; its CI check pairs the crash and kill campaigns at host concurrency.
 const CUT_SHARDS: usize = 8;
 
 fn shard_cuts(cuts: &[(usize, usize)], shard: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
