@@ -51,7 +51,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// profile daily evidence under the 95% fixed-rate model. A Night part shows elapsed
 /// observed time, queue shares, mapping, outstanding qualification and reproductions.
 /// Status shows policy facts; it computes no ceiling or eligibility itself.
-/// A defect names its recorded decisions and the `togi reset --all` that starts fresh.
+/// A defect names its recorded decisions and affected cores. A too-cautious one says the session
+/// continues; a too-aggressive one names the `togi reset --all` that starts fresh.
 /// After daily observations exist, a Day section lists boots, checkpointed hours per read-back
 /// profile, clean/unclean ends and the last unclean boot's reset reason.
 /// Each unclean end of a day-observed boot becomes a question until answered: what togi saw, the
@@ -552,9 +553,9 @@ impl Status<'_> {
                 .iter()
                 .map(|seq| format!("#{seq}"))
                 .collect();
-            let direction = match defect.direction {
-                DefectDirection::TooCautious => "too cautious",
-                DefectDirection::TooAggressive => "too aggressive",
+            let (direction, advice) = match defect.direction {
+                DefectDirection::TooCautious => ("too cautious", "  the session continues\n"),
+                DefectDirection::TooAggressive => ("too aggressive", "  togi reset --all\n"),
             };
             let text = format!(
                 "defect {}: {} ({direction}; fixed by pull request #{}); decisions {} affected cores {}",
@@ -565,7 +566,7 @@ impl Status<'_> {
                 cores_of(defect.cores)
             );
             wrap(self.out, "\n", "  ", &text);
-            self.out.push_str("  togi reset --all\n");
+            self.out.push_str(advice);
         }
     }
 }
