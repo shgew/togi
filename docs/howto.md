@@ -100,11 +100,11 @@ Then check that the machine is ready, without starting a session:
 sudo togi doctor
 ```
 
-It makes the checks `sudo togi run` makes before tuning ([Preflight](spec/runtime.md#preflight)) and prints one row per check: `ok`, `FAIL`, `warn` or `skipped`. The last line is `ready`, or `not ready:` with the failed checks; fix those first. A `warn` on `watchdog` means no hardware watchdog is active in this boot, which the tuning boot provides. A `warn` on `bios_context` means the recorded BIOS context changed: the next run records the new context in the same session and follows [firmware invalidation](spec/tuner.md#firmware), rather than archiving it. `doctor` appends nothing to the journal and changes no offset; [Commands](spec/runtime.md#commands) describes what it does without `sudo`.
+It makes the checks `sudo togi run` makes before tuning ([Preflight](spec/runtime.md#preflight)) and prints one row per check: `ok`, `FAIL`, `warn` or `skipped`. The last line is `ready`, or `not ready:` with the failed checks; fix those first. A `warn` on `watchdog` means no hardware watchdog is active in this boot, which the tuning boot provides. A `warn` on `bios_context` means the recorded BIOS context changed: the next run records the new context in the same session and follows [firmware invalidation](spec/tuner.md#firmware), rather than archiving it; tuning there needs a new stock attestation from `sudo togi night` in a normal boot. `doctor` appends nothing to the journal and changes no offset; [Commands](spec/runtime.md#commands) describes what it does without `sudo`.
 
 ## 3. A quick in-session test
 
-Start sessions from the [tuning boot](#4-overnight-the-tuning-boot), especially after a breaking update: it has hardware-watchdog reset protection. An in-session run is an optional way to watch a few trials on the desktop, not the recommended way to start a session.
+Start sessions from the [tuning boot](#4-overnight-the-tuning-boot), especially after a breaking update: it has hardware-watchdog reset protection. An in-session run is an optional way to watch a few trials on the desktop, not the recommended way to start a session. Either way, first give the stock attestation in a normal boot with `sudo togi night`, or with `n` on `sudo togi watch`, which asks the same confirmation; without a current one `sudo togi run` ends before any trial with `stock_unattested` and exit 12 ([Night and day](spec/runtime.md#night-and-day)).
 
 ```sh
 sudo togi run
@@ -188,7 +188,7 @@ Times are RFC 3339 or local (`2026-10-19 14:30`). `--running` is `idle`, `deskto
 
 `togi day notify` sends a desktop notification for each pending question using the installed `notify-send` (from libnotify; togi adds no notification library). On KDE Plasma (`XDG_CURRENT_DESKTOP` containing `KDE`) the notification has the four answers as buttons and waits up to two minutes for one. On other desktops it is a plain notification naming the command, because togi does not query what a notification server supports; answer with `togi day answer`. Dismissing a notification answers nothing, and the question stays in `status` and `watch`. The module's `togi-day-notify` user service runs it for each user in `services.togi.day.users`; elsewhere run `togi day notify` in your graphical session yourself.
 
-Daily observation requires an existing compatible session journal. It refuses to create a session or transition one written by another ruleset. Start a session through the tuning boot first. Stop daily observation before `togi run` or `togi reset` in a normal boot: they share the host and writer locks. `togi status`, `togi events` and `togi watch` remain lock-free while observation runs.
+Daily observation requires an existing compatible session journal. It refuses to create a session or transition one written by another ruleset. Start a session with `sudo togi night` and the tuning boot first. Stop daily observation before `togi run` or `togi reset` in a normal boot: they share the host and writer locks. `togi status`, `togi events` and `togi watch` remain lock-free while observation runs.
 
 To run it automatically in normal boots, enable the NixOS module option after creating a session:
 
@@ -287,7 +287,7 @@ End the night with `F10` on the tuning dashboard and answer `y` to `Reboot into 
 
 Ending restores the previous boot policy, not a normal generation chosen by togi. On systemd-boot that includes an absent EFI default, an explicit entry, a glob or `@saved`, together with its last-booted state. A newer default you select during the night wins over the remembered one. Stale saved IDs are restored verbatim and systemd-boot applies its normal fallback.
 
-You can also pick the tuning specialisation in the boot menu. GRUB remembers that choice automatically. systemd-boot remembers it only with effective `@saved`; with an explicit default or pattern, crash reboots follow that policy instead. Prefer `togi night` for unattended crash recovery with any policy. The module installs the loader tools and writes `/etc/togi/night.json`; see [Night and day](spec/runtime.md#night-and-day) for the exact restoration rules.
+You can also pick the tuning specialisation in the boot menu. GRUB remembers that choice automatically. systemd-boot remembers it only with effective `@saved`; with an explicit default or pattern, crash reboots follow that policy instead. Prefer `togi night` for unattended crash recovery with any policy. A menu-picked tuning boot runs no stock confirmation of its own: without a current attestation from an earlier `togi night` in a normal boot, it ends before any trial with `stock_unattested` (exit 12); a reset, a ruleset transition or a firmware change needs a new answer first ([Night and day](spec/runtime.md#night-and-day)). The module installs the loader tools and writes `/etc/togi/night.json`; see [Night and day](spec/runtime.md#night-and-day) for the exact restoration rules.
 
 For a GPU-rendered terminal instead of the Linux console, enable kmscon and rebuild before selecting the tuning boot:
 
@@ -312,7 +312,7 @@ The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed t
 
 The tuning boot also saves kernel messages on an orderly reboot or shutdown, as well as panic ([Tuning boot](spec/runtime.md#tuning-boot)). After an unclean togi boot, `togi events --json --kind crash.detected` includes `pstore.path` and the last lines of the saved kernel messages when it finds that boot's matching EFI pstore archive ([Trial outcome](spec/workloads.md#trial-outcome)). The archive stays under `/var/lib/systemd/pstore/`.
 
-A night works through its queues (reproduction, qualification, mapping, controls, requalification) by their shares of elapsed observed time, then the filler ([Night order](spec/tuner.md#night-order-and-reserved-budgets)). R7 loads run each CCD's full load, then partial loads derived from measured requests, and the all-core load ([coverage matrix](spec/workloads.md#coverage-matrix)). `status` and the dashboard show each queue's share used.
+A night works through its queues (reproduction, qualification, mapping, requalification) by their shares of elapsed observed time, then the filler ([Night order](spec/tuner.md#night-order-and-reserved-budgets)). R7 loads run each CCD's full load, then partial loads derived from measured requests, and the all-core load ([coverage matrix](spec/workloads.md#coverage-matrix)). `status` and the dashboard show each queue's share used.
 
 Mapping descends one CCD at a time with only that CCD tuned, so a failure is charged to that CCD ([Night edge U](spec/tuner.md#night-edge-u)). Failures at a nonzero whole profile stay profile-level evidence until isolated testing locates them.
 
@@ -353,8 +353,9 @@ F10 in the dashboard or a reboot (the power button included), and restores
 every core to CO 0 when it stops. A crash reboot into the tuning boot continues
 the same night; the next run after you end it opens a new one. A direct run
 or menu-started tuning boot without the current stock attestation stops at
-stock with `stock_unattested` (exit 12): use the normal `togi night`
-confirmation. An empty admissible nonzero queue stops with `no_nonzero_work`
+stock with `stock_unattested` (exit 12): give it through the normal-boot
+`togi night` confirmation first ([Night and day](spec/runtime.md#night-and-day)).
+An empty admissible nonzero queue stops with `no_nonzero_work`
 (exit 12), not a stock trial. Excluded backends and runtime safety stops
 retain their [named stopping conditions](spec/tuner.md#night-query-results).
 
@@ -396,11 +397,11 @@ Leave reasons survive outside the tuning journal as one pending `togi_leave_reas
 
 **The Go to Rust switch is the exception to everything below.** The Rust build neither archives nor imports from a Go session: move the Go state directory aside first, as [Go to Rust cutover](#go-to-rust-cutover) says.
 
-Update configuration before the tuning boot; invalid configuration exits 2 before archiving. Rebuild and reboot into the tuning boot with its active watchdog. The Ruleset 14 cutover archives Ruleset 13 unchanged and starts the durably identified successor at verified stock; no manual reset is needed.
+Update configuration before the tuning boot; invalid configuration exits 2 before archiving. Rebuild, then in a normal boot run `sudo togi night` and answer its stock-stability confirmation again: the successor is a new session, and archived consent is not imported ([Night and day](spec/runtime.md#night-and-day)). Reboot into the tuning boot with its active watchdog. Going straight to the tuning boot, or running `sudo togi run`, ends before any trial with `stock_unattested` (exit 12). The Ruleset 14 cutover archives Ruleset 13 unchanged and starts the durably identified successor at verified stock; no manual reset is needed.
 
 It imports original-identity raw daily observations, compatible `exposure.observed`, and CPU-suspect events, stops and vetoes needed to reconstruct the campaign. Inspect commitments with `togi events --kind successor.imported` and `togi events --kind campaign.start`. Missing/unreconstructible campaign history blocks nonzero exploration; old S, qualification conclusions and nonzero D are never permission.
 
-The two-event machine allowance includes provisional charges and is never renewed by restart, reset, firmware change, new session or reboot. Later non-CPU reclassification is displayed separately without refund. `sudo togi reset --all` stops raw tuning carry at a permanent boundary, but campaign-ledger records cross it. There is no per-core reset.
+The two-event machine allowance includes provisional charges and is never renewed by restart, reset, firmware change, new session or reboot. Later non-CPU reclassification is displayed separately without refund. `sudo togi reset --all` stops raw tuning carry at a permanent boundary, but campaign-ledger records cross it. There is no per-core reset. A reset starts a new session, so answer `sudo togi night`'s stock-stability confirmation again before tuning; the old answer is not carried over.
 
 A firmware change remains in-session: it returns to stock and requires new-context exact qualification and 50 clean stock hours before guarded restoration of the previous full profile. It never reopens a stopped unit.
 
@@ -418,7 +419,7 @@ Cut over, as root, before the first Rust boot:
 2. Check that the backup name is free, counting a dangling symlink as taken: `sudo sh -c 'test ! -e /var/lib/togi-go && test ! -L /var/lib/togi-go && echo free'`. If it prints nothing, something already sits there, perhaps a backup of an earlier attempt. Never overwrite it: choose another name for the backup and use that name everywhere below, or stop and look at what is there.
 3. Move the Go state aside without overwriting: `sudo mv -nT /var/lib/togi /var/lib/togi-go`. `-n` refuses to replace an existing destination, but `mv` can exit 0 when it skips, so its status proves nothing. Confirm that the source is gone and the destination exists: `sudo sh -c 'test -d /var/lib/togi-go && test ! -e /var/lib/togi && test ! -L /var/lib/togi && echo moved'`. If it does not print `moved`, stop: nothing was overwritten, but the cutover has not happened. Nothing in the directory is deleted, edited or read by the Rust build, and the Go build's session, archives and `state.json` stay there as they were.
 4. Rebuild with the Rust package: update the `togi` input to the cutover merge commit or later, where `default` is the Rust build ([section 1](#1-install-the-module)), and leave `services.togi.package` at its default.
-5. Reboot and pick "NixOS - togi". The Rust build finds no `/var/lib/togi`, creates it and starts a fresh session without importing Go observations ([Transitions](spec/journal.md#transitions)). Nothing converts the Go journal, so the Go session's progress is not in the new one.
+5. Reboot into a normal generation, not "NixOS - togi", and run `sudo togi night`: the new session has no stock attestation, and a tuning boot without one ends before any trial with `stock_unattested` (exit 12). After you answer its stock-stability confirmation the machine reboots into "NixOS - togi". The Rust build finds no Go journal, starts a fresh session without importing Go observations ([Transitions](spec/journal.md#transitions)) and nothing converts the Go journal, so the Go session's progress is not in the new one. See [Night and day](spec/runtime.md#night-and-day).
 
 The only state directory is `/var/lib/togi`, used by one build. The moved Go directory is a plain directory under `/var/lib`, never a second state directory: no `--state-dir` and no `-rs` suffix. There is no rollback to the Go build; the directory stays at the backup path chosen above for reference.
 
@@ -429,7 +430,7 @@ A crash while the very first journal line was being written can leave `events.js
 1. Stop every writer and reader: `sudo systemctl stop togi.service togi-watch.service` and any `togi run` or `togi watch` started by hand. Check that `pgrep -a -x togi` lists nothing. Do not boot "NixOS - togi" again until step 4.
 2. Keep the file as it is, moved out of the way without overwriting: pick a free name such as `/var/lib/togi/events.jsonl.torn-20261012`, check it with `sudo sh -c 'test ! -e NAME && test ! -L NAME && echo free'`, then `sudo mv -n /var/lib/togi/events.jsonl NAME` and confirm that `events.jsonl` is gone and `NAME` exists, as in the cutover steps (`mv -n` can exit 0 when it skips). Leave `archive/`, `trials/`, `lock`, `state.json` and everything else in place. The new session follows [Transitions](spec/journal.md#transitions) for any pending raw-day import: only eligible observations identified by its durable marker may be imported, never old tuning decisions.
 3. Check with `sudo togi status`: it now fails with a missing-journal error naming `events.jsonl` (no `no session yet` message; that appears only for a journal that exists). That error only shows the file is gone; it proves nothing about what the file was. Keep the moved file as evidence.
-4. Reboot and pick "NixOS - togi", or run `sudo togi run`. A new session starts. The kept file is evidence for a bug report and nothing reads it.
+4. Reboot into a normal generation and run `sudo togi night`; after you answer its stock-stability confirmation it reboots into "NixOS - togi" and a new session starts. Picking that entry in the menu first, or running `sudo togi run`, gives the new session no attestation and ends before any trial with `stock_unattested` (exit 12) ([Night and day](spec/runtime.md#night-and-day)). The kept file is evidence for a bug report and nothing reads it.
 
 ## 8. When the tuning boot does not reach togi
 
