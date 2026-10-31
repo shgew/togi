@@ -101,6 +101,8 @@ Rejected:
 
 Ordinary tests and simulations use `togi-journal`'s `MemFs` and in-memory fakes of the `togi-machine` seams, with time from the injected `Clock` or Tokio's paused clock. They do no network I/O, start no processes, leave no process-wide state behind and never call `fsync`, directly or through production code. Inject sync failures or record durability ordering instead; production retains its per-event durability.
 
+Status, dashboard and replay tests read compile-time journals from `togi-watchtest`; each scenario is a recorded prefix of one of five simulated bases. The determinism tests still compare two fresh simulations and check the committed base bytes and scenario cuts against them. To regenerate the fixtures explicitly, run `TOGI_FIXTURES="${TMPDIR:-/tmp}/togi-watchtest-fixtures" cargo test -p togi-watchtest real_fs_generate_fixtures -- --ignored`, then review and copy the emitted files into `crates/togi-watchtest/src/fixtures/`. Ordinary fixture checks remain in memory; the ignored generator follows the explicit temporary-output convention used for rendered snapshots.
+
 Disk is permitted only for:
 
 - Kernel-dependent filesystem or process behavior in a named `real_fs_` or `real_process_` test, with files confined to its own temporary directory and sync disabled; tests behind the `hardware` Cargo feature run by `just hardware`; and VM tests exercising the shipped binary's real durability.

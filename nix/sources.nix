@@ -72,10 +72,11 @@ let
       )
     )) (testOnly crate);
 
-  # Files outside its directory that a crate reads when it compiles. The journal's build script hashes the
-  # production source of the reducer crates, its test-only list and its fingerprint module.
+  # Non-Rust files and sources outside a member's directory that it reads when it compiles. The journal's build
+  # script hashes the production source of the reducer crates, its test-only list and its fingerprint module.
   compileInputs = {
     togi-version = [ ../version.txt ];
+    togi-watchtest = [ ../crates/togi-watchtest/src/fixtures ];
     togi-journal = [
       ../version.txt
       ../crates/test-only.txt

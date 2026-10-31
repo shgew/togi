@@ -88,3 +88,52 @@ fn the_filler_base_halts_after_its_first_filler_trial() {
         )
     );
 }
+
+/// Regenerate fixtures explicitly, outside the ordinary in-memory tests:
+/// `TOGI_FIXTURES="${TMPDIR:-/tmp}/togi-watchtest-fixtures" cargo test -p togi-watchtest real_fs_generate_fixtures -- --ignored`.
+/// Review and copy the emitted files into `src/fixtures/`.
+#[test]
+#[ignore = "writes regenerated journal fixtures to an explicitly supplied temporary directory"]
+fn real_fs_generate_fixtures() {
+    use std::fmt::Write as _;
+    use std::io::Write as _;
+
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use togi_watchtest::Scenario;
+
+    let directory = std::env::var_os("TOGI_FIXTURES").expect("set TOGI_FIXTURES");
+    let directory = std::path::Path::new(&directory);
+    assert!(
+        directory.starts_with(std::env::temp_dir()),
+        "use a temporary directory"
+    );
+    std::fs::create_dir_all(directory).expect("create the fixture output directory");
+    let mut cuts = String::from("match self {\n");
+    for base in Base::ALL {
+        let events = base.simulate().expect("the base simulates");
+        let mut journal = GzEncoder::new(Vec::new(), Compression::default());
+        for event in &events {
+            writeln!(journal, "{}", event.encode().expect("an event encodes"))
+                .expect("compress a fixture event");
+        }
+        std::fs::write(
+            directory.join(format!("{base:?}.jsonl.gz")),
+            journal.finish().expect("finish the compressed fixture"),
+        )
+        .expect("write the base fixture");
+        for scenario in Scenario::ALL
+            .into_iter()
+            .filter(|scenario| scenario.base() == base)
+        {
+            let events = scenario
+                .events_from(&events)
+                .expect("the scenario builds from the fresh simulation");
+            writeln!(cuts, "    Self::{scenario:?} => {},", events.len())
+                .expect("write the scenario cut");
+        }
+    }
+    cuts.push_str("}\n");
+    std::fs::write(directory.join("scenario-cuts.inc"), cuts)
+        .expect("write the scenario cut fixtures");
+}

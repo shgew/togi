@@ -21,6 +21,8 @@ pub enum Error {
     Session(Vec<SessionError>),
     #[error("read the simulated journal")]
     History(#[from] HistoryError),
+    #[error("read the compile-time journal fixture")]
+    ReadFixture(#[from] togi_journal::ReadError),
     #[error("the simulation did not stop within {0} boots")]
     Capped(NonZeroU32),
     #[error("build the simulated machine")]
@@ -41,8 +43,8 @@ pub enum Error {
         #[source]
         source: Box<Error>,
     },
-    /// The simulation every caller of one base shares failed; each caller gets the same failure.
-    #[error("run the shared simulation")]
+    /// The compile-time journal fixture every caller of one base shares failed to decode.
+    #[error("read the shared journal fixture")]
     Shared(#[source] Arc<Error>),
     #[error("fixture: {0}")]
     Fixture(String),

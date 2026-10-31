@@ -6,7 +6,7 @@ use togi_machine::{Regime, TargetOffset};
 use crate::cut::{before_crash_detected, cut_at, cut_passed_trial, cut_trial};
 use crate::{Base, Error};
 
-/// A watch golden scenario cut from a live bounded-exploration session at the named state.
+/// A watch golden scenario captured from a live bounded-exploration session at the named state.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Scenario {
     /// The first night's first CO-0 control trial has started.
@@ -81,11 +81,13 @@ impl Scenario {
         }
     }
 
-    /// The scenario's journal. Its base simulation runs once per process; the cut is copied.
+    /// The compile-time scenario fixture, decoded only through its recorded prefix without simulating or cutting.
     pub fn events(self) -> Result<Vec<Event>, Error> {
         self.base()
-            .events()
-            .and_then(|base| self.cut(base))
+            .fixture_events()
+            .take(self.fixture_len())
+            .collect::<Result<_, _>>()
+            .map_err(Error::ReadFixture)
             .map_err(|source| self.failed(source))
     }
 
@@ -93,6 +95,10 @@ impl Scenario {
     /// [`Base::simulate`].
     pub fn events_from(self, base: &[Event]) -> Result<Vec<Event>, Error> {
         self.cut(base).map_err(|source| self.failed(source))
+    }
+
+    const fn fixture_len(self) -> usize {
+        include!("fixtures/scenario-cuts.inc")
     }
 
     fn failed(self, source: Error) -> Error {

@@ -1,13 +1,16 @@
 use std::cell::RefCell;
+use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use flate2::read::MultiGzDecoder;
 use jiff::SignedDuration;
 use togi_config::Config;
 use togi_journal::{
-    Activity, DayBootStart, Event, EventKind, Payload, Queue, SessionStart, Stamp, TrialId,
+    Activity, DayBootStart, Event, EventKind, EventReader, Payload, Queue, ReadError, SessionStart,
+    Stamp, TrialId,
 };
 use togi_machine::{CoreId, Machine};
 use togi_simrun::day_night::{
@@ -70,7 +73,7 @@ impl Base {
         Self::DeadEnd,
     ];
 
-    /// Simulates the session afresh. [`Base::events`] is the same journal, simulated once per process.
+    /// Simulates the session afresh. [`Base::events`] reads the same journal from a compile-time fixture.
     pub fn simulate(self) -> Result<Vec<Event>, Error> {
         match self {
             Self::Night => simulate(default_machine(1)?, Config::default(), None, NIGHT),
@@ -91,15 +94,30 @@ impl Base {
         }
     }
 
-    /// The simulated journal, simulated once per process.
+    /// The compile-time journal fixture, decoded once per process without running a simulation.
     pub fn events(self) -> Result<&'static [Event], Error> {
         static CELLS: [OnceLock<Result<Vec<Event>, Arc<Error>>>; Base::ALL.len()] =
             [const { OnceLock::new() }; Base::ALL.len()];
-        let index = Self::ALL.iter().position(|base| *base == self).unwrap_or(0);
+        let index = self as usize;
         CELLS[index]
-            .get_or_init(|| self.simulate().map_err(Arc::new))
+            .get_or_init(|| {
+                self.fixture_events()
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|source| Arc::new(Error::ReadFixture(source)))
+            })
             .as_deref()
             .map_err(|error| Error::Shared(Arc::clone(error)))
+    }
+
+    pub(crate) fn fixture_events(self) -> impl Iterator<Item = Result<Event, ReadError>> {
+        let bytes: &[u8] = match self {
+            Self::Night => include_bytes!("fixtures/Night.jsonl.gz"),
+            Self::Mapped => include_bytes!("fixtures/Mapped.jsonl.gz"),
+            Self::Filler => include_bytes!("fixtures/Filler.jsonl.gz"),
+            Self::Calendar => include_bytes!("fixtures/Calendar.jsonl.gz"),
+            Self::DeadEnd => include_bytes!("fixtures/DeadEnd.jsonl.gz"),
+        };
+        EventReader::new(BufReader::new(MultiGzDecoder::new(bytes)))
     }
 }
 

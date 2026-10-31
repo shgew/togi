@@ -1,22 +1,57 @@
-use togi_journal::Payload;
+use std::io::{BufRead, BufReader};
+
+use flate2::read::MultiGzDecoder;
+use togi_journal::{Event, Payload};
 use togi_watchtest::{Base, Scenario};
 
-use crate::support::lines;
+fn assert_same_journal(first: &[Event], second: &[Event], label: impl std::fmt::Debug) {
+    assert_eq!(first.len(), second.len(), "{label:?}");
+    for (first, second) in first.iter().zip(second) {
+        assert_eq!(
+            first.encode().expect("an event encodes"),
+            second.encode().expect("an event encodes"),
+            "{label:?}: #{}",
+            first.seq.get()
+        );
+    }
+}
 
-fn identical_when_built_twice(base: Base) {
-    let afresh = base.simulate().expect("the base simulates");
-    let shared = base.events().expect("the shared base simulates");
-    assert_eq!(lines(&afresh), lines(shared));
+fn identical_when_built_twice(base: Base, compressed_fixture: &[u8]) {
+    let afresh = base.simulate().expect("the first base simulates");
+    let again = base.simulate().expect("the second base simulates");
+    assert_same_journal(&afresh, &again, base);
+    let shared = base.events().expect("the base fixture decodes");
+    assert_same_journal(&afresh, shared, base);
+
+    // Check the actual uncompressed fixture bytes too, including every newline and the exact end of the file.
+    let mut fixture = BufReader::new(MultiGzDecoder::new(compressed_fixture));
+    let mut line = String::new();
+    for event in &afresh {
+        line.clear();
+        fixture.read_line(&mut line).expect("read a fixture line");
+        let mut expected = event.encode().expect("an event encodes");
+        expected.push('\n');
+        assert_eq!(line, expected, "{base:?}: #{}", event.seq.get());
+    }
+    assert_eq!(
+        fixture.read_line(&mut line).expect("read the fixture end"),
+        0,
+        "{base:?}: the fixture has no extra bytes"
+    );
     for scenario in Scenario::ALL
         .into_iter()
         .filter(|scenario| scenario.base() == base)
     {
-        let first = scenario.events().expect("the scenario builds");
-        let second = scenario
+        let first = scenario
             .events_from(&afresh)
+            .expect("the scenario builds from the first simulation");
+        let second = scenario
+            .events_from(&again)
             .expect("the scenario builds from the second simulation");
         assert!(!first.is_empty(), "{scenario}");
-        assert_eq!(lines(&first), lines(&second), "{scenario}");
+        assert_same_journal(&first, &second, scenario);
+        let fixture = scenario.events().expect("the scenario fixture decodes");
+        assert_same_journal(&first, &fixture, scenario);
     }
 }
 
@@ -25,7 +60,10 @@ macro_rules! determinism {
         $(
             #[test]
             fn $test() {
-                identical_when_built_twice(Base::$base);
+                identical_when_built_twice(
+                    Base::$base,
+                    include_bytes!(concat!("../../src/fixtures/", stringify!($base), ".jsonl.gz")),
+                );
             }
         )+
     };
@@ -36,6 +74,7 @@ determinism! {
     mapped_and_its_scenarios_build_byte_identical_journals_twice: Mapped,
     filler_and_its_scenarios_build_byte_identical_journals_twice: Filler,
     dead_end_and_its_scenarios_build_byte_identical_journals_twice: DeadEnd,
+    calendar_and_its_scenarios_build_byte_identical_journals_twice: Calendar,
 }
 
 #[test_case::test_case(Scenario::Controls; "controls")]

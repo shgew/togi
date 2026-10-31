@@ -2187,6 +2187,7 @@ dependencies = [
 name = "togi-watchtest"
 version = "0.0.0"
 dependencies = [
+ "flate2",
  "jiff",
  "test-case",
  "thiserror",

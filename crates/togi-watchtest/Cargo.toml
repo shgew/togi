@@ -7,6 +7,7 @@ publish.workspace = true
 description = "Deterministic simulated session journals for the dashboard, replay and status tests"
 
 [dependencies]
+flate2.workspace = true
 jiff.workspace = true
 thiserror.workspace = true
 togi-config.workspace = true
