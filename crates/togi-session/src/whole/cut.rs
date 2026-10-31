@@ -658,7 +658,7 @@ impl Snapshot {
             sim: Simulator::restore(model.clone(), None, self.machine.clone()).unwrap(),
             mem,
             config: Config::default(),
-            defects: &[],
+            defects: togi_defect::KNOWN_DEFECTS,
         }
     }
 }

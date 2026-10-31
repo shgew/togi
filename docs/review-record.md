@@ -8,14 +8,14 @@ The GitHub App robotogi posts one review record comment for each reviewed head c
 
 Exception: when a version-1 record's historical base cannot be recovered, the next record links it but covers the whole current layer conservatively, and states why a minimal delta could not be established. It may repeat files and reviewers for that coverage; prior findings are still inherited through the chain.
 
-Passing builds and tests do not establish that anyone read the diff. The public record names the exact head, coverage, reviewers and every finding's priority and outcome; the App's `review` check links it on that head. Merge requires CI, this check from robotogi and resolved review threads. Success needs an outcome for every finding accumulated through the chain and no open P0/P1; deferring one does not clear the gate. The record is evidence of independent review, not a guarantee of no defects.
+Passing builds and tests do not establish that anyone read the diff. The public record names the exact head, coverage, reviewers and every finding's priority and outcome; the App's `review` check links it on that head. [Workflow](../AGENTS.md#workflow) owns the merge gates. Success needs an outcome for every finding accumulated through the chain and no open P0/P1; deferring one does not clear the gate. The record is evidence of independent review, not a guarantee of no defects.
 
 Rejected:
 
 - **Committed records:** the record commit would change the commit it certifies and add per-pull-request repository churn.
 - **Editing previous records or restating all earlier coverage:** each old check must keep describing its own head; linked delta records expose new changes without losing accumulated findings.
 - **GitHub approvals as the gate:** authorship uses the owner's account, which cannot approve its own pull requests; the separate App's check certifies the reviewed head.
-- **Hosted model review in GitHub Actions:** independent review before the owner merges needs no hosted model credentials or added per-pull-request API cost.
+- **Hosted model review in GitHub Actions:** independent review before merging needs no hosted model credentials or added per-pull-request API cost.
 - **CodeRabbit:** a paid seat for bot-authored pull requests, low-signal warnings and repeated review rounds add cost; the repository keeps concrete recurring defect lessons in `REVIEW.md`.
 
 ## Record format

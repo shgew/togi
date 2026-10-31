@@ -9,7 +9,7 @@ use crate::session::Control;
 use crate::testing::{Bench, core, kinds_of};
 use test_case::test_case;
 
-const DEEPER_ON_WARNING: Clause = Clause {
+const DEEPER_ON_WARNING: Clause = Clause::DirectCause {
     decision_kind: EventKind::CcdEdge,
     cause_kind: EventKind::SessionWarning,
 };

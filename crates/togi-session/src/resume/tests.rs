@@ -1,4 +1,4 @@
-use togi_defect::{DefectState, Entry};
+use togi_defect::{DefectState, Entry, KNOWN_DEFECTS};
 use togi_journal::{DefectDirection, DefectId, Payload};
 use togi_machine::Signal;
 use togi_sim::MachineDefinition;
@@ -56,7 +56,7 @@ fn capsule_of(events: &[Event], defects: &'static [Entry]) -> ResumeCapsule {
 }
 
 fn fold_of(events: &[Event]) -> Folds {
-    Folds::replay_with(&[], events).unwrap()
+    Folds::replay_with(KNOWN_DEFECTS, events).unwrap()
 }
 
 fn halves(ended: &Ended) -> (&[Event], &[Event]) {
@@ -107,15 +107,15 @@ fn verify_names_the_part_that_differs() {
     let (prefix, events) = halves(&ended);
     let behind = fold_of(prefix);
 
-    let mut facts = capsule_of(events, &[]);
+    let mut facts = capsule_of(events, KNOWN_DEFECTS);
     facts.folds.facts = behind.facts.clone();
     assert!(matches!(facts.verify(events), Err(Divergence::Facts)));
 
-    let mut tuner = capsule_of(events, &[]);
+    let mut tuner = capsule_of(events, KNOWN_DEFECTS);
     tuner.folds.tuner = behind.tuner.clone();
     assert!(matches!(tuner.verify(events), Err(Divergence::Tuner)));
 
-    let mut recovery = capsule_of(events, &[]);
+    let mut recovery = capsule_of(events, KNOWN_DEFECTS);
     recovery.folds.recovery = behind.recovery;
     assert!(matches!(recovery.verify(events), Err(Divergence::Recovery)));
 
@@ -147,7 +147,7 @@ fn verify_rejects_a_capsule_that_misses_events() {
     let bench = bench();
     let ended = one_cycle(&bench, None);
     let (prefix, events) = halves(&ended);
-    let capsule = capsule_of(prefix, &[]);
+    let capsule = capsule_of(prefix, KNOWN_DEFECTS);
     assert!(matches!(
         capsule.verify(events),
         Err(Divergence::Last { .. })
@@ -159,21 +159,26 @@ fn a_capsule_is_adopted_only_when_it_covers_exactly_the_journal() {
     let bench = bench();
     let ended = one_cycle(&bench, None);
     let capsule = ended.capsule.clone().unwrap();
-    assert!(capsule.clone().adopt(&ended.journal, &[]).is_some());
+    assert!(
+        capsule
+            .clone()
+            .adopt(&ended.journal, bench.defects)
+            .is_some()
+    );
 
     let foreign = ResumeCapsule {
         session: None,
         ..capsule.clone()
     };
     assert!(
-        foreign.adopt(&ended.journal, &[]).is_none(),
+        foreign.adopt(&ended.journal, bench.defects).is_none(),
         "another session"
     );
 
     drop(ended);
     let extended = one_cycle(&bench, None);
     assert!(
-        capsule.adopt(&extended.journal, &[]).is_none(),
+        capsule.adopt(&extended.journal, bench.defects).is_none(),
         "a journal that grew"
     );
 }
@@ -343,7 +348,7 @@ fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_
     bench.sim.reboot().unwrap();
     let resumed = one_cycle(&bench, None);
     assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
-    assert!(capsule.adopt(&resumed.journal, &[]).is_none());
+    assert!(capsule.adopt(&resumed.journal, bench.defects).is_none());
     let rebuilt: Vec<_> = resumed
         .journal
         .events()
@@ -414,7 +419,7 @@ fn a_run_that_cannot_adopt_a_capsule_reads_the_state_and_rebuilds_what_a_crash_l
     let capsule = crashed(&bench).capsule.unwrap();
     bench.sim.reboot().unwrap();
     let resumed = one_cycle(&bench, None);
-    assert!(capsule.adopt(&resumed.journal, &[]).is_none());
+    assert!(capsule.adopt(&resumed.journal, bench.defects).is_none());
     assert!(state_reads(&bench) > 0);
     assert_eq!(state_publications(&bench), 2, "the rebuild and the end");
 }

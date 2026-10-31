@@ -36,6 +36,7 @@ togi-version.workspace = true
 proptest.workspace = true
 test-case.workspace = true
 
+togi-defect.workspace = true
 togi-render.workspace = true
 togi-watch.workspace = true
 

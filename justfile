@@ -407,7 +407,7 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     just _publish push-fix
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; fail at once when it conflicts with its base; never merges
+# Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready to merge; fail at once when it conflicts with its base; never merges
 [group('github')]
 land number: _dev-shell
     #!/usr/bin/env bash
@@ -465,7 +465,7 @@ land number: _dev-shell
         fi
         echo "land: #$1 head moved from $head to $current"
     done
-    echo "land: #$1 is ready for the owner to merge: check and review passed on $head and every review thread is resolved"
+    echo "land: #$1 is ready to merge: check and review passed on $head and every review thread is resolved"
 
 # Run GitHub commands as robotogi
 [group('github')]

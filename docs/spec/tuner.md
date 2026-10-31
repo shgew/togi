@@ -112,6 +112,8 @@ A filler cap probe uses the isolated mapping contract and records mapping activi
 
 On the first night and after every firmware-context change, run the entire coverage matrix at all-zero before a nonzero test. A conclusive failure at all-zero is already confirmation at stock: stop with `platform unstable at stock under <class>`, naming the class and evidence. Do not keep tuning around it, attribute it to a nonzero CCD, or claim CO caused it. A failure at a nonzero profile that names a CO-0 core instead requires one conclusive rerun of the same class and duration with **every** CCD at CO 0; the rerun's cell is rebuilt from the failed trial's recorded class and the topology, never regenerated from the current matrix, whose R7 partial chain a later full-CCD load may have changed. A passing rerun is not proof of causation and the original failure remains profile-level unless isolated testing locates it. Inconclusive controls give no clearance. A new run cannot ignore an unresolved stock-failure stop; it needs an explicit reset and fresh controls.
 
+Once the entire stock-control matrix first completes in a firmware and evidence context, freeze that completed declaration: later partial-chain changes do not reopen controls, while stock failures, pending CO-0 reruns and new contexts remain subject to the rules above.
+
 ## Day steps
 
 The pure policy returns hold, promote, retreat or firmware-zero with its reason and witnesses; it never writes hardware. [Runtime](runtime.md#ruleset-13-policy-boundary) owns invocation and successful-application commits.
