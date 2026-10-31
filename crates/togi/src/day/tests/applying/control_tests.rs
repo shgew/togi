@@ -2,9 +2,10 @@ use super::*;
 use crate::day::socket::{self, ControlSource, PauseRequest, Reply, Request};
 use std::cell::RefCell;
 use std::sync::mpsc::{self, Receiver, SyncSender};
+use test_case::test_case;
 
 enum Message {
-    Request(Request, SyncSender<Reply>),
+    Request(Box<Request>, SyncSender<Reply>),
     Stop,
 }
 
@@ -24,7 +25,7 @@ impl ControlSource for Source {
         match self.inbox.recv_timeout(Duration::from_secs(5)).unwrap() {
             Message::Request(request, reply) => {
                 let before = journal.events().len();
-                let response = socket::respond(journal, clock, 0, request, controller)?;
+                let response = socket::respond(journal, clock, 0, *request, controller)?;
                 self.transactions
                     .borrow_mut()
                     .push(journal.events()[before..].to_vec());
@@ -93,7 +94,9 @@ fn threaded_controls_reapply_committed_d_without_promotion(
         let client = scope.spawn(move || {
             let send = |request| {
                 let (reply, response) = mpsc::sync_channel(1);
-                sender.send(Message::Request(request, reply)).unwrap();
+                sender
+                    .send(Message::Request(Box::new(request), reply))
+                    .unwrap();
                 response.recv_timeout(Duration::from_secs(5)).unwrap()
             };
             if paused {

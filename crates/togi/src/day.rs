@@ -173,7 +173,9 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         &mut clock,
         &cancel,
         &build,
-        socket.as_ref().map(|server| server as &dyn socket::ControlSource),
+        socket
+            .as_ref()
+            .map(|server| server as &dyn socket::ControlSource),
     );
     // Close before dropping hardware and its borrowed exclusion lock.
     let closed = journal.close();

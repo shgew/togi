@@ -36,6 +36,15 @@ impl Hardware {
             firmware: bios(),
         }
     }
+
+    fn write(&mut self, target: TargetOffset) -> Result<(), MachineError> {
+        self.writes.push(target);
+        if matches!(self.failure, Failure::Write(at) if at == self.writes.len()) {
+            return Err(MachineError::BootMissing);
+        }
+        self.current = target.get();
+        Ok(())
+    }
 }
 
 impl Smu for Hardware {
@@ -47,15 +56,10 @@ impl Smu for Hardware {
         Ok(ObservedOffset(self.current))
     }
     fn set_offset(&mut self, _: CoreId, target: TargetOffset) -> Result<(), MachineError> {
-        self.set_all_offsets(target)
+        self.write(target)
     }
     fn set_all_offsets(&mut self, target: TargetOffset) -> Result<(), MachineError> {
-        self.writes.push(target);
-        if matches!(self.failure, Failure::Write(at) if at == self.writes.len()) {
-            return Err(MachineError::BootMissing);
-        }
-        self.current = target.get();
-        Ok(())
+        self.write(target)
     }
     fn emergency_zero(&mut self, _: SmuValidated, _: &Stopped) -> Result<(), MachineError> {
         self.emergency += 1;
