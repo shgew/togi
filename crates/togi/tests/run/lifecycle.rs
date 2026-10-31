@@ -111,12 +111,30 @@ fn an_unattended_fresh_run_refuses_nonzero_tuning_without_stock_attestation() {
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     assert_eq!(exit, Exit::NoEvidence, "{err}");
     let events = fake.events();
-    let dead_end = events.iter().find_map(|event| {
-        if let Payload::DeadEnd(value) = &event.payload { Some(value) } else { None }
-    }).unwrap();
-    assert!(dead_end.detail.starts_with("stock_unattested:"), "{dead_end:?}");
-    assert!(!events.iter().any(|event| matches!(event.payload, Payload::TrialIntent(_))));
-    assert!(!events.iter().any(|event| matches!(event.payload, Payload::StockAttested(_))));
+    let dead_end = events
+        .iter()
+        .find_map(|event| {
+            if let Payload::DeadEnd(value) = &event.payload {
+                Some(value)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert!(
+        dead_end.detail.starts_with("stock_unattested:"),
+        "{dead_end:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::TrialIntent(_)))
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::StockAttested(_)))
+    );
     assert_eq!(offsets(&fake), vec![0; usize::try_from(CORES).unwrap()]);
 }
 

@@ -92,12 +92,17 @@ fn an_attested_night_maps_from_minus_five_without_an_all_zero_trial() {
         .filter_map(|intent| intent.task.map(|task| task.queue))
         .collect();
     assert_eq!(queues.first(), Some(&Queue::Mapping), "{queues:?}");
-    assert!(queues.iter().all(|queue| *queue != Queue::Control), "{queues:?}");
+    assert!(
+        queues.iter().all(|queue| *queue != Queue::Control),
+        "{queues:?}"
+    );
     let trials = intents(ended.journal.events());
-    assert_eq!(trials.first().unwrap().offset.get(), -5);
-    assert!(trials.iter().all(|trial| {
-        trial.profile.iter().any(|(_, offset)| offset.get() != 0)
-    }));
+    assert_eq!(trials.first().unwrap().offset.unwrap().get(), -5);
+    assert!(
+        trials
+            .iter()
+            .all(|trial| { trial.profile.iter().any(|(_, offset)| offset.get() != 0) })
+    );
 }
 
 #[test]
@@ -114,7 +119,11 @@ fn unattended_run_without_operator_attestation_ends_named_and_at_stock() {
     assert_eq!(count(ended.journal.events(), "stock.attested"), 0);
     let mut smu = bench.sim.seams().smu;
     for core in 0..8 {
-        assert_eq!(smu.offset(crate::testing::core(core)).unwrap().0, 0, "core {core}");
+        assert_eq!(
+            smu.offset(crate::testing::core(core)).unwrap().0,
+            0,
+            "core {core}"
+        );
     }
 }
 
@@ -208,6 +217,11 @@ fn a_restart_reads_back_the_state_a_mapping_night_published_without_rebuilding_i
             .count()
             > 2
     );
+    assert_eq!(
+        crate::verify_snapshot(first.journal.dir(), first.journal.events()).unwrap(),
+        crate::SnapshotStatus::Matches
+    );
+    let before_resume = first.journal.events().len();
     drop(first.journal.close().unwrap());
 
     let resumed = crate::run(bench.input_ending_at(bench.short_night()));
@@ -216,6 +230,7 @@ fn a_restart_reads_back_the_state_a_mapping_night_published_without_rebuilding_i
         .journal
         .events()
         .iter()
+        .skip(before_resume)
         .filter_map(|event| {
             if let Payload::StateRebuilt(rebuilt) = &event.payload {
                 Some(rebuilt.fields.clone())
@@ -228,9 +243,9 @@ fn a_restart_reads_back_the_state_a_mapping_night_published_without_rebuilding_i
 }
 
 #[test]
-fn a_backend_inconclusive_through_every_retry_is_left_out_and_the_night_goes_on() {
+fn a_backend_inconclusive_through_every_retry_ends_when_no_nonzero_work_remains() {
     let bench = bench();
-    // Controls need every backend before any nonzero work, so the backend fails once a night has passed them.
+    // Stock has no filler or requalification; excluding a required mapping backend can empty the night.
     let mut input = bench.input();
     let cancel = input.cancel.clone();
     input.on_append = Some(Box::new(move |event| {
@@ -240,14 +255,27 @@ fn a_backend_inconclusive_through_every_retry_is_left_out_and_the_night_goes_on(
             cancel.cancel();
         }
     }));
-    let controlled = crate::run(input);
-    assert_eq!(controlled.stop, Some(Stop::Signal));
-    drop(controlled.journal.close().unwrap());
+    let started = crate::run(input);
+    assert_eq!(started.stop, Some(Stop::Signal));
+    drop(started.journal.close().unwrap());
     bench.sim.fail_backend_setup(Backend::Mprime);
 
     let ended = crate::run(bench.input_ending_at(a_night(&bench)));
 
-    ended_by_the_operator(&bench, &ended);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let Some(Stop::DeadEnd {
+        dead_end, causes, ..
+    }) = &ended.stop
+    else {
+        panic!("{:?}", ended.stop);
+    };
+    assert_eq!(dead_end.condition, DeadEndCondition::NoEvidence);
+    assert!(
+        dead_end
+            .detail
+            .starts_with("every runnable cell needs an unavailable backend:")
+    );
+    assert!(!causes.is_empty());
     let events = ended.journal.events();
     let retries = count(events, "backend.retry");
     assert_eq!(retries, 3, "one retry after each of 1, 5 and 30 min");
@@ -264,15 +292,21 @@ fn a_backend_inconclusive_through_every_retry_is_left_out_and_the_night_goes_on(
         .filter(|backends| backends.contains(&Backend::Mprime))
         .count();
     assert!(mprime <= 1, "the exhausting attempt at most: {after:?}");
+    assert!(!after.is_empty(), "the exhausting attempt was journaled");
     assert!(
-        after
+        intents(events)
             .iter()
-            .filter(|backends| !backends.contains(&Backend::Mprime))
-            .count()
-            > 1,
-        "the night goes on without mprime: {after:?}"
+            .all(|intent| intent.profile.iter().any(|(_, offset)| offset.get() != 0))
     );
-    assert_eq!(count(events, "deadend"), 0);
+    assert_eq!(count(events, "deadend"), 1);
+    let mut smu = bench.sim.seams().smu;
+    for n in 0..8 {
+        assert_eq!(
+            smu.offset(crate::testing::core(n)).unwrap().0,
+            0,
+            "core {n}"
+        );
+    }
 }
 
 #[test]

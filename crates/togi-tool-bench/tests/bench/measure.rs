@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use serde_json::{Value, json};
-use togi_journal::{Event, SCHEMA};
+use togi_journal::{Event, Payload, SCHEMA};
 use togi_machine::{LEGACY_REGIMES, Regime, TargetOffset, workloads};
 use togi_sim::definition::CoreDef;
 use togi_sim::replay::{Replay, ReplayFact, ReplayOutcome};
@@ -78,7 +78,7 @@ fn measuring_twice_gives_the_same_numbers() {
 }
 
 #[test]
-fn trials_a_real_fact_answers_are_counted_against_the_trials_that_ended() {
+fn legacy_per_core_facts_do_not_answer_current_nonzero_ccd_trials() {
     let path = Path::new("/bench/machines/target-fit-0.json");
     let definition = definition("target-fit-0.json");
     let replay = Extracts::new()
@@ -92,7 +92,13 @@ fn trials_a_real_fact_answers_are_counted_against_the_trials_that_ended() {
     let model = Model::new(&definition, 1).unwrap();
     let with = measure(&replayed.events, &model, Some(&replay)).unwrap();
     let without = measure(&replayed.events, &model, None).unwrap();
-    assert!(with.real_answers > 0, "a replayed run has answered trials");
+    assert!(with.trials > 0);
+    assert_eq!(with.real_answers, 0);
+    for event in &replayed.events {
+        if let Payload::TrialIntent(intent) = &event.payload {
+            assert!(intent.profile.iter().any(|(_, offset)| offset.get() != 0));
+        }
+    }
     assert!(with.real_answers <= with.trials);
     assert!(
         (with.real_answer_share - f64::from(with.real_answers) / f64::from(with.trials)).abs()

@@ -411,9 +411,9 @@ impl System for Host {
                     )))
                 })
             }
-            Request::Reapply | Request::AttestStock { .. } => Err(togi_cli::day::socket::Error::Absent(io::Error::from(
-                io::ErrorKind::NotFound,
-            ))),
+            Request::Reapply | Request::AttestStock { .. } => Err(
+                togi_cli::day::socket::Error::Absent(io::Error::from(io::ErrorKind::NotFound)),
+            ),
         }
     }
 
@@ -640,7 +640,7 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self {
-        Self::of(Scenario::Controls)
+        Self::of(Scenario::Nonzero)
     }
 
     pub fn of(scenario: Scenario) -> Self {

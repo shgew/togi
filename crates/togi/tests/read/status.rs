@@ -1018,7 +1018,7 @@ fn baseline_stock_does_not_mask_a_completed_night_profile_without_the_day_servic
     );
 }
 
-#[test_case::test_case(Scenario::Controls; "no cap evidence")]
+#[test_case::test_case(Scenario::Nonzero; "no cap evidence")]
 #[test_case::test_case(Scenario::Mapping; "mapping witnesses")]
 #[test_case::test_case(Scenario::DayStep; "qualified profile without day application")]
 fn evidence_is_read_only_and_identical_under_no_color(scenario: Scenario) {
@@ -1106,7 +1106,7 @@ fn real_fs_generate_status_snapshots() {
         assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
         emit(&format!("status_{}", scenario.name()), text(&ran.stdout));
     }
-    for scenario in [Scenario::Controls, Scenario::Mapping, Scenario::DayStep] {
+    for scenario in [Scenario::Nonzero, Scenario::Mapping, Scenario::DayStep] {
         emit(
             &format!("evidence_{}", scenario.name()),
             &evidence_output(scenario, true),

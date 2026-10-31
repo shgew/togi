@@ -7,11 +7,11 @@ session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
 in flight: none
-dead end: failure at offset 0 [#72]
+dead end: no conclusive evidence [#1341]
 
-UNIT   CORES                  D  C        D-C  HOLD h  STATE
-CCD 0  0,1,2,3,4,5,6,7        0  unknown  -    0/50    held
-CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    held
+UNIT   CORES                  D  C  D-C  HOLD h  STATE
+CCD 0  0,1,2,3,4,5,6,7        0  0  0    0/50    finished
+CCD 1  8,9,10,11,12,13,14,15  0  0  0    0/50    finished
 
 Day policy
 permission: experimental hold + exact night qualification
@@ -24,11 +24,19 @@ proposed profile: none
 paused-saved profile: none
 allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
-  U: unknown
-  state: held: unknown edge for CCD 0; unknown edge for CCD 1
+  U: observed -1 [#1016]
+  state: finished: ceiling; last clean 0
+  finished at: 2026-01-01T01:13:37Z; core 0 0, core 1 0, core 2 0, core 3 0,
+  core 4 0, core 5 0, core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11
+  0, core 12 0, core 13 0, core 14 0, core 15 0 []
+  diagnostic S (non-authorizing): 0 [#1338]
 unit: CCD 1, phase coarse, parent none, inherited start 0
-  U: unknown
-  state: held: unknown edge for CCD 0; unknown edge for CCD 1
+  U: observed -1 [#1323]
+  state: finished: ceiling; last clean 0
+  finished at: 2026-01-01T02:27:14Z; core 0 0, core 1 0, core 2 0, core 3 0,
+  core 4 0, core 5 0, core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11
+  0, core 12 0, core 13 0, core 14 0, core 15 0 []
+  diagnostic S (non-authorizing): 0 [#1339]
 current exact profile daily evidence: 0 h; 0 crashes []
 experimental: rate bound unavailable (95%, fixed-rate model)
 firmware restoration: none
@@ -38,13 +46,12 @@ freeze: off
 firmware: valid
 
 Night since 00:00
-elapsed: 0s
+elapsed: 4h54m
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
 qualification    75%    0%    0s
-mapping          10%    0%    0s
-control          5%     0%    0s
+mapping          10%    100%  4h54m
 requalification  10%    0%    0s
-current task: control (task control #0)
+current task: none
 mapping CCD 0: next offset 0
 mapping CCD 1: next offset 0

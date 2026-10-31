@@ -815,20 +815,37 @@ fn night_confirmation_uses_the_live_observers_current_firmware_and_is_idempotent
         pause.control(journal, &mut hardware, clock, &mut live, action)
     };
     let first = socket::respond(
-        &mut journal, &clock, 0, Request::AttestStock { session }, &mut control,
-    ).unwrap();
+        &mut journal,
+        &clock,
+        0,
+        Request::AttestStock { session },
+        &mut control,
+    )
+    .unwrap();
     let second = socket::respond(
-        &mut journal, &clock, 0, Request::AttestStock { session }, &mut control,
-    ).unwrap();
+        &mut journal,
+        &clock,
+        0,
+        Request::AttestStock { session },
+        &mut control,
+    )
+    .unwrap();
     assert!(matches!(first, Reply::Controlled { .. }));
     assert!(matches!(second, Reply::Controlled { .. }));
-    let recorded: Vec<_> = journal.events().iter().filter_map(|event| {
-        if let Payload::StockAttested(value) = &event.payload {
-            Some(value.firmware.clone())
-        } else {
-            None
-        }
-    }).collect();
+    let recorded: Vec<_> = journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::StockAttested(value) = &event.payload {
+                Some(value.firmware.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(recorded, [firmware]);
-    assert!(hardware.writes.is_empty(), "attestation does not disrupt the day profile");
+    assert!(
+        hardware.writes.is_empty(),
+        "attestation does not disrupt the day profile"
+    );
 }

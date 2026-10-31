@@ -7,7 +7,6 @@
 
 mod climb;
 mod climb_status;
-mod controls_freeze;
 mod day;
 mod fixture;
 mod flow;
@@ -95,7 +94,9 @@ fn the_scheduler_starts_with_nonzero_mapping() {
     };
     assert_eq!(trial.activity, togi_journal::Activity::Mapping);
     assert!(!trial.profile.is_zero());
-    assert!(matches!(trial.tested, togi_journal::Tested::Isolated { offset, .. } if offset.get() == -5));
+    assert!(
+        matches!(trial.tested, togi_journal::Tested::Isolated { offset, .. } if offset.get() == -5)
+    );
 }
 
 #[test]
@@ -409,8 +410,7 @@ fn comparable_exposures_use_the_latest_distinct_stock_witness() {
         })
         .unwrap();
     // Historical stock exposure remains comparable evidence, not runnable stock work.
-    stock.profile =
-        togi_journal::CcdVector::expand(fixture::zero(), &fixture::cores()).unwrap();
+    stock.profile = togi_journal::CcdVector::expand(fixture::zero(), &fixture::cores()).unwrap();
     stock.source.seq = togi_journal::Seq::new(1002).unwrap();
     let first = journal.append(stock.clone().into(), &[]);
     let profile = fixture::zero().with(

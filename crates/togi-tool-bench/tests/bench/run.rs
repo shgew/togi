@@ -304,6 +304,8 @@ fn real_process_a_session_killed_by_a_signal_is_an_error_record_and_is_not_cache
             .iter()
             .all(|r| r.status == Status::Concluded)
     );
+    // A run its audit faults is never cached, so the four clean sessions must be audited clean to be hit again.
+    assert!(first.violations.is_empty(), "{:?}", first.violations);
     let second = run(&options);
     assert_eq!(second.cached, 4);
     assert!(second.records.iter().all(|r| r.status == Status::Concluded));

@@ -80,7 +80,17 @@ After all instances and confinement are ready and profile readback is verified, 
 
 ### Coverage matrix
 
-The exact-profile qualification certificate is a **composite matrix**. R1–R5 per-core cells on the changed CCD run at its proposed offset; unchanged CCD cells may reuse an earlier completed qualification only at that CCD's identical offset, class, placement contract, content, epoch and firmware, with no intervening applicable failure. This is reuse of a per-CCD observation, not a pass from a deeper offset. All package/interaction cells below run freshly at the **complete proposed profile**. On first qualification, stock controls or firmware invalidation, no unchanged-CCD credit is assumed. Monthly re-qualification runs all CCDs' cells fresh. The certificate explicitly lists reused witnesses and the fresh whole-profile cells; it cannot be described as every class having run freshly at that vector.
+The exact-profile qualification certificate is a **composite matrix**.
+R1–R5 per-core cells on the changed CCD run at its proposed offset; unchanged
+CCD cells may reuse an earlier completed qualification only at that CCD's
+identical offset, class, placement contract, content, epoch and firmware,
+with no intervening applicable failure. This is reuse of a per-CCD observation,
+not a pass from a deeper offset. All package/interaction cells below run
+freshly at the **complete proposed profile**. On first qualification or
+firmware invalidation, no unchanged-CCD credit is assumed. Monthly
+re-qualification runs all CCDs' cells fresh. The certificate explicitly lists
+reused witnesses and the fresh whole-profile cells; it cannot be described
+as every class having run freshly at that vector.
 
 One full own-duration launch per listed breadth position plus each stated sustained block is required. A conclusive failure invalidates the certificate: [failed next-step qualification](tuner.md#failed-next-step-qualification) owns the durable disposition of a proposed profile, and [daily-event escalation](tuner.md#whole-profile-veto-and-escalation) owns a current-D re-qualification failure. Only incomplete, nonfailed certificates retain outstanding cells across nights. Every position means every physical core for per-core/R8 rows, and each explicit physical-core position group for R9; only the actually tested logical position gains ledger exposure.
 

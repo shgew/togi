@@ -339,17 +339,12 @@ impl State {
             Outcome::Inconclusive => None,
             Outcome::Failure => {
                 let on_tested = ended.end.core.is_none_or(|core| {
-                    self.machine
-                        .cores
-                        .iter()
-                        .any(|info| {
-                            info.core == core
-                                && (info.ccd == tested
-                                    || (trial.intent.activity
-                                        == Some(togi_journal::Activity::Mapping)
-                                        && trial.intent.profile.get(core)
-                                            == Some(TargetOffset::ZERO)))
-                        })
+                    self.machine.cores.iter().any(|info| {
+                        info.core == core
+                            && (info.ccd == tested
+                                || (trial.intent.activity == Some(togi_journal::Activity::Mapping)
+                                    && trial.intent.profile.get(core) == Some(TargetOffset::ZERO)))
+                    })
                 });
                 Some(IsolatedResult::Fail {
                     location: if on_tested {

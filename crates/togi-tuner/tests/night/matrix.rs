@@ -405,13 +405,8 @@ fn a_tied_measured_chain_without_a_partial_runs_the_subset_fallback() {
 #[test]
 fn an_all_fresh_qualification_matrix_keeps_its_nonzero_profile_and_launches_every_cell() {
     let machine = two_ccds();
-    let matrix = qualification_cells(
-        &machine.layout(),
-        &profile(&[-10, -5]),
-        3,
-        &Reuse::AllFresh,
-    )
-    .unwrap();
+    let matrix =
+        qualification_cells(&machine.layout(), &profile(&[-10, -5]), 3, &Reuse::AllFresh).unwrap();
     assert_eq!(matrix.profile, profile(&[-10, -5]));
     assert_eq!(matrix.fresh_launches(), 259);
     assert!(matrix.cells.iter().all(|p| p.source == Source::Fresh));

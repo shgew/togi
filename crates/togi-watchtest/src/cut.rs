@@ -14,7 +14,7 @@ pub fn cut_at(events: &[Event], mut accept: impl FnMut(&Event) -> bool) -> Resul
         .ok_or(Error::NoCut("no event the cut accepts"))
 }
 
-/// Folds the events through the Ruleset 13 policy state at the specification's parameters and cuts at the first
+/// Folds the events through the current policy state at the specification's parameters and cuts at the first
 /// event after which `accept` holds.
 pub fn cut_when(
     events: &[Event],

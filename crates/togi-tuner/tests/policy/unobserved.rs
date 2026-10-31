@@ -180,8 +180,7 @@ fn an_unobserved_crash_record_gets_one_reproduction_night_that_closes_under_its_
     assert_eq!(reproduction.state, ReproductionState::Unreproduced);
     journal.reboot("tuning3");
     for step in 0..30_i64 {
-        let Ok(plan) =
-            journal.until_end(at(64_000 + step), &std::collections::BTreeMap::new())
+        let Ok(plan) = journal.until_end(at(64_000 + step), &std::collections::BTreeMap::new())
         else {
             break;
         };

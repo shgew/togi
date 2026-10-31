@@ -982,7 +982,7 @@ fn dashboard(scenario: Scenario, shown: &str) -> (TempDir, Pty, Helper) {
 
 #[test]
 fn real_process_a_started_idle_trial_holds_the_dashboard_still() {
-    let (_state, mut pty, helper) = dashboard(Scenario::Idle, "this screen holds still");
+    let (_state, mut pty, helper) = dashboard(Scenario::Idle, "screen paused · planned end");
     let first = pty.seen.len();
     assert!(
         pty.falls_quiet(QUIET, QUIET * 2),
@@ -998,7 +998,7 @@ fn real_process_a_started_idle_trial_holds_the_dashboard_still() {
 
 #[test]
 fn real_process_a_running_trial_redraws_the_dashboard_s_clock() {
-    let (_state, mut pty, helper) = dashboard(Scenario::Controls, "NIGHT since");
+    let (_state, mut pty, helper) = dashboard(Scenario::Nonzero, "NIGHT since");
     assert!(
         !pty.falls_quiet(QUIET, QUIET),
         "the clock of a running trial stood still"

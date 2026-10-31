@@ -614,20 +614,6 @@ impl Policy for Ruleset13 {
         Ok(())
     }
 
-    /// Records the firmware context the session meets and the simulated operator's stock attestation of it, as the
-    /// confirmation of `togi night` does before tuning on that context.
-    fn record_firmware(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
-        let firmware = machine.host.bios_context()?;
-        let context = SessionContext::from(firmware.clone());
-        self.append(machine, context.into(), &[])?;
-        self.append(
-            machine,
-            Payload::StockAttested(StockAttested { firmware }),
-            &[],
-        )?;
-        Ok(())
-    }
-
     fn start_day(&mut self, _day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
         self.start(machine)?;
         self.close_day(machine)?;
@@ -733,6 +719,21 @@ impl Policy for Ruleset13 {
 }
 
 impl Ruleset13 {
+    /// Records the firmware context and the simulated operator's confirmed stock stability.
+    fn record_firmware(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        let firmware = machine.host.bios_context()?;
+        let context = SessionContext::from(firmware.clone());
+        self.append(machine, context.into(), &[])?;
+        if !self.state.stock_attested() {
+            self.append(
+                machine,
+                Payload::StockAttested(StockAttested { firmware }),
+                &[],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Runs a night until its budget ends or `stop` selects a trial whose start should end the run.
     ///
     /// A selected trial is started and stopped through the machine seams, but no outcome or shutdown
@@ -800,7 +801,10 @@ impl Ruleset13 {
                 }
                 Action::EndNight(reason) => {
                     stop = match reason {
-                        EndReason::DeadEnd | EndReason::Unavailable => ShutdownReason::DeadEnd,
+                        EndReason::DeadEnd
+                        | EndReason::Unavailable
+                        | EndReason::StockUnattested
+                        | EndReason::NoNonzeroWork => ShutdownReason::DeadEnd,
                     };
                     break;
                 }

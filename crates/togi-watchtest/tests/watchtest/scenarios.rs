@@ -25,7 +25,7 @@ fn every_scenario_names_a_distinct_golden_and_builds() {
     sorted.dedup();
     assert_eq!(sorted.len(), names.len(), "{names:?}");
     for want in [
-        "controls",
+        "nonzero",
         "idle",
         "between",
         "mapping",
@@ -55,10 +55,9 @@ fn every_scenario_is_a_prefix_of_its_base_simulation() {
 
 #[test]
 fn every_session_scenario_but_the_ended_night_folds_into_one_open_night() {
-    for scenario in Scenario::ALL
-        .into_iter()
-        .filter(|scenario| scenario.base() != Base::Calendar && *scenario != Scenario::Stopped)
-    {
+    for scenario in Scenario::ALL.into_iter().filter(|scenario| {
+        !matches!(scenario.base(), Base::Calendar | Base::Filler) && *scenario != Scenario::Stopped
+    }) {
         let events = cut(scenario);
         let projection = project(&events);
         let night = projection.night.expect("the night is planned");
@@ -75,19 +74,24 @@ fn every_session_scenario_but_the_ended_night_folds_into_one_open_night() {
 }
 
 #[test]
-fn controls_starts_the_first_nights_zero_offset_control_trial() {
-    let events = cut(Scenario::Controls);
+fn nonzero_starts_the_first_attested_isolated_mapping_trial() {
+    let events = cut(Scenario::Nonzero);
     let intent = running_trial(&events);
-    assert_eq!(intent.activity, Some(Activity::Control));
-    assert_eq!(intent.tested, Some(Tested::Exact {}));
-    assert!(intent.profile.iter().all(|(_, offset)| offset.get() == 0));
-    assert_eq!(intent.task.map(|task| task.queue), Some(Queue::Control));
+    assert_eq!(intent.activity, Some(Activity::Mapping));
+    assert!(matches!(intent.tested, Some(Tested::Isolated { offset, .. }) if offset.get() == -5));
+    assert!(intent.profile.iter().any(|(_, offset)| offset.get() != 0));
+    assert_eq!(intent.task.map(|task| task.queue), Some(Queue::Mapping));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::StockAttested(_)))
+    );
     assert!(!intent.retry);
     assert_eq!(intent.regime, Regime::R1);
     let night = project(&events).night.expect("the night is planned");
-    let (task, activity) = night.current.expect("the control task runs");
-    assert_eq!(task.queue, Queue::Control);
-    assert_eq!(activity, Some(Activity::Control));
+    let (task, activity) = night.current.expect("the mapping task runs");
+    assert_eq!(task.queue, Queue::Mapping);
+    assert_eq!(activity, Some(Activity::Mapping));
     assert!(night.mapping.iter().all(|mapping| mapping.cursor.is_some()));
     assert!(
         project(&events).units.iter().all(|unit| unit.cap.is_none()),
@@ -96,12 +100,18 @@ fn controls_starts_the_first_nights_zero_offset_control_trial() {
 }
 
 #[test]
-fn idle_starts_the_first_r6_trial_on_every_core() {
+fn idle_starts_the_first_exact_r6_qualification_trial() {
     let events = cut(Scenario::Idle);
     let intent = running_trial(&events);
     assert_eq!(intent.regime, Regime::R6);
-    assert_eq!(intent.activity, Some(Activity::Control));
-    assert_eq!(intent.cores.len(), 16);
+    assert_eq!(intent.activity, Some(Activity::Qualification));
+    assert_eq!(intent.tested, Some(Tested::Exact {}));
+    assert_eq!(
+        intent.task.map(|task| task.queue),
+        Some(Queue::Qualification)
+    );
+    assert_eq!(intent.cores.len(), 16, "the idle hold spans every core");
+    assert!(intent.profile.iter().any(|(_, offset)| offset.get() != 0));
     let earlier = events.iter().filter(
         |event| matches!(&event.payload, Payload::TrialIntent(other) if other.regime == Regime::R6),
     );
@@ -109,15 +119,15 @@ fn idle_starts_the_first_r6_trial_on_every_core() {
 }
 
 #[test]
-fn between_ends_on_a_passed_trial_with_none_in_flight() {
+fn between_ends_on_a_passed_r2_mapping_trial_with_none_in_flight() {
     let events = cut(Scenario::Between);
     let Payload::TrialEnd(end) = &events.last().expect("events").payload else {
         panic!("the journal ends on {:?}", events.last().map(Event::kind));
     };
     assert_eq!(end.outcome, Outcome::Pass);
     let passed = intent_of(&events, &end.trial);
-    assert_eq!(passed.activity, Some(Activity::Control));
-    assert_eq!(passed.regime, Regime::R3);
+    assert_eq!(passed.activity, Some(Activity::Mapping));
+    assert_eq!(passed.regime, Regime::R2);
     assert!(
         togi_journal::State::replay(&events)
             .expect("the journal folds")
@@ -130,13 +140,13 @@ fn between_ends_on_a_passed_trial_with_none_in_flight() {
             .night
             .expect("planned")
             .current
-            .is_some_and(|(task, _)| task.queue == Queue::Control),
-        "the control task stays open between its trials"
+            .is_some_and(|(task, _)| task.queue == Queue::Mapping),
+        "the mapping task stays open between its trials"
     );
 }
 
 #[test]
-fn mapping_starts_the_first_isolated_trial_below_zero_after_the_controls() {
+fn mapping_starts_at_minus_five_without_control_trials() {
     let events = cut(Scenario::Mapping);
     let intent = running_trial(&events);
     assert_eq!(intent.activity, Some(Activity::Mapping));
@@ -160,9 +170,8 @@ fn mapping_starts_the_first_isolated_trial_below_zero_after_the_controls() {
         night
             .tasks
             .iter()
-            .filter(|planned| planned.task.queue == Queue::Control)
-            .all(|planned| planned.status == TaskStatus::Complete),
-        "the controls finished before mapping went below zero: {:?}",
+            .all(|planned| planned.task.queue != Queue::Control),
+        "stock is attested, never queued for testing: {:?}",
         night.tasks
     );
     assert_eq!(
@@ -175,6 +184,10 @@ fn mapping_starts_the_first_isolated_trial_below_zero_after_the_controls() {
 fn filler_repeats_the_exact_current_day_profile_after_real_work_is_done() {
     let events = cut(Scenario::Filler);
     let intent = running_trial(&events);
+    assert!(
+        intent.profile.iter().any(|(_, offset)| offset.get() != 0),
+        "filler never runs at stock"
+    );
     assert_eq!(intent.task.map(|task| task.queue), Some(Queue::Filler));
     assert_eq!(intent.activity, Some(Activity::Qualification));
     assert!(matches!(intent.tested, Some(Tested::Exact {})));
@@ -369,27 +382,38 @@ fn recovering_ends_on_the_recorded_crash() {
         "recovering is crashed plus the crash record"
     );
     let night = project(&events).night.expect("planned");
+    let first_plan = events
+        .iter()
+        .position(|event| event.kind() == EventKind::NightPlan)
+        .expect("the night is planned");
     assert_eq!(
         night.night,
-        project(&events[..1_000]).night.expect("planned").night,
+        project(&events[..=first_plan])
+            .night
+            .expect("planned")
+            .night,
         "the crash reboot continues the same night"
     );
 }
 
 #[test]
-fn deadend_ends_on_a_failure_at_stock() {
+fn deadend_ends_when_no_nonzero_work_remains() {
     let events = cut(Scenario::Deadend);
     let Payload::DeadEnd(dead) = &events.last().expect("events").payload else {
         panic!("the journal ends on {:?}", events.last().map(Event::kind));
     };
-    assert_eq!(dead.condition, DeadEndCondition::FailureAtZero);
+    assert_eq!(dead.condition, DeadEndCondition::NoEvidence);
+    assert!(dead.detail.starts_with("no_nonzero_work:"));
     assert!(
         events
             .iter()
             .any(|event| event.kind() == EventKind::CrashDetected),
-        "the crash at CO 0 is recorded before the dead end"
+        "the failed nonzero probes are recorded before the dead end"
     );
-    assert!(project(&events).stopped);
+    assert!(
+        !project(&events).stopped,
+        "the no-work end is durable evidence, not a stock failure stop"
+    );
 }
 
 #[test]
@@ -423,11 +447,42 @@ fn stopped_is_a_night_the_operator_ended_with_work_left() {
     );
 }
 #[test]
-fn the_default_night_does_not_end_before_it_has_run_its_controls() {
+fn the_default_night_runs_nonzero_work_until_the_operator_ends_it() {
     let base = Base::Night.events().expect("the base simulates");
     let ended = base
         .iter()
         .filter(|event| event.kind() == EventKind::TrialEnd)
         .count();
-    assert!(ended > 100, "{ended}");
+    assert!(ended > 0, "{ended}");
+    assert!(base.iter().all(|event| !matches!(&event.payload,
+        Payload::TrialIntent(intent) if intent.profile.iter().all(|(_, offset)| offset.get() == 0)
+            || intent.activity == Some(Activity::Control))));
+}
+
+#[test]
+fn every_scenario_has_only_attested_nonzero_first_attempts() {
+    for scenario in Scenario::ALL {
+        let events = cut(scenario);
+        let mut attested = false;
+        for event in &events {
+            if matches!(&event.payload, Payload::SessionStart(_)) {
+                attested = false;
+            } else if matches!(&event.payload, Payload::StockAttested(_)) {
+                attested = true;
+            } else if let Payload::TrialIntent(intent) = &event.payload {
+                assert!(attested, "{scenario}: trial before stock attestation");
+                assert!(
+                    intent.profile.iter().any(|(_, offset)| offset.get() != 0),
+                    "{scenario}: stock trial"
+                );
+                assert_ne!(intent.activity, Some(Activity::Control), "{scenario}");
+                assert_ne!(
+                    intent.task.map(|task| task.queue),
+                    Some(Queue::Control),
+                    "{scenario}"
+                );
+                assert!(!intent.retry, "{scenario}: rerun");
+            }
+        }
+    }
 }

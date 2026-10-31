@@ -2,7 +2,7 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-night since 00:00, 0s elapsed: control (task control #0)
+night since 00:00, 0s elapsed: mapping (task mapping #0)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
@@ -25,6 +25,7 @@ allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
   U: unknown
   state: held: unknown edge for CCD 0; unknown edge for CCD 1
+  diagnostic S (non-authorizing): 0 [#206]
 unit: CCD 1, phase coarse, parent none, inherited start 0
   U: unknown
   state: held: unknown edge for CCD 0; unknown edge for CCD 1
@@ -42,8 +43,7 @@ QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
 qualification    75%    0%    0s
 mapping          10%    0%    0s
-control          5%     0%    0s
 requalification  10%    0%    0s
-current task: control (task control #0)
-mapping CCD 0: next offset 0
-mapping CCD 1: next offset 0
+current task: mapping (task mapping #0)
+mapping CCD 0: next offset -5
+mapping CCD 1: next offset -5

@@ -16,7 +16,11 @@ fn a_failed_projection_warns_after_the_stop_and_does_not_fail_the_session() {
     let bench = Bench::new(&hunt_machine(2), 1);
     let mut input = bench.input();
     let fs = bench.fs.clone();
+    let cancel = input.cancel.clone();
     input.observer = Some(Box::new(move |event| {
+        if event.kind() == EventKind::TrialEnd {
+            cancel.cancel();
+        }
         if event.kind() == EventKind::Shutdown {
             fs.fail_state_publication();
         }

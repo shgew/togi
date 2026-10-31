@@ -30,7 +30,10 @@ fn stock_attestation_is_additive_and_strict(path: &str) {
         "boot-a",
         0,
         &[1],
-        StockAttested { firmware: super::fixtures::bios() }.into(),
+        StockAttested {
+            firmware: super::fixtures::bios(),
+        }
+        .into(),
     );
     let encoded = expected.encode().unwrap();
     assert_eq!(Event::decode(&encoded).unwrap(), expected);
@@ -43,8 +46,14 @@ fn stock_attestation_is_additive_and_strict(path: &str) {
         Err(DecodeError::UnknownField { .. })
     ));
     let header = super::fixtures::at(
-        1, "boot-a", 0, &[], super::fixtures::sample(EventKind::SessionStart),
-    ).encode().unwrap();
+        1,
+        "boot-a",
+        0,
+        &[],
+        super::fixtures::sample(EventKind::SessionStart),
+    )
+    .encode()
+    .unwrap();
     let journal = format!("{header}\n{unknown}\n");
     let mut reader = EventReader::lenient(journal.as_bytes());
     reader.next().unwrap().unwrap();

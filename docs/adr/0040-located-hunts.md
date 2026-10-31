@@ -1,6 +1,6 @@
 # Locate multi-core R7 failures before charging the loaded cores
 
-Status: superseded for located hunts by [0080](0080-per-ccd-first.md). Stock confirmation now follows [CO-0 controls](../spec/tuner.md#co-0-controls); the Ruleset 10 gate record below remains historical.
+Status: superseded for located hunts by [0080](0080-per-ccd-first.md). [0095](0095-operator-attested-stock-stability.md) replaces stock controls with the operator's attestation; the Ruleset 10 gate record below remains historical.
 
 Amends [ADR 0038](0038-self-sufficient-cores.md): its multi-core R7 attribution, its `failure_at_zero` dead end "regardless of idle cores" and its bench gate. [Issue #415](https://github.com/shgew/togi/issues/415) records the decision and its design; [#348](https://github.com/shgew/togi/issues/348) the all-zero rerun before every `failure_at_zero` dead end; [#416](https://github.com/shgew/togi/issues/416) the Ruleset 10 gate.
 

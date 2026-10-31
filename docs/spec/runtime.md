@@ -540,6 +540,8 @@ prompt. Before selecting tuning, a yes durably journals
 [`stock.attested`](journal.md#stock-attestation) for the current firmware
 context if it has not already been attested. A BIOS, AGESA or microcode change
 requires a new current-context answer. A decline records no attestation.
+The normal boot's session envelope and operator attestation alone are not
+tuning activity and do not admit that boot to tuning crash recovery.
 
 After recording the answer, it selects the tuning entry, remembering the day's
 selection if this is the first switch (another switch in the night keeps the

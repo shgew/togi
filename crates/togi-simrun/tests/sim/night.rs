@@ -1,18 +1,17 @@
-//! Ruleset 13 nights through the simulation: the real session over the simulated seams. Whole-night assertions
+//! Ruleset 14 nights through the simulation: the real session over the simulated seams. Whole-night assertions
 //! retain the operator's `stop_at`; transition assertions stop from the event observer.
 
 use jiff::SignedDuration;
 use test_case::test_case;
 use togi_journal::{
-    DeadEndCondition, Event, EventKind, Payload, Queue, ShutdownReason, StockAttested,
+    DeadEndCondition, Event, EventKind, Outcome, Payload, Queue, ShutdownReason, StockAttested,
     TrialIntent,
 };
 use togi_machine::{Backend, BiosContext, CoreId, Signal};
-use togi_session::{SessionError, Stop};
+use togi_session::Stop;
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ScriptDef;
 use togi_simrun::{Observe, Replay};
-use togi_tuner::policy::EndReason;
 
 use crate::common::{Bench, crash_at_nth, finish, hunt_machine};
 
@@ -311,33 +310,67 @@ fn an_exhausted_backend_is_left_and_the_night_continues_on_the_other() {
 
 #[test_case(Backend::Mprime; "mprime")]
 #[test_case(Backend::Ycruncher; "ycruncher")]
-fn a_night_whose_backend_is_exhausted_from_the_start_runs_no_zero_trial_on_it(backend: Backend) {
+fn a_backend_unavailable_from_the_start_is_exhausted_without_a_started_trial(backend: Backend) {
     let bench = Bench::new(&MachineDefinition::default(), 1);
     bench.sim.fail_backend_setup(backend);
     let finished = finish(bench.input());
 
+    assert!(finished.errors.is_empty(), "{:?}", finished.errors);
+    let Some(Stop::DeadEnd {
+        dead_end, causes, ..
+    }) = &finished.stop
+    else {
+        panic!("stop {:?}", finished.stop);
+    };
+    assert_eq!(dead_end.condition, DeadEndCondition::NoEvidence);
     assert!(
-        finished
-            .errors
-            .iter()
-            .all(|error: &SessionError| !error.is_crash()),
-        "{:?}",
-        finished.errors
+        dead_end
+            .detail
+            .starts_with("every runnable cell needs an unavailable backend:"),
+        "{}",
+        dead_end.detail
     );
-    assert!(
-        matches!(
-            finished.stop,
-            Some(
-                Stop::Signal
-                    | Stop::Night(EndReason::Unavailable | EndReason::NoNonzeroWork)
-            )
-        ),
-        "{:?}",
-        finished.stop
-    );
+    assert!(dead_end.detail.contains(&backend.to_string()));
+    assert!(!causes.is_empty(), "the backend exhaustion has no evidence");
     let events = bench.events();
-    assert_eq!(ran_on(&events, backend), 0);
+    let failed: Vec<_> = intents(&events)
+        .into_iter()
+        .filter(|intent| {
+            intent
+                .content
+                .iter()
+                .any(|content| content.content.backend == backend)
+        })
+        .collect();
+    assert!(!failed.is_empty(), "the backend was never attempted");
+    for intent in failed {
+        assert!(
+            find!(events, TrialStart, |start| start.trial == intent.trial).is_none(),
+            "trial {} started on the failed backend",
+            intent.trial
+        );
+        let end = find!(events, TrialEnd, |end| end.trial == intent.trial)
+            .unwrap_or_else(|| panic!("the failed setup has no trial end"));
+        assert_eq!(end.outcome, Outcome::Inconclusive);
+    }
+    let excluded = events
+        .iter()
+        .position(|event| {
+            matches!(&event.payload, Payload::NightPlan(plan)
+                if plan.unavailable.iter().any(|held| held.backend == backend))
+        })
+        .unwrap_or_else(|| panic!("the exhausted backend was never excluded from the night"));
+    assert_eq!(ran_on(&events[excluded + 1..], backend), 0);
+    for cause in causes {
+        assert!(
+            events.iter().any(|event| event.seq == *cause
+                && matches!(&event.payload, Payload::TrialEnd(end)
+                    if end.outcome == Outcome::Inconclusive)),
+            "exhaustion cites a cause other than an inconclusive trial: {cause}"
+        );
+    }
     assert_no_zero_trial(&events);
+    all_zero(&bench, 16);
 }
 
 #[test]
@@ -347,20 +380,21 @@ fn a_night_with_every_backend_exhausted_ends_in_a_dead_end() {
     bench.sim.fail_backend_setup(Backend::Ycruncher);
     let finished = finish(bench.input());
 
+    assert!(finished.errors.is_empty(), "{:?}", finished.errors);
+    let Some(Stop::DeadEnd { dead_end, .. }) = finished.stop else {
+        panic!("stop {:?}", finished.stop);
+    };
+    assert_eq!(dead_end.condition, DeadEndCondition::NoEvidence);
     assert!(
-        finished
-            .errors
-            .iter()
-            .all(|error: &SessionError| !error.is_crash()),
-        "{:?}",
-        finished.errors
+        dead_end
+            .detail
+            .starts_with("every runnable cell needs an unavailable backend:"),
+        "{}",
+        dead_end.detail
     );
-    assert!(
-        matches!(
-            finished.stop,
-            Some(Stop::DeadEnd { .. } | Stop::Night(EndReason::Unavailable))
-        ),
-        "{:?}",
-        finished.stop
-    );
+    let events = bench.events();
+    assert_eq!(count(&events, EventKind::TrialStart), 0);
+    assert_eq!(count(&events, EventKind::Failure), 0);
+    assert_no_zero_trial(&events);
+    all_zero(&bench, 16);
 }

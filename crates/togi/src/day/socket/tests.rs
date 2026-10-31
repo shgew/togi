@@ -664,7 +664,10 @@ fn stock_attestation_failure_is_never_acknowledged() {
     let mut journal = crate::day::tests::journal();
     let session = journal.session().unwrap();
     let result = respond(
-        &mut journal, &FixedClock, 0, Request::AttestStock { session },
+        &mut journal,
+        &FixedClock,
+        0,
+        Request::AttestStock { session },
         &mut |_, _, action| {
             assert_eq!(action, Control::AttestStock);
             Err(super::super::Error::ClockReversed)

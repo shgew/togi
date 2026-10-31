@@ -9,9 +9,9 @@ use togi_journal::{
     Activity, CommandReset, NightId, Payload, QualificationState, Queue, ResetTarget, Seq,
     SessionContext, Shutdown, ShutdownReason, TaskId, Tested, UnavailableBackend,
 };
-use togi_machine::{Backend, BootId, Regime};
+use togi_machine::{Backend, BootId, CoreId, Regime};
 use togi_tuner::day::{Invocation, Pause};
-use togi_tuner::night::Roles;
+use togi_tuner::night::{PackageLoad, Roles};
 use togi_tuner::policy::{DayQuery, EndReason, Params, TrialPlan};
 
 use crate::fixture::{Ending, Journal, at, context, cores, cores_per_ccd, firmware};
@@ -641,9 +641,12 @@ fn a_night_never_runs_an_all_zero_trial_and_ends_for_want_of_nonzero_work(mode: 
         drive_without_zero(&mut journal, ending),
         EndReason::NoNonzeroWork
     );
-    assert!(journal.events.iter().all(|event| match &event.payload {
-        Payload::TrialIntent(intent) => intent.activity != Some(Activity::Control),
-        _ => true,
+    assert!(journal.events.iter().all(|event| {
+        if let Payload::TrialIntent(intent) = &event.payload {
+            intent.activity != Some(Activity::Control)
+        } else {
+            true
+        }
     }));
 }
 
@@ -820,7 +823,11 @@ fn mapping_steps_keep_their_declared_partials_and_alternate_ccds(cold: bool) {
             && is_isolated_ccd0_mapping(&plan)
             && matches!(plan.cell.roles, Roles::Package(PackageLoad::FullCcd { .. }))
         {
-            journal.run_requesting(&plan, &requests_of([1.3, 1.2, 1.1, 1.0]));
+            let requests = (0..4_i64)
+                .zip([1.3, 1.2, 1.1, 1.0])
+                .map(|(id, volts)| (CoreId::new(id).unwrap(), volts))
+                .collect();
+            journal.run_requesting(&plan, &requests);
             changed = true;
         } else {
             journal.run(&plan, Ending::Pass);

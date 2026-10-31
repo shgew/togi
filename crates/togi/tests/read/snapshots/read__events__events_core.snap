@@ -3,3 +3,6 @@ source: crates/togi/tests/read/events.rs
 expression: text(&ran.stdout)
 ---
 00:00:00 smu.readback   SMU core 03 reads CO 0
+00:00:00 smu.intent     SMU set core 03 to offset -5
+00:00:00 smu.write      SMU wrote core 03 CO -5
+00:00:00 smu.readback   SMU core 03 reads CO -5

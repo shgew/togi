@@ -161,17 +161,10 @@ pub enum RequalificationDue {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum Reason {
-    Reproduction {
-        event: Seq,
-        attempt: AttemptScope,
-    },
+    Reproduction { event: Seq, attempt: AttemptScope },
     Qualification,
-    Mapping {
-        target: MappingTarget,
-    },
-    Requalification {
-        due: RequalificationDue,
-    },
+    Mapping { target: MappingTarget },
+    Requalification { due: RequalificationDue },
 }
 
 /// One queue's outstanding work: the cells still to launch, in order, at one whole CCD profile.
@@ -235,13 +228,14 @@ fn runnable(work: Option<&Work>) -> Option<&Work> {
 
 /// The queues holding work this visit, in visiting order.
 fn due(inputs: &Inputs) -> Vec<(Queue, &Work)> {
-    let reproduction = inputs
-        .reproduction
-        .as_ref()
-        .and_then(|reproduction| match &reproduction.stage {
-            ReproductionStage::Open(work) => Some(work),
-            ReproductionStage::Concluded | ReproductionStage::Lapsed => None,
-        });
+    let reproduction =
+        inputs
+            .reproduction
+            .as_ref()
+            .and_then(|reproduction| match &reproduction.stage {
+                ReproductionStage::Open(work) => Some(work),
+                ReproductionStage::Concluded | ReproductionStage::Lapsed => None,
+            });
     VISIT_ORDER
         .into_iter()
         .filter_map(|queue| {

@@ -44,7 +44,9 @@ fn resetting_everything_makes_the_boundary_permanent_and_leaves_no_import_marker
 #[test]
 fn resetting_in_an_empty_journal_is_no_session() {
     let bench = Bench::new(2);
-    let Session { appender, .. } = bench.open();
+    let Ok(Session { appender, .. }) = Session::open(bench.input_unattested()) else {
+        panic!("open empty journal");
+    };
     let journal = appender.into_journal();
     let error = reset_all(&build(), journal, &mut *bench.sim.seams().clock).unwrap_err();
     assert!(matches!(error, CommandError::NoSession));

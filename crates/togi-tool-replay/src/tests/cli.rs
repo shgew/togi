@@ -187,8 +187,8 @@ fn at_prints_one_frame_of_the_recording_in_the_supplied_time_zone() {
 #[test_case("help", View::Help; "help view")]
 #[test_case("log", View::Log; "log view")]
 fn every_view_can_be_printed(name: &str, view: View) {
-    let bytes = recording(Scenario::Controls);
-    let events = Scenario::Controls.events().unwrap();
+    let bytes = recording(Scenario::Nonzero);
+    let events = Scenario::Nonzero.events().unwrap();
     let cli = parse(&["--at", "30", "--view", name]).unwrap();
     let mut out = Vec::new();
     assert!(run(&cli, &bytes, &mut out).is_empty());
@@ -205,7 +205,7 @@ fn every_view_can_be_printed(name: &str, view: View) {
 
 #[test]
 fn at_a_sequence_number_beyond_the_recording_prints_its_last_frame() {
-    let bytes = recording(Scenario::Controls);
+    let bytes = recording(Scenario::Nonzero);
     let cli = parse(&["--at", "99999999"]).unwrap();
     let mut out = Vec::new();
     assert!(run(&cli, &bytes, &mut out).is_empty());
@@ -271,7 +271,7 @@ fn run_reports_an_unreadable_recording_and_a_failed_write() {
     .unwrap_err();
     assert!(matches!(error, Error::Read(_)));
 
-    let bytes = recording(Scenario::Controls);
+    let bytes = recording(Scenario::Nonzero);
     let error = run_with(
         &cli,
         &mut Broken,

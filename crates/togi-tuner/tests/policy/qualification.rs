@@ -92,12 +92,13 @@ fn a_qualification_failure_on_a_stock_core_blocks_the_exact_profile_without_a_st
         assert!(next_proposal_cycle(&mut journal).is_empty());
         assert_eq!(failed_commitments(&journal, &profile), 1);
         assert_eq!(journal.state.project().climb.units[0].edge, edge);
-        assert!(journal.events[from..].iter().all(|event| match &event.payload {
-            Payload::TrialIntent(intent) => {
+        assert!(journal.events[from..].iter().all(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
                 intent.activity != Some(Activity::Control)
                     && intent.profile.iter().any(|(_, offset)| offset.get() != 0)
+            } else {
+                true
             }
-            _ => true,
         }));
         return;
     }

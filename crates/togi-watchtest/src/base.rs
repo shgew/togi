@@ -6,10 +6,8 @@ use std::time::Duration;
 
 use jiff::SignedDuration;
 use togi_config::Config;
-use togi_journal::{
-    Activity, DayBootStart, Event, EventKind, Payload, Queue, SessionStart, Stamp, TrialId,
-};
-use togi_machine::{CoreId, Machine};
+use togi_journal::{Activity, DayBootStart, Event, EventKind, Payload, Queue, SessionStart, Stamp};
+use togi_machine::Machine;
 use togi_simrun::day_night::{
     CalendarConfig, DayClassification, DayObservation, EndAnswer, Night, Policy, Ruleset13,
     RunError, run_with_policy,
@@ -22,8 +20,8 @@ use crate::simulate::{Halt, build, crash_trial, default_machine, simulate};
 /// The night the simulated operator gives the session: eight hours, as the scenarios have always had.
 const NIGHT: SignedDuration = SignedDuration::from_hours(8);
 
-/// The night the operator leaves running until mapping is done: longer than the default machine needs to reach its
-/// first filler trial, about fifty hours in. The bases that need it stop as soon as their state is reached.
+/// Long enough to reach a mapping crash or exhaust all isolated -5 probes. Generation stops as soon as the
+/// requested state is reached.
 const LONG_NIGHT: SignedDuration = SignedDuration::from_hours(60);
 
 /// The calendar simulator's machine for [`Base::Calendar`]: a deep edge, so the first promotion comes within a month.
@@ -33,20 +31,14 @@ const CALENDAR_MACHINE: &str = "edge-deep";
 /// if that transition is not reached within a month.
 const CALENDAR_DAYS: u32 = 30;
 
-/// How many control trials run before [`Base::DeadEnd`] crashes one: the fourth.
-const CRASH_AFTER: usize = 3;
-
 /// The simulated sessions the scenarios are cut from. Each is the default machine at seed 1.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Base {
-    /// An eight-hour night the operator ends: the first night's CO-0 controls, all passing, and the operator's
-    /// signal interrupting the last of them.
+    /// An eight-hour night of attested nonzero mapping, ended by the operator's signal.
     Night,
-    /// A night the operator leaves running past its controls into mapping, stopped once the next boot has recorded
-    /// the crash a mapping trial at CCD1, CO -10 causes (about fifteen hours in).
+    /// A long mapping night, stopped when the next boot records its first crash below zero.
     Mapped,
-    /// The same long night, stopped once its first filler trial has ended, after mapping has nothing left to do
-    /// (about fifty hours in).
+    /// Real days and nights until the first filler trial at a promoted nonzero day profile starts.
     Filler,
     /// Bounded-exploration days and nights up to the first reproduction trial start on `edge-deep`, seed 1: the real policy
     /// decides every night trial and day step, the trial runner runs them on a simulated machine, and the day
@@ -56,8 +48,7 @@ pub enum Base {
     /// The session is not `togi run`, so the journal has no `config.loaded`, preflight or SMU transaction; its builds
     /// are rewritten to [`crate::build`].
     Calendar,
-    /// The night whose fourth control trial crashes the machine at CO 0, a conclusive failure at stock: the next
-    /// boot records the crash and the session dead-ends.
+    /// A night whose isolated -5 probes all crash: implicit stock passes remain, but no nonzero work is admissible.
     DeadEnd,
 }
 
@@ -80,13 +71,8 @@ impl Base {
                 Some(Box::new(|event| event.kind() == EventKind::CrashDetected)),
                 LONG_NIGHT,
             ),
-            Self::Filler => simulate(
-                default_machine(1)?,
-                Config::default(),
-                Some(after_first_filler()),
-                LONG_NIGHT,
-            ),
-            Self::Calendar => calendar(),
+            Self::Filler => calendar(CalendarGoal::Filler),
+            Self::Calendar => calendar(CalendarGoal::Reproduction),
             Self::DeadEnd => dead_end(),
         }
     }
@@ -103,39 +89,30 @@ impl Base {
     }
 }
 
-/// Halts after the `trial.end` of the first filler trial.
-fn after_first_filler() -> Halt {
-    let mut filler: Option<TrialId> = None;
-    Box::new(move |event| {
-        if let Payload::TrialIntent(intent) = &event.payload {
-            if filler.is_none() && intent.task.is_some_and(|task| task.queue == Queue::Filler) {
-                filler = Some(intent.trial.clone());
-            }
-        } else if let Payload::TrialEnd(end) = &event.payload {
-            return filler.as_ref() == Some(&end.trial);
-        }
-        false
-    })
-}
-
-fn calendar() -> Result<Vec<Event>, Error> {
+fn calendar(goal: CalendarGoal) -> Result<Vec<Event>, Error> {
     let mut policy = CpuAnswerAfterPromotion {
         inner: Ruleset13::with_params(Params::SPEC).recording(),
         progress: CalendarProgress::AwaitingPromotion,
+        goal,
     };
     run_with_policy(
         CALENDAR_MACHINE,
         1,
         CalendarConfig {
-            days: CALENDAR_DAYS,
+            days: if matches!(goal, CalendarGoal::Filler) {
+                90
+            } else {
+                CALENDAR_DAYS
+            },
             ..CalendarConfig::default()
         },
         &mut policy,
     )?;
     if !policy.is_finished() {
-        return Err(Error::NoCut(
-            "the Calendar's first reproduction trial start",
-        ));
+        return Err(Error::NoCut(match goal {
+            CalendarGoal::Filler => "the Calendar's first nonzero filler trial start",
+            CalendarGoal::Reproduction => "the Calendar's first reproduction trial start",
+        }));
     }
     Ok(policy
         .inner
@@ -146,11 +123,17 @@ fn calendar() -> Result<Vec<Event>, Error> {
         .collect())
 }
 
-/// Ruleset 13, except that the first day observed at a promoted profile ends in a crash the operator blames on the
-/// CPU.
+/// The real ruleset policy, with an optional operator CPU answer after the first promotion.
 struct CpuAnswerAfterPromotion {
     inner: Ruleset13,
     progress: CalendarProgress,
+    goal: CalendarGoal,
+}
+
+#[derive(Clone, Copy)]
+enum CalendarGoal {
+    Filler,
+    Reproduction,
 }
 
 enum CalendarProgress {
@@ -180,7 +163,10 @@ impl Policy for CpuAnswerAfterPromotion {
             .project()
             .applied
             .is_some_and(|profile| !profile.is_zero());
-        if promoted && matches!(self.progress, CalendarProgress::AwaitingPromotion) {
+        if promoted
+            && matches!(self.goal, CalendarGoal::Reproduction)
+            && matches!(self.progress, CalendarProgress::AwaitingPromotion)
+        {
             self.progress = CalendarProgress::AwaitingReproduction;
             let crashed = DayObservation::Ended {
                 active: Duration::from_hours(1),
@@ -192,10 +178,15 @@ impl Policy for CpuAnswerAfterPromotion {
     }
 
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
+        let goal = self.goal;
         let progress = self
             .inner
-            .night_until_trial_start(night, machine, |intent| {
-                intent.activity == Some(Activity::Reproduction)
+            .night_until_trial_start(night, machine, |intent| match goal {
+                CalendarGoal::Reproduction => intent.activity == Some(Activity::Reproduction),
+                CalendarGoal::Filler => {
+                    intent.task.is_some_and(|task| task.queue == Queue::Filler)
+                        && intent.profile.iter().any(|(_, offset)| offset.get() != 0)
+                }
             })?;
         if let ControlFlow::Break(()) = progress {
             self.progress = CalendarProgress::Complete;
@@ -240,21 +231,17 @@ fn dead_end() -> Result<Vec<Event>, Error> {
     let fault = machine.clone();
     let failed: Rc<RefCell<Option<Error>>> = Rc::new(RefCell::new(None));
     let report = Rc::clone(&failed);
-    let mut intents = 0;
     let arm: Halt = Box::new(move |event| {
         let Payload::TrialIntent(intent) = &event.payload else {
             return false;
         };
-        if intent.activity != Some(Activity::Control) {
+        if intent.activity != Some(Activity::Mapping) {
             return false;
         }
-        intents += 1;
-        if intents != CRASH_AFTER + 1 {
+        let Some(core) = intent.cores.first() else {
             return false;
-        }
-        let crash = CoreId::new(3)
-            .map_err(Error::from)
-            .and_then(|core| crash_trial(&fault, intent.trial.as_str(), 7.0, core));
+        };
+        let crash = crash_trial(&fault, intent.trial.as_str(), 7.0, core);
         match crash {
             Ok(()) => false,
             Err(error) => {
@@ -263,7 +250,7 @@ fn dead_end() -> Result<Vec<Event>, Error> {
             }
         }
     });
-    let events = simulate(machine, Config::default(), Some(arm), NIGHT)?;
+    let events = simulate(machine, Config::default(), Some(arm), LONG_NIGHT)?;
     if let Some(error) = failed.take() {
         return Err(error);
     }

@@ -171,22 +171,45 @@ fn a_shard_the_count_cannot_hold_is_refused_by_check(shard: &str) {
     assert_eq!(ran.code, Some(1), "{}", ran.stderr);
 }
 
-/// A suite of one run whose machine has a core that fails at the stock offset, so its night dead ends at CO 0.
-fn doomed(night_end: &str) -> Host {
+/// Four cores that crash at every nonzero offset and pass at stock: each isolated -5 mapping probe fails, no nonzero
+/// cell stays admissible, and the night ends at the named `no_nonzero_work` dead end with no failure at CO 0.
+const STOCK_ONLY: &str = r#"{
+  "cores": 4,
+  "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
+  "core": [
+    {"id": 0, "alone": [0, 0, 0, 0, 0], "together": [0, 0, 0, 0, 0, 0, 0]},
+    {"id": 1, "alone": [0, 0, 0, 0, 0], "together": [0, 0, 0, 0, 0, 0, 0]},
+    {"id": 2, "alone": [0, 0, 0, 0, 0], "together": [0, 0, 0, 0, 0, 0, 0]},
+    {"id": 3, "alone": [0, 0, 0, 0, 0], "together": [0, 0, 0, 0, 0, 0, 0]}
+  ]
+}"#;
+
+/// A suite of one run on [`STOCK_ONLY`], whose night runs out of nonzero work, expected to end as `night_end` says.
+fn exhausted(night_end: &str) -> Host {
     let mut host = host();
-    let mut machine: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../../../tools/bench/machines/flat-hazard.json"
-    ))
-    .unwrap();
-    machine["core"][0]["alone"] = serde_json::json!([1, 1, 1, 1, 1]);
-    host.put("/machine.json", machine.to_string());
+    host.put("/machine.json", STOCK_ONLY);
     host.put(
         "/suite.json",
         format!(
-            r#"{{"scenarios":[{{"name":"doomed","machine":"machine.json","night_end":"{night_end}","dev":[1]}}]}}"#
+            r#"{{"scenarios":[{{"name":"exhausted","machine":"machine.json","night_end":"{night_end}","dev":[1]}}]}}"#
         ),
     );
     host
+}
+
+/// The night of [`exhausted`] ended at its `no_nonzero_work` dead end where the scenario expected `expected`.
+fn ended_without_nonzero_work_instead_of(host: &mut Host, expected: ExpectedEnd) {
+    let ran = run_shard(host, "0", &[]);
+    assert_eq!(ran.code, Some(1), "{}", ran.stderr);
+    let outcomes = outcomes(host);
+    assert!(
+        matches!(
+            outcomes.as_slice(),
+            [Outcome::WrongEnd { expected: wanted, ended }]
+                if *wanted == expected && ended.contains("no_nonzero_work")
+        ),
+        "{outcomes:?}"
+    );
 }
 
 fn outcomes(host: &Host) -> Vec<Outcome> {
@@ -199,36 +222,24 @@ fn outcomes(host: &Host) -> Vec<Outcome> {
 
 #[test]
 fn a_session_that_dead_ends_when_the_operator_was_to_end_it_fails_its_shard_and_is_recorded() {
-    let mut host = doomed("operator");
-    let ran = run_shard(&mut host, "0", &[]);
-    assert_eq!(ran.code, Some(1), "{}", ran.stderr);
-    let outcomes = outcomes(&host);
-    assert!(
-        matches!(
-            outcomes.as_slice(),
-            [Outcome::WrongEnd {
-                expected: ExpectedEnd::Operator,
-                ..
-            }]
-        ),
-        "{outcomes:?}"
-    );
+    ended_without_nonzero_work_instead_of(&mut exhausted("operator"), ExpectedEnd::Operator);
 }
 
 #[test]
 fn a_dead_end_the_scenario_expects_passes_when_replay_and_audit_are_clean() {
-    let mut host = doomed("dead_end");
+    let mut host = exhausted("dead_end");
     let ran = run_shard(&mut host, "0", &[]);
     assert_eq!(ran.code, Some(0), "{}", ran.stderr);
     assert_eq!(outcomes(&host), [Outcome::Clean]);
 }
 
 #[test]
-fn a_stock_dead_end_passes_when_the_scenario_allows_the_operator_or_a_stock_end() {
-    let mut host = doomed("operator_or_stock");
-    let ran = run_shard(&mut host, "0", &[]);
-    assert_eq!(ran.code, Some(0), "{}", ran.stderr);
-    assert_eq!(outcomes(&host), [Outcome::Clean]);
+fn a_night_out_of_nonzero_work_is_not_a_stock_end_when_the_scenario_allows_the_operator_or_a_stock_end()
+ {
+    ended_without_nonzero_work_instead_of(
+        &mut exhausted("operator_or_stock"),
+        ExpectedEnd::OperatorOrStock,
+    );
 }
 
 #[test]

@@ -2,10 +2,10 @@
 source: crates/togi-tool-replay/src/tests/frames.rs
 expression: body
 ---
- togi   11:55:00   tuning 11h55m   session 11h55m   0 failures · 0 crashes
- ► NIGHT 11h55m ─ mapping C0 -5
+ togi   00:00:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+ ► NIGHT 0h00m ─ mapping C0 -5
 
- ▌  Mapping CCD 0 at -5 (mapping task 2).
+ ▌  Mapping CCD 0 at -5 (mapping task 0).
 
   R1   light load  on 00   mprime SSE 4K-21K · 1 worker                                            MAPPING CCD 0 AT -5
  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:30 left
@@ -13,7 +13,7 @@ expression: body
 
 
  CCD 0 one loaded 0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
- D 0 · C unknown · U unknown · S 0 diagnostic only           D 0 · C unknown · U unknown · S 0 diagnostic only
+ D 0 · C unknown · U unknown                                 D 0 · C unknown · U unknown
  held: unknown edge for CCD 0, unknown edge for CCD 1        held: unknown edge for CCD 0, unknown edge for CCD 1
  ► 00  -5 LOADED                                               08   0
    01  -5                                                      09   0
@@ -24,11 +24,11 @@ expression: body
    06  -5                                                      14   0
    07  -5                                                      15   0
 
- NIGHT since 00:00 · 11h55m elapsed ──────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
- task        mapping task 2 · 3 of 4 planned tasks done
- mapping     CCD 0 at -5                                     11:55  night    night replanned · 11h55m elapsed · 4...
-             CCD 1 at -5                                     11:55  cap      CCD1 S 0 → 0 · diagnostic only, not...
- shares      reproduction 0%/25% · qualification 0%/75%...   11:55  cap      CCD0 S 0 → 0 · diagnostic only, not...
- DAY ─────────────────────────────────────────────────────   11:55  pass     mapping · CCD 1 at 0 · mapping task 1...
- permission: experimental hold + exact night qualification   11:53  cap      CCD1 S 0 → 0 · diagnostic only, not...
- +5 more                                                     +520 more
+ NIGHT since 00:00 · 0h00m elapsed ───────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
+ task        mapping task 0 · 0 of 1 planned tasks done
+ mapping     CCD 0 at -5                                     00:00  night    night replanned · 0s elapsed · 1 task
+             CCD 1 at -5                                     00:00  night    night opened · 0 tasks
+ shares      reproduction 0%/25% · qualification 0%/75%...   00:00  edge     CCD1 edge unknown -> unknown; ceiling...
+ DAY ─────────────────────────────────────────────────────   00:00  edge     CCD0 edge unknown -> unknown; ceiling...
+ permission: experimental hold + exact night qualification   00:00  note     campaign 20260101T000000Z#33: fresh...
+ +5 more                                                     +2 more

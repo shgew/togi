@@ -28,7 +28,7 @@ fn text(bytes: Vec<u8>) -> String {
 #[test]
 fn real_process_at_prints_a_frame_of_a_recording_and_nothing_else() {
     let dir = tempdir().unwrap();
-    install(dir.path(), Scenario::Controls).unwrap();
+    install(dir.path(), Scenario::Nonzero).unwrap();
     let state = dir.path().to_str().unwrap();
     let ran = replay(&[
         "--state-dir",
@@ -95,7 +95,7 @@ fn real_process_an_invalid_speed_is_a_usage_error_before_the_journal_is_read(spe
 #[test]
 fn real_process_playing_without_a_terminal_fails_and_points_at_at() {
     let dir = tempdir().unwrap();
-    install(dir.path(), Scenario::Controls).unwrap();
+    install(dir.path(), Scenario::Nonzero).unwrap();
     let ran = replay(&["--state-dir", dir.path().to_str().unwrap()]);
     assert_eq!(ran.status.code(), Some(1));
     assert_eq!(

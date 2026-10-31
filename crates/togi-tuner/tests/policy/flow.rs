@@ -528,7 +528,9 @@ fn exact_reproduction_failure_on_a_stock_core_stays_a_profile_failure_without_ze
     let (mut journal, d) = promoted();
     unexplained_end(&mut journal, &d);
     let committed = journal.settle_day(&cold_boot("day2", 61_000));
-    let retreat = step_of(&committed, |action| matches!(action, ClimbAction::Retreat { .. }));
+    let retreat = step_of(&committed, |action| {
+        matches!(action, ClimbAction::Retreat { .. })
+    });
     apply(&mut journal, &retreat, 2, "day2");
     journal.reboot("tuning2");
     let from = journal.events.len();
@@ -549,12 +551,13 @@ fn exact_reproduction_failure_on_a_stock_core_stays_a_profile_failure_without_ze
         matches!(&event.payload, Payload::NightReproduction(record)
             if record.state == ReproductionState::Reproduced)
     }));
-    assert!(journal.events[from..].iter().all(|event| match &event.payload {
-        Payload::TrialIntent(intent) => {
+    assert!(journal.events[from..].iter().all(|event| {
+        if let Payload::TrialIntent(intent) = &event.payload {
             intent.activity != Some(Activity::Control)
                 && intent.profile.iter().any(|(_, offset)| offset.get() != 0)
+        } else {
+            true
         }
-        _ => true,
     }));
 }
 
@@ -1119,7 +1122,10 @@ fn a_failure_is_warned_of_once_its_class_passes_deeper() {
     };
     let offset = togi_machine::TargetOffset::new(-10).unwrap();
     deeper.task.ordinal = 50_000;
-    deeper.tested = Tested::Isolated { ccd: ccd(0), offset };
+    deeper.tested = Tested::Isolated {
+        ccd: ccd(0),
+        offset,
+    };
     deeper.profile = togi_tuner::UnitProfile::of_ccd(&zero().with(ccd(0), offset));
     journal.run(&deeper, Ending::Pass);
     let warnings = |journal: &Journal| -> Vec<(Seq, Vec<Seq>, Vec<Seq>)> {
@@ -1158,10 +1164,10 @@ fn a_failure_is_warned_of_once_its_class_passes_deeper() {
 fn a_cap_says_why_each_class_is_uncovered() {
     let mut journal = Journal::ready();
     let _ = journal.until_filler(|_| Ending::Pass);
-    let first = journal
+    let caps: Vec<_> = journal
         .events
         .iter()
-        .find_map(|event| {
+        .filter_map(|event| {
             if let Payload::CcdCap(cap) = &event.payload
                 && cap.ccd == ccd(0)
             {
@@ -1170,11 +1176,10 @@ fn a_cap_says_why_each_class_is_uncovered() {
                 None
             }
         })
-        .unwrap_or_else(|| panic!("the night committed no cap for CCD 0"));
+        .collect();
     let reasons = |regime: Regime| -> Vec<UncoveredReason> {
-        first
-            .uncovered
-            .iter()
+        caps.iter()
+            .flat_map(|cap| &cap.uncovered)
             .filter(|uncovered| uncovered.class.regime == regime)
             .map(|uncovered| uncovered.reason)
             .collect()
@@ -1436,7 +1441,7 @@ fn an_interrupted_mapping_task_keeps_its_diagnostic_rotation() {
     let mut journal = Journal::ready();
     let plan = loop {
         let plan = journal.until_trial(journal.now());
-        if matches!(plan.tested, Tested::Isolated { offset, .. } if offset.get() < 0) {
+        if matches!(plan.tested, Tested::Isolated { offset, .. } if offset.get() < -5) {
             break plan;
         }
         journal.run(&plan, Ending::Pass);

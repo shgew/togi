@@ -132,7 +132,7 @@ impl Witnesses {
             && let Some(trial) = &exposure.source.trial
         {
             let id = trial.as_str().to_owned();
-            self.exposures.insert(event.seq, id.clone());
+            self.exposures.insert(event.seq, id);
             if exposure.outcome == Outcome::Failure {
                 self.failures
                     .insert(event.seq, format!("ruleset13-failure-{}", trial.as_str()));

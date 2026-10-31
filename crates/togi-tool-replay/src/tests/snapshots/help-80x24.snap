@@ -2,8 +2,8 @@
 source: crates/togi-tool-replay/src/tests/frames.rs
 expression: body
 ---
- togi   11:55:00   tuning 11h55m   session 11h55m   0 failures · 0 crashes
- ► NIGHT 11h55m ─ mapping C0 -5 ─ 1:30 left
+ togi   00:00:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+ ► NIGHT 0h00m ─ mapping C0 -5 ─ 1:30 left
 
  █ READING THE SCREEN ────────────────────────────────────────────────────────
  █

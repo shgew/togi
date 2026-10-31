@@ -310,15 +310,27 @@ impl Fake {
         let firmware = machine.host.bios_context().unwrap();
         let boot = machine.host.boot_id().unwrap();
         let mut journal = togi_journal::StateDir::lock_with_fs(self.fs.clone(), &self.state_dir())
-            .unwrap().open_at(boot, self.sim.now()).unwrap();
-        let stamp = togi_journal::Stamp { time: self.sim.now(), mono: None };
+            .unwrap()
+            .open_at(boot, self.sim.now())
+            .unwrap();
+        let stamp = togi_journal::Stamp {
+            time: self.sim.now(),
+            mono: None,
+        };
         if journal.events().is_empty() {
             let session = journal.state_dir().session_id(self.sim.now()).unwrap();
-            journal.append(stamp, togi_journal::SessionStart {
-                build: togi_cli::report::current_build(),
-                session,
-                cores: machine.host.topology().unwrap(),
-            }.into(), &[]).unwrap();
+            journal
+                .append(
+                    stamp,
+                    togi_journal::SessionStart {
+                        build: togi_cli::report::current_build(),
+                        session,
+                        cores: machine.host.topology().unwrap(),
+                    }
+                    .into(),
+                    &[],
+                )
+                .unwrap();
         }
         if !journal.events().iter().any(|event| {
             matches!(&event.payload, togi_journal::Payload::StockAttested(value) if value.firmware == firmware)
