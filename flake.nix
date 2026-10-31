@@ -179,8 +179,8 @@
               {
                 pname = "togi-recovery";
                 cargoExtraArgs = "--locked ${lib.concatMapStringsSep " " (crate: "-p ${crate}") recoveryCrates}";
-                # Run precisely the excluded campaigns; their inner cut pools are bounded separately.
-                cargoNextestExtraArgs = "--profile ci --ignore-default-filter --test-threads 1 -E 'not default()'";
+                # Run every recovery shard, with at most two single-worker campaigns at a time.
+                cargoNextestExtraArgs = "--profile ci --ignore-default-filter --test-threads 2 -E 'not default()'";
                 passthru.tier = "ci";
                 nativeCheckInputs = [
                   pkgs.gitMinimal

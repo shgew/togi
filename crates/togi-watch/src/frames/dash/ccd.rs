@@ -1,13 +1,11 @@
-//! One CCD's table: a heading with the scale, the CCD's committed D, S and U, how much of the cap its coverage
-//! backs, and a row per core with the offset read back and a gauge.
-//!
-//! The rows show what the tuner's projection says; nothing here computes a cap, an edge or a distance.
+//! Physical CCD topology with unit-generic D, hard ceiling C and tagged U.
+//! The policy supplies every permission fact; diagnostic S never draws the gauge.
 
 use ratatui::buffer::Buffer;
 use ratatui::text::{Line, Span};
-use togi_journal::{Binding, Edge, Slope};
-use togi_machine::TargetOffset;
-use togi_tuner::policy::{CapProjection, UnitProjection};
+use togi_journal::Edge;
+use togi_tuner::policy::{ClimbQualificationState, ClimbUnitProjection, ClimbUnitState};
+use togi_tuner::unit::UnitId;
 
 use crate::frames::colours::Paint;
 use crate::frames::draw::{put, put_cells};
@@ -62,20 +60,19 @@ pub(crate) const fn marks(colours: Colours) -> Marks {
 }
 
 /// The count a gauge marks as the CCD's edge, and whether it is an observed failure or a censored limit.
-fn edge_mark(ccd: Option<&UnitProjection>) -> Option<(i64, Paint)> {
-    match ccd?.edge.as_ref()? {
+fn edge_mark(unit: Option<&ClimbUnitProjection>) -> Option<(i64, Paint)> {
+    match &unit?.edge {
         Edge::Observed { offset, .. } => Some((offset.get(), Paint::Bad)),
         Edge::Censored { limit, .. } => Some((limit.get(), Paint::Warn)),
         Edge::Unknown {} => None,
     }
 }
 
-/// The gauge of a core in `cells` cells, 2 counts to a cell at 25 cells and 1 at 50: the applied depth, the
-/// cap's reach as a dotted track, and the CCD's edge. `applied` is the offset it draws as applied.
+/// Committed day D, the hard ceiling's dotted track and tagged edge, independent of a trial's readback.
 pub(super) fn gauge(
     scene: &Scene<'_>,
     core: &CoreView,
-    ccd: Option<&UnitProjection>,
+    ccd: Option<&ClimbUnitProjection>,
     applied: Option<i64>,
     cells: usize,
 ) -> Line<'static> {
@@ -83,8 +80,8 @@ pub(super) fn gauge(
         return Line::default();
     }
     let cap = ccd
-        .and_then(|ccd| ccd.cap.as_ref())
-        .map_or(0, |cap| cap.offset.get());
+        .and_then(|unit| unit.ceiling)
+        .map_or(0, togi_machine::TargetOffset::get);
     let edge = edge_mark(ccd);
     let marks = marks(scene.colours);
     let total = i64::from(saturating_cells(cells));
@@ -128,134 +125,62 @@ fn span(scene: &Scene<'_>, paint: Option<Paint>, text: String) -> Span<'static> 
     }
 }
 
-fn slope_word(slope: &Slope) -> &'static str {
-    match slope {
-        Slope::Fallback { .. } => "fallback",
-        Slope::Measured { .. } => "measured",
-    }
-}
-
-fn binding_words(binding: &Binding) -> String {
-    match binding {
-        Binding::Rate { class } => format!("rate {}", class.regime),
-        Binding::EdgeMargin {} => "edge margin".to_owned(),
-        Binding::Baseline {} => "baseline".to_owned(),
-    }
-}
-
-fn offset_text(offset: TargetOffset) -> String {
-    offset.get().to_string()
-}
-
 /// What U says: unknown, the offset that failed, or the limit no failure was seen down to.
 pub(crate) fn edge_words(edge: Option<&Edge>) -> (String, String) {
     match edge {
         None | Some(Edge::Unknown {}) => ("U unknown".to_owned(), "U ?".to_owned()),
         Some(Edge::Observed { offset, .. }) => (
-            format!("U fails at {}", offset.get()),
-            format!("U {}", offset.get()),
+            format!("U observed at {}", offset.get()),
+            format!("U observed {}", offset.get()),
         ),
         Some(Edge::Censored { limit, .. }) => (
             format!("U censored at {}", limit.get()),
-            format!("U >{}", limit.get()),
+            format!("U censored {}", limit.get()),
         ),
     }
 }
 
-/// What S says, in full and short: its offset and slope label.
-pub(crate) fn cap_words(cap: &CapProjection) -> (String, String) {
-    let s = offset_text(cap.offset);
-    (
-        format!("S {s} {} slope", slope_word(&cap.slope)),
-        format!("S {s}"),
-    )
-}
-
-/// The distance row: committed D/S/binding, the separate current calculation, U and distance.
-pub(super) fn facts_line(scene: &Scene<'_>, ccd: &UnitProjection, width: usize) -> Line<'static> {
-    let sep = || scene.paint(Paint::Track, " · ");
-    let text = |paint: Paint, value: String| Line::from(scene.paint(paint, value));
-    let mut clauses = vec![Clause::whole(
-        Line::default(),
-        Line::from(vec![
-            scene.paint(Paint::Grey, "D "),
-            scene.paint(Paint::White, offset_text(ccd.day)),
-        ]),
-    )];
-    if let Some(cap) = &ccd.cap {
-        let (full, short) = cap_words(cap);
-        clauses.push(Clause::new(
-            sep(),
+/// Unit facts fit whole values; there is deliberately no remaining-to-S display.
+pub(super) fn facts_line(
+    scene: &Scene<'_>,
+    unit: &ClimbUnitProjection,
+    width: usize,
+) -> Line<'static> {
+    let text = |value: String| Line::from(scene.paint(Paint::Text, value));
+    let (edge_full, edge_short) = edge_words(Some(&unit.edge));
+    let ceiling = unit
+        .ceiling
+        .map_or_else(|| "C unknown".to_owned(), |c| format!("C {}", c.get()));
+    let mut clauses = vec![
+        Clause::whole("", text(format!("D {}", unit.applied.get()))),
+        Clause::whole(" · ", text(ceiling)),
+        Clause::new(
+            " · ",
             vec![
-                Form::new(text(Paint::Text, full), 3),
-                Form::new(text(Paint::Text, short), 0),
+                Form::new(text(edge_full), 1),
+                Form::new(text(edge_short), 0),
+                Form::empty(),
             ],
-        ));
-        let bound = binding_words(&cap.binding);
+        ),
+    ];
+    if let Some(remaining) = unit.remaining {
         clauses.push(Clause::new(
-            sep(),
+            " · ",
             vec![
-                Form::new(text(Paint::Grey, format!("bound by {bound}")), 4),
-                Form::new(text(Paint::Grey, bound), 2),
+                Form::new(text(format!("{remaining} counts to C")), 2),
+                Form::new(text(format!("{remaining} to C")), 1),
                 Form::empty(),
             ],
         ));
-        if let Some(evidence) = &ccd.evidence {
-            let offset = offset_text(evidence.offset);
-            clauses.push(Clause::new(
-                sep(),
-                vec![
-                    Form::new(
-                        text(
-                            Paint::Grey,
-                            format!("calc {offset}: {}", evidence.reason.label()),
-                        ),
-                        0,
-                    ),
-                    Form::new(text(Paint::Grey, format!("calc {offset}")), 1),
-                ],
-            ));
-        }
-    } else {
-        let reason = ccd
-            .evidence
-            .as_ref()
-            .map_or("no cap yet", |evidence| evidence.reason.label());
-        clauses.push(Clause::new(
-            sep(),
-            vec![
-                Form::new(text(Paint::Grey, format!("S 0 · {reason}")), 2),
-                Form::new(text(Paint::Grey, reason.to_owned()), 0),
-            ],
-        ));
     }
-    let (edge_full, edge_short) = edge_words(ccd.edge.as_ref());
-    let edge_paint = match ccd.edge {
-        Some(Edge::Observed { .. }) => Paint::Bad,
-        Some(Edge::Censored { .. }) => Paint::Warn,
-        Some(Edge::Unknown {}) | None => Paint::Grey,
-    };
-    clauses.push(Clause::new(
-        sep(),
-        vec![
-            Form::new(text(edge_paint, edge_full), 1),
-            Form::new(text(edge_paint, edge_short), 0),
-        ],
-    ));
-    if let Some(remaining) = ccd.remaining {
-        let (full, short) = if remaining == 0 {
-            ("at S".to_owned(), "at S".to_owned())
-        } else {
-            (
-                format!("{remaining} counts to S"),
-                format!("{remaining} to S"),
-            )
-        };
+    if let Some(diagnostic) = &unit.diagnostic_s {
         clauses.push(Clause::new(
-            sep(),
+            " · ",
             vec![
-                Form::new(text(Paint::Text, full), 2),
-                Form::new(text(Paint::Text, short), 1),
+                Form::new(
+                    text(format!("S {} diagnostic only", diagnostic.cap.offset.get())),
+                    3,
+                ),
                 Form::empty(),
             ],
         ));
@@ -263,52 +188,69 @@ pub(super) fn facts_line(scene: &Scene<'_>, ccd: &UnitProjection, width: usize) 
     fit_clauses(width, &clauses, scene.colours)
 }
 
-/// The cap owner's eligible mapping witness hours and gaps; non-mapping exposure is not coverage.
+/// Hold, exact-vector qualification and finish/held state, never statistical coverage as permission.
 pub(super) fn coverage_line(
     scene: &Scene<'_>,
-    ccd: &UnitProjection,
+    unit: &ClimbUnitProjection,
     width: usize,
 ) -> Line<'static> {
-    let text = |value: String| Line::from(scene.paint(Paint::Grey, value));
-    let (full, short) = match &ccd.evidence {
-        Some(evidence) => {
-            let seconds = evidence
-                .cells
-                .iter()
-                .fold(0_u64, |total, cell| total.saturating_add(cell.eligible_s));
-            let non_mapping = evidence
-                .uncovered
-                .iter()
-                .filter(|gap| gap.reason == togi_journal::UncoveredReason::NonMappingOnly)
-                .count();
-            let hours = seconds / 360;
-            (
-                format!(
-                    "Ruleset 13 mapping: {}.{}h eligible · {} gaps ({} non-mapping)",
-                    hours / 10,
-                    hours % 10,
-                    evidence.uncovered.len(),
-                    non_mapping
-                ),
-                format!(
-                    "Ruleset 13: {}.{}h · {} gaps",
-                    hours / 10,
-                    hours % 10,
-                    evidence.uncovered.len()
-                ),
+    let text = |value: String| Line::from(scene.paint(Paint::Text, value));
+    let qualification = unit.next.as_ref().map_or_else(
+        || "no candidate".to_owned(),
+        |next| {
+            let state = match next.qualification.state {
+                ClimbQualificationState::Missing => "qualification missing",
+                ClimbQualificationState::InProgress => "qualifying",
+                ClimbQualificationState::Complete { .. } => "exact qualified",
+                ClimbQualificationState::Failed { .. } => "qualification blocked",
+            };
+            format!(
+                "{state} · {} outstanding",
+                next.qualification.outstanding.len()
             )
-        }
-        None => (
-            "Ruleset 13 mapping: eligible hours/gaps unknown".to_owned(),
-            "Ruleset 13: hours/gaps unknown".to_owned(),
+        },
+    );
+    let state = match &unit.state {
+        ClimbUnitState::Climbing => "climbing".to_owned(),
+        ClimbUnitState::Held { reason } => format!(
+            "held: {}",
+            reason
+                .iter()
+                .map(super::super::story::blocker_words)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        ClimbUnitState::Finished {
+            reason, last_clean, ..
+        } => format!(
+            "finished: {} · last clean {}",
+            super::super::story::finish_words(reason),
+            last_clean.get()
         ),
     };
     fit_clauses(
         width,
-        &[Clause::new(
-            Line::default(),
-            vec![Form::new(text(full), 1), Form::new(text(short), 0)],
-        )],
+        &[
+            Clause::whole("", text(state)),
+            Clause::new(
+                " · ",
+                vec![
+                    Form::new(
+                        text(format!(
+                            "hold {} / {} h",
+                            unit.hold.credited_s / 3600,
+                            unit.hold.required_s / 3600
+                        )),
+                        1,
+                    ),
+                    Form::empty(),
+                ],
+            ),
+            Clause::new(
+                " · ",
+                vec![Form::new(text(qualification), 2), Form::empty()],
+            ),
+        ],
         scene.colours,
     )
 }
@@ -387,9 +329,17 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
     let projection = scene
         .s
         .policy
+        .climb
         .units
         .iter()
-        .find(|p| p.unit == togi_tuner::unit::UnitId::Ccd(id));
+        .find(|p| p.unit == UnitId::Ccd(id));
+    let core_phase = scene
+        .s
+        .policy
+        .climb
+        .units
+        .iter()
+        .any(|p| matches!(p.unit, UnitId::Core(_)));
     match projection {
         Some(projection) => {
             put(buf, r, 0, 1, &facts_line(scene, projection, width), colours);
@@ -402,17 +352,29 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
                 colours,
             );
         }
+        None if core_phase => put(
+            buf,
+            r,
+            0,
+            1,
+            &paint(Paint::Grey, "core tuning · physical CCD topology".into()),
+            colours,
+        ),
         None => put(
             buf,
             r,
             0,
             1,
-            &paint(Paint::Grey, "no tuner state for this CCD yet".into()),
+            &paint(
+                Paint::Grey,
+                "unit state unavailable; no ordinary permission".into(),
+            ),
             colours,
         ),
     }
     let cores: Vec<&CoreView> = scene.s.cores.iter().filter(|core| core.ccd == id).collect();
-    let rows = usize::from(r.height.saturating_sub(3));
+    let stride = if core_phase { 2 } else { 1 };
+    let rows = usize::from(r.height.saturating_sub(3)) / stride;
     let mut shown = cores.len().min(rows);
     if cores.len() > shown && shown > 0 {
         shown -= 1;
@@ -420,7 +382,37 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
         put(buf, r, 0, r.height - 1, &more, colours);
     }
     for (i, core) in cores.iter().take(shown).enumerate() {
-        let y = saturating_cells(i + 3);
+        let y = saturating_cells(i * stride + 3);
+        let projection = if core_phase {
+            scene
+                .s
+                .policy
+                .climb
+                .units
+                .iter()
+                .find(|unit| unit.unit == UnitId::Core(core.id))
+        } else {
+            projection
+        };
+        if core_phase {
+            let line = projection.map_or_else(
+                || {
+                    paint(
+                        Paint::Grey,
+                        format!("core {} · unit state unavailable", core.id.get()),
+                    )
+                },
+                |unit| {
+                    let mut line =
+                        Line::from(scene.paint(Paint::White, format!("core {} · ", core.id.get())));
+                    line.spans
+                        .extend(facts_line(scene, unit, width.saturating_sub(10)).spans);
+                    line
+                },
+            );
+            put(buf, r, 0, y, &line, colours);
+        }
+        let y = y + u16::from(core_phase);
         let applied = shown_offset(scene, core);
         let own = if core.loaded {
             Paint::White
@@ -462,7 +454,13 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             r,
             saturating_cells(col.gauge),
             y,
-            &gauge(scene, core, projection, applied, col.cells),
+            &gauge(
+                scene,
+                core,
+                projection,
+                projection.map(|unit| unit.applied.get()),
+                col.cells,
+            ),
             colours,
         );
     }

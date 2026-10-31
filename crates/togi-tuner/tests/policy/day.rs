@@ -3,8 +3,8 @@
 
 use test_case::test_case;
 use togi_journal::{
-    Activity, Classification, DayFault, HoldReason, LiveFault, Payload, QualificationPurpose,
-    QualificationState, StepKind,
+    Activity, Classification, ClimbAction, ClimbBlocker, DayFault, LiveFault, Payload,
+    QualificationPurpose, QualificationState,
 };
 use togi_machine::{BankType, BootId, CcdProfile, CoreId, CpuId};
 use togi_tuner::day::Invocation;
@@ -21,6 +21,33 @@ fn same_boot(boot: &str, second: i64) -> DayQuery {
     }
 }
 
+#[test_case(49 * 3_600 + 59 * 60, false; "49 hours 59 minutes holds")]
+#[test_case(50 * 3_600, true; "50 hours earns the first step")]
+fn the_first_step_needs_fifty_clean_stock_hours(seconds: u64, promotes: bool) {
+    let mut journal = Journal::ready();
+    journal.observe_stock_in("1", seconds);
+    journal.until_filler(|_| Ending::Pass);
+    journal.boot_start("first-step");
+    let mut query = cold_boot("first-step", 0);
+    query.now = journal.now();
+    let committed = journal.settle_day(&query);
+    let decisions = steps(&committed);
+    let [decision] = decisions.as_slice() else {
+        panic!("expected exactly one decision: {committed:?}");
+    };
+    assert_eq!(decision.hold.eligible_s, seconds);
+    assert_eq!(
+        matches!(decision.decision, ClimbAction::Promote { .. }),
+        promotes
+    );
+    if !promotes {
+        assert!(
+            matches!(&decision.decision, ClimbAction::Hold { blocked_by }
+            if blocked_by.contains(&ClimbBlocker::Hold { credited_s: seconds, required_s: 50 * 3_600 }))
+        );
+    }
+}
+
 #[test]
 fn a_firmware_change_later_in_the_boot_still_zeroes_d_on_a_same_boot_query() {
     let (mut journal, _) = Journal::promoted_compact();
@@ -31,10 +58,10 @@ fn a_firmware_change_later_in_the_boot_still_zeroes_d_on_a_same_boot_query() {
         panic!("expected one step, got {committed:?}");
     };
     assert!(
-        matches!(step.step, StepKind::FirmwareZero { .. }),
+        matches!(step.decision, ClimbAction::FirmwareZero { .. }),
         "{step:?}"
     );
-    assert!(step.proposed.ccd().is_zero());
+    assert!(crate::flow::profile(&step.proposed).is_zero());
     // The reset is issued once: asking again owes nothing.
     assert!(journal.settle_day(&same_boot("day1", 60_200)).is_empty());
 }
@@ -47,10 +74,11 @@ fn a_boot_that_held_never_promotes_later_in_the_same_boot() {
     assert!(
         steps(&held)
             .iter()
-            .all(|step| matches!(step.step, StepKind::Hold { .. })),
+            .all(|step| matches!(step.decision, ClimbAction::Hold { .. })),
         "{held:?}"
     );
     // A night qualifies the proposal while the boot still runs; asking again in that boot owes no promotion.
+    journal.hold_stock();
     journal.until_filler(|_| Ending::Pass);
     assert!(
         steps(&journal.settle_day(&cold_boot("day1", 60_000))).is_empty(),
@@ -62,7 +90,7 @@ fn a_boot_that_held_never_promotes_later_in_the_same_boot() {
     assert!(
         steps(&committed)
             .iter()
-            .any(|step| matches!(step.step, StepKind::Promote { .. })),
+            .any(|step| matches!(step.decision, ClimbAction::Promote { .. })),
         "{committed:?}"
     );
 }
@@ -163,14 +191,14 @@ fn a_proposal_that_failed_qualification_holds_with_its_witnesses_and_no_daily_ev
     let [step] = steps(&committed)[..] else {
         panic!("expected one step, got {committed:?}");
     };
-    let StepKind::Hold { blocked_by } = &step.step else {
+    let ClimbAction::Hold { blocked_by } = &step.decision else {
         panic!("expected a hold, got {step:?}");
     };
     let witnesses = blocked_by
         .iter()
         .find_map(|reason| {
-            if let HoldReason::QualificationFailed { profile, witnesses } = reason
-                && *profile.ccd() == failed
+            if let ClimbBlocker::CertificateFailed { profile, witnesses } = reason
+                && crate::flow::profile(profile) == failed
             {
                 Some(witnesses)
             } else {

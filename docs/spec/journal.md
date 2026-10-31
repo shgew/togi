@@ -16,7 +16,7 @@ All files live in the state directory, default `/var/lib/togi`:
 | `archive/<session-id>-trials/` | The `trials/` directory of an archived session |
 | `archive/<session-id>-compat-pending` | Crash-recovery marker while a journal this build cannot read is archived without being appended to (`reset --all` or a transition of an unreadable journal); removed on completion |
 | `archive/<session-id>-import-pending` | Raw-day import marker: the filename identifies the immutable source and its contents identify the destination session; removed after durable `session.imported` commitment under [Transitions](#transitions) |
-| `archive/<session-id>-reset-all` | Permanent reset boundary: this session and every older source are excluded from future imports |
+| `archive/<session-id>-reset-all` | Permanent reset boundary: excludes this and older sources from raw tuning carry, not from campaign-ledger reconstruction |
 | `lock` | Held, exclusive and non-blocking, with `std::fs::File::try_lock` by the one process allowed to write the journal; a second writer fails at once with a contention error and never waits |
 | `.events.jsonl.tmp`, `.state.json.tmp` | Temporary files of a torn-tail repair and of a `state.json` publication; a leftover is overwritten, never read as truth |
 
@@ -156,6 +156,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Trials | `task.start` (night and task identity; recorded before the task's profile is prepared and its backends are waited for; its timestamp starts the task's wall time, and a restart that resumes the same night task keeps it, so interrupted preparation, wait and recovery downtime stay charged to the task: [scheduling](tuner.md#scheduling)), `trial.intent` (complete profile, class/content identity, `activity`, night/task and requirement identity), `trial.start` (pid, scope, cpus, argv, files, instances, roles and monotonic window start), `trial.progress` (typed backend signal and location), `trial.signal` (schedule and signalling counts), `trial.sample`, `trial.end` (outcome, measured duration, last evidence, placement/credit exclusions, backend/containment errors, process faults and optional telemetry) |
 | Evidence | `failure` (signal, location, raw evidence sequences and actual profile), `mce`, `crash.detected` (previous boot, interrupted action, reset reason and optional pstore); these remain observations, not per-core blame decisions |
 | Ruleset 13 | [New policy kinds](#ruleset-13-events): exposure, edge/cap, night planning/qualification, day steps/events/vetoes and raw day imports |
+| Ruleset 14 | Unit mappings/edges/stops, climb decisions, campaign allowance/reclassification, firmware restoration and successor import commitments (typed kinds below; adding them does not activate the policy) |
 | Other plans | `host.ranking`, `tuner.warning`; ranking is descriptive, never per-core tuning policy |
 | Recovery | `backend.retry` |
 | Defects | `defect.found` (known defect, direction, affected cores and decision sequences), `defect.answered` (reset answer and cores) |
@@ -235,6 +236,26 @@ New kinds render plain except: `ccd.edge` with an observed failure, failed quali
 - **Intervals.** `DayIntervals`, the raw interval fold of [day observation](#day-observation), consumes `day.pause` directly. A `day.pause` of a known boot makes the checkpoint closing its interval exclude that interval from every profile, like a changed offset, and so does every later checkpoint while the pause holds; the checkpoint after a `running` record is the last excluded. Cumulative `applied_secs` still advances. A `day.boot_start` of a boot after another inherits the earlier boot's `until` pause, never its `until_boot` one; a same-boot restart keeps either. The runtime appends a boundary `day.checkpoint` before each pause control so the span before it is closed first.
 - **Compatibility.** `day.pause` is an additive kind under [ADR 0009](../adr/0009-compatibility-across-updates.md): no `SCHEMA` or ruleset bump. A build that predates it skips it as an unknown kind when reading leniently, as decoding rules above say, and refuses a journal holding it for writing. Its payload objects refuse unknown fields in strict decoding.
 
+### Ruleset 14 events
+
+These additive kinds preserve every released Ruleset 13 kind and field, including the distinct historical meanings of `ccd.edge` (U) and `ccd.cap` (statistical S). `SCHEMA` remains 1: old journals decode the same way; older strict readers still refuse unknown new kinds. The source fingerprint invalidates snapshots when the new decoder changes; snapshots are rebuilt from the authoritative journal.
+
+Unit identities are externally tagged objects: `{"ccd":N}` or `{"core":N}`. `UnitMapping` contains `phase: "coarse"|"core"` and `units`, each with `unit`, physical `cores` and optional `parent`. A `UnitVector` always contains `cores` (the complete physical-core target-offset vector) and `mapping` (the complete unit mapping). A coarse offset expands uniformly to all its member cores; refinement retains each core's actual offset and coarse parent, never an averaged CCD approximation. Decoding preserves recorded discrepancies, as for `CcdVector`; consumers validate topology, exact membership/coverage and uniform coarse expansion before application.
+
+| Kind (Ruleset 14) | Payload and interpretation |
+|---|---|
+| `unit.mapping` | `phase`, `units: [{unit, cores, parent?}]`; stable topology membership and coarse ancestry. |
+| `unit.edge` | `unit`, `firmware`, `epoch`, `old`, `new` (the existing tagged `unknown`, `observed{offset,witness}` or `censored{limit,witnesses}` edge), optional `ceiling`, `margin`. C is a hard edge-margin ceiling, not S. |
+| `climb.decision` | `decision`, `cold_boot`, `before` and `proposed` full `UnitVector`s, `hold: {application, credited, eligible_s}`, optional `certificate` sequence, `ceilings` and `events` sequences. Decision is tagged by `kind`: `hold{blocked_by}`, `promote{unit,from,to,step}`, `retreat{units,cause,wanted?}`, `restore{restoration,units}` or `firmware_zero`. `restoration` is `firmware` or `reclassified` (distinct from the decision's `kind` tag). A proposal is not an application or a consumed step. |
+| `unit.stop` | `unit`, tagged `reason`: `ceiling`, `first_backstep{event,application}`, `allowance_exhausted` or `restoration_backstep{event}`; full `profile`, `last_clean` offset and `witnesses` sequences. The envelope supplies finish time; stops remain history rather than permission to restart. |
+| `campaign.start` | Stable `campaign: {session,seq}` naming the original campaign start, `allowance`, tagged `origin`: `fresh` or `successor{sources}`, and tagged `history`: `complete` or `unreconstructible{reason}`. Session freshness never replenishes the campaign. |
+| `campaign.charge` | `campaign`, canonical `event` and `aliases` (existing `DayEventId`s), full `profile`, `phase: "learning"|"post_finish"`, `unit_phase`, `provisional`, raw lifetime `consumed`, `remaining`, `exhausted`. Aliases do not multiply a charge; post-finish events remain counted. |
+| `campaign.reclassified` | `campaign`, `event`, `from` and `to` using the existing classification type. Reclassification is retained separately and never refunds historical consumption. |
+| `firmware.restoration` | `saved` exact full vector/mapping and tagged `state`: `saved`, `qualified{certificate}`, `held{hold}`, `restored{application}` or `stepped_back{event}`. Certificates are local qualification sequences; applications retain the existing application identity. Saving history alone grants no current-context permission. |
+| `successor.imported` | `sources` (existing source session/schema/ruleset identities), raw `counts` (selected/imported/duplicates/unknown/excluded), `vetoes` and `night_observations` (original session/sequence identities), `campaign` reconstruction state `complete` or `unreconstructible{reason}`. Source identities are not local journal causes; the manifest carries no old qualification or nonzero application permission, and a copied `night.qualification` is evidence only (see [the successor transition](tuner-ruleset14.md#10-journal-schema-and-architectural-record)). |
+
+Climb hold blockers are tagged `hold{credited_s,required_s}`, `certificate`, `certificate_failed{profile,witnesses}`, `question_pending{boot}`, `event_unresolved{event}`, `veto{event}`, `firmware_invalid`, `frozen`, `paused`, `allowance_exhausted`, `unknown_edge{unit}` or `finished{unit}`. Retreat causes are tagged `adverse_ceiling{edges}`, `event{event}`, `veto{event}` or `completion`; none reinterprets statistical S as a hard ceiling. The existing `DayEventId`, classification, application identity, edge witnesses and local sequence references retain their original shapes. Coarse applications still use the released `day.applied`; introducing these kinds does not authorize nonzero writes or a core-phase application format.
+
 ### Trial activity
 
 Ruleset 13 trial activities are `mapping`, `qualification`, `reproduction` and `control`. The intent names its night/task, exact requirement, class and actual applied profile. A re-qualification is qualification with its recorded purpose; filler is a distinct night task retaining its underlying mapping or qualification activity under [the filler rule](tuner.md#filler). An inconclusive retry keeps the same task/class and records `retry: true`; it does not erase consumed task time or unavailable-backend state. No intent carries a hunt, cycle or round. Stop/cleanup and recovery continue through the ordinary trial and transaction events.
@@ -270,15 +291,21 @@ Boot roles remain separate. Session recovery tracks a tuning boot only from tuni
 
 ## Transitions
 
-Ruleset 13 starts **fresh** ([ADR 0084](../adr/0084-a-fresh-ruleset-transition.md)). `run` judges the first complete `session.start` before appending: an older ruleset/schema/epoch with no newer dimension is archived unchanged; any newer dimension is refused unchanged. The day observer never performs this transition. No solo limits, failure points, combinations, phases, passes, caps, day steps or prior tuning decisions carry into the new session. A later ruleset owns its own transition design.
+Ruleset 14 archives Ruleset 13 unchanged and starts the durably identified successor at verified stock under [the successor policy](tuner-ruleset14.md#10-journal-schema-and-architectural-record). `run` judges the first complete `session.start` before append: older dimensions with none newer archive unchanged; any newer dimension refuses unchanged. The day observer never transitions a session. S, old qualification conclusions and nonzero D never carry as permission.
 
 Under the host lock then writer lock, durably record an archive/import-pending marker naming the immutable source session and destination identity before moving the journal; fsync marker and containing directories. Archive publication and new-session creation are recoverable separately. New IDs sort after existing source/marker IDs even if wall time moves backwards. A newer journal is never opened for tail repair or mutated before refusal. An older journal need not decode obsolete tuning kinds to be archived.
 
-Create the new session with its build, actual current context and all-zero observed baseline. Select only raw pre-transition **day records**: boots, checkpoint/profile intervals, faults, unclean ends, answers and explicit manual reports. Import each as `day.imported`, preserving original `(session, seq)` and full raw payload/provenance, then commit `session.imported` with source sessions, selected identities, counts, unknown/excluded records and reason `fresh Ruleset 13 transition; no tuning carry`. A kill before commitment resumes the same manifest and appends only missing original identities; a committed import is never repeated. The marker is removed only after the commitment is durable. An interrupted destination archived by a further startup retains the original source manifest and deduplication identities.
+Create the successor with its build, actual context and verified all-zero baseline. Import original-identity raw daily observations and compatible `exposure.observed`, plus CPU-suspect events, stops and veto records needed to reconstruct the campaign. Preserve source identities and raw provenance; write `successor.imported` and `campaign.start {origin, history}` with complete/unreconstructible history. Missing history blocks nonzero exploration. A kill resumes the same manifest and appends only missing original identities; remove the pending marker only after durable commitment.
+
+A daily crash whose identity precedes the machine's first `campaign.start` keeps its
+original whole-profile veto, even if recorded after the transition. It produces no
+`campaign.charge` or `unit.stop` and needs no applied-step ancestry. Events at or
+after the start retain those requirements; [the Ruleset 14 transition](tuner-ruleset14.md#10-journal-schema-and-architectural-record)
+defines the identity boundary and replay contract.
 
 ### Fact eligibility
 
-Only decodable raw day observations are importable; unknown fields/kinds remain in the archive and are listed as unknown, never converted to zero exposure or guessed evidence. Traverse the archived source and its earlier observation sources, preserving first provenance and deduplicating imported copies; never cross an explicit permanent reset/import boundary. `reset --all` durably establishes that boundary before removing a pending marker or moving a journal; a later transition cannot resurrect discarded sources. Historical archives remain unchanged and visible.
+Import only decodable eligible observations; unknown kinds/fields stay archived and are reported, never guessed into evidence. Deduplicate copies by original identity. Permanent reset boundaries stop raw tuning carry, but campaign ledger records are carried across them to preserve charges, stops and vetoes. Reset never renews allowance; missing reconstruction blocks nonzero exploration rather than supplying an unused ledger.
 
 Imported all-zero intervals with matching firmware context and verified known duration form the CO-0 daily baseline. Nonzero records stay at their actual profiles, never get relabelled stock, and never supply synthetic exposure or a qualification. Missing interval/readback information is shown but earns no invented hours. In particular, pre-13 records journaled from #1224 onward remain available even though the tuning session starts over.
 
@@ -286,7 +313,7 @@ The three recorded freezes identified by [#1215 Q16](https://github.com/shgew/to
 
 ### Decisions in the new session
 
-Initialize U unknown, S and D at CO 0, no tuning qualifications or hold credit. Fold imported daily events under [the new event rules](tuner.md#daily-events); only their raw observations and applicable vetoes survive, not old decisions. Original firmware facts can be mapping hints but cannot bypass current-context controls. The raw exposure ledger created **after** this cutover remains available for a future ruleset to recompute caps; that is not a promise of future carry or D restoration.
+Initialize applied D at verified stock with no imported hold or qualification conclusion. Recompute compatible raw night evidence under Ruleset 14; old-context facts remain history/hints and cannot bypass current controls. Reconstruct campaign events, stops and vetoes before nonzero exploration. `SCHEMA` remains 1 because the new kinds are additive; production reducer changes rebuild snapshots through their source-build fingerprint.
 
 ## Defects
 
@@ -315,7 +342,7 @@ The `facts` projection owns schema/session/last sequence, topology, observed bas
 
 A failed projection write appends `session.warning` with `operation: "write state projection"` and the error, then continues the session; it never triggers emergency zeroing by itself. The authoritative event is already durable. Persisting that warning does not attempt another projection write, so an unwritable state file cannot recursively generate warnings. A journal append failure, including failure to append the warning, remains fatal: after CPU family/model and driver codename validation it takes the emergency-zeroing path; before that boundary it exits without mailbox commands or SMN access (`runtime.md`, Preflight). Readers see either the previous complete state or the new complete state, never a torn file. On the next start, replay rebuilds a stale or missing projection and records `state.rebuilt` after a successful rewrite; if that rewrite fails, it warns and continues instead. A warning after a durable `shutdown` does not make the stopped boot a crash.
 
-The projection exposes, in ascending CCD order, `ccds` (identity, cores, U's tagged state, S, D, slope mode/bound, remaining distance, covered and uncovered classes); whole-profile `day` (successful application, hold, freeze, firmware validity, vetoes, events and questions); and `night` (first-plan identity, consumed task time and shares, unavailable backends, mapping cursor/bracket, filler cursor, reproduction and qualification cells). Unknown values remain absent/tagged unknown, not zero sentinels. Content identities are separate from package-path provenance.
+The projection exposes ordered tuning units with D/C/tagged U, qualification and outstanding coverage; whole-profile day state with successful applications, exact-profile holds, saved/proposed profiles, stops, events, vetoes and blockers; campaign consumption, provisional/reclassified counts and post-finish events; and night queues, measured time, mapping/filler cursors and qualification/reproduction progress. Any S/slope projection is labelled non-authorizing diagnostic. Unknown stays absent/tagged unknown rather than a zero sentinel; content identity remains distinct from path provenance.
 
 `open` retains every intent without a result. An SMU intent is cleared by its citing write/error or a same-boot startup readback citing it; a trial intent by its end. Recovery closes prior-boot intents without manufacturing a completed workload. Dead-end evidence and the last decision's sequence/reason remain available even before their derived commitment is appended. The complete incremental state remains sufficient for replay to produce the same next query.
 
@@ -361,6 +388,13 @@ The run log and `togi events` color the whole human-readable line according to i
 | Shallower cap, retreat/firmware-zero step, active veto, `tuner.warning`, `session.warning`, known defect or ruleset mismatch warning | Yellow |
 | Inconclusive trial or `backend.retry` | Dim |
 | Other new kinds and historical kinds not listed above | Plain |
+| `unit.edge` observed failure | Red; other edge states plain |
+| `climb.decision` promote/restore | Green; retreat/firmware-zero yellow; hold plain |
+| `unit.stop` ceiling | Green; adverse/stopped/allowance-exhausted yellow |
+| `campaign.charge` | Red; exhausted yellow |
+| `campaign.reclassified` | Red when reclassified CPU-suspect; otherwise plain |
+| `firmware.restoration` | Qualified/restored green; stepped-back yellow; saved/held plain |
+| `unit.mapping`, `campaign.start`, `successor.imported` | Plain |
 
 ANSI SGR is used when that output stream is a terminal (a character device such as `/dev/null` is not one) or `JOURNAL_STREAM` names that stream (its device and inode match, whatever the file type). A non-empty `NO_COLOR` disables ANSI even in the system journal. `events.jsonl`, `state.json` and `togi events --json` stay uncolored. When `JOURNAL_STREAM` names that stream, red and red-bold lines start with `<3>` so systemd stores them at priority err (`SyslogLevelPrefix=` is on by default), including with `NO_COLOR`; no other line gets a priority prefix, and terminals outside the system journal never get one. `togi events` uses the same rules on stdout.
 

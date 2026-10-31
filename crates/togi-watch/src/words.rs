@@ -52,7 +52,7 @@ pub enum Tag {
     Night,
     /// A CCD's edge changed.
     Edge,
-    /// A CCD's cap changed.
+    /// A CCD's non-authorizing statistical diagnostic changed.
     Cap,
     /// A night qualification moved.
     Qualify,
@@ -443,12 +443,12 @@ pub const fn slope_words(slope: &Slope) -> &'static str {
     }
 }
 
-/// What fixed a cap, in words.
+/// What fixed the historical statistical diagnostic, not permission for D.
 pub fn binding_words(binding: &Binding) -> String {
     match binding {
         Binding::Rate { class } => format!("rate of {} {}", class.regime, kind_words(class.regime)),
         Binding::EdgeMargin {} => "edge margin".to_owned(),
-        Binding::Baseline {} => "no cap yet".to_owned(),
+        Binding::Baseline {} => "baseline diagnostic".to_owned(),
     }
 }
 
@@ -457,7 +457,7 @@ fn cap_line(d: &CcdCap) -> Line {
         Tag::Cap,
         Tone::Plain,
         format!(
-            "CCD{} cap {} → {} · {} · {}",
+            "CCD{} S {} → {} · diagnostic only, not permission · {} · {}",
             d.ccd,
             offset_text(d.old),
             offset_text(d.new),
@@ -864,6 +864,35 @@ pub fn words(kind: EventKind) -> Words {
             history: History::Line(|payload| {
                 Some(line(Tag::Reset, Tone::Plain, payload.message()))
             }),
+            ..Words::SILENT
+        },
+        EventKind::UnitMapping | EventKind::CampaignStart | EventKind::SuccessorImported => Words {
+            history: History::Recorded(Tag::Note, Tone::Plain),
+            ..Words::SILENT
+        },
+        EventKind::UnitEdge => Words {
+            history: History::Recorded(Tag::Edge, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Edge),
+            ..Words::SILENT
+        },
+        EventKind::ClimbDecision => Words {
+            history: History::Recorded(Tag::Step, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Step),
+            ..Words::SILENT
+        },
+        EventKind::UnitStop => Words {
+            history: History::Recorded(Tag::Stop, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Stop),
+            ..Words::SILENT
+        },
+        EventKind::CampaignCharge | EventKind::CampaignReclassified => Words {
+            history: History::Recorded(Tag::Day, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Day),
+            ..Words::SILENT
+        },
+        EventKind::FirmwareRestoration => Words {
+            history: History::Recorded(Tag::Step, Tone::Warn),
+            tag: Tagging::Fixed(Tag::Step),
             ..Words::SILENT
         },
         EventKind::CcdEdge => Words::said(Tag::Edge, of!(CcdEdge, |d| Some(edge_line(d)))),

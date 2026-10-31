@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 
 use jiff::SignedDuration;
 use togi_journal::{
-    Activity, Classification, DeadEndCondition, Event, EventKind, Outcome, Payload,
-    QualificationState, Queue, ShutdownReason, StepKind, TaskStatus, Tested,
+    Activity, Classification, ClimbAction, DeadEndCondition, Event, EventKind, Outcome, Payload,
+    QualificationState, Queue, ShutdownReason, TaskStatus, Tested,
 };
 use togi_machine::{Regime, TargetOffset};
 use togi_watchtest::{Base, Scenario};
@@ -172,16 +172,24 @@ fn mapping_starts_the_first_isolated_trial_below_zero_after_the_controls() {
 }
 
 #[test]
-fn filler_starts_once_mapping_has_nothing_left() {
+fn filler_repeats_the_exact_current_day_profile_after_real_work_is_done() {
     let events = cut(Scenario::Filler);
     let intent = running_trial(&events);
     assert_eq!(intent.task.map(|task| task.queue), Some(Queue::Filler));
-    assert!(
-        matches!(intent.tested, Some(Tested::Isolated { offset, .. }) if offset != TargetOffset::ZERO),
-        "filler tests one CCD past its cap: {:?}",
-        intent.tested
+    assert_eq!(intent.activity, Some(Activity::Qualification));
+    assert!(matches!(intent.tested, Some(Tested::Exact {})));
+    let projection = project(&events);
+    let applied = projection
+        .climb
+        .profiles
+        .applied
+        .as_ref()
+        .expect("current D");
+    assert_eq!(
+        intent.profile, applied.cores,
+        "filler qualifies exact-current-D; it never probes S−1"
     );
-    let night = project(&events).night.expect("planned");
+    let night = projection.night.expect("planned");
     assert!(
         night
             .tasks
@@ -227,15 +235,23 @@ fn qualification_starts_an_exact_trial_of_a_profile_below_zero() {
 #[test]
 fn day_step_ends_on_the_first_promotion_after_a_complete_qualification() {
     let events = cut(Scenario::DayStep);
-    let Payload::DayStep(step) = &events.last().expect("events").payload else {
+    let Payload::ClimbDecision(step) = &events.last().expect("events").payload else {
         panic!("the journal ends on {:?}", events.last().map(Event::kind));
     };
     assert!(
-        matches!(step.step, StepKind::Promote { .. }),
+        matches!(step.decision, ClimbAction::Promote { .. }),
         "{:?}",
-        step.step
+        step.decision
     );
-    assert_ne!(step.proposed, step.old);
+    assert_ne!(step.proposed, step.before);
+    assert!(
+        step.hold.eligible_s >= 50 * 3600,
+        "the initial stock hold is earned too"
+    );
+    assert!(
+        step.certificate.is_some(),
+        "the exact candidate is qualified"
+    );
     assert!(
         events.iter().any(|event| matches!(&event.payload,
             Payload::NightQualification(qualification)
@@ -262,7 +278,7 @@ fn reproduction_retests_the_cpu_suspect_profile_exactly() {
         .iter()
         .position(|event| {
             matches!(&event.payload,
-            Payload::DayStep(step) if matches!(step.step, StepKind::Promote { .. }))
+            Payload::ClimbDecision(step) if matches!(step.decision, ClimbAction::Promote { .. }))
         })
         .expect("the Calendar promoted a qualified profile");
     let suspect = events

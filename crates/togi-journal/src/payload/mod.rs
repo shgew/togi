@@ -4,6 +4,7 @@ mod domain;
 mod message;
 mod ruleset13;
 mod ruleset13_day;
+mod ruleset14;
 mod session;
 mod smu;
 mod trial;
@@ -43,6 +44,13 @@ pub use ruleset13_day::{
     ApplyCause, CcdCursor, Classification, DayApplied, DayEvent, DayFreeze, DayHold, DayImported,
     DayInterval, DayStep, DayVeto, Escalation, FreezeSource, HoldChange, HoldReason, ImportCounts,
     ImportedRecordRef, Resolution, RetreatCause, SessionImported, StepCauses, StepKind,
+};
+pub use ruleset14::{
+    CampaignCharge, CampaignEventPhase, CampaignHistory, CampaignId, CampaignOrigin,
+    CampaignReclassified, CampaignStart, ClimbAction, ClimbBlocker, ClimbDecision, ClimbHold,
+    ClimbRetreatCause, FirmwareRestoration, FirmwareRestorationState, RestorationKind,
+    SuccessorImported, UnitEdge, UnitId, UnitMapping, UnitMembership, UnitPhase, UnitStop,
+    UnitStopReason, UnitVector,
 };
 pub use session::{
     BootLeaveReason, BootSavedEntry, CarriedCore, CarriedFailurePoint, CarriedLimit, CarriedSource,
@@ -197,6 +205,15 @@ payloads! {
     DayFreeze(DayFreeze) = "day.freeze",
     DayInterval(DayInterval) = "day.interval",
     DayImported(DayImported) = "day.imported",
+    UnitMapping(UnitMapping) = "unit.mapping",
+    UnitEdge(UnitEdge) = "unit.edge",
+    ClimbDecision(ClimbDecision) = "climb.decision",
+    UnitStop(UnitStop) = "unit.stop",
+    CampaignStart(CampaignStart) = "campaign.start",
+    CampaignCharge(CampaignCharge) = "campaign.charge",
+    CampaignReclassified(CampaignReclassified) = "campaign.reclassified",
+    FirmwareRestoration(FirmwareRestoration) = "firmware.restoration",
+    SuccessorImported(SuccessorImported) = "successor.imported",
     DayPause(DayPause) = "day.pause",
 }
 
@@ -277,6 +294,15 @@ impl Payload {
             | Self::DayHold(_)
             | Self::DayFreeze(_)
             | Self::DayInterval(_)
+            | Self::UnitMapping(_)
+            | Self::UnitEdge(_)
+            | Self::ClimbDecision(_)
+            | Self::UnitStop(_)
+            | Self::CampaignStart(_)
+            | Self::CampaignCharge(_)
+            | Self::CampaignReclassified(_)
+            | Self::FirmwareRestoration(_)
+            | Self::SuccessorImported(_)
             | Self::DayImported(_)
             | Self::DayPause(_) => None,
         }
@@ -324,6 +350,16 @@ impl Payload {
                 p.class.cores.contains(core)
                     || p.failures.iter().any(|failure| failure.core == Some(core))
             }
+            Self::UnitMapping(p) => p.units.iter().any(|unit| unit.cores.contains(core)),
+            Self::UnitEdge(p) => p.unit == UnitId::Core(core),
+            Self::ClimbDecision(p) => {
+                p.before.cores.get(core).is_some() || p.proposed.cores.get(core).is_some()
+            }
+            Self::UnitStop(p) => {
+                p.unit == UnitId::Core(core) || p.profile.cores.get(core).is_some()
+            }
+            Self::CampaignCharge(p) => p.profile.cores.get(core).is_some(),
+            Self::FirmwareRestoration(p) => p.saved.cores.get(core).is_some(),
             Self::SessionStart(_)
             | Self::SessionContext(_)
             | Self::SessionBaseline(_)
@@ -370,6 +406,9 @@ impl Payload {
             | Self::DayHold(_)
             | Self::DayFreeze(_)
             | Self::DayInterval(_)
+            | Self::CampaignStart(_)
+            | Self::CampaignReclassified(_)
+            | Self::SuccessorImported(_)
             | Self::DayImported(_)
             | Self::DayPause(_) => false,
         }
@@ -416,6 +455,11 @@ impl EventKind {
             | Self::DayFreeze
             | Self::DayInterval
             | Self::DayImported
+            | Self::ClimbDecision
+            | Self::UnitStop
+            | Self::CampaignCharge
+            | Self::CampaignReclassified
+            | Self::FirmwareRestoration
             | Self::DayPause => Writer::Day,
             Self::NightPlan
             | Self::NightQualification
@@ -472,11 +516,15 @@ impl EventKind {
             | Self::ExposureObserved
             | Self::CcdEdge
             | Self::CcdCap
+            | Self::UnitMapping
+            | Self::UnitEdge
+            | Self::CampaignStart
+            | Self::SuccessorImported
             | Self::TaskStart => Writer::Run,
         }
     }
 
-    /// Whether this is a day kind: a `togi day` observer event, or a Ruleset 13 day decision, event or import.
+    /// Whether this is a day observer event or a day-policy decision, event or import.
     /// Day kinds come from normal boots and the day policy, not from a tuning boot, so tuning-boot tracking such as
     /// crash detection and boot continuity skips them. The observer's raw records are inputs to the day policy.
     pub const fn is_day(self) -> bool {

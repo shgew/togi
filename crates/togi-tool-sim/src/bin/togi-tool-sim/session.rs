@@ -15,6 +15,7 @@ use togi_simrun::{Finished, Persistence, Replay, ResumeError, SimInput, SimOutco
 use togi_tool_trialfacts::Extracts;
 use togi_tuner::policy::{FoldError, Params, State};
 
+use crate::content::{RecordedContent, RecordedContentError};
 use crate::log::Log;
 use crate::{SessionArgs, build, machine, signals};
 
@@ -105,6 +106,8 @@ pub(crate) enum Error {
     Simulate(#[from] togi_simrun::SimError),
     #[error("fold the journal into the policy")]
     Fold(#[from] FoldError),
+    #[error("read the content identities the journal recorded")]
+    RecordedContent(#[from] RecordedContentError),
 }
 
 fn simulate(
@@ -130,12 +133,19 @@ fn simulate(
     let max_boots = args.max_boots;
     let night = SignedDuration::from_hours(i64::from(args.night_hours.get()));
     let write_samples = args.samples;
+    let recorded_content = args.recorded_content;
     let persistence = persistence(args, log)?;
     let config = togi_simrun::recorded_config(&persistence, Config::default())?;
     let simulator = togi_simrun::resume_simulator(&persistence, model, seed, replay)?;
     // The night ends a fixed time after it started, however many processes the machine's boots span. A night a
     // completed stop already closed is over; a rerun opens a fresh one at the simulator's clock.
-    let started = night_started(&togi_simrun::events(&persistence)?, simulator.now())?;
+    let events = togi_simrun::events(&persistence)?;
+    let adapt_trials = if recorded_content {
+        Some(RecordedContent::from_events(&events)?.adapter())
+    } else {
+        None
+    };
+    let started = night_started(&events, simulator.now())?;
     let stop_at = Some(started + night);
     let dir = match &persistence {
         Persistence::Files(dir) => dir.as_path(),
@@ -166,6 +176,7 @@ fn simulate(
         cancel,
         observer: None,
         dump_to: None,
+        adapt_trials,
     })?;
     Ok(match outcome {
         SimOutcome::Capped { boots } => {

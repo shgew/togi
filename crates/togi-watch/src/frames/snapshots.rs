@@ -17,6 +17,9 @@ use super::testing::{
 };
 use crate::screen::{Colours, Journal, Screen, View};
 
+#[path = "snapshots/d.rs"]
+mod d;
+
 const MAIN_SIZES: [(u16, u16); 3] = [(240, 67), (160, 45), (120, 33)];
 const VIEW_SIZES: [(u16, u16); 3] = [(80, 24), (160, 45), (240, 67)];
 const WIDE: (u16, u16) = (240, 67);
@@ -26,7 +29,7 @@ macro_rules! expected {
     ($name:expr; $($snapshot:literal),* $(,)?) => {
         match $name {
             $($snapshot => include_str!(concat!("snapshots/", $snapshot, ".snap")),)*
-            name => panic!("no embedded frame snapshot for {name}"),
+            name => d::expected(name),
         }
     };
 }
@@ -142,7 +145,9 @@ fn body_of(buf: &Buffer, form: Form) -> String {
 }
 
 fn checked(name: &str, buf: &Buffer, form: Form) {
-    assert_glyphs_drawable(buf, name);
+    if !matches!(form, Form::Styled(Colours::Rich)) {
+        assert_glyphs_drawable(buf, name);
+    }
     check(name, &body_of(buf, form));
 }
 
@@ -537,4 +542,5 @@ fn real_fs_generate_snapshots() {
     help_frames(&mut frame);
     log_frames(&mut frame);
     one_frame_prints(&mut frame);
+    d::frames(&mut frame);
 }

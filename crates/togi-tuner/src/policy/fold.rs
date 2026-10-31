@@ -26,6 +26,10 @@ pub enum FoldError {
     History(#[from] HistoryError),
     #[error("building a profile from a journal record")]
     Profile(#[from] CcdProfileError),
+    #[error("recording a bounded-climb application")]
+    Climb(#[from] crate::climb::ClimbError),
+    #[error("invalid climb record: {0}")]
+    ClimbRecord(&'static str),
 }
 
 impl State {
@@ -37,7 +41,21 @@ impl State {
             return Ok(());
         }
         self.apply(event)?;
+        if matches!(
+            event.payload,
+            Payload::DayUncleanEnd(_)
+                | Payload::DayAnswer(_)
+                | Payload::DayRecord(_)
+                | Payload::DayFault(_)
+                | Payload::Mce(_)
+                | Payload::ExposureObserved(_)
+                | Payload::NightQualification(_)
+                | Payload::DayImported(_)
+        ) {
+            self.observe_raw_campaign(event.time)?;
+        }
         self.last = Some(event.seq);
+        self.last_time = self.last_time.max(Some(event.time));
         Ok(())
     }
 
@@ -137,6 +155,27 @@ impl State {
             Payload::CcdCap(p) => {
                 self.nights.caps.insert(p.ccd, committed(event, p.clone()));
             }
+            Payload::UnitEdge(p) => {
+                self.nights
+                    .unit_edges
+                    .insert(p.unit, committed(event, p.clone()));
+                self.observe_finishes(event.time);
+            }
+            Payload::UnitMapping(p) => self.fold_mapping(event, p)?,
+            Payload::ClimbDecision(p) => self.fold_climb_decision(event, p)?,
+            Payload::UnitStop(p) => self.fold_unit_stop(event, p)?,
+            Payload::CampaignStart(p) => self.fold_campaign_start(event, p)?,
+            Payload::CampaignCharge(p) => self.fold_campaign_charge(event, p),
+            Payload::CampaignReclassified(p) => self.fold_campaign_reclassified(event, p),
+            Payload::FirmwareRestoration(p) => {
+                self.climb.restoration = Some(committed(event, p.clone()));
+            }
+            Payload::SuccessorImported(p) => {
+                self.climb.successor = Some(committed(event, p.clone()));
+            }
+            Payload::SessionImported(p) => {
+                self.climb.import_summary = Some(p.clone());
+            }
             // A completed stop is the durable record that tuning was left: the operator's (signal,
             // F10, the power button) or the dead end's (`docs/spec/runtime.md`, Night declaration).
             Payload::Shutdown(p) => {
@@ -190,7 +229,11 @@ impl State {
             Payload::NightReproduction(p) => {
                 self.nights.reproductions.push(committed(event, p.clone()));
             }
-            Payload::DayEvent(p) => self.day_event(event, p),
+            Payload::DayEvent(p) => {
+                self.day_event(event, p);
+                self.observe_campaign_event(p);
+                self.observe_finishes(event.time);
+            }
             Payload::DayVeto(p) => {
                 self.days
                     .vetoes
@@ -205,7 +248,30 @@ impl State {
             }
             Payload::DayApplied(p) => self.applied(event, p)?,
             Payload::DayFreeze(p) => self.freeze(p),
-            Payload::DayImported(p) => self.imported(seq, p),
+            Payload::DayImported(p) => {
+                if !self
+                    .climb
+                    .imports
+                    .iter()
+                    .any(|known| known.original == p.original)
+                {
+                    if p.original_kind == togi_journal::EventKind::CampaignStart
+                        && self
+                            .climb
+                            .original_enrollment
+                            .as_ref()
+                            .is_none_or(|held| p.time < held.time)
+                    {
+                        self.climb.original_enrollment = Some(super::enrollment::Enrollment {
+                            time: p.time,
+                            boot: p.boot.clone(),
+                        });
+                    }
+                    self.climb.imports.push(p.clone());
+                    self.climb.import_sequences.insert(p.original, seq);
+                }
+                self.imported(seq, p);
+            }
             Payload::DeadEnd(p) => {
                 if p.condition == DeadEndCondition::FailureAtZero && self.stop.is_none() {
                     self.stop = Some(Stop {});
@@ -220,7 +286,6 @@ impl State {
             | Payload::DayPause(_)
             | Payload::SessionWarning(_)
             | Payload::SessionArchived(_)
-            | Payload::SessionImported(_)
             | Payload::SessionCarried(_)
             | Payload::ConfigLoaded(_)
             | Payload::PreflightCheck(_)
@@ -268,6 +333,11 @@ impl State {
         };
         let zero = CcdProfile::zero(topology.ccds().iter().map(|&(ccd, _)| ccd))?;
         self.days.history = Some(DayHistory::baseline(seq, UnitProfile::of_ccd(&zero)));
+        if self.climb.history.is_none() {
+            self.climb.history = Some(crate::climb::ClimbHistory::stock(crate::Units::coarse(
+                topology,
+            )));
+        }
         self.machine.anchor.clone_from(&self.machine.firmware);
         Ok(())
     }
@@ -559,6 +629,7 @@ impl State {
 
     /// A successful application extends the day history. Its kind comes from the step it carried out.
     fn applied(&mut self, event: &Event, applied: &DayApplied) -> Result<(), FoldError> {
+        self.fold_climb_application(event, applied)?;
         let kind = self.application_kind(applied);
         let zeroed = kind == ApplicationKind::FirmwareZero;
         self.days
@@ -578,6 +649,9 @@ impl State {
     }
 
     fn application_kind(&self, applied: &DayApplied) -> ApplicationKind {
+        if let Some(kind) = self.climb_application_kind(applied) {
+            return kind;
+        }
         let step = match applied.cause {
             ApplyCause::Reapplication {} => return ApplicationKind::Reapplication,
             // A reset starts a new hold and consumes nothing, as a cap retreat does.
@@ -655,7 +729,7 @@ impl State {
 
 impl State {
     /// The day policy's name for a journal event identity. A manual record's identity is its crash's: the
-    /// crashed boot, or the crash instant of one no observer saw. A record the state never folded has none.
+    /// crashed boot or crash instant; a receipt without its raw record keeps its original namespace.
     pub(super) fn policy_event_id(&self, id: &DayEventId) -> Option<EventId> {
         match id {
             DayEventId::Boot { boot } => Some(EventId::Boot(boot.clone())),
@@ -673,6 +747,7 @@ impl State {
                         CrashedBoot::UncleanEnd { boot } => EventId::Boot(boot.clone()),
                         CrashedBoot::Unobserved { at } => EventId::Unobserved(*at),
                     })
+                    .or(Some(EventId::Imported(origin)))
             }
         }
     }
@@ -684,6 +759,10 @@ impl State {
             EventId::Boot(boot) => Some(DayEventId::Boot { boot: boot.clone() }),
             EventId::Requalification(at) => Some(DayEventId::Requalification {
                 night: togi_journal::NightId(*at),
+            }),
+            EventId::Imported(origin) => Some(DayEventId::Record {
+                session: origin.session,
+                seq: origin.seq,
             }),
             EventId::Unobserved(at) => self
                 .days
@@ -719,7 +798,7 @@ impl State {
     }
 }
 
-fn committed<T>(event: &Event, payload: T) -> Committed<T> {
+pub(super) fn committed<T>(event: &Event, payload: T) -> Committed<T> {
     Committed {
         seq: event.seq,
         time: event.time,

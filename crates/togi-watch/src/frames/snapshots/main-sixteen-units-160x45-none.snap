@@ -1,0 +1,49 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│
+│  ► DAY
+│
+│  ▌  NIGHT OVER   allowance: 0 consumed / 2 limit; 2 remaining · 0                last trial      PASS  10:00 on core 00
+│  ▌               provisional · 0 reclassified
+│
+│  BETWEEN TRIALS ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  last: PASS after 10:00 · R1 light on core 00
+│  next trial: deciding
+│
+│
+│
+│
+│
+│  CCD 0 idle         0       -10       -20       -30       -40       -50          CCD 1 idle         0       -10       -20       -30       -40       -50
+│  core tuning · physical CCD topology                                             core tuning · physical CCD topology
+│
+│  core 0 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 8 · D -8 · C -26 · U observed at -31 · 18 counts to C
+│    00  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               08   -8           ▄▄▄▄▄▄▄▄··················    ▄
+│  core 1 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 9 · D -8 · C -26 · U observed at -31 · 18 counts to C
+│    01  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               09   -8           ▄▄▄▄▄▄▄▄··················    ▄
+│  core 2 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 10 · D -8 · C -26 · U observed at -31 · 18 counts to C
+│    02  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               10   -8           ▄▄▄▄▄▄▄▄··················    ▄
+│  core 3 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 11 · D -8 · C -26 · U observed at -31 · 18 counts to C
+│    03  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               11   -8           ▄▄▄▄▄▄▄▄··················    ▄
+│  core 4 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 12 · D -8 · C -26 · U observed at -31 · 18 counts to C
+│    04  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               12   -8           ▄▄▄▄▄▄▄▄··················    ▄
+│  core 5 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 13 · D -8 · C -26 · U observed at -31 · 18 counts to C
+│    05  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               13   -8           ▄▄▄▄▄▄▄▄··················    ▄
+│  core 6 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 14 · D -8 · C -26 · U observed at -31 · 18 counts to C
+│    06  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               14   -8           ▄▄▄▄▄▄▄▄··················    ▄
+│  core 7 · D -10 · C -26 · U observed at -31 · 16 counts to C                     core 15 · D -8 · C -26 · U observed at -31 · 18 counts to C
+│    07  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               15   -8           ▄▄▄▄▄▄▄▄··················    ▄
+│
+│  DAY ───────────────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+│  permission: experimental hold + exact night qualification
+│  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0...             22:13  start    session started on 16 cores
+│  experimental: 50.000 clean hours
+│  core 0: climbing; hold 50.000 / 50.000 h at exact D
+│  core 1: climbing; hold 50.000 / 50.000 h at exact D
+│  +19 more
+│
+│   ?  help    l  log    esc  back    q  exit dashboard

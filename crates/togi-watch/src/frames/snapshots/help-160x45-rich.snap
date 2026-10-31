@@ -15,40 +15,40 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~  t
 │  █ ► 04  -12  LOADED   ▆▆▆▆▆▆▆▆▆▆▆▆··············    ▆                     -31
 ~  t wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwggggggggggggggttttf                     fff
-│  █                     applied -12 under load; the dots run to the cap S at -26; the red mark is the edge U, failed at -31
-~  t                     ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  █                     applied -12 under load; dots reach hard ceiling C at -26; U observed at -31
+~  t                     ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │  █
 ~  t
-│  █   09   -8           ▆▆▆▆▆▆▆▆······
-~  t wwwwwwwwwwwwwwwwwwwwgggggggggggggg
-│  █                     idle, so grey; the cap S is -14 and its CCD has no edge yet, so there is no red mark
-~  t                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  █   09   -8           ▆▆▆▆▆▆▆▆
+~  t wwwwwwwwwwwwwwwwwwwwgggggggg
+│  █                     idle, so grey; C is unknown until U is mapped, so there are no ceiling dots or edge mark
+~  t                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │  █
 ~  t
-│  █   11    ?           ······························                   ▆  -50
-~  t wwwwwwwwwwwwwwwwwwwwggggggggggggggggggggggggggggggttttttttttttttttttta  aaa
-│  █                     no readback yet; the cap S is -30 and the edge is censored: nothing failed down to -50
-~  t                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  █   11    ?           ·············································    ▆  -50
+~  t wwwwwwwwwwwwwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggggtttta  aaa
+│  █                     no readback yet; U censored at -50 gives hard ceiling C at -45, not physical -50
+~  t                     gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │  █
 ~  t
 │  █ ►         the core carries load in this trial
 ~  t w         ttttttttttttttttttttttttttttttttttt
-│  █ ▆▆▆       offset applied now, or saved after a stop restored the hardware; white when this trial loads the core
-~  t www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  █ ▆▆▆       committed day offset D, distinct from the numeric hardware readback; white when this trial loads the core
+~  t www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  █ ?         no hardware offset has been read back for this core
 ~  t w         ttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  █ grey ▆▆▆  the same depth, grey when the core is not loaded
 ~  t wwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttt
-│  █ ···       the cap S: how far past the applied offset the night's evidence lets its CCD go
-~  t www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  █ red ▆     the night edge U of its CCD: the shallowest offset that failed in isolation, one count wide at Wide and Medium
-~  t wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  █ ···       the hard night ceiling C for this tuning unit, not statistical permission
+~  t www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ red ▆     the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at Wide and Medium
+~  g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  │ amber ▆   a censored edge: nothing failed down to the mapping limit
 ~  g wwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  │ cyan      running now
 ~  g wwww      ttttttttttt
-│  │ amber     a hold, a veto, a retreat, a crash, or classes uncovered for the cap
-~  g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ amber     a hold, a veto, a retreat, a crash, or outstanding qualification
+~  g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  │ red       failures, past and present
 ~  g www       tttttttttttttttttttttttttt
 │  │ green     passed, done, covered
@@ -79,12 +79,12 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~  g wwwwwwwwwwwwww gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │  │
 ~  g
-│  │ NIGHT       Until you end it, togi maps each CCD's edge, qualifies profiles, reproduces daily events and runs controls, and fills idle time with cap
-~  g wwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  │             probes and exact repeats. The stage shows when the night started, its elapsed time and what the current trial tests; the night panel lists
-~  g             tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  │             each queue's share of that time and the progress.
-~  g             ttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ NIGHT       Until you end it, togi maps each unit's edge U, sweeps uncovered cells from U toward C, qualifies exact profiles, reproduces daily events and
+~  g wwwww       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │             runs controls. Idle time repeats exact-current-D qualification cells, never S-directed probes.
+~  g             tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │
+~  g
 │
 │   ?  help    l  log    esc  back    q  exit dashboard
 ~  uuu gggg   hhh ggg   hhhhh gggg   hhh gggggggggggggg

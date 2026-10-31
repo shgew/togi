@@ -45,11 +45,7 @@ pub enum ApplicationKind {
 /// A step-back application as the escalation chain reads it.
 #[derive(Clone)]
 pub(crate) struct RetreatRecord<'a> {
-    /// The journal position of the step-back application.
-    pub at: Seq,
-    pub profile: &'a UnitProfile,
     pub events: &'a [EventId],
-    pub reverted: &'a [Reverted],
     pub outcome: RetreatOutcome<'a>,
 }
 
@@ -184,28 +180,18 @@ impl DayHistory {
     /// The step-back applications, oldest first.
     pub(crate) fn retreats(&self) -> impl Iterator<Item = RetreatRecord<'_>> {
         self.iter().filter_map(|application| {
-            let (events, reverted, outcome) = match &application.kind {
-                ApplicationKind::Retreat { events, reverted } => {
-                    (events, reverted, RetreatOutcome::Reached)
+            let (events, outcome) = match &application.kind {
+                ApplicationKind::Retreat { events, .. } => (events, RetreatOutcome::Reached),
+                ApplicationKind::Fallback { events, wanted, .. } => {
+                    (events, RetreatOutcome::Fallback { wanted })
                 }
-                ApplicationKind::Fallback {
-                    events,
-                    reverted,
-                    wanted,
-                } => (events, reverted, RetreatOutcome::Fallback { wanted }),
                 ApplicationKind::Baseline
                 | ApplicationKind::Promotion
                 | ApplicationKind::SafetyCap
                 | ApplicationKind::FirmwareZero
                 | ApplicationKind::Reapplication => return None,
             };
-            Some(RetreatRecord {
-                at: application.at,
-                profile: &application.profile,
-                events,
-                reverted,
-                outcome,
-            })
+            Some(RetreatRecord { events, outcome })
         })
     }
 }

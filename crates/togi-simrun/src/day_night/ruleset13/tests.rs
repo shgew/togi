@@ -1,10 +1,12 @@
 use std::time::Duration;
 
 use togi_journal::{
-    ApplyCause, Certainty, DayAnswer, DayAnswerKind, Event, Outcome, Payload, QualificationState,
-    ShutdownReason, StepKind,
+    ApplyCause, Certainty, ClimbAction, ClimbDecision, ClimbRetreatCause, DayAnswer, DayAnswerKind,
+    DayApplied, DecisionId, Event, Outcome, Payload, QualificationState, ShutdownReason, UnitStop,
+    UnitStopReason,
 };
-use togi_machine::{CcdProfile, Machine};
+use togi_machine::{CcdProfile, Machine, TargetOffset};
+use togi_tuner::day::HOLD_SECS;
 use togi_tuner::policy::{Params, State};
 
 use super::{OPERATOR_UID, Ruleset13, reported_classification};
@@ -52,6 +54,49 @@ fn holds_promotion(policy: &Ruleset13) -> bool {
         .project()
         .applied
         .is_some_and(|profile| !profile.is_zero())
+}
+
+/// Each application of a climb decision: its index in `events`, its receipt, and the index and
+/// commitment of the decision it applied. A receipt names its decision by the decision's sequence.
+fn applied_decisions(
+    events: &[Event],
+) -> impl Iterator<Item = (usize, &DayApplied, usize, &ClimbDecision)> {
+    events.iter().enumerate().filter_map(|(index, event)| {
+        let Payload::DayApplied(receipt) = &event.payload else {
+            return None;
+        };
+        let ApplyCause::Step { decision } = receipt.cause else {
+            return None;
+        };
+        let (decided, proposal) = events[..index]
+            .iter()
+            .enumerate()
+            .find_map(|(decided, event)| {
+                if let Payload::ClimbDecision(proposal) = &event.payload
+                    && DecisionId(event.seq.get()) == decision
+                {
+                    Some((decided, proposal))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "application at event {} names no earlier climb decision {decision:?}",
+                    event.seq
+                )
+            });
+        Some((index, receipt, decided, proposal))
+    })
+}
+
+/// Whether `event` completed a night qualification of exactly `proposal`'s profile under
+/// firmware `firmware` accepts.
+fn certifies(event: &Event, proposal: &ClimbDecision, firmware: impl Fn(&str) -> bool) -> bool {
+    matches!(&event.payload, Payload::NightQualification(q)
+        if firmware(&q.firmware.bios_version)
+            && q.profile.cores() == &proposal.proposed.cores
+            && matches!(q.state, QualificationState::Complete { .. }))
 }
 
 #[test]
@@ -118,31 +163,27 @@ fn a_first_promotion_follows_a_completed_night_qualification() {
         }
     });
     let events = policy.events().unwrap();
-    let promoted_by = |decision| {
-        events.iter().any(|step| {
-            matches!(&step.payload, Payload::DayStep(step)
-                if step.decision == decision && matches!(step.step, StepKind::Promote { .. }))
-        })
-    };
-    let promotion = events
+    let (promotion, receipt, decided, proposal) = applied_decisions(events)
+        .find(|(_, _, _, proposal)| matches!(proposal.decision, ClimbAction::Promote { .. }))
+        .expect("no promotion decision was applied");
+    assert_eq!(receipt.target.cores(), &proposal.proposed.cores);
+    assert!(!receipt.target.ccd().is_zero());
+    // The promotion cites a completed night qualification of exactly the promoted profile,
+    // recorded before the decision, and the initial hold it climbed from.
+    let certificate = proposal
+        .certificate
+        .expect("the promotion cites no qualification");
+    let qualified = events[..decided]
         .iter()
-        .position(|event| {
-            if let Payload::DayApplied(applied) = &event.payload
-                && let ApplyCause::Step { decision } = applied.cause
-            {
-                promoted_by(decision)
-            } else {
-                false
-            }
-        })
-        .unwrap();
-    let qualified = events[..promotion].iter().any(|event| {
-        matches!(&event.payload, Payload::NightQualification(q)
-            if matches!(q.state, QualificationState::Complete { .. }))
-    });
+        .any(|event| event.seq == certificate && certifies(event, proposal, |_| true));
     assert!(
         qualified,
-        "promoted at event {promotion} before any qualification completed"
+        "promoted at event {promotion} without a completed qualification of its profile"
+    );
+    assert!(
+        proposal.hold.eligible_s >= HOLD_SECS,
+        "promoted after {} s of the {HOLD_SECS} s hold",
+        proposal.hold.eligible_s
     );
 }
 
@@ -219,21 +260,28 @@ fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
         at_firmware_change(events).expect("the calendar recorded no firmware change");
     let previous =
         previous_profile(before).expect("no nonzero profile was applied when the firmware changed");
-    // The next cold boot proposes the firmware zero and applies stock.
-    let step = after
-        .iter()
-        .find_map(|event| {
-            if let Payload::DayStep(step) = &event.payload {
-                Some(step)
-            } else {
-                None
-            }
-        })
-        .unwrap();
+    // The next cold boot commits the firmware zero and applies stock.
+    let (zeroed, receipt, _, proposal) = applied_decisions(after)
+        .next()
+        .expect("no climb decision was applied after the firmware change");
     assert!(
-        matches!(step.step, StepKind::FirmwareZero { .. }),
+        matches!(proposal.decision, ClimbAction::FirmwareZero {}),
         "{:?}",
-        step.step
+        proposal.decision
+    );
+    assert!(
+        proposal
+            .proposed
+            .cores
+            .iter()
+            .all(|(_, offset)| offset == TargetOffset::ZERO)
+    );
+    assert!(receipt.target.ccd().is_zero());
+    assert!(
+        after[..zeroed]
+            .iter()
+            .filter_map(applied)
+            .all(|profile| profile.is_zero())
     );
     assert!(after.iter().find_map(applied).unwrap().is_zero());
     // The old qualification no longer counts: the previous profile is qualified afresh under the
@@ -290,31 +338,99 @@ impl Policy for FreezeAfterPromotion {
     }
 }
 
+/// The retreat the freeze answer caused, once applied: its decision, its receipt, and the permanent
+/// stop recorded at classification, before the later retreat receipt.
+fn retreat_and_stop(events: &[Event]) -> Option<(&ClimbDecision, &DayApplied, &UnitStop)> {
+    let (applied_at, receipt, _, proposal) = applied_decisions(events)
+        .find(|(_, _, _, proposal)| matches!(proposal.decision, ClimbAction::Retreat { .. }))?;
+    let ClimbAction::Retreat { units, .. } = &proposal.decision else {
+        return None;
+    };
+    let stop = events[..applied_at].iter().find_map(|event| {
+        if let Payload::UnitStop(stop) = &event.payload
+            && units.contains(&stop.unit)
+        {
+            Some(stop)
+        } else {
+            None
+        }
+    })?;
+    Some((proposal, receipt, stop))
+}
+
 #[test]
 fn a_cpu_suspect_answer_leads_to_a_retreat() {
     let mut policy = FreezeAfterPromotion {
         inner: Ruleset13::new(1.5).unwrap().recording(),
         frozen: None,
     };
-    // The run ends once a retreat step follows the CPU-suspect event.
+    // The run ends once the retreat the CPU-suspect answer caused is applied and its unit stopped.
     run_until(&mut policy, |policy| {
-        let retreated = policy.inner.events().unwrap().iter().any(|event| {
-            matches!(&event.payload, Payload::DayStep(step)
-                if matches!(step.step, StepKind::Retreat { .. }))
-        });
-        if policy.frozen.is_some() && retreated {
+        if policy.frozen.is_some() && retreat_and_stop(policy.inner.events().unwrap()).is_some() {
             DayStart::Stop
         } else {
             DayStart::Run
         }
     });
     assert_eq!(policy.frozen, Some(DayClassification::CpuSuspect));
+    let events = policy.inner.events().unwrap();
+    let (retreat, receipt, stop) = retreat_and_stop(events).unwrap();
+    let ClimbAction::Retreat { cause, .. } = &retreat.decision else {
+        unreachable!()
+    };
+    assert!(
+        matches!(cause, ClimbRetreatCause::Event { .. }),
+        "the retreat was caused by {cause:?}, not the CPU-suspect answer"
+    );
+    // It backs toward stock without deepening any core, and applies exactly what it committed.
+    let backs_off = retreat.proposed.cores.iter().all(|(core, offset)| {
+        retreat
+            .before
+            .cores
+            .get(core)
+            .is_some_and(|before| offset >= before)
+    });
+    let shallower = retreat.proposed.cores.iter().any(|(core, offset)| {
+        retreat
+            .before
+            .cores
+            .get(core)
+            .is_some_and(|before| offset > before)
+    });
+    assert!(backs_off && shallower, "{retreat:?}");
+    assert_eq!(receipt.target.cores(), &retreat.proposed.cores);
+    // The target is stock, or a profile with a completed qualification committed earlier.
+    if retreat
+        .proposed
+        .cores
+        .iter()
+        .any(|(_, offset)| offset != TargetOffset::ZERO)
+    {
+        let certificate = retreat
+            .certificate
+            .expect("a nonzero retreat target cites no qualification");
+        assert!(
+            events
+                .iter()
+                .any(|event| event.seq == certificate && certifies(event, retreat, |_| true)),
+            "the retreat target is not qualified"
+        );
+    }
+    // The unit that backed off is stopped for good at the retreat's profile.
+    assert!(matches!(
+        stop.reason,
+        UnitStopReason::FirstBackstep { .. } | UnitStopReason::RestorationBackstep { .. }
+    ));
+    assert_eq!(stop.profile.cores, retreat.proposed.cores);
     let report = policy.inner.report();
     assert_eq!(report.allowance, None);
     assert_eq!(report.finishes, Vec::new());
-    assert!(report.events.iter().any(
-        |event| event.classification == crate::day_night::successor::Classification::CpuSuspect
-    ));
+    assert!(
+        report
+            .events
+            .iter()
+            .any(|event| event.classification == Classification::CpuSuspect)
+    );
     assert!(report.events.iter().all(|event| !event.charged));
 }
 
@@ -346,6 +462,7 @@ impl Policy for UnansweredEnd {
     fn firmware_changed(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
         self.inner.firmware_changed(machine)
     }
+
     fn start_day(&mut self, day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
         if let (Some(_), Some(answer), false) = (&self.ended, self.late, self.answered) {
             let answer = self
@@ -371,6 +488,7 @@ impl Policy for UnansweredEnd {
         }
         self.inner.start_day(day, machine)
     }
+
     fn observe_day(
         &mut self,
         day: u32,
@@ -388,6 +506,7 @@ impl Policy for UnansweredEnd {
         }
         self.inner.observe_day(day, evidence, machine)
     }
+
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
         self.inner.night(night, machine)
     }
@@ -427,6 +546,71 @@ fn an_answer_reclassifies_a_provisional_event_under_its_original_identity() {
     );
     assert_eq!(report.allowance, None);
     assert!(report.events.iter().all(|event| !event.charged));
+}
+
+#[test]
+fn a_reclassified_restoration_reports_its_actual_retreat_and_fresh_guards() {
+    use crate::day_night::successor::StepKind;
+
+    let mut policy = UnansweredEnd::new(true, Some(DayAnswerKind::Graphics));
+    run_until(&mut policy, |policy| {
+        if policy
+            .inner
+            .applications()
+            .steps
+            .iter()
+            .any(|step| matches!(step.kind, StepKind::ReclassifiedRestoration { .. }))
+        {
+            DayStart::Stop
+        } else {
+            DayStart::Run
+        }
+    });
+    let applications = policy.inner.applications();
+    let restored = applications
+        .steps
+        .iter()
+        .find(|step| matches!(step.kind, StepKind::ReclassifiedRestoration { .. }))
+        .unwrap();
+    let StepKind::ReclassifiedRestoration {
+        retreat,
+        event,
+        reclassified_day,
+        units,
+        hold,
+        qualification,
+        consumed_before,
+        consumed_after,
+        crash_vetoes,
+    } = &restored.kind
+    else {
+        unreachable!();
+    };
+    let source = applications
+        .steps
+        .iter()
+        .find(|step| &step.id == retreat)
+        .unwrap();
+    assert_eq!(event, &policy.ended.unwrap().id);
+    assert!(source.day <= *reclassified_day && *reclassified_day <= restored.day);
+    assert_eq!(restored.after, source.before);
+    let StepKind::Retreat {
+        units: physically_reverted,
+        ..
+    } = &source.kind
+    else {
+        panic!("restoration must cite a retreat");
+    };
+    assert_eq!(units, physically_reverted);
+    let hold = hold
+        .as_ref()
+        .expect("the decision cites fresh normal hold evidence");
+    assert_eq!(hold.profile, restored.before);
+    assert!(hold.clean_hours >= 50.0);
+    assert!(!hold.witnesses.is_empty());
+    assert_eq!(qualification.as_ref().unwrap().profile, restored.after);
+    assert_eq!((*consumed_before, *consumed_after), (1, 1));
+    assert!(crash_vetoes.is_empty());
 }
 
 #[test]

@@ -5,8 +5,8 @@ fail-fast = false
 default-filter = '''
 not (
   (package(togi-session) & (
-    test(=whole::cut::killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments)
-    | test(=whole::cut::crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve_decisions)
+    test(/^whole::cut::killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments::/)
+    | test(/^whole::cut::crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve_decisions::/)
   ))
   | (package(togi-simrun) & test(/^warm_cold::warm_equals_cold::/))
 )

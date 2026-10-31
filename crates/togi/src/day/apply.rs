@@ -77,13 +77,31 @@ impl Live {
             .enumerate()
             .rev()
             .find_map(|(index, event)| {
+                if let Payload::ClimbDecision(step) = &event.payload {
+                    return (step.cold_boot == *journal.boot() && (!same_boot || index >= before))
+                        .then(|| {
+                            let profile =
+                                CcdProfile::of_cores(&step.proposed.cores, &self.topology)
+                                    .ok_or(Error::NonuniformProposal)?;
+                            let proposed = CcdVector::expand(profile, &self.topology)?;
+                            if proposed.cores() != &step.proposed.cores {
+                                return Err(Error::NonuniformProposal);
+                            }
+                            Ok((
+                                event.seq,
+                                togi_journal::DecisionId(event.seq.get()),
+                                proposed,
+                            ))
+                        });
+                }
                 if let Payload::DayStep(step) = &event.payload {
                     (step.cold_boot == *journal.boot() && (!same_boot || index >= before))
-                        .then(|| (event.seq, step.clone()))
+                        .then(|| Ok((event.seq, step.decision, step.proposed.clone())))
                 } else {
                     None
                 }
-            });
+            })
+            .transpose()?;
         let previous = journal.events().iter().rev().find_map(|event| {
             if let Payload::DayApplied(applied) = &event.payload {
                 Some((event.seq, applied.target.clone()))
@@ -91,15 +109,13 @@ impl Live {
                 None
             }
         });
-        let (requested, cause, causes) = if let Some((seq, step)) = step {
-            let cause = if is_stock(&step.proposed) {
-                ApplyCause::Step {
-                    decision: step.decision,
-                }
+        let (requested, cause, causes) = if let Some((seq, decision, proposed)) = step {
+            let cause = if is_stock(&proposed) {
+                ApplyCause::Step { decision }
             } else {
                 ApplyCause::Reset { cause: seq }
             };
-            (step.proposed, cause, vec![seq])
+            (proposed, cause, vec![seq])
         } else if let Some((seq, target)) = previous {
             let cause = if is_stock(&target) {
                 ApplyCause::Reapplication {}

@@ -830,17 +830,25 @@ fn a_timed_pause_is_inherited_by_the_next_boot_until_it_ends() {
         checkpointed(3, A, 600),
         started(4, B, 0),
     ]);
+    assert_eq!(intervals.current().unwrap().pause(), Some(timed()));
+    assert!(intervals.current().unwrap().started_paused());
     assert_eq!(
         closed(intervals.apply(&checkpointed(5, B, 600))),
         Some((false, 600))
     );
     assert_eq!(intervals.apply(&paused(6, B, PauseState::Running {})), None);
+    assert_eq!(intervals.current().unwrap().pause(), None);
+    assert!(intervals.current().unwrap().started_paused());
+    intervals.apply(&started(7, B, 0));
+    let restored: DayIntervals =
+        serde_json::from_value(serde_json::to_value(&intervals).unwrap()).unwrap();
+    assert!(restored.current().unwrap().started_paused());
     assert_eq!(
-        closed(intervals.apply(&checkpointed(7, B, 1200))),
+        closed(intervals.apply(&checkpointed(8, B, 1200))),
         Some((false, 600))
     );
     assert_eq!(
-        closed(intervals.apply(&checkpointed(8, B, 1800))),
+        closed(intervals.apply(&checkpointed(9, B, 1800))),
         Some((true, 600))
     );
 }
@@ -857,6 +865,21 @@ fn an_until_boot_pause_ends_with_its_boot() {
         closed(intervals.apply(&checkpointed(5, B, 600))),
         Some((true, 600))
     );
+}
+
+#[test_case(-1, true; "before deadline")]
+#[test_case(0, false; "at deadline")]
+#[test_case(1, false; "after deadline")]
+fn cold_boot_pause_eligibility_uses_the_first_observation_time(seconds: i64, expected: bool) {
+    let PauseState::Until { deadline } = timed() else {
+        unreachable!();
+    };
+    let mut boot = started(3, B, 0);
+    boot.time = deadline
+        .checked_add(jiff::SignedDuration::from_secs(seconds))
+        .unwrap();
+    let intervals = DayIntervals::of(&[started(1, A, 0), paused(2, A, timed()), boot]);
+    assert_eq!(intervals.current().unwrap().started_paused(), expected);
 }
 
 #[test_case(timed(); "timed")]

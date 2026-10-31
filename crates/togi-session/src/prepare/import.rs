@@ -1,9 +1,9 @@
-//! The manifest of a fresh Ruleset 13 transition: which raw pre-transition day records the new session imports.
+//! A versioned successor manifest of original observations and irreversible campaign history.
 //!
 //! The manifest is a pure function of the archived journals' bytes, so a startup that was killed before it committed
 //! rebuilds the same one and appends only the identities the live journal lacks.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use jiff::Timestamp;
 use serde::Deserialize;
@@ -17,8 +17,8 @@ use togi_machine::{
     BiosContext, BootId, CcdProfile, CoreInfo, ObservedOffset, PerCore, TargetOffset,
 };
 
-/// The reason `session.imported` records for every fresh transition.
-pub(crate) const REASON: &str = "fresh Ruleset 13 transition; no tuning carry";
+/// The versioned successor contract; no predecessor conclusion grants permission.
+pub(crate) const REASON: &str = "successor import v1; verified stock; no carried permission";
 
 /// A day record kind and how an import classes it.
 const DAY_KINDS: [(&str, ImportClass); 8] = [
@@ -32,8 +32,25 @@ const DAY_KINDS: [(&str, ImportClass); 8] = [
     ("day.fault", ImportClass::Fault),
 ];
 
+/// Campaign facts cross reset boundaries; raw tuning observations do not.
+const HISTORY_KINDS: &[&str] = &[
+    "session.start",
+    "day.applied",
+    "day.step",
+    "day.event",
+    "day.veto",
+    "climb.decision",
+    "unit.mapping",
+    "unit.stop",
+    "campaign.start",
+    "campaign.charge",
+    "campaign.reclassified",
+    // Never permission: only evidence that a failed requalification owes a campaign event.
+    "night.qualification",
+    "successor.imported",
+];
+
 const IMPORTED_KIND: &str = "day.imported";
-const COMMITMENT_KIND: &str = "session.imported";
 const START_KIND: &str = "session.start";
 const MCE_KIND: &str = "mce";
 const TRIAL_PREFIX: &str = "trial.";
@@ -48,12 +65,26 @@ pub struct Manifest {
     duplicates: u64,
     unknown: Vec<ImportedRecordRef>,
     excluded: Vec<ImportedRecordRef>,
+    campaign_records: Vec<DayImported>,
+    topologies: BTreeMap<SessionId, Vec<CoreInfo>>,
 }
 
 impl Manifest {
     /// The records to append, oldest original identity first.
     pub fn records(&self) -> &[DayImported] {
         &self.records
+    }
+
+    pub fn sources(&self) -> &[CarriedSource] {
+        &self.sources
+    }
+
+    pub fn reconstruction(&self) -> togi_tuner::policy::successor::Reconstruction {
+        togi_tuner::policy::successor::reconstruct(&self.campaign_records, &self.unknown)
+    }
+
+    pub(crate) fn topology(&self, session: SessionId) -> Option<&[CoreInfo]> {
+        self.topologies.get(&session).map(Vec::as_slice)
     }
 
     /// The identity of every record the import selects.
@@ -96,14 +127,7 @@ impl Manifest {
 pub(crate) struct Source {
     pub(crate) session: SessionId,
     pub(crate) bytes: Vec<u8>,
-}
-
-/// Whether an archive carries a committed import, so the walk need not look further back.
-pub(crate) fn commits_import(bytes: &[u8]) -> bool {
-    lines(bytes).any(|(_, line)| {
-        line.and_then(|text| serde_json::from_str::<Light>(text).ok())
-            .is_some_and(|light| light.kind == COMMITMENT_KIND)
-    })
+    pub(crate) carry_raw: bool,
 }
 
 /// The manifest of `sources`, newest archive first: each original identity is kept once, from the newest archive
@@ -114,6 +138,14 @@ pub(crate) fn manifest(sources: &[Source]) -> Manifest {
     for source in sources {
         read(source, &mut manifest, &mut seen);
     }
+    manifest.campaign_records.clone_from(&manifest.records);
+    manifest.records.retain(|record| {
+        HISTORY_KINDS.contains(&record.original_kind.as_str())
+            || sources
+                .iter()
+                .find(|source| source.session == record.original.session)
+                .is_none_or(|source| source.carry_raw)
+    });
     manifest
         .records
         .sort_by_key(|record| (record.original.session, record.original.seq));
@@ -171,6 +203,18 @@ fn read(source: &Source, manifest: &mut Manifest, seen: &mut HashSet<Provenance>
         })
         .collect();
     let topology = start_of(&parsed, &mut manifest.sources, source.session);
+    if topology.is_none() {
+        manifest.unknown.push(ImportedRecordRef {
+            original: Provenance {
+                session: source.session,
+                seq: Seq::FIRST,
+            },
+            kind: START_KIND.to_owned(),
+        });
+    }
+    if let Some(topology) = &topology {
+        manifest.topologies.insert(source.session, topology.clone());
+    }
     let (day_boots, trial_boots) = boot_roles(&parsed);
     for (number, light) in &parsed {
         let Some((light, text)) = light else {
@@ -275,7 +319,10 @@ fn classify(
     if light.kind == MCE_KIND {
         return classify_mce(light, text, day_boots, trial_boots);
     }
-    if !light.kind.starts_with(DAY_PREFIX) {
+    if !light.kind.starts_with(DAY_PREFIX)
+        && !HISTORY_KINDS.contains(&light.kind.as_str())
+        && light.kind != "exposure.observed"
+    {
         return Class::Ignored;
     }
     let Ok(event) = Event::decode(text) else {
@@ -286,6 +333,12 @@ fn classify(
             return Class::Unknown;
         };
         return Class::Copy(Box::new(record));
+    }
+    if HISTORY_KINDS.contains(&light.kind.as_str()) || light.kind == "exposure.observed" {
+        return Class::Day {
+            class: ImportClass::Manual,
+            event: Box::new(event),
+        };
     }
     match DAY_KINDS.iter().find(|(kind, _)| *kind == light.kind) {
         Some((_, class)) => Class::Day {
@@ -327,6 +380,14 @@ fn day_record(
     event: &Event,
     topology: Option<&[CoreInfo]>,
 ) -> DayImported {
+    let original = if let Payload::ExposureObserved(observed) = &event.payload {
+        Provenance {
+            session: observed.source.session,
+            seq: observed.source.seq,
+        }
+    } else {
+        original
+    };
     let facts = Facts::of(&event.payload);
     let Facts {
         build,

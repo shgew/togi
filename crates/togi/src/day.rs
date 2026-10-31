@@ -274,6 +274,8 @@ pub enum Error {
     ApplicationOverflow,
     #[error("invalid day profile")]
     Profile(#[from] togi_machine::CcdProfileError),
+    #[error("daily proposal does not match a uniform CCD profile over the recorded topology")]
+    NonuniformProposal,
     #[error("fold daily policy")]
     PolicyFold(#[from] togi_tuner::policy::FoldError),
     #[error("query daily policy")]

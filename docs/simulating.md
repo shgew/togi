@@ -5,12 +5,13 @@
 The simulator is a model, not the machine. Research that runs it follows [Research campaigns](benchmarking.md#research-campaigns): model development changes the model under the [model program](../tools/fit/program.md), every other mode keeps the simulator frozen, and a simulated gain never lifts the tuner program's [evidence volume](../tools/bench/program.md#hard-rules) freeze. A simulated night ends where a real one does: when the operator ends it (`--night-hours`) or a dead end stops it.
 
 ```sh
-just sim [--seed N] [--machine FILE] [--replay-facts] [--night-hours N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
+just sim [--seed N] [--machine FILE] [--replay-facts] [--recorded-content] [--night-hours N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
 ```
 
 - `--seed` (default 1) selects deterministic limits and failures; the same seed and history reproduce the journal.
 - `--machine FILE` loads an explicit simulator machine JSON file, including limits, joints, ranking, outcome scripts and reset reasons; `--seed` still sets its seed.
 - `--replay-facts` answers exact trial-class/full-profile matches from the machine file's `facts` extract, under its declared BIOS context. Without this flag the file remains a fitted simulator alone.
+- `--recorded-content` makes each simulated trial report the workload content identities the state directory's live journal recorded, instead of the simulator's synthetic ones. It reads every `exposure.observed` class and `trial.intent` content of that journal before any transition archives it, keyed by the workload each entry runs (an R8 or R9 entry by the R1 or R3 workload it runs). It is for a transition dry run on a copy of recorded state ([Inspecting a transition](reviewing.md#inspecting-a-transition-on-recorded-state)): recorded observations are matched against the identities of the workloads the simulated session runs, so synthetic identities differ from them. The identities are a simulation assumption: nothing checks that those executables exist on this machine, and backend availability stays the simulator's own (a simulated missing backend still fails). It does not replay recorded outcomes (that is `--replay-facts`) and is no evidence of real hardware or real content. Refused before the session starts: a journal that records no identity, two different identities for one workload, or an identity of a different backend than the workload runs. Refused when the session asks for a workload the journal recorded no identity for; it is never answered with a synthetic one. Without the option, identities stay synthetic.
 - `--night-hours` (default 8) is when the simulated operator ends the night, counted in simulated time from the machine's clock when the command starts; a night has no other deadline. The operator's end is a signal, seen at the first event appended at or after that time (a trial in flight finishes first).
 - `--state-dir` uses an existing directory; without it, `togi-tool-sim` creates a temporary `togi-sim-*` directory, keeps it and announces it on stderr as `sim: state directory DIR`.
 - `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection, gzip-compressed on trial end; by default trial samples stay in memory. Simulation output, including compression, is never synced ([Journal, simulated storage](spec/journal.md#rules)).
@@ -246,6 +247,8 @@ A divergence is `SimError::Diverged`, and a state that cannot be published is `S
 
 **Observing the run.** An `observer` sees every appended event and may answer `Observe::Stop`, which cancels the run with `Stop::Signal`. It is called once per event, in order, at constant cost, and it keeps seeing events after the caller's log fails. It may also call the simulator's fault controls, such as `crash`, `next_reset` or `power_loss`. An observer works with either persistence. `write_samples` writes trial samples under the state directory's `trials/`, so it needs persistence on disk.
 
+**Wrapping the trial runner.** `adapt_trials`, when set, receives each boot's simulated trial runner and returns the one the session uses; it runs at every boot, so the wrapper outlives reboots, and `None` leaves the simulator's own. `togi-tool-sim --recorded-content` uses it to answer content identities from a recording; the wrapper must forward every other `Trials` call unchanged.
+
 **After a run.** These functions read the state directory:
 
 - `events` returns the live journal's events.
@@ -285,6 +288,11 @@ before the next day boot; a policy `EndNight` closes it with `shutdown{reason: d
 apply day steps for a paused boot, because the calendar has no pause.
 Successor diagnostics retain applied promotion, retreat and stock-reset step witnesses from the adapter's journal,
 including the completed exact-profile qualification's fresh, reused and stock-control trial identifiers.
+Reclassified-event restorations are separate from promotions and firmware restorations: their report links the
+decision's cited retreat receipt and the typed campaign reclassification, retaining the consumed allowance,
+credited normal-hold observations, exact-profile qualification and later whole-profile crash vetoes. Reverted
+units follow the retreat's physical before/after depths, not merely its declared unit list. Missing hold or
+qualification evidence stays absent so the successor auditor can reject the claim rather than infer permission.
 The successor unit summaries count the observed launches named by those applied qualification witnesses;
 failed or unfinished qualifications are not counted as completed application evidence. Conclusive night
 failures carry the adapter's CPU-suspect classification; interrupted or inconclusive trials do not invent a failure.
@@ -506,7 +514,7 @@ The calendar still idealizes zero setup and teardown and omits hardware controll
 `crates/togi-tool-sim` builds the `togi-tool-sim` command. It runs from a source checkout:
 
 ```sh
-just sim [--seed N] [--machine FILE] [--replay-facts] [--night-hours N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
+just sim [--seed N] [--machine FILE] [--replay-facts] [--recorded-content] [--night-hours N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
 just sim-suite [--jobs N] [--max-boots N]   # the whole suite in one shard, then its check; on demand, not a CI check
 cargo run --release -p togi-tool-sim -- suite --suite tools/bench/suite.json [--shards N] [--shard I] [--jobs N] --out DIR [--max-boots N]
 cargo run --release -p togi-tool-sim -- check --suite tools/bench/suite.json --shards N [--shard I] DIR

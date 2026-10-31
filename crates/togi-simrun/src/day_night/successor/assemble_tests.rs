@@ -45,7 +45,7 @@ fn config(scenario: &truth::Scenario, days: u32, mode: UnitMode) -> RunConfig {
 #[test]
 fn ruleset13_promotions_keep_their_journal_witnesses() {
     use std::collections::BTreeSet;
-    use togi_journal::{ApplyCause, Payload, StepKind as JournalStep};
+    use togi_journal::{ApplyCause, ClimbAction, DecisionId, Payload};
 
     let scenario = truth::Scenario::builtin("successor-edge-deep", 20_001).unwrap();
     let mut policy = crate::day_night::Ruleset13::new(1.5).unwrap().recording();
@@ -63,11 +63,11 @@ fn ruleset13_promotions_keep_their_journal_witnesses() {
                 return None;
             };
             journal.iter().find_map(|proposal| {
-                if let Payload::DayStep(step) = &proposal.payload
-                    && step.decision == decision
-                    && matches!(step.step, JournalStep::Promote { .. })
+                if let Payload::ClimbDecision(step) = &proposal.payload
+                    && DecisionId(proposal.seq.get()) == decision
+                    && matches!(step.decision, ClimbAction::Promote { .. })
                 {
-                    Some((event, applied))
+                    Some((event, applied, step))
                 } else {
                     None
                 }
@@ -75,13 +75,47 @@ fn ruleset13_promotions_keep_their_journal_witnesses() {
         })
         .collect();
     assert!(!promotions.is_empty(), "fixture never promoted");
-    for (event, applied) in promotions {
+    for (event, applied, proposal) in promotions {
         let day = 1.0 + event.mono.unwrap().as_secs_f64() / 86_400.0;
         let witness = record
             .steps
             .iter()
             .find(|step| step.day == day && matches!(step.kind, StepKind::Climb { .. }))
             .expect("applied promotion has a step witness");
+        let StepKind::Climb {
+            ceiling_depth,
+            clean_hold_hours,
+            qualification,
+            ..
+        } = &witness.kind
+        else {
+            unreachable!();
+        };
+        assert_eq!(
+            *clean_hold_hours,
+            Duration::from_secs(proposal.hold.eligible_s).as_secs_f64() / 3600.0
+        );
+        assert_eq!(
+            qualification.id,
+            format!("ruleset13-qualification-{}", proposal.certificate.unwrap())
+        );
+        let ClimbAction::Promote { unit, .. } = proposal.decision else {
+            unreachable!();
+        };
+        let ceiling = journal
+            .iter()
+            .find_map(|event| {
+                if let Payload::UnitEdge(edge) = &event.payload
+                    && edge.unit == unit
+                    && proposal.ceilings.contains(&event.seq)
+                {
+                    edge.ceiling
+                } else {
+                    None
+                }
+            })
+            .expect("promotion cites its hard-ceiling edge");
+        assert_eq!(i64::from(*ceiling_depth), -ceiling.get());
         for info in scenario.topology() {
             assert_eq!(
                 i64::from(witness.after.get(info.core).unwrap()),

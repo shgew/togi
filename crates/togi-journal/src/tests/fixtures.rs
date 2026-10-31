@@ -1028,6 +1028,9 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
     ]
+    .into_iter()
+    .chain(super::ruleset14::samples())
+    .collect()
 }
 
 fn ccd(id: u8) -> CcdId {

@@ -229,6 +229,15 @@ impl Extractor {
             | Payload::DayImported(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_)
+            | Payload::UnitMapping(_)
+            | Payload::UnitEdge(_)
+            | Payload::ClimbDecision(_)
+            | Payload::UnitStop(_)
+            | Payload::CampaignStart(_)
+            | Payload::CampaignCharge(_)
+            | Payload::CampaignReclassified(_)
+            | Payload::FirmwareRestoration(_)
+            | Payload::SuccessorImported(_)
             | Payload::CorePhase(_)
             | Payload::SessionArchived(_) => {}
         }

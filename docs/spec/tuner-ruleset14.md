@@ -1,16 +1,16 @@
-# Ruleset 14 (specified; not yet implemented)
+# Ruleset 14
 
-This specification records the approved two-ends D decision in [#1458](https://github.com/shgew/togi/issues/1458), tracked by [Ruleset 14 #1460](https://github.com/shgew/togi/issues/1460). **The binary does not implement these rules. [Ruleset 13](tuner.md) remains the normative description of shipped behavior.** This sibling keeps future policy separate from the current executable contract; it is not a selectable alternative. No compatibility constant, schema number, evidence epoch or deployment authorization changes here.
+Normative rules for the only tuning policy, two-ends D, approved in [#1458](https://github.com/shgew/togi/issues/1458) and tracked by [#1460](https://github.com/shgew/togi/issues/1460). This supersedes Ruleset 13's statistical-cap permission rules in [tuner.md](tuner.md); S remains a labelled, non-authorizing diagnostic.
 
-Within this document, “must”, “retains” and present-tense policy descriptions specify the successor implementation contract, not a claim about the shipped binary. Sections 1–11 preserve the design’s numbering. [Workloads](workloads.md), [journal](journal.md) and [runtime](runtime.md) continue to own their respective execution, durability and application contracts; the disposition section identifies the policy changes rather than replacing those contracts.
+Sections 1–11 preserve the design's numbering. [Workloads](workloads.md), [journal](journal.md) and [runtime](runtime.md) own execution, durability and application; retained scheduling rules are linked explicitly below. Nonzero hardware activation remains subject to §9.
 
 ## 1. Scope, compatibility and terminology
 
 Rules below apply to a **tuning unit**: a CCD in the coarse phase; a physical core in later refinement. The whole profile is always the complete ordered per-core vector plus its topology and phase/unit mapping. A CCD offset expands uniformly to its member cores; a core offset expands to that physical core's SMT siblings. No daily crash identifies a guilty unit.
 
-D needs a **new ruleset**, not an unversioned fix to Ruleset 13. Separate authorization reserves the RULESET bump and its number; the Ruleset 13 design number is already distinct from `togi_tuner::RULESET = 3`. Any required SCHEMA or evidence-epoch decision also requires separate authorization. This design assigns none of those numbers.
+The Ruleset 14 design number is distinct from the Rust `RULESET` compatibility constant. This policy requires a ruleset transition; the final compatibility number is assigned with the implementation switch. `SCHEMA` remains 1: the new journal kinds are additive and retain released wire meanings. Production reducer changes invalidate snapshots through the source-build fingerprint and rebuild them from the journal.
 
-The settled policy specifies the two-ended climb, initial and subsequent 50-hour holds, bounded rounded-up steps, exact-profile qualification, newest-step stop, whole-profile veto/escalation, firmware-zero/one-step restoration, two-event machine allowance and honest evidence wording. The decisions below are settled; implementation and hardware acceptance remain outstanding.
+This policy specifies the two-ended climb, initial and subsequent 50-hour holds, bounded rounded-up steps, exact-profile qualification, newest-step stop, whole-profile veto/escalation, firmware-zero/one-step restoration, two-event campaign allowance and honest evidence wording.
 
 The eventual CO-added-hazard goal remains `λ* = 1 crash per 3,000 machine-hours`; bounded exploration is not permission to raise that goal or claim it has already been met.
 
@@ -58,6 +58,8 @@ Example with C = −25: `0 → −5 → −10 → −15 → −20 → −23 → 
 Retain the existing classification: an orderly shutdown is not a crash; core-local or uncorrected MCEs remain CPU-suspect even in cleanly ended boots; an otherwise unexplained `unsure` answer or unanswered Unknown/CF9 end at nonzero D forms a **provisional CPU-suspect event**. Non-CPU answers cannot erase independent MCE evidence. Manual records retain the actual profile and provenance; copied witnesses never create extra events.
 
 A CPU-suspect event vetoes its **whole applied profile** P and every day profile Q at least as deep on every physical core. Vetoes do not expire, and a clean night cannot clear one. Only source-event reclassification can clear that event's veto. Controlled reproduction retains its explicit one-night exception and earns no qualification credit.
+
+A crash before the machine's first campaign enrollment is a veto only: it is no learning event, so it charges no allowance, stops no unit and needs no step ancestry. Events at or after the enrollment keep the rules below; section 10 defines the boundary across a successor transition. A zero-profile event is never charged, whether it is observed live or imported.
 
 At the next cold boot:
 
@@ -110,6 +112,8 @@ Use **`experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate mod
 | BIOS zero and session transitions | **Keep** BIOS CO 0, no export or automatic BIOS recommendation, archive history honestly; §10 specifies the successor transition separately. |
 
 A unit not yet stepped into a profile cannot consume a fictitious “previous step.” If a safety retreat target has no valid qualification, stock is the fallback, not a claim that the shallower target passed. A required safety backstep has priority over restoration, promotion, freeze or allowance availability.
+
+The journal's typed [`day.pause` fold](journal.md#day-pause) supplies pause accounting and boot eligibility. A boot that first observes an unexpired timed pause remains promotion-ineligible after `running`, including after a service restart or snapshot replay. While a durable pause is in force, status/watch distinguish the saved D from the actual observed/read-back profile; neither recording the pause before zeroing nor a saved nonzero D is evidence that nonzero offsets are currently applied.
 
 **Firmware restoration history:** save the exact pre-change profile and its unit mapping, reset to stock, and record the subsequently successful restoration as one whole-profile **learning step** from stock. The stock hold and the exact new-context night certificate are both mandatory; do not substitute a componentwise-deeper pass or old firmware hours. Keep ordinary pending-event, veto, remaining-allowance, freeze/pause, watchdog, safe-apply and activation checks. A genuinely adverse current-context ceiling finding takes precedence; an old U is not current positive evidence, and absence of a newly mapped U alone does not turn this explicit restoration path into a mandatory re-climb.
 
@@ -167,9 +171,23 @@ The durable journal and reporting contract requires:
 - a campaign-level machine allowance, unique event identities, provisional/reclassification history, consumption and exhaustion, with no silent renewal;
 - permission mode, S's diagnostic-only status, applied vs saved/proposed profile, current-profile daily hours/crashes and separated learning/post-finish events.
 
-Use additive typed events/fields where their semantics genuinely are additive. A new event kind alone need not require SCHEMA under the existing journal contract, but replacing the required CCD profile shape, retyping fields or changing released meanings can. Inventory all strict readers, importers, snapshots and the day applier's current uniform-CCD consistency check before choosing a representation. A future core-phase applier must validate the complete core vector against topology, not disable validation or pretend a nonuniform profile expands from one CCD offset. **RULESET/SCHEMA changes require separate compatibility authorization.** Evidence epoch changes only if workload/credit contracts actually change; using unit-generic policy is not permission to relabel incompatible trials.
+The journal uses additive typed kinds without changing released fields or meanings, so `SCHEMA` stays 1. The [journal catalog](journal.md) owns their payloads. Snapshots are caches: the production source-build fingerprint rejects stale reducers and replay rebuilds them. A future core-phase applier must validate the complete core vector against topology, not pretend a nonuniform profile expands from a CCD offset. Evidence epoch changes only when workload/credit contracts change.
 
-**Successor transition:** archive the Ruleset 13 session unchanged and start at verified stock. Preserve original-identity raw daily observations, applicable whole-profile vetoes and compatible night observations for explicitly checked recomputation; never carry S, a qualification conclusion or nonzero D as permission. Reconstruct campaign allowance/stops across transitions rather than using session freshness to renew risk. Old-context facts stay history/hints. If required campaign history cannot be reconstructed, block new nonzero exploration pending an explicit policy decision, not a default zero-consumed counter. The reset boundary is the archived predecessor and durably identified successor session at verified stock: interruption must resume that same transition, not create another campaign. Imports and replay retain source observation/event identities, so an interrupted derived commitment cannot duplicate credit, charges or steps. [Journal transitions](journal.md#transitions) own archive durability and compatibility refusal; the successor implementation must establish its crash-resume boundary before switching compatibility.
+**Successor transition:** archive the Ruleset 13 session unchanged and start the durably identified successor at verified stock. Import original-identity raw daily observations, compatible `exposure.observed` observations, and CPU-suspect events, stops and veto records needed to reconstruct the campaign. Never import S, an old qualification conclusion or nonzero D as permission.
+
+A copied `night.qualification` is evidence only: a failed re-qualification of a nonzero current profile whose derived event and charge never landed marks the history unreconstructible, and no copied qualification ever qualifies, certifies or unblocks any profile.
+
+Write `successor.imported` and `campaign.start {origin, history}` with source provenance and complete/unreconstructible history. Missing or unreconstructible campaign history blocks nonzero exploration rather than assuming zero consumption. Interruption resumes the same identified import, deduplicating original identities.
+
+A permanent reset boundary ends raw tuning carry, but campaign ledger records cross that boundary: reset never renews allowance. Restart, reset, firmware change, new session and reboot do not replenish the two-event allowance.
+
+**Crashes before the first enrollment:** a daily event whose crash happened before the machine's first campaign enrollment or start is a whole-profile veto and nothing else. It consumes no allowance, stops no unit and needs no applied-step ancestry, so a history made only of such events stays complete with the full allowance. This includes a manual record appended after the transition whose `Unobserved.at`, or whose named crashed boot's own timeline, precedes that start.
+
+If a late record makes the current applied D forbidden, retreat to a non-forbidden profile, using stock while the exact target is unqualified. Units shallowed only by that pre-enrollment veto, including its qualification fallback, do not stop; independently required in-campaign or adverse-evidence stops remain unchanged.
+
+The boundary is the earliest `campaign.start` of the machine, original or fresh, never a successor's restart. With no original start among the imported records, every imported crash that carries a timeline precedes it. A named boot's crash cannot be later than the first record that observed it, however late a copy of that record is written, and a boot other than the enrolling one with no record at or after the start ended before it.
+
+Identities with no recoverable timeline, such as a failed re-qualification, stay inside the campaign and are charged as before; events at or after the start keep every campaign rule. Imports keep the original provenance and deduplicate by original identity, and the first hold still starts at zero.
 
 The consolidated architectural rationale and predecessor dispositions are [ADR 0094](../adr/0094-two-ends-bounded-exploration.md). The original Ruleset 13 gate remains failed; [#1457](https://github.com/shgew/togi/issues/1457) owns successor registration.
 

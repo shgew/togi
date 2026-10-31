@@ -1,0 +1,51 @@
+---
+source: crates/togi/tests/read/status.rs
+expression: text(&ran.stdout)
+---
+day
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+BIOS F1 on board, CPU, microcode 0x1, boost limit 5000 MHz
+in flight: none
+
+UNIT   CORES                  D   C        D-C  HOLD h  STATE
+CCD 0  0,1,2,3,4,5,6,7        -5  unknown  -    0/50    held
+CCD 1  8,9,10,11,12,13,14,15  0   unknown  -    0/50    held
+
+Day policy
+permission: experimental hold + exact night qualification
+S: diagnostic, non-authorizing; finishing is not a safety certificate
+applied profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
+  core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core
+  13 0, core 14 0, core 15 0
+read-back profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
+  core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core
+  13 0, core 14 0, core 15 0
+proposed profile: none
+paused-saved profile: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5,
+  core 5 -5, core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0,
+  core 12 0, core 13 0, core 14 0, core 15 0
+allowance: unavailable; campaign history must be reconstructed
+unit: CCD 0, phase coarse, parent none, inherited start 0
+  U: unknown
+  state: held: unknown edge for CCD 0; unknown edge for CCD 1; campaign history
+  unavailable; paused
+unit: CCD 1, phase coarse, parent none, inherited start 0
+  U: unknown
+  state: held: unknown edge for CCD 0; unknown edge for CCD 1; campaign history
+  unavailable; paused
+current exact profile daily evidence: 0 h; 0 crashes []
+experimental: rate bound unavailable (95%, fixed-rate model)
+firmware restoration: none
+
+Daily safety
+freeze: off
+firmware: valid
+
+Day
+boots observed: 1; clean ends: 0; unclean ends: 0
+hardware watchdog at the last observer check: not recorded
+Applied hours per read-back profile (changed intervals excluded):
+all profiles: 0.0h observed, 0 crashes (0 unknown intervals)
+stock (CO 0): 0.0h observed, 0 crashes
+totals are observations, not a bound
+last unclean end: none

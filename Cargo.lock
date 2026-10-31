@@ -1867,6 +1867,7 @@ dependencies = [
  "togi-journal",
  "togi-machine",
  "togi-session",
+ "togi-tuner",
  "togi-version",
 ]
 

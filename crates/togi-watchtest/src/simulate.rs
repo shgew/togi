@@ -90,6 +90,7 @@ pub fn simulate(
             })
         }),
         dump_to: None,
+        adapt_trials: None,
     })?;
     match outcome {
         SimOutcome::Stopped(finished) if finished.errors.is_empty() => {}

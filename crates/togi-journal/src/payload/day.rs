@@ -641,6 +641,21 @@ pub struct DayIntervalBoot {
     /// A pause held, began or ended within the interval the next checkpoint closes.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     paused: bool,
+    /// Whether the first observation in this boot inherited an unexpired timed pause. Ending the
+    /// pause or restarting the service cannot create a promotion opportunity in this boot.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    started_paused: bool,
+}
+
+impl DayIntervalBoot {
+    /// The durable pause still awaiting a verified reapplication and its `running` record.
+    pub const fn pause(&self) -> Option<PauseState> {
+        self.pause
+    }
+
+    pub const fn started_paused(&self) -> bool {
+        self.started_paused
+    }
 }
 
 /// The raw interval closed by a checkpoint, not the tuner's hold eligibility.
@@ -689,16 +704,18 @@ impl DayIntervals {
     pub fn apply(&mut self, event: &Event) -> Option<DayIntervalCredit<'_>> {
         if let Payload::DayBootStart(start) = &event.payload {
             let previous = self.boots.iter().rposition(|boot| boot.boot == event.boot);
-            let (seconds, pause, paused) = if let Some(at) = previous {
+            let (seconds, pause, paused, started_paused) = if let Some(at) = previous {
                 let boot = self.boots.remove(at);
-                (boot.seconds, boot.pause, boot.paused)
+                (boot.seconds, boot.pause, boot.paused, boot.started_paused)
             } else {
                 let pause = self
                     .boots
                     .last()
                     .and_then(|boot| boot.pause)
                     .filter(|pause| matches!(pause, PauseState::Until { .. }));
-                (0, pause, pause.is_some())
+                let started_paused =
+                    matches!(pause, Some(PauseState::Until { deadline }) if deadline > event.time);
+                (0, pause, pause.is_some(), started_paused)
             };
             self.boots.push(DayIntervalBoot {
                 boot: event.boot.clone(),
@@ -707,6 +724,7 @@ impl DayIntervals {
                 changed: false,
                 pause,
                 paused,
+                started_paused,
             });
         }
         if let Payload::DayPause(change) = &event.payload
@@ -749,6 +767,11 @@ impl DayIntervals {
 
     pub fn get(&self, boot: &BootId) -> Option<&DayIntervalBoot> {
         self.boots.iter().rev().find(|known| known.boot == *boot)
+    }
+
+    /// The most recently observed boot, including same-boot service restarts.
+    pub fn current(&self) -> Option<&DayIntervalBoot> {
+        self.boots.last()
     }
 
     pub fn is_empty(&self) -> bool {

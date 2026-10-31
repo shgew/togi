@@ -1,6 +1,6 @@
 # Two ends: clean daily holds earn bounded, night-qualified steps
 
-Status: accepted; implementation pending. [Ruleset 13](../spec/tuner.md) remains the normative description of the shipped binary; the successor rules in [Ruleset 14](../spec/tuner-ruleset14.md) are specified, not implemented. Consolidates and takes current-policy ownership from [0079](0079-day-observer-night-tester.md)–[0084](0084-a-fresh-ruleset-transition.md); see [the index](README.md).
+Status: accepted and implemented by [Ruleset 14](../spec/tuner-ruleset14.md), the sole normative tuning policy. Consolidates and takes current-policy ownership from [0079](0079-day-observer-night-tester.md)–[0084](0084-a-fresh-ruleset-transition.md); see [the index](README.md). Nonzero activation remains separately gated.
 
 ## Context
 
@@ -50,7 +50,7 @@ The stop is paired with a durable machine-wide allowance of two unique CPU-suspe
 
 ### Gate and activation
 
-The binary still implements Ruleset 13 until an implementing change lands with a separately authorized compatibility switch; this record assigns no ruleset, schema or evidence-epoch number. Automatic nonzero day offsets stay disabled until D's rules and allowance are specified, the frozen successor registration in [#1457](https://github.com/shgew/togi/issues/1457) scores this exact policy with acceptance met or its failure explicitly disposed of, and the hardware acceptance in [§9](../spec/tuner-ruleset14.md#9-safety-and-activation) passes. Running a gate is not permission to enable nonzero use, and no score of D can retroactively accept Ruleset 13.
+Ruleset 14 is the only policy; this record assigns no compatibility number. Automatic nonzero offsets remain disabled until the exact policy meets the successor registration's acceptance or failures are explicitly disposed of, and [§9 hardware acceptance](../spec/tuner-ruleset14.md#9-safety-and-activation) passes. Running a gate is not permission to enable nonzero use, and no D score retroactively accepts Ruleset 13.
 
 ## Considered Options
 
@@ -73,6 +73,6 @@ D deliberately permits exploratory profiles whose daily CO-added hazard may exce
 
 Progress has a linear daily-hour floor. Under fixed ceilings, clean holds and ready certificates, the coarse example to C = −25 takes about 700 applied hours, and one to five further counts per core in refinement add about 800–2,400 hours ([§8](../spec/tuner-ruleset14.md#8-per-core-refinement-is-the-end-goal-not-a-restart-from-zero) owns the arithmetic and its assumptions). If refinement needs too many serial holds, that is a tractability failure to decide anew, not permission to shorten holds or relax coverage.
 
-Until implementation, Ruleset 13 in [tuner.md](../spec/tuner.md) describes the shipped binary and this record describes the accepted successor. The disposition of Ruleset 13 is fixed in every place that states it: shipped in v0.12.0; registered gate not met; superseded by this design. Outstanding Ruleset 13 hardware acceptance moves to named tracking in [#1459](https://github.com/shgew/togi/issues/1459) rather than being waived.
+Ruleset 13 in [tuner.md](../spec/tuner.md) is historical except for explicitly retained contracts. Its disposition remains: shipped in v0.12.0; registered gate not met; superseded by Ruleset 14. Outstanding hardware acceptance remains tracked in [#1459](https://github.com/shgew/togi/issues/1459), not waived.
 
 History: [0079](0079-day-observer-night-tester.md), [0080](0080-per-ccd-first.md), [0081](0081-margin-from-measured-slope.md), [0082](0082-bios-stays-at-zero.md), [0083](0083-ask-after-unclean-ends.md) and [0084](0084-a-fresh-ruleset-transition.md); through them [0004](0004-find-only.md), [0006](0006-start-from-bios-values.md), [0019](0019-a-ruleset-change-starts-a-seeded-session.md), [0027](0027-carry-trial-facts.md), [0038](0038-self-sufficient-cores.md), [0054](0054-two-phases-replace-the-deepening-loop.md) and [0056](0056-later-failures-step-back-in-pairs.md).

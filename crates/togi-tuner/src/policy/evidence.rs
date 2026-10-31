@@ -8,7 +8,7 @@ use togi_journal::{Activity, ExposureObserved, Outcome, Seq, Tested, WorkloadCon
 use togi_machine::{BiosContext, CcdId, CoreInfo, TargetOffset};
 
 use super::State;
-use super::ledger::{Sig, cap_purpose, failures_on, is_adequate, saturating_u32};
+use super::ledger::{Sig, cap_purpose, eligible_seconds, failures_on, is_adequate, saturating_u32};
 use crate::EVIDENCE_EPOCH;
 use crate::cap::{self, Hours};
 
@@ -141,6 +141,8 @@ impl Group {
     ) {
         let sig = Sig::of_class(&observed.class);
         let adequate = is_adequate(observed, cores);
+        let eligible_s =
+            eligible_seconds(observed.outcome, &observed.exclusions, observed.eligible_s);
         let zero = observed.profile.ccd().is_zero();
         if let Tested::Isolated { ccd, offset } = observed.tested {
             if observed.activity == Activity::Mapping && adequate {
@@ -219,7 +221,7 @@ impl Group {
                 classes.len() - 1
             };
             let class = &mut classes[at];
-            let hours = Hours::new(f64::from(saturating_u32(observed.eligible_s)) / SECS_PER_HOUR)
+            let hours = Hours::new(f64::from(saturating_u32(eligible_s)) / SECS_PER_HOUR)
                 .unwrap_or(Hours::ZERO)
                 .get();
             let exposure = if adequate {
@@ -243,7 +245,7 @@ impl Group {
                 }),
             }
             if purpose == cap::Purpose::Mapping {
-                *class.mapping_secs.entry(offset).or_default() += observed.eligible_s;
+                *class.mapping_secs.entry(offset).or_default() += eligible_s;
                 class.latest_mapping = Some(seq);
             }
         }

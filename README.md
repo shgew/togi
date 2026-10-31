@@ -17,10 +17,10 @@ Moves a Zen 5 desktop CPU towards deeper per-CCD Curve Optimizer offsets, as far
 ## Status
 
 Works today, on a simulated 16-core machine:
-- the full simulated Ruleset 13 lifecycle: per-CCD mapping of the edge, the cap from the measured slope, CO-0 controls, exact-profile qualification, reproduction, day steps with holds, vetoes and retreats, crash resume and reset;
-- a fresh session after a ruleset update, which maps from scratch and keeps the raw day observations ([Transitions](docs/spec/journal.md#transitions)); a BIOS change stays in the session, which re-qualifies its profile;
-- a conclusive failure at all-zero stops tuning with `platform unstable at stock` ([Dead ends](docs/spec/tuner.md#dead-ends));
-- reading a session's activity, each CCD's D, S and U with its slope and coverage, the night's queues and shares, qualification progress and the day policy (hold, latest step and its blockers, freeze, firmware validity, events and vetoes) with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands));
+- Ruleset 14 two-ends D: isolated night edge U, hard ceiling C, exact-profile qualification and 50-hour holds (including stock) for bounded day steps; newest-step stops, whole-profile vetoes and safety retreats;
+- a Ruleset 13 successor archived unchanged and restarted at verified stock, importing raw daily and compatible night observations and reconstructing campaign events/stops/vetoes ([transition](docs/spec/tuner-ruleset14.md#10-journal-schema-and-architectural-record));
+- a durable two-event machine allowance, including provisional charges, never renewed by restart, reset, firmware change, new session or reboot; missing campaign history blocks nonzero exploration;
+- status/watch D/C/U, qualification, hold and finish reasons, allowance and experimental evidence (`experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`); S is diagnostic only, never permission;
 - console-compatible dashboard rendering and a [rich truecolour profile](docs/spec/runtime.md#dashboard) using the same colours with Unicode gauges and text;
 - normal-boot stock application and observation with `togi day`: durable intent/write/readback, zero-before-clean-stop ordering, checkpointed hours, clean/unclean ends and questions you answer without root. Answers and evidence classify [daily events](docs/spec/tuner.md#daily-events); nonzero application remains disabled.
 
@@ -78,14 +78,14 @@ The NixOS tuning specialisation supports exactly one of GRUB or systemd-boot. `s
 |Document|Read it for|
 |---|---|
 |[docs/howto.md](docs/howto.md)|Installing togi and running a tuning session|
-|[docs/how-togi-tunes.md](docs/how-togi-tunes.md)|The tuning policy in brief: nights and days, D, S and U, costs and ruleset history|
+|[docs/how-togi-tunes.md](docs/how-togi-tunes.md)|Two-ends tuning: nights and days, D/C/U, holds, campaign allowance and history|
 |[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
 |[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`, and writing a run's retro|
 |[docs/benchmarking.md](docs/benchmarking.md)|Comparing tuner changes across simulated machines|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[GLOSSARY.md](GLOSSARY.md)|The vocabulary: offsets, profiles, nights and days, D, S and U|
-|[docs/spec/tuner.md](docs/spec/tuner.md)|The Ruleset 13 rules: evidence, caps, night scheduling and day steps|
+|[docs/spec/tuner-ruleset14.md](docs/spec/tuner-ruleset14.md)|The normative Ruleset 14 policy; [Ruleset 13 history and retained contracts](docs/spec/tuner.md)|
 |[docs/spec/workloads.md](docs/spec/workloads.md)|The workload regimes and how failures are detected|
 |[docs/spec/journal.md](docs/spec/journal.md)|The journal, its events and the state file|
 |[docs/spec/runtime.md](docs/spec/runtime.md)|Commands, configuration, the tuning boot and the NixOS module|

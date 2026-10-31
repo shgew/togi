@@ -186,6 +186,15 @@ impl Facts {
                 });
             }
             Payload::SessionContext(_)
+            | Payload::UnitMapping(_)
+            | Payload::UnitEdge(_)
+            | Payload::ClimbDecision(_)
+            | Payload::UnitStop(_)
+            | Payload::CampaignStart(_)
+            | Payload::CampaignCharge(_)
+            | Payload::CampaignReclassified(_)
+            | Payload::FirmwareRestoration(_)
+            | Payload::SuccessorImported(_)
             | Payload::SessionBaseline(_)
             | Payload::SessionNotice(_)
             | Payload::SessionWarning(_)

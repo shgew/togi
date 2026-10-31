@@ -3,16 +3,14 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use togi_machine::{CcdId, CcdProfile, CoreId, CoreInfo, CoreSet, PerCore, TargetOffset};
+#[cfg(test)]
+use togi_machine::CcdId;
+use togi_machine::{CcdProfile, CoreId, CoreInfo, CoreSet, PerCore, TargetOffset};
 
 use crate::Topology;
 
-/// Every CCD precedes every core; identities within a kind ascend numerically.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub enum UnitId {
-    Ccd(CcdId),
-    Core(CoreId),
-}
+/// The journal and policy share one ordered topology identity.
+pub use togi_journal::UnitId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Phase {
@@ -32,24 +30,6 @@ pub struct TuningUnit {
 pub struct Units {
     phase: Phase,
     units: Vec<TuningUnit>,
-}
-
-impl UnitId {
-    pub const fn ccd(self) -> Option<CcdId> {
-        match self {
-            Self::Ccd(ccd) => Some(ccd),
-            Self::Core(_) => None,
-        }
-    }
-}
-
-impl std::fmt::Display for UnitId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Ccd(ccd) => ccd.fmt(f),
-            Self::Core(core) => write!(f, "core {core}"),
-        }
-    }
 }
 
 impl Units {

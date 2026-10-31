@@ -110,6 +110,7 @@ pub(crate) fn input(simulator: Simulator, persistence: Persistence) -> SimInput 
         cancel: CancellationToken::new(),
         observer: None,
         dump_to: None,
+        adapt_trials: None,
     }
 }
 

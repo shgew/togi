@@ -1,0 +1,37 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│ ► DAY
+│
+│ ▌  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified
+│
+│ BETWEEN TRIALS  last: PASS after 10:00 · R1 light on core 00
+│ next trial: deciding
+│
+│
+│
+│ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
+│ D -26 · C -26 · U observed at -31 · 0 counts to C           D -45 · C -45 · U censored at -50 · 0 counts to C
+│ finished: night ceiling reached · last clean -26            finished: night ceiling reached · last clean -45
+│   00 -26          ▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄                            08 -45          ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄
+│   01 -26          ▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄                            09 -45          ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄
+│   02 -26          ▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄                            10 -45          ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄
+│   03 -26          ▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄                            11 -45          ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄
+│   04 -26          ▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄                            12 -45          ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄
+│   05 -26          ▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄                            13 -45          ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄
+│   06 -26          ▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄                            14 -45          ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄
+│   07 -26          ▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄                            15 -45          ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄
+│
+│ DAY ─────────────────────────────────────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ permission: experimental hold + exact night qualification
+│ allowance: 0 consumed / 2 limit; 2 remaining · 0...         22:13  start    session started on 16 cores
+│ experimental: 50.000 clean hours
+│ CCD 0: finished: night ceiling reached; last clean...
+│ CCD 1: finished: night ceiling reached; last clean...
+│ firmware    valid
+│ +3 more
+│
+│  ?  help    l  log    esc  back    q  exit dashboard

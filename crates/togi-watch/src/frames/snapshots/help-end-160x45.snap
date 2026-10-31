@@ -6,11 +6,6 @@ expression: body
 │
 │  ► NIGHT since 22:13 · 0h30m  ───  mapping CCD 1 at -20  ───  9:20 left
 │
-│  │             core with the offset read back.
-│  │
-│  │ R6          During idle trials this screen holds still, clock included, so it cannot wake the cores.
-│  │
-│  │ NO ETA      Nights and days follow the clock, but when a hold completes depends on what runs, so togi shows only what is scheduled and the time left in
 │  │             the current trial.
 │  │
 │  │ RULES       How togi decides what to do: https://github.com/shgew/togi/blob/main/docs/spec/tuner.md
@@ -18,21 +13,26 @@ expression: body
 │  │
 │  │ WORDS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  │
-│  │ offset       Curve Optimizer counts, 0 to -50; deeper is more negative
-│  │ trial        one launch of one workload on its target
-│  │ D            the CCD's applied day offset; 0 before the first day step
-│  │ S            the cap: the deepest offset the night's evidence supports, with its slope and what binds it
-│  │ U            the night edge: the shallowest offset that failed in isolation; unknown until mapped, censored when nothing failed down to the limit
-│  │ slope        how fast a class's failure rate grows with depth: a fallback until enough is measured
-│  │ bound by     what limits S: a class's failure rate, the margin from the edge, or the baseline
-│  │ covered      a class whose evidence backs the cap; an uncovered class does not yet
-│  │ hold         applied hours at D out of the hours a step needs
-│  █ step         what the day decided: hold, promote one CCD, retreat, or reset after a firmware change
-│  █ veto         a profile an event forbids until the veto clears
-│  █ freeze       keeps D and blocks promotions; a required retreat or firmware reset still applies
-│  █ qualifying   running a whole profile until every class has witnessed it
-│  █ reproducing  re-running a daily event's conditions to see whether it comes back
-│  █ share        the part of the night's elapsed time a queue has used, against the part it is meant to take
+│  │ offset        Curve Optimizer counts, 0 to -50; deeper is more negative
+│  │ trial         one launch of one workload on its target
+│  │ D             the tuning unit's applied day offset; saved and proposed profiles are not hardware readback
+│  │ C             the hard night ceiling, with its edge and margin witnesses; unknown U blocks ordinary promotion
+│  │ S             non-authorizing statistical diagnostic, with its slope, witnesses and gaps; never permission or a retreat trigger
+│  │ U             the night edge: the shallowest offset that failed in isolation; unknown until mapped, censored when nothing failed down to the limit
+│  │ slope         how fast a class's failure rate grows with depth: a fallback until enough is measured
+│  │ bound by      what limits diagnostic S: a class's failure rate, edge margin, or baseline; not what permits D
+│  │ covered       a class with diagnostic exposure; this does not qualify a whole profile
+│  │ hold          clean observed hours at the current exact D; earlier profiles, nights and paused time do not count
+│  │ step          hold, promote one tuning unit, retreat, restore, or reset after a firmware change
+│  │ veto          a profile an event forbids until the veto clears
+│  │ freeze        keeps D and blocks promotions; a required retreat or firmware reset still applies
+│  │ qualifying    running a whole profile until every class has witnessed it
+│  │ reproducing   re-running a daily event's conditions to see whether it comes back
+│  █ share         the part of the night's elapsed time a queue has used, against the part it is meant to take
+│  █ allowance     machine-wide consumed and remaining events, including provisional charges; reclassification does not refund them and finish does not hide
+│  █               later events
+│  █ experimental  experimental: 50 clean hours; at most 1 crash per 17 h (95%, fixed-rate model). This is an example for current exact-profile evidence, not
+│  █               a reliability certificate; finish alone never meets the hazard goal
 │  █
 │  █
 │  █ KINDS OF LOAD ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

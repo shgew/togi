@@ -449,8 +449,8 @@ fn paused_cold_boot_takes_the_required_retreat_and_resume_never_promotes() {
         .events()
         .iter()
         .filter_map(|event| {
-            if let Payload::DayStep(step) = &event.payload {
-                (step.cold_boot == *journal.boot()).then_some(&step.step)
+            if let Payload::ClimbDecision(step) = &event.payload {
+                (step.cold_boot == *journal.boot()).then_some(&step.decision)
             } else {
                 None
             }
@@ -459,13 +459,12 @@ fn paused_cold_boot_takes_the_required_retreat_and_resume_never_promotes() {
     assert!(
         boot_steps
             .iter()
-            .any(|step| matches!(step, StepKind::Retreat { .. }))
+            .any(|step| matches!(step, togi_journal::ClimbAction::Retreat { .. }))
     );
-    assert!(
-        !boot_steps
-            .iter()
-            .any(|step| matches!(step, StepKind::Promote { .. }))
-    );
+    assert!(!boot_steps.iter().any(|step| matches!(
+        step,
+        togi_journal::ClimbAction::Promote { .. } | togi_journal::ClimbAction::Restore { .. }
+    )));
     let steps = boot_steps.len();
     let mut live = crate::day::apply::Live::preflight(&journal, &mut hardware).unwrap();
     Pause::of(&journal)
@@ -478,7 +477,7 @@ fn paused_cold_boot_takes_the_required_retreat_and_resume_never_promotes() {
         )
         .unwrap();
     assert_eq!(applications(&journal).last().unwrap().readbacks, offsets(0));
-    assert_eq!(journal.events().iter().filter(|event| matches!(&event.payload, Payload::DayStep(step) if step.cold_boot == *journal.boot())).count(), steps);
+    assert_eq!(journal.events().iter().filter(|event| matches!(&event.payload, Payload::ClimbDecision(step) if step.cold_boot == *journal.boot())).count(), steps);
 }
 
 /// A clock the test moves by hand, shared with the closures that run during a control.

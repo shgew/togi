@@ -549,39 +549,28 @@ fn night_plan() -> Payload {
 }
 
 #[test]
-fn a_ccd_row_shows_its_day_offset_cap_slope_binding_edge_and_coverage() {
+fn a_historical_statistical_cap_is_not_presented_as_daily_permission() {
     let events = append(&base(), edge_and_cap(-20, -15));
     let raw = status_of(&installed(&events));
     assert_fits(&raw);
     let shown = flat(&raw);
     assert!(
-        shown.contains("CCD CORES D S SLOPE BINDING U REMAINING COVERED UNCOVERED"),
+        shown.contains("permission: experimental hold + exact night qualification"),
         "{shown}"
     );
-    assert!(
-        shown.contains("0 0-7 0 -15 fallback edge fails -20 15 1 3"),
-        "{shown}"
-    );
-    assert!(
-        shown.contains("CCD 0 uncovered for the cap, no observations: R6"),
-        "{shown}"
-    );
-    assert!(
-        shown.contains("CCD 0 uncovered for the cap, non-mapping exposure only: R3"),
-        "{shown}"
-    );
-    assert!(shown.contains("120s isolated x2"), "{shown}");
-    assert!(
-        shown.contains("A CCD with no cap yet has S at offset 0."),
-        "{shown}"
-    );
+    assert!(shown.contains("S: diagnostic, non-authorizing"), "{shown}");
+    assert!(!shown.contains("D S SLOPE BINDING"), "{shown}");
+    assert!(!shown.contains("remaining to S"), "{shown}");
 }
 
 #[test]
-fn a_ccd_without_an_edge_or_cap_reads_unknown_and_dashes() {
+fn missing_campaign_history_is_explicit_not_an_unused_allowance() {
     let shown = flat(&status_of(&hand()));
-    assert!(shown.contains("0 0-7 0 - - - unknown - - -"), "{shown}");
-    assert!(shown.contains("1 8-15 0 - - - unknown - - -"), "{shown}");
+    assert!(
+        shown.contains("allowance: unavailable; campaign history must be reconstructed"),
+        "{shown}"
+    );
+    assert!(!shown.contains("2 remaining"), "{shown}");
 }
 
 #[test]
@@ -607,8 +596,7 @@ fn an_open_night_names_its_start_elapsed_time_shares_and_current_task() {
         flat.contains("current task: mapping (task mapping #1)"),
         "{flat}"
     );
-    let night = shown.split_once("\nNight since 00:00\n").unwrap().1;
-    assert!(!night.contains("available"), "{shown}");
+
     for gone in ["until", "RESERVED", "deadline"] {
         assert!(!shown.contains(gone), "{gone}: {shown}");
     }
@@ -731,7 +719,7 @@ fn a_dead_end_leads_the_header() {
 }
 
 #[test]
-fn the_day_policy_shows_hold_blocking_reasons_vetoes_freeze_and_firmware() {
+fn daily_safety_stays_visible_beside_experimental_permission() {
     let base = base();
     let boot: BootId = "day-a".to_owned().into();
     let vetoing = DayEventId::Boot { boot: boot.clone() };
@@ -817,17 +805,10 @@ fn the_day_policy_shows_hold_blocking_reasons_vetoes_freeze_and_firmware() {
     let flat = flat(&shown);
     assert!(flat.contains("Day policy"), "{flat}");
     assert!(
-        flat.contains("applied profile: CCD 0 -10, CCD 1 -5"),
+        flat.contains("permission: experimental hold + exact night qualification"),
         "{flat}"
     );
-    assert!(
-        flat.contains("hold: 12.5/50 h at CCD 0 -10, CCD 1 -5"),
-        "{flat}"
-    );
-    assert!(
-        flat.contains("holds, blocked by: hold incomplete, 12.5 of 50 h; vetoed by boot day-a; promotion is frozen"),
-        "{flat}"
-    );
+    assert!(flat.contains("S: diagnostic, non-authorizing"), "{flat}");
     assert!(flat.contains("freeze: on"), "{flat}");
     assert!(
         flat.contains("event: boot day-a: CPU-suspect, unresolved, reproduction pending"),
@@ -1044,8 +1025,12 @@ fn evidence_is_read_only_and_identical_under_no_color(scenario: Scenario) {
     let shown = evidence_output(scenario, false);
     assert_eq!(shown, evidence_output(scenario, true));
     assert!(!shown.contains('\u{1b}'));
-    assert!(shown.contains("Ruleset 13 (compatibility RULESET 3)"));
-    assert!(shown.contains("Cap calculation witnesses"));
+    assert!(shown.contains("Ruleset 14."));
+    let shown_flat = flat(&shown);
+    assert!(shown_flat.contains("Permission: experimental hold + exact night qualification"));
+    assert!(shown_flat.contains("S is a non-authorizing diagnostic"));
+    assert!(shown_flat.contains("Current exact-profile daily evidence alone"));
+    assert!(shown.contains("cap calculation witnesses"));
     assert!(shown.contains("Qualification exposure"));
     assert!(shown.contains("Applied-step history"));
     assert!(shown.contains("Comparable same-class night clocks and temperatures"));
@@ -1130,4 +1115,93 @@ fn real_fs_generate_status_snapshots() {
     let morning = morning_state();
     emit("status_morning", text(&togi(&morning, &["status"]).stdout));
     emit("evidence_morning", &evidence_in(&morning, true));
+    let paused = paused_ruleset14();
+    emit("paused_ruleset14", &status_of(&paused));
+    let watch = togi(&paused, &["watch", "--width", "240", "--height", "67"]);
+    assert_eq!(watch.status.code(), Some(0), "{}", text(&watch.stderr));
+    std::fs::write(
+        directory.join("read__watch__paused_ruleset14.snap"),
+        format!(
+            "---\nsource: crates/togi/tests/read/status.rs\nexpression: text(&ran.stdout)\n---\n{}",
+            text(&watch.stdout)
+        ),
+    )
+    .unwrap();
+}
+
+fn paused_ruleset14() -> Session {
+    let saved = profile(-5, 0);
+    let stock = profile(0, 0);
+    let base = base();
+    let Payload::SessionContext(context) = &base[2].payload else {
+        unreachable!();
+    };
+    let events = append(
+        &base,
+        vec![
+            DayBootStart {
+                build: build(),
+                bios: context.bios_context(),
+                offsets: saved
+                    .cores()
+                    .iter()
+                    .map(|(core, offset)| (core, offset.observed()))
+                    .collect(),
+                watchdog: None,
+            }
+            .into(),
+            DayApplied {
+                application: ApplicationId(1),
+                cause: ApplyCause::Reapplication {},
+                target: saved.clone(),
+                readbacks: saved
+                    .cores()
+                    .iter()
+                    .map(|(core, offset)| (core, offset.observed()))
+                    .collect(),
+                transactions: Vec::new(),
+                boot: "boot-1".to_owned().into(),
+                mono_ns: 1,
+            }
+            .into(),
+            togi_journal::DayPause {
+                state: togi_journal::PauseState::UntilBoot {},
+                source: togi_journal::PauseSource::Command { uid: 1000 },
+            }
+            .into(),
+            togi_journal::DayOffsetsChanged {
+                offsets: stock
+                    .cores()
+                    .iter()
+                    .map(|(core, offset)| (core, offset.observed()))
+                    .collect(),
+            }
+            .into(),
+        ],
+    );
+    installed(&events)
+}
+
+#[test]
+fn ruleset14_pause_keeps_saved_d_separate_from_verified_stock_on_status_and_watch() {
+    let dir = paused_ruleset14();
+    let status = status_of(&dir);
+    let compact = flat(&status);
+    assert!(compact.contains("paused"), "{status}");
+    assert!(compact.contains("applied profile: core 0 0"), "{status}");
+    assert!(
+        compact.contains("paused-saved profile: core 0 -5"),
+        "{status}"
+    );
+    assert!(compact.contains("state: held:"), "{status}");
+    assert!(compact.contains("; paused"), "{status}");
+    assert_fits(&status);
+    super::support::snapshot("status__paused_ruleset14", &status);
+    let watch = togi(&dir, &["watch", "--width", "240", "--height", "67"]);
+    assert_eq!(watch.status.code(), Some(0), "{}", text(&watch.stderr));
+    assert_eq!(text(&watch.stderr), "");
+    let watch = text(&watch.stdout);
+    assert!(watch.contains(", paused"), "{watch}");
+    assert!(watch.contains("saved"), "{watch}");
+    super::support::snapshot("watch__paused_ruleset14", watch);
 }

@@ -333,6 +333,7 @@ fn execute_loaded(
         cancel: cancel.child_token(),
         observer: None,
         dump_to: None,
+        adapt_trials: None,
     });
     let finished = match simulated {
         Ok(SimOutcome::Stopped(finished)) => finished,

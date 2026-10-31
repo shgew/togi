@@ -1,10 +1,9 @@
 //! What status and watch show of the policy, and the `tuner` key of `state.json`: the committed edges and
 //! caps, the applied profile and its hold, the events and vetoes, the qualifications and the latest night.
 
-use std::collections::HashMap;
-
 use crate::{UnitId, UnitProfile};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use togi_journal::{
     Activity, Binding, Budget, Classification, DayEventId, DayStep, Edge, ExposureClass, NightId,
     PlannedTask, QualificationPurpose, QualificationState, ReproductionState, Resolution, Seq,
@@ -94,7 +93,7 @@ pub struct UnitProjection {
     pub evidence: Option<CapEvidence>,
     /// D: CO 0 before any `day.applied`.
     pub day: TargetOffset,
-    /// Counts from D down to S; zero when D is already at or past S. `None` without a cap.
+    /// Counts from D down to C; unknown U gives no distance. Statistical S is diagnostic only.
     pub remaining: Option<u32>,
 }
 
@@ -106,10 +105,20 @@ pub struct EventProjection {
     pub reproduction: ReproductionState,
 }
 
+/// Whose veto it is: this session's day events, or one the predecessor's journal carried over and the tuner
+/// still enforces under its original identity.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VetoSource {
+    Day,
+    Predecessor,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct VetoProjection {
     pub event: DayEventId,
     pub state: VetoState,
+    pub source: VetoSource,
 }
 
 /// Where a qualification record stands.
@@ -207,8 +216,8 @@ pub struct NightProjection {
     pub closed_by: Option<Seq>,
     pub budgets: Vec<Budget>,
     pub tasks: Vec<PlannedTask>,
-    /// The running task and its activity. A filler task runs cap probes (mapping) and exact repeats
-    /// (qualification): its activity is its latest trial's, unknown before its first trial.
+    /// The running task and its activity. Filler repeats exact-current-D qualification cells;
+    /// its activity is unknown before its first trial.
     pub current: Option<(TaskId, Option<Activity>)>,
     pub mapping: Vec<MappingProjection>,
     pub qualification: Option<QualificationProgress>,
@@ -223,6 +232,8 @@ pub struct NightProjection {
 /// The `tuner` key of `state.json` and what `status` and `watch` read.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Projection {
+    #[serde(default)]
+    pub climb: super::ClimbProjection,
     pub applied: Option<UnitProfile>,
     pub units: Vec<UnitProjection>,
     pub day: DayProjection,
@@ -279,6 +290,43 @@ fn offset(value: i64) -> TargetOffset {
 }
 
 impl State {
+    /// The committed day vetoes, then the predecessor's the tuner still enforces. The latter come from
+    /// `active_vetoes`, the one owner of which vetoes bind a decision, so status never hides one.
+    fn veto_projections(
+        &self,
+        committed: &[&super::books::Committed<togi_journal::DayVeto>],
+    ) -> Vec<VetoProjection> {
+        let mut shown: Vec<VetoProjection> = committed
+            .iter()
+            .map(|commit| VetoProjection {
+                event: commit.payload.event.clone(),
+                state: commit.payload.state,
+                source: VetoSource::Day,
+            })
+            .collect();
+        let Ok(view) = self.day_view() else {
+            return shown;
+        };
+        for veto in self.active_vetoes(&view) {
+            if !self.climb.imported_vetoes.contains_key(&veto.event) {
+                continue;
+            }
+            let Some(event) = self.journal_event_id(&veto.event) else {
+                continue;
+            };
+            if shown.iter().all(|entry| entry.event != event) {
+                shown.push(VetoProjection {
+                    event,
+                    state: VetoState::Active,
+                    source: VetoSource::Predecessor,
+                });
+            }
+        }
+        shown
+    }
+}
+
+impl State {
     /// The committed state as status shows it. Pure: it reads only what the journal committed, plus the
     /// mapping cursors and the open qualification the same journal derives.
     #[must_use]
@@ -293,6 +341,7 @@ impl State {
             .as_ref()
             .map(|history| history.current().profile.clone());
         Projection {
+            climb: self.climb_projection(),
             units: self.unit_projections(applied.as_ref()),
             applied,
             day: self.day_projection(),
@@ -308,13 +357,7 @@ impl State {
                     }
                 })
                 .collect(),
-            vetoes: vetoes
-                .into_iter()
-                .map(|commit| VetoProjection {
-                    event: commit.payload.event.clone(),
-                    state: commit.payload.state,
-                })
-                .collect(),
+            vetoes: self.veto_projections(&vetoes),
             qualifications: self
                 .qualification_records()
                 .iter()
@@ -406,14 +449,18 @@ impl State {
                         .edges
                         .get(&ccd)
                         .map(|edge| edge.payload.edge.clone()),
-                    remaining: cap.map(|cap| {
-                        saturating_u32(
-                            day.get()
-                                .saturating_sub(cap.payload.new.get())
-                                .max(0)
-                                .unsigned_abs(),
-                        )
-                    }),
+                    remaining: self
+                        .ceilings()
+                        .get(&UnitId::Ccd(ccd))
+                        .and_then(|ceiling| ceiling.c)
+                        .map(|ceiling| {
+                            saturating_u32(
+                                day.get()
+                                    .saturating_sub(ceiling.get())
+                                    .max(0)
+                                    .unsigned_abs(),
+                            )
+                        }),
                     cap: cap.map(|cap| CapProjection {
                         offset: cap.payload.new,
                         binding: cap.payload.binding.clone(),
@@ -450,7 +497,8 @@ impl State {
                     .filter_map(|event| match &event.id {
                         crate::day::EventId::Boot(boot) => Some(boot.clone()),
                         crate::day::EventId::Unobserved(_)
-                        | crate::day::EventId::Requalification(_) => None,
+                        | crate::day::EventId::Requalification(_)
+                        | crate::day::EventId::Imported(_) => None,
                     })
                     .collect()
             })

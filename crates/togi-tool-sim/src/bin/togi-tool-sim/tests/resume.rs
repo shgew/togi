@@ -18,7 +18,7 @@ fn a_session_resumed_from_recorded_memory_ends_where_an_uninterrupted_one_does()
         "--state-dir",
         "/split",
         "--max-boots",
-        "2",
+        "1",
     ];
     let mut code = host.run(split).code;
     while code == Some(3) {

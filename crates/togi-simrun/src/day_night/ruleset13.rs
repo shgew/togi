@@ -1,6 +1,6 @@
-//! The production Ruleset 13 policy on the calendar (`docs/spec/runtime.md`, Ruleset 13 policy
-//! boundary): the simulator plugs into the same pure functions the session and the day runtime call,
-//! never a second tuner. The adapter plays the parts of `togi run`, `togi day` and the day applier.
+//! The production policy on the calendar: the simulator plugs into the same pure functions the
+//! session and day runtime call, never a second tuner. The adapter plays the parts of `togi run`,
+//! `togi day` and the day applier.
 //! It keeps the journal those would write in memory, folds every event it appends into the real
 //! [`State`] and executes what the state decides through the machine seams.
 
@@ -286,12 +286,29 @@ impl Ruleset13 {
                 return Err(RunError::Unsettled("the day query kept owing commitments"));
             }
             for decision in owed {
-                if let PolicyPayload::DayStep(proposal) = &decision.payload
+                let proposed = if let PolicyPayload::ClimbDecision(proposal) = &decision.payload
                     && proposal.cold_boot == self.boot
+                    && !matches!(proposal.decision, togi_journal::ClimbAction::Hold { .. })
                 {
-                    step = Some((proposal.decision, proposal.proposed.clone()));
+                    if proposal.proposed.mapping.phase != togi_journal::UnitPhase::Coarse {
+                        return Err(RunError::Calendar(
+                            "the calendar applier requires coarse units",
+                        ));
+                    }
+                    let cores = self.cores()?;
+                    let profile =
+                        togi_machine::CcdProfile::of_cores(&proposal.proposed.cores, &cores)
+                            .ok_or(RunError::Calendar(
+                                "a day profile must be uniform within each CCD",
+                            ))?;
+                    Some(CcdVector::expand(profile, &cores)?)
+                } else {
+                    None
+                };
+                let seq = self.commit(machine, decision.payload, &decision.causes)?;
+                if let Some(proposed) = proposed {
+                    step = Some((togi_journal::DecisionId(seq.get()), proposed));
                 }
-                self.commit(machine, decision.payload, &decision.causes)?;
             }
         }
         let (cause, target) = if let Some((decision, proposed)) = step {

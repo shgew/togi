@@ -964,7 +964,11 @@ fn an_event_the_policy_refuses_is_a_problem() {
     assert!(
         matches!(
             error,
-            FoldError::Tuner(togi_tuner::policy::FoldError::History(_))
+            FoldError::Tuner(togi_tuner::policy::FoldError::Climb(
+                togi_tuner::climb::ClimbError::Profile(togi_tuner::UnitProfileError::Extra(
+                    togi_tuner::UnitId::Ccd(ccd),
+                )),
+            )) if ccd.get() == 7
         ),
         "{error:?}"
     );
@@ -974,7 +978,11 @@ fn an_event_the_policy_refuses_is_a_problem() {
     let later = script.event(warning("later"), &[]);
     assert!(matches!(
         model.fold(&later),
-        Err(FoldError::Tuner(togi_tuner::policy::FoldError::History(_)))
+        Err(FoldError::Tuner(togi_tuner::policy::FoldError::Climb(
+            togi_tuner::climb::ClimbError::Profile(togi_tuner::UnitProfileError::Extra(
+                togi_tuner::UnitId::Ccd(ccd),
+            )),
+        ))) if ccd.get() == 7
     ));
 }
 

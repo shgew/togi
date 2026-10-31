@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Activity, Binding, Build, Candidate, CcdCap, CcdEdge, CcdVector, CellEvidence, CellWitness,
+    Activity, Binding, Build, Candidate, CcdCap, CcdVector, CellEvidence, CellWitness, ClimbAction,
     DayBootStart, Edge, Event, ExposureClass, ExposureObserved, ExposureOrigin, Finite, FixStamp,
     NightQualification, OriginalSource, Outcome, Payload, Placement, QualificationPurpose,
     QualificationState, Rate, SCHEMA, Seq, SessionBaseline, SessionContext, SessionStart, Slope,
-    Stamp, StepKind, TaskId, Tested, TrialEnd, TrialId, TrialStart, WorkloadContent,
+    Stamp, TaskId, Tested, TrialEnd, TrialId, TrialStart, WorkloadContent,
 };
 use togi_machine::{
     Backend, BootId, CcdId, CcdProfile, ContentId, CoreId, CoreInfo, CpuId, Digest, ObservedOffset,
@@ -31,7 +31,7 @@ fn build() -> Build {
     Build {
         version: "0.1.0".into(),
         rev: None,
-        ruleset: 13,
+        ruleset: togi_tuner::RULESET,
         schema: SCHEMA,
         fixes: FixStamp::none(),
         evidence: 1,
@@ -224,6 +224,44 @@ impl Journal {
         self.boot_start_at(boot, "1", &zero())
     }
 
+    /// Observes verified, successfully applied stock for the initial promotion hold.
+    pub(crate) fn hold_stock(&mut self) {
+        self.hold_stock_in("1");
+    }
+
+    pub(crate) fn hold_stock_in(&mut self, bios_version: &str) {
+        self.observe_stock_in(bios_version, 50 * 3_600);
+    }
+
+    pub(crate) fn observe_stock_in(&mut self, bios_version: &str, seconds: u64) {
+        let boot = format!("stock-hold-{}", self.events.len());
+        self.boot_start_at(&boot, bios_version, &zero());
+        self.append(
+            togi_journal::DayApplied {
+                application: togi_journal::ApplicationId(100 + self.events.len() as u64),
+                cause: togi_journal::ApplyCause::Reapplication {},
+                target: vector(&zero()),
+                readbacks: offsets_on(&self.machine, &zero()),
+                transactions: Vec::new(),
+                boot: BootId::from(boot),
+                mono_ns: 1,
+            }
+            .into(),
+            &[],
+        );
+        self.advance(i64::try_from(seconds).unwrap());
+        self.append(
+            togi_journal::DayCheckpoint {
+                applied_secs: seconds,
+                load_mix: togi_journal::LoadMix::default(),
+                watchdog: None,
+            }
+            .into(),
+            &[],
+        );
+        self.append(togi_journal::DayCleanStop {}.into(), &[]);
+    }
+
     /// Reboots into the normal boot `boot` under firmware `bios_version` and appends its observer start,
     /// each core at its CCD's offset in `profile`.
     pub(crate) fn boot_start_at(
@@ -345,6 +383,10 @@ fn contents_of(built: &ContentId) -> Contents {
 pub(crate) enum Ending {
     Pass,
     Interrupted,
+    Inconclusive {
+        interrupted: bool,
+    },
+    Withheld,
     /// A conclusive failure, on `core` when it names one.
     Fail(Option<u8>),
 }
@@ -415,6 +457,8 @@ impl Journal {
         let (outcome, interrupted, core) = match ending {
             Ending::Pass => ("pass", false, None),
             Ending::Interrupted => ("failure", true, None),
+            Ending::Inconclusive { interrupted } => ("inconclusive", interrupted, None),
+            Ending::Withheld => ("pass", false, None),
             Ending::Fail(core) => ("failure", false, core),
         };
         let mut end = serde_json::json!({
@@ -425,6 +469,7 @@ impl Journal {
             end["core"] = serde_json::json!(core);
         }
         let mut end: TrialEnd = serde_json::from_value(end).unwrap();
+        end.backend_missing = matches!(ending, Ending::Withheld);
         end.voltage_requests_v = *requests;
         self.append(end.into(), &[intent])
     }
@@ -621,17 +666,24 @@ impl Journal {
         (ended, observed)
     }
 
-    /// A promoted day built from public events alone, without running the night policy. The first night
-    /// opens with the plan its first query commits. On each CCD, one isolated pass at the write limit
-    /// censors its edge and a cap S of -1 follows. One exact pass then qualifies the proposal
-    /// P = (CCD 0: -1, CCD 1: 0). The cold boot `day1` promotes P and its application commits it as D.
+    /// A promoted day built from public events, including a verified 50-hour stock hold.
+    /// Each CCD has a censored edge at the write limit and diagnostic S = -1.
+    /// The exact candidate is P = (CCD 0: -5, CCD 1: 0), independent of S.
     ///
     /// For focused day tests; `crate::flow::promoted` reaches D through the whole first night instead.
     pub(crate) fn promoted_compact() -> (Self, CcdProfile) {
+        Self::promoted_compact_after(|_| {})
+    }
+
+    /// The ready session after `setup`, a successor's imported predecessor history and campaign
+    /// enrollment preceding its first stock hold, then a night that qualifies the candidate.
+    fn qualified_candidate(setup: impl FnOnce(&mut Self)) -> (Self, CcdProfile) {
         let mut journal = Self::ready();
+        setup(&mut journal);
+        journal.hold_stock();
         journal.reboot("tuning1");
-        let opening = journal.next(at(100)).unwrap();
-        let night = togi_journal::NightId(journal.commit(opening));
+        let opening = crate::next_plan(&mut journal);
+        let night = togi_journal::NightId(journal.append(opening.payload.into(), &opening.causes));
         let limit = write_limit();
         for ccd_id in [0, 1] {
             let task = TaskId {
@@ -657,18 +709,21 @@ impl Journal {
                 witnesses: vec![ended],
             };
             let censored = journal.append(
-                CcdEdge {
-                    ccd: ccd(ccd_id),
-                    edge: edge.clone(),
+                togi_journal::UnitEdge {
+                    unit: togi_tuner::UnitId::Ccd(ccd(ccd_id)),
+                    firmware: context().bios_context(),
+                    epoch: togi_tuner::EVIDENCE_EPOCH,
+                    new: edge.clone(),
                     old: Edge::Unknown {},
-                    reason: format!("no failure down to the write limit {}", limit.get()),
+                    ceiling: Some(TargetOffset::new(-45).unwrap()),
+                    margin: 5,
                 }
                 .into(),
                 &[ended],
             );
             journal.append(cap(ccd_id, -1, edge).into(), &[censored]);
         }
-        let proposal = zero().with(ccd(0), TargetOffset::new(-1).unwrap());
+        let proposal = zero().with(ccd(0), TargetOffset::new(-5).unwrap());
         let cell = r1_class(0, Placement::Exact);
         let qualification = |state| NightQualification {
             profile: vector(&proposal),
@@ -702,14 +757,26 @@ impl Journal {
             .into(),
             &[observed],
         );
+        (journal, proposal)
+    }
+
+    /// [`Self::promoted_compact_after`] without its promotion: the qualified candidate waits at the
+    /// cold boot `day1`, whose commitments the caller settles.
+    pub(crate) fn qualified_compact_after(setup: impl FnOnce(&mut Self)) -> (Self, CcdProfile) {
+        let (mut journal, proposal) = Self::qualified_candidate(setup);
         journal.boot_start("day1");
+        (journal, proposal)
+    }
+
+    pub(crate) fn promoted_compact_after(setup: impl FnOnce(&mut Self)) -> (Self, CcdProfile) {
+        let (mut journal, proposal) = Self::qualified_compact_after(setup);
         let committed = journal.settle_day(&cold_boot("day1", 60_000));
         let step = steps(&committed)
             .into_iter()
-            .find(|step| matches!(step.step, StepKind::Promote { .. }))
+            .find(|step| matches!(step.decision, ClimbAction::Promote { .. }))
             .cloned()
             .unwrap_or_else(|| panic!("no promotion in {committed:?}"));
-        assert_eq!(step.proposed.ccd(), &proposal);
+        assert_eq!(&crate::flow::profile(&step.proposed), &proposal);
         apply(&mut journal, &step, 1, "day1");
         (journal, proposal)
     }

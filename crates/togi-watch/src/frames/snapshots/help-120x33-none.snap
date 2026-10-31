@@ -1,0 +1,37 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│ ► NIGHT 0h30m ─ mapping C1 -20 ─ 9:20 left
+│
+│ █ READING THE SCREEN ────────────────────────────────────────────────────────────────────────────────────────────────
+│ █
+│ █ ► 04  -12  LOADED   ▄▄▄▄▄▄▄▄▄▄▄▄··············    ▄                     -31
+│ █                     applied -12 under load; dots reach hard ceiling C at -26; U observed at -31
+│ █
+│ █   09   -8           ▄▄▄▄▄▄▄▄
+│ █                     idle, so grey; C is unknown until U is mapped, so there are no ceiling dots or edge mark
+│ █
+│ │   11    ?           ·············································    ▄  -50
+│ │                     no readback yet; U censored at -50 gives hard ceiling C at -45, not physical -50
+│ │
+│ │ ►         the core carries load in this trial
+│ │ ▄▄▄       committed day offset D, distinct from the numeric hardware readback; white when this trial loads the core
+│ │ ?         no hardware offset has been read back for this core
+│ │ grey ▄▄▄  the same depth, grey when the core is not loaded
+│ │ ···       the hard night ceiling C for this tuning unit, not statistical permission
+│ │ red ▄     the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at
+│ │           Wide and Medium
+│ │ amber ▄   a censored edge: nothing failed down to the mapping limit
+│ │ cyan      running now
+│ │ amber     a hold, a veto, a retreat, a crash, or outstanding qualification
+│ │ red       failures, past and present
+│ │ green     passed, done, covered
+│ │ grey      idle, still to come, unknown
+│ │
+│ │
+│ │ THE TOP LINE ──────────────────────────────────────────────────────────────────────────────────────────────────────
+│
+│  ?  help    l  log    esc  back    q  exit dashboard

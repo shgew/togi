@@ -595,7 +595,7 @@ fn gauge_of(
     gauge(
         &scene,
         &snapshot.cores[0],
-        Some(projection),
+        Some(&crate::frames::hand::climb_row(projection)),
         Some(applied),
         cells,
     )
@@ -698,7 +698,7 @@ fn facts_text(projection: &togi_tuner::policy::UnitProjection, width: usize) -> 
     plain(
         &facts_line(
             &scene(&snapshot, FIXED_NOW, &zone, Colours::None),
-            projection,
+            &crate::frames::hand::climb_row(projection),
             width,
         ),
         Colours::None,
@@ -712,7 +712,7 @@ fn coverage_text(projection: &togi_tuner::policy::UnitProjection, width: usize) 
     plain(
         &coverage_line(
             &scene(&snapshot, FIXED_NOW, &zone, Colours::None),
-            projection,
+            &crate::frames::hand::climb_row(projection),
             width,
         ),
         Colours::None,
@@ -720,10 +720,10 @@ fn coverage_text(projection: &togi_tuner::policy::UnitProjection, width: usize) 
 }
 
 #[test]
-fn the_facts_row_names_day_cap_binding_edge_and_distance() {
+fn the_facts_row_names_day_ceiling_tagged_edge_and_diagnostic_s() {
     assert_eq!(
         facts_text(&ccd_projection(), 115),
-        "D -10 · S -15 fallback slope · bound by rate R1 · U fails at -23 · 5 counts to S"
+        "D -10 · C -15 · U observed at -23 · 5 counts to C · S -15 diagnostic only"
     );
     let measured_cap = with_cap(
         ccd_row(0, &[0, 1], -10),
@@ -732,7 +732,7 @@ fn the_facts_row_names_day_cap_binding_edge_and_distance() {
         5,
     );
     let text = facts_text(&measured_cap, 115);
-    assert!(text.contains("measured slope"), "{text}");
+    assert!(text.contains("S -15 diagnostic only"), "{text}");
     assert!(text.contains("U censored at -50"), "{text}");
 }
 
@@ -740,17 +740,17 @@ fn the_facts_row_names_day_cap_binding_edge_and_distance() {
 fn a_ccd_with_no_cap_or_edge_says_so() {
     let text = facts_text(&ccd_row(0, &[0], 0), 115);
     assert!(text.starts_with("D 0 · "), "{text}");
-    assert!(text.contains("no cap"), "{text}");
+    assert!(text.contains("C unknown"), "{text}");
     assert!(text.contains("U unknown"), "{text}");
     let covered = coverage_text(&ccd_row(0, &[0], 0), 115);
-    assert!(covered.contains("hours/gaps unknown"), "{covered}");
+    assert!(covered.contains("no candidate"), "{covered}");
 }
 
 #[test]
-fn missing_current_evidence_is_not_fabricated_from_committed_cell_counts() {
+fn the_second_row_shows_exact_hold_and_candidate_not_statistical_permission() {
     assert_eq!(
         coverage_text(&ccd_projection(), 115),
-        "Ruleset 13 mapping: eligible hours/gaps unknown"
+        "climbing · hold 3 / 50 h · no candidate"
     );
 }
 
@@ -758,14 +758,12 @@ fn missing_current_evidence_is_not_fabricated_from_committed_cell_counts() {
 fn the_facts_row_never_cuts_a_value_whatever_the_width() {
     let whole = [
         "D -10",
-        "S -15 fallback slope",
-        "S -15",
-        "bound by rate R1",
-        "rate R1",
-        "U fails at -23",
-        "U -23",
-        "5 counts to S",
-        "5 to S",
+        "C -15",
+        "S -15 diagnostic only",
+        "U observed at -23",
+        "U observed -23",
+        "5 counts to C",
+        "5 to C",
     ];
     for width in 21..=120 {
         let text = facts_text(&ccd_projection(), width);
@@ -791,7 +789,16 @@ fn table(hand: &Hand, width: u16, height: u16, colours: Colours) -> Vec<String> 
     let rect = Rect::new(0, 0, width, height);
     let mut buf = Buffer::empty(rect);
     let zone = TimeZone::UTC;
-    let snapshot = hand.snapshot();
+    let mut policy = hand.policy.clone();
+    policy.climb.units = policy
+        .units
+        .iter()
+        .map(crate::frames::hand::climb_row)
+        .collect();
+    let snapshot = crate::model::Snapshot {
+        policy: &policy,
+        ..hand.snapshot()
+    };
     let scene = scene(&snapshot, FIXED_NOW, &zone, colours);
     draw_ccd(
         &mut buf,
@@ -822,8 +829,12 @@ fn a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core() {
     let rows = table(&hand, 115, 5, Colours::None);
     assert!(rows[0].starts_with("CCD 0 one loaded"), "{:?}", rows[0]);
     assert!(rows[0].contains("-50"), "{:?}", rows[0]);
-    assert!(rows[1].starts_with("D -10 · S -15"), "{:?}", rows[1]);
-    assert!(rows[2].starts_with("Ruleset 13 mapping:"), "{:?}", rows[2]);
+    assert!(rows[1].starts_with("D -10 · C -15"), "{:?}", rows[1]);
+    assert!(
+        rows[2].starts_with("climbing · hold 3 / 50 h"),
+        "{:?}",
+        rows[2]
+    );
     assert!(rows[3].starts_with("► 00"), "{:?}", rows[3]);
     assert!(
         rows[3].contains("-10") && rows[3].contains("LOAD"),
@@ -831,6 +842,17 @@ fn a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core() {
         rows[3]
     );
     assert!(rows[4].starts_with("  01"), "{:?}", rows[4]);
+}
+
+#[test]
+fn numeric_trial_readback_does_not_replace_committed_day_d_in_the_gauge() {
+    let rows = table(&two_cores(), 115, 5, Colours::None);
+    assert!(rows[4].contains("-4"), "numeric readback: {:?}", rows[4]);
+    assert!(
+        rows[4].contains(&format!("{}{}", "▄".repeat(10), "·".repeat(5))),
+        "D -10, C -15: {:?}",
+        rows[4]
+    );
 }
 
 #[test]
@@ -900,7 +922,7 @@ fn a_ccd_the_tuner_has_no_state_for_says_so() {
     let hand = Hand::new(vec![core_row(0, 0, Some(0), false)], bare(vec![]));
     let rows = table(&hand, 115, 4, Colours::None);
     assert!(
-        rows[1].starts_with("no tuner state for this CCD yet"),
+        rows[1].starts_with("unit state unavailable; no ordinary permission"),
         "{:?}",
         rows[1]
     );
@@ -1073,7 +1095,7 @@ fn foreground(buf: &Buffer, x: usize, y: usize) -> ratatui::style::Color {
 
 fn edge_hand(applied: i64, edge: i64) -> Hand {
     let projection = with_cap(
-        ccd_row(0, &[0], 0),
+        ccd_row(0, &[0], applied),
         cap(-50, rate_bound(), fallback(), 1, 0),
         Some(observed(edge)),
         3,
@@ -1083,6 +1105,12 @@ fn edge_hand(applied: i64, edge: i64) -> Hand {
         bare(vec![projection, ccd_row(1, &[8], 0)]),
     );
     hand.cores.push(core_row(8, 1, Some(0), false));
+    hand.policy.climb.units = hand
+        .policy
+        .units
+        .iter()
+        .map(crate::frames::hand::climb_row)
+        .collect();
     hand
 }
 
@@ -1253,15 +1281,15 @@ fn trial_bars_have_no_strip_under_their_track(width: u16, height: u16, colours: 
     assert!(below.chars().all(|c| c == ' '), "{below:?}");
 }
 
-#[test_case(togi_tuner::policy::CapReason::NoAdequateClass, include_str!("snapshots/committed-cap-current-zero.snap"); "no mapping class")]
-#[test_case(togi_tuner::policy::CapReason::UnknownEdge, include_str!("snapshots/committed-cap-current-unknown-edge.snap"); "unknown edge")]
-#[test_case(togi_tuner::policy::CapReason::NoJustifiedDecay, include_str!("snapshots/committed-cap-current-no-decay.snap"); "no justified decay")]
-fn committed_caps_keep_their_binding_separate_from_current_zero_reasons(
+#[test_case(togi_tuner::policy::CapReason::NoAdequateClass; "no mapping class")]
+#[test_case(togi_tuner::policy::CapReason::UnknownEdge; "unknown edge")]
+#[test_case(togi_tuner::policy::CapReason::NoJustifiedDecay; "no justified decay")]
+fn current_zero_reasons_never_move_d_c_u_or_grant_s_permission(
     reason: togi_tuner::policy::CapReason,
-    snapshot: &str,
 ) {
     let words = reason.label();
-    let mut projection = ccd_projection();
+    let baseline = ccd_projection();
+    let mut projection = baseline.clone();
     projection.evidence = Some(togi_tuner::policy::CapEvidence {
         offset: togi_machine::TargetOffset::ZERO,
         reason,
@@ -1281,15 +1309,20 @@ fn committed_caps_keep_their_binding_separate_from_current_zero_reasons(
         }],
         slope_inputs: Vec::new(),
     });
-    let (_, expected) = snapshot
+    let (_, expected) = include_str!("snapshots/committed-cap-diagnostic-s.snap")
         .split_once("\n---\n")
         .expect("an embedded insta snapshot header");
     assert_eq!(format!("{}\n", facts_text(&projection, 180)), expected);
-    let narrow = facts_text(&projection, 115);
-    assert!(narrow.contains("S -15"), "{narrow}");
-    assert!(narrow.contains(&format!("calc 0: {words}")), "{narrow}");
+    for width in [180, 115] {
+        let text = facts_text(&projection, width);
+        assert_eq!(text, facts_text(&baseline, width), "D, C and U moved");
+        assert!(text.contains("S -15 diagnostic only"), "{text}");
+        assert!(!text.contains("to S"), "S is never a destination: {text}");
+        assert!(!text.contains(words), "a zero reason leaked: {text}");
+    }
     assert_eq!(
         coverage_text(&projection, 115),
-        "Ruleset 13 mapping: 1.5h eligible · 1 gaps (1 non-mapping)"
+        coverage_text(&baseline, 115),
+        "a zero reason changed permission"
     );
 }

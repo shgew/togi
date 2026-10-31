@@ -1,7 +1,7 @@
 //! Daily events and vetoes: the raw observer records classified by the day policy, and the `day.event`
 //! and `day.veto` commitments that carry them.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use crate::UnitId;
 use jiff::Timestamp;
@@ -17,8 +17,8 @@ use super::decision::{Decision, PolicyPayload};
 use super::night_query::NotReady;
 use crate::day::{
     Answer, ApplicationKind, Certainty as DayCertainty, Classification, CoreProfile, DailyEvent,
-    DayDecision, DayInputs, EventId, EventStatus, Invocation, MceKind, Observation,
-    ReproductionOutcome, RetreatCause, Witness, daily_events, day_step, event_statuses, vetoes,
+    EventId, EventStatus, Invocation, MceKind, Observation, ReproductionOutcome, Witness,
+    daily_events, event_statuses, vetoes,
 };
 
 /// Where an event's raw evidence came from.
@@ -30,10 +30,14 @@ pub(super) struct EventMeta {
     pub(super) witnesses: Vec<Seq>,
 }
 
-/// The daily events as the day policy classifies them now.
+/// The daily events as the day policy classifies them now. Events that crashed before the machine's
+/// first campaign enrollment are `historical`: they veto their whole profile and are visible, and
+/// nothing else reads them, so they charge no allowance, stop no unit and owe no retreat,
+/// reproduction or question.
 #[derive(Clone, Debug)]
 pub(super) struct DayView {
     pub(super) events: Vec<DailyEvent>,
+    pub(super) historical: Vec<DailyEvent>,
     pub(super) meta: HashMap<EventId, EventMeta>,
 }
 
@@ -346,7 +350,7 @@ impl State {
                     );
                     Some(boot.clone())
                 }
-                EventId::Unobserved(_) | EventId::Requalification(_) => None,
+                EventId::Unobserved(_) | EventId::Requalification(_) | EventId::Imported(_) => None,
             };
             witnesses.sort();
             witnesses.dedup();
@@ -373,7 +377,15 @@ impl State {
                 },
             );
         }
-        Ok(DayView { events, meta })
+        let enrollment = self.first_enrollment();
+        let (historical, events): (Vec<_>, Vec<_>) = events
+            .into_iter()
+            .partition(|event| self.precedes_enrollment(enrollment, &event.id));
+        Ok(DayView {
+            events,
+            historical,
+            meta,
+        })
     }
 
     /// The closed reproductions, by the day policy's event identity.
@@ -446,35 +458,19 @@ impl State {
         &self,
         view: &DayView,
         now: Timestamp,
-    ) -> Result<Option<DayDecision>, NotReady> {
-        let Some(history) = self.days.history.as_ref() else {
+    ) -> Result<Option<crate::climb::Retreat>, NotReady> {
+        if self.climb.history.is_none() {
             return Ok(None);
-        };
-        let intervals = self.committed_intervals();
-        let reproductions = self.reproduction_outcomes();
-        let caps = self.permission()?.limits;
-        let qualified = self.qualified_profiles(now);
-        let decision = day_step(&DayInputs {
-            topology: &self.machine.cores,
-            history,
-            events: &view.events,
-            reproductions: &reproductions,
-            intervals: intervals.as_slice(),
-            caps: &caps,
-            qualified: &qualified,
-            // Only a promotion asks about failed qualifications, and this keeps only retreats.
-            blocked: &BTreeSet::new(),
-            firmware: self.firmware_state(),
-            freeze: self.days.freeze,
-            invocation: Invocation::SameBoot,
-            params: self.params.hold,
-        })?;
-        Ok(match decision {
-            retreat @ DayDecision::Retreat { .. } => Some(retreat),
-            DayDecision::Hold { .. }
-            | DayDecision::Promote { .. }
-            | DayDecision::FirmwareZero { .. } => None,
-        })
+        }
+        Ok(
+            match self.climb_decision(view, now, Invocation::SameBoot)?.action {
+                crate::climb::ClimbAction::Retreat(retreat) => Some(retreat),
+                crate::climb::ClimbAction::Hold { .. }
+                | crate::climb::ClimbAction::Promote(_)
+                | crate::climb::ClimbAction::Restore(_)
+                | crate::climb::ClimbAction::FirmwareZero { .. } => None,
+            },
+        )
     }
 
     /// The decision that applied the promotion with this application seq.
@@ -493,62 +489,57 @@ impl State {
     /// The `consumed`, escalation and cursors the pending retreat gives each event it answers.
     fn retreat_marks(
         &self,
-        plan: &DayDecision,
+        plan: &crate::climb::Retreat,
     ) -> HashMap<EventId, (Escalation, Vec<DecisionId>, Vec<CcdCursor>)> {
-        let mut marks = HashMap::new();
-        let DayDecision::Retreat { causes, .. } = plan else {
-            return marks;
-        };
-        let applied_retreats = self
-            .days
+        let mut consumed: Vec<_> = plan
+            .cursors
+            .iter()
+            .filter_map(|cursor| Seq::new(cursor.transition.application.get()))
+            .filter_map(|application| self.decision_of_application(application))
+            .collect();
+        consumed.sort_by_key(|decision| decision.0);
+        consumed.dedup();
+        let cursors = self
+            .ccds()
+            .into_iter()
+            .map(|ccd| CcdCursor {
+                ccd,
+                depth: super::ledger::saturating_u32(
+                    u64::try_from(
+                        plan.cursors
+                            .iter()
+                            .filter(|cursor| cursor.unit == UnitId::Ccd(ccd))
+                            .count(),
+                    )
+                    .unwrap_or(u64::MAX),
+                ),
+            })
+            .collect::<Vec<_>>();
+        let strike = self
+            .climb
             .history
             .as_ref()
-            .map_or(0, |history| history.retreats().count());
-        for cause in causes {
-            let (events, reverted, strike) = match cause {
-                RetreatCause::StepBack { events, reverted } => (events, reverted, None),
-                RetreatCause::Escalation { events, reverted } => (
-                    events,
-                    reverted,
-                    Some(super::ledger::saturating_u32(
-                        u64::try_from(applied_retreats).unwrap_or(u64::MAX),
-                    )),
-                ),
-                RetreatCause::SafetyCap { .. } | RetreatCause::Completion { .. } => continue,
-            };
-            let consumed: Vec<DecisionId> = reverted
-                .iter()
-                .filter_map(|reverted| self.decision_of_application(reverted.step))
-                .collect();
-            let cursors: Vec<CcdCursor> = self
-                .ccds()
-                .into_iter()
-                .map(|ccd| CcdCursor {
-                    ccd,
-                    depth: super::ledger::saturating_u32(
-                        u64::try_from(
-                            reverted
-                                .iter()
-                                .filter(|r| r.unit == UnitId::Ccd(ccd))
-                                .count(),
-                        )
-                        .unwrap_or(u64::MAX),
-                    ),
+            .map_or(0, |history| history.retreats().len());
+        let escalation = if strike == 0 {
+            consumed
+                .first()
+                .map_or(Escalation::EveryCcd { strike: 0 }, |&reverted| {
+                    Escalation::RevertNewest { reverted }
                 })
-                .collect();
-            for event in events {
-                let escalation = match (strike, consumed.first()) {
-                    (None, Some(&newest)) => Escalation::RevertNewest { reverted: newest },
-                    (None, None) => Escalation::EveryCcd { strike: 0 },
-                    (Some(strike), _) => Escalation::EveryCcd { strike },
-                };
-                marks.insert(
-                    event.id.clone(),
-                    (escalation, consumed.clone(), cursors.clone()),
-                );
+        } else {
+            Escalation::EveryCcd {
+                strike: super::ledger::saturating_u32(u64::try_from(strike).unwrap_or(u64::MAX)),
             }
-        }
-        marks
+        };
+        plan.events
+            .iter()
+            .map(|event| {
+                (
+                    event.clone(),
+                    (escalation, consumed.clone(), cursors.clone()),
+                )
+            })
+            .collect()
     }
 
     /// The application seq of the retreat that answered an event.
@@ -569,7 +560,7 @@ impl State {
             .map(|application| application.at)
     }
 
-    fn journal_classification(class: Classification) -> JournalClassification {
+    pub(super) fn journal_classification(class: Classification) -> JournalClassification {
         match class {
             Classification::CpuSuspect(_) => JournalClassification::CpuSuspect {
                 certainty: Certainty::Definite,
@@ -604,7 +595,7 @@ impl State {
             None => HashMap::new(),
         };
         let mut owed = Vec::new();
-        for event in &view.events {
+        for event in view.events.iter().chain(&view.historical) {
             let (Some(id), Some(meta)) =
                 (self.journal_event_id(&event.id), view.meta.get(&event.id))
             else {
@@ -614,7 +605,9 @@ impl State {
             let status = statuses
                 .as_ref()
                 .and_then(|statuses| statuses.iter().find(|status| status.id == event.id));
-            let resolution = if status.is_some_and(EventStatus::is_resolved) {
+            let resolution = if status.is_some_and(EventStatus::is_resolved)
+                || view.historical.iter().any(|held| held.id == event.id)
+            {
                 Resolution::Resolved {
                     retreat: self.retreat_application(&event.id),
                 }
@@ -666,7 +659,8 @@ impl State {
     /// event's veto is not committed cleared.
     pub(super) fn owed_day_vetoes(&self) -> Result<Vec<Decision>, NotReady> {
         let view = self.day_view()?;
-        let active = vetoes(&view.events);
+        let mut active = vetoes(&view.events);
+        active.extend(vetoes(&view.historical));
         let mut owed = Vec::new();
         for veto in &active {
             let (Some(id), Some(meta)) = (

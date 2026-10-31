@@ -77,12 +77,13 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, sta
     out.push_str("\nEvidence\n");
     line(
         out,
-        "Ruleset 13 (compatibility RULESET 3). S uses isolated mapping classes only. Qualification, reproduction and controls can inform slope but cannot supply mapping rate coverage. The cap is coverage-incomplete.",
+        "Ruleset 14. Permission: experimental hold + exact night qualification. S is a non-authorizing diagnostic: isolated mapping classes supply its rate coverage; qualification, reproduction and controls can inform slope only. Coverage gaps remain unknown.",
     );
     line(
         out,
-        "The machine incremental hazard goal is 1 crash per 3,000 applied hours, divided among CCDs. Poisson bounds and log-linear projection are modeling assumptions, not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that stock meets the hazard goal.",
+        "The machine incremental hazard goal is 1 crash per 3,000 applied hours. Current exact-profile daily evidence alone supports its fixed-rate Poisson claim; qualification, stock and previous-profile hours do not. Log-linear S projections are modeling assumptions, not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that stock meets the goal.",
     );
+    super::climb::daily_evidence(out, &policy.climb);
     let selected = policy.evidence_profile().map(|selected| match selected {
         EvidenceProfile::Applied(profile) => (profile, "applied day profile"),
         EvidenceProfile::NightQualified(profile) => (
@@ -98,7 +99,7 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, sta
             line(
                 out,
                 &format!(
-                    "exact profile: {}",
+                    "historical exact profile (all recorded contexts; not a current-profile bound): {}",
                     totals.profile(&offsets(profile, policy)).describe()
                 ),
             );
@@ -117,7 +118,7 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, sta
         ),
     );
 
-    out.push_str("\nCap calculation witnesses\n");
+    out.push_str("\nDiagnostic cap calculation witnesses (S never authorizes or retreats D)\n");
     for unit in &policy.units {
         let Some(evidence) = &unit.evidence else {
             line(

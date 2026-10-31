@@ -1,0 +1,62 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+~ gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│ ► DAY
+~ ccwww
+│
+│ ▌  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0 reclassified
+~ c  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│
+│ BETWEEN TRIALS  last: PASS after 10:00 · R1 light on core 00
+~ gggggggggggggg  tttttttttttttttttttttttttttttttttttttttttttt
+│ next trial: deciding
+~ tttttttttttttttttttt
+│
+│
+│
+│ CCD 0 idle       0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
+~ wwwww gggg       g  kkkkkkkkkkkkk       ggg                 wwwww gggg       g  kkkkkkkkkkkkk       ggg
+│ D -10 · C -45 · U censored at -50 · 35 counts to C          D -8 · C -45 · U censored at -50 · 37 counts to C
+~ ttttt   ttttt   ttttttttttttttttt   tttttttttttttt          tttt   ttttt   ttttttttttttttttt   tttttttttttttt
+│ climbing · hold 50 / 50 h · no candidate                    climbing · hold 50 / 50 h · no candidate
+~ tttttttt   tttttttttttttt   tttttttttttt                    tttttttt   tttttttttttttt   tttttttttttt
+│   00 -10          ▄▄▄▄▄·················· ▄                   08  -8          ▄▄▄▄··················· ▄
+~   tt ttt          ggggggggggggggggggggggg a                   tt ttt          ggggggggggggggggggggggg a
+│   01 -10          ▄▄▄▄▄·················· ▄                   09  -8          ▄▄▄▄··················· ▄
+~   tt ttt          ggggggggggggggggggggggg a                   tt ttt          ggggggggggggggggggggggg a
+│   02 -10          ▄▄▄▄▄·················· ▄                   10  -8          ▄▄▄▄··················· ▄
+~   tt ttt          ggggggggggggggggggggggg a                   tt ttt          ggggggggggggggggggggggg a
+│   03 -10          ▄▄▄▄▄·················· ▄                   11  -8          ▄▄▄▄··················· ▄
+~   tt ttt          ggggggggggggggggggggggg a                   tt ttt          ggggggggggggggggggggggg a
+│   04 -10          ▄▄▄▄▄·················· ▄                   12  -8          ▄▄▄▄··················· ▄
+~   tt ttt          ggggggggggggggggggggggg a                   tt ttt          ggggggggggggggggggggggg a
+│   05 -10          ▄▄▄▄▄·················· ▄                   13  -8          ▄▄▄▄··················· ▄
+~   tt ttt          ggggggggggggggggggggggg a                   tt ttt          ggggggggggggggggggggggg a
+│   06 -10          ▄▄▄▄▄·················· ▄                   14  -8          ▄▄▄▄··················· ▄
+~   tt ttt          ggggggggggggggggggggggg a                   tt ttt          ggggggggggggggggggggggg a
+│   07 -10          ▄▄▄▄▄·················· ▄                   15  -8          ▄▄▄▄··················· ▄
+~   tt ttt          ggggggggggggggggggggggg a                   tt ttt          ggggggggggggggggggggggg a
+│
+│ DAY ─────────────────────────────────────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
+~ www kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk   ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggg
+│ permission: experimental hold + exact night qualification
+~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ allowance: 0 consumed / 2 limit; 2 remaining · 0...         22:13  start    session started on 16 cores
+~ ttttttttttttttttttttttttttttttttttttttttttttttttttt         ggggg  tttttttt ttttttttttttttttttttttttttt
+│ experimental: 50.000 clean hours
+~ tttttttttttttttttttttttttttttttt
+│ CCD 0: climbing; hold 50.000 / 50.000 h at exact D
+~ tttttttttttttttttttttttttttttttttttttttttttttttttt
+│ CCD 0: applied step -5 → -10 (5 counts); application...
+~ ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ CCD 1: climbing; hold 50.000 / 50.000 h at exact D
+~ tttttttttttttttttttttttttttttttttttttttttttttttttt
+│ +4 more
+~ ggggggg
+│
+│  ?  help    l  log    esc  back    q  exit dashboard
+~ hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

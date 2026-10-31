@@ -677,7 +677,7 @@ impl State {
             NightTask::StockUnstable { class } => return Ok(Action::Decide(self.dead_end(&class))),
             // A lapsed reproduction is closed before scheduling; with nothing due the filler runs.
             NightTask::Unreproduced { .. } | NightTask::Idle => {
-                match self.filler(layout, mapping, night, unavailable)? {
+                match self.filler(layout, night, unavailable)? {
                     Some(chosen) => chosen,
                     None => return Ok(self.end_unavailable(night, excluded)),
                 }

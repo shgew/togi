@@ -3,9 +3,9 @@
 //! it stops blocking promotion once both are done while its veto stands.
 
 use togi_journal::{
-    Classification, CrashedBoot, DayEventId, DayImported, DayRecord, EventKind, HoldReason,
-    ImportClass, OffsetSource, Payload, Provenance, Queue, RecordedOffsets, ReproductionState,
-    RetreatCause, Running, Seq, StepKind, VetoState,
+    Classification, ClimbAction, ClimbBlocker, ClimbRetreatCause, CrashedBoot, DayEventId,
+    DayImported, DayRecord, EventKind, ImportClass, OffsetSource, Payload, Provenance, Queue,
+    RecordedOffsets, ReproductionState, Running, Seq, VetoState,
 };
 use togi_machine::CcdProfile;
 
@@ -15,9 +15,10 @@ use crate::flow::{apply, cold_boot, promoted, steps};
 /// Records, in the cold boot `boot`, a crash at D that no day observer saw; returns the record's identity.
 fn unobserved_crash_at(journal: &mut Journal, boot: &str, d: &CcdProfile) -> DayEventId {
     journal.boot_start(boot);
+    let crashed = journal.now();
     let seq = journal.append(
         DayRecord {
-            boot: CrashedBoot::Unobserved { at: at(50_000) },
+            boot: CrashedBoot::Unobserved { at: crashed },
             offsets: RecordedOffsets::new(offsets_of(d)).unwrap(),
             source: OffsetSource::Entered { at: at(50_100) },
             running: Running::Build,
@@ -68,29 +69,30 @@ fn an_unobserved_crash_record_commits_a_cpu_suspect_event_an_active_veto_and_a_r
     assert_eq!(veto.state, VetoState::Active);
     let retreat = steps(&committed)
         .into_iter()
-        .find(|step| matches!(step.step, StepKind::Retreat { .. }))
+        .find(|step| matches!(step.decision, ClimbAction::Retreat { .. }))
         .unwrap_or_else(|| panic!("no retreat in {committed:?}"));
-    let StepKind::Retreat {
-        cause: RetreatCause::Event { event: cited, .. },
+    let ClimbAction::Retreat {
+        cause: ClimbRetreatCause::Event { event: cited, .. },
         ..
-    } = &retreat.step
+    } = &retreat.decision
     else {
         panic!("the retreat is not caused by the event: {retreat:?}");
     };
     assert_eq!(*cited, id);
-    assert!(retreat.proposed.ccd().is_zero());
+    assert!(crate::flow::profile(&retreat.proposed).is_zero());
 }
 
 #[test]
 fn an_imported_unobserved_crash_keeps_its_original_record_identity_for_event_and_veto() {
     let (mut journal, d) = promoted();
     journal.boot_start("day2");
+    let crashed = journal.now();
     let original = Provenance {
         session: "20231113T221320Z".parse().unwrap(),
         seq: Seq::new(7).unwrap(),
     };
     let record = DayRecord {
-        boot: CrashedBoot::Unobserved { at: at(50_000) },
+        boot: CrashedBoot::Unobserved { at: crashed },
         offsets: RecordedOffsets::new(offsets_of(&d)).unwrap(),
         source: OffsetSource::Entered { at: at(50_100) },
         running: Running::Build,
@@ -153,7 +155,7 @@ fn an_unobserved_crash_record_gets_one_reproduction_night_that_closes_under_its_
     let committed = journal.settle_day(&cold_boot("day2", 61_000));
     let retreat = steps(&committed)
         .into_iter()
-        .find(|step| matches!(step.step, StepKind::Retreat { .. }))
+        .find(|step| matches!(step.decision, ClimbAction::Retreat { .. }))
         .cloned()
         .unwrap();
     apply(&mut journal, &retreat, 2, "day2");
@@ -193,7 +195,7 @@ fn an_unobserved_crash_record_blocks_promotion_until_its_retreat_and_reproductio
     let committed = journal.settle_day(&cold_boot("day2", 61_000));
     let retreat = steps(&committed)
         .into_iter()
-        .find(|step| matches!(step.step, StepKind::Retreat { .. }))
+        .find(|step| matches!(step.decision, ClimbAction::Retreat { .. }))
         .cloned()
         .unwrap();
     apply(&mut journal, &retreat, 2, "day2");
@@ -202,10 +204,10 @@ fn an_unobserved_crash_record_blocks_promotion_until_its_retreat_and_reproductio
     let waiting = journal.settle_day(&cold_boot("day2b", 61_500));
     let blocked = hold_reasons(&waiting);
     assert!(
-        blocked.contains(&HoldReason::EventUnresolved { event: id.clone() }),
+        blocked.contains(&ClimbBlocker::EventUnresolved { event: id.clone() }),
         "{blocked:?}"
     );
-    // The night reproduces it and the next cold boot closes the task: only the veto still blocks.
+    // Closing reproduction resolves the work, never the whole-profile veto or the unit's stop.
     journal.reboot("tuning2");
     let plan = journal.until_trial(at(62_000));
     journal.run(&plan, Ending::Pass);
@@ -213,21 +215,27 @@ fn an_unobserved_crash_record_blocks_promotion_until_its_retreat_and_reproductio
     let done = journal.settle_day(&cold_boot("day3", 63_000));
     let blocked = hold_reasons(&done);
     assert!(
-        !blocked.contains(&HoldReason::EventUnresolved { event: id.clone() }),
+        !blocked.contains(&ClimbBlocker::EventUnresolved { event: id.clone() }),
         "{blocked:?}"
     );
+    assert!(journal.events.iter().any(|event| matches!(&event.payload,
+        Payload::DayVeto(veto) if veto.event == id && veto.state == VetoState::Active)));
+    assert!(journal.events.iter().any(|event| matches!(&event.payload,
+        Payload::UnitStop(stop) if matches!(&stop.reason,
+            togi_journal::UnitStopReason::FirstBackstep { event, .. } if event == &id))));
     assert!(
-        blocked.contains(&HoldReason::Vetoed { veto: id }),
-        "{blocked:?}"
+        steps(&done)
+            .iter()
+            .all(|step| matches!(step.decision, ClimbAction::Hold { .. }))
     );
 }
 
 /// What the hold among `payloads` is blocked by.
-fn hold_reasons(payloads: &[Payload]) -> Vec<HoldReason> {
+fn hold_reasons(payloads: &[Payload]) -> Vec<ClimbBlocker> {
     steps(payloads)
         .into_iter()
         .find_map(|step| {
-            if let StepKind::Hold { blocked_by } = &step.step {
+            if let ClimbAction::Hold { blocked_by } = &step.decision {
                 Some(blocked_by.clone())
             } else {
                 None

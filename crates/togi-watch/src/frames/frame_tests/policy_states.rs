@@ -53,8 +53,8 @@ fn assert_shows(shown: &str, want: &str) {
 #[test_case(
     StepKind::Hold { blocked_by: vec![HoldReason::AtCap {}, HoldReason::NotQualified {}] },
     false,
-    "last step   hold: at the cap, not qualified";
-    "a hold at the cap and unqualified"
+    "last step   hold: no ordinary step; see unit finish/held reason, not qualified";
+    "a historical no-step hold and unqualified"
 )]
 #[test_case(
     StepKind::Hold { blocked_by: vec![HoldReason::Vetoed { veto: record() }, HoldReason::EventUnresolved { event: record() }] },
@@ -105,8 +105,13 @@ fn assert_shows(shown: &str, want: &str) {
     "last step   proposed resetting CCD 0, 1 after firmware change, not applied";
     "a proposed firmware reset"
 )]
-fn the_day_names_its_last_step(kind: StepKind, applied: bool, want: &str) {
+fn a_legacy_day_step_is_shown_only_without_a_d_projection(
+    kind: StepKind,
+    applied: bool,
+    want: &str,
+) {
     let mut hand = Staged::Day.hand();
+    hand.policy.climb = togi_tuner::policy::ClimbProjection::default();
     hand.applied_steps.clear();
     let step = step(kind);
     if applied {
@@ -176,5 +181,9 @@ fn a_retried_re_qualification_says_so() {
 fn a_ccd_the_tuner_has_no_state_for_says_so() {
     let mut hand = Staged::Between.hand();
     hand.policy.units.clear();
-    assert_shows(&shown(&hand), "no tuner state for this CCD yet");
+    hand.policy.climb.units.clear();
+    assert_shows(
+        &shown(&hand),
+        "unit state unavailable; no ordinary permission",
+    );
 }

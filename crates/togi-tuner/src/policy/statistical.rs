@@ -1,15 +1,15 @@
-//! Statistical cap computation and commitments, independent of mapping replay.
+//! Non-authorizing statistical diagnostics and `ccd.cap` commitments, independent of scheduling.
 
 use super::decision::{Decision, PolicyPayload};
 use super::evidence::ClassCap;
 use super::ledger::{Sig, saturating_u32};
 use super::night_query::NotReady;
 use super::{State, mapping::MappingPlan};
+use crate::UnitId;
 use crate::cap::{
     self, Beta, CapLimits, EDGE_MARGIN, Hours, LikelihoodCutoff, Rate, Refresh, Slope,
 };
 use crate::night::{EdgeU, Layout, mapping_cells};
-use crate::{UnitId, UnitProfile};
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ use togi_machine::{CcdId, ContentId, TargetOffset, WorkloadId};
 /// A class of the interned cap input; the cap's classes must be ordered, an exposure class is not.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct ClassId(u32);
-/// The cap S of one CCD and what produced it.
+/// The diagnostic S of one CCD and what produced it; never a scheduling or target permission.
 #[derive(Clone, Debug)]
 pub(super) struct CapOutcome {
     pub(super) cap: cap::Cap<ClassId>,
@@ -370,8 +370,8 @@ impl State {
             }
             let mut causes: Vec<Seq> = self
                 .nights
-                .edges
-                .get(&ccd)
+                .unit_edges
+                .get(&UnitId::Ccd(ccd))
                 .map(|edge| edge.seq)
                 .into_iter()
                 .collect();
@@ -386,18 +386,6 @@ impl State {
             )));
         }
         Ok(None)
-    }
-
-    /// The committed cap S of every CCD; CO 0 until a cap is committed.
-    pub(super) fn committed_caps(&self) -> Result<UnitProfile, NotReady> {
-        let ccds = self.ccds();
-        let mut caps = togi_machine::CcdProfile::zero(ccds.iter().copied())?;
-        for ccd in ccds {
-            if let Some(cap) = self.nights.caps.get(&ccd) {
-                caps = caps.with(ccd, cap.payload.new);
-            }
-        }
-        Ok(UnitProfile::of_ccd(&caps))
     }
 }
 fn same_cap(a: &CcdCap, b: &CcdCap) -> bool {

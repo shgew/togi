@@ -219,6 +219,8 @@ pub(crate) fn snapshot(name: &str, actual: &str) {
         "status__evidence_day-step",
         "status__status_morning",
         "status__evidence_morning",
+        "status__paused_ruleset14",
+        "watch__paused_ruleset14",
         "watch__watch_help",
     );
     let (_, body) = expected

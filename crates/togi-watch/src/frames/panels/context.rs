@@ -7,16 +7,17 @@ use ratatui::text::{Line, Span};
 use togi_journal::{Classification, DayEventId, DayStep, HoldReason, Queue, Resolution, StepKind};
 use togi_tuner::policy::{
     DayProjection, EventProjection, FirmwareValidity, NightProjection, Projection,
-    QualificationProgress, ReproductionProjection,
+    QualificationProgress, ReproductionProjection, VetoSource,
 };
 use togi_tuner::unit::UnitProfile;
 
 use super::super::colours::Paint;
 use super::super::draw::bounded_rows;
-use super::super::fit::rule;
+use super::super::fit::{Clause, Form, fit_clauses, rule};
 use super::super::layout::SizeClass;
 use super::super::measure::Measure;
 use super::super::scene::{Scene, hm};
+use super::super::story::{ClimbLine, DailyBound, DailyWords};
 use super::table::{cell, field_row};
 use crate::day_totals::unknown_intervals;
 
@@ -266,10 +267,40 @@ fn reproduction_value(scene: &Scene<'_>, reproduction: &ReproductionProjection) 
     value(scene, Paint::Text, text)
 }
 
+/// The daily-evidence line fitted to `width`: the observed counts go first, then the numeric bound together with
+/// its fixed-rate-model qualification, so a number never shows without the qualification it needs.
+fn daily_value(scene: &Scene<'_>, daily: DailyWords, width: usize) -> Line<'static> {
+    let text = |text: String| cell(scene, Paint::Text, text);
+    let bound = match daily.bound {
+        DailyBound::Unavailable => Clause::whole(
+            DailyWords::BOUND_SEP,
+            text("rate bound unavailable".to_owned()),
+        ),
+        DailyBound::Rate(rate) => Clause::new(
+            DailyWords::BOUND_SEP,
+            vec![Form::new(text(rate), 1), Form::empty()],
+        ),
+    };
+    let clauses = [
+        Clause::whole("", text(daily.head)),
+        bound,
+        Clause::new(
+            DailyWords::OBSERVED_SEP,
+            vec![Form::new(text(daily.observed), 2), Form::empty()],
+        ),
+    ];
+    fit_clauses(width, &clauses, scene.colours)
+}
+
 fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'static>> {
-    let applied = policy.applied.as_ref().map_or_else(
-        || "applied CO 0".to_owned(),
-        |profile| format!("applied {}", profile_text(profile)),
+    let applied = policy.climb.profiles.applied.as_ref().map_or_else(
+        || {
+            policy.applied.as_ref().map_or_else(
+                || "applied profile unavailable".to_owned(),
+                |profile| format!("applied {}", profile_text(profile)),
+            )
+        },
+        |profile| format!("applied D {}", super::super::story::vector_words(profile)),
     );
     let day = &policy.day;
     let mut out = vec![rule(
@@ -279,24 +310,22 @@ fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'
         scene.style(Paint::Track),
         scene.colours,
     )];
-    out.push(field_row(
-        scene,
-        "Ruleset 13",
-        value(
-            scene,
-            Paint::Grey,
-            "mapping-only cap; CO 0 is not hazard-goal proof".to_owned(),
-        ),
-        width,
-    ));
-    out.push(field_row(scene, "hold", hold_value(scene, day), width));
-    if let Some((_, step)) = &day.last_step {
-        out.push(field_row(
-            scene,
-            "last step",
-            step_value(scene, step),
-            width,
-        ));
+    for line in super::super::story::climb_lines(policy) {
+        out.push(match line {
+            ClimbLine::Text(text) => value(scene, Paint::Text, text),
+            ClimbLine::Daily(daily) => daily_value(scene, daily, width),
+        });
+    }
+    if policy.climb.units.is_empty() {
+        out.push(field_row(scene, "hold", hold_value(scene, day), width));
+        if let Some((_, step)) = &day.last_step {
+            out.push(field_row(
+                scene,
+                "last step",
+                step_value(scene, step),
+                width,
+            ));
+        }
     }
     if day.freeze {
         out.push(field_row(
@@ -359,13 +388,21 @@ fn day_lines(scene: &Scene<'_>, policy: &Projection, width: usize) -> Vec<Line<'
     }
     let mut label = "vetoes";
     for veto in &policy.vetoes {
+        let source = match veto.source {
+            VetoSource::Day => "",
+            VetoSource::Predecessor => " · imported from predecessor",
+        };
         out.push(field_row(
             scene,
             label,
             value(
                 scene,
                 Paint::Text,
-                format!("{} · {}", event_name(&veto.event), veto.state.as_str()),
+                format!(
+                    "{} · {}{source}",
+                    event_name(&veto.event),
+                    veto.state.as_str()
+                ),
             ),
             width,
         ));
@@ -396,7 +433,7 @@ fn reason_words(reason: &HoldReason) -> String {
             credited_s,
             required_s,
         } => format!("incomplete, {} of {}", secs(*credited_s), secs(*required_s)),
-        HoldReason::AtCap {} => "at the cap".to_owned(),
+        HoldReason::AtCap {} => "no ordinary step; see unit finish/held reason".to_owned(),
         HoldReason::NotQualified {} => "not qualified".to_owned(),
         HoldReason::Vetoed { veto } => format!("vetoed by {}", event_name(veto)),
         HoldReason::QuestionPending { .. } => "a question is pending".to_owned(),
@@ -583,15 +620,22 @@ mod tests {
             "a blank row separates the sections"
         );
         assert!(
-            rows[day].trim_end().ends_with("applied CO 0"),
+            rows[day]
+                .trim_end()
+                .ends_with("applied profile unavailable"),
             "{:?}",
             rows[day]
         );
         assert_eq!(
             rows[day + 1],
-            "Ruleset 13  mapping-only cap; CO 0 is not hazard-goal proof"
+            "permission: experimental hold + exact night qualification"
         );
-        assert!(rows[day + 2].contains("holding -10"), "{:?}", rows[day + 2]);
+        assert!(
+            rows[day..]
+                .iter()
+                .any(|row| row.starts_with("hold ") && row.contains("holding -10")),
+            "{rows:#?}"
+        );
         assert!(
             rows.iter()
                 .any(|row| row

@@ -152,7 +152,9 @@ fn the_context_rectangle_holds_the_whole_night_at_the_largest_size() {
         "mapping",
         "shares",
         "DAY",
-        "hold",
+        "permission: experimental hold + exact night qualification",
+        "allowance:",
+        "CCD 0: climbing; hold",
         "firmware",
     ] {
         assert!(

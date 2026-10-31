@@ -69,6 +69,7 @@ fn session_with(
         cancel: CancellationToken::new(),
         observer,
         dump_to: None,
+        adapt_trials: None,
     })
     .unwrap();
     Session {
@@ -113,8 +114,7 @@ pub(crate) fn brief(definition: &MachineDefinition, seed: u64) -> Session {
     )
 }
 
-/// Four cores that crash once a trial pushes them past their limits at -10: a Ruleset 13 night needs a neighbour on
-/// every CCD, so four cores, and it crashes four times, so a session of fewer boots is capped.
+/// Four cores that crash beyond -10. Two boot attempts interrupt the bounded campaign before its final recovery.
 pub(crate) fn hunting() -> MachineDefinition {
     serde_json::from_str(
         r#"{

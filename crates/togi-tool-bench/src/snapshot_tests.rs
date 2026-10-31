@@ -90,6 +90,7 @@ fn generated_from(
         cancel: CancellationToken::new(),
         observer,
         dump_to: None,
+        adapt_trials: None,
     })
     .unwrap();
     (events(&persistence).unwrap(), definition)

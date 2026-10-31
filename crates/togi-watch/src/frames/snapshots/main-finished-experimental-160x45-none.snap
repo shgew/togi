@@ -1,0 +1,49 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lamp u=Current
+│  togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
+│
+│  ► DAY
+│
+│  ▌  NIGHT OVER   allowance: 0 consumed / 2 limit; 2 remaining · 0                last trial      PASS  10:00 on core 00
+│  ▌               provisional · 0 reclassified
+│
+│  BETWEEN TRIALS ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  last: PASS after 10:00 · R1 light on core 00
+│  next trial: deciding
+│
+│
+│
+│
+│
+│  CCD 0 idle         0       -10       -20       -30       -40       -50          CCD 1 idle         0       -10       -20       -30       -40       -50
+│  D -26 · C -26 · U observed at -31 · 0 counts to C · S -26 diagnostic only       D -45 · C -45 · U censored at -50 · 0 counts to C · S -15 diagnostic only
+│  finished: night ceiling reached · last clean -26 · hold 50 / 50 h               finished: night ceiling reached · last clean -45 · hold 50 / 50 h
+│    00  -26           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄                               08  -45           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄
+│    01  -26           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄                               09  -45           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄
+│    02  -26           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄                               10  -45           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄
+│    03  -26           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄                               11  -45           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄
+│    04  -26           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄                               12  -45           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄
+│    05  -26           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄                               13  -45           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄
+│    06  -26           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄                               14  -45           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄
+│    07  -26           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄                               15  -45           ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄    ▄
+│
+│  DAY ───────────────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+│  permission: experimental hold + exact night qualification
+│  allowance: 0 consumed / 2 limit; 2 remaining · 0 provisional · 0...             22:13  start    session started on 16 cores
+│  experimental: 50.000 clean hours
+│  CCD 0: finished: night ceiling reached; last clean -26; remains...
+│  CCD 1: finished: night ceiling reached; last clean -45; remains...
+│  firmware    valid
+│
+│  LAST NIGHT 14:13-22:13 ────────────────────────────────────────────────────
+│  task        none running · 1 of 2 planned tasks done
+│  shares      mapping 66%/10% · qualification 33%/75% · control 0%/5%
+│
+│
+│
+│
+│
+│   ?  help    l  log    esc  back    q  exit dashboard

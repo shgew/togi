@@ -1,17 +1,22 @@
-//! Cutpoint sweeps over Ruleset 13: the journal of a scenario of nights and days is cut after each of its durable
-//! events in turn, and the scenario resumed from the cut must reach what the uninterrupted scenario reached.
+//! Cutpoint sweeps over bounded exploration: cut after each durable event and resume to the
+//! same projection and commitments as an uninterrupted scenario.
 //!
 //! Nights run through the public `run`. Days run through [`day`], a day host that, like `togi day`, derives
 //! everything it writes from the journal and the policy state it folds, so a day cut after any record resumes where
 //! it stopped.
 //!
-//! The swept window starts with the run that completes night 2's qualification and ends with the final day:
+//! The swept window starts with the first mapped unit edge and ends with the final day:
 //! every durable event, without a stride. Projections and policy commitments compare all rendered values exactly,
 //! naming identities by first mention. Sequence citations (including night IDs) also compare their target's kind
 //! and identity-hidden policy payload in the whole journal, or kind alone for raw facts; missing targets are
 //! distinct from local ones. Exposure anchors also hide the source boot because a resumed trial can run on a new
 //! boot; directly compared exposures keep it exact. These bounded anchors do not recursively compare target
 //! citations. Policy commitments compare as a multiset; trial identities compare only by first-mention aliasing.
+//!
+//! A killed trial with observed wall time is compared against a control charged with that same interruption:
+//! it ends inconclusive, supplies no passing exposure and still consumes its queue's wall-time share.
+//! Every kill cut also checks its live folds and persisted snapshot against full replay;
+//! no cut or field is omitted.
 //!
 //! Machine crashes also cover every durable event. Power is cut before and after every actual SMU access.
 //! Each resumed phase checks its registers and each crashed trial's duration and failure attribution. Between
@@ -25,8 +30,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use test_case::test_case;
@@ -35,7 +38,7 @@ use togi_journal::fs::{AppendPoint, AppendTrigger, Fault, FileKind, Fs, MemFs, O
 use togi_journal::{
     ApplicationId, ApplyCause, Attribution, CcdVector, DayApplied, DayBootStart, DayCheckpoint,
     DayCleanStop, DayOffsetsChanged, DayUncleanEnd, Event, Journal, Outcome, Payload,
-    QualificationState, RateCell, Seq, Stamp, Tested, TrialId,
+    QualificationState, Seq, Stamp, Tested, TrialId,
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, EndEvidence, Error, Machine, ObservedOffset, PerCore,
@@ -86,15 +89,15 @@ fn reproduced(night: &[Event]) -> bool {
         .any(|event| matches!(event.payload, Payload::NightReproduction(_)))
 }
 
-/// Night 1 maps both CCDs; night 2 completes the qualification of a first promotion, which the day after applies.
-/// A day at the promoted profile then ends unexplained, the next day retreats, and the night after reproduces
-/// that end, closed by the last day.
+/// Map at stock, earn the initial fifty-hour hold, qualify −5, then apply it on a cold boot.
+/// An unexplained end consumes one campaign event and forces a retreat with a sticky unit stop;
+/// the next night reproduces the event.
 const SCENARIO: &[Step] = &[
     Step::Night {
         until: qualified,
         hours: 12,
     },
-    Step::Day { hours: 1 },
+    Step::Day { hours: 50 },
     Step::Night {
         until: qualified,
         hours: 12,
@@ -302,10 +305,31 @@ fn day(
                 }
             }
             let step = day.events().iter().rev().find_map(|event| {
-                if let Payload::DayStep(step) = &event.payload
+                if let Payload::ClimbDecision(step) = &event.payload
                     && step.cold_boot == boot
+                    && !matches!(step.decision, togi_journal::ClimbAction::Hold { .. })
                 {
-                    Some((step.decision, step.proposed.clone()))
+                    let ccds = step
+                        .proposed
+                        .mapping
+                        .units
+                        .iter()
+                        .map(|unit| {
+                            let togi_journal::UnitId::Ccd(ccd) = unit.unit else {
+                                panic!("coarse fixture")
+                            };
+                            let offset = step
+                                .proposed
+                                .cores
+                                .get(unit.cores.first().unwrap())
+                                .unwrap();
+                            (ccd, offset)
+                        })
+                        .collect::<BTreeMap<_, _>>();
+                    let profile = togi_machine::CcdProfile::try_from(ccds).unwrap();
+                    let target =
+                        CcdVector::expand(profile, &machine.host.topology().unwrap()).unwrap();
+                    Some((togi_journal::DecisionId(event.seq.get()), target))
                 } else {
                     None
                 }
@@ -328,7 +352,7 @@ fn day(
                 .filter(|event| matches!(event.payload, Payload::DayApplied(_)))
                 .count();
             let applied = DayApplied {
-                application: ApplicationId(u64::try_from(applications).unwrap()),
+                application: ApplicationId(u64::try_from(applications).unwrap() + 1),
                 cause,
                 target,
                 readbacks,
@@ -372,6 +396,19 @@ fn day(
     if ran {
         assert!(!fired, "the day continued after its cut");
         let events = day.events().to_vec();
+        if matches!(fate, Fate::Killed) {
+            let replay = folded(&events);
+            assert_eq!(
+                serde_json::to_value(&day.state).unwrap(),
+                serde_json::to_value(&replay).unwrap(),
+                "live day state versus replay",
+            );
+            assert_lines_equal(
+                &compared_projection(&events, &day.state.project()),
+                &compared_projection(&events, &replay.project()),
+                "live day versus replay",
+            );
+        }
         drop(day.journal.close().unwrap());
         RunEnd::Stopped(None, events)
     } else if fired {
@@ -445,6 +482,18 @@ fn segment(
         return RunEnd::Crashed;
     }
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    if matches!(fate, Fate::Killed) {
+        ended
+            .capsule
+            .as_ref()
+            .expect("a completed phase returns its live folds")
+            .verify(ended.journal.events())
+            .unwrap();
+        crate::ResumeCapsule::read_snapshot(&ended.journal, bench.defects)
+            .unwrap()
+            .verify(ended.journal.events())
+            .unwrap();
+    }
     let stop = ended.stop;
     let events = ended.journal.events().to_vec();
     drop(ended.journal.close().unwrap());
@@ -697,8 +746,7 @@ fn reference(bench: &Bench, steps: &[Step]) -> Vec<Played> {
     played
 }
 
-/// The scenario played uninterrupted, and the first phase the sweeps cut: the run that completes night 2's
-/// qualification. The phases before it, night 1 included, are only the fixture the swept phases start from.
+/// The uninterrupted scenario and the first phase that commits a mapped unit edge.
 fn scenario() -> (Model, Vec<Played>, usize) {
     let bench = bench();
     let played = reference(&bench, SCENARIO);
@@ -709,12 +757,39 @@ fn scenario() -> (Model, Vec<Played>, usize) {
     );
     let from = played
         .iter()
-        .position(|phase| qualified(phase.own()))
-        .expect("no night completed a qualification");
+        .position(|phase| phase.own().iter().any(|event|
+            matches!(&event.payload, Payload::UnitEdge(edge) if !matches!(edge.new, togi_journal::Edge::Unknown {}))))
+        .expect("no night mapped a unit edge");
     let last = played.last().unwrap();
     assert!(
         reproduced(&last.events[played[from].start..]),
         "the swept phases reproduce nothing"
+    );
+    let charges: Vec<_> = last
+        .events
+        .iter()
+        .filter_map(|event| {
+            if let Payload::CampaignCharge(charge) = &event.payload {
+                Some(charge)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(charges.len(), 1, "one daily event consumes one allowance");
+    let charge = charges[0];
+    assert_eq!(charge.phase, togi_journal::CampaignEventPhase::Learning);
+    assert_eq!(
+        (charge.consumed, charge.remaining, charge.exhausted),
+        (1, 1, false)
+    );
+    assert!(
+        last.events.iter().any(|event| {
+            matches!(&event.payload, Payload::UnitStop(stop)
+                if matches!(&stop.reason, togi_journal::UnitStopReason::FirstBackstep { event, .. }
+                    if *event == charge.event))
+        }),
+        "the charged daily event must stop the unit at its first backstep"
     );
     (bench.sim.model(), played, from)
 }
@@ -731,42 +806,39 @@ fn cuts(played: &[Played], from: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// CI runs the sweep tests sequentially; each sweep uses this many cut workers, independent of the host.
-const CUT_WORKERS: usize = 2;
+/// Each nextest test owns one partition; the recovery runner bounds concurrent shards to two.
+const CUT_SHARDS: usize = 8;
 
-/// Runs `check` on every cut in parallel, and fails with every cut it failed on.
-fn each(cuts: &[(usize, usize)], check: impl Fn(usize, usize) + Sync) {
-    let next = AtomicUsize::new(0);
-    let failed = Mutex::new(Vec::new());
-    std::thread::scope(|scope| {
-        for _ in 0..CUT_WORKERS {
-            scope.spawn(|| {
-                while let Some(&(phase, after)) = cuts.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let checked =
-                        std::panic::catch_unwind(AssertUnwindSafe(|| check(phase, after)));
-                    if let Err(panic) = checked {
-                        let message = panic
-                            .downcast_ref::<String>()
-                            .cloned()
-                            .or_else(|| {
-                                panic
-                                    .downcast_ref::<&str>()
-                                    .map(|message| (*message).to_owned())
-                            })
-                            .unwrap_or_default();
-                        failed.lock().unwrap().push((after, message));
-                    }
-                }
-            });
+fn shard_cuts(cuts: &[(usize, usize)], shard: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
+    assert!(shard < CUT_SHARDS);
+    cuts.iter().copied().skip(shard).step_by(CUT_SHARDS)
+}
+
+/// Runs `check` on every cut in this shard, and fails with every cut it failed on.
+fn each(cuts: &[(usize, usize)], shard: usize, check: impl Fn(usize, usize)) {
+    let mut failed = Vec::new();
+    let mut checked = 0;
+    for (phase, after) in shard_cuts(cuts, shard) {
+        checked += 1;
+        if let Err(panic) = std::panic::catch_unwind(AssertUnwindSafe(|| check(phase, after))) {
+            let message = panic
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| {
+                    panic
+                        .downcast_ref::<&str>()
+                        .map(|message| (*message).to_owned())
+                })
+                .unwrap_or_default();
+            failed.push((after, message));
         }
-    });
-    let mut failed = failed.into_inner().unwrap();
+    }
     failed.sort();
     assert!(
         failed.is_empty(),
         "{} of {} cuts failed:\n{}",
         failed.len(),
-        cuts.len(),
+        checked,
         failed
             .iter()
             .map(|(after, message)| format!("cut after event {after}: {message}"))
@@ -1117,6 +1189,117 @@ fn projection(events: &[Event]) -> Vec<String> {
     compared_projection(events, &folded(events).project())
 }
 
+/// A killed open trial is an independently checked raw observation, not free execution. Charge the same
+/// interruption in a control that has no pending trial to recover; no policy commitment is copied into it.
+/// Zero-wall-time kills still compare against the original uninterrupted scenario.
+fn charged_kill_control(
+    played: &Played,
+    model: &Model,
+    after: usize,
+    resumed: &[Event],
+) -> Option<Vec<Event>> {
+    let prefix = &played.events[..after];
+    let (at, intended, intent) = prefix.iter().enumerate().rev().find_map(|(at, event)| {
+        if let Payload::TrialIntent(intent) = &event.payload {
+            Some((at, event, intent))
+        } else {
+            None
+        }
+    })?;
+    if prefix[at..]
+        .iter()
+        .any(|event| matches!(&event.payload, Payload::TrialEnd(end) if end.trial == intent.trial))
+    {
+        return None;
+    }
+    let ends: Vec<_> = resumed[after..]
+        .iter()
+        .filter_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload
+                && end.trial == intent.trial
+            {
+                Some(end)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(ends.len(), 1, "one end for killed trial {}", intent.trial);
+    let end = ends[0];
+    let start = prefix[at..].iter().find_map(|event| {
+        if matches!(&event.payload, Payload::TrialStart(start) if start.trial == intent.trial) {
+            event.mono
+        } else {
+            None
+        }
+    });
+    let last = prefix[at..].iter().rev().find_map(|event| {
+        if matches!(
+            event.payload,
+            Payload::TrialStart(_)
+                | Payload::TrialProgress(_)
+                | Payload::TrialSignal(_)
+                | Payload::TrialSample(_)
+        ) {
+            event.mono
+        } else {
+            None
+        }
+    });
+    let duration = start
+        .zip(last)
+        .map_or(Duration::ZERO, |(start, last)| last.saturating_sub(start));
+    assert_eq!(u64::from(end.duration_s), duration.as_secs());
+    assert_eq!(end.outcome, Outcome::Inconclusive);
+    assert!(end.interrupted);
+    let observed: Vec<_> = resumed[after..]
+        .iter()
+        .filter_map(|event| {
+            if let Payload::ExposureObserved(observed) = &event.payload
+                && observed.source.trial.as_ref() == Some(&intent.trial)
+            {
+                Some(observed)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        observed.len(),
+        usize::from(intent.regime != togi_machine::Regime::R9 || start.is_some()),
+        "one observation per known class; an unstarted R9 has no recorded serial CPU",
+    );
+    for observed in observed {
+        assert_eq!(observed.eligible_s, 0);
+        assert_eq!(observed.uninterrupted_s, 0);
+        assert!(observed.failures.is_empty());
+    }
+    if prefix.last().unwrap().time == intent.task_start.unwrap_or(intended.time) {
+        return None;
+    }
+
+    let control = played.before.bench(model);
+    let Phase::Run { trials } = played.phase else {
+        panic!("an open night trial belongs to a run phase");
+    };
+    let trigger = AppendTrigger::new(after, AppendPoint::BeforeSync);
+    assert!(matches!(
+        segment(&control, Some(&trigger), Fate::Killed, played.start, trials),
+        RunEnd::Cut(false)
+    ));
+    assert_eq!(durable(&control), prefix);
+    let mut machine = control.sim.seams();
+    let mut journal = simulated(&control.mem)
+        .open_at(machine.host.boot_id().unwrap(), machine.clock.now())
+        .unwrap();
+    journal
+        .append(stamp(&mut machine), end.clone().into(), &[intended.seq])
+        .unwrap();
+    drop(journal.close().unwrap());
+    let (_, events) = play(&control, played.phase, played.start, None);
+    Some(events)
+}
+
 /// The policy commitments from `from` onward, without observations of interrupted trials, which only the resumed
 /// journal has. An observation may commit an unchanged cap before a retried trial rather than after it, so
 /// commitments are sorted by identity-hidden shape before naming citations. Anchors use the whole journal,
@@ -1153,6 +1336,15 @@ fn commitments(events: &[Event], from: usize, observations: bool) -> Vec<String>
                     | Payload::DayHold(_)
                     | Payload::DayFreeze(_)
                     | Payload::DayInterval(_)
+                    | Payload::UnitMapping(_)
+                    | Payload::UnitEdge(_)
+                    | Payload::ClimbDecision(_)
+                    | Payload::UnitStop(_)
+                    | Payload::CampaignStart(_)
+                    | Payload::CampaignCharge(_)
+                    | Payload::CampaignReclassified(_)
+                    | Payload::FirmwareRestoration(_)
+                    | Payload::SuccessorImported(_)
             ) || observations
                 && matches!(&event.payload, Payload::ExposureObserved(observed)
                 if observed.source.trial.as_ref().is_none_or(|trial| !interrupted.contains(&trial)))
@@ -1179,16 +1371,20 @@ fn commitments(events: &[Event], from: usize, observations: bool) -> Vec<String>
         .collect()
 }
 
-/// The kinds the kill sweep must cut after at least once.
+/// Current D commitments and retained diagnostic/raw kinds the sweep must cut after at least once.
+/// The campaign is created before this window; its later charge and permanent unit stop are swept here.
 const KINDS: &[&str] = &[
     "task.start",
     "night.plan",
     "exposure.observed",
-    "ccd.edge",
+    "unit.edge",
+    "unit.mapping",
+    "campaign.charge",
+    "unit.stop",
     "ccd.cap",
     "night.qualification",
     "night.reproduction",
-    "day.step",
+    "climb.decision",
     "day.applied",
 ];
 
@@ -1218,8 +1414,17 @@ fn assert_window(played: &[Played], from: usize, cuts: &[(usize, usize)]) {
     );
 }
 
-#[test]
-fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments() {
+#[test_case(0; "shard 1")]
+#[test_case(1; "shard 2")]
+#[test_case(2; "shard 3")]
+#[test_case(3; "shard 4")]
+#[test_case(4; "shard 5")]
+#[test_case(5; "shard 6")]
+#[test_case(6; "shard 7")]
+#[test_case(7; "shard 8")]
+fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments(
+    shard: usize,
+) {
     let (model, played, from) = scenario();
     let cuts = cuts(&played, from);
     assert_window(&played, from, &cuts);
@@ -1227,16 +1432,70 @@ fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection
         .iter()
         .map(|phase| projection(&phase.events))
         .collect();
-    each(&cuts, |phase, after| {
+    each(&cuts, shard, |phase, after| {
         let reference = &played[phase];
         let events = resume(reference, &model, after, Fate::Killed);
         assert_eq!(&events[..after], &reference.events[..after]);
-        assert_eq!(projection(&events), wanted[phase]);
-        assert_eq!(
-            commitments(&events, after, true),
-            commitments(&reference.events, after, true)
+        let control = charged_kill_control(reference, &model, after, &events);
+        let expected_events = control.as_deref().unwrap_or(&reference.events);
+        let expected_projection = control.as_deref().map(projection);
+        assert_lines_equal(
+            &projection(&events),
+            expected_projection.as_ref().unwrap_or(&wanted[phase]),
+            "projection",
+        );
+        assert_lines_equal(
+            &commitments(&events, after, true),
+            &commitments(expected_events, after, true),
+            "commitments",
         );
     });
+    eprintln!(
+        "kill coverage shard {}/{}: {} durable events; no stride",
+        shard + 1,
+        CUT_SHARDS,
+        shard_cuts(&cuts, shard).count(),
+    );
+}
+
+#[test_case(false, false; "before single-core launch")]
+#[test_case(false, true; "before serial launch")]
+#[test_case(true, false; "after measured execution")]
+fn an_interruption_compares_against_identically_charged_observations(measured: bool, serial: bool) {
+    let (model, played, from) = scenario();
+    let (phase, after) = cuts(&played, from)
+        .into_iter()
+        .find(|&(phase, after)| {
+            let prefix = &played[phase].events[..after];
+            if !measured {
+                return matches!(&prefix.last().unwrap().payload, Payload::TrialIntent(intent)
+                    if (intent.regime == togi_machine::Regime::R9) == serial);
+            }
+            let Payload::TrialProgress(progress) = &prefix.last().unwrap().payload else {
+                return false;
+            };
+            prefix.iter().any(|event| {
+                matches!(&event.payload, Payload::TrialIntent(intent)
+                    if intent.trial == progress.trial && intent.regime == togi_machine::Regime::R6)
+            })
+        })
+        .expect("the swept qualification includes both interruption boundaries");
+    let reference = &played[phase];
+    let resumed = resume(reference, &model, after, Fate::Killed);
+    assert_eq!(
+        projection(&resumed) != projection(&reference.events),
+        measured,
+        "only charged interruption wall time changes the soft-share schedule",
+    );
+    let control = charged_kill_control(reference, &model, after, &resumed);
+    assert_eq!(control.is_some(), measured);
+    let expected = control.as_deref().unwrap_or(&reference.events);
+    assert_lines_equal(&projection(&resumed), &projection(expected), "projection");
+    assert_lines_equal(
+        &commitments(&resumed, after, true),
+        &commitments(expected, after, true),
+        "commitments",
+    );
 }
 
 /// The events of each trial on its own boot, from its intent through its end: the cuts where a crash leaves a trial
@@ -1262,13 +1521,61 @@ fn trial_cuts(played: &[Played], from: usize) -> Vec<(usize, usize)> {
     cuts
 }
 
+fn smu_cuts(played: &[Played], from: usize) -> Vec<(usize, usize)> {
+    played
+        .iter()
+        .enumerate()
+        .skip(from)
+        .flat_map(|(phase, played)| (1..=played.accesses.len()).map(move |at| (phase, at)))
+        .collect()
+}
+
 #[test]
-fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve_decisions() {
+fn sweep_shards_cover_every_durable_dual_kind_and_smu_cut_exactly_once() {
+    let (_, played, from) = scenario();
+    let durable = cuts(&played, from);
+    let trials = trial_cuts(&played, from);
+    let smu = smu_cuts(&played, from);
+    assert_window(&played, from, &durable);
+    assert!(!smu.is_empty());
+    let expected: BTreeMap<_, _> = durable
+        .iter()
+        .map(|&(phase, at)| (("power loss", phase, at), 1))
+        .chain(trials.iter().map(|&(phase, at)| (("crash", phase, at), 1)))
+        .chain(smu.iter().map(|&(phase, at)| (("SMU", phase, at), 1)))
+        .collect();
+    assert_eq!(expected.len(), durable.len() + trials.len() + smu.len());
+    let mut actual = BTreeMap::new();
+    for shard in 0..CUT_SHARDS {
+        for (phase, at) in shard_cuts(&durable, shard) {
+            *actual.entry(("power loss", phase, at)).or_insert(0) += 1;
+            if trials.contains(&(phase, at)) {
+                *actual.entry(("crash", phase, at)).or_insert(0) += 1;
+            }
+        }
+        for (phase, at) in shard_cuts(&smu, shard) {
+            *actual.entry(("SMU", phase, at)).or_insert(0) += 1;
+        }
+    }
+    assert_eq!(actual, expected);
+}
+
+#[test_case(0; "shard 1")]
+#[test_case(1; "shard 2")]
+#[test_case(2; "shard 3")]
+#[test_case(3; "shard 4")]
+#[test_case(4; "shard 5")]
+#[test_case(5; "shard 6")]
+#[test_case(6; "shard 7")]
+#[test_case(7; "shard 8")]
+fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve_decisions(
+    shard: usize,
+) {
     let (model, played, from) = scenario();
     let trials = trial_cuts(&played, from);
     let cuts = cuts(&played, from);
     assert_window(&played, from, &cuts);
-    each(&cuts, |phase, after| {
+    each(&cuts, shard, |phase, after| {
         let events = resume(&played[phase], &model, after, Fate::PowerLoss);
         assert_unchanged_decisions(
             &played[phase],
@@ -1284,21 +1591,20 @@ fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve
             resume(&played[phase], &model, after, Fate::Crashed);
         }
     });
-    let smu: Vec<_> = played
-        .iter()
-        .enumerate()
-        .skip(from)
-        .flat_map(|(phase, played)| (1..=played.accesses.len()).map(move |at| (phase, at)))
-        .collect();
+    let smu = smu_cuts(&played, from);
     assert!(!smu.is_empty(), "the swept phases touched no SMU");
-    each(&smu, |phase, at| {
+    each(&smu, shard, |phase, at| {
         resume_at_smu(&played[phase], &model, at);
     });
     eprintln!(
-        "crash coverage: {} power-loss durable events ({} dual-kind trial events), {} SMU hooks; no stride",
-        cuts.len(),
-        trials.len(),
-        smu.len()
+        "crash coverage shard {}/{}: {} power-loss durable events ({} dual-kind trial events), {} SMU hooks; no stride",
+        shard + 1,
+        CUT_SHARDS,
+        shard_cuts(&cuts, shard).count(),
+        shard_cuts(&cuts, shard)
+            .filter(|cut| trials.contains(cut))
+            .count(),
+        shard_cuts(&smu, shard).count(),
     );
 }
 
@@ -1308,35 +1614,53 @@ fn scenario_events() -> Vec<Event> {
     played.last().unwrap().events.clone()
 }
 
-/// `events` with `change` applied to the first rate cell of the first `ccd.cap` that has one.
-fn with_changed_rate_cell(events: &[Event], change: impl FnOnce(&mut RateCell)) -> Vec<Event> {
-    let mut events = events.to_vec();
-    let cell = events
+/// Statistical rate-cell permission is gone: mutate the D hold and event evidence instead.
+#[test_case(1, 0; "event count")]
+#[test_case(0, 1; "eligible seconds")]
+fn a_changed_hold_or_event_count_changes_the_commitments(events_added: u32, eligible_s: u64) {
+    let events = scenario_events();
+    let mut changed = events.clone();
+    let event = changed
         .iter_mut()
-        .find_map(|event| {
-            if let Payload::CcdCap(cap) = &mut event.payload {
-                cap.cells.first_mut()
-            } else {
-                None
-            }
-        })
-        .expect("no ccd.cap of the scenario carries a rate cell");
-    change(cell);
-    events
+        .find(|event| matches!(event.payload, Payload::ClimbDecision(_)))
+        .expect("the scenario commits a D decision");
+    let seq = event.seq;
+    let Payload::ClimbDecision(decision) = &mut event.payload else {
+        unreachable!()
+    };
+    decision.hold.eligible_s += eligible_s;
+    for _ in 0..events_added {
+        decision.events.push(seq);
+    }
+    assert_ne!(
+        commitments(&changed, 0, true),
+        commitments(&events, 0, true)
+    );
 }
 
-#[test_case(1, 0; "failure count")]
-#[test_case(0, 1; "eligible seconds")]
-fn a_changed_rate_cell_changes_the_commitments(failures: u32, eligible_s: u64) {
+#[test_case("unit.edge"; "hard ceiling margin")]
+#[test_case("campaign.charge"; "remaining allowance")]
+#[test_case("unit.stop"; "stop witnesses")]
+fn a_changed_unit_commitment_changes_the_commitments(kind: &str) {
     let events = scenario_events();
-    let changed = with_changed_rate_cell(&events, |cell| {
-        cell.failures += failures;
-        cell.eligible_s += eligible_s;
-    });
+    let mut changed = events.clone();
+    let event = changed
+        .iter_mut()
+        .find(|event| event.kind().as_str() == kind)
+        .expect("the scenario commits the required D record");
+    if let Payload::UnitEdge(edge) = &mut event.payload {
+        edge.margin += 1;
+    } else if let Payload::CampaignCharge(charge) = &mut event.payload {
+        charge.remaining -= 1;
+    } else if let Payload::UnitStop(stop) = &mut event.payload {
+        stop.witnesses.pop().expect("the stop cites its history");
+    } else {
+        unreachable!();
+    }
     assert_ne!(
         commitments(&changed, 0, true),
         commitments(&events, 0, true),
-        "a rate cell that counts {failures} more failures and {eligible_s} more seconds compares equal"
+        "{kind} payload must participate in resume comparisons"
     );
 }
 
@@ -1345,12 +1669,17 @@ fn a_changed_count_of_cited_events_changes_the_projection() {
     let events = scenario_events();
     let projection = folded(&events).project();
     let mut changed = projection.clone();
-    let (seq, step) = changed
-        .day
-        .last_step
-        .as_mut()
-        .expect("the scenario ends after a day step");
-    step.hours.push(*seq);
+    let unit = changed
+        .climb
+        .units
+        .first_mut()
+        .expect("the scenario has a tuning unit");
+    let seq = events
+        .iter()
+        .find(|event| matches!(event.payload, Payload::DayCheckpoint(_)))
+        .unwrap()
+        .seq;
+    unit.hold.witnesses.push(seq);
     assert_ne!(
         compared_projection(&events, &changed),
         compared_projection(&events, &projection)
@@ -1358,26 +1687,32 @@ fn a_changed_count_of_cited_events_changes_the_projection() {
 }
 
 #[test]
-fn caps_citing_one_event_instead_of_two_change_the_projection() {
+fn unit_edges_citing_one_event_instead_of_two_change_the_projection() {
     let events = scenario_events();
     let projection = folded(&events).project();
     let witnesses: Vec<_> = projection
+        .climb
         .units
         .iter()
-        .filter_map(|unit| unit.cap.as_ref().map(|cap| cap.witness))
+        .filter_map(|unit| match &unit.edge {
+            togi_journal::Edge::Observed { witness, .. } => Some(*witness),
+            togi_journal::Edge::Censored { witnesses, .. } => witnesses.first().copied(),
+            togi_journal::Edge::Unknown {} => None,
+        })
         .collect();
     assert!(
         witnesses.len() >= 2 && witnesses[0] != witnesses[1],
-        "the scenario's CCDs have no two distinct caps: {witnesses:?}"
+        "two distinct mapped edges required"
     );
     let mut changed = projection.clone();
-    let first = witnesses[0];
-    for cap in changed
-        .units
-        .iter_mut()
-        .filter_map(|unit| unit.cap.as_mut())
-    {
-        cap.witness = first;
+    for unit in &mut changed.climb.units {
+        match &mut unit.edge {
+            togi_journal::Edge::Observed { witness, .. } => *witness = witnesses[0],
+            togi_journal::Edge::Censored {
+                witnesses: held, ..
+            } => *held = vec![witnesses[0]],
+            togi_journal::Edge::Unknown {} => panic!("mapped unit expected"),
+        }
     }
     assert_ne!(
         compared_projection(&events, &changed),
@@ -1435,29 +1770,92 @@ fn a_qualification_citing_a_different_exposure_changes_the_commitments() {
 }
 
 #[test]
-fn a_cap_citing_a_different_event_changes_the_projection() {
+fn a_unit_edge_citing_a_different_event_changes_the_projection() {
     let events = scenario_events();
-    let cap_at = events
+    let at = events
         .iter()
-        .position(|event| matches!(event.payload, Payload::CcdCap(_)))
-        .expect("the scenario commits a cap");
-    let events = &events[..=cap_at];
+        .position(|event| {
+            matches!(&event.payload, Payload::UnitEdge(edge)
+        if !matches!(edge.new, togi_journal::Edge::Unknown {}))
+        })
+        .expect("the scenario commits a unit edge");
+    let events = &events[..=at];
     let projection = folded(events).project();
     let mut changed = projection.clone();
     let replacement = events
         .iter()
         .find(|event| matches!(event.payload, Payload::TrialIntent(_)))
-        .expect("the scenario runs a trial");
-    let cap = changed.units[0]
-        .cap
-        .as_mut()
-        .expect("the scenario has a cap");
-    let original = cap.witness;
-    cap.witness = replacement.seq;
+        .expect("the scenario runs a trial")
+        .seq;
+    let unit = changed
+        .climb
+        .units
+        .iter_mut()
+        .find(|unit| !matches!(unit.edge, togi_journal::Edge::Unknown {}))
+        .expect("the scenario has a mapped edge");
+    match &mut unit.edge {
+        togi_journal::Edge::Observed { witness, .. } => *witness = replacement,
+        togi_journal::Edge::Censored { witnesses, .. } => *witnesses = vec![replacement],
+        togi_journal::Edge::Unknown {} => unreachable!(),
+    }
     assert_ne!(
         compared_projection(events, &changed),
-        compared_projection(events, &projection),
-        "cap witness changed from {original} to {} with both target events unchanged",
-        replacement.seq
+        compared_projection(events, &projection)
     );
+}
+
+#[test]
+fn a_kill_between_observation_and_derived_commitment_resumes_to_the_same_state() {
+    let (model, played, _) = scenario();
+    let mut checked = BTreeSet::new();
+    for phase in &played {
+        if let Some(at) = phase.own().iter().position(|event| {
+            matches!(
+                event.payload,
+                Payload::ExposureObserved(_) | Payload::DayUncleanEnd(_)
+            )
+        }) {
+            let after = phase.start + at + 1;
+            let resumed = resume(phase, &model, after, Fate::Killed);
+            assert_eq!(projection(&resumed), projection(&phase.events));
+            assert_eq!(
+                commitments(&resumed, after, true),
+                commitments(&phase.events, after, true)
+            );
+            checked.insert(phase.own()[at].kind().as_str());
+        }
+    }
+    assert!(checked.contains("exposure.observed") && checked.contains("day.unclean_end"));
+}
+
+#[test]
+fn a_lost_qualification_or_retreat_commitment_is_recomputed() {
+    let (model, played, _) = scenario();
+    for qualification in [true, false] {
+        let (phase, at) = played
+            .iter()
+            .find_map(|phase| {
+                phase
+                    .own()
+                    .iter()
+                    .position(|event| {
+                        if qualification {
+                            matches!(&event.payload, Payload::NightQualification(record)
+                        if matches!(record.state, QualificationState::Complete { .. }))
+                        } else {
+                            matches!(&event.payload, Payload::ClimbDecision(record)
+                        if matches!(record.decision, togi_journal::ClimbAction::Retreat { .. }))
+                        }
+                    })
+                    .map(|at| (phase, at))
+            })
+            .expect("the scenario must qualify a step and retreat after a CPU-suspect event");
+        let after = phase.start + at;
+        let resumed = resume(phase, &model, after, Fate::Killed);
+        assert_eq!(projection(&resumed), projection(&phase.events));
+        assert_eq!(
+            commitments(&resumed, after, true),
+            commitments(&phase.events, after, true)
+        );
+    }
 }

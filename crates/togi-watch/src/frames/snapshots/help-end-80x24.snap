@@ -5,13 +5,13 @@ expression: body
 │ togi   22:14:00   tuning 0h00m   session 0h00m   0 failures · 0 crashes
 │ ► NIGHT 0h30m ─ mapping C1 -20 ─ 9:20 left
 │
-│ │ freeze       keeps D and blocks promotions; a required retreat or firmware
-│ │              reset still applies
-│ │ qualifying   running a whole profile until every class has witnessed it
-│ │ reproducing  re-running a daily event's conditions to see whether it comes
-│ │              back
-│ │ share        the part of the night's elapsed time a queue has used, against
-│ │              the part it is meant to take
+│ │ allowance     machine-wide consumed and remaining events, including
+│ │               provisional charges; reclassification does not refund them
+│ │               and finish does not hide later events
+│ │ experimental  experimental: 50 clean hours; at most 1 crash per 17 h (95%,
+│ │               fixed-rate model). This is an example for current
+│ │               exact-profile evidence, not a reliability certificate; finish
+│ │               alone never meets the hazard goal
 │ │
 │ │
 │ │ KINDS OF LOAD ─────────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ expression: body
 │ │ R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
 │ │ R3 load steps     load switching on and off: current steps
 │ │ R4 partial load   light load at 25-75% duty: bursty work
-│ █ R5 both threads   both threads of one core: SMT pressure
+│ │ R5 both threads   both threads of one core: SMT pressure
 │ █ R6 idle + bursts  idle with short wake-ups: idle and boost
 │ █ R7 all-core       a CCD, part of one, or every core: power and heat
 │
