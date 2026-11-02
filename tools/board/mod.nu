@@ -7,6 +7,7 @@ const issues_query = 'query($owner: String!, $name: String!, $endCursor: String)
         number title body isPinned
         labels(first: 50) { nodes { name } }
         assignees(first: 20) { nodes { login } }
+        comments(last: 1) { nodes { createdAt } }
         parent { number title }
         blockedBy(first: 50) { nodes { number state } }
         subIssuesSummary { total completed }
@@ -19,7 +20,7 @@ const pulls_query = 'query($owner: String!, $name: String!, $endCursor: String) 
   repository(owner: $owner, name: $name) {
     pullRequests(states: OPEN, first: 100, after: $endCursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { number body headRefName headRepository { nameWithOwner } }
+      nodes { number body headRefName updatedAt headRepository { nameWithOwner } }
     }
   }
 }'
@@ -56,6 +57,8 @@ def bool-field [value: any]: nothing -> bool { wire-value $value bool }
 def record-field [value: any]: nothing -> record { wire-value $value record }
 def list-field [value: any]: nothing -> list { wire-value $value list }
 
+def datetime-field [value: any]: nothing -> datetime { string-field $value | into datetime }
+
 def parent [value: any]: nothing -> any {
     if $value == null { return null }
     let p = (record-field $value)
@@ -76,6 +79,7 @@ def issue [value: record]: nothing -> record {
         pinned: (bool-field ($value.isPinned? | default false))
         labels: (nodes $value.labels? | each {|l| string-field ($l.name? | default '')})
         assignees: (nodes $value.assignees? | each {|a| string-field ($a.login? | default '')})
+        activity: (nodes $value.comments? | each {|c| datetime-field $c.createdAt?} | get -o 0)
         parent: (parent $value.parent?)
         blockers: (nodes $value.blockedBy? | where {|b| $b.state? == OPEN} | each {|b| int-field ($b.number? | default 0)})
         total: (int-field ($summary.total? | default 0))
@@ -107,6 +111,7 @@ export def board-output [gh: closure, now: datetime]: nothing -> string {
                     body: (string-field ($n.body? | default ''))
                     repo: (string-field ($n.headRepository?.nameWithOwner? | default ''))
                     branch: (string-field ($n.headRefName? | default ''))
+                    updated: (datetime-field $n.updatedAt?)
                 }
                 $pulls = ($pulls | append $pull)
             }
@@ -194,10 +199,14 @@ export def interactions [limit: record, now: datetime]: nothing -> string {
 
 export def build [repo: string, issues: list<record>, pulls: list<record>, limit: record, now: datetime]: nothing -> record {
     let sorted = ($issues | sort-by number)
-    let progress = ($sorted | where {|i| ($i.assignees | is-not-empty) and 'needs-hardware' not-in $i.labels} | each {|i|
+    let claimed = ($sorted | where {|i| ($i.assignees | is-not-empty) and 'needs-hardware' not-in $i.labels} | each {|i|
         let own = (pulls-for $i.number $pulls)
-        $i | insert work (work $repo $own) | insert touches (touches $i.body) | insert pulls ($own | get number)
+        let activity = ([$i.activity? ($own | get -o updated)] | flatten | compact | sort | reverse | get -o 0)
+        let idle = (if $activity == null { null } else { $now - $activity })
+        let stale = ('needs-decision' not-in $i.labels and ($i.blockers | is-empty) and ($idle == null or $idle >= 24hr))
+        $i | upsert activity $activity | insert idle $idle | insert stale $stale | insert work (work $repo $own) | insert touches (touches $i.body) | insert pulls ($own | get number)
     })
+    let progress = ($claimed | where stale == false)
     let ready_issues = ($sorted | where {|i| (ready $i) and 'needs-hardware' not-in $i.labels} | each {|i| $i | insert touches (touches $i.body)})
     {
         interactions: (interactions $limit $now)
@@ -206,6 +215,7 @@ export def build [repo: string, issues: list<record>, pulls: list<record>, limit
         blocked: ($sorted | where {|i| ($i.blockers | is-not-empty) and ($i.assignees | is-empty) and 'needs-hardware' not-in $i.labels})
         untriaged: ($sorted | where {|i| 'needs-triage' in $i.labels})
         progress: $progress
+        stale: ($claimed | where stale == true)
         ready: (group $ready_issues)
         overlaps: ($ready_issues | each {|r|
             $progress | each {|p|
@@ -242,6 +252,18 @@ export def render []: record -> string {
                 (if $i.parent != null { $'    block: #($i.parent.number) ($i.parent.title)' })
                 $'    branches: (display-list $i.work)'
                 $'    pull requests: (display-list ($i.pulls | each {|n| $'#($n)'}))'
+                $'    touches: (display-list $i.touches)'
+            ] | compact | str join "\n"
+        }))
+        (section 'Stale (claimed, no activity for 24 hours)' ($b.stale | each {|i|
+            let activity = (if $i.activity == null { 'no activity recorded' } else {
+                let days = (($i.idle / 1day) | math floor | into int)
+                let hours = ((($i.idle mod 1day) / 1hr) | math floor | into int)
+                $'idle ($days)d ($hours)h since ($i.activity | format date "%Y-%m-%d")'
+            })
+            [
+                ('  ' + (head $i) + (assigned $i) + ' — ' + $activity)
+                (if $i.parent != null { $'    block: #($i.parent.number) ($i.parent.title)' })
                 $'    touches: (display-list $i.touches)'
             ] | compact | str join "\n"
         }))

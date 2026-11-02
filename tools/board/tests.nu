@@ -1,12 +1,12 @@
 use std/assert
-use mod.nu [board-output ready priority touches overlaps pulls-for work group interactions build]
+use mod.nu [board-output ready priority touches overlaps pulls-for work group interactions build render]
 
 const now = 2026-10-06T12:00:00Z
 const fixtures = path self testdata
 
 const base = {
     number: 0, title: '', body: '', pinned: false, labels: [feature P2], assignees: [],
-    parent: null, blockers: [], total: 0, completed: 0
+    parent: null, blockers: [], total: 0, completed: 0, activity: null
 }
 
 def fixture-gh [args: list<string>]: nothing -> string {
@@ -220,7 +220,7 @@ def test-hardware-exclusivity [] {
         let issues = [
             ($base | merge {number: 1, labels: [feature P1 needs-hardware], assignees: $assignees, blockers: [7], body: 'Touches: `internal/tuner`'})
             ($base | merge {number: 2, body: 'Touches: `internal/tuner`'})
-            ($base | merge {number: 3, assignees: [shgew], body: 'Touches: `internal/tuner/hunt.go`'})
+            ($base | merge {number: 3, assignees: [shgew], activity: $now, body: 'Touches: `internal/tuner/hunt.go`'})
         ]
         let b = (build shgew/togi $issues [] {limit: '', expires: null} $now)
         assert equal ($b.hardware | get number) [1]
@@ -252,6 +252,64 @@ def test-blocked-hardware [] {
     assert equal $waiting.progress []
 }
 
+def test-claim-before-boundary [] {
+    let claim = ($base | merge {number: 1, assignees: [someone], activity: ($now - 23hr - 59min)})
+    let b = (build example/togi [$claim] [] {limit: '', expires: null} $now)
+    assert equal ($b.progress | get number) [1]
+    assert equal $b.stale []
+}
+
+def test-claim-at-boundary [] {
+    let claim = ($base | merge {number: 1, assignees: [someone], activity: ($now - 24hr)})
+    let b = (build example/togi [$claim] [] {limit: '', expires: null} $now)
+    assert equal $b.progress []
+    assert equal ($b.stale | get number) [1]
+    assert equal $b.stale.0.idle 24hr
+}
+
+def test-pull-keeps-claim-fresh [] {
+    let claim = ($base | merge {number: 1, assignees: [someone], activity: ($now - 3day)})
+    let pulls = [
+        {number: 2, body: 'Refs #1', repo: example/togi, branch: active, updated: ($now - 1hr)}
+        {number: 3, body: 'Refs #1', repo: example/togi, branch: old, updated: ($now - 2day)}
+    ]
+    let b = (build example/togi [$claim] $pulls {limit: '', expires: null} $now)
+    assert equal ($b.progress | get number) [1]
+    assert equal $b.progress.0.activity ($now - 1hr)
+    assert equal $b.stale []
+}
+
+def test-claim-without-activity [] {
+    let claim = ($base | merge {number: 1, assignees: [someone]})
+    let b = (build example/togi [$claim] [] {limit: '', expires: null} $now)
+    assert equal $b.progress []
+    assert equal ($b.stale | get number) [1]
+    assert equal $b.stale.0.activity null
+    assert str contains ($b | render) '— no activity recorded'
+}
+
+def test-idle-claim-exemptions [] {
+    let claims = [
+        ($base | merge {number: 1, assignees: [someone], labels: [needs-decision], activity: ($now - 3day)})
+        ($base | merge {number: 2, assignees: [someone], blockers: [7]})
+        ($base | merge {number: 3, assignees: [someone], labels: [needs-hardware]})
+    ]
+    let b = (build example/togi $claims [] {limit: '', expires: null} $now)
+    assert equal ($b.progress | get number) [1 2]
+    assert equal ($b.hardware | get number) [3]
+    assert equal $b.stale []
+}
+
+def test-stale-claim-no-overlap [] {
+    let issues = [
+        ($base | merge {number: 1, assignees: [someone], body: 'Touches: tools/board'})
+        ($base | merge {number: 2, body: 'Touches: tools/board/mod.nu'})
+    ]
+    let b = (build example/togi $issues [] {limit: '', expires: null} $now)
+    assert equal ($b.stale | get number) [1]
+    assert equal $b.overlaps []
+}
+
 def main [] {
     nu-check --debug ($env.CURRENT_FILE | path dirname | path join main.nu)
     nu-check --debug --as-module ($env.CURRENT_FILE | path dirname | path join mod.nu)
@@ -271,5 +329,11 @@ def main [] {
     test-hidden-blockers
     test-ascii-issue-patterns
     test-parent-number-grouping
-    print 'board: 16 tests passed'
+    test-claim-before-boundary
+    test-claim-at-boundary
+    test-pull-keeps-claim-fresh
+    test-claim-without-activity
+    test-idle-claim-exemptions
+    test-stale-claim-no-overlap
+    print 'board: 22 tests passed'
 }

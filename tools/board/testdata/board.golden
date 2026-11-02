@@ -3,6 +3,7 @@ Interactions
 
 Waiting on you (needs-decision)
   #503 Split the frame renderer (@shgew)
+  #520 Choose the simulator output (@shgew)
 
 Waiting on the target machine (needs-hardware)
   #515 Name the hardware layer by what it does (@shgew)
@@ -29,6 +30,19 @@ In progress
     branches: idle-shade, someone/togi:reason-text
     pull requests: #603, #604, #605
     touches: internal/tuner
+  #520 Choose the simulator output (@shgew)
+    branches: none
+    pull requests: none
+    touches: none
+  #521 Wait for dashboard column names (@shgew)
+    branches: none
+    pull requests: none
+    touches: none
+
+Stale (claimed, no activity for 24 hours)
+  #519 Resume the dashboard layout (@shgew) — idle 2d 3h since 2026-10-04
+    block: #502 Block: dashboard
+    touches: internal/watch
 
 Ready
   P0

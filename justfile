@@ -318,7 +318,7 @@ check-main: _dev-shell
     echo "check-main: no new workflow_dispatch check run appeared for $head" >&2
     exit 1
 
-# Print who may post on the repository, what waits on the owner and on the target machine, untriaged issues, work in progress, ready work, overlaps and the open Ruleset issue
+# Print who may post on the repository, what waits on the owner and on the target machine, untriaged issues, work in progress, stale claims, ready work, overlaps and the open Ruleset issue
 [group('github')]
 board: _dev-shell
     nu --no-config-file tools/board/main.nu
