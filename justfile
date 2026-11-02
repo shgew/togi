@@ -350,7 +350,7 @@ claim number branch plan base="main": _dev-shell
         exit 1
     fi
 
-# Refuse unless HEAD is a clean pull request branch outside a gh stack, then format and refuse if that changed files; RECIPE names the caller, STACK_HINT says what a stack layer does instead
+# Refuse main, detached HEAD, stack layers and dirty trees; rebase onto origin/main first, refusing fetch failures or conflicts, then format and refuse changed files; RECIPE names the caller, STACK_HINT guides stack layers
 _push-ready recipe stack_hint: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
@@ -379,22 +379,49 @@ _push-ready recipe stack_hint: _dev-shell
         echo "$1: commit or stash every change first, untracked files included, so the checks run on what is pushed" >&2
         exit 1
     fi
+    if ! git fetch --quiet origin main; then
+        echo "$1: could not fetch origin main; run just $1 again once it can" >&2
+        exit 1
+    fi
+    if ! git merge-base --is-ancestor origin/main HEAD; then
+        if ! git rebase --quiet origin/main; then
+            conflicts=$(git diff --name-only --diff-filter=U) || conflicts="(could not list conflict paths)"
+            if ! git rebase --abort; then
+                echo "$1: could not abort rebasing $branch onto origin/main; recover the rebase by hand before running just $1 again" >&2
+                exit 1
+            fi
+            echo "$1: rebasing $branch onto origin/main conflicts in $conflicts; the branch is unchanged. Rebase by hand, then run just $1 again" >&2
+            exit 1
+        fi
+        main_head=$(git rev-parse --short origin/main) || {
+            echo "$1: could not read origin/main after rebasing $branch" >&2
+            exit 1
+        }
+        echo "$1: rebased $branch onto origin/main at $main_head"
+    fi
     just fmt
     if [[ -n "$(git status --porcelain)" ]]; then
         echo "$1: just fmt changed files; review and commit them, then run just $1 again" >&2
         exit 1
     fi
 
-# Format, run `just gate`, then push the current branch to the branch of the same name on origin, replacing it after a rebase unless the remote branch has commits this one never contained; stack layers use `gh stack push`
+# Rebase onto origin/main first, refusing main, detached HEAD, stack layers, dirty trees, fetch failures or conflicts; format, gate and push with lease; stack layers use gh stack push
 [group('github')]
 ship: (_push-ready "ship" "gate it with just gate and push the stack with gh stack push")
     #!/usr/bin/env bash
     set -euo pipefail
     branch=$(git branch --show-current)
     just gate
+    if git fetch --quiet origin main; then
+        if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "ship: main moved during the checks; CI rebuilds what that change touched, and the merge step rebases again" >&2
+        fi
+    else
+        echo "ship: could not check main after the checks; pushing anyway" >&2
+    fi
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Push a review fix: format, lint, build quality and local nextest checks, publish built outputs, then push as just ship does
+# Rebase onto origin/main first with just ship's refusals, require a remote branch, then format, lint, build quality and local nextest checks, publish built outputs and push with lease
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -410,6 +437,13 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     read -r -a nextest <<< "$names"
     just check-one "${nextest[@]}"
     just _publish push-fix
+    if git fetch --quiet origin main; then
+        if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "push-fix: main moved during the checks; CI rebuilds what that change touched, and the merge step rebases again" >&2
+        fi
+    else
+        echo "push-fix: could not check main after the checks; pushing anyway" >&2
+    fi
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
 # Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready to merge; fail at once when it conflicts with its base; never merges
