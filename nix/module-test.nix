@@ -20,13 +20,24 @@ let
   evaluateLoader =
     mirrors: selectedPackage: hardwareTestGroup: display: fontSize: day: loader:
     (import (pkgs.path + "/nixos/lib/eval-config.nix") {
-      # Keep generated configuration files native while evaluating Linux boot settings on every host.
-      pkgs = pkgs // {
-        formats = hostPkgs.formats;
-      };
+      inherit pkgs;
       system = pkgs.stdenv.hostPlatform.system;
       modules = [
-        module
+        # Override only this module's JSON producer, without rebuilding the Linux package set.
+        (
+          {
+            config,
+            lib,
+            pkgs,
+            ...
+          }:
+          module {
+            inherit config lib;
+            pkgs = pkgs // {
+              formats = hostPkgs.formats;
+            };
+          }
+        )
         {
           system.stateVersion = "26.05";
           boot.loader = lib.recursiveUpdate {
@@ -165,6 +176,7 @@ let
   # ExecStopPost is the module's postStop script: the shipped package's zero-only emergency path, gated on an
   # abnormal result.
   stopHook = togiService.postStop;
+  resumeScript = builtins.unsafeDiscardStringContext day.systemd.services.togi-day-resume.serviceConfig.ExecStopPost.text;
   generatedConfig = one.environment.etc."togi/config.json";
   nightSetup = one.environment.etc."togi/night.json";
   expectedNight = hostPkgs.writeText "togi-module-night.json" (
@@ -502,6 +514,9 @@ assert !lib.hasInfix "emergency-stop" togiService.serviceConfig.ExecStart;
 assert lib.hasInfix
   (builtins.unsafeDiscardStringContext "exec ${lib.getExe pkgs.hello} emergency-stop")
   overriddenTuning.systemd.services.togi.postStop;
+assert lib.hasInfix "is-active togi-day.service || exit 0" resumeScript;
+assert lib.hasInfix (builtins.unsafeDiscardStringContext "exec ${lib.getExe package} day reapply")
+  resumeScript;
 hostPkgs.runCommand "togi-module-check" { nativeBuildInputs = [ hostPkgs.jq ]; } ''
   jq --exit-status --slurpfile expected ${expectedSettings} \
     '. == $expected[0]' ${generatedConfig.source}
@@ -511,9 +526,5 @@ hostPkgs.runCommand "togi-module-check" { nativeBuildInputs = [ hostPkgs.jq ]; }
     '. == $expected[0]' ${systemd.environment.etc."togi/night.json".source}
   jq --exit-status --slurpfile expected ${expectedXbootldrNight} \
     '. == $expected[0]' ${xbootldr.environment.etc."togi/night.json".source}
-  jq --exit-status --raw-input --slurp \
-    --arg executable ${lib.escapeShellArg "${lib.getExe package} day reapply"} \
-    'contains("is-active togi-day.service || exit 0") and contains("exec " + $executable)' \
-    ${day.systemd.services.togi-day-resume.serviceConfig.ExecStopPost}
   touch "$out"
 ''
