@@ -148,7 +148,7 @@ impl Harness {
         }
     }
 
-    pub(crate) fn dispatch(&mut self, args: &[&str]) -> Result<(), Error> {
+    pub(crate) fn dispatch(&mut self, args: &[&str]) -> Result<crate::Outcome, Error> {
         crate::dispatch(&mut self.tools(), &owned(args))
     }
 

@@ -1,6 +1,7 @@
 //! togi's review tool. With no arguments, or `report`, it prints the track record over the current
 //! repository's merged pull requests: robotogi's review check on each head, findings by priority and
 //! outcome from the review records, and the time from opening to the first record.
+//! `status [N]` prints the next action for every open pull request, or the requested pull request.
 //!
 //! `snapshot` freezes a pull request's head, base and diff into a directory of hunk files and a manifest;
 //! `render` writes the review record from that manifest and the coordinator's findings; `publish` posts the
@@ -20,6 +21,7 @@ pub mod record;
 pub mod render;
 pub mod report;
 pub mod snapshot;
+pub mod status;
 pub mod text;
 
 #[cfg(test)]
@@ -35,6 +37,16 @@ pub const ROBOTOGI_LOGIN: &str = "robotogi";
 /// The exact REST login of the robotogi App's comments; a prefix would also match ordinary users such as
 /// robotogi-helper.
 pub const ROBOTOGI_BOT_LOGIN: &str = "robotogi[bot]";
+/// The GitHub App whose successful review check completes robotogi's review gate.
+pub const ROBOTOGI_APP_ID: i64 = 5_162_510;
+
+/// A successful command, a pending CI check, or a pull request that needs another action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    Success,
+    Waiting,
+    NotReady,
+}
 
 /// A length as the manifest's and record's integer counts hold it, saturating at `i64::MAX`, which no
 /// list in memory reaches.
@@ -55,22 +67,23 @@ pub struct Tools<'a> {
 }
 
 /// Runs the subcommand named first; no subcommand reports.
-pub fn dispatch(t: &mut Tools<'_>, args: &[String]) -> Result<(), Error> {
+pub fn dispatch(t: &mut Tools<'_>, args: &[String]) -> Result<Outcome, Error> {
     let Some(command) = args.first() else {
-        return report::run(t.programs, t.stdout);
+        return report::run(t.programs, t.stdout).map(|()| Outcome::Success);
     };
     match command.as_str() {
+        "status" => status::run(t.programs, t.stdout, &args[1..]),
         "report" => {
             if args.len() > 1 {
                 return Err(Error::new("usage: reviews [report]"));
             }
-            report::run(t.programs, t.stdout)
+            report::run(t.programs, t.stdout).map(|()| Outcome::Success)
         }
-        "snapshot" => snapshot::run_snapshot(t, &args[1..]),
-        "render" => render::run_render(t.stdout, &args[1..]),
-        "publish" => publish::run_publish(t, &args[1..]),
+        "snapshot" => snapshot::run_snapshot(t, &args[1..]).map(|()| Outcome::Success),
+        "render" => render::run_render(t.stdout, &args[1..]).map(|()| Outcome::Success),
+        "publish" => publish::run_publish(t, &args[1..]).map(|()| Outcome::Success),
         _ => Err(Error::new(format!(
-            "unknown subcommand {}: want report, snapshot, render or publish",
+            "unknown subcommand {}: want report, status, snapshot, render or publish",
             text::quote(command)
         ))),
     }
