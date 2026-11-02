@@ -149,12 +149,20 @@ An unavailable placement, incomplete thread-affinity change, failed cap or misma
 Each backend instance runs as a child of togi inside a transient scope confined to its logical CPUs:
 
 ```
-systemd-run --scope --quiet --collect --uid=<uid> --gid=<gid> --working-directory=<instance-dir> -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- <argv>
+systemd-run --scope --quiet --collect --unit <scope> --working-directory <instance-dir> -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- setpriv --reuid=<uid> --regid=<gid> --clear-groups -- <argv>
 ```
 
 `DefaultDependencies=no` keeps a system shutdown from stopping the scope on its own. Otherwise systemd stops the scope and the unit running togi at the same moment, the backend can exit before togi sees its signal, and the trial would end as an unexpected exit on the target instead of interrupted. Without the default dependencies, togi's teardown ends the scope after the signal reaches it.
 
-The root launcher clears all supplementary groups before starting `systemd-run`, retaining UID 0 for system-bus access and scope creation. The scope launch then drops to the configured backend UID and primary GID. Its working directory is explicit: with `--uid` alone, `systemd-run --scope` defaults to the account's home instead of the prepared instance directory. Between fork and exec the launcher makes only direct system calls (clearing the groups as root, its CPU affinity, a parent-death SIGKILL and a check that its parent still lives), never a C library wrapper that can take a lock another thread held at the fork.
+The root launcher clears all supplementary groups before starting `systemd-run`, retaining UID 0 for system-bus access and scope creation. Inside the scope, util-linux's `setpriv` sets the configured backend UID and primary GID, clears supplementary groups and execs the workload in place, preserving the scope's main PID. Credentials drop inside the scope rather than through `systemd-run --uid`/`--gid`: systemd 262's `--uid` initializes the account's group list, undoing the launcher's clearing. This launch path keeps the same no-supplementary-groups contract on systemd 261 and 262. Both `systemd-run` and `setpriv` are located through PATH; the NixOS service includes systemd and util-linux there. The working directory is always the prepared instance directory, explicitly passed to `systemd-run`. Between fork and exec the launcher makes only direct system calls (clearing the groups as root, its CPU affinity, a parent-death SIGKILL and a check that its parent still lives), never a C library wrapper that can take a lock another thread held at the fork.
+
+Unprivileged development runs through a user manager keep their existing command, without `setpriv`:
+
+```
+systemd-run --user --scope --quiet --collect --unit <scope> --uid <uid> --gid <gid> --working-directory <instance-dir> -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- <argv>
+```
+
+These runs use the development account's credentials; they do not attempt the privileged group-clearing step.
 
 If togi dies before teardown, the scope can outlive it and keep its descendants running. The next fresh start or resume sweeps concrete `togi-trial-*.scope` units after nonwriting preflight and before any SMU profile write, whether in a tuning boot or an in-session run. The sweep sends SIGCONT and SIGTERM through bounded `systemctl kill --kill-whom=all` calls on each exact scope during the shared grace period, then uses normal teardown's bounded scope-kill slot to send SIGKILL and stop the scopes. A recovered PID and its start time are used only to verify exit, never to signal a PID or process group that may now belong to somebody else. Cleanup verifies that no matching unit or process remains and that every captured process exited, including one that moved out of its scope. A moved process that survives scope signaling is a containment dead end, not a reason to signal its recovered PID. Recovered processes are observed only; the runner holds no handle that could signal them. Discovery and verification consume the same absolute 15 s budget as teardown, not a fresh budget per scope. Cancelling a sweep before any scope is known returns cancelled at once; once a scope is known, cancellation, including during the process scan, never drops the cleanup: the signals, kill, stop and verification of the listed scopes still finish inside that budget, and the result is cancelled joined with the containment failures if cleanup did not confirm.
 

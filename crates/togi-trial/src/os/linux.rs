@@ -399,6 +399,31 @@ mod tests {
         )
     }
 
+    #[test_case::test_case(false; "system manager")]
+    #[test_case::test_case(true; "user manager")]
+    fn the_probe_uses_the_workload_scope_command(user_manager: bool) {
+        let os = Linux::new(
+            Proc::new("/proc".into(), crate::procfs::ticks_per_second()),
+            user_manager,
+        );
+        let identity = crate::identity::BackendIdentity::new(997, 996).unwrap();
+        let unit = "togi-preflight";
+        assert_eq!(
+            os.argv(&Systemd::Probe {
+                unit: unit.to_owned(),
+                identity,
+            }),
+            scope_argv(
+                unit,
+                identity,
+                user_manager,
+                std::path::Path::new("/"),
+                &[CpuId::from(0)],
+                &["/bin/sh".into(), "-c".into(), "exit 0".into()],
+            )
+        );
+    }
+
     #[test]
     fn real_process_a_launcher_whose_pidfd_could_not_be_opened_is_killed_polled_and_reaped() {
         let os = linux().with_pidfd_refused();

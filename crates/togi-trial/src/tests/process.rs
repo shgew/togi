@@ -1055,10 +1055,15 @@ struct Rollback {
 
 impl Rollback {
     fn first_launch(&self, command: &LaunchCommand) -> Result<Leader, LaunchFailure<Leader>> {
-        let program = command.argv.iter().position(|arg| arg == "--").map_or_else(
-            || command.argv.clone(),
-            |at| command.argv[at + 1..].to_vec(),
-        );
+        let after_separator = |argv: &[std::ffi::OsString]| {
+            argv.iter()
+                .position(|arg| arg == "--")
+                .map(|at| argv[at + 1..].to_vec())
+        };
+        let mut program = after_separator(&command.argv).unwrap_or_else(|| command.argv.clone());
+        if program.first().is_some_and(|arg| arg == "setpriv") {
+            program = after_separator(&program).unwrap_or(program);
+        }
         let leader = self.linux.launch(&LaunchCommand {
             argv: program,
             cwd: command.cwd.clone(),

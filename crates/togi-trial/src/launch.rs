@@ -37,9 +37,13 @@ pub(crate) fn cpus_list(cpus: &[CpuId]) -> String {
         .join(",")
 }
 
-/// `systemd-run [--user] --scope --quiet --collect --unit <scope> --uid <uid> --gid <gid>
-/// --working-directory <dir> -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- <argv>`.
+/// `systemd-run --scope --quiet --collect --unit <scope> --working-directory <dir>
+/// -p AllowedCPUs=<cpus> -p DefaultDependencies=no --
+/// setpriv --reuid=<uid> --regid=<gid> --clear-groups -- <argv>`.
 ///
+/// Drop credentials inside the scope: systemd 262's `--uid` initializes the account's groups.
+/// `setpriv` execs the workload in place, preserving the scope's main PID. A user manager keeps
+/// `--user --uid <uid> --gid <gid>` and runs argv directly, without a privileged drop step.
 /// `DefaultDependencies=no` keeps a system shutdown from stopping the scope on its own.
 pub(crate) fn scope_argv(
     unit: &str,
@@ -60,14 +64,21 @@ pub(crate) fn scope_argv(
             "--collect".to_owned(),
             "--unit".to_owned(),
             unit.to_owned(),
-            "--uid".to_owned(),
-            identity.uid().to_string(),
-            "--gid".to_owned(),
-            identity.gid().to_string(),
-            "--working-directory".to_owned(),
         ]
         .map(OsString::from),
     );
+    if user_manager {
+        argv.extend(
+            [
+                "--uid".to_owned(),
+                identity.uid().to_string(),
+                "--gid".to_owned(),
+                identity.gid().to_string(),
+            ]
+            .map(OsString::from),
+        );
+    }
+    argv.push("--working-directory".into());
     argv.push(cwd.as_os_str().to_owned());
     argv.extend(
         [
@@ -79,6 +90,18 @@ pub(crate) fn scope_argv(
         ]
         .map(OsString::from),
     );
+    if !user_manager {
+        argv.extend(
+            [
+                "setpriv".to_owned(),
+                format!("--reuid={}", identity.uid()),
+                format!("--regid={}", identity.gid()),
+                "--clear-groups".to_owned(),
+                "--".to_owned(),
+            ]
+            .map(OsString::from),
+        );
+    }
     argv.extend_from_slice(program);
     argv
 }
@@ -200,16 +223,17 @@ mod tests {
                 "--collect",
                 "--unit",
                 "togi-trial-t1-c00",
-                "--uid",
-                "997",
-                "--gid",
-                "996",
                 "--working-directory",
                 "/trials/t1/c00",
                 "-p",
                 "AllowedCPUs=2,18",
                 "-p",
                 "DefaultDependencies=no",
+                "--",
+                "setpriv",
+                "--reuid=997",
+                "--regid=996",
+                "--clear-groups",
                 "--",
                 "/bin/mprime",
                 "-t",
@@ -218,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn a_user_manager_adds_the_user_flag_first() {
+    fn a_user_manager_keeps_its_existing_credential_flags_without_a_drop_step() {
         let identity = BackendIdentity::new(1001, 1002).unwrap();
         let argv = scope_argv(
             scope().as_str(),
@@ -228,7 +252,30 @@ mod tests {
             &[CpuId::from(0)],
             &["x".into()],
         );
-        assert_eq!(strings(&argv)[..2], ["systemd-run", "--user"]);
+        assert_eq!(
+            strings(&argv),
+            [
+                "systemd-run",
+                "--user",
+                "--scope",
+                "--quiet",
+                "--collect",
+                "--unit",
+                "togi-trial-t1-c00",
+                "--uid",
+                "1001",
+                "--gid",
+                "1002",
+                "--working-directory",
+                "/",
+                "-p",
+                "AllowedCPUs=0",
+                "-p",
+                "DefaultDependencies=no",
+                "--",
+                "x",
+            ]
+        );
     }
 
     #[test]
