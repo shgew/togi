@@ -48,6 +48,18 @@ pub enum Outcome {
     NotReady,
 }
 
+impl Outcome {
+    /// The process exit status: 0 for success, 3 while only a check runs, 4 for any other next action.
+    /// An error exits 1 instead.
+    pub fn exit_code(self) -> u8 {
+        match self {
+            Self::Success => 0,
+            Self::Waiting => 3,
+            Self::NotReady => 4,
+        }
+    }
+}
+
 /// A length as the manifest's and record's integer counts hold it, saturating at `i64::MAX`, which no
 /// list in memory reaches.
 pub fn saturating_record_count(len: usize) -> i64 {

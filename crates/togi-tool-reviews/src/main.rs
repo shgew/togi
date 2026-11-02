@@ -1,7 +1,7 @@
 use std::io::Write as _;
 use std::process::ExitCode;
 
-use togi_tool_reviews::{Outcome, System, Tools, dispatch};
+use togi_tool_reviews::{System, Tools, dispatch};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args_os()
@@ -27,9 +27,7 @@ fn main() -> ExitCode {
         stderr: &mut stderr,
     };
     match dispatch(&mut t, &args) {
-        Ok(Outcome::Success) => ExitCode::SUCCESS,
-        Ok(Outcome::Waiting) => ExitCode::from(3),
-        Ok(Outcome::NotReady) => ExitCode::from(4),
+        Ok(outcome) => ExitCode::from(outcome.exit_code()),
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "reviews: {}", error.render());
             ExitCode::FAILURE

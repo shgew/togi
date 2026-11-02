@@ -17,7 +17,7 @@ const PULL_FIELDS: &str = r#"
       pageInfo { hasNextPage }
       nodes {
         app { databaseId }
-        runs: checkRuns(first: 20, filterBy: {checkName: "check"}) {
+        runs: checkRuns(first: 20, filterBy: {checkName: "check", checkType: LATEST}) {
           pageInfo { hasNextPage }
           nodes { name status conclusion }
         }
@@ -27,7 +27,7 @@ const PULL_FIELDS: &str = r#"
       pageInfo { hasNextPage }
       nodes {
         app { databaseId }
-        runs: checkRuns(first: 20, filterBy: {checkName: "review"}) {
+        runs: checkRuns(first: 20, filterBy: {checkName: "review", checkType: LATEST}) {
           pageInfo { hasNextPage }
           nodes { name status conclusion }
         }
@@ -47,14 +47,29 @@ const THREADS_QUERY: &str = r"query($owner: String!, $name: String!, $number: In
   }
 }";
 
+/// Where review of a head stands; robotogi's passing review check on the head means done.
 #[derive(Debug, PartialEq, Eq)]
-enum State<'a> {
-    Draft,
-    Conflicts { base: &'a str },
-    CheckFailed { head: &'a str },
+enum Review {
+    Done,
+    Pending(Pending),
+}
+
+/// Why review of a head is not done yet.
+#[derive(Debug, PartialEq, Eq)]
+enum Pending {
     NeedsReview,
     RecordWithoutCheck,
     CarryForward { url: String },
+}
+
+/// The first matching merge gate. Draft, conflicts and a failed check come before review in that order,
+/// so they carry the review state that `/review-pr` still needs.
+#[derive(Debug, PartialEq, Eq)]
+enum State<'a> {
+    Draft { review: Review },
+    Conflicts { base: &'a str, review: Review },
+    CheckFailed { head: &'a str, review: Review },
+    Review(Pending),
     UnresolvedThreads { count: usize },
     Behind { base: &'a str },
     CheckRunning,
@@ -66,24 +81,33 @@ impl State<'_> {
         match self {
             Self::Ready => Outcome::Success,
             Self::CheckRunning => Outcome::Waiting,
-            Self::Draft
+            Self::Draft { .. }
             | Self::Conflicts { .. }
             | Self::CheckFailed { .. }
-            | Self::NeedsReview
-            | Self::RecordWithoutCheck
-            | Self::CarryForward { .. }
+            | Self::Review(_)
             | Self::UnresolvedThreads { .. }
             | Self::Behind { .. } => Outcome::NotReady,
         }
     }
+
+    /// The review state an earlier gate hides from `next:`.
+    fn masked_review(&self) -> Option<&Review> {
+        match self {
+            Self::Draft { review }
+            | Self::Conflicts { review, .. }
+            | Self::CheckFailed { review, .. } => Some(review),
+            Self::Review(_)
+            | Self::UnresolvedThreads { .. }
+            | Self::Behind { .. }
+            | Self::CheckRunning
+            | Self::Ready => None,
+        }
+    }
 }
 
-impl fmt::Display for State<'_> {
+impl fmt::Display for Pending {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Draft => f.write_str("draft"),
-            Self::Conflicts { base } => write!(f, "conflicts with {base}"),
-            Self::CheckFailed { head } => write!(f, "check failed on {head}"),
             Self::NeedsReview => f.write_str("needs review"),
             Self::RecordWithoutCheck => {
                 f.write_str("needs review: the record on this head has no passing review check")
@@ -91,6 +115,26 @@ impl fmt::Display for State<'_> {
             Self::CarryForward { url } => {
                 write!(f, "carry forward or review the delta since {url}")
             }
+        }
+    }
+}
+
+impl fmt::Display for Review {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Done => f.write_str("done"),
+            Self::Pending(pending) => pending.fmt(f),
+        }
+    }
+}
+
+impl fmt::Display for State<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Draft { .. } => f.write_str("draft"),
+            Self::Conflicts { base, .. } => write!(f, "conflicts with {base}"),
+            Self::CheckFailed { head, .. } => write!(f, "check failed on {head}"),
+            Self::Review(pending) => pending.fmt(f),
             Self::UnresolvedThreads { count } => write!(f, "{count} unresolved review threads"),
             Self::Behind { base } => {
                 write!(
@@ -321,14 +365,6 @@ fn fetch_pulls(programs: &mut dyn Programs, number: Option<i64>) -> Result<Vec<P
 }
 
 fn classify<'a>(programs: &mut dyn Programs, pull: &'a Pull) -> Result<State<'a>, Error> {
-    if pull.is_draft {
-        return Ok(State::Draft);
-    }
-    if pull.mergeable == "CONFLICTING" {
-        return Ok(State::Conflicts {
-            base: &pull.base_ref_name,
-        });
-    }
     let commit = &pull
         .commits
         .nodes
@@ -356,11 +392,6 @@ fn classify<'a>(programs: &mut dyn Programs, pull: &'a Pull) -> Result<State<'a>
         || checks.clone().any(Run::failed),
         |runs| runs.iter().any(|r| r.run.name == "check" && r.run.failed()),
     );
-    if check_failed {
-        return Ok(State::CheckFailed {
-            head: pull.head_ref_oid.get(..7).unwrap_or(&pull.head_ref_oid),
-        });
-    }
     let reviewed = complete.as_ref().map_or_else(
         || {
             commit
@@ -379,31 +410,28 @@ fn classify<'a>(programs: &mut dyn Programs, pull: &'a Pull) -> Result<State<'a>
             })
         },
     );
-    if !reviewed {
-        let comments = join_records(robotogi_comments(programs, "{owner}/{repo}", pull.number)?)?;
-        let mut latest = None;
-        let mut on_head = false;
-        for comment in comments {
-            let record = match parse_record(&comment.body) {
-                Ok(record) => record,
-                Err(RecordError::NoBlock) => continue,
-                Err(error) => return Err(Error::wrap("parse review record", error)),
-            };
-            on_head |= record.head_sha == pull.head_ref_oid;
-            if latest
-                .as_ref()
-                .is_none_or(|previous: &crate::parts::Comment| previous.created <= comment.created)
-            {
-                latest = Some(comment);
-            }
-        }
-        return Ok(if on_head {
-            State::RecordWithoutCheck
-        } else if let Some(record) = latest {
-            State::CarryForward { url: record.url }
-        } else {
-            State::NeedsReview
+    let review = if reviewed {
+        Review::Done
+    } else {
+        Review::Pending(pending_review(programs, pull)?)
+    };
+    if pull.is_draft {
+        return Ok(State::Draft { review });
+    }
+    if pull.mergeable == "CONFLICTING" {
+        return Ok(State::Conflicts {
+            base: &pull.base_ref_name,
+            review,
         });
+    }
+    if check_failed {
+        return Ok(State::CheckFailed {
+            head: pull.head_ref_oid.get(..7).unwrap_or(&pull.head_ref_oid),
+            review,
+        });
+    }
+    if let Review::Pending(pending) = review {
+        return Ok(State::Review(pending));
     }
     let count = unresolved_threads(programs, pull.number)?;
     if count > 0 {
@@ -442,6 +470,35 @@ fn classify<'a>(programs: &mut dyn Programs, pull: &'a Pull) -> Result<State<'a>
     Ok(State::Ready)
 }
 
+/// Why review is not done: no complete record, a record on this head without a passing check, or the
+/// latest record on an older head.
+fn pending_review(programs: &mut dyn Programs, pull: &Pull) -> Result<Pending, Error> {
+    let comments = join_records(robotogi_comments(programs, "{owner}/{repo}", pull.number)?)?;
+    let mut latest = None;
+    let mut on_head = false;
+    for comment in comments {
+        let record = match parse_record(&comment.body) {
+            Ok(record) => record,
+            Err(RecordError::NoBlock) => continue,
+            Err(error) => return Err(Error::wrap("parse review record", error)),
+        };
+        on_head |= record.head_sha == pull.head_ref_oid;
+        if latest
+            .as_ref()
+            .is_none_or(|previous: &crate::parts::Comment| previous.created <= comment.created)
+        {
+            latest = Some(comment);
+        }
+    }
+    Ok(if on_head {
+        Pending::RecordWithoutCheck
+    } else if let Some(record) = latest {
+        Pending::CarryForward { url: record.url }
+    } else {
+        Pending::NeedsReview
+    })
+}
+
 #[derive(Deserialize)]
 struct Comparison {
     behind_by: u64,
@@ -465,7 +522,9 @@ fn fetch_all_checks(programs: &mut dyn Programs, head: &str) -> Result<Vec<RestR
             "api",
             "--paginate",
             "--slurp",
-            &format!("repos/{{owner}}/{{repo}}/commits/{head}/check-runs?per_page=100&filter=all"),
+            &format!(
+                "repos/{{owner}}/{{repo}}/commits/{head}/check-runs?per_page=100&filter=latest"
+            ),
         ])
         .map_err(|error| Error::wrap("fetch head check runs", error))?;
     let pages: Vec<CheckPage> = serde_json::from_slice(&out)
@@ -532,7 +591,11 @@ fn unresolved_threads(programs: &mut dyn Programs, number: i64) -> Result<usize,
 fn render(w: &mut dyn Write, pull: &Pull, state: &State<'_>) -> Result<(), Error> {
     writeln!(w, "  #{} {}", pull.number, pull.title)
         .map_err(|error| Error::wrap("write status", error))?;
-    writeln!(w, "    next: {state}").map_err(|error| Error::wrap("write status", error))
+    writeln!(w, "    next: {state}").map_err(|error| Error::wrap("write status", error))?;
+    if let Some(review) = state.masked_review() {
+        writeln!(w, "    review: {review}").map_err(|error| Error::wrap("write status", error))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
