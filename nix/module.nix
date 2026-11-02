@@ -96,7 +96,7 @@ in
     settings = lib.mkOption {
       type = json.type;
       default = { };
-      description = "Configuration rendered to /etc/togi/config.json. backend_user defaults to the module-declared togi-trial system user; togi stays root while workloads run as that user with no supplementary groups.";
+      description = "Configuration rendered to /etc/togi/config.json. backend_user defaults to the module-declared togi-trial system user; togi stays root while workloads drop to that user's UID and primary GID inside each scope with no supplementary groups.";
     };
   };
 
@@ -332,7 +332,7 @@ in
               "systemd-pstore.service"
               "local-fs.target"
             ];
-            path = bootTools;
+            path = bootTools ++ [ pkgs.util-linux ];
             startLimitIntervalSec = 1800;
             startLimitBurst = 3;
             serviceConfig = {
