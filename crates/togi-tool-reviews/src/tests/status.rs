@@ -21,6 +21,8 @@ struct Fixture {
     /// The `isResolved` flags of each review thread page, in page order.
     thread_pages: Vec<Vec<bool>>,
     behind: u64,
+    /// The App whose review suite `pull` holds; GitHub hides its identity on the suite itself.
+    reviews_app: i64,
     /// The runs each REST page holds once GitHub applies `filter=latest`.
     rest_pages: Vec<Vec<Value>>,
     /// Earlier attempts that only `filter=all` returns.
@@ -35,10 +37,10 @@ impl Fixture {
                 "isDraft": false, "headRefOid": HEAD_SHA, "baseRefName": "main",
                 "baseRef": {"target": {"oid": BASE_SHA}}, "mergeable": "MERGEABLE",
                 "commits": {"nodes": [{"commit": {
-                    "checks": {"nodes": [{"app": {"databaseId": 1}, "runs": {
+                    "checks": {"nodes": [{"runs": {
                         "nodes": [{"name": "check", "status": "COMPLETED", "conclusion": "SUCCESS"}]
                     }}]},
-                    "reviews": {"nodes": [{"app": {"databaseId": 5_162_510}, "runs": {
+                    "reviews": {"nodes": [{"app": null, "runs": {
                         "nodes": [{"name": "review", "status": "COMPLETED", "conclusion": "SUCCESS"}]
                     }}]}
                 }}]}
@@ -46,6 +48,7 @@ impl Fixture {
             comments: Vec::new(),
             thread_pages: vec![vec![true]],
             behind: 0,
+            reviews_app: 5_162_510,
             rest_pages: Vec::new(),
             superseded: Vec::new(),
         }
@@ -84,9 +87,10 @@ impl Fixture {
         self
     }
 
+    /// The review check belongs to another App, so the server's `appId` filter returns it only for that
+    /// App's id.
     fn other_app(mut self) -> Self {
-        self.pull["commits"]["nodes"][0]["commit"]["reviews"]["nodes"][0]["app"]["databaseId"] =
-            json!(99);
+        self.reviews_app = 99;
         self
     }
 
@@ -170,11 +174,15 @@ impl Fixture {
                         assert!(query.contains("checkName: \"check\""));
                         assert!(query.contains("checkName: \"review\""));
                         assert!(args.iter().any(|a| a == "appId=5162510"));
+                        let mut pull = self.pull.clone();
+                        if !args.contains(&format!("appId={}", self.reviews_app)) {
+                            pull["commits"]["nodes"][0]["commit"]["reviews"]["nodes"] = json!([]);
+                        }
                         if args.iter().any(|a| a == "number=700") {
-                            json!([{"data": {"repository": {"pullRequest": self.pull}}}])
+                            json!([{"data": {"repository": {"pullRequest": pull}}}])
                         } else {
                             assert!(query.contains("states: OPEN"));
-                            json!([{"data": {"repository": {"pullRequests": {"nodes": [self.pull]}}}}])
+                            json!([{"data": {"repository": {"pullRequests": {"nodes": [pull]}}}}])
                         }
                     }
                 } else if args.iter().any(|a| a.contains("/comments")) {

@@ -16,7 +16,6 @@ const PULL_FIELDS: &str = r#"
     checks: checkSuites(first: 20) {
       pageInfo { hasNextPage }
       nodes {
-        app { databaseId }
         runs: checkRuns(first: 20, filterBy: {checkName: "check", checkType: LATEST}) {
           pageInfo { hasNextPage }
           nodes { name status conclusion }
@@ -26,7 +25,6 @@ const PULL_FIELDS: &str = r#"
     reviews: checkSuites(first: 20, filterBy: {appId: $appId}) {
       pageInfo { hasNextPage }
       nodes {
-        app { databaseId }
         runs: checkRuns(first: 20, filterBy: {checkName: "review", checkType: LATEST}) {
           pageInfo { hasNextPage }
           nodes { name status conclusion }
@@ -219,7 +217,6 @@ struct Commit {
 
 #[derive(Deserialize)]
 struct Suite {
-    app: Option<App>,
     runs: Connection<Run>,
 }
 
@@ -392,13 +389,14 @@ fn classify<'a>(programs: &mut dyn Programs, pull: &'a Pull) -> Result<State<'a>
         || checks.clone().any(Run::failed),
         |runs| runs.iter().any(|r| r.run.name == "check" && r.run.failed()),
     );
+    // The GraphQL `reviews` connection is filtered to robotogi's App by the server, which does not expose
+    // that App on its suites to every token; REST does, so the fallback checks it.
     let reviewed = complete.as_ref().map_or_else(
         || {
             commit
                 .reviews
                 .nodes
                 .iter()
-                .filter(|s| s.app.as_ref().is_some_and(|a| a.id == ROBOTOGI_APP_ID))
                 .flat_map(|s| &s.runs.nodes)
                 .any(Run::passed)
         },
