@@ -115,7 +115,7 @@ jobs:
       - name: nix build .#checks.x86_64-linux.${{ matrix.check }}
         env:
           CHECK: ${{ matrix.check }}
-        run: nix build --no-link --print-build-logs --print-out-paths ".#checks.x86_64-linux.$CHECK" > "$RUNNER_TEMP/out-paths"
+        run: nix build --fallback --no-link --print-build-logs --print-out-paths ".#checks.x86_64-linux.$CHECK" > "$RUNNER_TEMP/out-paths"
       - name: Repeat EFI lifecycle without cached results
         if: matrix.check == 'vm-efi' && github.event_name == 'workflow_dispatch' && inputs.efi_runs != '0'
         env:
@@ -125,7 +125,7 @@ jobs:
           nproc
           free -m
           df -h /nix/store
-          driver=$(nix build --no-link --print-build-logs --print-out-paths .#checks.x86_64-linux.vm-efi.driver)
+          driver=$(nix build --fallback --no-link --print-build-logs --print-out-paths .#checks.x86_64-linux.vm-efi.driver)
           for ((run = 1; run <= EFI_RUNS; run++)); do
             echo "::group::EFI lifecycle $run/$EFI_RUNS"
             date -u +'%Y-%m-%dT%H:%M:%SZ'
@@ -163,7 +163,7 @@ jobs:
           for check in "${checks[@]}"; do
             installables+=(".#checks.x86_64-linux.$check")
           done
-          nix build --no-link --print-build-logs --keep-going --print-out-paths "${installables[@]}" > "$RUNNER_TEMP/out-paths"
+          nix build --fallback --no-link --print-build-logs --keep-going --print-out-paths "${installables[@]}" > "$RUNNER_TEMP/out-paths"
       - name: Push the checks' outputs to Cachix
         if: env.CACHIX_AUTH_TOKEN != ''
         continue-on-error: true
