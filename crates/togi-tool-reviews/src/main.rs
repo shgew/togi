@@ -27,7 +27,7 @@ fn main() -> ExitCode {
         stderr: &mut stderr,
     };
     match dispatch(&mut t, &args) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(outcome) => ExitCode::from(outcome.exit_code()),
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "reviews: {}", error.render());
             ExitCode::FAILURE

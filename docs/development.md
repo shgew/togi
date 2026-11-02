@@ -13,7 +13,7 @@ Choose checks by the action:
 - For session, journal or recovery changes: also run `just recovery` before pushing. The full sweep reaches interruption boundaries the gate's bounded witnesses cannot cover.
 - For changes to `flake.nix` or `nix/`: also run `just check` before shipping; it builds every local-tier flake check supported by the host, including `package` and cargo-deny's advisory audit beyond the gate.
 - During review: `just push-fix` has the same refusals as `just ship` and requires an existing remote branch. It rebases onto the latest `origin/main` first; a conflict refuses and leaves the branch unchanged. It then formats, lints, builds `quality` and the local `nextest` check and publishes what it built, then pushes.
-- Before landing: `just land N` waits for `check` and `review` on the head and resolved review threads, then reports readiness. It fails at once when the pull request conflicts with its base, since GitHub runs no pull request CI until the conflict is resolved. Neither it nor the push recipes merges.
+- Before landing: `just land N` waits while only `check` remains and reports readiness by `just reviews status`; it stops at once on any other state, naming it. Neither it nor the push recipes merges.
 - For a full CI run on `main`: `just check-main` dispatches and follows it. Release dispatches the full check on the shipping head ([CI and release gates](#ci-and-release-gates)); a check whose published output is cached counts as passed.
 - For named hermetic checks: `just check-one <names>` builds exactly those flake checks for the host and streams their logs, including CI-tier checks when explicitly named.
 

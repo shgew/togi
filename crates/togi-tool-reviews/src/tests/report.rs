@@ -504,6 +504,8 @@ fn run_prints_the_track_record() {
         "owner={owner}",
         "-F",
         "name={repo}",
+        "-F",
+        "appId=5162510",
         "-f",
         &query,
     ];

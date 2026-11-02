@@ -11,7 +11,7 @@ use serde::Deserialize;
 use crate::parts::{Comment, ZERO_TIME, join_records};
 use crate::record::{Finding, OUTCOMES, PRIORITIES, RecordError, parse_record};
 use crate::text::nullable;
-use crate::{Error, Programs, ROBOTOGI_LOGIN};
+use crate::{Error, Programs, ROBOTOGI_APP_ID, ROBOTOGI_LOGIN};
 
 const NANOS_PER_MINUTE: i64 = 60_000_000_000;
 const NANOS_PER_HOUR: i64 = 60 * NANOS_PER_MINUTE;
@@ -19,14 +19,14 @@ const NANOS_PER_HOUR: i64 = 60 * NANOS_PER_MINUTE;
 /// The merged pull requests, with check suites filtered by robotogi's App ID, and each one's first page of
 /// comments. `gh --paginate` follows the first `pageInfo` in a response, the merged pull requests', which the
 /// query asks for before the nested comments'.
-pub const PULLS_QUERY: &str = r#"query($owner: String!, $name: String!, $endCursor: String) {
+pub const PULLS_QUERY: &str = r#"query($owner: String!, $name: String!, $appId: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: MERGED, first: 50, after: $endCursor) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number title createdAt
         commits(last: 1) { nodes { commit {
-          checkSuites(first: 10, filterBy: {appId: 5162510}) { nodes {
+          checkSuites(first: 10, filterBy: {appId: $appId}) { nodes {
             checkRuns(first: 10, filterBy: {checkName: "review"}) { nodes { conclusion } }
           } }
         } } }
@@ -243,6 +243,7 @@ struct Author {
 
 fn fetch_pulls(programs: &mut dyn Programs) -> Result<Vec<Pull>, Error> {
     let query = format!("query={PULLS_QUERY}");
+    let app = format!("appId={ROBOTOGI_APP_ID}");
     let out = programs
         .gh(&[
             "api",
@@ -253,6 +254,8 @@ fn fetch_pulls(programs: &mut dyn Programs) -> Result<Vec<Pull>, Error> {
             "owner={owner}",
             "-F",
             "name={repo}",
+            "-F",
+            &app,
             "-f",
             &query,
         ])

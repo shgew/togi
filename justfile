@@ -318,10 +318,11 @@ check-main: _dev-shell
     echo "check-main: no new workflow_dispatch check run appeared for $head" >&2
     exit 1
 
-# Print who may post on the repository, what waits on the owner and on the target machine, untriaged issues, work in progress, stale claims, ready work, overlaps and the open Ruleset issue
+# Print who may post on the repository, what waits on the owner and on the target machine, untriaged issues, work in progress, stale claims, ready work, overlaps, the open Ruleset issue and open pull requests with their next action
 [group('github')]
 board: _dev-shell
     nu --no-config-file tools/board/main.nu
+    cargo run --quiet --locked -p togi-tool-reviews -- status
 
 # Limit issues, comments, reactions and pull requests to collaborators for six months, GitHub's longest interaction limit
 [group('github')]
@@ -446,65 +447,36 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     fi
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready to merge; fail at once when it conflicts with its base; never merges
+# Wait while only check remains, report readiness on the board's terms and stop on any other state naming it; never merges
 [group('github')]
 land number: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
-    last=
+    waiting=0
     while true; do
-        while true; do
-            read -r state head mergeable < <(gh pr view "$1" --json state,headRefOid,mergeable --jq '"\(.state) \(.headRefOid) \(.mergeable)"')
-            if [[ "$state" != OPEN ]]; then
-                echo "land: #$1 is $state" >&2
-                exit 1
-            fi
-            if [[ "$mergeable" == CONFLICTING ]]; then
-                echo "land: #$1 conflicts with its base; GitHub runs no pull request CI until it is resolved" >&2
-                exit 1
-            fi
-            waiting=()
-            for name in check review; do
-                run=$(gh api "repos/{owner}/{repo}/commits/$head/check-runs?check_name=$name" --jq '.check_runs[0] // {} | "\(.status // "missing") \(.conclusion // "")"')
-                read -r status conclusion <<<"$run"
-                if [[ "$status" != completed ]]; then
-                    waiting+=("$name $status")
-                elif [[ "$conclusion" != success ]]; then
-                    echo "land: #$1 $name concluded $conclusion on $head" >&2
-                    exit 1
+        rc=0
+        status=$(cargo run --quiet --locked -p togi-tool-reviews -- status "$1") || rc=$?
+        case "$rc" in
+            0)
+                printf 'land: #%s is ready to merge:\n%s\n' "$1" "$status"
+                exit 0
+                ;;
+            3)
+                if [[ "$waiting" == 0 ]]; then
+                    echo "land: #$1 waiting on check"
+                    waiting=1
                 fi
-            done
-            if ((${#waiting[@]} == 0)); then
-                break
-            fi
-            now="$head: ${waiting[*]}"
-            if [[ "$now" != "$last" ]]; then
-                echo "land: #$1 waiting on $now"
-                last=$now
-            fi
-            sleep 30
-        done
-        unresolved=$(gh api graphql --paginate -F number="$1" -f query='query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100, after: $endCursor) { nodes { isResolved comments(first: 1) { nodes { url } } } pageInfo { hasNextPage endCursor } } } } }' -F owner='{owner}' -F repo='{repo}' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | .comments.nodes[0].url')
-        if [[ -n "$unresolved" ]]; then
-            echo "land: #$1 has unresolved review threads:" >&2
-            echo "$unresolved" >&2
-            exit 1
-        fi
-        read -r state current mergeable < <(gh pr view "$1" --json state,headRefOid,mergeable --jq '"\(.state) \(.headRefOid) \(.mergeable)"')
-        if [[ "$state" != OPEN ]]; then
-            echo "land: #$1 is $state" >&2
-            exit 1
-        fi
-        if [[ "$mergeable" == CONFLICTING ]]; then
-            echo "land: #$1 conflicts with its base; GitHub runs no pull request CI until it is resolved" >&2
-            exit 1
-        fi
-        if [[ "$current" == "$head" ]]; then
-            break
-        fi
-        echo "land: #$1 head moved from $head to $current"
+                sleep 30
+                ;;
+            4)
+                printf '%s\n' "$status" >&2
+                exit 1
+                ;;
+            *)
+                exit "$rc"
+                ;;
+        esac
     done
-    echo "land: #$1 is ready to merge: check and review passed on $head and every review thread is resolved"
 
 # Run GitHub commands as robotogi
 [group('github')]
@@ -519,7 +491,7 @@ as-bot +cmd: _dev-shell
     token=$(gh-token generate --app-id 5162510 --key "${ROBOTOGI_KEY_FILE:?ROBOTOGI_KEY_FILE must name the robotogi private key file}" --token-only)
     GH_TOKEN=$token exec "$@"
 
-# Print the review track record of merged pull requests; subcommands snapshot, render and publish run a review's mechanical steps (docs/review-record.md)
+# Print merged pull requests' review track record; status lists open pull requests' next actions, and snapshot, render and publish run a review's mechanical steps (docs/review-record.md)
 [group('github')]
 reviews *args: _dev-shell
     cargo run --quiet --locked -p togi-tool-reviews -- "$@"
