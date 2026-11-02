@@ -61,6 +61,7 @@
        "number": 503,
        "title": "Split the frame renderer",
        "body": "## Problem\n\nTouches: `internal/watch`, `docs/spec/runtime.md`\n",
+       "comments": {"nodes": [{"createdAt": "2026-10-06T10:00:00Z"}]},
        "isPinned": false,
        "labels": {
         "nodes": [
@@ -351,6 +352,7 @@
        "number": 512,
        "title": "Keep punctuation out of reasons",
        "body": "Plan below.\r\nTouches: `internal/journal`, `internal/tuner/hunt.go`\r\n",
+       "comments": {"nodes": [{"createdAt": "2026-10-06T10:00:00Z"}]},
        "isPinned": false,
        "labels": {
         "nodes": [
@@ -412,6 +414,7 @@
        "number": 514,
        "title": "Shade the idle cores",
        "body": "Touches: `./internal/tuner/`",
+       "comments": {"nodes": [{"createdAt": "2026-10-06T10:00:00Z"}]},
        "isPinned": false,
        "labels": {
         "nodes": [
@@ -574,6 +577,30 @@
         "total": 0,
         "completed": 0
        }
+      },
+      {
+       "number": 519,
+       "title": "Resume the dashboard layout",
+       "body": "Touches: internal/watch",
+       "labels": {"nodes": [{"name": "feature"}, {"name": "P2"}]},
+       "assignees": {"nodes": [{"login": "shgew"}]},
+       "comments": {"nodes": [{"createdAt": "2026-10-04T09:00:00Z"}]},
+       "parent": {"number": 502, "title": "Block: dashboard"}
+      },
+      {
+       "number": 520,
+       "title": "Choose the simulator output",
+       "labels": {"nodes": [{"name": "needs-decision"}]},
+       "assignees": {"nodes": [{"login": "shgew"}]},
+       "comments": {"nodes": [{"createdAt": "2026-10-01T12:00:00Z"}]}
+      },
+      {
+       "number": 521,
+       "title": "Wait for dashboard column names",
+       "labels": {"nodes": [{"name": "feature"}, {"name": "P2"}]},
+       "assignees": {"nodes": [{"login": "shgew"}]},
+       "comments": {"nodes": [{"createdAt": "2026-10-01T12:00:00Z"}]},
+       "blockedBy": {"nodes": [{"number": 507, "state": "OPEN"}]}
       }
      ]
     }
