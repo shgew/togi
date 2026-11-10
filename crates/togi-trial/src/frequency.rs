@@ -56,7 +56,7 @@ impl Error {
     pub(crate) fn journal_failed(&self) -> bool {
         self.source
             .get_ref()
-            .is_some_and(|source| source.is::<journal::Failure>())
+            .is_some_and(<dyn std::error::Error + Send + Sync>::is::<journal::Failure>)
     }
 }
 
