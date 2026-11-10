@@ -234,6 +234,45 @@ fn startup_readback_resolves_only_a_cited_same_boot_smu_intent(
     assert_eq!(incremental, state);
 }
 
+#[test_case::test_case("boot-a", &[2], true, false; "same boot observation")]
+#[test_case::test_case("boot-b", &[2], true, false; "later boot observation")]
+#[test_case::test_case("boot-b", &[], true, true; "uncited observation")]
+#[test_case::test_case("boot-b", &[2], false, true; "partial observation")]
+fn day_start_retires_only_cited_intents_with_complete_readback(
+    boot: &str,
+    causes: &[u64],
+    complete: bool,
+    still_open: bool,
+) {
+    let Payload::DayBootStart(mut observed) = sample(EventKind::DayBootStart) else {
+        unreachable!()
+    };
+    observed.offsets = if complete {
+        [
+            (core(0), togi_machine::ObservedOffset(0)),
+            (core(1), togi_machine::ObservedOffset(-5)),
+        ]
+        .into_iter()
+        .collect()
+    } else {
+        [(core(0), togi_machine::ObservedOffset(0))]
+            .into_iter()
+            .collect()
+    };
+    let events = [
+        start(),
+        smu_intent(2, "boot-a"),
+        at(3, boot, 2, causes, observed.into()),
+    ];
+    let state = replay(&events).unwrap();
+    assert_eq!(state.in_flight().is_some(), still_open);
+    let mut incremental = State::default();
+    for event in &events {
+        incremental.apply(event).unwrap();
+    }
+    assert_eq!(incremental, state);
+}
+
 #[test]
 fn trial_end_closes_only_its_own_trial() {
     let state = replay(&[
