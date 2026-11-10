@@ -814,7 +814,7 @@ fn start_failure(
 #[test]
 fn all_threads_start_budgets_readiness_for_each_logical_cpu_instance() {
     let timing = fast();
-    let delay = timing.readiness() - secs(1);
+    let delay = timing.readiness().checked_sub(secs(1)).unwrap();
     let spec = super::harness::all_threads_spec(0, 0, secs(3));
     let total_readiness = delay * u32::try_from(spec.roles.len()).unwrap();
     assert!(total_readiness > timing.start_bound(u32::try_from(spec.cores.len()).unwrap()));
