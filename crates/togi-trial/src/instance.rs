@@ -380,6 +380,10 @@ fn report(
     error: &WatchError,
 ) -> bool {
     let observation = match error {
+        WatchError::Missing => Observation::SamplingLoss {
+            instance: index,
+            what: error.to_string(),
+        },
         WatchError::LineTooLong => Observation::LineTooLong {
             instance: index,
             stream: Stream::Watched,

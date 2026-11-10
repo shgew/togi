@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-/// The stall rule: over a window of unsuspended time, CPU time must advance by at least half of
-/// the allowed CPUs times the window, after a startup grace. Equality is healthy.
+/// Liveness only, never verified work: over a window of unsuspended time, CPU time must advance
+/// by at least half of the allowed CPUs times the window, after a startup grace. Equality is healthy.
 #[derive(Debug)]
 pub(crate) struct Stall {
     grace: Duration,

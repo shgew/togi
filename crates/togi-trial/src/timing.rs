@@ -41,13 +41,13 @@ impl Default for Timing {
 }
 
 impl Timing {
-    /// How long one launcher gets to enter its scope before R6 stops it anyway.
+    /// How long one launcher gets to enter its scope before readiness is missing.
     pub(crate) fn readiness(&self) -> Duration {
         self.stall_grace.min(READINESS_LIMIT)
     }
 
     /// The most the runtime thread may need to start `instances` instances: the file preparation,
-    /// each scope wait of an R6 start, then a rollback teardown if the start fails. Timing begins
+    /// each scope-readiness wait, then a rollback teardown if the start fails. Timing begins
     /// after it.
     pub(crate) fn start_bound(&self, instances: u32) -> Duration {
         self.prepare + self.readiness() * instances + self.teardown + self.margin

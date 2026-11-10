@@ -115,6 +115,8 @@ fn r6_waits_for_the_scope_before_the_initial_stop() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
+            rig.fake
+                .on_launch(super::harness::printing("verified self-test\n"));
             rig.fake.set_ready_default(false);
             let helper = {
                 let fake = rig.fake.clone();
