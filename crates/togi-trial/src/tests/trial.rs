@@ -365,6 +365,25 @@ fn a_disappearing_process_is_not_a_sampling_loss() {
 }
 
 #[test]
+fn a_sampling_read_cut_at_its_tick_deadline_is_not_a_sampling_loss() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig();
+            let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
+            rig.fake.hang_threads();
+            // The tick at 1 s waits for its thread read until 2 s; the read's owner returns first.
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            rig.fake.release_threads();
+            let run = finish(&handle).await;
+            assert_eq!(run.finished.result.inconclusive, None);
+            assert_eq!(run.finished.result.ran, secs(5));
+            assert!(run.finished.teardown.is_ok());
+        })
+        .await;
+    });
+}
+
+#[test]
 fn a_partial_thread_listing_still_proves_an_escape_despite_other_failures() {
     crate::testing::runtime(true).block_on(async move {
         local(async {

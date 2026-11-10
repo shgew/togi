@@ -1141,7 +1141,9 @@ impl<O: Os> Supervisor<O> {
         stop.then_some(End::Evidence)
     }
 
-    /// Reads the required observations of one ready instance: its threads and its CPU time.
+    /// Reads the required observations of one ready instance: its threads and its CPU time. A
+    /// read cut at `deadline` is no part of the trial, like a sample the tick never starts; a read
+    /// that stays blocked fails the next tick's observations as stuck.
     async fn sample(
         env: &Env<O>,
         instance: &mut LiveInstance<O>,
@@ -1184,7 +1186,7 @@ impl<O: Os> Supervisor<O> {
                     });
                 }
             }
-            Err(ProcError::Gone) => {}
+            Err(ProcError::Gone | ProcError::Deadline) => {}
             Err(error) => {
                 judge.observe(Observation::SamplingLoss {
                     instance: index,
@@ -1221,7 +1223,7 @@ impl<O: Os> Supervisor<O> {
                     });
                 }
             }
-            Err(ProcError::Gone) => {}
+            Err(ProcError::Gone | ProcError::Deadline) => {}
             Err(error) => {
                 judge.observe(Observation::SamplingLoss {
                     instance: index,

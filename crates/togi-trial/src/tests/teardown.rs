@@ -145,21 +145,16 @@ fn a_stalled_process_observation_cannot_delay_stop_or_authorize_restoration(
             // Enter the first sample, then stop halfway through its observation budget.
             tokio::time::sleep(Duration::from_millis(1500)).await;
             assert!(rig.fake.observations_finished().is_err());
-            if !unscoped {
-                // The verification scan must use only what remains of teardown's budget.
-                rig.fake.hang_scans();
-            }
             let begun = tokio::time::Instant::now();
             handle.commands.send(TrialCommand::Stop).unwrap();
             let run = finish(&handle).await;
+            // Teardown waits for the blocked owner, scoped or not, only until its one deadline.
             assert!(
-                begun.elapsed() <= secs(15) + Duration::from_millis(50),
+                begun.elapsed() >= secs(15)
+                    && begun.elapsed() <= secs(15) + Duration::from_millis(50),
                 "{:?}",
                 begun.elapsed()
             );
-            if !unscoped {
-                assert!(begun.elapsed() >= secs(15));
-            }
             let containment = run.finished.teardown.unwrap_err();
             assert!(
                 containment.failures().iter().any(|failure| {
@@ -204,6 +199,11 @@ fn a_timed_out_process_observation_withholds_the_proof_after_its_wait_has_ended(
             let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
             rig.fake.hang_threads();
             let run = finish(&handle).await;
+            // The read cut at the first tick is no evidence; the still-blocked owner fails the next.
+            assert_eq!(
+                run.finished.result.inconclusive.as_deref(),
+                Some("core 00 thread sampling lost: an earlier /proc scan is still blocked")
+            );
             let containment = run.finished.teardown.unwrap_err();
             assert!(matches!(
                 containment.failures().first(),
@@ -216,6 +216,41 @@ fn a_timed_out_process_observation_withholds_the_proof_after_its_wait_has_ended(
                     .iter()
                     .all(|call| matches!(call, Call::Confine(_)))
             );
+        })
+        .await;
+    });
+}
+
+#[test]
+fn an_abandoned_observation_whose_owner_returns_within_the_budget_lets_teardown_prove_the_stop() {
+    use crate::controller::{Call, Recording};
+    use crate::os::Os as _;
+    use crate::supervisor::TrialCommand;
+
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let controller = Arc::new(Recording::default());
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+                env.controller = controller.clone();
+            });
+            let handle = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
+            rig.fake.hang_threads();
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            assert!(rig.fake.observations_finished().is_err());
+            let begun = tokio::time::Instant::now();
+            let fake = rig.fake.clone();
+            tokio::task::spawn_local(async move {
+                tokio::time::sleep(secs(5)).await;
+                fake.release_threads();
+            });
+            handle.commands.send(TrialCommand::Stop).unwrap();
+            let run = finish(&handle).await;
+            let waited = begun.elapsed();
+            assert!(run.finished.teardown.is_ok(), "{:?}", run.finished.teardown);
+            // The proof waited for the blocked owner, inside the one teardown budget.
+            assert!(waited >= secs(5) && waited < secs(15), "{waited:?}");
+            assert!(rig.fake.process(0).reaped.get());
+            assert!(matches!(controller.calls().last(), Some(Call::Restore)));
         })
         .await;
     });

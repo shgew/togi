@@ -166,7 +166,7 @@ pub(crate) trait Os: 'static {
     ) -> Result<bool, ProcError>;
     async fn usage(&self, pid: u32, deadline: Instant) -> Result<Usage, ProcError>;
     async fn threads(&self, pid: u32, deadline: Instant) -> Result<Threads, ProcError>;
-    /// An abandoned observation permanently withholds cleanup proof, even if it later returns.
+    /// An abandoned observation withholds cleanup proof while its blocking owner is still running.
     fn observations_finished(&self) -> Result<(), ProcError>;
     /// Runs through `togi_command::run`; a timed-out call is an error even when it printed text.
     async fn systemd(

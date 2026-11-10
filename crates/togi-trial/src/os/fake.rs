@@ -267,7 +267,7 @@ struct Shared {
     hang_scans: Cell<bool>,
     scan_fault: Cell<Option<ScanFault>>,
     hang_threads: Cell<bool>,
-    observation_lost: Cell<bool>,
+    observer_blocked: Cell<bool>,
     signal_error_default: Cell<Option<SignalErrorKind>>,
     fail_once: Rc<RefCell<Vec<(GroupSignal, SignalErrorKind)>>>,
     recovered: RefCell<Vec<(ScopeProcess, Recovered)>>,
@@ -360,7 +360,7 @@ impl Fake {
                 hang_scans: Cell::new(false),
                 scan_fault: Cell::new(None),
                 hang_threads: Cell::new(false),
-                observation_lost: Cell::new(false),
+                observer_blocked: Cell::new(false),
                 signal_error_default: Cell::new(None),
                 fail_once: Rc::default(),
                 recovered: RefCell::default(),
@@ -400,9 +400,17 @@ impl Fake {
         *self.shared.threads_hook.borrow_mut() = Some(Box::new(hook));
     }
 
-    /// A required thread observation never reports, including after the caller stops awaiting it.
+    /// A required thread observation blocks its owner, which stays blocked after the caller stops
+    /// awaiting it, until `release_threads`; like the real scan owner, every later thread
+    /// observation and scope scan meanwhile fails at once as stuck.
     pub(crate) fn hang_threads(&self) {
         self.shared.hang_threads.set(true);
+    }
+
+    /// Every blocked thread observation's owner returns; later observations answer at once.
+    pub(crate) fn release_threads(&self) {
+        self.shared.hang_threads.set(false);
+        self.shared.observer_blocked.set(false);
     }
 
     /// Every signal to a new process fails like this.
@@ -661,9 +669,12 @@ impl Os for Fake {
     }
 
     async fn threads(&self, pid: u32, deadline: Instant) -> Result<Threads, ProcError> {
+        if self.shared.observer_blocked.get() {
+            return Err(ProcError::Stuck);
+        }
         if self.shared.hang_threads.get() {
-            // Like the real blocking owner: abandoning the wait cannot confirm cleanup later.
-            self.shared.observation_lost.set(true);
+            // Like the real blocking owner: it outlives an abandoned wait until it returns.
+            self.shared.observer_blocked.set(true);
             sleep_until(deadline).await;
             return Err(ProcError::Deadline);
         }
@@ -684,7 +695,7 @@ impl Os for Fake {
     }
 
     fn observations_finished(&self) -> Result<(), ProcError> {
-        if self.shared.observation_lost.get() {
+        if self.shared.observer_blocked.get() {
             Err(ProcError::Abandoned)
         } else {
             Ok(())
@@ -755,6 +766,9 @@ impl Os for Fake {
         if let Some(hook) = self.shared.scan_hook.borrow_mut().as_mut() {
             hook();
         }
+        if self.shared.observer_blocked.get() {
+            return Err(ProcError::Stuck);
+        }
         match self.shared.scan_fault.get() {
             Some(ScanFault::Fail) => return Err(lost_read()),
             Some(ScanFault::Late) => {
@@ -798,6 +812,9 @@ impl Os for Fake {
         captured: &[ScopeProcess],
         deadline: Instant,
     ) -> Result<usize, ProcError> {
+        if self.shared.observer_blocked.get() {
+            return Err(ProcError::Stuck);
+        }
         if self.shared.fail_alive.get() {
             return Err(lost_read());
         }

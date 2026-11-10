@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::io;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use rustix::process::{
     Pid, PidfdFlags, Signal, WaitId, WaitIdOptions, kill_process_group, pidfd_open, waitid,
@@ -255,7 +255,7 @@ impl Os for Linux {
     }
 
     fn observations_finished(&self) -> Result<(), ProcError> {
-        if self.scans.lost.load(Ordering::Acquire) {
+        if self.scans.abandoned.load(Ordering::Acquire) > 0 {
             Err(ProcError::Abandoned)
         } else {
             Ok(())
@@ -316,7 +316,6 @@ const DONE: u8 = 2;
 #[derive(Default)]
 struct Scans {
     abandoned: AtomicUsize,
-    lost: AtomicBool,
 }
 
 /// Marks one scan finished, whether its closure returned, panicked or was dropped unrun, and
@@ -347,14 +346,12 @@ impl Drop for Awaiting<'_> {
             return;
         }
         self.scans.abandoned.fetch_add(1, Ordering::AcqRel);
-        match self
+        if self
             .state
             .compare_exchange(RUNNING, ABANDONED, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
         {
-            Ok(_) => self.scans.lost.store(true, Ordering::Release),
-            Err(_) => {
-                self.scans.abandoned.fetch_sub(1, Ordering::AcqRel);
-            }
+            self.scans.abandoned.fetch_sub(1, Ordering::AcqRel);
         }
     }
 }
@@ -371,7 +368,6 @@ impl Scans {
         scan: impl FnOnce() -> Result<T, ProcError> + Send + 'static,
     ) -> Result<T, ProcError> {
         if Instant::now() >= deadline {
-            self.lost.store(true, Ordering::Release);
             return Err(ProcError::Deadline);
         }
         if self.abandoned.load(Ordering::Acquire) > 0 {
@@ -395,12 +391,9 @@ impl Scans {
             Ok(Err(_)) => Err(ProcError::ScanLost),
             Err(_) => Err(ProcError::Deadline),
         };
+        // A result polled after the deadline is no evidence.
         if Instant::now() > deadline {
-            self.lost.store(true, Ordering::Release);
             return Err(ProcError::Deadline);
-        }
-        if matches!(result, Err(ProcError::Deadline | ProcError::ScanLost)) {
-            self.lost.store(true, Ordering::Release);
         }
         result
     }
@@ -801,10 +794,26 @@ mod tests {
             assert!(matches!(observed, Err(ProcError::Deadline)));
             assert!(matches!(loss, Err(ProcError::Abandoned)));
             assert!(matches!(replacement, Err(ProcError::Stuck)));
-            assert!(
-                matches!(os.observations_finished(), Err(ProcError::Abandoned)),
-                "a late result cannot retroactively authorize restoration"
-            );
+            // The late result was discarded with its wait; only a running owner withholds proof.
+            assert!(os.observations_finished().is_ok());
+        });
+    }
+
+    #[test]
+    fn real_process_an_observation_that_never_started_or_has_finished_withholds_nothing() {
+        let memory = Arc::new(togi_journal::fs::MemFs::new());
+        let os = Linux::new(
+            Proc::with_inputs("/proc".into(), 100, crate::procfs::Inputs::memory(memory)),
+            false,
+        );
+        current_thread().block_on(async {
+            let expired = os.usage(10, Instant::now()).await;
+            assert!(matches!(expired, Err(ProcError::Deadline)));
+            assert!(os.observations_finished().is_ok());
+            let _ = os.threads(10, Instant::now() + secs(10)).await;
+            assert!(os.observations_finished().is_ok());
+            let next = os.usage(10, Instant::now() + secs(10)).await;
+            assert!(!matches!(next, Err(ProcError::Stuck | ProcError::Deadline)));
         });
     }
 }
