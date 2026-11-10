@@ -17,6 +17,19 @@ fn replay(events: &[Event]) -> Result<State, FoldError> {
     State::replay(events)
 }
 
+#[test_case::test_case(EventKind::FrequencyIntent; "intent")]
+#[test_case::test_case(EventKind::FrequencyReadback; "readback")]
+#[test_case::test_case(EventKind::FrequencyDiscarded; "discarded")]
+fn frequency_audit_neither_owns_recovery_intent_nor_resolves_smu_intent(kind: EventKind) {
+    let events = [start(), smu_intent(2, "boot-a")];
+    let mut expected = replay(&events).unwrap();
+    let mut observed = expected.clone();
+    let event = at(3, "boot-a", 2, &[2], sample(kind));
+    observed.apply(&event).unwrap();
+    expected.last_seq = Some(event.seq);
+    assert_eq!(observed, expected);
+}
+
 #[test]
 fn start_records_the_session_and_sorted_cores() {
     let state = replay(&[start()]).unwrap();

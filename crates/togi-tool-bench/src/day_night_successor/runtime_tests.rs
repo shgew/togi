@@ -4,7 +4,8 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use togi_machine::{
-    CancellationToken, CoreId, Machine, PerCore, Reporter, Sample, Signal, TargetOffset,
+    CancellationToken, CoreId, FrequencyEvent, FrequencyJournal, Machine, PerCore, Reporter,
+    Sample, Signal, TargetOffset,
 };
 use togi_simrun::day_night::successor::{
     self, AllowanceLedger, Classification, FinishReason, FirmwareRestoration, LearningEvent,
@@ -72,6 +73,19 @@ impl Reporter for Silent {
     fn progress(&mut self, _detail: &str) {}
     fn sample(&mut self, _sample: Sample) {}
     fn signal(&mut self, _core: CoreId, _signal: Signal, _pid: Option<u32>, _detail: &str) {}
+}
+
+/// Acknowledges by keeping every frequency event it is given.
+#[derive(Default)]
+struct Journal {
+    events: Vec<FrequencyEvent>,
+}
+
+impl FrequencyJournal for Journal {
+    fn record(&mut self, event: FrequencyEvent) -> std::io::Result<()> {
+        self.events.push(event);
+        Ok(())
+    }
 }
 
 struct Witness {
@@ -181,13 +195,18 @@ impl Scripted {
             let actual_profile = readback(machine)?;
             let context = machine.host.bios_context()?.bios_version;
             let cancel = CancellationToken::new();
+            let mut journal = Journal::default();
             let stopped = machine.trials.sweep(&cancel)?.stopped;
             let mut running = machine
                 .trials
-                .start(&cancel, spec, stopped)
+                .start(&cancel, spec, stopped, &mut journal)
                 .map_err(|partial| partial.error)?;
             let result = running.wait(&cancel, &mut Silent);
-            let _stopped = running.stop()?;
+            let _stopped = running.stop(&mut journal)?;
+            assert!(
+                journal.events.is_empty(),
+                "the simulated machine writes no frequency limit"
+            );
             machine.trials.ended(&id)?;
             let result = result.map_err(|partial| partial.error)?;
             let finished = day(machine)?;

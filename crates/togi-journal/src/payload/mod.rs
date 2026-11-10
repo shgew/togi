@@ -15,6 +15,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use togi_machine::CoreId;
+pub use togi_machine::{FrequencyDiscarded, FrequencyIntent, FrequencyReadback};
 
 pub use config::{
     ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
@@ -145,6 +146,9 @@ payloads! {
     SmuWrite(SmuWriteRecord) = "smu.write",
     SmuReadback(SmuReadback) = "smu.readback",
     SmuError(SmuError) = "smu.error",
+    FrequencyIntent(FrequencyIntent) = "frequency.intent",
+    FrequencyReadback(FrequencyReadback) = "frequency.readback",
+    FrequencyDiscarded(FrequencyDiscarded) = "frequency.discarded",
     ProfileApplied(ProfileApplied) = "profile.applied",
     ProfileChange(ProfileChange) = "profile.change",
     ProfileRestored(ProfileRestored) = "profile.restored",
@@ -245,6 +249,9 @@ impl Payload {
             | Self::SessionCarried(_)
             | Self::ConfigLoaded(_)
             | Self::PreflightCheck(_)
+            | Self::FrequencyIntent(_)
+            | Self::FrequencyReadback(_)
+            | Self::FrequencyDiscarded(_)
             | Self::SmuIntent(_)
             | Self::SmuWrite(_)
             | Self::SmuReadback(_)
@@ -371,6 +378,9 @@ impl Payload {
             | Self::SessionCarried(_)
             | Self::ConfigLoaded(_)
             | Self::PreflightCheck(_)
+            | Self::FrequencyIntent(_)
+            | Self::FrequencyReadback(_)
+            | Self::FrequencyDiscarded(_)
             | Self::ProfileApplied(_)
             | Self::ProfileChange(_)
             | Self::ProfileRestored(_)
@@ -484,6 +494,9 @@ impl EventKind {
             | Self::SessionCarried
             | Self::ConfigLoaded
             | Self::PreflightCheck
+            | Self::FrequencyIntent
+            | Self::FrequencyReadback
+            | Self::FrequencyDiscarded
             | Self::ProfileApplied
             | Self::ProfileChange
             | Self::ProfileRestored

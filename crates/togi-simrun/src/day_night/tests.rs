@@ -2,13 +2,13 @@ use std::time::Duration;
 
 use test_case::test_case;
 use togi_machine::{
-    CancellationToken, CoreId, Machine, Partial, PerCore, Reporter, Running, Sample, SampleError,
-    Signal, Started, Stopped, Swept, TargetOffset, TrialConditions, TrialFailure, TrialResult,
-    TrialSpec, Trials,
+    CancellationToken, CoreId, FrequencyJournal, Machine, Partial, PerCore, Reporter, Running,
+    Sample, SampleError, Signal, Started, Stopped, Swept, TargetOffset, TrialConditions,
+    TrialFailure, TrialResult, TrialSpec, Trials,
 };
 use togi_sim::day_night::{Scenario, TrialClass, TruthState};
 
-use super::machine::Runtime;
+use super::machine::{Journal, Runtime};
 use super::{
     CalendarConfig, DayClassification, DayObservation, EndAnswer, FixedMargin, Night, Policy,
     PolicyKind, RunError, run, run_with_policy,
@@ -259,17 +259,18 @@ impl Policy for NightProbe {
         }
         self.spec = Some(spec.clone());
         let cancel = CancellationToken::new();
+        let mut journal = Journal::default();
         let stopped = machine.trials.sweep(&cancel)?.stopped;
         let mut running = machine
             .trials
-            .start(&cancel, spec.clone(), stopped)
+            .start(&cancel, spec.clone(), stopped, &mut journal)
             .map_err(|partial| partial.error)?;
         self.result = Some(
             running
                 .wait(&cancel, &mut Silent)
                 .map_err(|partial| partial.error)?,
         );
-        let _stopped = running.stop()?;
+        let _stopped = running.stop(&mut journal)?;
         machine.trials.ended(&spec.id)?;
         machine.smu.set_all_offsets(TargetOffset::ZERO)?;
         Ok(())
@@ -471,11 +472,19 @@ impl Trials for EdgeTrials {
             stopped: confirmed(),
         })
     }
+    fn recover_frequency(
+        &mut self,
+        _stopped: &Stopped,
+        _journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, togi_machine::Error> {
+        Ok(String::new())
+    }
     fn start(
         &mut self,
         _cancel: &CancellationToken,
         spec: TrialSpec,
         _ready: Stopped,
+        _journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         let failure = spec
             .cores
@@ -519,7 +528,10 @@ impl Running for EdgeRun {
     ) -> Result<TrialResult, Partial<TrialResult>> {
         Ok(self.0.clone())
     }
-    fn stop(self: Box<Self>) -> Result<Stopped, togi_machine::Error> {
+    fn stop(
+        self: Box<Self>,
+        _journal: &mut dyn FrequencyJournal,
+    ) -> Result<Stopped, togi_machine::Error> {
         Ok(confirmed())
     }
 }

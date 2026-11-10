@@ -848,6 +848,9 @@ impl<'events> Names<'events> {
             | Payload::TaskStart(_)
             | Payload::DayImported(_)
             | Payload::StockAttested(_)
+            | Payload::FrequencyIntent(_)
+            | Payload::FrequencyReadback(_)
+            | Payload::FrequencyDiscarded(_)
             | Payload::DayPause(_) => return None,
         })
     }

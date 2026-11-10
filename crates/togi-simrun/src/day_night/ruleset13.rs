@@ -27,6 +27,7 @@ use togi_tuner::policy::{
     Action, Contents, DayQuery, EndReason, NightQuery, Params, PolicyPayload, State, TrialPlan,
 };
 
+use super::machine::Journal;
 use super::{DayClassification, DayObservation, EndAnswer, Night, Policy, RunError};
 
 mod witnesses;
@@ -486,12 +487,13 @@ impl Ruleset13 {
             },
         };
         let cancel = CancellationToken::new();
+        let mut journal = Journal::default();
         let stopped = machine.trials.sweep(&cancel)?.stopped;
         let window_start_ns = u64::try_from(machine.clock.monotonic()?.as_nanos())
             .map_err(|_| RunError::Calendar("monotonic nanoseconds"))?;
         let mut running = machine
             .trials
-            .start(&cancel, spec, stopped)
+            .start(&cancel, spec, stopped, &mut journal)
             .map_err(|partial| partial.error)?;
         let started = running.started();
         let scheduled = started.schedule.is_some();
@@ -522,13 +524,15 @@ impl Ruleset13 {
             &[intent],
         )?;
         if retain_start {
-            let _stopped = running.stop()?;
+            let _stopped = running.stop(&mut journal)?;
             machine.trials.ended(id.as_str())?;
+            journal.assert_unwritten();
             return Ok(Ended::Retained);
         }
         let waited = running.wait(&cancel, &mut Silent);
-        let _stopped = running.stop()?;
+        let _stopped = running.stop(&mut journal)?;
         machine.trials.ended(id.as_str())?;
+        journal.assert_unwritten();
         // The calendar's operator ends the night by signal; the runner returns what ran until then.
         let (result, ended) = match waited {
             Ok(result) => (result, Ended::Completed),

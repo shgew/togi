@@ -17,6 +17,36 @@ fn every_kind_has_a_message() {
     }
 }
 
+#[test_case(togi_machine::FrequencyAction::Cap, 800_123, "cap"; "cap")]
+#[test_case(togi_machine::FrequencyAction::Restore, 5_700_123, "restore"; "restore")]
+fn frequency_messages_keep_exact_khz_and_action(
+    action: togi_machine::FrequencyAction,
+    requested: u32,
+    name: &str,
+) {
+    let mut intent = super::fixtures::frequency_intent();
+    intent.action = action;
+    intent.original_khz = 5_700_123;
+    intent.cap_khz = 800_123;
+    assert_eq!(
+        Payload::from(intent.clone()).message(),
+        format!(
+            "controller frequency {name} policy3 (CPUs 3, 19): scaling_max_freq {requested} kHz, original 5700123 kHz, cap 800123 kHz"
+        )
+    );
+    let observed = Payload::from(FrequencyReadback {
+        intent,
+        observed_khz: 799_999,
+    })
+    .message();
+    assert_eq!(
+        observed,
+        format!(
+            "controller frequency {name} policy3 (CPUs 3, 19): scaling_max_freq {requested} kHz, original 5700123 kHz, cap 800123 kHz; observed scaling_max_freq 799999 kHz"
+        )
+    );
+}
+
 #[test]
 fn spec_quoted_texts() {
     let Payload::TunerDecision(mut decision) = sample(EventKind::TunerDecision) else {

@@ -151,6 +151,9 @@ impl HiddenClosing {
             | EventKind::SessionCarried
             | EventKind::ConfigLoaded
             | EventKind::PreflightCheck
+            | EventKind::FrequencyIntent
+            | EventKind::FrequencyReadback
+            | EventKind::FrequencyDiscarded
             | EventKind::SmuIntent
             | EventKind::SmuWrite
             | EventKind::SmuReadback

@@ -549,6 +549,9 @@ struct Record {
 }
 
 impl togi_machine::Reporter for Record {
+    fn frequency(&mut self, _: togi_machine::FrequencyEvent) -> std::io::Result<()> {
+        Ok(())
+    }
     fn progress(&mut self, _: &str) {}
     fn sample(&mut self, _: togi_machine::Sample) {}
     fn signal(&mut self, _: togi_machine::CoreId, signal: Signal, _: Option<u32>, detail: &str) {
@@ -587,7 +590,12 @@ impl Outcome {
 fn run(runner: &mut Runner, spec: togi_machine::TrialSpec) -> Outcome {
     let started = Instant::now();
     let mut trial = runner
-        .start(&CancellationToken::new(), spec, nothing_runs())
+        .start(
+            &CancellationToken::new(),
+            spec,
+            nothing_runs(),
+            &mut crate::testing::Frequencies::default(),
+        )
         .map_err(|partial| partial.error)
         .unwrap();
     let mut record = Record::default();
@@ -595,7 +603,7 @@ fn run(runner: &mut Runner, spec: togi_machine::TrialSpec) -> Outcome {
         Ok(result) => (result, None),
         Err(Partial { value, error }) => (value, Some(error)),
     };
-    let stopped = trial.stop();
+    let stopped = trial.stop(&mut crate::testing::Frequencies::default());
     Outcome {
         result,
         waited,
@@ -764,6 +772,7 @@ fn real_process_r6_workers_are_stopped_before_the_trial_starts_to_count() {
             &CancellationToken::new(),
             spec(Regime::R6, &[0, 1], Duration::from_secs(2)),
             nothing_runs(),
+            &mut crate::testing::Frequencies::default(),
         )
         .map_err(|partial| partial.error)
         .unwrap();
@@ -792,7 +801,11 @@ fn real_process_r6_workers_are_stopped_before_the_trial_starts_to_count() {
         "two initial stops and the one burst stop"
     );
     assert_eq!(result.conts, 1);
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 fn published_holder(file: &Path) -> Escaped {
@@ -823,13 +836,14 @@ fn real_process_a_detached_pipe_holder_makes_the_drain_unconfirmed_and_the_stop_
             &CancellationToken::new(),
             spec(Regime::R1, &[0], Duration::from_millis(1500)),
             nothing_runs(),
+            &mut crate::testing::Frequencies::default(),
         )
         .map_err(|partial| partial.error)
         .unwrap();
     let begun = Instant::now();
     let descendant = published_holder(&dir.path().join("trials/t1/work/descendant.pid"));
     let waited = trial.wait(&CancellationToken::new(), &mut Record::default());
-    let stopped = trial.stop();
+    let stopped = trial.stop(&mut crate::testing::Frequencies::default());
     let alive_after_the_stop = descendant.alive();
     descendant.kill();
     assert!(
@@ -917,7 +931,12 @@ fn real_process_cancelling_during_a_watched_flood_ends_supervision_and_the_teard
     };
     let mut flooding = runner_over(helper, false, flood_timing, dir.path(), linux);
     let mut trial = flooding
-        .start(&cancel, spec(Regime::R1, &[0], secs(30)), nothing_runs())
+        .start(
+            &cancel,
+            spec(Regime::R1, &[0], secs(30)),
+            nothing_runs(),
+            &mut crate::testing::Frequencies::default(),
+        )
         .map_err(|partial| partial.error)
         .unwrap();
     let begun = Instant::now();
@@ -960,7 +979,11 @@ fn real_process_cancelling_during_a_watched_flood_ends_supervision_and_the_teard
         [(Signal::ComputationError, "COMPUTE ERROR".to_owned())],
         "reported exactly once"
     );
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 fn relative_to_cwd(target: &Path) -> PathBuf {
@@ -1218,6 +1241,7 @@ fn real_process_a_failed_second_launch_keeps_its_cause_first_targets_both_scopes
         &CancellationToken::new(),
         spec(Regime::R7, &[0, 1], secs(60)),
         nothing_runs(),
+        &mut crate::testing::Frequencies::default(),
     );
     let returned = Instant::now();
     let Err(partial) = started else {

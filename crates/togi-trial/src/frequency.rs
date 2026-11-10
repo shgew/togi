@@ -19,7 +19,9 @@ use tokio::time::{Instant, sleep_until};
 use crate::samples::Durability;
 use crate::sweep::until_cancelled;
 
+mod journal;
 mod sysfs;
+pub(crate) use journal::{Journal, Message, Reply, Request};
 pub use sysfs::Sysfs;
 
 const PENDING: &str = "controller-frequency.pending.json";
@@ -49,6 +51,12 @@ pub struct Error {
 impl Error {
     fn new(operation: &'static str, source: io::Error) -> Self {
         Self { operation, source }
+    }
+
+    pub(crate) fn journal_failed(&self) -> bool {
+        self.source
+            .get_ref()
+            .is_some_and(<dyn std::error::Error + Send + Sync>::is::<journal::Failure>)
     }
 }
 
@@ -92,6 +100,18 @@ enum State {
     Restored,
 }
 
+impl Saved {
+    fn intent(&self, action: togi_machine::FrequencyAction) -> togi_machine::FrequencyIntent {
+        togi_machine::FrequencyIntent {
+            policy: self.policy,
+            related_cpus: self.related_cpus.clone(),
+            original_khz: self.original_khz,
+            cap_khz: self.cap_khz,
+            action,
+        }
+    }
+}
+
 /// The pending transaction is independent of the runner process and the trial directory.
 /// Memory fixtures use the same publication protocol without making durability syscalls.
 pub(crate) struct Limits {
@@ -129,8 +149,9 @@ impl Limits {
         workers: &[CpuId],
         cancel: &CancellationToken,
         report: &mut Vec<String>,
+        journal: &Journal,
     ) -> Result<(), Error> {
-        self.apply(controller, workers, cancel, report)
+        self.apply(controller, workers, cancel, report, journal)
             .await
             .map_err(|source| Error::new("save and apply the cap", source))
     }
@@ -141,6 +162,7 @@ impl Limits {
         workers: &[CpuId],
         cancel: &CancellationToken,
         report: &mut Vec<String>,
+        journal: &Journal,
     ) -> io::Result<()> {
         if self.load()?.is_some() {
             return Err(invalid(
@@ -197,6 +219,11 @@ impl Limits {
                 "controller frequency intent: policy{} CPUs {:?}, saved scaling_max_freq {} kHz, cap {} kHz",
                 saved.policy.get(), saved.related_cpus, saved.original_khz, saved.cap_khz
             ));
+            journal
+                .record(togi_machine::FrequencyEvent::Intent(
+                    saved.intent(togi_machine::FrequencyAction::Cap),
+                ))
+                .await?;
             self.machine
                 .set_scaling_max_khz(saved.policy, saved.cap_khz)?;
         }
@@ -226,6 +253,14 @@ impl Limits {
                 policy.get(),
                 readback.last(cap),
             ));
+            journal
+                .record(togi_machine::FrequencyEvent::Readback(
+                    togi_machine::FrequencyReadback {
+                        intent: pending.policies[index].intent(togi_machine::FrequencyAction::Cap),
+                        observed_khz: readback.last(cap),
+                    },
+                ))
+                .await?;
             match readback {
                 Readback::Matched => {
                     pending.policies[index].state = State::Capped;
@@ -252,8 +287,9 @@ impl Limits {
         &self,
         cancel: &CancellationToken,
         report: &mut Vec<String>,
+        journal: &Journal,
     ) -> Result<(), Error> {
-        self.recover(cancel, report)
+        self.recover(cancel, report, journal)
             .await
             .map_err(|source| Error::new("restore saved limits", source))
     }
@@ -262,11 +298,20 @@ impl Limits {
         &self,
         cancel: &CancellationToken,
         report: &mut Vec<String>,
+        journal: &Journal,
     ) -> io::Result<()> {
         let Some(mut pending) = self.load()? else {
             return Ok(());
         };
         if pending.boot != self.machine.boot_id()? {
+            journal
+                .record(togi_machine::FrequencyEvent::Discarded(
+                    togi_machine::FrequencyDiscarded {
+                        boot: pending.boot.clone(),
+                        reason: "a reboot reinitializes cpufreq limits; saved values belong to a previous boot".to_owned(),
+                    },
+                ))
+                .await?;
             report.push("discarded obsolete controller frequency recovery intent from a previous boot; no frequency values restored".to_owned());
             return self.remove();
         }
@@ -275,11 +320,10 @@ impl Limits {
         let mut unrestored: Option<Unrestored> = None;
         // Every policy is written before any is read, so each gets the whole readback window
         // after its own write instead of what an earlier, slower policy left of it.
-        let mut outcomes: Vec<io::Result<()>> = pending
-            .policies
-            .iter()
-            .map(|saved| self.write_original(saved, &policies, report))
-            .collect();
+        let mut outcomes = Vec::with_capacity(total);
+        for saved in &pending.policies {
+            outcomes.push(self.write_original(saved, &policies, report, journal).await);
+        }
         let targets: Vec<(usize, FrequencyPolicyId, u32)> = pending
             .policies
             .iter()
@@ -302,6 +346,19 @@ impl Limits {
                         policy.get(),
                         readback.last(khz),
                     ));
+                    if let Err(error) = journal
+                        .record(togi_machine::FrequencyEvent::Readback(
+                            togi_machine::FrequencyReadback {
+                                intent: pending.policies[index]
+                                    .intent(togi_machine::FrequencyAction::Restore),
+                                observed_khz: readback.last(khz),
+                            },
+                        ))
+                        .await
+                    {
+                        outcomes[index] = Err(error);
+                        continue;
+                    }
                     match readback {
                         Readback::Matched => Ok(()),
                         Readback::Unconfirmed { ended, .. } => Err(invalid(format!(
@@ -355,11 +412,12 @@ impl Limits {
 
     /// Writes the saved limit back; writes nothing to a policy that is missing or whose CPUs
     /// changed since the intent. The readback is the caller's.
-    fn write_original(
+    async fn write_original(
         &self,
         saved: &Saved,
         policies: &[FrequencyPolicy],
         report: &mut Vec<String>,
+        journal: &Journal,
     ) -> io::Result<()> {
         let phase = match saved.state {
             State::Intended => "write or cap readback unconfirmed",
@@ -392,6 +450,11 @@ impl Limits {
             saved.policy.get(),
             saved.original_khz
         ));
+        journal
+            .record(togi_machine::FrequencyEvent::Intent(
+                saved.intent(togi_machine::FrequencyAction::Restore),
+            ))
+            .await?;
         self.machine
             .set_scaling_max_khz(saved.policy, saved.original_khz)
     }

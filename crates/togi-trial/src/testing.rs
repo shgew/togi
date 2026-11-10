@@ -143,3 +143,14 @@ pub(crate) fn tempdir() -> tempfile::TempDir {
         .unwrap_or_else(|error| panic!("set the temporary directory's mode: {error}"));
     dir
 }
+
+/// A frequency journal that acknowledges every event as durable and keeps it in order.
+#[derive(Debug, Default)]
+pub(crate) struct Frequencies(pub(crate) Vec<togi_machine::FrequencyEvent>);
+
+impl togi_machine::FrequencyJournal for Frequencies {
+    fn record(&mut self, event: togi_machine::FrequencyEvent) -> std::io::Result<()> {
+        self.0.push(event);
+        Ok(())
+    }
+}

@@ -23,12 +23,17 @@ pub(crate) enum Command {
         cancel: CancellationToken,
         spec: Box<TrialSpec>,
         ready: Stopped,
-        reply: Reply<Result<Delivered, Partial<Option<Stopped>>>>,
+        journal: crate::frequency::Journal,
+        reply: crate::frequency::Reply<Result<Delivered, Partial<Option<Stopped>>>>,
     },
     /// `cancel` is this sweep's own token, as for `Start`.
     Sweep {
         cancel: CancellationToken,
         reply: Reply<Result<Swept, Error>>,
+    },
+    RecoverFrequency {
+        journal: crate::frequency::Journal,
+        reply: crate::frequency::Reply<Result<String, Error>>,
     },
     Probe {
         reply: Reply<Result<String, Error>>,
@@ -105,6 +110,7 @@ impl Runtime {
                             Command::Shutdown => break,
                             command @ (Command::Start { .. }
                             | Command::Sweep { .. }
+                            | Command::RecoverFrequency { .. }
                             | Command::Probe { .. }) => {
                                 tasks.retain(|task| !task.handle.is_finished());
                                 tasks.push(Task::spawn(&env, command));
@@ -191,9 +197,12 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
             cancel,
             spec,
             ready,
+            journal,
             reply,
         } => {
-            let outcome = start(env, cancel, *spec, ready).await.map(Delivered::new);
+            let outcome = start(env, cancel, *spec, ready, journal)
+                .await
+                .map(Delivered::new);
             if let Err(std::sync::mpsc::SendError(Err(Partial { value: None, error }))) =
                 reply.send(outcome)
             {
@@ -206,15 +215,6 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
         Command::Sweep { cancel, reply } => {
             let outcome = async {
                 let (mut detail, stopped) = sweep::sweep(&env, &cancel).await?;
-                let mut reports = Vec::new();
-                env.frequency
-                    .restore(&CancellationToken::new(), &mut reports)
-                    .await
-                    .map_err(Error::Frequency)?;
-                for line in reports {
-                    detail.push_str("; ");
-                    detail.push_str(&line);
-                }
                 // A sweep proves nothing runs, so threads still confined by a start that never
                 // reached its teardown can have their own CPUs back.
                 if let Some(moved) = env.controller.restore() {
@@ -227,6 +227,21 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
             if let Err(std::sync::mpsc::SendError(Err(error))) = reply.send(outcome) {
                 report(&format!(
                     "a sweep nobody waits for failed: {}",
+                    togi_machine::error_chain(&error)
+                ));
+            }
+        }
+        Command::RecoverFrequency { journal, reply } => {
+            let mut reports = Vec::new();
+            let outcome = env
+                .frequency
+                .restore(&CancellationToken::new(), &mut reports, &journal)
+                .await
+                .map(|()| reports.join("; "))
+                .map_err(Error::Frequency);
+            if let Err(std::sync::mpsc::SendError(Err(error))) = reply.send(outcome) {
+                report(&format!(
+                    "frequency recovery nobody waits for failed: {}",
                     togi_machine::error_chain(&error)
                 ));
             }
@@ -250,6 +265,7 @@ impl Task {
         let (what, cancel) = match &command {
             Command::Start { cancel, .. } => ("start", Some(cancel.clone())),
             Command::Sweep { cancel, .. } => ("sweep", Some(cancel.clone())),
+            Command::RecoverFrequency { .. } => ("frequency recovery", None),
             Command::Probe { .. } | Command::Shutdown => ("probe", None),
         };
         Self {

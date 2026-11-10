@@ -11,6 +11,7 @@ use crate::error::{SessionError, Step};
 use crate::recover::{self, Recovered, Recovery};
 use crate::recovery::BACKEND_CHECK_PREFIX;
 use crate::session::{Control, Fault, Lifecycle, Outcome, Session, Stop, Visit};
+use crate::trial::FrequencySink;
 use crate::write;
 
 const WATCHDOG_WAIT: Duration = Duration::from_secs(30);
@@ -208,6 +209,17 @@ impl Session<'_> {
             Ok(swept) => {
                 self.lifecycle = Lifecycle::swept(SweepCleared::of(&swept), swept.stopped);
                 self.record_check("trial_scopes", swept.detail, true)?;
+                let stopped = self.lifecycle.stopped().ok_or(SessionError::Unproven)?;
+                let cancel = CancellationToken::new();
+                let mut journal = FrequencySink::new(&mut self.appender, &cancel);
+                let recovered = self.trials.recover_frequency(stopped, &mut journal);
+                if let Some(failure) = journal.into_failure() {
+                    return Err(failure.into());
+                }
+                let detail = recovered.map_err(SessionError::Machine)?;
+                if !detail.is_empty() {
+                    self.record_check("frequency_recovery", detail, true)?;
+                }
                 Ok(Control::Continue)
             }
             Err(Error::Crashed) => Err(Error::Crashed.into()),

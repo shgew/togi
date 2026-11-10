@@ -1028,10 +1028,35 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
         StockAttested { firmware: bios() }.into(),
+        frequency_intent().into(),
+        FrequencyReadback {
+            intent: FrequencyIntent {
+                action: togi_machine::FrequencyAction::Restore,
+                ..frequency_intent()
+            },
+            observed_khz: 5_700_000,
+        }
+        .into(),
+        FrequencyDiscarded {
+            boot: BootId::from("previous-boot".to_owned()),
+            reason: "pending record belongs to a previous boot; stale limits were not written"
+                .into(),
+        }
+        .into(),
     ]
     .into_iter()
     .chain(super::ruleset14::samples())
     .collect()
+}
+
+pub(crate) fn frequency_intent() -> FrequencyIntent {
+    FrequencyIntent {
+        policy: togi_machine::FrequencyPolicyId::new(3),
+        related_cpus: vec![CpuId::new(3).unwrap(), CpuId::new(19).unwrap()],
+        original_khz: 5_700_000,
+        cap_khz: 800_000,
+        action: togi_machine::FrequencyAction::Cap,
+    }
 }
 
 fn ccd(id: u8) -> CcdId {

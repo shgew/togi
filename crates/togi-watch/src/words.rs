@@ -805,6 +805,9 @@ pub fn words(kind: EventKind) -> Words {
         | EventKind::DayInterval
         | EventKind::DayImported
         | EventKind::StateRebuilt
+        | EventKind::FrequencyIntent
+        | EventKind::FrequencyReadback
+        | EventKind::FrequencyDiscarded
         | EventKind::ProfileChange
         | EventKind::TrialCarried
         | EventKind::FailureCarried
