@@ -32,9 +32,12 @@ fn screen_items(colours: Colours) -> Vec<(&'static str, &'static str)> {
         ("►", "the core carries load in this trial"),
         (
             pick("▄▄▄", "▆▆▆"),
-            "committed day offset D, distinct from the numeric hardware readback; white when this trial loads the core",
+            "the depth of the hardware offset read back in this boot; white when this trial loads the core",
         ),
-        ("?", "no hardware offset has been read back for this core"),
+        (
+            "?",
+            "no hardware offset read back for this core in this boot",
+        ),
         (
             pick("grey ▄▄▄", "grey ▆▆▆"),
             "the same depth, grey when the core is not loaded",
@@ -1326,7 +1329,9 @@ mod tests {
                 .unwrap_or_else(|| panic!("no legend row {label:?}: {rows:#?}"))
                 .clone()
         };
-        assert!(row_of(applied).contains("committed day offset D"));
+        assert!(
+            row_of(applied).contains("the depth of the hardware offset read back in this boot")
+        );
         assert!(row_of(edge).contains("the night edge U of its tuning unit"));
         assert!(row_of(censored).contains("a censored edge"));
         let text = rows.join("\n");
