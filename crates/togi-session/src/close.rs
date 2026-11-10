@@ -3,7 +3,7 @@
 //! The workload is joined before a step of the run returns, so a run that reaches the cleanup holds the proof that
 //! nothing runs, or holds a fault that says why it does not. Restoration needs that proof and no fault; a latched
 //! journal failure is answered by the emergency instead. The final `shutdown` closes the lifecycle; an SMU
-//! dead end leaves stock unverified and must never stand in for a restoration receipt.
+//! dead end, including one reached while restoring after another dead end, leaves stock unverified.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -15,18 +15,21 @@ use crate::session::{Ended, Fault, Panic, Session, Stop, message_of};
 
 /// How far the restoration at the end of a run that may still touch the machine got.
 enum Reached {
-    /// Cleanup completed, including a recorded dead end where stock could not be verified.
+    /// Cleanup completed, or restoration was skipped for an SMU dead-end stop.
     Settled,
+    /// Restoration hit an SMU dead end, but the run keeps its earlier dead-end stop.
+    Unverified,
     /// The restoration found dead-end evidence and recorded the dead end, which settles it and replaces the stop.
     DeadEnd(Stop),
     /// The restoration did not finish, for the error if there is one: nothing more is recorded about the run's end.
     Unsettled(Option<SessionError>),
 }
 
-/// What the cleanup of a run that may still touch the machine left: the stop the run ends at, which a dead end the
-/// cleanup recorded replaces, the errors of the cleanup, and the panic that cut it short.
+/// What cleanup left: the stop (replaced only by a newly recorded dead end), whether restoration hit an SMU
+/// dead end while keeping an earlier stop, the errors, and the panic that cut it short.
 struct Cleanup {
     stop: Option<Stop>,
+    stock_unverified: bool,
     errors: Vec<SessionError>,
     panic: Option<Panic>,
 }
@@ -45,9 +48,11 @@ impl Session<'_> {
         for error in std::mem::take(&mut self.unconfirmed) {
             errors.push(self.keep(SessionError::Machine(error)));
         }
+        let mut stock_unverified = false;
         let panic = if self.lifecycle.fault().is_none() && self.appender.failure().is_none() {
             let cleanup = self.clean_up(stop);
             stop = cleanup.stop;
+            stock_unverified = cleanup.stock_unverified;
             errors.extend(cleanup.errors);
             cleanup.panic
         } else {
@@ -58,7 +63,8 @@ impl Session<'_> {
             .failure()
             .cloned()
             .map(|failure| self.answer(&failure));
-        self.finish(stop, errors, emergency, panic)
+        stock_unverified |= smu_dead_end(stop.as_ref());
+        self.finish(stop, stock_unverified, errors, emergency, panic)
     }
 
     /// Restores the machine to CO 0 and records the shutdown. A panic out of the restoration or the shutdown
@@ -67,6 +73,7 @@ impl Session<'_> {
     fn clean_up(&mut self, stop: Option<Stop>) -> Cleanup {
         let mut cleanup = Cleanup {
             stop,
+            stock_unverified: false,
             errors: Vec::new(),
             panic: None,
         };
@@ -83,6 +90,7 @@ impl Session<'_> {
         }));
         match reached {
             Ok(Reached::Settled) => {}
+            Ok(Reached::Unverified) => cleanup.stock_unverified = true,
             Ok(Reached::DeadEnd(dead_end)) => cleanup.stop = Some(dead_end),
             Ok(Reached::Unsettled(error)) => {
                 cleanup.errors.extend(error);
@@ -94,7 +102,7 @@ impl Session<'_> {
             }
         }
         let shutdown = catch_unwind(AssertUnwindSafe(|| {
-            if smu_dead_end(cleanup.stop.as_ref()) {
+            if cleanup.stock_unverified || smu_dead_end(cleanup.stop.as_ref()) {
                 self.stock_not_verified()?;
             }
             if self.unreconciled() {
@@ -147,7 +155,7 @@ impl Session<'_> {
             Err(Flow::Fatal(error)) => Reached::Unsettled(Some(self.keep(error))),
             Err(Flow::DeadEnd(condition)) => {
                 if matches!(stop, Some(Stop::DeadEnd { .. })) {
-                    return Reached::Settled;
+                    return Reached::Unverified;
                 }
                 match self.check_dead_end() {
                     Ok(Some(dead_end)) => Reached::DeadEnd(dead_end),
@@ -194,6 +202,7 @@ impl Session<'_> {
     fn finish(
         mut self,
         stop: Option<Stop>,
+        stock_unverified: bool,
         mut errors: Vec<SessionError>,
         mut emergency: Option<emergency::Outcome>,
         panic: Option<Panic>,
@@ -224,6 +233,7 @@ impl Session<'_> {
         };
         Ended {
             stop,
+            stock_unverified,
             errors,
             emergency,
             capsule,

@@ -366,6 +366,53 @@ fn smu_dead_end_leaves_current_offsets_unknown() {
 }
 
 #[test]
+fn an_smu_error_restoring_after_another_dead_end_leaves_current_offsets_unknown() {
+    let mut script = Script::three();
+    script.append(restored(), &[]);
+    script.append(
+        togi_journal::DeadEnd {
+            condition: DeadEndCondition::Containment,
+            core: None,
+            detail: "workload containment failed".to_owned(),
+            action: None,
+        }
+        .into(),
+        &[],
+    );
+    let intent = script.append(smu_intent(0, 0), &[]);
+    script.append(
+        togi_journal::SmuError {
+            op: togi_journal::SmuOp::Set,
+            core: Some(core(0)),
+            offset: Some(off(0)),
+            error: "SMU write failed".to_owned(),
+        }
+        .into(),
+        &[intent],
+    );
+    script.append(shutdown(ShutdownReason::DeadEnd), &[]);
+    let model = script.model();
+    let snap = model.snapshot();
+    assert!(!snap.stopped.unwrap().saved);
+    assert_eq!(snap.dead_end.unwrap().condition, DeadEndCondition::Containment);
+    assert_eq!(
+        snap.cores.iter().map(|core| core.applied).collect::<Vec<_>>(),
+        [None, None, None]
+    );
+    script.append(readback(1, 0), &[]);
+    let model = script.model();
+    assert_eq!(
+        model
+            .snapshot()
+            .cores
+            .iter()
+            .map(|core| core.applied)
+            .collect::<Vec<_>>(),
+        [None, Some(ObservedOffset(0)), None]
+    );
+}
+
+#[test]
 fn sparse_core_ids() {
     let mut script = Script::new(&[(0, 0), (8, 1)]);
     script.append(

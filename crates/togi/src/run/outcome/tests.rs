@@ -9,7 +9,7 @@ use togi_machine::{BootId, PerCore};
 use togi_render::{OutputFacts, Renderer};
 use togi_session::{SessionError, Stop};
 
-use super::{HiddenClosing, conclude, print_hidden};
+use super::{HiddenClosing, conclude, print_hidden, stock_not_verified};
 use crate::exit::Exit;
 
 fn event(seq: u64, payload: Payload) -> Event {
@@ -85,14 +85,44 @@ fn every_dead_end_exits_with_its_own_status_and_prints_its_detail(
     assert_eq!(
         err,
         format!(
-            "togi: dead end {}: operator intervention required\n{}",
-            condition.as_str(),
-            if condition == DeadEndCondition::Smu {
-                "togi: stock not verified; current offsets unknown\n"
-            } else {
-                ""
-            }
+            "togi: dead end {}: operator intervention required\n",
+            condition.as_str()
         )
+    );
+}
+
+#[test_case(false, "togi: stock not verified; current offsets unknown\n"; "plain")]
+#[test_case(true, "<3>\x1b[1;31mtogi: stock not verified; current offsets unknown\x1b[0m\n"; "system journal")]
+fn uncertain_offsets_have_their_own_diagnostic(journald: bool, want: &str) {
+    let renderer = Renderer::new(OutputFacts {
+        is_terminal: false,
+        no_color: false,
+        journald,
+    });
+    let mut err = Vec::new();
+    stock_not_verified(&mut err, renderer);
+    assert_eq!(String::from_utf8(err).unwrap(), want);
+}
+
+#[test]
+fn uncertain_offsets_are_reported_alongside_cleanup_errors() {
+    let stop = dead_end(DeadEndCondition::Smu, Vec::new(), false);
+    let errors = [SessionError::Log(std::io::Error::other("full"))];
+    let mut err = Vec::new();
+    let outcome = conclude(
+        &mut err,
+        Renderer::default(),
+        &TimeZone::UTC,
+        Some(&stop),
+        &errors,
+        &[],
+    );
+    stock_not_verified(&mut err, Renderer::default());
+    assert_eq!(outcome.exit, Exit::Error);
+    assert_eq!(
+        String::from_utf8(err).unwrap(),
+        "togi run: write the event log: full\n\
+         togi: stock not verified; current offsets unknown\n"
     );
 }
 

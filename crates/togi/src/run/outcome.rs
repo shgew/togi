@@ -94,16 +94,6 @@ pub(super) fn conclude(
                 dead_end.detail
             );
             let _ = writeln!(err, "{}", renderer.text(Style::RedBold, &line));
-            if dead_end.condition == togi_journal::DeadEndCondition::Smu {
-                let _ = writeln!(
-                    err,
-                    "{}",
-                    renderer.text(
-                        Style::RedBold,
-                        "togi: stock not verified; current offsets unknown"
-                    )
-                );
-            }
             for seq in causes {
                 if let Some(event) = find(events, *seq) {
                     let _ = writeln!(
@@ -120,6 +110,18 @@ pub(super) fn conclude(
         }
         None => Outcome::exit(Exit::Error),
     }
+}
+
+/// Reports uncertain offsets independently of the stop and any cleanup errors.
+pub(super) fn stock_not_verified(err: &mut dyn Write, renderer: Renderer) {
+    let _ = writeln!(
+        err,
+        "{}",
+        renderer.text(
+            Style::RedBold,
+            "togi: stock not verified; current offsets unknown"
+        )
+    );
 }
 
 fn find(events: &[Event], seq: Seq) -> Option<&Event> {

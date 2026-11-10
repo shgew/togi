@@ -99,6 +99,8 @@ pub(crate) type Outcome = Result<Control, SessionError>;
 #[must_use = "an ended run carries the errors, emergency and panic to report and the journal to close"]
 pub struct Ended {
     pub stop: Option<Stop>,
+    /// The SMU is dead, so stock could not be verified and current offsets are unknown.
+    pub stock_unverified: bool,
     /// The error that ended the run first, then the errors of its cleanup.
     pub errors: Vec<SessionError>,
     pub emergency: Option<emergency::Outcome>,
@@ -324,6 +326,7 @@ impl<'machine> Session<'machine> {
         let refused = |journal, errors: Vec<SessionError>| {
             Box::new(Ended {
                 stop: None,
+                stock_unverified: false,
                 errors,
                 emergency: None,
                 journal,

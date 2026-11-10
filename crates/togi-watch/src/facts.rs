@@ -130,6 +130,10 @@ impl Facts {
             Payload::SmuReadback(readback) => {
                 self.applied.set(readback.core, Some(readback.offset));
             }
+            Payload::SmuError(_) => {
+                self.applied = PerCore::default();
+                self.restored = false;
+            }
             Payload::ProfileRestored(restored) => {
                 self.restored = true;
                 for (core, offset) in restored.offsets.iter() {
@@ -211,7 +215,6 @@ impl Facts {
             | Payload::SessionCarried(_)
             | Payload::PreflightCheck(_)
             | Payload::SmuWrite(_)
-            | Payload::SmuError(_)
             | Payload::ProfileApplied(_)
             | Payload::TrialProgress(_)
             | Payload::TrialSignal(_)

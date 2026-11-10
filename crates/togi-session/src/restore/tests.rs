@@ -113,6 +113,7 @@ fn an_smu_dead_close_reports_stock_not_verified_without_restoration(during_close
     };
     let ended = session.close(Ok(stop));
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert!(ended.stock_unverified);
     assert!(matches!(
         ended.stop,
         Some(crate::Stop::DeadEnd { ref dead_end, .. })
@@ -137,8 +138,55 @@ fn an_smu_dead_close_reports_stock_not_verified_without_restoration(during_close
         .unwrap();
     assert!(warning.msg.contains("stock not verified"));
     assert!(warning.msg.contains("current offsets unknown"));
+    assert!(warning.seq < events.last().unwrap().seq);
     assert!(matches!(
         events.last().unwrap().payload,
         Payload::Shutdown(_)
     ));
+}
+
+#[test]
+fn an_smu_failure_restoring_after_another_dead_end_keeps_the_stop_and_reports_uncertainty() {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    recorded_baseline(&mut session, &[0, 0]);
+    put(&mut session, &[-10, -10]);
+    let stop = session
+        .dead_end(
+            togi_journal::DeadEnd {
+                condition: togi_journal::DeadEndCondition::Containment,
+                core: None,
+                detail: "workload containment failed".into(),
+                action: None,
+            },
+            &[],
+        )
+        .unwrap();
+    bench.sim.fail_write(1);
+    let ended = session.close(Ok(stop.clone()));
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert_eq!(ended.stop, Some(stop));
+    assert!(ended.stock_unverified);
+    let events = ended.journal.events();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.payload, Payload::ProfileRestored(_)))
+            .count(),
+        0
+    );
+    let warning = events
+        .iter()
+        .find(|event| {
+            matches!(
+                &event.payload, Payload::SessionWarning(warning)
+                    if warning.operation == "restore stock before stopping"
+            )
+        })
+        .unwrap();
+    assert!(warning.msg.contains("stock not verified"));
+    assert!(warning.msg.contains("current offsets unknown"));
+    let shutdown = events.last().unwrap();
+    assert!(matches!(shutdown.payload, Payload::Shutdown(_)));
+    assert!(warning.seq < shutdown.seq);
 }
