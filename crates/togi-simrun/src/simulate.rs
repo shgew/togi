@@ -217,6 +217,7 @@ fn simulate_with_dump(
         }
         let Ended {
             stop,
+            stock_unverified: _,
             mut errors,
             emergency,
             journal,

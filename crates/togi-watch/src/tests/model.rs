@@ -345,7 +345,7 @@ fn write_after_restoration_is_not_saved() {
 }
 
 #[test]
-fn smu_dead_end_keeps_the_readback() {
+fn smu_dead_end_leaves_current_offsets_unknown() {
     let mut script = Script::three();
     script.append(smu_intent(0, -25), &[]);
     script.append(readback(0, 0), &[]);
@@ -362,9 +362,96 @@ fn smu_dead_end_keeps_the_readback() {
     script.append(shutdown(ShutdownReason::DeadEnd), &[]);
     let model = script.model();
     let first = &model.snapshot().cores[0];
+    assert_eq!((first.applied, first.profile), (None, off(0)));
+}
+
+#[test]
+fn an_smu_error_restoring_after_another_dead_end_leaves_current_offsets_unknown() {
+    let mut script = Script::three();
+    script.append(restored(), &[]);
+    script.append(
+        togi_journal::DeadEnd {
+            condition: DeadEndCondition::Containment,
+            core: None,
+            detail: "workload containment failed".to_owned(),
+            action: None,
+        }
+        .into(),
+        &[],
+    );
+    let intent = script.append(smu_intent(0, 0), &[]);
+    script.append(
+        togi_journal::SmuError {
+            op: togi_journal::SmuOp::Set,
+            core: Some(core(0)),
+            offset: Some(off(0)),
+            error: "SMU write failed".to_owned(),
+        }
+        .into(),
+        &[intent],
+    );
+    script.append(shutdown(ShutdownReason::DeadEnd), &[]);
+    let model = script.model();
+    let snap = model.snapshot();
+    assert!(!snap.stopped.unwrap().saved);
     assert_eq!(
-        (first.applied, first.profile),
-        (Some(ObservedOffset(0)), off(0))
+        snap.dead_end.unwrap().condition,
+        DeadEndCondition::Containment
+    );
+    assert_eq!(
+        snap.cores
+            .iter()
+            .map(|core| core.applied)
+            .collect::<Vec<_>>(),
+        [None, None, None]
+    );
+    script.append(readback(1, 0), &[]);
+    let model = script.model();
+    assert_eq!(
+        model
+            .snapshot()
+            .cores
+            .iter()
+            .map(|core| core.applied)
+            .collect::<Vec<_>>(),
+        [None, Some(ObservedOffset(0)), None]
+    );
+}
+
+#[test]
+fn a_mismatching_readback_restoring_after_another_dead_end_leaves_current_offsets_unknown() {
+    let mut script = Script::three();
+    script.append(restored(), &[]);
+    script.append(
+        togi_journal::DeadEnd {
+            condition: DeadEndCondition::Containment,
+            core: None,
+            detail: "workload containment failed".to_owned(),
+            action: None,
+        }
+        .into(),
+        &[],
+    );
+    let intent = script.append(smu_intent(0, 0), &[]);
+    script.append(
+        togi_journal::SmuReadback {
+            core: core(0),
+            offset: ObservedOffset(-5),
+            expected: Some(off(0)),
+        }
+        .into(),
+        &[intent],
+    );
+    script.append(shutdown(ShutdownReason::DeadEnd), &[]);
+    assert_eq!(
+        script
+            .model()
+            .snapshot()
+            .cores
+            .iter()
+            .map(|core| core.applied)
+            .collect::<Vec<_>>(),
+        [None, None, None]
     );
 }
 

@@ -128,7 +128,19 @@ impl Facts {
             }
             Payload::SmuIntent(_) => self.restored = false,
             Payload::SmuReadback(readback) => {
-                self.applied.set(readback.core, Some(readback.offset));
+                // A readback that differs from its write is the SMU's dead-end evidence: nothing applied is known.
+                if let Some(expected) = readback.expected
+                    && expected.observed() != readback.offset
+                {
+                    self.applied = PerCore::default();
+                    self.restored = false;
+                } else {
+                    self.applied.set(readback.core, Some(readback.offset));
+                }
+            }
+            Payload::SmuError(_) => {
+                self.applied = PerCore::default();
+                self.restored = false;
             }
             Payload::ProfileRestored(restored) => {
                 self.restored = true;
@@ -174,6 +186,10 @@ impl Facts {
                 self.recover = Some(recover);
             }
             Payload::DeadEnd(dead_end) => {
+                if dead_end.condition == togi_journal::DeadEndCondition::Smu {
+                    self.applied = PerCore::default();
+                    self.restored = false;
+                }
                 self.dead_end = Some(DeadEndView {
                     at: event.time,
                     condition: dead_end.condition,
@@ -207,7 +223,6 @@ impl Facts {
             | Payload::SessionCarried(_)
             | Payload::PreflightCheck(_)
             | Payload::SmuWrite(_)
-            | Payload::SmuError(_)
             | Payload::ProfileApplied(_)
             | Payload::TrialProgress(_)
             | Payload::TrialSignal(_)

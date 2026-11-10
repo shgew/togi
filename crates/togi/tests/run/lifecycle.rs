@@ -452,6 +452,10 @@ fn a_failed_smu_write_is_the_smu_dead_end_and_exits_eleven() {
     assert_eq!(exit, Exit::Smu, "{err}");
     assert!(err.contains("togi: dead end smu:"), "{err}");
     assert!(
+        err.contains("togi: stock not verified; current offsets unknown\n"),
+        "{err}"
+    );
+    assert!(
         fake.events()
             .iter()
             .any(|event| event.kind() == EventKind::DeadEnd)

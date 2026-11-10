@@ -112,6 +112,18 @@ pub(super) fn conclude(
     }
 }
 
+/// Reports uncertain offsets independently of the stop and any cleanup errors.
+pub(super) fn stock_not_verified(err: &mut dyn Write, renderer: Renderer) {
+    let _ = writeln!(
+        err,
+        "{}",
+        renderer.text(
+            Style::RedBold,
+            "togi: stock not verified; current offsets unknown"
+        )
+    );
+}
+
 fn find(events: &[Event], seq: Seq) -> Option<&Event> {
     events.iter().find(|event| event.seq == seq)
 }

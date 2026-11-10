@@ -99,6 +99,8 @@ pub(crate) type Outcome = Result<Control, SessionError>;
 #[must_use = "an ended run carries the errors, emergency and panic to report and the journal to close"]
 pub struct Ended {
     pub stop: Option<Stop>,
+    /// The SMU is dead, so stock could not be verified and current offsets are unknown.
+    pub stock_unverified: bool,
     /// The error that ended the run first, then the errors of its cleanup.
     pub errors: Vec<SessionError>,
     pub emergency: Option<emergency::Outcome>,
@@ -293,7 +295,7 @@ pub(crate) struct Session<'machine> {
     /// What a join of a workload after a failed record or a panic reported when it could not confirm the stop; the
     /// close reports it after the error that ended the run.
     pub(crate) unconfirmed: Vec<togi_machine::Error>,
-    /// The `shutdown` the cleanup records once the machine is restored.
+    /// The lifecycle closure cleanup records after restoration or an explicit stock-not-verified warning.
     pub(crate) shutdown: Option<Shutdown>,
 }
 
@@ -324,6 +326,7 @@ impl<'machine> Session<'machine> {
         let refused = |journal, errors: Vec<SessionError>| {
             Box::new(Ended {
                 stop: None,
+                stock_unverified: false,
                 errors,
                 emergency: None,
                 journal,
@@ -757,7 +760,7 @@ impl<'machine> Session<'machine> {
         Ok(())
     }
 
-    /// Ends the run with `reason`; the cleanup records the `shutdown` once the machine is restored.
+    /// Ends the run with `reason`; cleanup records lifecycle closure without implying verified offsets.
     pub(crate) fn shut_down(&mut self, stop: Stop) -> Control {
         self.record_shutdown(&stop);
         Control::Stop(stop)

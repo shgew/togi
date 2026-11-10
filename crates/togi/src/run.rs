@@ -293,6 +293,9 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             ended.journal.events(),
         );
     }
+    if ended.stock_unverified {
+        outcome::stock_not_verified(ctx.err, renderer);
+    }
     let reboot_asked = matches!(
         dead_end,
         Some(togi_session::Stop::DeadEnd { reboot: true, .. })
