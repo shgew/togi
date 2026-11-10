@@ -16,8 +16,8 @@ use togi_machine::{
 use tokio::time::Instant;
 
 use super::harness::{
-    Rig, burn, core, crate_error, finish, local, nothing_runs, printing, rig, rig_edit, rig_with,
-    spec,
+    Rig, burn, core, crate_error, finish, local, nothing_runs, printing, printing_when_released, rig,
+    rig_edit, rig_with, spec,
 };
 use crate::error::{Error, InvalidTrial, PrepareError};
 use crate::files::Chown;
@@ -69,14 +69,16 @@ fn a_missing_result_for_one_loaded_core_withholds_the_pass_and_names_it() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            rig.fake.on_launch(|index, command| {
-                printing(if index == 0 {
-                    "verified self-test\n"
+            let (mut print, release) = printing_when_released("verified self-test\n");
+            rig.fake.on_launch(move |index, command| {
+                if index == 0 {
+                    print(index, command)
                 } else {
-                    "ok working\n"
-                })(index, command)
+                    printing("ok working\n")(index, command)
+                }
             });
             let handle = rig.start(spec(Regime::R7, &[1, 5], secs(3))).await.unwrap();
+            release.send_replace(());
             let run = finish(&handle).await;
             assert_eq!(run.finished.result.failure, None);
             assert_eq!(
@@ -93,8 +95,10 @@ fn every_loaded_core_with_a_verified_result_passes() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            rig.fake.on_launch(printing("verified self-test\n"));
+            let (print, release) = printing_when_released("verified self-test\n");
+            rig.fake.on_launch(print);
             let handle = rig.start(spec(Regime::R7, &[1, 5], secs(3))).await.unwrap();
+            release.send_replace(());
             let run = finish(&handle).await;
             assert_eq!(
                 (
@@ -108,6 +112,40 @@ fn every_loaded_core_with_a_verified_result_passes() {
         })
         .await;
     });
+}
+
+#[test]
+fn a_checked_result_before_another_instances_readiness_does_not_verify_its_core() {
+    crate::testing::runtime(true).block_on(local(async {
+        let rig = rig();
+        rig.fake.set_ready_default(false);
+        let (release, released) = tokio::sync::watch::channel(());
+        rig.fake.on_launch(move |index, _| {
+            let mut released = released.clone();
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                if index == 0 {
+                    ctx.print("verified self-test\n").await;
+                    ctx.shared.ready.set(true);
+                } else {
+                    tokio::time::sleep(secs(2)).await;
+                    ctx.shared.ready.set(true);
+                    released.changed().await.unwrap();
+                    ctx.print("verified self-test\n").await;
+                }
+                ctx.until_killed().await;
+            }))
+        });
+        let handle = rig.start(spec(Regime::R7, &[1, 5], secs(3))).await.unwrap();
+        release.send_replace(());
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(
+            run.finished.result.inconclusive.as_deref(),
+            Some("core 01 has no backend-verified result")
+        );
+        assert_eq!(run.progress().contains(&"core 01 self-test"), true);
+        assert_eq!(run.progress().contains(&"core 05 self-test"), true);
+    }));
 }
 
 #[test]
@@ -132,7 +170,10 @@ fn readiness_delay_is_not_measured_trial_time() {
             let run = finish(&handle).await;
             assert!(measured.elapsed() >= secs(3));
             assert_eq!(run.finished.result.ran, secs(3));
-            assert_eq!(run.finished.result.inconclusive, None);
+            assert_eq!(
+                run.finished.result.inconclusive.as_deref(),
+                Some("core 02 has no backend-verified result")
+            );
         })
         .await;
     });
@@ -426,8 +467,10 @@ fn a_disappearing_process_is_not_a_sampling_loss() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            rig.fake.on_launch(printing("verified self-test\n"));
+            let (print, release) = printing_when_released("verified self-test\n");
+            rig.fake.on_launch(print);
             let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
+            release.send_replace(());
             let process = rig.fake.process(0);
             *process.usage.borrow_mut() = Err(ProcError::Gone);
             *process.threads.borrow_mut() = Err(ProcError::Gone);
@@ -444,8 +487,10 @@ fn a_sampling_read_cut_at_its_tick_deadline_is_not_a_sampling_loss() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            rig.fake.on_launch(printing("verified self-test\n"));
+            let (print, release) = printing_when_released("verified self-test\n");
+            rig.fake.on_launch(print);
             let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
+            release.send_replace(());
             rig.fake.hang_threads();
             // The tick at 1 s waits for its thread read until 2 s; the read's owner returns first.
             tokio::time::sleep(Duration::from_millis(1500)).await;

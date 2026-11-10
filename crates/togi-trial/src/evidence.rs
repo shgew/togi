@@ -21,6 +21,13 @@ impl Stream {
     }
 }
 
+/// Only output whose bytes are known to belong to the measured interval can verify a core.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Verification {
+    Outside,
+    Measured,
+}
+
 /// What the supervisor saw, in the order it saw it; instances are indices into the trial plan.
 #[derive(Debug)]
 pub(crate) enum Observation {
@@ -28,6 +35,7 @@ pub(crate) enum Observation {
         instance: usize,
         pid: u32,
         stream: Stream,
+        verification: Verification,
         line: Line,
         text: String,
     },
@@ -125,7 +133,8 @@ struct Instance {
 pub(crate) struct Selector {
     /// Indexed like the trial plan.
     instances: Vec<Instance>,
-    /// Present cores are loaded; `None` means no instance on that core has verified a result.
+    /// Present cores are loaded; `None` means no instance on that core reported a checked result
+    /// known to have been produced during the measured interval, excluding readiness and teardown.
     /// Kept off the stack so readiness and teardown futures do not carry sixteen strings inline.
     verified: Box<PerCore<Option<String>>>,
     failure: Option<TrialFailure>,
@@ -211,8 +220,9 @@ impl Selector {
                 pid,
                 stream,
                 line,
+                verification,
                 text,
-            } => self.line(instance, pid, stream, line, text),
+            } => self.line(instance, pid, stream, verification, line, text),
             Observation::UnexpectedExit {
                 instance,
                 pid,
@@ -307,6 +317,7 @@ impl Selector {
         instance: usize,
         pid: u32,
         stream: Stream,
+        verification: Verification,
         line: Line,
         text: String,
     ) -> Decision {
@@ -324,10 +335,21 @@ impl Selector {
             Line::Other => Decision::default(),
             Line::Verified(detail) => {
                 if stream == Stream::Stdout {
-                    self.verified.get_or_insert_with(core, || detail.clone());
-                    self.line(instance, pid, stream, Line::Progress(detail), text)
+                    if verification == Verification::Measured {
+                        self.verified.get_or_insert_with(core, || detail.clone());
+                    }
+                    self.line(
+                        instance,
+                        pid,
+                        stream,
+                        verification,
+                        Line::Progress(detail),
+                        text,
+                    )
                 } else {
-                    self.verified.get_or_insert_with(core, || detail);
+                    if verification == Verification::Measured {
+                        self.verified.get_or_insert_with(core, || detail);
+                    }
                     Decision::default()
                 }
             }
@@ -465,6 +487,7 @@ mod tests {
             instance: 0,
             pid: 42,
             stream,
+            verification: Verification::Measured,
             line,
             text: text.to_owned(),
         }
@@ -498,6 +521,7 @@ mod tests {
             instance: 1,
             pid: 42,
             stream: Stream::Stdout,
+            verification: Verification::Measured,
             line: Line::Verified("BKT passed".into()),
             text: "Running BKT: Passed".into(),
         });
@@ -564,6 +588,7 @@ mod tests {
             instance: 1,
             pid: 1,
             stream: Stream::Stdout,
+            verification: Verification::Measured,
             line: Line::Progress("ok".into()),
             text: "ok".into(),
         });
@@ -610,6 +635,7 @@ mod tests {
             instance: 1,
             pid: 2,
             stream: Stream::Stdout,
+            verification: Verification::Measured,
             line: Line::ComputationError,
             text: "COMPUTE ERROR".into(),
         });
@@ -834,6 +860,7 @@ mod tests {
             instance: 1,
             pid: 43,
             stream: Stream::Stdout,
+            verification: Verification::Measured,
             line: Line::SetupError,
             text: "PIN FAILED".into(),
         });
@@ -883,6 +910,7 @@ mod tests {
             instance,
             pid: 40 + u32::try_from(instance).unwrap(),
             stream,
+            verification: Verification::Measured,
             line,
             text: text.to_owned(),
         }
@@ -1131,6 +1159,7 @@ mod tests {
             instance: 1,
             pid: 43,
             stream: Stream::Stdout,
+            verification: Verification::Measured,
             line: Line::SetupError,
             text: "PIN FAILED".to_owned(),
         });

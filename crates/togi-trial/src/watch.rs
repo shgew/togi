@@ -11,6 +11,7 @@ use togi_backend::FileName;
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, timeout_at};
 
+use crate::evidence::Verification;
 use crate::output::{CHUNK, Frame, Framer};
 
 /// The most one poll reads from one file.
@@ -521,6 +522,9 @@ pub(crate) struct Watched {
     buffer: Vec<u8>,
     inflight: Option<JoinHandle<Fetched>>,
     final_read_pending: bool,
+    /// No checked result is eligible until a post-start poll has fenced the old backlog.
+    /// `Outside` then withholds the first line when that snapshot ended in a partial line.
+    verification: Option<Verification>,
     #[cfg(test)]
     read_at: Option<ReadAt>,
 }
@@ -550,6 +554,7 @@ impl Watched {
             buffer: Vec::new(),
             inflight: None,
             final_read_pending: false,
+            verification: None,
             #[cfg(test)]
             read_at: None,
         }
@@ -634,6 +639,47 @@ impl Watched {
                 Waited::Late
             }
         }
+    }
+
+    /// The first post-start drain establishes a conservative byte fence, not a timestamp inferred
+    /// from a later read. Its whole backlog and any partial line stay unverified; only later
+    /// complete lines read before the deadline may verify a core.
+    pub(crate) async fn poll_interval(
+        &mut self,
+        until: Instant,
+        deadline: Option<Instant>,
+        sink: &mut impl FnMut(&str, Verification) -> ControlFlow<()>,
+        stop: &mut impl FnMut() -> bool,
+    ) -> Poll {
+        let mut next = self.verification;
+        let poll = self
+            .poll(
+                until,
+                &mut |line| {
+                    let verification = if next == Some(Verification::Measured)
+                        && deadline.is_some_and(|end| Instant::now() < end)
+                    {
+                        Verification::Measured
+                    } else {
+                        Verification::Outside
+                    };
+                    if next.is_some() {
+                        next = Some(Verification::Measured);
+                    }
+                    sink(line, verification)
+                },
+                stop,
+            )
+            .await;
+        if next.is_none() && matches!(poll, Poll::Idle | Poll::Drained) {
+            next = Some(if self.framer.pending() {
+                Verification::Outside
+            } else {
+                Verification::Measured
+            });
+        }
+        self.verification = next;
+        poll
     }
 
     /// Reads at most 64 KiB from the saved offset and frames it in 4 KiB chunks. `sink` breaks

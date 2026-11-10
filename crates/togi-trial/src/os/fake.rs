@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
-use tokio::io::{AsyncRead, AsyncWriteExt as _, DuplexStream, ReadBuf, duplex};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, DuplexStream, ReadBuf, duplex};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep_until};
@@ -101,7 +101,7 @@ struct PipeFailure {
 
 /// The read end of stdout; it can be made to fail like a pipe with an I/O error.
 struct Flaky {
-    inner: DuplexStream,
+    inner: Counted,
     failure: Rc<RefCell<PipeFailure>>,
 }
 
@@ -120,6 +120,77 @@ impl AsyncRead for Flaky {
             failure.waker = Some(cx.waker().clone());
         }
         Pin::new(&mut this.inner).poll_read(cx, buf)
+    }
+}
+
+impl super::OutputPipe for Flaky {
+    fn unread(&self) -> io::Result<u64> {
+        super::OutputPipe::unread(&self.inner)
+    }
+}
+
+/// Both ends account for bytes actually written and read, including direct script writes.
+pub(crate) struct Counted {
+    inner: DuplexStream,
+    queued: Rc<Cell<usize>>,
+}
+
+fn counted_pipe() -> (Counted, Counted) {
+    let (writer, reader) = duplex(1 << 20);
+    let queued = Rc::new(Cell::new(0));
+    (
+        Counted {
+            inner: writer,
+            queued: Rc::clone(&queued),
+        },
+        Counted {
+            inner: reader,
+            queued,
+        },
+    )
+}
+
+impl super::OutputPipe for Counted {
+    fn unread(&self) -> io::Result<u64> {
+        Ok(self.queued.get() as u64)
+    }
+}
+
+impl AsyncRead for Counted {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let before = buf.filled().len();
+        let result = Pin::new(&mut this.inner).poll_read(cx, buf);
+        this.queued
+            .set(this.queued.get() - (buf.filled().len() - before));
+        result
+    }
+}
+
+impl AsyncWrite for Counted {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        let result = Pin::new(&mut this.inner).poll_write(cx, bytes);
+        if let Poll::Ready(Ok(count)) = &result {
+            this.queued.set(this.queued.get() + *count);
+        }
+        result
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
     }
 }
 
@@ -149,8 +220,8 @@ impl ProcShared {
 /// `--uid`/`--gid` for an unprivileged user-manager launch.
 pub(crate) struct ProcCtx {
     pub(crate) shared: Rc<ProcShared>,
-    pub(crate) stdout: DuplexStream,
-    pub(crate) stderr: DuplexStream,
+    pub(crate) stdout: Counted,
+    pub(crate) stderr: Counted,
     pub(crate) signals: UnboundedReceiver<Delivery>,
     pub(crate) account: Option<(u32, u32)>,
     pub(crate) memory: crate::watch::Memory,
@@ -586,8 +657,8 @@ impl Os for Fake {
         };
         let pid = self.shared.next_pid.get();
         self.shared.next_pid.set(pid + 1);
-        let (stdout_writer, stdout_reader) = duplex(1 << 20);
-        let (stderr_writer, stderr_reader) = duplex(1 << 20);
+        let (stdout_writer, stdout_reader) = counted_pipe();
+        let (stderr_writer, stderr_reader) = counted_pipe();
         let (to_script, signals) = unbounded_channel();
         let (exited, exit) = watch::channel(false);
         let shared = Rc::new(ProcShared {
