@@ -163,14 +163,27 @@ impl Session<'_> {
     /// A fresh check at each workload and nonzero profile-write boundary. Zero-only cleanup must remain
     /// available after protection is lost, and an in-flight trial is joined before the next boundary.
     pub(crate) fn check_watchdog(&mut self) -> Outcome {
+        match self.watchdog_refusal()? {
+            Some((dead_end, seq)) => self.dead_end(dead_end, &[seq]).map(Control::Stop),
+            None => Ok(Control::Continue),
+        }
+    }
+
+    /// Records a failed boundary check without yet stopping, so an unstarted trial can be closed first.
+    pub(crate) fn watchdog_refusal(&mut self) -> Result<Option<(DeadEnd, Seq)>, SessionError> {
         let check = self.host.watchdog();
         if check.ok {
-            return Ok(Control::Continue);
+            return Ok(None);
         }
-        self.refuse_watchdog(check.detail).map(Control::Stop)
+        self.record_watchdog_refusal(check.detail).map(Some)
     }
 
     fn refuse_watchdog(&mut self, detail: String) -> Result<Stop, SessionError> {
+        let (dead_end, seq) = self.record_watchdog_refusal(detail)?;
+        self.dead_end(dead_end, &[seq])
+    }
+
+    fn record_watchdog_refusal(&mut self, detail: String) -> Result<(DeadEnd, Seq), SessionError> {
         let dead_end = DeadEnd {
             condition: DeadEndCondition::Preflight,
             core: None,
@@ -178,7 +191,7 @@ impl Session<'_> {
             action: None,
         };
         let seq = self.record_check("watchdog", detail, false)?;
-        self.dead_end(dead_end, &[seq])
+        Ok((dead_end, seq))
     }
 
     fn await_watchdog(&mut self, cancel: &CancellationToken) -> Outcome {

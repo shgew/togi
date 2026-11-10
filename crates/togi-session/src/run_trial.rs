@@ -242,9 +242,6 @@ impl Session<'_> {
         }
         let id = self.appender.recovery().next_trial_id();
         let boundary = self.kernel_boundary(None, false, &[])?;
-        if let Control::Stop(stop) = self.check_watchdog()? {
-            return Ok(Some(stop));
-        }
         let mut intent = plan
             .intent(id.clone(), &self.topology, content)
             .map_err(SessionError::Plan)?;
@@ -311,6 +308,32 @@ impl Session<'_> {
             roles: spec.roles.clone(),
             controller,
         };
+        if let Some((dead_end, check)) = self.watchdog_refusal()? {
+            let end = TrialEnd {
+                interrupted: true,
+                reason: Some(format!(
+                    "not started: hardware watchdog unarmed ({})",
+                    dead_end.detail
+                )),
+                ..evidence::trial_end(trial.id.clone(), togi_journal::Outcome::Inconclusive, 0)
+            };
+            let topology = self.appender.recovery().topology();
+            let summary = evidence::summarize_samples(
+                self.trials.samples(trial.id.as_str()),
+                trial.cores,
+                trial.plan.cell.regime(),
+                |core| topology.get(core).flatten(),
+            );
+            append_trial_end(
+                &mut self.appender,
+                &mut *self.trials,
+                end,
+                summary,
+                false,
+                &[intent, check],
+            )?;
+            return Ok(Some(self.dead_end(dead_end, &[check])?));
+        }
         let Lifecycle::Swept(Swept {
             stopped,
             confirmed: Some(confirmed),

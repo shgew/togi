@@ -190,12 +190,14 @@ fn watchdog_loss_after_preflight_refuses_the_first_nonzero_profile() {
     )));
 }
 
-#[test_case(false, false; "after profile application before workload")]
-#[test_case(false, true; "after first trial before workload at the applied profile")]
-#[test_case(true, false; "during trial before next profile or workload")]
+#[test_case(false, false, false; "after profile application before workload")]
+#[test_case(false, true, false; "after first trial before workload at the applied profile")]
+#[test_case(false, false, true; "at trial intent before workload")]
+#[test_case(true, false, false; "during trial before next profile or workload")]
 fn a_lost_watchdog_stops_new_work_and_restores_verified_stock(
     during_trial: bool,
     after_first_trial: bool,
+    at_trial_intent: bool,
 ) {
     let sim = simulator();
     let mem = MemFs::new();
@@ -204,9 +206,11 @@ fn a_lost_watchdog_stops_new_work_and_restores_verified_stock(
     input.on_append = Some(Box::new(move |event| {
         if matches!(&event.payload, Payload::TrialStart(_)) && during_trial
             || matches!(&event.payload, Payload::TrialEnd(_)) && after_first_trial
+            || matches!(&event.payload, Payload::TrialIntent(_)) && at_trial_intent
             || matches!(&event.payload, Payload::ProfileApplied(_))
                 && !during_trial
                 && !after_first_trial
+                && !at_trial_intent
         {
             fault.fail_check("watchdog", "hardware watchdog lost");
         }
@@ -248,6 +252,49 @@ fn a_lost_watchdog_stops_new_work_and_restores_verified_stock(
                 .any(|event| matches!(event.payload, Payload::SmuIntent(_))),
             "the next trial keeps the applied profile and reaches the workload-start check"
         );
+    }
+    if at_trial_intent {
+        let intent = events
+            .iter()
+            .find_map(|event| {
+                if let Payload::TrialIntent(intent) = &event.payload {
+                    Some((event.seq, &intent.trial))
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let (end_position, end_event, end) = events
+            .iter()
+            .enumerate()
+            .find_map(|(position, event)| {
+                if let Payload::TrialEnd(end) = &event.payload
+                    && &end.trial == intent.1
+                {
+                    Some((position, event, end))
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let dead_end_position = events
+            .iter()
+            .position(|event| matches!(event.payload, Payload::DeadEnd(_)))
+            .unwrap();
+        assert!(end.interrupted);
+        assert_eq!(end.outcome, togi_journal::Outcome::Inconclusive);
+        assert_eq!(end.duration_s, 0);
+        assert!(
+            end.reason
+                .as_deref()
+                .unwrap()
+                .contains("not started: hardware watchdog unarmed")
+        );
+        assert_eq!(end_event.cause, [intent.0, events[loss].seq]);
+        assert!(loss < end_position && end_position < dead_end_position);
+        assert!(!events.iter().any(|event| {
+            matches!(&event.payload, Payload::TrialStart(start) if &start.trial == intent.1)
+        }));
     }
     for event in events {
         if let Payload::TrialIntent(intent) = &event.payload {
