@@ -796,7 +796,7 @@ fn zero_baseline(session: &Session, boot: &str, causes: Vec<togi_journal::Seq>) 
 }
 
 #[test]
-fn day_checks_require_a_historical_same_boot_receipt_and_do_not_change_anything() {
+fn day_checks_require_a_current_same_boot_receipt_and_do_not_change_anything() {
     let session = Session::new();
     let host = day_host(&session);
     let readback = zero_readback(&session, &host.boot, 0);
@@ -833,7 +833,7 @@ fn day_checks_require_a_historical_same_boot_receipt_and_do_not_change_anything(
     );
     assert!(
         ran.out
-            .contains("distinct from applied D and current readback")
+            .contains("distinct from applied D and live readback")
     );
     assert!(
         ran.out
@@ -1086,7 +1086,7 @@ fn day_help_names_the_read_only_checks_and_separates_baseline_proof() {
     assert!(ran.out.contains("--day"));
     assert!(ran.out.contains("persistent system journal"));
     assert!(ran.out.contains("Applied D"));
-    assert!(ran.out.contains("historical baseline"));
+    assert!(ran.out.contains("superseded readback"));
     assert_eq!(host.calls.get(), 0);
 }
 
@@ -1110,5 +1110,161 @@ fn a_historical_zero_receipt_is_distinct_from_a_current_nonzero_readback() {
     let ran = doctor(&host, session.path(), &["--day"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert!(ran.out.contains("current offsets: core 0 = -5"));
-    assert!(ran.out.contains("this boot's verified CO-0 receipt"));
+    assert!(
+        ran.out
+            .contains("this boot's current verified CO-0 readback")
+    );
+}
+
+#[test]
+fn a_same_boot_zero_receipt_superseded_by_nonzero_readback_is_not_current() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    append_day_event(
+        &session,
+        &host.boot,
+        togi_journal::SmuReadback {
+            core: togi_machine::CoreId::new(0).unwrap(),
+            offset: togi_machine::ObservedOffset(-5),
+            expected: None,
+        }
+        .into(),
+        Vec::new(),
+    );
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight, "{}", ran.out);
+    assert!(ran.out.contains("co0_baseline"));
+}
+
+#[test]
+fn a_fresh_boot_without_a_durable_readback_refuses() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight, "{}", ran.out);
+    assert_eq!(ran.err, "togi doctor: not ready: co0_baseline\n");
+}
+
+#[test_case::test_case(0, true; "verified current stock")]
+#[test_case::test_case(-5, false; "current nonzero")]
+fn a_current_day_start_decides_from_its_all_core_readback(offset: i64, ready: bool) {
+    let session = Session::new();
+    let host = day_host(&session);
+    append_day_event(
+        &session,
+        &host.boot,
+        togi_journal::DayBootStart {
+            build: togi_cli::report::current_build(),
+            bios: session.context.clone(),
+            offsets: [(
+                togi_machine::CoreId::new(0).unwrap(),
+                togi_machine::ObservedOffset(offset),
+            )]
+            .into_iter()
+            .collect(),
+            watchdog: None,
+        }
+        .into(),
+        Vec::new(),
+    );
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(
+        ran.exit,
+        if ready { Exit::Ok } else { Exit::Preflight },
+        "{}",
+        ran.out
+    );
+}
+
+#[test]
+fn a_failed_readback_supersedes_a_same_boot_zero_receipt() {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    append_day_event(
+        &session,
+        &host.boot,
+        togi_journal::SmuError {
+            op: togi_journal::SmuOp::Read,
+            core: Some(togi_machine::CoreId::new(0).unwrap()),
+            offset: None,
+            error: "readback failed".into(),
+        }
+        .into(),
+        Vec::new(),
+    );
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight, "{}", ran.out);
+    assert_eq!(ran.err, "togi doctor: not ready: co0_baseline\n");
+}
+
+#[test_case::test_case("smu.intent", r#"{"op":"set_all","offset":-5}"#; "unresolved intent")]
+#[test_case::test_case("smu.write", r#"{"op":"set_all","offset":-5}"#; "later write")]
+#[test_case::test_case("smu.readback", r#"{"core":0,"offset":0}"#; "partial uncited readback")]
+fn a_later_incomplete_transaction_supersedes_the_stock_receipt(kind: &str, data: &str) {
+    let session = Session::new();
+    let host = day_host(&session);
+    let readback = zero_readback(&session, &host.boot, 0);
+    zero_baseline(&session, &host.boot, vec![readback]);
+    let text = session.text();
+    let last: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    let seq = last["seq"].as_u64().unwrap() + 1;
+    session.fs.put(
+        session.journal(),
+        format!("{text}{{\"seq\":{seq},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"{}\",\"kind\":\"{kind}\",\"msg\":\"incomplete transaction\",\"data\":{data}}}\n", host.boot).into_bytes(),
+    );
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Preflight, "{}", ran.out);
+    assert_eq!(ran.err, "togi doctor: not ready: co0_baseline\n");
+}
+
+#[test]
+fn a_current_all_core_zero_transaction_accepts_separate_core_writes() {
+    let session = Session::new();
+    let mut host = day_host(&session);
+    host.topology.push(togi_machine::CoreInfo {
+        core: togi_machine::CoreId::new(1).unwrap(),
+        ccd: togi_machine::CcdId::new(0).unwrap(),
+        cpus: vec![togi_machine::CpuId::from(1_u16)],
+    });
+    for info in &host.topology {
+        let intent = append_day_event(
+            &session,
+            &host.boot,
+            togi_journal::Payload::SmuIntent(
+                serde_json::from_value(
+                    serde_json::json!({"op": "set", "core": info.core, "offset": 0}),
+                )
+                .unwrap(),
+            ),
+            Vec::new(),
+        );
+        let write = append_day_event(
+            &session,
+            &host.boot,
+            togi_journal::Payload::SmuWrite(
+                serde_json::from_value(
+                    serde_json::json!({"op": "set", "core": info.core, "offset": 0}),
+                )
+                .unwrap(),
+            ),
+            vec![intent],
+        );
+        append_day_event(
+            &session,
+            &host.boot,
+            togi_journal::SmuReadback {
+                core: info.core,
+                offset: togi_machine::ObservedOffset(0),
+                expected: Some(togi_machine::TargetOffset::ZERO),
+            }
+            .into(),
+            vec![write],
+        );
+    }
+    let ran = doctor(&host, session.path(), &["--day"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.out);
 }

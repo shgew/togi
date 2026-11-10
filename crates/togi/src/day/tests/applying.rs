@@ -759,6 +759,23 @@ fn nonzero_baseline_is_refused_without_a_write_or_application() {
     assert_eq!(applications(&journal).len(), 0);
 }
 
+#[test]
+fn a_verified_day_zero_transaction_records_a_current_stock_baseline() {
+    let mut journal = seed();
+    let mut hardware = Hardware::stock();
+    let mut live = crate::day::apply::Live::preflight(&journal, &mut hardware).unwrap();
+    live.zero(&mut journal, &mut hardware, &ActiveClock::one())
+        .unwrap();
+    assert!(
+        crate::day::current_baseline(
+            journal.events(),
+            journal.boot(),
+            session_cores(journal.events()).unwrap(),
+        )
+        .is_some()
+    );
+}
+
 #[test_case("unarmed"; "unarmed watchdog")]
 #[test_case("active timer did not count down"; "non-counting watchdog")]
 fn an_unarmed_or_noncounting_watchdog_refuses_without_a_write(detail: &str) {

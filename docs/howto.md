@@ -349,7 +349,7 @@ that boot, not repeated on the next day boot. Notification deduplication is per 
 lifetime: restarting the notifier may show it again. A notification is not proof of current hardware
 offsets or stability.
 
-`doctor --day` checks the day prerequisites rather than stress-workload availability. Its baseline row asks whether this boot has a complete, verified CO-0 baseline witness, separately from the journal's applied D or a current zero readback. Missing proof is not silently filled in. Like ordinary `doctor`, it writes no journal event and changes no offset; root hardware checks still require the host lock, so stop a competing hardware process first. See [day diagnostics](spec/runtime.md#day-diagnostics) for the exact checks.
+`doctor --day` checks the day prerequisites rather than stress-workload availability. Its baseline row requires a current, complete, verified CO-0 readback recorded in this boot, using the day service's own stock-verification rule. The day service's start records that proof. An earlier-boot receipt, a receipt superseded by a write or failed/partial/nonzero readback, applied D alone or a live zero diagnostic reading cannot replace it. Missing proof refuses rather than being silently filled in. Like ordinary `doctor`, it writes no journal event and changes no offset; root hardware checks still require the host lock, so stop a competing hardware process first. See [day diagnostics](spec/runtime.md#day-diagnostics) for the exact checks.
 
 A night has no end time: `sudo togi run` tunes until you end it with Ctrl-C,
 F10 in the dashboard or a reboot (the power button included), and restores

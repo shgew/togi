@@ -20,6 +20,7 @@ use crate::exit::Exit;
 use crate::report::{current_build, exit_with};
 
 mod apply;
+pub(crate) use apply::current_baseline;
 mod control_cli;
 mod faults;
 mod load_mix;
@@ -494,6 +495,15 @@ fn observe_with_socket(
         // every later read follows.
         if matches!(progress.watchdog, WatchdogState::Unarmed { .. }) {
             return Err(Error::Watchdog);
+        }
+        if current_baseline(
+            journal.events(),
+            journal.boot(),
+            session_cores(journal.events())?,
+        )
+        .is_none()
+        {
+            return Err(Error::Baseline);
         }
         live.start(
             journal,
