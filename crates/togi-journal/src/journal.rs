@@ -251,8 +251,10 @@ impl Journal {
         self.commit(stamp, payload, cause)
     }
 
-    /// Records the start readback, citing every inherited open SMU obligation it can observe.
+    /// Records the start readback, citing open SMU intents not awaiting crash attribution.
     ///
+    /// Own-boot intents are always eligible. Another boot's intents are eligible only
+    /// when it has no non-note tuning-run event or its last such event is shutdown.
     /// Generic [`Self::append`] also routes day starts here. Partial readbacks carry no
     /// inherited-intent citations; the fold independently requires complete observation.
     ///
@@ -267,8 +269,20 @@ impl Journal {
         let state = crate::State::replay(&self.events)?;
         let mut causes = cause.to_vec();
         if start.observes_cores(state.cores.iter().map(|facts| facts.core)) {
+            let mut tuning_ends = std::collections::HashMap::new();
+            for event in &self.events {
+                if event.kind().admits_tuning_boot() {
+                    tuning_ends.insert(&event.boot, event.kind());
+                }
+            }
             for open in &state.open {
-                if open.kind == EventKind::SmuIntent && !causes.contains(&open.seq) {
+                if open.kind == EventKind::SmuIntent
+                    && (&open.boot == self.boot()
+                        || tuning_ends
+                            .get(&open.boot)
+                            .is_none_or(|kind| *kind == EventKind::Shutdown))
+                    && !causes.contains(&open.seq)
+                {
                     causes.push(open.seq);
                 }
             }
