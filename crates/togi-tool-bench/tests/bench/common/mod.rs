@@ -20,7 +20,6 @@ pub(crate) fn record(scenario: &str, seed: u64) -> Record {
         ruleset: 1,
         evidence: 1,
         status: Status::Concluded,
-        model_check: None,
         exit_code: 0,
         wall_s: Some(0.0),
         sim_hours: 10.0,

@@ -8,21 +8,19 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use togi_tool_audit::{Completion, Finding};
-use togi_tool_modelcheck::Check;
-use togi_tool_trialfacts::Extracts;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use crate::cache::{self, Costs, RunCache};
 use crate::compare;
-use crate::error::{Error, ModelCheckError, RunError};
+use crate::error::{Error, RunError};
 use crate::git::Tree;
 use crate::metrics::{self, Measured};
 use crate::pool;
 use crate::process::Fleet;
-use crate::record::{ModelCheck, Record, Status};
+use crate::record::{Record, Status};
 use crate::simulator::{Session, Simulator};
 use crate::stats::share;
-use crate::suite::{DiskSource, Machine, Plan, RunSpec, Selection, Suite};
+use crate::suite::{DiskSource, Plan, RunSpec, Selection, Suite};
 use crate::summary;
 
 mod adapters;
@@ -35,7 +33,7 @@ pub struct Options {
     pub selection: Selection,
     /// Where to write one record per run.
     pub out: Option<PathBuf>,
-    /// Where to write the records as a baseline file keeps them: without model checks and wall times.
+    /// Where to write the records as a baseline file keeps them: without wall times.
     pub baseline_out: Option<PathBuf>,
     /// A records file to compare the run with.
     pub baseline: Option<PathBuf>,
@@ -58,7 +56,6 @@ pub struct Options {
 pub struct Report {
     /// One record per selected run, in suite order.
     pub records: Vec<Record>,
-    pub checks: Vec<Check>,
     pub baseline: Option<Vec<Record>>,
     /// How many records came from the cache.
     pub cached: usize,
@@ -100,10 +97,9 @@ impl RunFinding {
 }
 
 impl Report {
-    /// Writes the report: the summary, the model checks, the journal audit and, with a baseline, the comparison.
+    /// Writes the report: the summary, the journal audit and, with a baseline, the comparison.
     pub fn write(&self, w: &mut impl io::Write) -> io::Result<()> {
         summary::report(w, &self.records)?;
-        togi_tool_modelcheck::report(w, &self.checks)?;
         writeln!(
             w,
             "audit: audited={} violations={}",
@@ -138,7 +134,6 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
     let started = Instant::now();
     let suite = Suite::load_from(&options.suite, io)?;
     let plan = suite.plan_from(options.selection, io)?;
-    let (verdicts, checks) = model_checks_with(&plan, |path| io.read_facts(path))?;
     let baseline = options
         .baseline
         .as_deref()
@@ -163,7 +158,6 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
         fleet,
         cache: cache.as_ref(),
         costs: costs.as_ref(),
-        verdicts: &verdicts,
         root: root.path(),
         cached: &cached,
         warnings: &warnings,
@@ -222,7 +216,6 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
     }
     Ok(Report {
         records,
-        checks,
         baseline,
         cached: cached.into_inner(),
         kept: root.kept(),
@@ -258,7 +251,6 @@ struct Job<'a, R> {
     fleet: &'a Fleet,
     cache: Option<&'a RunCache>,
     costs: Option<&'a Costs>,
-    verdicts: &'a BTreeMap<PathBuf, ModelCheck>,
     root: &'a Path,
     cached: &'a AtomicUsize,
 }
@@ -309,7 +301,7 @@ impl<R: SessionRunner> Job<'_, R> {
                 .simulator
                 .folded(&session)
                 .map_err(|error| RunError::Measure(crate::error::MeasureError::Folded(error)))?;
-            let record = record_of(spec, &session, self.verdicts, folded.facts())?;
+            let record = record_of(spec, &session, folded.facts())?;
             let audit = self.simulator.audit(&session, completion(record.status));
             if !keeping {
                 self.simulator.remove(&session.dir);
@@ -360,7 +352,6 @@ impl<R: SessionRunner> Job<'_, R> {
 fn record_of(
     spec: &RunSpec,
     session: &Session,
-    verdicts: &BTreeMap<PathBuf, ModelCheck>,
     facts: &togi_journal::State,
 ) -> Result<Record, RunError> {
     let model = spec.model().map_err(RunError::Model)?;
@@ -393,11 +384,6 @@ fn record_of(
                 session.log_dead_end,
             )
         },
-        model_check: spec
-            .machine
-            .as_ref()
-            .and_then(|machine| verdicts.get(&machine.path))
-            .copied(),
         exit_code: session.exit,
         wall_s: Some(session.wall.as_secs_f64()),
         sim_hours,
@@ -410,67 +396,6 @@ fn record_of(
         hazard_per_h,
         hazard_max_per_h,
     })
-}
-
-fn model_checks_with(
-    plan: &Plan,
-    mut reader: impl FnMut(
-        &Path,
-    ) -> Result<
-        Vec<togi_tool_trialfacts::TrialFact>,
-        togi_tool_trialfacts::ReadError,
-    >,
-) -> Result<(BTreeMap<PathBuf, ModelCheck>, Vec<Check>), Error> {
-    let mut extracts = Extracts::new();
-    let mut verdicts = BTreeMap::new();
-    let mut checks = Vec::new();
-    for machine in &plan.machines {
-        if let Some(check) = check_machine_with(machine, &mut extracts, &mut reader)? {
-            verdicts.insert(
-                machine.path.clone(),
-                ModelCheck {
-                    eligible_groups: check.groups.len(),
-                    flagged_groups: check.flagged().count(),
-                    idle_failures: check.idle_failures,
-                },
-            );
-            checks.push(check);
-        }
-    }
-    Ok((verdicts, checks))
-}
-
-pub(crate) fn check_machine_with(
-    machine: &Machine,
-    extracts: &mut Extracts,
-    reader: impl FnOnce(
-        &Path,
-    )
-        -> Result<Vec<togi_tool_trialfacts::TrialFact>, togi_tool_trialfacts::ReadError>,
-) -> Result<Option<Check>, Error> {
-    let Some(facts) = machine
-        .definition
-        .facts
-        .as_deref()
-        .filter(|facts| !facts.is_empty())
-    else {
-        return Ok(None);
-    };
-    let failed = |source| Error::ModelCheck {
-        machine: machine.name.clone(),
-        source,
-    };
-    let model = machine
-        .model(0)
-        .map_err(|error| failed(ModelCheckError::Model(error)))?;
-    let (_, records) = extracts
-        .load_with(&machine.path, &machine.definition, reader)
-        .map_err(|error| failed(ModelCheckError::Extract(error)))?;
-    let label = Path::new(&machine.name);
-    let extract = label.parent().unwrap_or_else(|| Path::new("")).join(facts);
-    togi_tool_modelcheck::check_records(label, &extract, &model, &records)
-        .map(Some)
-        .map_err(|error| failed(ModelCheckError::Check(error)))
 }
 
 fn open_cache(

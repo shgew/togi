@@ -23,12 +23,6 @@ pub enum Error {
         #[source]
         source: ExtractsError,
     },
-    #[error("check model {machine}")]
-    ModelCheck {
-        machine: String,
-        #[source]
-        source: ModelCheckError,
-    },
     #[error("{what} {}", path.display())]
     ReadFile {
         what: &'static str,
@@ -85,17 +79,6 @@ pub enum Error {
     },
     #[error("interrupted")]
     Interrupted,
-}
-
-/// Why a model check of a replayed machine did not run.
-#[derive(Debug, thiserror::Error)]
-pub enum ModelCheckError {
-    #[error("build the machine's model")]
-    Model(#[source] InvalidMachine),
-    #[error(transparent)]
-    Extract(ExtractsError),
-    #[error(transparent)]
-    Check(togi_tool_modelcheck::Error),
 }
 
 /// Why the simulator did not build.

@@ -56,7 +56,7 @@ struct RunArgs {
     /// Write one JSON record per run to this file.
     #[arg(long, value_name = "FILE")]
     out: Option<PathBuf>,
-    /// Write the records as a baseline file keeps them: without `model_check` and `wall_s`, which no comparison reads. Comparison accepts it as `--baseline`.
+    /// Write the records as a baseline file keeps them: without `wall_s`, which no comparison reads. Comparison accepts it as `--baseline`.
     #[arg(long, value_name = "FILE")]
     baseline_out: Option<PathBuf>,
     /// Compare the run with the records in this file.

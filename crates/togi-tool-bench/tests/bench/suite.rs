@@ -232,7 +232,6 @@ fn an_ensemble_picks_members_by_position_within_each_split() {
         ]
         .map(|(run, machine)| (run.to_owned(), machine.to_owned()))
     );
-    assert_eq!(plan.machines.len(), 2);
 }
 
 #[test]
@@ -245,7 +244,6 @@ fn a_machine_shared_by_runs_is_read_once() {
     )
     .unwrap();
     let plan = suite.plan_from(Selection::Dev, &dir).unwrap();
-    assert_eq!(plan.machines.len(), 1);
     let first = plan.runs[0].machine.as_ref().unwrap();
     assert!(
         plan.runs
@@ -378,8 +376,14 @@ fn the_committed_nonmember_scenario_is_a_replayed_synthetic_guard_with_one_smoke
 fn every_machine_of_the_committed_suite_is_valid_and_lists_its_files() {
     let dir = Tree::committed();
     let plan = dir.suite().plan_from(Selection::All, &dir).unwrap();
-    assert_eq!(plan.machines.len(), 18);
-    for machine in &plan.machines {
+    let machines: BTreeMap<_, _> = plan
+        .runs
+        .iter()
+        .filter_map(|run| run.machine.as_ref())
+        .map(|machine| (&machine.name, machine))
+        .collect();
+    assert_eq!(machines.len(), 18);
+    for machine in machines.values() {
         assert!(machine.model(1).is_ok(), "{}", machine.name);
         assert!(
             machine.inputs.iter().all(|(_, sum)| sum.is_some()),
@@ -387,10 +391,9 @@ fn every_machine_of_the_committed_suite_is_valid_and_lists_its_files() {
             machine.name
         );
     }
-    let overlay = plan
-        .machines
-        .iter()
-        .find(|m| m.name.ends_with("target-r7-vf-boost.json"))
+    let overlay = machines
+        .values()
+        .find(|machine| machine.name.ends_with("target-r7-vf-boost.json"))
         .unwrap();
     let files: Vec<_> = overlay
         .inputs

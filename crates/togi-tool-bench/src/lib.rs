@@ -52,16 +52,13 @@ mod stats;
 mod suite;
 pub mod summary;
 
-pub use error::{
-    BuildFailure, Error, GitError, MeasureError, ModelCheckError, RunError, Unrunnable,
-};
+pub use error::{BuildFailure, Error, GitError, MeasureError, RunError, Unrunnable};
 pub use git::{Tree, inspect};
 pub use metrics::{Measured, measure};
 pub use process::Fleet;
 pub use record::{
-    ModelCheck, Record, Status, encode as encode_records,
-    encode_baseline as encode_baseline_records, read as read_records,
-    read_from as read_records_from, write as write_records,
+    Record, Status, encode as encode_records, encode_baseline as encode_baseline_records,
+    read as read_records, read_from as read_records_from, write as write_records,
     write_baseline as write_baseline_records,
 };
 pub use run::{Options, Report, RunFinding, execute, set_scenario_shares};

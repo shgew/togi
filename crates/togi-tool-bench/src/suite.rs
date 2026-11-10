@@ -245,10 +245,7 @@ impl Suite {
         if runs.is_empty() {
             return Err(SuiteError::NoRuns.into());
         }
-        Ok(Plan {
-            runs,
-            machines: machines.loaded.into_values().collect(),
-        })
+        Ok(Plan { runs })
     }
 }
 
@@ -364,8 +361,6 @@ impl RunSpec {
 #[derive(Debug)]
 pub struct Plan {
     pub runs: Vec<RunSpec>,
-    /// Every distinct machine of the suite, selected or not, ordered by path.
-    pub machines: Vec<Arc<Machine>>,
 }
 
 #[derive(Default)]

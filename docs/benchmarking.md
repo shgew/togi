@@ -2,7 +2,7 @@
 
 `togi-tool-bench` (`just bench`) runs the legacy session suite and compares simulated session metrics for on-demand research. It is a development program and is not shipped. Its metrics do not establish a profile's daily-use safety.
 
-[Methodology](#methodology) owns the limitations of fitted-model evidence. Day/night scoring and campaign launching are [retired](#daynight-gate); normal bench, baseline, same/smoke, simulator, audit, stats and original trial evidence remain.
+[Methodology](#methodology) records the retirement of fitted-model evaluation. Day/night scoring and campaign launching are [retired](#daynight-gate); normal bench metrics, baseline, same/smoke, simulator, journal audit, stats and original trial evidence remain.
 
 ```sh
 just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR] [--jobs N] [--max-boots 1000]
@@ -12,30 +12,13 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 
 ### Fitted machines and target claims
 
-Bench verdicts rest on fitted machines and real-fact replay, not synthetic wins alone. Use all decisive same-BIOS observations, including archived sessions, older builds and observations before a reset; the tuner's evidence-eligibility rules do not discard evaluation facts. Keep a privacy-safe, reproducible extract with class, full profile, outcome, duration and provenance. BIOS context limits fitting, checking and replay.
+Fitting and model checking were retired by R03 in [#1559](https://github.com/shgew/togi/issues/1559), following the [approved decision](decisions.md#rejected) rejecting predictive simulators and fitted machine models as tuning-policy authorities. Bench no longer runs or reports calibration checks. Its hazard metrics still describe the selected synthetic model, not measured hardware risk.
 
-Check serialized members against the original extract: group decisive starts by BIOS context, trial class and shallowest loaded-core offset; for groups with at least ten starts, compare observed failures with the unchanged inclusive 99% binomial interval from mean predicted per-start failure probability over intended durations. Count trial-less idle failures separately, without inventing exposure. A flagged member cannot support a target-machine claim, even when the numeric bench verdict and exit status do not enforce that restriction.
-
-`just fit` produces an all-facts fit and eight whole-trial bootstrap refits by default. Fit the Bernoulli likelihood using the simulator's failure-probability calculation. Replay exact full-profile and class matches within the same BIOS context uniformly over matching decisive facts, deterministically per seed and trial ID/index; condition, phase, source ruleset and evidence epoch do not restrict matches. Unmatched trials and trial-less failures use the selected fit. Only ordinary journal observations reach the tuner. Report candidate and baseline replay coverage (`real_answer_share`), which is coverage, not confidence.
-
-A kept tuner experiment must win its registered evaluation and preserve its guardrails, with target model checks unchanged from research setup, **not necessarily passing**. A flagged member still supports no target-machine claim, so an experiment using one is kept without such a claim. Freeze simulator, facts, machines, suite and baseline during tuner research. New hardware evidence, extract refresh, refits and a new baseline are separate owner-triggered evaluation changes, not ways to improve an experiment's score.
-
-This evidence is conditional: adaptive starts are not independent merely because checks use binomial intervals; per-group 99% intervals do not give joint 99% coverage. Bootstrap constraints truncate spread. Unsupported boundaries and failure-time shapes remain unidentified; idle facts without exposure cannot identify idle rates. Hazard metrics describe the fitted fallback, not an empirical replay-oracle hazard.
-
-Rejected:
-
-- Hand-written machines alone encode their author's assumptions and have missed a real CCD1 failure shape. Keep them as adversaries, not target proof.
-- Replay without a fitted fallback cannot answer new profiles, classes and durations; restricting research to historical paths prevents evaluating changed decisions, while invented answers conceal missing evidence.
-- A single fit makes an apparent benefit depend on one optimum. Whole-trial refits expose some parameter sensitivity.
-- An unchecked bootstrap ensemble can lose sparse failures from a resample and contradict observed groups. Check every member against the original extract and disclose constraints and flags.
+The annotated historical-source tag [`archive/pre-cut`](https://github.com/shgew/togi/tree/archive/pre-cut) retains the [original methodology](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#methodology), fitter and model-check sources. It is not a product release. Reproduction requires that historical source, not current commands.
 
 ### Flagged target fits
 
-When the all-facts fit passes, restart a flagged bootstrap refit from it and optimize the same resampled likelihood subject to every original group's unchanged interval. Report the constraints; never redraw samples or relax the check. This is a constrained bootstrap ensemble, not an unconstrained confidence interval.
-
-When the all-facts fit fails, there is no passing restart point: write every bootstrap refit as fitted, unconstrained, explicitly naming each flagged refit. Every written member's `notes` and the fit report record `ok` or `flagged` and each flagged group's class, loaded cores, intended duration, depth, observed counts and interval against the original extract. The model check stays unchanged; flags travel with the files and block target-machine claims. Once the all-facts fit passes, constrained restarts resume. A model change must flag no group not already flagged at setup.
-
-Rejected: a Holm correction across the then-52 eligible groups would have made the check about 52 times more lenient and hidden real misfits (including a group at p ≈ 0.002). Blocking all fit output leaves committed machines older than the evidence and can retain more flagged groups. A better shared-voltage model is the substantive fix, not a reason to hide current misfits: the candidate considered in [#480](https://github.com/shgew/togi/issues/480) fitted the failing group in sample but predicted 2.12 times the observed R7 failures forward, so it could not replace the ensemble then. Model replacement still needs its own forward evidence.
+The committed machines retain their original provenance, constraints and model-check flags unchanged. Those flags are historical evidence, not checks performed by today's bench. The [historical explanation](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#flagged-target-fits) records their limitations; retirement neither validates a flagged fit nor supplies a target-machine claim.
 
 ### Crash cost and stray-crash exclusion
 
@@ -52,7 +35,7 @@ Rejected: weighing a crash only by reboot time leaves the goal of fewer crashes 
 |Scenario|Models|
 |---|---|
 |`default`|the seeded default machine|
-|`target`|real-fact replay over the all-facts target fit and eight bootstrap refits, all flagged by the model check and the refits unconstrained ([flagged target fits](#flagged-target-fits)), including CCD0 and CCD1 R7 joints|
+|`target`|real-fact replay over the all-facts target fit and eight bootstrap refits, all historically flagged by the retired model check and the refits unconstrained ([flagged target fits](#flagged-target-fits)), including CCD0 and CCD1 R7 joints|
 |`flat-hazard`|rare failures at any nonzero offset on two cores (issue #105)|
 |`late-onset`|R7 joint failures that start only after four minutes of load; the cores' own limits have no delay|
 |`idle-limit`|cores that fail idle at shallower offsets than under load (issue #106)|
@@ -108,7 +91,7 @@ A scenario may also list `smoke` seeds, each one of its dev or holdout seeds: th
 
 A scenario may set `night_hours` (a positive whole number, default 8), the simulated hours after which the operator ends each of its nights, and `night_end` (`"operator"`, the default, `"dead_end"`, or `"operator_or_stock"`, which also passes a stock dead end), how the sim suite expects the night to end ([the session suite](#the-session-suite)). Every scenario of `tools/bench/suite.json` sets `night_hours` to 48, so a night reaches mapping and the crashes a hunt produces. The bench does not read either.
 
-`--suite FILE` runs another scenario file instead, with machine paths relative to it. The [adversarial search](../tools/bench/adversary.md) scores candidate machines this way and turns confirmed findings into new scenarios.
+`--suite FILE` runs another scenario file instead, with machine paths relative to it. The [historical adversarial-search protocol](../tools/bench/adversary.md) used this interface; its removed model-check gate is not a current instruction.
 
 The target scenario has 18 dev and 18 holdout seeds: two seeds per ensemble member in each split. Its oracle draws uniformly from decisive facts matching the entire applied profile and trial class (regime, workload, sorted loaded cores and intended duration). Draws are deterministic per seed and trial ID/index. Condition, phase, source ruleset and evidence epoch do not restrict a class match; BIOS context does. The oracle never uses facts from another BIOS context or records without one. Non-matching trials and trial-less failures use the fitted machine. The tuner sees only the resulting journal evidence, not the oracle or its extract.
 
@@ -256,7 +239,7 @@ Cite a check as evidence only for the packages it exercises. `just gate` runs lo
 | `just sim-suite` | Every suite session on `togi-tool-sim` in one shard, then its manifest check, as [above](#the-session-suite) | The session, tuner, journal and simulator on the paths the suite reaches: each session concludes, resumes warm state equal to a cold fold, replays through the tuner and passes the invariant audit | Better or equal tuning (bench scoring does that), or anything about the packages the simulator replaces |
 | `just same` | Both trees' `togi-tool-sim` across every dev and holdout seed of their suites, with journals compared byte for byte (above) | The session, tuner and journal on the paths the suite's scenarios reach, through the simulator's SMU, host, trials and kernel | Any change to trial, detect, smu, hardware or the backends, which the simulator replaces; paths no scenario reaches |
 | `just smoke` | One session per scenario of both trees' `togi-tool-sim`, the suite's `smoke` list, compared as `just same` does | The same simulated paths as `just same`, on the sessions with the most crashes and longest histories of each scenario | Anything `just same` does not prove, and the paths the other sessions reach: run `just same` before relying on it |
-| `just bench` | Simulated sessions for the chosen split (dev by default) and the model checks; with `--baseline FILE`, a comparison with that baseline by metric thresholds | The same simulated paths as `just same` | Unchanged decisions (one changed decision with unchanged totals can pass), or anything about the packages the simulator replaces |
+| `just bench` | Simulated sessions for the chosen split (dev by default), journal audit, summary and cache; with `--baseline FILE`, a comparison with that baseline by metric thresholds | The same simulated paths as `just same` | Unchanged decisions (one changed decision with unchanged totals can pass), calibration or hardware reliability, or anything about the packages the simulator replaces |
 | `package` | Builds the release `togi` with the revision `dev` and runs it: `togi --version` and `togi completion` for bash, zsh, fish and nushell, as [below](#the-package) | That the package builds and installs, prints `togi <version.txt>+dev` and generates a completion script that names `togi` for each shell | What any command does, the set of commands, or that a completion script loads in its shell |
 | `just hardware` | On the target machine, as root: `cargo test --features hardware --test hardware` on `togi-smu`, `togi-detect`, `togi-trial` and `togi-hardware`, one binary and one test at a time, every binary even after one fails; as any other user it also builds and runs `togi-trial`'s `cached_errors`, which refuses root, and the tests that need root fail. `--no-run` builds them without running | The hardware tests: smu's sixteen distinct nonzero offsets written, read back as one vector and returned to verified stock, and its PM table lanes, detect reading the real kernel log, trial's real systemd scopes (R1 and R2 workloads on core 2 included) and hardware's diagnosis leaving offsets unchanged | R3 to R7 workloads or multi-core loads on real backends, the host's full preflight or ranking, or a tuning session: those need `togi doctor` or `togi run` evidence from the target machine. Until the owner runs it at the cutover, smu's, detect's and hardware's tests are only type-checked, by the flake's `clippy` check; `vm-runtime` runs trial's in a NixOS VM, all but the workload test, as root and as a delegated user, `cached_errors` included |
 
@@ -276,7 +259,7 @@ The commit, a dirty flag and the ruleset are recorded with every run.
 
 The summary counts each scenario's runs, `concluded` runs and `censored` runs. Its time and crash columns include every status, so a censored run's time and crashes enter them as lower bounds.
 
-The summary prints each scenario's `real_answer_share` and a pooled total. Comparison scenario rows and the verdict line print the candidate and baseline shares over paired runs. These fractions describe how much of the observed path has direct real evidence, not a confidence score. Unfinished trials of a censored session have no recorded outcome and are not counted. Hazard metrics and model checks still describe the fitted fallback, not an empirical oracle hazard.
+The summary prints each scenario's `real_answer_share` and a pooled total. Comparison scenario rows and the verdict line print the candidate and baseline shares over paired runs. These fractions describe how much of the observed path has direct real evidence, not a confidence score. Unfinished trials of a censored session have no recorded outcome and are not counted. Hazard metrics describe the fitted fallback, not an empirical oracle hazard; bench emits no calibration report.
 
 For example, `real_answer_share = 0.2` means matching real facts answered one fifth of completed trials, not one fifth of simulated hours or one fifth of the profile's risk. The rest of the path used the fitted fallback or includes completed trials that cannot count as real answers. A low share can simply mean the tuner explored profiles or load classes absent from the extract; it does not measure fit quality. Replay is enabled by the suite, not by the presence of `facts` in a machine file.
 
@@ -304,7 +287,7 @@ Historical legacy session-suite baselines can be recorded with:
 just bench-baseline
 ```
 
-The historical legacy session-suite baseline lives at `tools/bench/baseline.jsonl`; model development's F5 check still pins it. It is not the production-policy objective or a reference for day/night scores. It includes both dev and holdout seeds. The recipe runs `just bench --split all --out` into a temporary file and commits a projection of it that leaves out `model_check` (the fitted-machine check, repeated in every run of its machine and 93% of the full file), `wall_s` (each run's real duration) and `partial_seconds` (retired); every other field stays. Comparison reads none of the three, so it prints the same against the slim file as against the full one; `--out` itself still writes the full records. Baselines recorded before the oracle ensemble do not cover `target`; do not reuse them for V3.
+The historical legacy session-suite baseline lives at `tools/bench/baseline.jsonl` and includes both dev and holdout seeds. It is not the production-policy objective or a reference for day/night scores. R03 leaves this committed evidence unchanged. New baseline output omits only `wall_s` (each run's real duration); every other current record field stays. Comparison does not read `wall_s`, so it prints the same against baseline output as against full `--out` records. Baselines recorded before the oracle ensemble do not cover `target`; do not reuse them for V3.
 
 `just bench-baseline OUT` writes the same projection to another file and leaves the committed one alone:
 
@@ -312,7 +295,7 @@ The historical legacy session-suite baseline lives at `tools/bench/baseline.json
 just bench-baseline OUT
 ```
 
-`OUT` defaults to `tools/bench/baseline.jsonl`. The recipe runs `togi-tool-bench --split all --baseline-out OUT`. The flag writes the same run as `--out` with `model_check` and `wall_s` left out; it may be given together with `--out`, and neither file makes the tree dirty for the `commit` and `dirty` stamps. The projection is `Record::baseline` in the crate, pinned by its tests, not a filter in the recipe. `togi-tool-bench sanity` and `--baseline` read the committed file in this record format.
+`OUT` defaults to `tools/bench/baseline.jsonl`. The recipe runs `togi-tool-bench --split all --baseline-out OUT`. The flag writes the same run as `--out` with only `wall_s` left out; it may be given together with `--out`, and neither file makes the tree dirty for the `commit` and `dirty` stamps. The projection is `Record::baseline` in the crate, not a filter in the recipe. `togi-tool-bench sanity` and `--baseline` read the committed file in this record format.
 
 Compare legacy session-suite metrics with the historical baseline:
 
@@ -352,9 +335,9 @@ just bench sanity --records AFTER.jsonl
 
 The suite is `tools/bench/suite.json`, read by strict rules (unknown keys refused, a machine file per scenario, a replay oracle for `replay: true`); every scenario's machines and replay oracle are loaded and checked whatever `--split` selects. A run builds `togi-tool-sim` from this tree with `cargo build --release --locked`, copies the binary into a private directory, and starts that copy as a subprocess for every run with a temporary `--state-dir` whose journal the bench reads after it exits ([temporary-journal policy](development.md#temporary-journals-for-research-children)), in a process group of its own, with the flags `just sim` takes; `--sim PATH` copies and runs a given binary instead. `--jobs` (default: the CPU count) bounds the simulators at once, `--timeout SECONDS` is the hang safety limit of one run (an overrun is a harness error, not a run outcome), and `--max-boots` (default 1000) is the boot cap that makes a run censored. A harness error stops the simulators still running and is what the bench reports. A session a signal killed or stopped is an `error` record and is not cached. `--keep DIR` retains every run directory and skips the cache. The records come out in suite order whatever `--jobs` is, so they do not depend on scheduling. The bench records the tree's commit and dirty flag, so it runs inside a Git work tree. Ctrl-C stops the simulators that are running, discards kept run directories and exits non-zero.
 
-After a run's record is read and before its state directory is removed, the bench audits every journal of the directory, archives included, with [the audit](#the-audit-togi-tool-audit)'s library ([#546](https://github.com/shgew/togi/issues/546)). A `concluded` or `deadend` run is audited as finished, so its live journal must end in its conclusion and its `state.json` must equal a fresh fold; a `censored` or `error` run is audited as an unfinished prefix. A journal the lenient read left anything out of is a warning. The report prints `audit: audited=N violations=M` after the model checks, then each violation as `audit: RUN [JOURNAL] [seq N] CHECK: reason`; a run with a violation is not cached, and the bench exits 1 with `the journal audit found M violations` after writing its records and report. A cached record was audited when it was made. The `same` command audits nothing: it compares journals byte for byte.
+After a run's record is read and before its state directory is removed, the bench audits every journal of the directory, archives included, with [the audit](#the-audit-togi-tool-audit)'s library ([#546](https://github.com/shgew/togi/issues/546)). A `concluded` or `deadend` run is audited as finished, so its live journal must end in its conclusion and its `state.json` must equal a fresh fold; a `censored` or `error` run is audited as an unfinished prefix. A journal the lenient read left anything out of is a warning. The report prints `audit: audited=N violations=M`, then each violation as `audit: RUN [JOURNAL] [seq N] CHECK: reason`; a run with a violation is not cached, and the bench exits 1 with `the journal audit found M violations` after writing its records and report. A cached record was audited when it was made. The `same` command audits nothing: it compares journals byte for byte.
 
-The record is JSON Lines: every field is required except `machine`, `model_check` and `wall_s`, which are left out when absent (a baseline file written by `--baseline-out` leaves out `model_check` and `wall_s` on every line; comparison reads neither, so `--baseline` prints the same against it as against the full `--out` records), an unknown key is refused, `hazard_per_h` is an object by regime, `model_check` counts `eligible_groups`, `flagged_groups` and `idle_failures` (the flagged groups themselves are in the printed report), and `evidence` and `ruleset` are the build's `togi_tuner::EVIDENCE_EPOCH` and `RULESET`. A run's real answers come from the same extraction as the facts extract and count only decisive trials whose `trial.start` was journaled. The comparison, summary and verdict rules (V1–V3, the equal-scenario-weight bootstrap seeded with 1, 10000 resamples) are those of [Comparing two versions](#comparing-two-versions), except that the warning about unmatched runs counts the candidate runs without a baseline and the baseline runs in the candidate's splits without a candidate directly, so it never prints a negative count. A record file with a run twice, or of the earlier Go format, is refused: `--baseline` takes records of this format only.
+The record is JSON Lines: every field is required except `machine` and `wall_s`, which are left out when absent. Baseline output omits only `wall_s`; comparison does not read it. Unknown keys, including the retired `model_check` field, are refused. `hazard_per_h` is an object by regime, and `evidence` and `ruleset` are the build's `togi_tuner::EVIDENCE_EPOCH` and `RULESET`. A run's real answers come from the same extraction as the facts extract and count only decisive trials whose `trial.start` was journaled. The comparison, summary and verdict rules (V1–V3, the equal-scenario-weight bootstrap seeded with 1, 10000 resamples) are those of [Comparing two versions](#comparing-two-versions), except that the warning about unmatched runs counts the candidate runs without a baseline and the baseline runs in the candidate's splits without a candidate directly, so it never prints a negative count. A record file with a run twice, or of the earlier Go format, is refused: `--baseline` takes records of this format only.
 
 The cache holds finished records under `$XDG_CACHE_HOME/togi/bench` (or `~/.cache/togi/bench` on Linux and `~/Library/Caches/togi/bench` on macOS; `--cache DIR` and `--no-cache` override), a directory per tree key and the eight most recently used kept. The tree key binds the SHA-256 of the simulator copy that runs, the bench's own executable's SHA-256 and `--max-boots`; an entry also binds the suite file's bytes, the run's scenario, split and seed, the replay flag, and the bytes of the machine file, every file it extends and its facts extract. Any change misses. A failed cache write is a warning; the record is kept. A cache hit restamps the commit and dirty flag, so a cached record is the one a fresh run would write.
 
@@ -372,7 +355,7 @@ Each side's digest is cached under `same/<key>` in the cache directory (`--cache
 
 ## Checking a machine against real evidence
 
-A machine file may declare `"facts": "../facts/target.jsonl.gz"`, resolved relative to the machine JSON file. Every `target-fit-*.json` declares the committed target-machine extract. Files without `facts` are not checked.
+A machine file may declare `"facts": "../facts/target.jsonl.gz"`, resolved relative to the machine JSON file. Every `target-fit-*.json` declares the committed target-machine extract for replay. Bench no longer checks machines against these facts; the [historical check](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#checking-a-machine-against-real-evidence) is retired. Fact extraction and replay remain available.
 
 Regenerate the extract from a temporary copy of the state directory, never the live state: `togi-tool-facts` takes the directory's writer lock. Copy it as [above](#copying-a-real-state-directory), while togi is not running a trial:
 
@@ -389,118 +372,19 @@ The extract also retains an optional attributed `core` on failures, including co
 
 The native reader does not import Go-era journal headers. The committed 2026-10-17 refresh used the unmodified Go extractor at `ec7452cbd37fc826fab96fe4d0b877e040668c94`, with persisted per-trial samples to recover request and clock summaries. Its provenance and once-only score are [recorded below](#the-2026-10-17-frozen-score); this is not a native journal compatibility promise.
 
-The model check groups decisive trials by BIOS context, trial class (regime, workload, sorted loaded cores and intended duration), and the shallowest loaded-core offset in the applied profile. Any loaded core at 0 puts the trial at depth 0. If the machine declares a BIOS context, only matching facts are checked; otherwise contexts are checked separately.
-
-This check uses decisive pass/failure trials only; interrupted and inconclusive trials are omitted. A facts-declaring machine with positive `thermal_trip` or `power_loss` weights in `model.reset` is rejected: those resets can turn simulated crashes into inconclusive outcomes, while the simulator's failure probability includes the full failure hazard. Comparing that probability to decisive-only trials would use incompatible denominators.
-
-For each group with at least 10 trials, the simulator computes each trial's exact failure probability over its intended duration, including onset boosts, unloaded-core hazards and delayed joints. The check averages these probabilities and compares observed failures against quantiles 0.005 and 0.995 of Binomial(n, mean_p). A count outside that inclusive interval flags the machine. Idle failures are retained as their own fact class but have no trial duration or exposure denominator, so the report counts them separately rather than inventing a per-trial prediction.
-
-`just bench` prints `ok` or `flagged` for each checked file, and every offending class, depth, n, k, interval and mean_p. JSON run records carry the same information in `model_check`, including all eligible groups. A flag says the file does not explain that part of the real evidence; it does not change the comparison verdict or exit status. Investigate the group before using improvements on that file as evidence about the target machine. This is a model diagnostic, not a claim that adaptive journal trials are independent or that all groups jointly have a 99% coverage guarantee.
-
 ## Fitting the target machine
 
-```sh
-just fit --current-extract --facts tools/bench/facts/target.jsonl.gz --out tools/bench/machines
-# Optional: --seed 263 --bootstrap 8 --jobs N
-```
+`togi-tool-fit` and `togi-tool-modelcheck` are retired. `just fit`, `just fit-artifact` and `just forward-compare` are absent, with no replacement commands. The [approved decision](decisions.md#rejected) rejects fitted forecasts as a way to decide tuning policy.
 
-`togi-tool-fit` reads the same privacy-safe extract as the model check and requires 16-core profiles. It writes `target-fit-0.json` from all decisive trials and `target-fit-1.json` through `target-fit-8.json` from whole-trial bootstrap samples drawn with replacement. The default seed is 263; refit `n` uses seed `263+n`. Every file declares its extract relative to the output directory and its BIOS context. Mixed-context extracts are refused: split them before fitting. The `target` scenario spreads separate dev and holdout seeds across all nine files, with the replay oracle above each.
-
-Every run names its extract with `--facts`, and every run that writes machine files names its directory with `--out`; neither has a default, so no run reads the committed extract or replaces the committed machines by omission. Without `--current-extract`, an extract holding a session recorded after 20261004T000701Z is refused before anything is fitted or created, and an extract holding any of the original research artifact's seven sessions must be that exact artifact ([model program](../tools/fit/program.md#the-data)). The committed extract therefore needs `--current-extract`, the owner-approved regeneration above; no research campaign passes it. Each report opens with `Facts: sha256 HASH, N rows, N sessions:` and whether the rows are the original research artifact, the hash being the dispatcher's pin of the decompressed rows.
-
-`--jobs N` bounds the whole run's worker pool (default: available CPUs). Output order and machine bytes do not depend on the worker count. The fit's objective, search, parameter bounds, bootstrap constraints and identifiability limits are documented in the `togi-tool-fit` crate (`cargo doc -p togi-tool-fit --no-deps`).
-
-The report identifies constrained refits and their unconstrained flagged groups, intervals and mean probabilities. A constrained ensemble's spread is truncated by the original evidence, not an unconstrained bootstrap confidence interval.
-
-If the all-facts fit itself fails the model check, there is no passing fit to restart from, so `just fit` writes every bootstrap refit as fitted, without constraints, and prints `Refit N written unconstrained` for each flagged one ([flagged target fits](#flagged-target-fits)). The check is unchanged, and a flagged member still cannot support a target-machine claim ([methodology](#fitted-machines-and-target-claims)).
-
-Each generated file's `notes` array records provenance and diagnostics: the generating command, bootstrap index, seed, trial count and raw negative log likelihood, signal-mix failure count, constrained groups and the serialized member's model check against the original extract. A flagged member cannot support a target-machine claim ([methodology](#fitted-machines-and-target-claims)). Each new fit uses per-core mechanisms for R1–R6 and single-core loads and the [shared-voltage model](#in-sample-shared-voltage-anchor) for multi-core R7. It fits no R7 joints or CCD residual. The committed machine files retain their legacy model: the [2026-10-17 frozen score failed](#the-2026-10-17-frozen-score), so no ensemble was regenerated.
-
-A model-check flag is not silently repaired or excluded: inspect the named class, depth and interval before using that ensemble member as target evidence. A flag may reflect a poor local optimum, model assumptions, or a sparse failure absent from a bootstrap sample; it is not by itself proof of an impossible fit. The shared `togi-tool-modelcheck` crate is used by both `just fit` and `just bench`, with the same 99% intervals and unchanged shallowest-loaded-offset grouping.
-
-Treat fits as local optima with sparse-data limits, not discovered hardware boundaries: unsupported/all-passing limits, flat and idle hazards, workload overrides, onset/delay and attribution defaults are qualified in the crate documentation. Multi-core shared-voltage R7 has no unloaded-core hazard. Fixed inputs and seed reproduce output on one host for any `--jobs`, excluding elapsed report lines; cross-architecture last-digit equality is unmeasured. Historical committed files are not a regeneration oracle: [#561](https://github.com/shgew/togi/issues/561) records an unexplained last-digit discrepancy despite same-host equivalence of the old and refactored fitter.
-
+The [original fitting instructions and implementation](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#fitting-the-target-machine) remain under the annotated historical-source tag `archive/pre-cut`. The retained [model research program](../tools/fit/program.md) is historical, not an executable current gate. Machine files, facts, provenance and original evidence remain unchanged.
 
 ### In-sample shared-voltage anchor
 
-```sh
-just fit --shared-voltage-in-sample --current-extract --facts tools/bench/facts/target.jsonl.gz --out tools/bench/machines
-```
-
-This retained output mode uses the same fit as the ensemble and forward-only modes, on **all decisive trials**, including record-only facts, and writes only `target-shared-voltage.json`. It requires one nonempty BIOS context and 16-core profiles. The anchor mode rejects `--bootstrap`, `--seed`, `--forward-only` and `--seal`, even when their supplied values equal their defaults. Its command and output file are scheduled for removal only after #480 passes its forward score and regenerates the ensemble.
-
-Before creating the output directory or changing an anchor, it runs the **unchanged model check on the full original extract**, not a bootstrap or selected subset. It reports `ok` only when every eligible group passes (52 groups on the 2026-10-04 extract). A non-ok result prints each exact flagged class, loaded cores, intended duration, depth, observed counts, interval and full-precision mean probability, then exits with failure without writing. A passing in-sample check does not validate later-session predictions.
-
-There is no scalar repair: a failed all-facts check is reported as fitted, never profiled into feasibility. The default ensemble command writes [flagged fits](#flagged-target-fits); the retained anchor command refuses to overwrite its output when the unchanged check fails.
-
-Reports print raw total and per-trial in-sample Bernoulli loss for all trials and R7, and predicted/observed R7 failures, even when a flagged fit refuses to write. These are record-only diagnostics, not held-out scores. Generated notes mark the anchor **IN-SAMPLE, NOT forward-validated** and preserve provenance and model-check diagnostics. Unsupported y-cruncher thresholds are not hardware-validated; see the crate documentation for the model's assumptions.
-
-The [Q17 forward bar](https://github.com/shgew/togi/issues/105) remains authoritative: beat the constant predictor on held-out R7 log loss and predict R7 failures within a factor of 2. The [first candidate's failed check](https://github.com/shgew/togi/issues/306#issuecomment-5979625589) was not blind. An all-facts anchor neither supersedes it nor authorizes ensemble regeneration; a future forward claim needs a new blind session.
-
-To replay exact real facts over the anchor, set `"replay": true` on a **bench suite scenario**, not in the machine JSON (that key is unsupported there). For example, place this one-scenario suite at `tools/bench/shared-voltage-suite.json`:
-
-```json
-{
-  "scenarios": [
-    {
-      "name": "target-shared-voltage-in-sample",
-      "machine": "machines/target-shared-voltage.json",
-      "replay": true,
-      "dev": [1],
-      "holdout": [101]
-    }
-  ]
-}
-```
-
-```sh
-just bench --suite tools/bench/shared-voltage-suite.json --split dev
-```
-
-Machine paths resolve relative to the suite; facts resolve relative to the machine. The declared facts and BIOS context let `togi_tool_trialfacts::Extracts::replay` build a `togi_sim::replay::Replay` for matching decisive trials, with fitted fallback on unmatched classes/profiles. The bench process reads each extract once and shares it between its metric replay oracles and the model checks of every member that declares it; each simulated session's simulator still loads the extract itself. A replay run remains in-sample evidence, not forward validation.
-
-The hand-set shared-voltage scenario, anchor and its two overlays expose partial-load mechanisms, not forward-validated hardware failure rates. Earlier model-check and hazard-ratio measurements describe frozen copies, not today's overlays ([#563](https://github.com/shgew/togi/issues/563)).
+The anchor-generation mode is retired with the fitter. The committed anchor and overlays remain historical simulator inputs, not forward-validated hardware failure rates. Their [original methodology](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#in-sample-shared-voltage-anchor) and [#563 measurements](https://github.com/shgew/togi/issues/563) remain historical evidence.
 
 ### Forward-chained check
 
-After the ensemble's model check, `just fit` orders sessions with decisive trials by their UTC session IDs, comparing equal-second numeric suffixes numerically (`-2` before `-10`). For each session after the first, it fits all earlier sessions' decisive trials once, without bootstrap resampling or model-check constraints, then predicts only the held-out session. These fits stay in memory and do not change the generated machine files.
-
-The prefix fits run in parallel with the same `--jobs` limit; in `just fit` they run alongside the ensemble's fits, and the report prints after the ensemble's. Scoring and pooling remain in session order, so no held-out outcomes enter their own training prefix and the report is unchanged apart from elapsed times.
-
-Each session row names the session ID, ruleset and `training_sessions` count. `trials` and `failures` count held-out decisive trials and observed failures; `predicted` sums the fit's failure probabilities over their intended durations. `log_loss/trial` is the mean Bernoulli log loss, with probabilities clamped to `[1e-4, 1-1e-4]`. It compares the `fit` to a `constant` predictor whose probability, shown in parentheses, is the earlier training trials' failure rate. Lower loss is better: fit loss above the constant means the fit predicts that later session worse than a single average failure rate.
-
-`failures_p<0.01` counts observed failures assigned less than 1% probability: outcomes the model treated as nearly impossible. `exact_matches` is the number and share of held-out trials whose trial class and full profile occur in the earlier training trials. That share bounds what replay could answer from earlier evidence; it does not establish that replay's answers would be correct. `flagged/eligible` counts held-out groups flagged by the unchanged model check, with at least 10 trials and the same 99% binomial intervals. The indented regime rows also show fit and constant log loss over the same regime's trials, using exactly the existing probability clamp and each session's prefix-wide constant.
-
-R7 rows additionally break out each workload (including y-cruncher) and loaded-CCD scope: CCD0 only, CCD1 only, or both CCDs. These scope rows partition the R7 starts; a both-CCD start is not double-counted. Single-core R7 starts also get a separate diagnostic row, while remaining in their workload and CCD totals.
-
-`Pooled` sums all held-out sessions' counts and predictions and divides summed log losses by their total trials. Its constant uses each session's own earlier prefix, not one failure rate fitted to the pooled outcomes; its group counts sum the separate held-out checks. `Forward-chained elapsed` reports the check's own wall time, which in `just fit` overlaps the ensemble's fits. This is evidence about extrapolation to later sessions, not a gate or a guarantee about unseen profiles or other machines.
-
-```sh
-just fit --forward-only --facts ARTIFACT            # no ensemble, no machine files
-just fit --forward-only --facts ARTIFACT --seal 1   # leave the newest session unfitted and unscored
-just fit --forward-only --current-extract --facts tools/bench/facts/target.jsonl.gz
-```
-
-`just fit --forward-only` prints the same rows and `Pooled` line, without fitting the ensemble or writing machine files. `--seal N`, accepted only with `--forward-only`, drops the newest N sessions before the check: they are neither fitted nor scored, the remaining rows are unchanged, and `Pooled` covers only the remaining held-out sessions. At least one held-out session must remain. A seal count is not a data permission: on the committed extract, `--seal 1` still scores #480's spent score session 20261004T211726Z, which is why that extract needs `--current-extract` ([above](#fitting-the-target-machine)). Model research ([program](../tools/fit/program.md)) uses only its brief's approved sessions. On the original research artifact the report names the historical confirmation session after the `Facts:` line, as `sealed, neither fitted nor scored` or as `scored, a historical check that is not blind`.
-
-To score the current ensemble beside the forward candidate without refitting its members:
-
-```sh
-just fit --forward-only --current-extract --facts tools/bench/facts/target.jsonl.gz --reference-machine tools/bench/machines/target-fit-{0,1,2,3,4,5,6,7,8}.json
-```
-
-`--reference-machine` accepts one or more files and requires `--forward-only` and `--current-extract`: the committed members were fitted in-sample to all seven sessions of the original research artifact, the historical confirmation included, so scoring them is never research evidence. Reference scoring uses the same sessions, seal, prefix constants and probability clamp. For each trial it averages the members' failure probabilities before computing log loss, predicted failures and surprises. Its model-check diagnostic is explicitly `flagged_by_any_member/eligible`, not a check of the mean predictor. It is reference evidence, never the candidate's gate.
-
-The report rounds; `--records FILE` also writes the check's full-precision records to the new file `FILE`, one JSON line each: the `input` (the rows' `sha256`, `rows` and `seal`), every scored held-out `trial` keyed by `session` and `seq` (its workload, loaded-core count, outcome, probability before the clamp, constant, both log losses, surprise and match), each held-out `session`'s sums and the `pooled` sums. The losses are sums, added in trial order exactly as the report's, so its rounded means are recomputable. Reference scoring writes no records.
-
-To compare two forward runs, such as a candidate and the unchanged fitter at the reference revision:
-
-```sh
-just fit --forward-only --facts ARTIFACT --seal 1 --records candidate.jsonl
-just forward-compare candidate.jsonl reference.jsonl --metrics metrics.json
-```
-
-`--compare CANDIDATE REFERENCE` first requires each file to be a whole `--records` output: the input line, each held-out session's trial lines and summary, then one pooled summary last, with every summary's trial and failure counts equal to those of its trial lines. A file cut short, or with a duplicate or trailing summary, is refused. It then pairs the files trial by trial and refuses any pair whose input, seal, trial keys, outcomes, classes or constants differ, so both sides must be prefix fits of the same rows. A reference is the unchanged fitter's own forward run: the committed all-facts ensemble scored with `--reference-machine` is not it. For each held-out session and the pool, and within each for all trials and the single-core, non-R7 and R7 subsets, it prints at full precision the per-trial losses of both sides and the constant, their ratio, `failures_p<0.01`, predicted failures and `|ln(predicted/failures)|`, which a subset without failures reports as none. Each `all` row adds `ratio_95%`, the 2.5% and 97.5% quantiles of the loss ratio over 10,000 paired bootstrap resamples of that scope's trials, both sides of a drawn trial together, from a fixed seed. Pooled sums add per session and then across sessions, as the check does, so they equal the records' own. The report ends with the [model program's](../tools/fit/program.md#the-metric) primary, F1, F2 and F3 checks on the pool. `--metrics FILE` writes the same values to a new file as a flat JSON object of numbers keyed `SCOPE.SUBSET.NAME`, plus `pooled.f3_improved` and `pooled.f3_sessions`, leaving out values JSON cannot hold.
+Forward fitting and record comparison are retired with no replacement. The [original scoring procedure](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#forward-chained-check) remains historical source; no current command reruns it.
 
 #### The 2026-10-17 frozen score
 
@@ -510,12 +394,7 @@ The refreshed extract preserves the original research artifact's rows. That is e
 
 ### The fit tool (`togi-tool-fit`)
 
-`just fit`, `just fit-artifact` and `just forward-compare` run `togi-tool-fit`. Its modes and flags are described above; its objective, search, bounds and bootstrap implementation live in the crate documentation.
-
-- **The research artifact.** `just fit-artifact FILE` writes the original research artifact to the new file `FILE` (`--write-artifact`): the committed extract's rows of its seven sessions, byte for byte and in extract order, after checking that they hash to the program's SHA-256. It never replaces an existing file, and it fails without writing when the rows differ, for example after a refresh that rewrote those sessions; the extract committed at `455704be` then supplies them.
-- **Report.** The elapsed times are the last lines of the report and are not part of the deterministic output; `mean_p` is printed as `1.234560e-2`.
-
-The committed `tools/bench/machines/target-fit-*.json` and `target-shared-voltage.json` stay the Go tool's output until the ensemble is regenerated deliberately.
+The Rust fitting tool and its artifact and forward-comparison modes are retired. Their [source and original documentation](https://github.com/shgew/togi/tree/archive/pre-cut/crates/togi-tool-fit) remain at `archive/pre-cut`; the committed `tools/bench/machines/target-fit-*.json` and `target-shared-voltage.json` remain unchanged historical outputs.
 
 ### The package
 

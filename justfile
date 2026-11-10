@@ -224,7 +224,7 @@ same base="origin/main" *args: _dev-shell
 smoke base="origin/main" *args: _dev-shell
     dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" --smoke "${@:2}"
 
-# Re-record the committed bench baseline over all seeds, without model checks or wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
+# Re-record the committed bench baseline over all seeds, without wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
 [group('run')]
 bench-baseline out="tools/bench/baseline.jsonl": _dev-shell
     cargo run --release --locked -p togi-tool-bench -- --split all --baseline-out "$1"
@@ -238,21 +238,6 @@ facts state_dir: _dev-shell
 [group('run')]
 copy-state src dst: _dev-shell
     [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/copy-state-target; cargo run --release --locked -p togi-tool-copy-state -- "$1" "$2"
-
-# Fit the target-machine bootstrap ensemble from named facts into a named directory (`just fit --facts FILE --out DIR`; add --current-extract to read sessions after the research artifact); the result does not depend on --jobs
-[group('run')]
-fit *args: _dev-shell
-    cargo run --release --locked -p togi-tool-fit -- "$@"
-
-# Write the original seven-session research artifact from the committed extract to the new file OUT, checking its hash (tools/fit/program.md#the-data)
-[group('run')]
-fit-artifact out: _dev-shell
-    cargo run --release --locked -p togi-tool-fit -- --facts tools/bench/facts/target.jsonl.gz --write-artifact "$1"
-
-# Pair a candidate's forward records with a reference's and compare them exactly (`just forward-compare CANDIDATE REFERENCE --metrics FILE`)
-[group('run')]
-forward-compare candidate reference *args: _dev-shell
-    cargo run --release --locked -p togi-tool-fit -- --compare "$@"
 
 # Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
