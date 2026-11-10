@@ -2,9 +2,7 @@
 
 mod machine;
 mod policy;
-mod ruleset13;
-pub mod successor;
-mod successor_policy;
+mod production;
 
 use std::time::Duration;
 
@@ -13,8 +11,7 @@ use togi_machine::{Machine, TargetOffset, TrialSpec};
 use togi_sim::day_night::{FailureCause, Scenario, TrialClass, TruthError};
 
 pub use policy::{CoZero, FixedMargin};
-pub use ruleset13::Ruleset13;
-pub use successor_policy::SuccessorPolicy;
+pub use production::ProductionPolicy;
 
 /// One policy the runner can build afresh for every scenario and seed. Each variant carries the
 /// parameters its construction needs, so a run is reproducible from its `PolicyKind` alone.
@@ -112,11 +109,11 @@ impl PolicyKind {
     /// Refuses parameters the policy cannot run with.
     pub fn build(self, calendar: &CalendarConfig) -> Result<Box<dyn Policy>, RunError> {
         Ok(match self {
-            Self::CoZero => Box::new(CoZero::default()),
+            Self::CoZero => Box::new(CoZero),
             Self::FixedMargin => {
                 Box::new(FixedMargin::new(calendar.fixed_margin, calendar.day_step)?)
             }
-            Self::Ruleset13 { fallback_slope } => Box::new(Ruleset13::new(fallback_slope)?),
+            Self::Ruleset13 { fallback_slope } => Box::new(ProductionPolicy::new(fallback_slope)?),
         })
     }
 }
@@ -183,8 +180,6 @@ pub enum RunError {
     Profile(#[from] togi_machine::CcdProfileError),
     #[error("policy requested more trial time than the night's allocation")]
     NightOverrun,
-    #[error("the successor invocation execution budget expired")]
-    BudgetExpired,
 }
 
 /// What the operator answered, not the hidden cause of an interruption.
@@ -249,18 +244,6 @@ pub trait Policy {
         machine: &mut Machine<'_>,
     ) -> Result<DayClassification, RunError>;
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError>;
-
-    /// Observations owned by the policy, never simulator truth. A legacy policy does not
-    /// acquire a successor finish or machine learning allowance merely by being observed.
-    fn report(&self) -> successor::PolicyReport {
-        successor::PolicyReport::unavailable()
-    }
-
-    /// Policy-owned application and qualification witnesses; the successor runner checks
-    /// them against the actual machine trajectory rather than inventing permissions.
-    fn applications(&self) -> successor::PolicyApplications {
-        successor::PolicyApplications::default()
-    }
 
     /// Whether a caller-selected journal boundary ended this run during its last night.
     fn is_finished(&self) -> bool {

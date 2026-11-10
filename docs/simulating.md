@@ -268,8 +268,10 @@ They do not change the existing `Simulator`, machine-file model, or session runn
 adapter through `PolicyKind::build` and runs it; `run_with_policy` takes another implementation of the same `Policy`
 interface. The two diagnostics are comparators. `PolicyKind::Ruleset13 { fallback_slope }` is the policy under test (the
 gate role); its slope is the per-count hazard multiplier (1.5 or 2.0), so the policy's fallback slope is `beta = ln(multiplier)`.
+The `ruleset13` registry label remains the frozen experiment's recorded identity; it is not
+the name of the live internal driver.
 
-The Ruleset 13 adapter (`Ruleset13`) runs the production `togi_tuner::policy::State`, not a second tuner. It keeps the journal
+The production adapter (`ProductionPolicy`) runs the production `togi_tuner::policy::State`, not a second tuner. It keeps the journal
 `togi run` and `togi day` would write as an in-memory list of events (envelopes with consecutive `seq`, a boot id per boot,
 and timestamps from the calendar clock) and folds each appended event into the state. A firmware change appends a new
 `session.context`. A day starts as a cold boot: `day.boot_start`, then `State::day` staged until it owes nothing (every
@@ -288,19 +290,10 @@ session records a trial an operator's signal stopped: an inconclusive `trial.end
 "trial ended before its full duration; stopped by signal". The night then closes with `shutdown{reason: signal}`
 before the next day boot; a policy `EndNight` closes it with `shutdown{reason: dead_end}` instead. The adapter does not
 apply day steps for a paused boot, because the calendar has no pause.
-Successor diagnostics retain applied promotion, retreat and stock-reset step witnesses from the adapter's journal,
-including the completed exact-profile qualification's fresh and reused trial identifiers.
 The simulated operator attests stock stability once per firmware context in the session;
 this is consent, not a stock-control workload witness.
-Reclassified-event restorations are separate from promotions and firmware restorations: their report links the
-decision's cited retreat receipt and the typed campaign reclassification, retaining the consumed allowance,
-credited normal-hold observations, exact-profile qualification and later whole-profile crash vetoes. Reverted
-units follow the retreat's physical before/after depths, not merely its declared unit list. Missing hold or
-qualification evidence stays absent so the successor auditor can reject the claim rather than infer permission.
-The successor unit summaries count the observed launches named by those applied qualification witnesses;
-failed or unfinished qualifications are not counted as completed application evidence. Conclusive night
-failures carry the adapter's CPU-suspect classification; interrupted or inconclusive trials do not invent a failure.
-These read-only diagnostics remain available without retaining the full event list and do not change tuner decisions.
+Application and qualification evidence stays in the actual journal and its policy projection.
+There is no separate successor report, scoring record or application-witness interface.
 The calendar idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat.
 The retired gate scores omitted that overhead; actual overhead must be measured on hardware under the
 [production workload rules](spec/workloads.md#durations-and-checking-schedule).
@@ -499,19 +492,11 @@ feasibility or authorize nonzero deployment.
 
 ### Successor calendar runner
 
-`togi_simrun::day_night::successor` remains a library for its current callers, separate from the Ruleset 13 adapter above. Its external registration, run and score commands are [retired](benchmarking.md#successor-daynight-run-path). It runs a policy through the [successor physical-core truth](#successor-physical-core-truth) and fills a policy-neutral `Record`; it applies no thresholds and issues no verdict.
-
-`run(config, policy)` takes a `RunConfig` (calendar, provenance identifying scenario, seed, unit membership and mode, epochs, daily mix, `jobs`, resource class, compilation seconds and an optional wall-clock deadline) and a `&mut dyn Policy`. An empty `epochs` is filled from the truth's reference epochs, and an empty daily mix derives the truth's registered mix. A policy reports finishes, its allowance ledger, learning events with their classifications and its stopped units through `Policy::report`, which returns the `PolicyReport`. The policy never sees the scenario, true event cause, hazard or safe profile; truth stays on the record's metric side. The comparators are stock forever (`CoZero`) and the shipped Ruleset 13 adapter. Neither defines a shared successor allowance. The Ruleset 13 adapter reports classified learning events from its actual daily observations and conclusive night failures; stock reports none, and its unavailable events are classified `Unreported`.
-
-Stock reports each decision unit finished at the start of its first day with the explicit `fixed-stock` reason. Its ledger stays absent: an observed all-zero trajectory with no climb or restoration application establishes learning-contract non-applicability, not a fabricated allowance. Stock therefore has measured post-finish exposure and can meet safety and non-benign usefulness criteria while failing benign depth and convergence. Comparator `A` has neither a terminal finish notion nor a shared successor allowance; its convergence, post-finish and learning-contract cells lack evidence, rather than measuring unsafe behavior. Its applied steps retain the production journal's qualification evidence without asserting successor permission. Observed comparator promotion, retreat and truth-cause costs remain available through unit summaries; retreats without an identified event remain unattributed.
-
-Readbacks are exact per-core vectors, never collapsed to a CCD value. The runner integrates the **actual** history: expected CO-added failures follow the trajectory's thermal history, daily exposure, interruptions and preceding nights, split into learning and post-finish accounts per risk source. This is separate from the stationary reference rate, which excludes night heating. True CO crashes, background and non-CPU events keep their truth cause beside the policy's classification. An event counts once by identity, even when several sources or units are implicated.
-
-On a firmware change the runner resets to stock and records the exact previous whole profile and the stock readback. It includes only the qualification witnesses, clean stock hours and restoration step that the policy's report supplies; the runtime invents none of them, so a restoration the policy does not report is recorded as blocked with its reason, never as a fabricated qualification or a restoration. A restoration after the original first-finish boundary carries both the restoration-learning and post-finish tags, which overlap rather than add. A crash on it records the step back to stock and the stopped units. No grace interval follows a truth or firmware transition.
-
-Elapsed execution is bounded by `deadline`. When it passes, `run` returns `Ok` with a `Record` whose outcome is `truncated`, and no verdict; it never shortens the horizon or marks an unfinished trajectory crash-free. The retired external commands persisted the records and a manifest. `Record` still carries the `jobs`, resource class, compilation and wall-time fields they wrote, and an absent timing stays absent, not zero. The record's status is one of `complete-converged`, `complete-unconverged-crash-free`, `complete-unconverged-with-co-crashes`, `truncated` and `harness-error`.
-
-The calendar still idealizes zero setup and teardown and omits hardware controller-placement exclusions and required repeats; these records establish no real-night feasibility. No successor candidate policy is available on this layer, and no registration scoring run has been made.
+The successor reporting runner and its `Record`, scoring observations and policy-report
+interfaces are retired together with the external registration, run and score commands
+([retired commands](benchmarking.md#successor-daynight-run-path)).
+The calendar adapter above still generates and replays the production journal; the
+[physical-core truth catalog](#successor-physical-core-truth) remains separate.
 
 ### The simulator command (`togi-tool-sim`)
 

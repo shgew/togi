@@ -9,8 +9,7 @@ use togi_machine::{CcdProfile, Machine, TargetOffset};
 use togi_tuner::day::HOLD_SECS;
 use togi_tuner::policy::{Params, State};
 
-use super::{OPERATOR_UID, Ruleset13, reported_classification};
-use crate::day_night::successor::{Classification, LearningEvent};
+use super::{OPERATOR_UID, ProductionPolicy};
 use crate::day_night::{
     CalendarConfig, DayClassification, DayObservation, DayStart, EndAnswer, Night, Policy,
     PolicyKind, RunError, run_controlled, run_with_policy,
@@ -48,7 +47,7 @@ fn run_until<P: Policy>(policy: &mut P, mut start: impl FnMut(&P) -> DayStart) {
 }
 
 /// Whether `policy` applies a nonzero day profile.
-fn holds_promotion(policy: &Ruleset13) -> bool {
+fn holds_promotion(policy: &ProductionPolicy) -> bool {
     policy
         .state()
         .project()
@@ -107,7 +106,7 @@ fn the_gate_policy_builds_from_its_slope_and_refuses_a_non_multiplier() {
     assert!(kind.build(&calendar(1)).is_ok());
     for slope in [1.0, 0.5, f64::NAN, f64::INFINITY] {
         assert!(matches!(
-            Ruleset13::new(slope),
+            ProductionPolicy::new(slope),
             Err(RunError::Slope(rejected)) if rejected.to_bits() == slope.to_bits()
         ));
     }
@@ -115,7 +114,7 @@ fn the_gate_policy_builds_from_its_slope_and_refuses_a_non_multiplier() {
 
 #[test]
 fn the_journal_folds_identically_when_replayed() {
-    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
     run_with_policy(SCENARIO, 1, calendar(PROMOTION_DAYS), &mut policy).unwrap();
     let mut replayed = State::new(Params {
         fallback_slope: togi_tuner::cap::Beta::new(1.5_f64.ln()).unwrap(),
@@ -140,9 +139,9 @@ fn the_journal_folds_identically_when_replayed() {
 
 #[test]
 fn an_adapter_not_recording_keeps_no_journal_and_decides_alike() {
-    let mut recording = Ruleset13::new(1.5).unwrap().recording();
+    let mut recording = ProductionPolicy::new(1.5).unwrap().recording();
     run_with_policy(SCENARIO, 1, calendar(3), &mut recording).unwrap();
-    let mut bare = Ruleset13::new(1.5).unwrap();
+    let mut bare = ProductionPolicy::new(1.5).unwrap();
     run_with_policy(SCENARIO, 1, calendar(3), &mut bare).unwrap();
     assert!(bare.events().is_none());
     assert!(!recording.events().unwrap().is_empty());
@@ -154,7 +153,7 @@ fn an_adapter_not_recording_keeps_no_journal_and_decides_alike() {
 
 #[test]
 fn a_first_promotion_follows_a_completed_night_qualification() {
-    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
     run_until(&mut policy, |policy| {
         if holds_promotion(policy) {
             DayStart::Stop
@@ -228,7 +227,7 @@ fn previous_profile(before: &[Event]) -> Option<CcdProfile> {
 
 #[test]
 fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
-    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
     // The firmware changes once a promotion holds, and the run ends once the promoted profile is
     // qualified afresh under the new firmware and a nonzero profile is applied again.
     let mut changed = false;
@@ -307,10 +306,10 @@ fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
     }
 }
 
-/// Delegates to [`Ruleset13`], replacing the first day observation after a promotion with an end the
+/// Delegates to [`ProductionPolicy`], replacing the first day observation after a promotion with an end the
 /// operator answers as a freeze.
 struct FreezeAfterPromotion {
-    inner: Ruleset13,
+    inner: ProductionPolicy,
     frozen: Option<DayClassification>,
 }
 
@@ -367,7 +366,7 @@ fn retreat_and_stop(events: &[Event]) -> Option<(&ClimbDecision, &DayApplied, &U
 #[test]
 fn a_cpu_suspect_answer_leads_to_a_retreat() {
     let mut policy = FreezeAfterPromotion {
-        inner: Ruleset13::new(1.5).unwrap().recording(),
+        inner: ProductionPolicy::new(1.5).unwrap().recording(),
         frozen: None,
     };
     // The run ends once the retreat the CPU-suspect answer caused is applied and its unit stopped.
@@ -428,34 +427,24 @@ fn a_cpu_suspect_answer_leads_to_a_retreat() {
         UnitStopReason::FirstBackstep { .. } | UnitStopReason::RestorationBackstep { .. }
     ));
     assert_eq!(stop.profile.cores, retreat.proposed.cores);
-    let report = policy.inner.report();
-    assert_eq!(report.allowance, None);
-    assert_eq!(report.finishes, Vec::new());
-    assert!(
-        report
-            .events
-            .iter()
-            .any(|event| event.classification == Classification::CpuSuspect)
-    );
-    assert!(report.events.iter().all(|event| !event.charged));
 }
 
-/// Delegates to [`Ruleset13`], replacing one day observation with an unanswered end: the first day
+/// Delegates to [`ProductionPolicy`], replacing one day observation with an unanswered end: the first day
 /// unless `after_promotion`, otherwise the first day after a promotion. With `late`, the operator
 /// answers that end at the next day boot, through the same journal the adapter folds.
 struct UnansweredEnd {
-    inner: Ruleset13,
+    inner: ProductionPolicy,
     after_promotion: bool,
     late: Option<DayAnswerKind>,
-    /// The adapter's report of the end, as it stood when the day was observed.
-    ended: Option<LearningEvent>,
+    /// The journal's original event identity and classification, before any late answer.
+    ended: Option<(togi_journal::DayEventId, togi_journal::Classification)>,
     answered: bool,
 }
 
 impl UnansweredEnd {
     fn new(after_promotion: bool, late: Option<DayAnswerKind>) -> Self {
         Self {
-            inner: Ruleset13::new(1.5).unwrap().recording(),
+            inner: ProductionPolicy::new(1.5).unwrap().recording(),
             after_promotion,
             late,
             ended: None,
@@ -507,7 +496,13 @@ impl Policy for UnansweredEnd {
                 answer: None,
             };
             let classification = self.inner.observe_day(day, &end, machine)?;
-            self.ended = self.inner.report().events.last().cloned();
+            self.ended = self
+                .inner
+                .state()
+                .project()
+                .events
+                .last()
+                .map(|event| (event.event.clone(), event.classification));
             return Ok(classification);
         }
         self.inner.observe_day(day, evidence, machine)
@@ -529,98 +524,136 @@ fn an_answer_reclassifies_a_provisional_event_under_its_original_identity() {
             DayStart::Run
         }
     });
-    let ended = policy.ended.clone().unwrap();
-    // An unanswered end at a nonzero day profile is provisionally CPU-suspect.
-    assert_eq!(ended.classification, Classification::Unanswered);
-    assert!(ended.provisional);
-    assert_eq!(ended.reclassified_from, None);
-    let report = policy.inner.report();
-    let current: Vec<_> = report
-        .events
-        .iter()
-        .filter(|event| event.id == ended.id)
-        .collect();
-    // A graphics answer reclassifies the same event as non-CPU, keeping what it was first reported as.
+    let (identity, classification) = policy.ended.clone().unwrap();
     assert_eq!(
-        current,
-        [&LearningEvent {
-            classification: Classification::NonCpu,
-            provisional: false,
-            reclassified_from: Some(Classification::Unanswered),
-            ..ended
-        }]
+        classification,
+        togi_journal::Classification::CpuSuspect {
+            certainty: Certainty::Provisional
+        }
     );
-    assert_eq!(report.allowance, None);
-    assert!(report.events.iter().all(|event| !event.charged));
+    let current: Vec<_> = policy
+        .inner
+        .state()
+        .project()
+        .events
+        .into_iter()
+        .filter(|event| event.event == identity)
+        .map(|event| event.classification)
+        .collect();
+    assert_eq!(current, [togi_journal::Classification::NonCpu {}]);
+    assert!(policy.inner.events().unwrap().iter().any(|event| {
+        matches!(&event.payload, Payload::CampaignReclassified(change)
+            if change.event == identity && change.from == classification
+                && change.to == togi_journal::Classification::NonCpu {})
+    }));
 }
 
 #[test]
-fn a_reclassified_restoration_reports_its_actual_retreat_and_fresh_guards() {
-    use crate::day_night::successor::StepKind;
+fn a_reclassified_restoration_applies_its_actual_retreat_with_fresh_guards() {
+    use togi_journal::RestorationKind;
 
     let mut policy = UnansweredEnd::new(true, Some(DayAnswerKind::Graphics));
     run_until(&mut policy, |policy| {
-        if policy
-            .inner
-            .applications()
-            .steps
-            .iter()
-            .any(|step| matches!(step.kind, StepKind::ReclassifiedRestoration { .. }))
-        {
+        if applied_decisions(policy.inner.events().unwrap()).any(|(_, _, _, proposal)| {
+            matches!(
+                proposal.decision,
+                ClimbAction::Restore {
+                    restoration: RestorationKind::Reclassified,
+                    ..
+                }
+            )
+        }) {
             DayStart::Stop
         } else {
             DayStart::Run
         }
     });
-    let applications = policy.inner.applications();
-    let restored = applications
-        .steps
-        .iter()
-        .find(|step| matches!(step.kind, StepKind::ReclassifiedRestoration { .. }))
+    let events = policy.inner.events().unwrap();
+    let (applied_at, receipt, decided_at, restored) = applied_decisions(events)
+        .find(|(_, _, _, proposal)| {
+            matches!(
+                proposal.decision,
+                ClimbAction::Restore {
+                    restoration: RestorationKind::Reclassified,
+                    ..
+                }
+            )
+        })
         .unwrap();
-    let StepKind::ReclassifiedRestoration {
-        retreat,
-        event,
-        reclassified_day,
-        units,
-        hold,
-        qualification,
-        consumed_before,
-        consumed_after,
-        crash_vetoes,
-    } = &restored.kind
-    else {
-        unreachable!();
-    };
-    let source = applications
-        .steps
-        .iter()
-        .find(|step| &step.id == retreat)
+    let (identity, _) = policy.ended.as_ref().unwrap();
+    let (retreat_at, retreat_receipt, _, retreat) = applied_decisions(&events[..decided_at])
+        .find(|(_, _, _, proposal)| {
+            matches!(&proposal.decision,
+            ClimbAction::Retreat { cause: ClimbRetreatCause::Event { event }, .. }
+                if event == identity)
+        })
         .unwrap();
-    assert_eq!(event, &policy.ended.unwrap().id);
-    assert!(source.day <= *reclassified_day && *reclassified_day <= restored.day);
-    assert_eq!(restored.after, source.before);
-    let StepKind::Retreat {
-        units: physically_reverted,
-        ..
-    } = &source.kind
-    else {
-        panic!("restoration must cite a retreat");
+    assert!(events[decided_at].cause.contains(&events[retreat_at].seq));
+    assert_eq!(receipt.target.cores(), &restored.proposed.cores);
+    assert_eq!(restored.proposed.cores, retreat.before.cores);
+    assert_eq!(
+        restored.before.cores,
+        retreat_receipt.target.cores().clone()
+    );
+    let physically_reverted: Vec<_> = retreat
+        .before
+        .mapping
+        .units
+        .iter()
+        .filter(|unit| {
+            unit.cores
+                .iter()
+                .any(|core| retreat.before.cores.get(core) != retreat.proposed.cores.get(core))
+        })
+        .map(|unit| unit.unit)
+        .collect();
+    let ClimbAction::Restore { units, .. } = &restored.decision else {
+        unreachable!()
     };
-    assert_eq!(units, physically_reverted);
-    let hold = hold
-        .as_ref()
-        .expect("the decision cites fresh normal hold evidence");
-    assert_eq!(hold.profile, restored.before);
-    assert!(hold.clean_hours >= 50.0);
-    assert!(!hold.witnesses.is_empty());
-    assert_eq!(qualification.as_ref().unwrap().profile, restored.after);
-    assert_eq!((*consumed_before, *consumed_after), (1, 1));
-    assert!(crash_vetoes.is_empty());
+    assert_eq!(units, &physically_reverted);
+    let reclassified = events[..decided_at].iter().position(|event| {
+        matches!(&event.payload, Payload::CampaignReclassified(change) if &change.event == identity)
+    }).unwrap();
+    assert!(retreat_at < reclassified && reclassified < decided_at && decided_at < applied_at);
+    assert!(restored.hold.eligible_s >= HOLD_SECS);
+    assert!(!restored.hold.credited.is_empty());
+    assert!(events[..decided_at].iter().any(|event| {
+        matches!(&event.payload, Payload::DayApplied(applied)
+            if applied.application == restored.hold.application
+                && applied.target.cores() == &restored.before.cores)
+    }));
+    for witness in &restored.hold.credited {
+        assert!(
+            events[..decided_at]
+                .iter()
+                .any(|event| event.seq == *witness)
+        );
+    }
+    let certificate = restored.certificate.unwrap();
+    assert!(
+        events[..decided_at]
+            .iter()
+            .any(|event| { event.seq == certificate && certifies(event, restored, |_| true) })
+    );
+    let charges: Vec<_> = events[..applied_at]
+        .iter()
+        .filter_map(|event| {
+            if let Payload::CampaignCharge(charge) = &event.payload {
+                Some(charge.consumed)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(charges, [1]);
+    assert!(events[applied_at + 1..].iter().all(|event| {
+        !matches!(&event.payload, Payload::DayVeto(veto)
+            if veto.state == togi_journal::VetoState::Active)
+    }));
 }
 
 #[test]
-fn an_unanswered_end_at_stock_reports_a_non_cpu_event_without_an_allowance() {
+fn an_unanswered_end_at_stock_is_non_cpu_in_the_journal() {
     let mut policy = UnansweredEnd::new(false, None);
     run_until(&mut policy, |policy| {
         if policy.ended.is_some() {
@@ -629,56 +662,18 @@ fn an_unanswered_end_at_stock_reports_a_non_cpu_event_without_an_allowance() {
             DayStart::Run
         }
     });
-    let ended = policy.ended.clone().unwrap();
-    // An end at CO 0 is platform evidence, which the journal records as non-CPU.
-    assert_eq!(ended.classification, Classification::NonCpu);
-    assert!(!ended.provisional);
-    assert_eq!(ended.reclassified_from, None);
-    assert!(!ended.charged);
-    let report = policy.inner.report();
-    assert_eq!(report.allowance, None);
-    assert_eq!(report.finishes, Vec::new());
-    assert_eq!(report.events, [ended]);
-}
-
-/// The adapter's own unclean ends carry no readable evidence, so its journal never classifies one as
-/// unexplained; the mapping still reports that class, and an event the journal has not committed, as
-/// unexplained and not provisional.
-#[test_case::test_case(
-    Some(togi_journal::Classification::CpuSuspect { certainty: Certainty::Definite }),
-    Classification::CpuSuspect,
-    false;
-    "definite CPU suspect"
-)]
-#[test_case::test_case(
-    Some(togi_journal::Classification::CpuSuspect { certainty: Certainty::Provisional }),
-    Classification::Unanswered,
-    true;
-    "provisional CPU suspect"
-)]
-#[test_case::test_case(
-    Some(togi_journal::Classification::NonCpu {}),
-    Classification::NonCpu,
-    false;
-    "non CPU"
-)]
-#[test_case::test_case(
-    Some(togi_journal::Classification::Unexplained {}),
-    Classification::Unexplained,
-    false;
-    "unexplained"
-)]
-#[test_case::test_case(None, Classification::Unexplained, false; "not committed")]
-fn every_journal_classification_maps_to_its_reported_class(
-    journal: Option<togi_journal::Classification>,
-    reported: Classification,
-    provisional: bool,
-) {
-    assert_eq!(
-        reported_classification(journal),
-        (reported, provisional),
-        "{journal:?}"
-    );
+    let (identity, classification) = policy.ended.clone().unwrap();
+    assert_eq!(classification, togi_journal::Classification::NonCpu {});
+    let current: Vec<_> = policy
+        .inner
+        .state()
+        .project()
+        .events
+        .into_iter()
+        .filter(|event| event.event == identity)
+        .map(|event| event.classification)
+        .collect();
+    assert_eq!(current, [classification]);
 }
 
 #[test]
@@ -689,7 +684,7 @@ fn the_operator_ends_a_night_mid_trial_by_signal_before_the_next_day_boot() {
         night_hours: 0.01,
         ..CalendarConfig::default()
     };
-    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
     run_with_policy(SCENARIO, 1, calendar, &mut policy).unwrap();
     let events = policy.events().unwrap();
     let (end, trial) = events
