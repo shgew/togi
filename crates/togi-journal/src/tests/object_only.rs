@@ -151,6 +151,36 @@ fn every_payload_kind_refuses_a_positional_data() {
     }
 }
 
+#[test_case::test_case(
+    EventKind::FrequencyIntent, "/data",
+    &["policy", "related_cpus", "original_khz", "cap_khz", "action"];
+    "intent"
+)]
+#[test_case::test_case(
+    EventKind::FrequencyReadback, "/data", &["intent", "observed_khz"];
+    "readback"
+)]
+#[test_case::test_case(
+    EventKind::FrequencyDiscarded, "/data", &["boot", "reason"];
+    "discarded"
+)]
+#[test_case::test_case(
+    EventKind::FrequencyReadback, "/data/intent",
+    &["policy", "related_cpus", "original_khz", "cap_khz", "action"];
+    "nested intent"
+)]
+fn frequency_objects_refuse_correctly_ordered_positional_arrays(
+    kind: EventKind,
+    pointer: &str,
+    fields: &[&str],
+) {
+    let mut line = line_of(sample(kind));
+    let object = line.pointer_mut(pointer).unwrap();
+    *object = positional(object, fields);
+    let error = Event::decode(&line.to_string()).unwrap_err();
+    assert_expected_an_object(&error);
+}
+
 #[test]
 fn every_struct_nested_in_a_payload_refuses_a_positional_array() {
     let mut checked = 0;

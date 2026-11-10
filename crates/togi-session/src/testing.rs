@@ -11,8 +11,8 @@ use togi_journal::{
     fs::Fault, fs::Op,
 };
 use togi_machine::{
-    BootId, CancellationToken, Condition, CoreId, CoreSet, Machine, ObservedOffset, PerCore, Smu,
-    SmuValidated, TargetOffset,
+    BootId, CancellationToken, Condition, CoreId, CoreSet, FrequencyEvent, FrequencyJournal,
+    Machine, ObservedOffset, PerCore, Smu, SmuValidated, TargetOffset,
 };
 use togi_render::Renderer;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
@@ -24,6 +24,16 @@ use crate::emergency::SweepCleared;
 use crate::error::AppendFailure;
 use crate::session::{ConfigSource, Control, Lifecycle, RunInput, Session};
 use crate::write::{Hardware, ProfileRecord, ProfileRequest, apply_profile};
+
+#[derive(Default)]
+pub(crate) struct CollectedFrequency(pub Vec<FrequencyEvent>);
+
+impl FrequencyJournal for CollectedFrequency {
+    fn record(&mut self, event: FrequencyEvent) -> io::Result<()> {
+        self.0.push(event);
+        Ok(())
+    }
+}
 
 pub(crate) struct Rig {
     pub sim: Simulator,
@@ -133,6 +143,9 @@ impl Rig {
             &[],
         );
         let swept = trials.sweep(&CancellationToken::new()).unwrap();
+        trials
+            .recover_frequency(&swept.stopped, &mut CollectedFrequency::default())
+            .unwrap();
         let cores: CoreSet = topology.iter().map(|info| info.core).collect();
         let rig = Self {
             sim,

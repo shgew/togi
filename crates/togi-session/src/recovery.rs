@@ -520,6 +520,9 @@ impl RecoveryState {
             | Payload::FirmwareRestoration(_)
             | Payload::SuccessorImported(_)
             | Payload::DayUncleanEnd(_)
+            | Payload::FrequencyIntent(_)
+            | Payload::FrequencyReadback(_)
+            | Payload::FrequencyDiscarded(_)
             | Payload::StateRebuilt(_) => {}
         }
         Ok(())
@@ -619,6 +622,9 @@ impl RecoveryState {
             | Payload::FirmwareRestoration(_)
             | Payload::SuccessorImported(_)
             | Payload::DayUncleanEnd(_)
+            | Payload::FrequencyIntent(_)
+            | Payload::FrequencyReadback(_)
+            | Payload::FrequencyDiscarded(_)
             | Payload::StateRebuilt(_) => {}
         }
     }

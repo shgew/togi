@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use togi_machine::{
-    CancellationToken, Error, Host, Partial, PmTable, PmTableReader, ReadSamples, Running, Smu,
-    Stopped, Swept, TrialConditions, TrialSpec, Trials,
+    CancellationToken, Error, FrequencyJournal, Host, Partial, PmTable, PmTableReader, ReadSamples,
+    Running, Smu, Stopped, Swept, TrialConditions, TrialSpec, Trials,
 };
 
 use super::support::{Scope, Tree, Watch, host, refused_account};
@@ -48,11 +48,21 @@ impl Trials for Samples {
         panic!("sample reads must not sweep workloads")
     }
 
+    /// Sample reads hold no frequency state, so there is nothing to recover.
+    fn recover_frequency(
+        &mut self,
+        _stopped: &Stopped,
+        _journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, Error> {
+        Ok(String::new())
+    }
+
     fn start(
         &mut self,
         _cancel: &CancellationToken,
         _spec: TrialSpec,
         _ready: Stopped,
+        _journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         panic!("sample reads must not start workloads")
     }

@@ -677,7 +677,19 @@ mod hardware {
 
     struct Quiet;
 
+    /// A frequency journal that acknowledges every event as durable.
+    struct Acknowledged;
+
+    impl togi_machine::FrequencyJournal for Acknowledged {
+        fn record(&mut self, _: togi_machine::FrequencyEvent) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
     impl Reporter for Quiet {
+        fn frequency(&mut self, _: togi_machine::FrequencyEvent) -> io::Result<()> {
+            Ok(())
+        }
         fn progress(&mut self, _: &str) {}
         fn sample(&mut self, _: togi_machine::Sample) {}
         fn signal(&mut self, _: CoreId, _: Signal, _: Option<u32>, _: &str) {}
@@ -693,7 +705,7 @@ mod hardware {
 
     fn start(runner: &mut Runner, spec: TrialSpec) -> Box<dyn Running> {
         runner
-            .start(&CancellationToken::new(), spec, ready())
+            .start(&CancellationToken::new(), spec, ready(), &mut Acknowledged)
             .map_err(|partial| partial.error)
             .unwrap()
     }
@@ -1196,7 +1208,7 @@ mod hardware {
             names_scope(&String::from_utf8_lossy(&cgroup), "togi-trial-hardware"),
             "the helper ran in its scope"
         );
-        assert!(trial.stop().is_ok());
+        assert!(trial.stop(&mut Acknowledged).is_ok());
         assert!(scope_gone("togi-trial-hardware"));
     }
 
@@ -1207,7 +1219,7 @@ mod hardware {
         let trial = start(&mut runner, spec(Regime::R1, &[0], Duration::from_secs(30)));
         let detached = detached(&staged.tree, WORK, "togi-trial-hardware").unwrap();
         let begun = Instant::now();
-        assert!(trial.stop().is_ok());
+        assert!(trial.stop(&mut Acknowledged).is_ok());
         assert!(begun.elapsed() <= TEARDOWN);
         assert!(
             !detached.descendant.alive(),
@@ -1227,6 +1239,7 @@ mod hardware {
                 &CancellationToken::new(),
                 spec(Regime::R7, &[0, 1], Duration::from_secs(30)),
                 ready(),
+                &mut Acknowledged,
             )
             .err()
             .expect("the second launch fails");
@@ -1294,7 +1307,7 @@ mod hardware {
             names_scope(&String::from_utf8_lossy(&cgroup), "togi-trial-hardware"),
             "{mode} ran in its scope"
         );
-        assert!(trial.stop().is_ok(), "{mode}");
+        assert!(trial.stop(&mut Acknowledged).is_ok(), "{mode}");
         assert!(begun.elapsed() < Duration::from_secs(20), "{mode}");
         if mode != "watched" {
             let log = staged.tree.read(WORK, source, 2 * LINE_LIMIT).unwrap();
@@ -1387,7 +1400,7 @@ mod hardware {
             b"prepared input\n"
         );
         let begun = Instant::now();
-        assert!(trial.stop().is_ok());
+        assert!(trial.stop(&mut Acknowledged).is_ok());
         assert!(begun.elapsed() <= TEARDOWN);
         assert!(scope_gone("togi-trial-hardware"));
     }
@@ -1448,6 +1461,11 @@ mod hardware {
     struct Logged;
 
     impl Reporter for Logged {
+        fn frequency(&mut self, event: togi_machine::FrequencyEvent) -> io::Result<()> {
+            eprintln!("frequency: {event:?}");
+            Ok(())
+        }
+
         fn progress(&mut self, detail: &str) {
             eprintln!("progress: {detail}");
         }
@@ -1552,7 +1570,7 @@ mod hardware {
                         "{} {regime} ran {:?}, Tctl max {:?}",
                         workload.id, result.ran, result.tctl_max_c
                     );
-                    assert!(trial.stop().is_ok(), "{}", workload.id);
+                    assert!(trial.stop(&mut Acknowledged).is_ok(), "{}", workload.id);
                     assert!(
                         result.failure.is_none()
                             && result.inconclusive.is_none()
@@ -1757,7 +1775,7 @@ mod hardware {
             "{id} ran {:?}, Tctl max {:?}",
             result.ran, result.tctl_max_c
         );
-        assert!(trial.stop().is_ok(), "{id}");
+        assert!(trial.stop(&mut Acknowledged).is_ok(), "{id}");
         assert!(
             result.failure.is_none()
                 && result.inconclusive.is_none()
@@ -1910,7 +1928,7 @@ mod hardware {
             .map(|policy| (policy.id, frequency.scaling_max_khz(policy.id).unwrap()))
             .collect();
         let result = trial.wait(&CancellationToken::new(), &mut Logged).unwrap();
-        assert!(trial.stop().is_ok());
+        assert!(trial.stop(&mut Acknowledged).is_ok());
         for (policy, (_, capped)) in affected.iter().zip(observed) {
             let floor = policy.cpuinfo_min_khz.max(policy.scaling_min_khz);
             let minimum = policy.available_khz.as_ref().map_or(floor, |values| {
@@ -1958,7 +1976,7 @@ mod hardware {
             .filter(|cpu| affinity.is_set(usize::from(cpu.get())))
             .collect();
         let result = trial.wait(&CancellationToken::new(), &mut Logged).unwrap();
-        assert!(trial.stop().is_ok());
+        assert!(trial.stop(&mut Acknowledged).is_ok());
         assert_eq!(selected, host.cpus);
         assert_eq!((result.failure, result.inconclusive), (None, None));
         let single_ccd = topology.iter().all(|info| info.ccd == topology[0].ccd);

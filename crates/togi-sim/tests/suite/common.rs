@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use togi_machine::{
-    BootId, CancellationToken, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, Error, Machine,
-    Mce, ObservedOffset, Partial, PerCore, Regime, Reporter, Running, Sample, Signal, Stopped,
-    TargetOffset, TrialResult, TrialRole, TrialSpec, Workload, pick_workload,
+    BootId, CancellationToken, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, Error,
+    FrequencyEvent, FrequencyJournal, Machine, Mce, ObservedOffset, Partial, PerCore, Regime,
+    Reporter, Running, Sample, Signal, Stopped, TargetOffset, TrialResult, TrialRole, TrialSpec,
+    Workload, pick_workload,
 };
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{InvalidMachine, Load, MachineDefinition, Model, RunSettings, Simulator, file};
@@ -343,6 +344,19 @@ impl Reporter for Recorder {
     }
 }
 
+/// A frequency journal that acknowledges by keeping every event it is given.
+#[derive(Default)]
+pub(crate) struct Journal {
+    pub events: Vec<FrequencyEvent>,
+}
+
+impl FrequencyJournal for Journal {
+    fn record(&mut self, event: FrequencyEvent) -> std::io::Result<()> {
+        self.events.push(event);
+        Ok(())
+    }
+}
+
 /// Sixteen cores on two CCDs, core `n` on CPU `n` with its SMT sibling on CPU `n + 16`.
 fn topology() -> Vec<CoreInfo> {
     (0..16_u8)
@@ -475,6 +489,7 @@ pub(crate) fn crashed(waited: &Waited) -> bool {
 pub(crate) struct Rig {
     pub sim: Simulator,
     pub machine: Machine<'static>,
+    pub journal: Journal,
 }
 
 impl Rig {
@@ -491,7 +506,11 @@ impl Rig {
     pub(crate) fn with(model: Model, settings: RunSettings) -> Self {
         let sim = Simulator::new(model, settings).expect("a representable machine");
         let machine = sim.seams();
-        Self { sim, machine }
+        Self {
+            sim,
+            machine,
+            journal: Journal::default(),
+        }
     }
 
     pub(crate) fn proof(&mut self) -> Stopped {
@@ -509,7 +528,7 @@ impl Rig {
         let ready = self.proof();
         self.machine
             .trials
-            .start(&CancellationToken::new(), spec, ready)
+            .start(&CancellationToken::new(), spec, ready, &mut self.journal)
     }
 
     pub(crate) fn run(&mut self, spec: TrialSpec) -> (Waited, Recorder) {

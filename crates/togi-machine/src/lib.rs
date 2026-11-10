@@ -27,7 +27,10 @@ pub use ccd_profile::{CcdProfile, CcdProfileError};
 pub use content::{ContentId, Digest, InvalidDigest};
 pub use controller::{ControllerMode, Purpose};
 pub use core_set::CoreSet;
-pub use cpufreq::{CpuFrequency, FrequencyPolicy, FrequencyPolicyId};
+pub use cpufreq::{
+    CpuFrequency, FrequencyAction, FrequencyDiscarded, FrequencyEvent, FrequencyIntent,
+    FrequencyJournal, FrequencyPolicy, FrequencyPolicyId, FrequencyReadback,
+};
 pub use error::{Error, Partial, error_chain};
 pub use evidence::{
     EndEvidence, GraphicsDriver, KernelFault, KernelTail, MAX_FAULTS, MceCount, SleepMode,

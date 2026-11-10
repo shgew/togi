@@ -197,6 +197,34 @@ fn unknown_payload_field_names_the_kind() {
     }
 }
 
+#[test_case(EventKind::FrequencyIntent, "/data/action", json!("unknown"); "unknown action")]
+#[test_case(EventKind::FrequencyIntent, "/data/original_khz", json!(-1); "negative original")]
+#[test_case(EventKind::FrequencyIntent, "/data/cap_khz", json!(4_294_967_296_u64); "oversized cap")]
+#[test_case(EventKind::FrequencyReadback, "/data/observed_khz", json!(-1); "negative observation")]
+#[test_case(EventKind::FrequencyReadback, "/data/intent/action", json!("unknown"); "nested unknown action")]
+fn frequency_payloads_refuse_values_outside_their_types(
+    kind: EventKind,
+    pointer: &str,
+    invalid: Value,
+) {
+    let mut line = line_of(super::fixtures::sample(kind));
+    *line.pointer_mut(pointer).unwrap() = invalid;
+    assert!(
+        matches!(Event::decode(&line.to_string()), Err(DecodeError::Payload { kind: named, .. }) if named == kind)
+    );
+}
+
+#[test]
+fn frequency_readback_refuses_an_unknown_nested_intent_field() {
+    let mut line = line_of(super::fixtures::sample(EventKind::FrequencyReadback));
+    line["data"]["intent"]["extra"] = json!(true);
+    assert!(matches!(
+        Event::decode(&line.to_string()),
+        Err(DecodeError::UnknownField { kind: EventKind::FrequencyReadback, field })
+            if field == "data.intent.extra"
+    ));
+}
+
 #[test]
 fn missing_required_field_is_an_error() {
     let mut line = line_of(samples().remove(0));

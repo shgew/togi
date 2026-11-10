@@ -6,9 +6,9 @@ use rand::rngs::StdRng;
 use std::io;
 use std::time::Duration;
 use togi_machine::{
-    CancellationToken, Condition, ContentId, CoreId, CoreSet, CpuId, Error, LoadSchedule, Partial,
-    Regime, Reporter, ResetKind, Running, Signal, Started, Stopped, Swept, TargetOffset,
-    TrialConditions, TrialFailure, TrialResult, TrialSpec, Trials, WorkloadId,
+    CancellationToken, Condition, ContentId, CoreId, CoreSet, CpuId, Error, FrequencyJournal,
+    LoadSchedule, Partial, Regime, Reporter, ResetKind, Running, Signal, Started, Stopped, Swept,
+    TargetOffset, TrialConditions, TrialFailure, TrialResult, TrialSpec, Trials, WorkloadId,
 };
 
 use crate::hazard::{HazardSource, Load, SourceKind};
@@ -59,11 +59,21 @@ impl Trials for SimTrials {
         })
     }
 
+    /// The simulated machine writes no cpufreq limit, so it has no frequency state to recover.
+    fn recover_frequency(
+        &mut self,
+        _stopped: &Stopped,
+        _journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, Error> {
+        Ok(String::new())
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         ready: Stopped,
+        _journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         drop(ready);
         let fail = |error| Partial {
@@ -263,7 +273,7 @@ impl Running for SimRunning {
         }
     }
 
-    fn stop(self: Box<Self>) -> Result<Stopped, Error> {
+    fn stop(self: Box<Self>, _journal: &mut dyn FrequencyJournal) -> Result<Stopped, Error> {
         if self.stale() {
             Err(Error::Crashed)
         } else {

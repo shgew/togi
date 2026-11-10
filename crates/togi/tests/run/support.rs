@@ -18,9 +18,9 @@ use togi_hostlock::{HostLock, Policy};
 use togi_journal::MemFs;
 use togi_journal::fs::Fs;
 use togi_machine::{
-    BiosContext, BootId, CancellationToken, CoreId, Error as MachineError, Machine, ObservedOffset,
-    Partial, Running, Signal, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions,
-    TrialSpec, Trials,
+    BiosContext, BootId, CancellationToken, CoreId, Error as MachineError, FrequencyJournal,
+    Machine, ObservedOffset, Partial, Running, Signal, Smu, SmuValidated, Stopped, Swept,
+    TargetOffset, TrialConditions, TrialSpec, Trials,
 };
 use togi_render::OutputFacts;
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
@@ -755,18 +755,27 @@ impl Trials for InterruptingTrials {
         self.inner.sweep(cancel)
     }
 
+    fn recover_frequency(
+        &mut self,
+        stopped: &Stopped,
+        journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, MachineError> {
+        self.inner.recover_frequency(stopped, journal)
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         ready: Stopped,
+        journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         if !self.sent {
             self.sent = true;
             // Trial tokens are children: cancelling one alone does not stop the session.
             self.cancel.cancel();
         }
-        self.inner.start(cancel, spec, ready)
+        self.inner.start(cancel, spec, ready, journal)
     }
 
     fn ended(&mut self, id: &str) -> Result<(), MachineError> {

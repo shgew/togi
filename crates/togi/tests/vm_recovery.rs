@@ -650,6 +650,17 @@ mod vm_recovery {
             .unwrap();
     }
 
+    /// Acknowledges frequency events by collecting them, as a journal append would.
+    #[derive(Default)]
+    struct CollectedFrequency(Vec<togi_machine::FrequencyEvent>);
+
+    impl togi_machine::FrequencyJournal for CollectedFrequency {
+        fn record(&mut self, event: togi_machine::FrequencyEvent) -> io::Result<()> {
+            self.0.push(event);
+            Ok(())
+        }
+    }
+
     /// The shipped trial runner with a stable controller identity for the VM fixture's journal.
     struct VmTrials(Runner);
 
@@ -669,13 +680,22 @@ mod vm_recovery {
             self.0.sweep(cancel)
         }
 
+        fn recover_frequency(
+            &mut self,
+            stopped: &Stopped,
+            journal: &mut dyn togi_machine::FrequencyJournal,
+        ) -> Result<String, Error> {
+            self.0.recover_frequency(stopped, journal)
+        }
+
         fn start(
             &mut self,
             cancel: &CancellationToken,
             spec: TrialSpec,
             ready: Stopped,
+            journal: &mut dyn togi_machine::FrequencyJournal,
         ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-            self.0.start(cancel, spec, ready)
+            self.0.start(cancel, spec, ready, journal)
         }
 
         fn ended(&mut self, id: &str) -> Result<(), Error> {
@@ -957,7 +977,13 @@ mod vm_recovery {
             let read = machine.smu.offset(info.core).unwrap();
             offsets.set(info.core, TargetOffset::new(read.0).unwrap());
         }
-        let ready = machine.trials.sweep(&cancel).unwrap().stopped;
+        let mut frequency = CollectedFrequency::default();
+        let swept = machine.trials.sweep(&cancel).unwrap();
+        machine
+            .trials
+            .recover_frequency(&swept.stopped, &mut frequency)
+            .unwrap();
+        let ready = swept.stopped;
         let topology = topology();
         // R7 runs one instance per core, so the two loaded cores get one scope each.
         let regime = Regime::R7;
@@ -984,7 +1010,7 @@ mod vm_recovery {
         };
         let mut running = machine
             .trials
-            .start(&cancel, spec, ready)
+            .start(&cancel, spec, ready, &mut frequency)
             .map_err(|partial| partial.error)
             .unwrap();
         let started = running.started();
@@ -1000,7 +1026,8 @@ mod vm_recovery {
             exit(1);
         }
         let _ = running.wait(&cancel, &mut Quiet);
-        let _ = running.stop().unwrap();
+        let _ = running.stop(&mut frequency).unwrap();
+        log(&format!("frequency events {}", frequency.0.len()));
         restore_baseline();
         0
     }
