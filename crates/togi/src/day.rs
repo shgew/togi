@@ -66,8 +66,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// With no subcommand, requires an all-core CO-0 baseline and PID1's armed, counting watchdog,
 /// then applies the committed profile through durable intent, write and readback. It records active hours excluding
 /// suspend and journals kernel faults. Stop signals zero and verify every core before the final
-/// checkpoint and clean marker. Losing the watchdog with a nonzero profile zeroes and verifies,
-/// then fails without a clean marker or reapplication. It requires root and an existing compatible session journal.
+/// checkpoint and clean marker. A watchdog read unarmed at start, or with a nonzero profile applied, ends the
+/// service without a clean marker or reapplication; an applied profile is zeroed and verified first. It requires
+/// root and an existing compatible session journal.
 /// The service holds the host and writer locks: stop it before tuning; status/watch stay lock-free.
 ///
 /// Answer, notify, pause/resume and freeze/unfreeze use the credential-checked day socket without
@@ -443,6 +444,11 @@ fn observe_with_socket(
     let starts_paused = pause.starts_paused(journal.boot(), clock);
     let expired_at_start = pause.expired(journal.boot(), clock);
     if let Some(live) = live.as_deref_mut() {
+        // Preflight's armed read may no longer hold: the read journaled above decides, by the rule
+        // every later read follows.
+        if matches!(watchdog, WatchdogState::Unarmed { .. }) {
+            return Err(Error::Watchdog);
+        }
         live.start(
             journal,
             observer,
@@ -522,7 +528,8 @@ fn observe_with_socket(
         let sample = now.checked_sub(sampled).ok_or(Error::ClockReversed)? >= SAMPLE;
         // The first scheduled sample after waking checks again too: active state alone can survive S3
         // while the timer loses its MMIO decoding. Changes get a checkpoint immediately.
-        let watchdog_changed = if stopping || sample || due {
+        let watchdog_read = stopping || sample || due;
+        let watchdog_changed = if watchdog_read {
             let checked = observer.watchdog();
             let changed = checked != progress.watchdog;
             progress.watchdog = checked;
@@ -530,7 +537,9 @@ fn observe_with_socket(
         } else {
             false
         };
-        if watchdog_changed
+        // No nonzero profile without an armed watchdog, at every read and not only at a change: the
+        // recorded state can already be unarmed when a reapplication's own armed read restores the profile.
+        if watchdog_read
             && matches!(progress.watchdog, WatchdogState::Unarmed { .. })
             && progress
                 .offsets

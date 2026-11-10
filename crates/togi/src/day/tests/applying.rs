@@ -497,6 +497,61 @@ fn an_unarmed_or_noncounting_watchdog_refuses_without_a_write(detail: &str) {
 }
 
 #[test]
+fn an_unarmed_read_after_an_armed_preflight_applies_nothing() {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let lost = WatchdogState::Unarmed {
+        detail: "watchdog stopped counting".into(),
+    };
+    let mut hardware = Hardware::stock();
+    hardware.reading.watchdog = [armed(), lost.clone()].into();
+    let result = serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    );
+    assert!(matches!(result, Err(Error::Watchdog)));
+    assert_eq!(hardware.writes, []);
+    assert_eq!(hardware.emergency, 1);
+    assert_eq!(applications(&journal).len(), 0);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
+    assert!(!journal.events().iter().any(|event| {
+        matches!(
+            event.payload,
+            Payload::SmuIntent(_) | Payload::DayCleanStop(_)
+        )
+    }));
+}
+
+#[test]
+fn repeated_unarmed_reads_at_stock_write_nothing_and_keep_observing() {
+    let mut journal = seed();
+    let lost = WatchdogState::Unarmed {
+        detail: "watchdog stopped counting".into(),
+    };
+    let mut hardware = Hardware::stock();
+    hardware.reading.watchdog = [armed(), armed(), lost.clone()].into();
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ticking(3, SAMPLE, SAMPLE),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    // The cold boot's stock application and the stop's zero: no unarmed read between them wrote.
+    assert_eq!(hardware.writes, [TargetOffset::ZERO, TargetOffset::ZERO]);
+    assert_eq!(hardware.emergency, 0);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
+    assert_eq!(
+        journal.events().last().map(Event::kind),
+        Some(EventKind::DayCleanStop)
+    );
+}
+
+#[test]
 fn a_defect_stop_refuses_a_nonzero_proposal_and_takes_only_emergency_zero() {
     let mut journal = seed();
     proposed_climb(&mut journal);

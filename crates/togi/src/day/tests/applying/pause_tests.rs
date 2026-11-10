@@ -356,6 +356,86 @@ fn deadline_after_suspended_wall_time_reapplies_before_ending_pause() {
 }
 
 #[test]
+fn an_unarmed_read_that_is_no_change_still_zeroes_the_profile_a_pause_end_reapplied() {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    hardware.writes.clear();
+    paused(
+        &mut journal,
+        PauseState::Until {
+            deadline: deadline(),
+        },
+    );
+    journal
+        .reboot("paused-cold-boot".to_owned().into())
+        .unwrap();
+    let lost = WatchdogState::Unarmed {
+        detail: "watchdog stopped counting".into(),
+    };
+    // Preflight and start read armed, the check while paused at stock reads unarmed, the pause end's
+    // own read is armed, and the next check reads unarmed again: no change from the recorded state.
+    hardware.reading.watchdog = [armed(), armed(), lost.clone(), armed(), lost.clone()].into();
+    let mut clock = ActiveClock {
+        active: Duration::ZERO,
+        wall: Duration::ZERO,
+        sleeps: [
+            (Duration::from_secs(5), Duration::from_hours(1)),
+            (Duration::from_secs(5), Duration::from_secs(5)),
+        ]
+        .into(),
+    };
+    let result = serve(
+        &mut journal,
+        &mut hardware,
+        &mut clock,
+        &CancellationToken::new(),
+        &current_build(),
+    );
+    assert!(matches!(result, Err(Error::Watchdog)));
+    assert_eq!(
+        hardware.writes,
+        [
+            TargetOffset::ZERO,
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO
+        ]
+    );
+    assert_eq!(hardware.current, 0);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost.clone()));
+    assert_eq!(hardware.reading.watchdog, [lost]);
+    let kinds: Vec<_> = journal.events().iter().map(Event::kind).collect();
+    assert_eq!(
+        &kinds[kinds.len() - 6..],
+        [
+            EventKind::DayCheckpoint,
+            EventKind::SmuIntent,
+            EventKind::SmuWrite,
+            EventKind::SmuReadback,
+            EventKind::DayOffsetsChanged,
+            EventKind::DayCheckpoint,
+        ]
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == EventKind::DayCleanStop)
+            .count(),
+        1,
+        "only the first invocation stopped cleanly"
+    );
+}
+
+#[test]
 fn paused_stock_hours_feed_the_existing_exclusion_rule() {
     let mut journal = seed();
     paused(&mut journal, PauseState::UntilBoot {});
