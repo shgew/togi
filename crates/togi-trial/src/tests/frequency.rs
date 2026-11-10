@@ -100,6 +100,24 @@ fn refused_cap_withholds_pass_without_hiding_computation_failure() {
     }));
 }
 
+#[test_case::test_case("PIN FAILED\n", "core 02 mprime setup error: PIN FAILED"; "backend setup")]
+#[test_case::test_case("", "core 02 has no backend-verified result"; "missing checked result")]
+fn backend_outcome_reason_precedes_controller_cap_error(output: &'static str, reason: &str) {
+    crate::testing::runtime(true).block_on(local(async {
+        let machine = Fake::new(policies());
+        machine.refuse_write(true);
+        let rig = rig(&machine);
+        rig.fake.on_launch(printing(output));
+        let handle = rig.start(managed()).await.unwrap();
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(run.finished.result.inconclusive.as_deref(), Some(reason));
+        assert!(run.progress().iter().any(|line| {
+            line.starts_with("controller placement inconclusive: controller frequency limits:")
+        }));
+    }));
+}
+
 #[test]
 fn wrong_cap_readback_withholds_pass_and_restoration_retries_later() {
     crate::testing::runtime(true).block_on(local(async {
@@ -174,6 +192,7 @@ fn incomplete_managed_affinity_withholds_pass() {
                 env.durability,
             ));
         });
+        rig.fake.on_launch(printing("verified self-test\n"));
         let handle = rig.start(managed()).await.unwrap();
         let run = finish(&handle).await;
         assert!(

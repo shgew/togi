@@ -15,8 +15,8 @@ use togi_machine::{
 };
 
 use super::harness::{
-    core, crate_error, finish, local, nothing_runs, rig_edit, spec as base_spec, topology,
-    with_roles,
+    core, crate_error, finish, local, nothing_runs, printing, rig_edit, spec as base_spec,
+    topology, with_roles,
 };
 use super::process::{Helper, allowed_cpus, linux, timing};
 use crate::Error;
@@ -309,11 +309,7 @@ fn an_incomplete_confinement_and_restoration_warn_in_the_trials_progress(
         local(async {
             let (controller, install) = reporting(moved, moved);
             let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-            rig.fake.on_launch(|_, _| {
-                Launch::Run(script(|mut ctx: ProcCtx| async move {
-                    ctx.until_killed().await;
-                }))
-            });
+            rig.fake.on_launch(printing("verified self-test\n"));
             let spec = base_spec(Regime::R1, &[2], secs(5));
             let loaded = cpus_list(&spec.cpus);
             let handle = rig.start(spec).await.unwrap();
