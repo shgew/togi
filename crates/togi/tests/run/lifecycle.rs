@@ -1104,7 +1104,10 @@ fn a_cancelled_manual_watchdog_check_stops_by_signal_without_a_watchdog_check() 
     ));
     assert!(!events.iter().any(|event| matches!(
         event.payload,
-        Payload::DeadEnd(_) | Payload::SmuIntent(_) | Payload::TrialIntent(_) | Payload::TrialStart(_)
+        Payload::DeadEnd(_)
+            | Payload::SmuIntent(_)
+            | Payload::TrialIntent(_)
+            | Payload::TrialStart(_)
     )));
     assert!(
         !events.iter().any(|event| matches!(

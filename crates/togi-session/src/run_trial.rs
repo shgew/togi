@@ -313,7 +313,10 @@ impl Session<'_> {
             Ok(Some((dead_end, check))) => {
                 self.end_unstarted_trial(
                     &trial,
-                    format!("not started: hardware watchdog unarmed ({})", dead_end.detail),
+                    format!(
+                        "not started: hardware watchdog unarmed ({})",
+                        dead_end.detail
+                    ),
                     &[intent, check],
                 )?;
                 return Ok(Some(self.dead_end(dead_end, &[check])?));
@@ -399,7 +402,12 @@ impl Session<'_> {
     }
 
     /// Closes an intent whose final readiness check refused or was stopped before any workload started.
-    fn end_unstarted_trial(&mut self, trial: &Trial<'_>, reason: String, causes: &[Seq]) -> Step<()> {
+    fn end_unstarted_trial(
+        &mut self,
+        trial: &Trial<'_>,
+        reason: String,
+        causes: &[Seq],
+    ) -> Step<()> {
         let end = TrialEnd {
             interrupted: true,
             reason: Some(reason),

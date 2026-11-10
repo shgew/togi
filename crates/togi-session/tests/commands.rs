@@ -142,7 +142,11 @@ fn an_unarmed_manual_run_refuses_before_any_offset_write_or_trial() {
         Some(togi_session::Stop::DeadEnd { ref dead_end, .. })
             if dead_end.condition == togi_journal::DeadEndCondition::Preflight
     ));
-    assert_eq!(sim.monotonic(), before, "the simulated check needs no retry");
+    assert_eq!(
+        sim.monotonic(),
+        before,
+        "the simulated check needs no retry"
+    );
     let events = ended.journal.events();
     let checked = events
         .iter()
@@ -417,10 +421,11 @@ fn cancelling_a_boundary_check_restores_stock_and_closes_any_intent(
         &event.payload,
         Payload::PreflightCheck(check) if check.check == "watchdog" && !check.ok
     )));
-    assert!(!events.iter().any(|event| matches!(
-        event.payload,
-        Payload::DeadEnd(_) | Payload::TrialStart(_)
-    )));
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::DeadEnd(_) | Payload::TrialStart(_)))
+    );
     assert_eq!(
         events
             .iter()
@@ -445,7 +450,10 @@ fn cancelling_a_boundary_check_restores_stock_and_closes_any_intent(
             assert!(end.interrupted);
             assert_eq!(end.outcome, togi_journal::Outcome::Inconclusive);
             assert_eq!(end.duration_s, 0);
-            assert_eq!(end.reason.as_deref(), Some("not started: stopped by signal"));
+            assert_eq!(
+                end.reason.as_deref(),
+                Some("not started: stopped by signal")
+            );
             assert_eq!(end_event.cause, [event.seq]);
         }
     }
@@ -500,7 +508,11 @@ fn a_cancelled_manual_watchdog_check_never_records_a_watchdog_failure(already_ca
     let ended = run(input);
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
     assert!(matches!(ended.stop, Some(togi_session::Stop::Signal)));
-    let expected = if already_cancelled { vec![] } else { vec![false] };
+    let expected = if already_cancelled {
+        vec![]
+    } else {
+        vec![false]
+    };
     assert_eq!(*observed.borrow(), expected);
     let events = ended.journal.events();
     assert!(!events.iter().any(|event| matches!(
@@ -509,7 +521,10 @@ fn a_cancelled_manual_watchdog_check_never_records_a_watchdog_failure(already_ca
     )));
     assert!(!events.iter().any(|event| matches!(
         event.payload,
-        Payload::DeadEnd(_) | Payload::SmuIntent(_) | Payload::TrialIntent(_) | Payload::TrialStart(_)
+        Payload::DeadEnd(_)
+            | Payload::SmuIntent(_)
+            | Payload::TrialIntent(_)
+            | Payload::TrialStart(_)
     )));
     assert!(matches!(
         &events.last().unwrap().payload,
@@ -562,10 +577,12 @@ fn a_cancelled_manual_restart_checks_watchdog_and_restores_inherited_offsets() {
     let events = &ended.journal.events()[earlier..];
     let checked = events
         .iter()
-        .position(|event| matches!(
-            &event.payload,
-            Payload::PreflightCheck(check) if check.check == "watchdog" && check.ok
-        ))
+        .position(|event| {
+            matches!(
+                &event.payload,
+                Payload::PreflightCheck(check) if check.check == "watchdog" && check.ok
+            )
+        })
         .unwrap();
     let restored = events
         .iter()
