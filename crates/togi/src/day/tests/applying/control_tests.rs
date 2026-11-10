@@ -173,3 +173,134 @@ fn threaded_controls_reapply_committed_d_without_promotion(
         Payload::DayCleanStop(_)
     ));
 }
+
+/// Hands the service one request and then stops it. A service that ends with an error never answers, so the
+/// reply is not kept.
+struct OneRequest {
+    request: RefCell<Option<Request>>,
+    cancel: CancellationToken,
+}
+
+impl ControlSource for OneRequest {
+    fn poll(
+        &self,
+        journal: &mut Journal,
+        clock: &dyn Clock,
+        controller: socket::Controller<'_>,
+    ) -> Result<(), Error> {
+        let request = self.request.borrow_mut().take();
+        if let Some(request) = request {
+            socket::respond(journal, clock, 0, request, controller)?;
+        } else {
+            self.cancel.cancel();
+        }
+        Ok(())
+    }
+}
+
+/// Serves a nonzero startup profile, then a pause request while the hardware drifts at read `drift_at`. Reads
+/// number 1 the baseline check, 2 the boot-start read, 3 to 5 the startup transaction (stock readback, -5
+/// readback, confirmation), 6 the startup guard, 7 the control's first read, 8 the pause's stock readback and 9
+/// the control's second read.
+fn pause_with_drift_at(drift_at: usize) -> (Journal, Hardware, Result<(), Error>) {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    hardware.drift_at = Some(drift_at);
+    let cancel = CancellationToken::new();
+    let source = OneRequest {
+        request: RefCell::new(Some(Request::Pause(PauseRequest {
+            state: togi_journal::PauseState::UntilBoot {},
+        }))),
+        cancel: cancel.clone(),
+    };
+    let result = crate::day::serve_with_controls(
+        &mut journal,
+        &mut hardware,
+        &mut ControlClock(Duration::from_secs(120)),
+        &cancel,
+        &current_build(),
+        Some(&source),
+    );
+    (journal, hardware, result)
+}
+
+fn recorded_offsets(journal: &Journal) -> Vec<PerCore<ObservedOffset>> {
+    journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::DayOffsetsChanged(change) = &event.payload {
+                Some(change.offsets)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn drift_after_a_pauses_verified_stock_records_that_profile_before_the_drift() {
+    let (journal, hardware, result) = pause_with_drift_at(9);
+    assert!(matches!(result, Err(Error::OffsetDrift)));
+    assert_eq!(
+        recorded_offsets(&journal),
+        [offsets(-5), offsets(0), offsets(-12), offsets(0)]
+    );
+    let drift = journal
+        .events()
+        .iter()
+        .position(|event| {
+            matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(-12))
+        })
+        .unwrap();
+    assert_eq!(journal.events()[drift + 1].kind(), EventKind::DayCheckpoint);
+    assert_eq!(journal.events()[drift + 2].kind(), EventKind::SmuIntent);
+    assert_eq!(
+        hardware.writes,
+        [
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO,
+            TargetOffset::ZERO,
+        ]
+    );
+    assert_eq!(applications(&journal).len(), 1);
+    assert!(
+        !journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
+    );
+}
+
+#[test]
+fn drift_before_a_control_acts_stops_the_service_without_running_it() {
+    let (journal, hardware, result) = pause_with_drift_at(7);
+    assert!(matches!(result, Err(Error::OffsetDrift)));
+    assert!(
+        !journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::DayPause(_)))
+    );
+    assert_eq!(
+        recorded_offsets(&journal),
+        [offsets(-5), offsets(-12), offsets(0)]
+    );
+    assert_eq!(
+        hardware.writes,
+        [
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO,
+        ]
+    );
+    assert_eq!(applications(&journal).len(), 1);
+    assert!(
+        !journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
+    );
+}
