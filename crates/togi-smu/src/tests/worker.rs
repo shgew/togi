@@ -5,9 +5,10 @@ use super::fixture::{
 use crate::mailbox::{Command, MailboxError, Request, Worker};
 use crate::pm_table::{PmFile, TABLE_LEN};
 use crate::{Driver, Error, Operation, PmReader};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, ThreadId};
 use std::time::Duration;
+use test_case::test_case;
 use togi_machine::{PmTableReader, TargetOffset};
 
 /// Short enough to keep the timeout tests quick, long enough that a worker that is already
@@ -177,9 +178,10 @@ fn a_job_that_expired_while_queued_never_reaches_the_transport() {
     });
     let worker = Worker::spawn(Box::new(fake.clone()), SHORT).unwrap();
     let first = worker
-        .submit(Request::Command(Command::ReadOffset), |transport| {
-            transport.command(Command::ReadOffset, [0; 6])
-        })
+        .submit(
+            Request::Command(Command::ReadOffset),
+            |transport, poison| transport.command(Command::ReadOffset, [0; 6], poison),
+        )
         .unwrap();
     assert!(
         entered.wait_timeout(GENEROUS),
@@ -187,9 +189,10 @@ fn a_job_that_expired_while_queued_never_reaches_the_transport() {
     );
     // The worker is stuck in the first job, so this one cannot start before its caller gives up.
     let second = worker
-        .submit(Request::Command(Command::SetAllOffsets), |transport| {
-            transport.command(Command::SetAllOffsets, [0; 6])
-        })
+        .submit(
+            Request::Command(Command::SetAllOffsets),
+            |transport, poison| transport.command(Command::SetAllOffsets, [0; 6], poison),
+        )
         .unwrap();
     let error = worker.finish(second).unwrap_err();
     assert!(matches!(
@@ -208,6 +211,48 @@ fn a_job_that_expired_while_queued_never_reaches_the_transport() {
         "an expired job started after its caller was told it failed"
     );
     drop(first);
+}
+
+#[test]
+fn a_hung_transport_poisons_both_command_and_smn_paths_permanently() {
+    let fake = Fake::new();
+    let entered = Gate::default();
+    let release = Gate::default();
+    let (opened, held) = (entered.clone(), release.clone());
+    fake.hook_command(move || {
+        opened.open();
+        held.wait();
+    });
+    let mut worker = Worker::spawn(Box::new(fake.clone()), SHORT).unwrap();
+    let ticket = worker
+        .submit(
+            Request::Command(Command::ReadOffset),
+            |transport, poison| transport.command(Command::ReadOffset, [0; 6], poison),
+        )
+        .unwrap();
+    assert!(entered.wait_timeout(GENEROUS));
+    let stuck = Request::Command(Command::ReadOffset);
+    assert!(matches!(
+        worker.finish(ticket).unwrap_err(),
+        MailboxError::TimedOut { request, deadline } if request == stuck && deadline == SHORT
+    ));
+    assert!(matches!(
+        worker.command(Command::SetAllOffsets, [0; 6]).unwrap_err(),
+        MailboxError::Poisoned { request } if request == stuck
+    ));
+    assert!(matches!(
+        worker.read_smn(0).unwrap_err(),
+        MailboxError::Poisoned { request } if request == stuck
+    ));
+
+    release.open();
+    worker.flush();
+    assert!(matches!(
+        worker.read_smn(0).unwrap_err(),
+        MailboxError::Poisoned { request } if request == stuck
+    ));
+    assert_eq!(fake.commands(), [(Command::ReadOffset, 0)]);
+    assert_eq!(fake.smn_reads(), Vec::<u32>::new());
 }
 
 #[test]
@@ -329,4 +374,94 @@ fn an_existing_pm_reader_starts_no_transfer_once_a_mailbox_transaction_overran()
         }
     ));
     blocked.release.open();
+}
+
+#[test_case("smu_args", false, &["write smu_args"]; "argument write")]
+#[test_case("rsmu_cmd", false, &["write smu_args", "write rsmu_cmd"]; "command write")]
+#[test_case("rsmu_cmd", true, &["write smu_args", "write rsmu_cmd", "read rsmu_cmd"]; "status read")]
+#[test_case("smu_args", true, &["write smu_args", "write rsmu_cmd", "read rsmu_cmd", "read smu_args"]; "response read")]
+fn a_timed_out_sysfs_call_starts_no_later_step_after_driver_drop(
+    blocked_file: &'static str,
+    block_read: bool,
+    expected: &[&str],
+) {
+    let tree = Tree::new(8, true);
+    tree.put_bytes("sys/kernel/ryzen_smu_drv/smn", &[0; 4]);
+    tree.put_bytes("sys/kernel/ryzen_smu_drv/smu_args", &[0; 24]);
+    tree.put_bytes("sys/kernel/ryzen_smu_drv/rsmu_cmd", &1_u32.to_le_bytes());
+    let crate::files::Files::Readers(readers) = tree.source() else {
+        panic!("the witness needs in-memory sysfs files");
+    };
+    let entered = Gate::default();
+    let release = Gate::default();
+    let (alive, stopped) = mpsc::channel::<()>();
+    let steps: Arc<Mutex<Vec<String>>> = Arc::default();
+    let recorded = Arc::clone(&steps);
+    let (opened, held) = (entered.clone(), release.clone());
+    let read_file = Arc::clone(&readers.read);
+    let write_file = Arc::clone(&readers.write);
+    let read_alive = alive.clone();
+    let read_steps = Arc::clone(&steps);
+    let (read_entered, read_release) = (entered.clone(), release.clone());
+    let mut driver = Driver::from_readers(
+        tree.root(),
+        readers.cpu_names.clone(),
+        true,
+        move |path| {
+            let _keep_alive = &read_alive;
+            let name = path.file_name().unwrap().to_str().unwrap();
+            if matches!(name, "smu_args" | "rsmu_cmd") {
+                lock(&read_steps).push(format!("read {name}"));
+                if block_read && name == blocked_file {
+                    read_entered.open();
+                    read_release.wait();
+                }
+            }
+            read_file(path)
+        },
+        move |path, bytes| {
+            let _keep_alive = &alive;
+            let name = path.file_name().unwrap().to_str().unwrap();
+            if matches!(name, "smu_args" | "rsmu_cmd") {
+                lock(&recorded).push(format!("write {name}"));
+                if !block_read && name == blocked_file {
+                    opened.open();
+                    held.wait();
+                }
+                Ok(bytes.len())
+            } else {
+                write_file(path, bytes)
+            }
+        },
+    )
+    .unwrap();
+    let _ = driver.validate().unwrap();
+    driver.set_deadline(OVERRUN);
+
+    let error = write_all(&mut driver, TargetOffset::clamped(-10)).unwrap_err();
+    assert!(matches!(
+        smu_error(&error),
+        Error::Mailbox {
+            source: MailboxError::TimedOut {
+                request: Request::Command(Command::SetAllOffsets),
+                ..
+            },
+            ..
+        }
+    ));
+    assert!(entered.wait_timeout(GENEROUS));
+    assert_eq!(*lock(&steps), expected);
+    poisoned_by(
+        &write_all(&mut driver, TargetOffset::ZERO).unwrap_err(),
+        Request::Command(Command::SetAllOffsets),
+    );
+
+    // The blocked call can complete, but the poisoned worker must not start its next step.
+    drop(driver);
+    release.open();
+    assert!(matches!(
+        stopped.recv_timeout(GENEROUS),
+        Err(mpsc::RecvTimeoutError::Disconnected)
+    ));
+    assert_eq!(*lock(&steps), expected);
 }

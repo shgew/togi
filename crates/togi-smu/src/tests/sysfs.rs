@@ -1,7 +1,7 @@
 use super::fixture::Tree;
 #[cfg(target_os = "linux")]
 use crate::files::Files;
-use crate::mailbox::{Command, MailboxError, Status, Transport};
+use crate::mailbox::{Command, MailboxError, Poison, Status, Transport};
 use crate::sysfs::Sysfs;
 use std::io::ErrorKind;
 use tempfile::TempDir;
@@ -31,7 +31,9 @@ fn real_fs_an_absent_driver_directory_is_not_a_mailbox() {
 #[test_case(0x42, Status::Unknown(0x42), "status 0x42 (unknown status)"; "unknown status")]
 fn statuses_are_typed(code: u32, status: Status, text: &str) {
     let (_tree, sysfs) = mailbox_tree();
-    let error = sysfs.transact(code, [0; 6]).unwrap_err();
+    let error = sysfs
+        .transact(code, [0; 6], &Poison::default())
+        .unwrap_err();
     assert!(
         matches!(error, MailboxError::Status { command, status: got } if command == code && got == status),
         "{error:?}"
@@ -43,7 +45,7 @@ fn statuses_are_typed(code: u32, status: Status, text: &str) {
 fn arguments_round_trip_in_24_little_endian_bytes() {
     let (tree, sysfs) = mailbox_tree();
     let args = [0x1234_5678, 4, 3, 2, 1, 0xffec];
-    assert_eq!(sysfs.transact(1, args).unwrap(), args);
+    assert_eq!(sysfs.transact(1, args, &Poison::default()).unwrap(), args);
     let written = tree.bytes(&format!("{DRIVER}/smu_args"));
     assert_eq!(written.len(), 24);
     assert_eq!(written[..4], 0x1234_5678_u32.to_le_bytes());
@@ -56,7 +58,11 @@ fn arguments_round_trip_in_24_little_endian_bytes() {
 #[test]
 fn typed_commands_write_their_code() {
     let (tree, mut sysfs) = mailbox_tree();
-    let error = sysfs.command(Command::ReadOffset, [0x1010_0000, 0, 0, 0, 0, 0]);
+    let error = sysfs.command(
+        Command::ReadOffset,
+        [0x1010_0000, 0, 0, 0, 0, 0],
+        &Poison::default(),
+    );
     assert!(matches!(
         error,
         Err(MailboxError::Status { command: 0xd5, .. })
@@ -70,9 +76,12 @@ fn typed_commands_write_their_code() {
 #[test]
 fn smn_reads_write_the_address_and_read_the_value() {
     let (tree, mut sysfs) = mailbox_tree();
-    assert_eq!(sysfs.read_smn(0x304a_03dc).unwrap(), 0x304a_03dc);
+    assert_eq!(
+        sysfs.read_smn(0x304a_03dc, &Poison::default()).unwrap(),
+        0x304a_03dc
+    );
     tree.put(&format!("{DRIVER}/smn"), "xxxxx");
-    let error = sysfs.read_smn(0).unwrap_err();
+    let error = sysfs.read_smn(0, &Poison::default()).unwrap_err();
     assert!(
         matches!(
             error,
@@ -91,7 +100,7 @@ fn smn_reads_write_the_address_and_read_the_value() {
 fn a_response_of_the_wrong_length_is_refused() {
     let (tree, sysfs) = mailbox_tree();
     tree.put(&format!("{DRIVER}/smu_args"), &"\0".repeat(30));
-    let error = sysfs.transact(1, [0; 6]).unwrap_err();
+    let error = sysfs.transact(1, [0; 6], &Poison::default()).unwrap_err();
     assert!(
         matches!(
             error,
@@ -110,7 +119,9 @@ fn a_response_of_the_wrong_length_is_refused() {
 fn unavailable_mailbox_command_files_fail_at_the_open_stage(name: &str) {
     let (tree, mut sysfs) = mailbox_tree();
     tree.remove(&format!("{DRIVER}/{name}"));
-    let error = sysfs.command(Command::SetOffset, [0; 6]).unwrap_err();
+    let error = sysfs
+        .command(Command::SetOffset, [0; 6], &Poison::default())
+        .unwrap_err();
     let path = tree.path(&format!("{DRIVER}/{name}"));
     let MailboxError::Open {
         path: failed,
@@ -134,7 +145,7 @@ fn unavailable_mailbox_command_files_fail_at_the_open_stage(name: &str) {
 fn an_unavailable_smn_file_fails_at_the_open_stage() {
     let (tree, mut sysfs) = mailbox_tree();
     tree.remove(&format!("{DRIVER}/smn"));
-    let error = sysfs.read_smn(0).unwrap_err();
+    let error = sysfs.read_smn(0, &Poison::default()).unwrap_err();
     let path = tree.path(&format!("{DRIVER}/smn"));
     let MailboxError::Open {
         path: failed,
@@ -158,7 +169,7 @@ fn a_failed_write_is_reported_with_its_path() {
         write: std::sync::Arc::new(|_, _| Err(std::io::Error::other("write failed"))),
     };
     let sysfs = Sysfs::from_readers(tree.root(), Files::Readers(std::sync::Arc::new(readers)));
-    let error = sysfs.transact(1, [0; 6]).unwrap_err();
+    let error = sysfs.transact(1, [0; 6], &Poison::default()).unwrap_err();
     assert!(
         matches!(&error, MailboxError::Write { path, .. } if path == &args),
         "{error:?}"
