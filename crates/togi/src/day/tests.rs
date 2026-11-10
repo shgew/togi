@@ -72,6 +72,33 @@ fn journal_on(fs: Arc<MemFs>) -> Journal {
     journal
 }
 
+#[test]
+fn a_close_failure_and_emergency_zero_failure_report_both_causes_in_order() {
+    let fs = Arc::new(MemFs::new());
+    let journal = journal_on(Arc::clone(&fs));
+    let before = journal.events().to_vec();
+    let mut hardware = applying::Hardware::stock();
+    hardware.current = -10;
+    hardware.failure = applying::Failure::Emergency;
+    fs.inject(Fault::before(Op::Sync, 1).named("events.jsonl"));
+
+    let error = close_failure(journal.close().unwrap_err(), &mut hardware);
+    assert_eq!(
+        render_error(&error),
+        "emergency zero after daily service failure: close journal: injected Sync fault; emergency zero: injected emergency zero fault"
+    );
+    assert_eq!(hardware.emergency, 1);
+    assert_eq!(hardware.current, -10);
+    let reopened = state_dir(fs)
+        .open_at("day-a".to_owned().into(), Timestamp::UNIX_EPOCH)
+        .unwrap();
+    assert_eq!(reopened.events(), before);
+    assert!(!reopened.events().iter().any(|event| matches!(
+        event.kind(),
+        EventKind::DayCleanStop | EventKind::ProfileRestored
+    )));
+}
+
 type LiveLog = dyn FnMut(Option<&KernelCursor>) -> Result<KernelRead, Partial<KernelRead>>;
 
 struct Reading {

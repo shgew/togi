@@ -92,6 +92,8 @@ Every ten minutes of active monotonic time (`CLOCK_MONOTONIC`, not boot-time or 
 
 SIGTERM, SIGINT and SIGHUP wake the wait, zero every core through the durable transaction and verify all-core readbacks, then finish with a final readback/checkpoint and `day.clean_stop`, in that durable order. Systemd's orderly shutdown/reboot stop includes a power-button shutdown it handles normally. A failed zero, read, clock or append exits 1 and never fabricates a clean stop. A service error takes the journal-independent zero-only emergency path; abnormal process exit also invokes zero-only `ExecStopPost` before any delayed restart. Neither path can apply a nonzero offset or earn a clean marker.
 
+If closing the day journal fails and its emergency zero also fails, stderr retains the journal-close failure and its causes first, followed by the emergency-zero failure and its causes. This remains exit 1, without further journal events, a new clean marker or a claim of verified stock; journal close, emergency cleanup and hardware/host-lock release keep their existing order.
+
 The next invocation records each previously observed other boot with no final clean-stop marker once as `day.unclean_end`, naming its boot ID, last checkpoint (or absence), last read-back offsets, reset reason and the evidence below. An unclean end is an observation, never a tuning crash. [Ruleset 13's policy boundary](#ruleset-13-policy-boundary) consumes it as daily evidence; session recovery still admits only tuning activity as a tuning boot. The observation path itself starts no workload.
 
 ### Live faults
