@@ -1,6 +1,7 @@
 use test_case::test_case;
 
 use super::*;
+use crate::day_night::machine::Journal;
 
 const SEED: u64 = 17;
 
@@ -274,10 +275,11 @@ fn night_prefix_and_sleep_account_actual_time_and_firmware_resets_all_cores() {
     let spec = class
         .to_spec("one-night-trial".into(), PerCore::default(), 0, SEED)
         .unwrap();
+    let mut journal = Journal::default();
     let ready = machine.trials.sweep(&cancel).unwrap().stopped;
     let mut running = machine
         .trials
-        .start(&cancel, spec, ready)
+        .start(&cancel, spec, ready, &mut journal)
         .map_err(|partial| partial.error)
         .unwrap();
     let result = running.wait(&cancel, &mut Silent);
@@ -288,7 +290,7 @@ fn night_prefix_and_sleep_account_actual_time_and_firmware_resets_all_cores() {
             partial.value.ran
         }
     };
-    let _stopped = running.stop().unwrap();
+    let _stopped = running.stop(&mut journal).unwrap();
     assert_eq!(runtime.end_night(), ran);
     let observations = runtime.drain_observations();
     assert_eq!(observations.len(), 1);
@@ -368,17 +370,18 @@ fn launch(machine: &mut Machine<'_>, class: &TrialClass, index: usize) -> Durati
     let spec = class
         .to_spec(format!("launch-{index}"), PerCore::default(), index, SEED)
         .unwrap();
+    let mut journal = Journal::default();
     let ready = machine.trials.sweep(&cancel).unwrap().stopped;
     let mut running = machine
         .trials
-        .start(&cancel, spec, ready)
+        .start(&cancel, spec, ready, &mut journal)
         .map_err(|partial| partial.error)
         .unwrap();
     let ran = match running.wait(&cancel, &mut Silent) {
         Ok(result) => result.ran,
         Err(partial) => partial.value.ran,
     };
-    let _ = running.stop().unwrap();
+    let _ = running.stop(&mut journal).unwrap();
     ran
 }
 

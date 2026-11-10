@@ -5,6 +5,7 @@ use togi_machine::{
     TrialSpec,
 };
 
+use super::machine::Journal;
 use super::successor::{
     FinishReason, PolicyReport, PolicyUnit, UnitFinish, UnitId, UnitMode, UnitPhase,
 };
@@ -353,15 +354,17 @@ impl Reporter for Silent {
 
 fn probe(machine: &mut Machine<'_>, spec: TrialSpec) -> Result<(bool, Duration), RunError> {
     let cancel = CancellationToken::new();
+    let mut journal = Journal::default();
     let stopped = machine.trials.sweep(&cancel)?.stopped;
     let id = spec.id.clone();
     let mut running = machine
         .trials
-        .start(&cancel, spec, stopped)
+        .start(&cancel, spec, stopped, &mut journal)
         .map_err(|partial| partial.error)?;
     let result = running.wait(&cancel, &mut Silent);
-    let _stopped = running.stop()?;
+    let _stopped = running.stop(&mut journal)?;
     machine.trials.ended(&id)?;
+    journal.assert_unwritten();
     match result {
         Ok(result) => Ok((
             result.failure.is_none() && result.inconclusive.is_none(),

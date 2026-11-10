@@ -4,9 +4,10 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use togi_machine::{
-    BiosContext, BootId, CancellationToken, Check, Clock, CoreInfo, CoreRank, Error, Host, Machine,
-    Partial, PerCore, Reporter, Running, SampleError, Signal, SmuValidated, Started, Stopped,
-    Swept, TargetOffset, TrialConditions, TrialFailure, TrialResult, TrialSpec, Trials,
+    BiosContext, BootId, CancellationToken, Check, Clock, CoreInfo, CoreRank, Error,
+    FrequencyEvent, FrequencyJournal, Host, Machine, Partial, PerCore, Reporter, Running,
+    SampleError, Signal, SmuValidated, Started, Stopped, Swept, TargetOffset, TrialConditions,
+    TrialFailure, TrialResult, TrialSpec, Trials,
 };
 use togi_sim::day_night::{
     FailureCause, NonCpuAnswer, NonCpuCause, Scenario, TrialClass, TruthState,
@@ -347,6 +348,29 @@ impl Clock for CycleClock {
     }
 }
 
+/// The calendar simulator's frequency journal: it acknowledges by keeping every event it is given.
+/// The simulated machine writes no cpufreq limit, so nothing should ever reach it.
+#[derive(Default)]
+pub(super) struct Journal {
+    events: Vec<FrequencyEvent>,
+}
+
+impl Journal {
+    pub(super) fn assert_unwritten(&self) {
+        debug_assert!(
+            self.events.is_empty(),
+            "the simulated calendar wrote a frequency limit"
+        );
+    }
+}
+
+impl FrequencyJournal for Journal {
+    fn record(&mut self, event: FrequencyEvent) -> std::io::Result<()> {
+        self.events.push(event);
+        Ok(())
+    }
+}
+
 struct CycleTrials(Shared);
 impl Trials for CycleTrials {
     fn controller_pid(&self) -> u32 {
@@ -369,11 +393,19 @@ impl Trials for CycleTrials {
             stopped: confirmed(),
         })
     }
+    fn recover_frequency(
+        &mut self,
+        _stopped: &Stopped,
+        _journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, Error> {
+        Ok(String::new())
+    }
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         _ready: Stopped,
+        _journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         let build = || {
             if cancel.is_cancelled() {
@@ -517,7 +549,7 @@ impl Running for CycleRunning {
             }),
         }
     }
-    fn stop(self: Box<Self>) -> Result<Stopped, Error> {
+    fn stop(self: Box<Self>, _journal: &mut dyn FrequencyJournal) -> Result<Stopped, Error> {
         Ok(confirmed())
     }
 }

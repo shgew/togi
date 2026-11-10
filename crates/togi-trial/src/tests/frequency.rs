@@ -1,16 +1,16 @@
 use std::io;
 use std::rc::Rc;
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use togi_machine::{
-    CancellationToken, ControllerMode, CpuFrequency as _, CpuId, FrequencyPolicy,
-    FrequencyPolicyId, Purpose, Regime, Signal,
+    CancellationToken, ControllerMode, CpuFrequency as _, CpuId, FrequencyAction, FrequencyEvent,
+    FrequencyPolicy, FrequencyPolicyId, Purpose, Regime, Signal,
 };
 
 use super::harness::{core, finish, local, printing, rig_edit, spec, topology};
 use crate::controller::{Controller, Moved, Recording};
-use crate::frequency::{Limits, fake::Fake};
+use crate::frequency::{Journal, Limits, fake::Fake};
 use crate::os::fake::Launch;
 use crate::runtime::{Command, serve_detached};
 use crate::testing::TestBackend;
@@ -117,8 +117,18 @@ fn wrong_cap_readback_withholds_pass_and_restoration_retries_later() {
             },
         )
         .await;
-        let swept = answer.recv().unwrap().unwrap();
-        assert!(swept.detail.contains("frequency restore readback"));
+        answer.recv().unwrap().unwrap();
+        let (reply, answer) = mpsc::sync_channel(1);
+        serve_detached(
+            Rc::clone(&rig.env),
+            Command::RecoverFrequency {
+                journal: crate::frequency::Journal::recorded(),
+                reply: reply.into(),
+            },
+        )
+        .await;
+        let recovered = answer.recv().unwrap().unwrap();
+        assert!(recovered.contains("frequency restore readback"));
         assert_eq!(
             machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
             5_700_000
@@ -301,5 +311,188 @@ fn an_uncapped_trial_recovers_a_failed_restore_first_or_is_refused() {
         );
         let run = finish(&handle).await;
         assert_eq!(run.finished.result.inconclusive, None);
+    }));
+}
+
+/// Records attempted appends, latching the first failure like the session's appender.
+fn refusing(refuse: fn(&FrequencyEvent) -> bool) -> (Journal, Arc<Mutex<Vec<FrequencyEvent>>>) {
+    let offered = Arc::new(Mutex::new(Vec::new()));
+    let log = Arc::clone(&offered);
+    let failed = std::sync::atomic::AtomicBool::new(false);
+    let journal = Journal::new(move |request| {
+        if failed.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = request
+                .reply
+                .send(Err(io::Error::other("journal append refused")));
+            return Ok(());
+        }
+        let refused = refuse(&request.event);
+        failed.store(refused, std::sync::atomic::Ordering::Relaxed);
+        log.lock().unwrap().push(request.event.clone());
+        let _ = request.reply.send(if refused {
+            Err(io::Error::other("journal append refused"))
+        } else {
+            Ok(())
+        });
+        Ok(())
+    });
+    (journal, offered)
+}
+
+fn cap_intent(event: &FrequencyEvent) -> bool {
+    matches!(event, FrequencyEvent::Intent(intent) if intent.action == FrequencyAction::Cap)
+}
+
+fn restore_intent(event: &FrequencyEvent) -> bool {
+    matches!(event, FrequencyEvent::Intent(intent) if intent.action == FrequencyAction::Restore)
+}
+
+#[test]
+fn an_unacknowledged_cap_intent_refuses_the_start_before_any_workload_launches() {
+    crate::testing::runtime(true).block_on(local(async {
+        let machine = Fake::new(policies());
+        let rig = rig(&machine);
+        let (journal, offered) = refusing(cap_intent);
+        let failed = rig.start_journaled(managed(), journal).await.err().unwrap();
+        assert!(failed.value.is_some());
+        assert_eq!(rig.fake.launches().len(), 0, "no workload was launched");
+        assert_eq!(machine.writes(), Vec::new(), "no limit was written");
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            5_700_000
+        );
+        let offered = offered.lock().unwrap();
+        assert!(
+            matches!(&offered[..], [event] if cap_intent(event)),
+            "the refused cap intent was the first and last thing offered: {offered:?}"
+        );
+    }));
+}
+
+#[test]
+fn a_restart_restores_a_pending_cap_or_faults_before_the_next_trial() {
+    crate::testing::runtime(true).block_on(local(async {
+        let machine = Fake::new(policies());
+        let rig = rig(&machine);
+        let handle = rig.start(managed()).await.unwrap();
+        machine.refuse_write(true);
+        let run = finish(&handle).await;
+        assert!(run.finished.result.inconclusive.is_some());
+        machine.refuse_write(false);
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            400_000,
+            "the failed restore left the idle CCD capped"
+        );
+
+        let writes = machine.writes();
+        let launches = rig.fake.launches().len();
+        let (journal, offered) = refusing(restore_intent);
+        let failed = rig
+            .start_journaled(uncapped(), journal)
+            .await
+            .err()
+            .unwrap();
+        assert!(failed.value.is_some());
+        assert_eq!(
+            rig.fake.launches().len(),
+            launches,
+            "no next trial launched"
+        );
+        assert_eq!(
+            machine.writes(),
+            writes,
+            "the unacknowledged restore wrote nothing"
+        );
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            400_000
+        );
+        assert!(
+            matches!(&offered.lock().unwrap()[..], [event] if restore_intent(event)),
+            "the restore intent was refused before any write"
+        );
+
+        let handle = rig.start(uncapped()).await.unwrap();
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            5_700_000,
+            "the pending cap is restored once its intent is acknowledged"
+        );
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.inconclusive, None);
+    }));
+}
+
+async fn recover(
+    rig: &super::harness::Rig,
+    journal: Journal,
+) -> Result<String, crate::error::Error> {
+    let (reply, answer) = mpsc::sync_channel(1);
+    serve_detached(
+        Rc::clone(&rig.env),
+        Command::RecoverFrequency {
+            journal,
+            reply: reply.into(),
+        },
+    )
+    .await;
+    answer.recv().unwrap()
+}
+
+#[test]
+fn a_sweep_needs_no_frequency_journal_and_leaves_a_pending_cap_for_a_journaled_recovery() {
+    crate::testing::runtime(true).block_on(local(async {
+        let machine = Fake::new(policies());
+        let rig = rig(&machine);
+        let handle = rig.start(managed()).await.unwrap();
+        machine.refuse_write(true);
+        let run = finish(&handle).await;
+        assert!(run.finished.result.inconclusive.is_some());
+        machine.refuse_write(false);
+        let pending = rig.env.dir.join("controller-frequency.pending.json");
+        assert!(rig.exists(&pending), "the failed restore left its record");
+        let writes = machine.writes();
+
+        let (reply, answer) = mpsc::sync_channel(1);
+        serve_detached(
+            Rc::clone(&rig.env),
+            Command::Sweep {
+                cancel: CancellationToken::new(),
+                reply,
+            },
+        )
+        .await;
+        answer
+            .recv()
+            .unwrap()
+            .expect("a sweep needs no frequency journal");
+        assert_eq!(machine.writes(), writes, "the sweep wrote no limit");
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            400_000,
+            "the sweep left the cap"
+        );
+        assert!(rig.exists(&pending), "the sweep left the record");
+
+        let (journal, offered) = refusing(restore_intent);
+        recover(&rig, journal)
+            .await
+            .expect_err("an unacknowledged restore intent fails the recovery");
+        assert!(matches!(&offered.lock().unwrap()[..], [event] if restore_intent(event)));
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            400_000,
+            "the refused recovery wrote nothing"
+        );
+        assert!(rig.exists(&pending), "the refused recovery left the record");
+
+        recover(&rig, Journal::recorded())
+            .await
+            .expect("an acknowledged recovery restores the cap");
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            5_700_000
+        );
     }));
 }

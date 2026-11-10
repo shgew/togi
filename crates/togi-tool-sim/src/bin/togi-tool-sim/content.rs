@@ -10,8 +10,8 @@ use std::rc::Rc;
 
 use togi_journal::{Event, Payload, Seq, WorkloadContent};
 use togi_machine::{
-    Backend, CancellationToken, ContentId, Error, Partial, Running, SampleError, Stopped, Swept,
-    TrialConditions, TrialSpec, Trials, WorkloadId,
+    Backend, CancellationToken, ContentId, Error, FrequencyJournal, Partial, Running, SampleError,
+    Stopped, Swept, TrialConditions, TrialSpec, Trials, WorkloadId,
 };
 use togi_simrun::TrialsAdapter;
 
@@ -126,13 +126,22 @@ impl Trials for RecordedTrials {
         self.inner.sweep(cancel)
     }
 
+    fn recover_frequency(
+        &mut self,
+        stopped: &Stopped,
+        journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, Error> {
+        self.inner.recover_frequency(stopped, journal)
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         ready: Stopped,
+        journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-        self.inner.start(cancel, spec, ready)
+        self.inner.start(cancel, spec, ready, journal)
     }
 
     fn ended(&mut self, id: &str) -> Result<(), Error> {

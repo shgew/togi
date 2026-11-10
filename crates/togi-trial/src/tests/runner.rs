@@ -142,6 +142,7 @@ fn start(
             &CancellationToken::new(),
             spec(regime, cores, duration),
             nothing_runs(),
+            &mut crate::testing::Frequencies::default(),
         )
         .map_err(|partial| partial.error)
         .unwrap()
@@ -252,7 +253,9 @@ fn a_whole_trial_runs_waits_and_stops_through_the_public_seams() {
     );
     assert_eq!(result.failure, None);
     assert_eq!(result.ran, Duration::from_millis(300));
-    let _stopped: Stopped = trial.stop().unwrap();
+    let _stopped: Stopped = trial
+        .stop(&mut crate::testing::Frequencies::default())
+        .unwrap();
     assert!(fs.contents("/rig/trials/t1/work/stdout.log").is_some());
     assert_eq!(
         fs.contents("/rig/trials/t1/work/stdout.log").unwrap(),
@@ -290,14 +293,22 @@ fn a_failing_trial_reports_its_signal_on_the_waiting_thread() {
         result.failure.map(|f| f.signal),
         Some(Signal::ComputationError)
     );
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 #[test]
 fn stopping_without_waiting_tears_down_and_proves_it() {
     let (mut runner, _dir) = live_runner(|_| {}, fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 #[test]
@@ -349,7 +360,11 @@ fn readers_keep_draining_between_start_and_wait() {
         200 * 100,
         "controller diagnostics do not replace any queued backend progress"
     );
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 #[test]
@@ -374,6 +389,7 @@ fn the_blocking_apis_refuse_to_run_inside_a_runtime() {
                 &CancellationToken::new(),
                 spec(Regime::R1, &[0], secs(1)),
                 nothing_runs(),
+                &mut crate::testing::Frequencies::default(),
             )
             .err()
             .unwrap();
@@ -407,7 +423,10 @@ fn waiting_and_stopping_inside_a_runtime_are_refused_and_the_trial_stays_usable(
 
 fn trial_stop_refused(trial: Box<dyn Running>) -> bool {
     matches!(
-        trial.stop().as_ref().map_err(crate_error),
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .as_ref()
+            .map_err(crate_error),
         Err(Some(Error::InsideRuntime { operation: "stop" }))
     )
 }
@@ -447,7 +466,10 @@ fn a_trial_dropped_after_wait_changes_nothing() {
     assert!(result.is_ok());
     drop(trial);
     let next = start(&mut runner, Regime::R1, &[0], Duration::from_millis(100));
-    assert!(next.stop().is_ok());
+    assert!(
+        next.stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 /// Cancels the wait it reports to at the first progress line.
@@ -478,7 +500,11 @@ fn cancelling_a_wait_returns_a_partial_result_and_stop_still_proves_the_teardown
         .unwrap_err();
     assert!(matches!(partial.error, togi_machine::Error::Cancelled));
     assert!(partial.value.ran < secs(600));
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 #[test]
@@ -505,7 +531,7 @@ fn an_unconfirmed_teardown_is_containment_for_wait_and_for_stop() {
         "evidence is kept beside the containment"
     );
     assert!(matches!(
-        trial.stop(),
+        trial.stop(&mut crate::testing::Frequencies::default()),
         Err(togi_machine::Error::Containment(_))
     ));
 }
@@ -585,7 +611,11 @@ fn the_runner_sweeps_probes_compresses_and_reads_samples() {
 
     let mut trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(300));
     let _ = trial.wait(&CancellationToken::new(), &mut Collect::default());
-    drop(trial.stop().unwrap());
+    drop(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .unwrap(),
+    );
     runner.ended("t1").unwrap();
     assert!(fs.contents("/rig/trials/t1/work/stdout.log.gz").is_some());
     assert!(fs.contents("/rig/trials/t1/work/stdout.log").is_none());
@@ -641,7 +671,11 @@ fn a_trial_longer_than_the_teardown_budgets_still_completes_through_wait() {
         .map_err(|partial| partial.error)
         .unwrap();
     assert_eq!(result.ran, long);
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 /// A trial whose supervisor's events are what the test sends, on `clock`.
@@ -713,7 +747,7 @@ fn stop_gives_up_on_a_supervisor_that_never_answers_with_containment() {
         let clock = Arc::clone(&clock);
         move || clock.expire_waiting()
     });
-    let outcome = Box::new(trial).stop();
+    let outcome = Box::new(trial).stop(&mut crate::testing::Frequencies::default());
     expiry.join().unwrap();
     assert!(matches!(outcome, Err(togi_machine::Error::Containment(_))));
     assert_eq!(clock.elapsed(), Duration::from_millis(300));
@@ -783,7 +817,9 @@ fn containment_carries_the_ordered_cleanup_failures_as_its_source() {
         fast(),
     );
     let trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(100));
-    let Err(togi_machine::Error::Containment(source)) = trial.stop() else {
+    let Err(togi_machine::Error::Containment(source)) =
+        trial.stop(&mut crate::testing::Frequencies::default())
+    else {
         panic!("not containment");
     };
     let containment = source
@@ -806,6 +842,7 @@ fn start_failure(
             &CancellationToken::new(),
             spec(regime, cores, duration),
             nothing_runs(),
+            &mut crate::testing::Frequencies::default(),
         )
         .err()
         .expect("the start fails")
@@ -904,7 +941,11 @@ fn a_repeated_wait_reports_the_failure_the_first_one_did() {
         .unwrap_err();
     assert!(matches!(again.error, togi_machine::Error::Cancelled));
     assert_eq!(again.value, first.value);
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 fn launch_error() -> Error {
@@ -1092,7 +1133,11 @@ fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
         matches!(joined.errors(), [Error::Cancelled, Error::Output(_)]),
         "{joined}"
     );
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 /// Timings whose supervisor bound is short: a trial's wait bound is its duration plus 600 ms.
@@ -1126,7 +1171,11 @@ fn a_first_wait_after_the_old_deadline_still_gets_the_finished_outcome() {
             .is_ok(),
         "and the outcome stays retrievable"
     );
-    assert!(Box::new(trial).stop().is_ok());
+    assert!(
+        Box::new(trial)
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1203,7 +1252,11 @@ fn ending_a_trial_compresses_it_and_leaves_every_older_retained_trial_untouched(
 
     let mut trial = start(&mut runner, Regime::R7, &[0, 1], Duration::from_millis(300));
     let _ = trial.wait(&CancellationToken::new(), &mut Collect::default());
-    drop(trial.stop().unwrap());
+    drop(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .unwrap(),
+    );
     runner.ended("t1").unwrap();
 
     let mut files = Vec::new();
@@ -1601,8 +1654,14 @@ async fn shutdown_overlaps_pending_rollback_and_live_teardown_in_one_slot() {
             let mut pending = spec(Regime::R1, &[1], secs(600));
             pending.id = "pending".into();
             let result =
-                crate::supervisor::start(env, CancellationToken::new(), pending, nothing_runs())
-                    .await;
+                crate::supervisor::start(
+                    env,
+                    CancellationToken::new(),
+                    pending,
+                    nothing_runs(),
+                    crate::frequency::Journal::recorded(),
+                )
+                .await;
             let _ = reply.send(result.err().unwrap());
         });
         let begun = tokio::time::Instant::now();
@@ -1650,6 +1709,7 @@ async fn shutdown_retains_and_abandons_a_supervisor_registered_by_a_pending_star
                 CancellationToken::new(),
                 spec(Regime::R1, &[0], secs(600)),
                 nothing_runs(),
+                crate::frequency::Journal::recorded(),
             )
             .await
             .unwrap();
@@ -1681,6 +1741,7 @@ async fn a_late_registration_is_abandoned_promptly_while_another_pending_start_s
                 CancellationToken::new(),
                 spec(Regime::R1, &[0], secs(600)),
                 nothing_runs(),
+                crate::frequency::Journal::recorded(),
             )
             .await
             .unwrap();
@@ -1868,7 +1929,8 @@ fn undeliverable_start() -> crate::runtime::Command {
         cancel: CancellationToken::new(),
         spec: Box::new(spec(Regime::R1, &[0], secs(600))),
         ready: nothing_runs(),
-        reply,
+        journal: crate::frequency::Journal::recorded(),
+        reply: reply.into(),
     }
 }
 
@@ -2031,7 +2093,7 @@ fn a_cached_cancellation_joined_to_a_failed_teardown_stays_containment_with_ever
     }
     assert_eq!(seen[0], seen[1]);
     assert!(matches!(
-        trial.stop(),
+        trial.stop(&mut crate::testing::Frequencies::default()),
         Err(togi_machine::Error::Containment(_))
     ));
 }
@@ -2085,7 +2147,10 @@ async fn a_cancelled_sweep_nobody_waits_for_with_failed_cleanup_reports_every_ca
         crate::runtime::RUNTIME_REPORTS.with_borrow_mut(Vec::clear);
         crate::runtime::serve_detached(
             Rc::clone(&rig.env),
-            crate::runtime::Command::Sweep { cancel, reply },
+            crate::runtime::Command::Sweep {
+                cancel,
+                reply,
+            },
         )
         .await;
         assert_eq!(
@@ -2104,7 +2169,11 @@ fn stopping_without_waiting_has_terminated_the_workload_before_it_returns() {
     let terminated = Arc::new(AtomicBool::new(false));
     let (mut runner, _keep) = live_runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
-    assert!(trial.stop().is_ok());
+    assert!(
+        trial
+            .stop(&mut crate::testing::Frequencies::default())
+            .is_ok()
+    );
     assert!(
         terminated.load(Ordering::SeqCst),
         "stop returned before the workload ended"

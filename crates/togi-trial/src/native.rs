@@ -261,6 +261,25 @@ impl Runner {
         }
     }
 
+    fn journaled_answer<T>(
+        &self,
+        answer: &std::sync::mpsc::Receiver<crate::frequency::Message<T>>,
+        bound: Duration,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<T, RecvTimeoutError> {
+        let begun = self.clock.now();
+        loop {
+            let remaining = bound.saturating_sub(self.clock.now().duration_since(begun));
+            match self.clock.recv_timeout(answer, remaining)? {
+                crate::frequency::Message::Frequency(request) => {
+                    let result = journal.record(request.event);
+                    let _ = request.reply.send(result);
+                }
+                crate::frequency::Message::Finished(value) => return Ok(value),
+            }
+        }
+    }
+
     /// The preflight check: a scope pinned to CPU 0 is created and ends, within 30 s.
     pub fn probe_scope(&self) -> Result<String, Error> {
         self.ask("the scope probe", self.timing.probe_bound(), |reply| {
@@ -289,11 +308,35 @@ impl Trials for Runner {
         asked?.map_err(Into::into)
     }
 
+    fn recover_frequency(
+        &mut self,
+        _stopped: &Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<String, togi_machine::Error> {
+        outside_runtime("frequency recovery")?;
+        let bound = self.timing.sweep_bound();
+        let (sink, reply, answer) = crate::frequency::Journal::channel();
+        self.runtime.send(Command::RecoverFrequency {
+            journal: sink,
+            reply,
+        })?;
+        self.journaled_answer(&answer, bound, journal)
+            .map_err(|error| match error {
+                RecvTimeoutError::Timeout => Error::Stuck {
+                    operation: "frequency recovery",
+                    bound,
+                },
+                RecvTimeoutError::Disconnected => Error::RuntimeGone,
+            })?
+            .map_err(Into::into)
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         ready: Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         if let Err(error) = outside_runtime("start") {
             return Err(Partial {
@@ -320,11 +363,12 @@ impl Trials for Runner {
         // This start's own token: fired when the caller gives up waiting, so the runtime rolls
         // the start back instead of finishing a trial nobody holds, and when the runner ends.
         let attempt = cancel.child_token();
-        let (reply, answer) = sync_channel(1);
+        let (sink, reply, answer) = crate::frequency::Journal::channel();
         let command = Command::Start {
             cancel: attempt.clone(),
             spec: Box::new(spec),
             ready,
+            journal: sink,
             reply,
         };
         if let Err(error) = self.runtime.send(command) {
@@ -333,7 +377,7 @@ impl Trials for Runner {
                 error: error.into(),
             });
         }
-        match self.clock.recv_timeout(&answer, bound) {
+        match self.journaled_answer(&answer, bound, journal) {
             Ok(Ok(delivered)) => Ok(Box::new(Trial::new(
                 delivered.claim(),
                 &self.timing,
@@ -448,16 +492,16 @@ impl Trials for Runner {
 /// the proof cannot come from a borrowed trial:
 ///
 /// ```compile_fail,E0507
-/// fn proof(trial: &mut Box<dyn togi_machine::Running>) -> Result<togi_machine::Stopped, togi_machine::Error> {
-///     trial.stop()
+/// fn proof(trial: &mut Box<dyn togi_machine::Running>, journal: &mut dyn togi_machine::FrequencyJournal) -> Result<togi_machine::Stopped, togi_machine::Error> {
+///     trial.stop(journal)
 /// }
 /// ```
 ///
 /// A stopped trial cannot be used again:
 ///
 /// ```compile_fail,E0382
-/// fn reuse(trial: Box<dyn togi_machine::Running>) {
-///     let _ = trial.stop();
+/// fn reuse(trial: Box<dyn togi_machine::Running>, journal: &mut dyn togi_machine::FrequencyJournal) {
+///     let _ = trial.stop(journal);
 ///     let _ = trial.started();
 /// }
 /// ```
@@ -527,6 +571,10 @@ impl Trial {
             };
             match event {
                 Some(Event::Progress(detail)) => report.progress(&detail),
+                Some(Event::Frequency(request)) => {
+                    let result = report.frequency(request.event);
+                    let _ = request.reply.send(result);
+                }
                 Some(Event::Sample(sample)) => report.sample(sample),
                 Some(Event::Signal {
                     core,
@@ -568,9 +616,12 @@ pub(crate) fn compress_pinned_unsynced(
     )))
 }
 
-struct Discard;
+struct Discard<'a>(&'a mut dyn togi_machine::FrequencyJournal);
 
-impl Reporter for Discard {
+impl Reporter for Discard<'_> {
+    fn frequency(&mut self, event: togi_machine::FrequencyEvent) -> std::io::Result<()> {
+        self.0.record(event)
+    }
     fn progress(&mut self, _: &str) {}
     fn sample(&mut self, _: togi_machine::Sample) {}
     fn signal(
@@ -653,11 +704,14 @@ impl Running for Trial {
         }
     }
 
-    fn stop(mut self: Box<Self>) -> Result<Stopped, togi_machine::Error> {
+    fn stop(
+        mut self: Box<Self>,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<Stopped, togi_machine::Error> {
         outside_runtime("stop")?;
         if self.ended.is_none() {
             let _ = self.commands.send(TrialCommand::Stop);
-            if !self.await_end(self.stop_bound, true, &mut Discard) {
+            if !self.await_end(self.stop_bound, true, &mut Discard(journal)) {
                 return Err(Error::Stuck {
                     operation: "the stop",
                     bound: self.stop_bound,

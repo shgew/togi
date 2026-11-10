@@ -67,6 +67,15 @@ mod cached_errors {
 
     struct Quiet;
 
+    /// A frequency journal that acknowledges every event as durable.
+    struct Acknowledged;
+
+    impl togi_machine::FrequencyJournal for Acknowledged {
+        fn record(&mut self, _: togi_machine::FrequencyEvent) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     impl Reporter for Quiet {
         fn progress(&mut self, _: &str) {}
         fn sample(&mut self, _: Sample) {}
@@ -138,7 +147,12 @@ mod cached_errors {
         )]
         let ready = Stopped::confirmed();
         runner
-            .start(&CancellationToken::new(), spec(id), ready)
+            .start(
+                &CancellationToken::new(),
+                spec(id),
+                ready,
+                &mut Acknowledged,
+            )
             .map_err(|partial| partial.error)
             .unwrap()
     }
@@ -218,7 +232,7 @@ mod cached_errors {
             "every wait reports the one kept error"
         );
         assert_eq!(first.error.to_string(), second.error.to_string());
-        assert!(trial.stop().is_ok());
+        assert!(trial.stop(&mut Acknowledged).is_ok());
     }
 
     #[test]
@@ -252,6 +266,6 @@ mod cached_errors {
             );
             assert!(partial.error.source().is_none());
         }
-        assert!(trial.stop().is_ok());
+        assert!(trial.stop(&mut Acknowledged).is_ok());
     }
 }

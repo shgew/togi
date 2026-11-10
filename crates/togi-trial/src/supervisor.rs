@@ -148,6 +148,7 @@ pub(crate) enum TrialCommand {
 #[derive(Debug)]
 pub(crate) enum Event {
     Progress(String),
+    Frequency(crate::frequency::Request),
     Sample(Sample),
     Signal {
         core: CoreId,
@@ -219,12 +220,13 @@ async fn confine<O: Os>(
     spec: &TrialSpec,
     cancel: &CancellationToken,
     events: &StdSender<Event>,
-) -> PlacementEvidence {
+    journal: &crate::frequency::Journal,
+) -> Result<PlacementEvidence, crate::frequency::Error> {
     let Some(placement) = controller::placement(&env.topology, spec) else {
-        return PlacementEvidence {
+        return Ok(PlacementEvidence {
             inconclusive: Some("managed controller placement could not select a host".to_owned()),
             excluded: togi_machine::CoreSet::default(),
-        };
+        });
     };
     let mut evidence = PlacementEvidence::default();
     if placement.contract.capped() {
@@ -241,12 +243,15 @@ async fn confine<O: Os>(
         let mut reports = Vec::new();
         let outcome = env
             .frequency
-            .cap(&placement.cpus, &workers, cancel, &mut reports)
+            .cap(&placement.cpus, &workers, cancel, &mut reports, journal)
             .await;
         for line in reports {
             let _ = events.send(Event::Progress(line));
         }
         if let Err(error) = outcome {
+            if error.journal_failed() {
+                return Err(error);
+            }
             evidence.inconclusive = Some(error_chain(&error));
         }
     }
@@ -276,7 +281,7 @@ async fn confine<O: Os>(
             "controller host core {host} is excluded from passing exposure; its failure evidence remains"
         )));
     }
-    evidence
+    Ok(evidence)
 }
 
 /// Gives togi's threads back the affinity they had, once the teardown confirmed nothing runs.
@@ -284,11 +289,12 @@ async fn confine<O: Os>(
 async fn restore<O: Os>(
     env: &Env<O>,
     events: &StdSender<Event>,
+    journal: &crate::frequency::Journal,
 ) -> Result<(), crate::frequency::Error> {
     let mut reports = Vec::new();
     let outcome = env
         .frequency
-        .restore(&CancellationToken::new(), &mut reports)
+        .restore(&CancellationToken::new(), &mut reports, journal)
         .await;
     for line in reports {
         let _ = events.send(Event::Progress(line));
@@ -323,6 +329,7 @@ pub(crate) async fn start<O: Os>(
     cancel: CancellationToken,
     spec: TrialSpec,
     ready: Stopped,
+    journal: crate::frequency::Journal,
 ) -> Result<Handle, Partial<Option<Stopped>>> {
     // Every distinct backend the roles name must be configured and usable before anything starts.
     let mut checked: Vec<togi_machine::Backend> = Vec::new();
@@ -373,7 +380,11 @@ pub(crate) async fn start<O: Os>(
     // A trial never runs beside limits an earlier trial left armed, whatever placement it takes:
     // they are restored first, and a failed restoration refuses the start.
     let mut recovered = Vec::new();
-    if let Err(error) = env.frequency.restore(&cancel, &mut recovered).await {
+    if let Err(error) = env
+        .frequency
+        .restore(&cancel, &mut recovered, &journal)
+        .await
+    {
         return Err(early(Error::Frequency(error), ready));
     }
     let prepare_until = Instant::now() + env.timing.prepare;
@@ -420,7 +431,7 @@ pub(crate) async fn start<O: Os>(
     for line in recovered {
         let _ = events_tx.send(Event::Progress(line));
     }
-    let placement = confine(&env, &spec, &cancel, &events_tx).await;
+    let placement = confine(&env, &spec, &cancel, &events_tx, &journal).await;
     let (inbound_tx, mut inbound_rx) = bounded(INBOUND_CAPACITY);
     let selector = Selector::mixed(
         &plan
@@ -435,6 +446,21 @@ pub(crate) async fn start<O: Os>(
         scopes: Vec::new(),
         scoped: identity.is_some(),
         failures: Failures::default(),
+    };
+    let placement = match placement {
+        Ok(placement) => placement,
+        Err(error) => {
+            return Err(roll_back(
+                &env,
+                live,
+                judge,
+                &mut inbound_rx,
+                logs,
+                Error::Frequency(error),
+                &journal,
+            )
+            .await);
+        }
     };
     let mut launched = Launched::default();
     let outcome = launch_all(
@@ -453,7 +479,7 @@ pub(crate) async fn start<O: Os>(
     )
     .await;
     if let Err(cause) = outcome {
-        return Err(roll_back(&env, live, judge, &mut inbound_rx, logs, cause).await);
+        return Err(roll_back(&env, live, judge, &mut inbound_rx, logs, cause, &journal).await);
     }
 
     let started_at = Instant::now();
@@ -461,9 +487,16 @@ pub(crate) async fn start<O: Os>(
         match Sensors::with_inputs(&env.roots, &env.topology, started_at, env.inputs.clone()) {
             Ok(sensors) => sensors,
             Err(error) => {
-                return Err(
-                    roll_back(&env, live, judge, &mut inbound_rx, logs, error.into()).await,
-                );
+                return Err(roll_back(
+                    &env,
+                    live,
+                    judge,
+                    &mut inbound_rx,
+                    logs,
+                    error.into(),
+                    &journal,
+                )
+                .await);
             }
         };
     for instance in &mut live.instances {
@@ -497,6 +530,14 @@ pub(crate) async fn start<O: Os>(
         ));
     }
     let supervisor = Supervisor {
+        frequency_journal: {
+            let events = events_tx.clone();
+            crate::frequency::Journal::new(move |request| {
+                events
+                    .send(Event::Frequency(request))
+                    .map_err(|_| std::io::Error::other("frequency journal receiver ended"))
+            })
+        },
         sensors,
         timeline: timeline(&plan.loads(), plan.duration).peekable(),
         env: Rc::clone(&env),
@@ -806,6 +847,7 @@ async fn roll_back<O: Os>(
     inbound: &mut Receiver<Inbound>,
     logs: LogWriter,
     cause: Error,
+    journal: &crate::frequency::Journal,
 ) -> Partial<Option<Stopped>> {
     let budget = Budget::start(env.timing);
     let ended = Teardown::begin(&env.os, inbound, &mut judge, live, budget)
@@ -825,7 +867,7 @@ async fn roll_back<O: Os>(
         Ok(stopped) => {
             if let Err(error) = env
                 .frequency
-                .restore(&CancellationToken::new(), &mut diagnostics)
+                .restore(&CancellationToken::new(), &mut diagnostics, journal)
                 .await
             {
                 diagnostics.push(error_chain(&error));
@@ -914,6 +956,7 @@ enum End {
 
 struct Supervisor<O: Os> {
     env: Rc<Env<O>>,
+    frequency_journal: crate::frequency::Journal,
     plan: TrialPlan,
     live: Live<O>,
     judge: Judge,
@@ -1276,6 +1319,7 @@ impl<O: Os> Supervisor<O> {
     async fn finish(self, end: End) {
         let Self {
             env,
+            frequency_journal,
             plan,
             mut live,
             mut judge,
@@ -1336,7 +1380,7 @@ impl<O: Os> Supervisor<O> {
             .finish()
             .await;
         if ended.proof.is_ok()
-            && let Err(error) = restore(&env, &events).await
+            && let Err(error) = restore(&env, &events, &frequency_journal).await
         {
             let reason = error_chain(&error);
             let _ = events.send(Event::Progress(reason.clone()));

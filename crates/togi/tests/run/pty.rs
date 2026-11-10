@@ -16,8 +16,8 @@ use tempfile::TempDir;
 use togi_cli::dashboard::Stop;
 use togi_journal::{EventKind, Payload, ShutdownReason};
 use togi_machine::{
-    CancellationToken, Error as MachineError, Machine, Partial, Reporter, Running, Started,
-    Stopped, Swept, TrialResult, TrialSpec, Trials,
+    CancellationToken, Error as MachineError, FrequencyJournal, Machine, Partial, Reporter,
+    Running, Started, Stopped, Swept, TrialResult, TrialSpec, Trials,
 };
 use togi_render::open_pty;
 
@@ -62,14 +62,23 @@ impl Trials for Endless {
         self.0.sweep(cancel)
     }
 
+    fn recover_frequency(
+        &mut self,
+        stopped: &Stopped,
+        journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, MachineError> {
+        self.0.recover_frequency(stopped, journal)
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         ready: Stopped,
+        journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         let endless = written(&spec);
-        let running = self.0.start(cancel, spec, ready)?;
+        let running = self.0.start(cancel, spec, ready, journal)?;
         if !endless {
             return Ok(running);
         }
@@ -112,8 +121,8 @@ impl Running for EndlessRunning {
         self.0.wait(cancel, report)
     }
 
-    fn stop(self: Box<Self>) -> Result<Stopped, MachineError> {
-        self.0.stop()
+    fn stop(self: Box<Self>, journal: &mut dyn FrequencyJournal) -> Result<Stopped, MachineError> {
+        self.0.stop(journal)
     }
 }
 

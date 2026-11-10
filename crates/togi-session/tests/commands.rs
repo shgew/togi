@@ -386,8 +386,11 @@ impl togi_machine::Running for DurationRunning {
         Ok(result)
     }
 
-    fn stop(self: Box<Self>) -> Result<togi_machine::Stopped, togi_machine::Error> {
-        self.inner.stop()
+    fn stop(
+        self: Box<Self>,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<togi_machine::Stopped, togi_machine::Error> {
+        self.inner.stop(journal)
     }
 }
 
@@ -410,16 +413,25 @@ impl togi_machine::Trials for DurationTrials {
         self.inner.sweep(cancel)
     }
 
+    fn recover_frequency(
+        &mut self,
+        stopped: &togi_machine::Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<String, togi_machine::Error> {
+        self.inner.recover_frequency(stopped, journal)
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: togi_machine::TrialSpec,
         ready: togi_machine::Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
     ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
     {
         self.starts.set(self.starts.get() + 1);
         Ok(Box::new(DurationRunning {
-            inner: self.inner.start(cancel, spec, ready)?,
+            inner: self.inner.start(cancel, spec, ready, journal)?,
             time: self.time,
             cancel: self.cancel.clone(),
         }))
@@ -684,11 +696,20 @@ impl togi_machine::Trials for SetupFailure {
         self.0.sweep(cancel)
     }
 
+    fn recover_frequency(
+        &mut self,
+        stopped: &togi_machine::Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<String, togi_machine::Error> {
+        self.0.recover_frequency(stopped, journal)
+    }
+
     fn start(
         &mut self,
         _: &CancellationToken,
         _: togi_machine::TrialSpec,
         ready: togi_machine::Stopped,
+        _: &mut dyn togi_machine::FrequencyJournal,
     ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
     {
         Err(togi_machine::Partial {
@@ -810,11 +831,20 @@ impl togi_machine::Trials for BackendGate {
         self.inner.sweep(cancel)
     }
 
+    fn recover_frequency(
+        &mut self,
+        stopped: &togi_machine::Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<String, togi_machine::Error> {
+        self.inner.recover_frequency(stopped, journal)
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: togi_machine::TrialSpec,
         ready: togi_machine::Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
     ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
     {
         let backend = spec.workload.backend();
@@ -829,7 +859,7 @@ impl togi_machine::Trials for BackendGate {
                 error: togi_machine::Error::Other(Box::new(io::Error::other("setup unavailable"))),
             });
         }
-        self.inner.start(cancel, spec, ready)
+        self.inner.start(cancel, spec, ready, journal)
     }
 
     fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {

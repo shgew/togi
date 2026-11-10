@@ -1,10 +1,22 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use test_case::test_case;
 
-use togi_journal::{Outcome, Payload, TrialId, TrialProgress, TrialSample};
-use togi_machine::{CancellationToken, CpuId, Reporter, Sample, Signal};
+use togi_journal::{
+    MemFs, Outcome, Payload, TrialId, TrialProgress, TrialSample,
+    fs::{Fault, Op},
+};
+use togi_machine::{
+    BootId, CancellationToken, CpuId, FrequencyAction, FrequencyDiscarded, FrequencyEvent,
+    FrequencyIntent, FrequencyJournal, FrequencyPolicyId, FrequencyReadback, Reporter, Sample,
+    Signal,
+};
 use togi_sim::model::Script;
 
-use super::Journaled;
+use super::{FrequencySink, Journaled};
 use crate::error::{AppendFailure, JournalCause};
 use crate::testing::{Bench, Rig, core};
 use crate::{Ended, run};
@@ -171,4 +183,224 @@ fn a_stall_journaled_before_a_crash_is_recovered_as_the_failure_of_the_interrupt
     assert_eq!(end.signal, Some(Signal::Stall));
     assert_eq!(end.core, Some(core(0)));
     assert!(end.interrupted);
+}
+
+fn frequency_intent() -> FrequencyIntent {
+    FrequencyIntent {
+        policy: FrequencyPolicyId::new(0),
+        related_cpus: vec![CpuId::from(0), CpuId::from(1)],
+        original_khz: 5_000_000,
+        cap_khz: 3_000_000,
+        action: FrequencyAction::Cap,
+    }
+}
+
+fn frequency_readback() -> FrequencyReadback {
+    FrequencyReadback {
+        intent: frequency_intent(),
+        observed_khz: 3_000_000,
+    }
+}
+
+fn frequency_discarded() -> FrequencyDiscarded {
+    FrequencyDiscarded {
+        boot: BootId::from("prior-boot".to_owned()),
+        reason: "pending record belongs to another boot".to_owned(),
+    }
+}
+
+#[test_case(FrequencyEvent::Intent(frequency_intent()), Payload::FrequencyIntent(frequency_intent()); "intent")]
+#[test_case(FrequencyEvent::Readback(frequency_readback()), Payload::FrequencyReadback(frequency_readback()); "readback")]
+#[test_case(FrequencyEvent::Discarded(frequency_discarded()), Payload::FrequencyDiscarded(frequency_discarded()); "discarded")]
+fn frequency_sink_acknowledges_only_after_the_typed_event_is_durable(
+    event: FrequencyEvent,
+    payload: Payload,
+) {
+    let mut rig = Rig::new(2);
+    let before = rig.events().len();
+    let cancel = CancellationToken::new();
+    rig.mem.record_history();
+    let mut sink = FrequencySink::new(&mut rig.appender, &cancel);
+    sink.record(event).unwrap();
+    assert!(sink.into_failure().is_none());
+    assert_eq!(payloads(&rig, before), [payload]);
+    assert_eq!(
+        rig.mem.log().iter().map(|(op, _)| *op).collect::<Vec<_>>(),
+        [Op::Write, Op::Sync],
+    );
+    assert!(!cancel.is_cancelled());
+}
+
+#[test_case(Fault::before(Op::Write, 1); "write refused")]
+#[test_case(Fault::before(Op::Sync, 1); "durability refused")]
+fn frequency_sink_refuses_failed_ack_keeps_the_original_failure_and_never_appends_again(
+    fault: Fault,
+) {
+    let mut rig = Rig::new(2);
+    let before = rig.events().len();
+    let cancel = CancellationToken::new();
+    rig.mem.inject(fault);
+    let mut sink = FrequencySink::new(&mut rig.appender, &cancel);
+    assert!(
+        sink.record(FrequencyEvent::Intent(frequency_intent()))
+            .is_err()
+    );
+    assert!(cancel.is_cancelled());
+    let mutations = rig.mem.mutations();
+    assert!(
+        sink.record(FrequencyEvent::Readback(frequency_readback()))
+            .is_err()
+    );
+    assert_eq!(rig.mem.mutations(), mutations);
+    let Some(AppendFailure::Journal(failure)) = sink.into_failure() else {
+        panic!("the original append failure was not retained");
+    };
+    assert!(matches!(failure.cause(), JournalCause::Append(_)));
+    assert_eq!(rig.events().len(), before);
+}
+
+#[test]
+fn a_failed_frequency_report_cancels_the_trial_and_refuses_later_write_acknowledgements() {
+    let mut rig = Rig::new(2);
+    let start = rig.events().last().unwrap().seq;
+    let before = rig.events().len();
+    let cancel = CancellationToken::new();
+    let trial = trial();
+    rig.mem.inject(Fault::before(Op::Sync, 1));
+    let mut reporter = Journaled::new(&mut rig.appender, &trial, start, &cancel);
+    assert!(
+        reporter
+            .frequency(FrequencyEvent::Intent(frequency_intent()))
+            .is_err()
+    );
+    assert!(cancel.is_cancelled());
+    let mutations = rig.mem.mutations();
+    reporter.progress("must not continue");
+    assert!(
+        reporter
+            .frequency(FrequencyEvent::Readback(frequency_readback()))
+            .is_err()
+    );
+    assert_eq!(rig.mem.mutations(), mutations);
+    let Some(AppendFailure::Journal(failure)) = reporter.into_failure() else {
+        panic!("the original append failure was not retained");
+    };
+    assert!(matches!(failure.cause(), JournalCause::Append(_)));
+    assert_eq!(rig.events().len(), before);
+}
+
+enum FrequencyFailureAt {
+    Start,
+    Recovery,
+}
+
+struct FrequencyFailure {
+    inner: Box<dyn togi_machine::Trials>,
+    mem: MemFs,
+    at: FrequencyFailureAt,
+    refused: Arc<AtomicBool>,
+}
+
+impl togi_machine::Trials for FrequencyFailure {
+    fn controller_pid(&self) -> u32 {
+        self.inner.controller_pid()
+    }
+
+    fn sweep(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> Result<togi_machine::Swept, togi_machine::Error> {
+        self.inner.sweep(cancel)
+    }
+
+    fn recover_frequency(
+        &mut self,
+        stopped: &togi_machine::Stopped,
+        journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, togi_machine::Error> {
+        match self.at {
+            FrequencyFailureAt::Start => self.inner.recover_frequency(stopped, journal),
+            FrequencyFailureAt::Recovery => {
+                self.mem.inject(Fault::before(Op::Sync, 1));
+                // Even a runner that incorrectly ignores a refused acknowledgement must not
+                // make the session continue into profile writes or trials.
+                let result = journal.record(FrequencyEvent::Intent(frequency_intent()));
+                self.refused.store(result.is_err(), Ordering::SeqCst);
+                Ok("frequency recovery incorrectly reported success".to_owned())
+            }
+        }
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: togi_machine::TrialSpec,
+        ready: togi_machine::Stopped,
+        journal: &mut dyn FrequencyJournal,
+    ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
+    {
+        if let FrequencyFailureAt::Recovery = self.at {
+            return self.inner.start(cancel, spec, ready, journal);
+        }
+        self.mem.inject(Fault::before(Op::Sync, 1));
+        let result = journal.record(FrequencyEvent::Intent(frequency_intent()));
+        self.refused.store(result.is_err(), Ordering::SeqCst);
+        let error = result.unwrap_err();
+        assert!(cancel.is_cancelled());
+        // A runner may classify its setup failure as inconclusive; the session must retain the
+        // journal failure instead of retrying that trial.
+        Err(togi_machine::Partial {
+            value: Some(ready),
+            error: togi_machine::Error::Other(Box::new(error)),
+        })
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
+        self.inner.ended(id)
+    }
+
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, togi_machine::Error> {
+        self.inner.content(workload)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
+        self.inner.samples(id)
+    }
+}
+
+#[test_case(FrequencyFailureAt::Start; "start")]
+#[test_case(FrequencyFailureAt::Recovery; "startup recovery")]
+fn a_failed_frequency_ack_ends_the_session_without_starting_or_retrying_the_trial(
+    at: FrequencyFailureAt,
+) {
+    let bench = Bench::new(2);
+    let mut input = bench.input_ending_at(bench.short_night());
+    let refused = Arc::new(AtomicBool::new(false));
+    input.machine.trials = Box::new(FrequencyFailure {
+        inner: input.machine.trials,
+        mem: bench.mem.clone(),
+        at,
+        refused: refused.clone(),
+    });
+    let ended = run(input);
+    assert!(
+        refused.load(Ordering::SeqCst),
+        "the frequency append must be refused at its own seam"
+    );
+    assert!(ended.errors.iter().any(|error| matches!(
+        error,
+        crate::SessionError::Journal(failure) if matches!(failure.cause(), JournalCause::Append(_))
+    )));
+    assert!(!ended.journal.events().iter().any(|event| matches!(
+        event.payload,
+        Payload::TrialStart(_) | Payload::TrialEnd(_) | Payload::BackendRetry(_)
+    )));
 }

@@ -198,10 +198,12 @@ fn a_cancelled_start_does_not_consume_a_setup_fault_or_move_the_clock() {
     let cancel = CancellationToken::new();
     cancel.cancel();
     let ready = rig.proof();
-    let cancelled = rig
-        .machine
-        .trials
-        .start(&cancel, basic(Regime::R1, &[0], MINUTE), ready);
+    let cancelled = rig.machine.trials.start(
+        &cancel,
+        basic(Regime::R1, &[0], MINUTE),
+        ready,
+        &mut rig.journal,
+    );
     assert!(matches!(
         cancelled,
         Err(Partial {
@@ -240,7 +242,7 @@ fn stopping_a_trial_matches_what_a_cancelled_wait_would_clean_up(state: Machine)
     let cancel = CancellationToken::new();
     cancel.cancel();
     let waited = running.wait(&cancel, &mut crate::common::Recorder::default());
-    let stopped = running.stop();
+    let stopped = running.stop(&mut rig.journal);
     if state == Machine::Running {
         assert!(
             matches!(
@@ -278,6 +280,7 @@ fn a_crashed_machine_rejects_its_operations_and_does_not_move_its_clock() {
     let cancel = CancellationToken::new();
     let ready = rig.proof();
     let machine = &mut rig.machine;
+    let journal = &mut rig.journal;
     let results: Vec<(&str, Result<(), Error>)> = vec![
         (
             "sleep",
@@ -307,7 +310,7 @@ fn a_crashed_machine_rejects_its_operations_and_does_not_move_its_clock() {
             "start",
             machine
                 .trials
-                .start(&cancel, basic(Regime::R1, &[0], MINUTE), ready)
+                .start(&cancel, basic(Regime::R1, &[0], MINUTE), ready, journal)
                 .map(drop)
                 .map_err(|partial| partial.error),
         ),

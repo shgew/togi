@@ -19,8 +19,8 @@ use support::{Host, Ran};
 use togi_cli::Exit;
 use togi_machine::{
     BiosContext, BootId, CancellationToken, Check, CoreId, CoreInfo, CoreRank, Error,
-    Host as MachineHost, Machine, Partial, Running, SmuValidated, Stopped, Swept, TrialConditions,
-    TrialSpec, Trials,
+    FrequencyJournal, Host as MachineHost, Machine, Partial, Running, SmuValidated, Stopped, Swept,
+    TrialConditions, TrialSpec, Trials,
 };
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{Model, RunSettings, Simulator};
@@ -80,13 +80,26 @@ impl Trials for Sweeping {
         self.inner.sweep(cancel)
     }
 
+    /// Pending frequency caps whose journal is unavailable: recovery always fails, and notes the call.
+    fn recover_frequency(
+        &mut self,
+        _stopped: &Stopped,
+        _journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, Error> {
+        self.log.borrow_mut().push("recover_frequency".into());
+        Err(Error::Containment(
+            "frequency journal unavailable with a pending cap".into(),
+        ))
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         ready: Stopped,
+        journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-        self.inner.start(cancel, spec, ready)
+        self.inner.start(cancel, spec, ready, journal)
     }
 
     fn ended(&mut self, id: &str) -> Result<(), Error> {
@@ -283,6 +296,29 @@ fn a_failed_sweep_exits_1_and_leaves_every_offset_as_it_was() {
     );
     assert_eq!(rig.ops(), ["sweep"]);
     rig.assert_untouched();
+}
+
+#[test]
+fn a_pending_frequency_cap_with_no_journal_never_blocks_the_workload_only_sweep() {
+    let rig = Rig::new();
+    let pending = rig.state.join("trials/controller-frequency.pending.json");
+    let original = br#"{"boot":"current-boot","policies":[{"policy":0,"related_cpus":[0,16],"original_khz":3250123,"cap_khz":400000,"state":"capped"}]}"#;
+    rig.host.fs.put(&pending, original);
+    rig.host.fs.inject(togi_journal::fs::Fault::before(
+        togi_journal::fs::Op::Write,
+        1,
+    ));
+    let ran = rig.run();
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    let mut expected = vec!["sweep".to_owned(), "set-all".to_owned()];
+    expected.extend((0..CORES).map(|number| format!("read {number:02}")));
+    assert_eq!(rig.ops(), expected);
+    assert!(!rig.ops().contains(&"recover_frequency".to_owned()));
+    assert_eq!(rig.offsets(), vec![0; usize::from(CORES)]);
+    assert_eq!(
+        rig.host.fs.contents(&pending).as_deref(),
+        Some(original.as_slice())
+    );
 }
 
 #[test_case::test_case("cpu", "not a Zen 5"; "cpu")]

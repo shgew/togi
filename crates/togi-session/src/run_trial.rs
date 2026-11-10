@@ -14,7 +14,7 @@ use togi_machine::{
 };
 use togi_tuner::policy::TrialPlan;
 
-use crate::error::{SessionError, Step};
+use crate::error::{AppendFailure, SessionError, Step};
 use crate::evidence::{self, ProcessFaults, RecordedMce, TrialEvidence};
 use crate::execute::is_crash_flow;
 use crate::recover::append_trial_end;
@@ -308,8 +308,24 @@ impl Session<'_> {
         let authorized = trial::authorize(confirmed);
         let mut cites = vec![intent];
         cites.extend_from_slice(authorized.readbacks());
-        let running = match trial::start(&mut *self.trials, &token, authorized, spec, ready) {
-            Ok(running) => running,
+        let mut journal = trial::FrequencySink::new(&mut self.appender, &token);
+        let started = trial::start(
+            &mut *self.trials,
+            &token,
+            authorized,
+            spec,
+            ready,
+            &mut journal,
+        );
+        let failure = journal.into_failure();
+        let running = match started {
+            Ok(running) => {
+                if let Some(failure) = failure {
+                    let _ = self.reap(running);
+                    return Err(failure.into());
+                }
+                running
+            }
             Err(Partial { value, error }) => {
                 let crashed = matches!(error, Error::Crashed);
                 let uncontained =
@@ -320,6 +336,9 @@ impl Session<'_> {
                 let joined = Joined::of(crashed, uncontained);
                 if let Joined::Uncontained(_) = joined {
                     self.lifecycle.latch(Fault::Containment);
+                }
+                if let Some(failure) = failure {
+                    return Err(failure.into());
                 }
                 let waited = Waited {
                     result: TrialResult::default(),
@@ -337,11 +356,13 @@ impl Session<'_> {
         let (scheduled, waiting) = match window {
             Ok(Ok(window)) => window,
             Ok(Err(flow)) => {
-                self.reap(running);
+                if let Some(failure) = self.reap(running) {
+                    return Err(failure.into());
+                }
                 return Err(flow);
             }
             Err(payload) => {
-                self.reap(running);
+                let _ = self.reap(running);
                 resume_unwind(payload);
             }
         };
@@ -444,7 +465,9 @@ impl Session<'_> {
             reported,
         } = waiting;
         self.appender.watch_trial(None);
-        let stopping = running.stop();
+        let mut journal = trial::FrequencySink::new(&mut self.appender, &self.cancel);
+        let stopping = running.stop(&mut journal);
+        let stop_failure = journal.into_failure();
         let (result, mut error) = match waited {
             Ok(result) => (result, None),
             Err(Partial { value, error }) => (value, Some(error)),
@@ -471,7 +494,7 @@ impl Session<'_> {
             Joined::Uncontained(_) => self.lifecycle.latch(Fault::Containment),
             Joined::Crashed { .. } => self.lifecycle.crash(),
         }
-        if let Some(failure) = reported {
+        if let Some(failure) = reported.or(stop_failure) {
             return Err(failure.into());
         }
         Ok(Waited {
@@ -483,9 +506,12 @@ impl Session<'_> {
 
     /// Joins a workload a failed record or a panic left running, and keeps the proof if it gives one. A join that
     /// cannot confirm the stop is kept for the close to report, beside the error that ended the run.
-    fn reap(&mut self, running: Box<dyn Running>) {
+    fn reap(&mut self, running: Box<dyn Running>) -> Option<AppendFailure> {
         self.appender.watch_trial(None);
-        match running.stop() {
+        let mut journal = trial::FrequencySink::new(&mut self.appender, &self.cancel);
+        let stopping = running.stop(&mut journal);
+        let failure = journal.into_failure();
+        match stopping {
             Ok(stopped) => self.lifecycle.hold(stopped),
             Err(error) => {
                 let fault = if matches!(error, Error::Crashed) {
@@ -497,6 +523,7 @@ impl Session<'_> {
                 self.unconfirmed.push(error);
             }
         }
+        failure
     }
 
     /// Ends the trial: reads the kernel log for machine checks of its window, adds the

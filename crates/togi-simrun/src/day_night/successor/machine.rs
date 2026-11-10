@@ -10,10 +10,10 @@ use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 use togi_machine::{
-    BiosContext, BootId, CancellationToken, Check, Clock, CoreId, CoreInfo, CoreRank, Error, Host,
-    Machine, ObservedOffset, Partial, PerCore, Reporter, Running, SampleError, Signal, Smu,
-    SmuValidated, Started, Stopped, Swept, TargetOffset, TrialConditions, TrialFailure,
-    TrialResult, TrialSpec, Trials,
+    BiosContext, BootId, CancellationToken, Check, Clock, CoreId, CoreInfo, CoreRank, Error,
+    FrequencyJournal, Host, Machine, ObservedOffset, Partial, PerCore, Reporter, Running,
+    SampleError, Signal, Smu, SmuValidated, Started, Stopped, Swept, TargetOffset, TrialConditions,
+    TrialFailure, TrialResult, TrialSpec, Trials,
 };
 use togi_sim::day_night::successor::{
     Depth, Exposure, Failure, FailureCause, Profile, Scenario, SliceSeconds, TruthState,
@@ -536,11 +536,19 @@ impl Trials for CycleTrials {
             stopped: confirmed(),
         })
     }
+    fn recover_frequency(
+        &mut self,
+        _stopped: &Stopped,
+        _journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, Error> {
+        Ok(String::new())
+    }
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         _ready: Stopped,
+        _journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         let build = || {
             if cancel.is_cancelled() {
@@ -677,7 +685,7 @@ impl Running for CycleRunning {
             }),
         }
     }
-    fn stop(self: Box<Self>) -> Result<Stopped, Error> {
+    fn stop(self: Box<Self>, _journal: &mut dyn FrequencyJournal) -> Result<Stopped, Error> {
         Ok(confirmed())
     }
 }

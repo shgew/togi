@@ -19,7 +19,21 @@ fn samples_cover_every_kind_once() {
     let kinds: BTreeSet<_> = samples().iter().map(Payload::kind).collect();
     assert_eq!(kinds.len(), samples().len());
     assert_eq!(kinds, EventKind::ALL.iter().copied().collect());
-    assert_eq!(EventKind::ALL.len(), 85);
+    assert_eq!(EventKind::ALL.len(), 88);
+}
+
+#[test_case::test_case(EventKind::FrequencyIntent; "intent")]
+#[test_case::test_case(EventKind::FrequencyReadback; "readback")]
+#[test_case::test_case(EventKind::FrequencyDiscarded; "discarded")]
+fn frequency_events_are_run_audit_without_trial_or_core_association(kind: EventKind) {
+    let payload = super::fixtures::sample(kind);
+    assert_eq!(kind.writer(), Writer::Run);
+    assert_eq!(kind.group(), "frequency");
+    assert_eq!(payload.trial(), None);
+    for id in 0..16 {
+        assert_eq!(payload.names_core(super::fixtures::core(id)), false);
+    }
+    assert_eq!(SCHEMA, 1);
 }
 
 #[test_case::test_case("/data"; "payload")]

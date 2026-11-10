@@ -602,7 +602,12 @@ fn seam() {
         let spec = trial_spec(id, loaded, &topology);
         let workload = spec.cpus[0].get();
         let trial = runner
-            .start(&CancellationToken::new(), spec, nothing_runs())
+            .start(
+                &CancellationToken::new(),
+                spec,
+                nothing_runs(),
+                &mut crate::testing::Frequencies::default(),
+            )
             .map_err(|partial| partial.error)
             .unwrap();
         // Threads created while the trial runs: by this thread, and by a thread that existed
@@ -612,7 +617,12 @@ fn seam() {
         let floor = baseline.len() + 3;
         assert_confined(expected, &loaded_cpus, floor);
         assert_workload_keeps(trial.started().pid, &[workload]);
-        assert!(trial.stop().is_ok(), "{id}: the stop was not confirmed");
+        assert!(
+            trial
+                .stop(&mut crate::testing::Frequencies::default())
+                .is_ok(),
+            "{id}: the stop was not confirmed"
+        );
         for (tid, mask) in &masks() {
             let wanted = baseline.get(tid).unwrap_or(&allowed);
             assert_eq!(

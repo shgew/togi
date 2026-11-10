@@ -198,6 +198,9 @@ impl<'a> Auditor<'a> {
                 conclusion.stopped = matches!(reset.target, togi_journal::ResetTarget::All);
             }
             Payload::SessionWarning(_)
+            | Payload::FrequencyIntent(_)
+            | Payload::FrequencyReadback(_)
+            | Payload::FrequencyDiscarded(_)
             | Payload::BootLeaveReason(_)
             | Payload::BootSavedEntry(_)
             | Payload::DayBootStart(_)
@@ -311,6 +314,9 @@ impl<'a> Auditor<'a> {
             | Payload::SessionWarning(_)
             | Payload::SessionCarried(_)
             | Payload::PreflightCheck(_)
+            | Payload::FrequencyIntent(_)
+            | Payload::FrequencyReadback(_)
+            | Payload::FrequencyDiscarded(_)
             | Payload::SmuIntent(_)
             | Payload::SmuWrite(_)
             | Payload::SmuReadback(_)
