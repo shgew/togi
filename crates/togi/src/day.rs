@@ -182,22 +182,37 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     // Close before dropping hardware and its borrowed exclusion lock.
     let closed = journal.close();
     if let Err(error) = result {
-        return exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error);
+        return exit_with(ctx, "day", render_error(&error), Exit::Error);
     }
     match closed {
         Ok(_dir) => Exit::Ok,
         Err(error) => {
-            if let Err(cleanup) = apply::emergency(&mut *observer) {
-                return exit_with(
-                    ctx,
-                    "day emergency zero",
-                    togi_render::error_chain(&cleanup),
-                    Exit::Error,
-                );
-            }
-            exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error)
+            let error = close_failure(error, &mut *observer);
+            exit_with(ctx, "day", render_error(&error), Exit::Error)
         }
     }
+}
+
+fn close_failure(error: togi_journal::CloseError, observer: &mut dyn Observer) -> Error {
+    if let Err(cleanup) = apply::emergency(observer) {
+        return Error::Emergency {
+            original: Box::new(error.into()),
+            cleanup,
+        };
+    }
+    error.into()
+}
+
+fn render_error(error: &Error) -> String {
+    // Error::source is linear; keep both typed branches and render each complete chain here.
+    if let Error::Emergency { cleanup, .. } = error {
+        return format!(
+            "{}; emergency zero: {}",
+            togi_render::error_chain(error),
+            togi_render::error_chain(cleanup)
+        );
+    }
+    togi_render::error_chain(error)
 }
 
 fn answer_end(boot: &str, answer: togi_journal::DayAnswerKind, ctx: &mut Context<'_>) -> Exit {
@@ -263,6 +278,8 @@ pub enum Error {
     Observe(#[from] togi_machine::Error),
     #[error("append daily observation")]
     Append(#[from] togi_journal::AppendError),
+    #[error(transparent)]
+    Close(#[from] togi_journal::CloseError),
     #[error("the monotonic clock moved backwards")]
     ClockReversed,
     #[error("daily observation duration overflowed")]
@@ -299,10 +316,10 @@ pub enum Error {
     PauseChanged,
     #[error("only a timed pause can be extended")]
     PauseNotTimed,
-    #[error("emergency zero failed after daily service error: {original}")]
+    #[error("emergency zero after daily service failure")]
     Emergency {
-        original: Box<Error>,
         #[source]
+        original: Box<Error>,
         cleanup: togi_machine::Error,
     },
 }

@@ -8,25 +8,26 @@ use togi_machine::{CcdProfile, Smu, SmuValidated, Stopped, TargetOffset};
 use super::*;
 
 #[derive(Clone, Copy)]
-enum Failure {
+pub(super) enum Failure {
     None,
     Write(usize),
     Read(usize),
+    Emergency,
 }
 
-struct Hardware {
+pub(super) struct Hardware {
     reading: Reading,
-    current: i64,
+    pub(super) current: i64,
     writes: Vec<TargetOffset>,
     read_count: usize,
-    emergency: usize,
-    failure: Failure,
+    pub(super) emergency: usize,
+    pub(super) failure: Failure,
     firmware: BiosContext,
     drift_at: Option<usize>,
 }
 
 impl Hardware {
-    fn stock() -> Self {
+    pub(super) fn stock() -> Self {
         Self {
             reading: Reading::fixed(),
             current: 0,
@@ -68,6 +69,9 @@ impl Smu for Hardware {
     }
     fn emergency_zero(&mut self, _: SmuValidated, _: &Stopped) -> Result<(), MachineError> {
         self.emergency += 1;
+        if matches!(self.failure, Failure::Emergency) {
+            return Err(MachineError::Other("injected emergency zero fault".into()));
+        }
         self.current = 0;
         Ok(())
     }
