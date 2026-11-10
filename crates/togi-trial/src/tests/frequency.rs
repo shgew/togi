@@ -441,6 +441,58 @@ async fn recover(
 }
 
 #[test]
+fn an_unacknowledged_restore_readback_keeps_the_pending_record_for_recovery() {
+    crate::testing::runtime(true).block_on(local(async {
+        let machine = Fake::new(policies());
+        let rig = rig(&machine);
+        rig.env
+            .frequency
+            .cap(
+                &[CpuId::from(8)],
+                &[CpuId::from(2)],
+                &CancellationToken::new(),
+                &mut Vec::new(),
+                &Journal::recorded(),
+            )
+            .await
+            .unwrap();
+        let pending = rig.env.dir.join("controller-frequency.pending.json");
+        let writes = machine.writes();
+        let (journal, offered) = refusing(|event| {
+            matches!(event, FrequencyEvent::Readback(readback)
+                if readback.intent.action == FrequencyAction::Restore)
+        });
+
+        let error = recover(&rig, journal).await.unwrap_err();
+        assert!(togi_machine::error_chain(&error).contains("journal append refused"));
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            5_700_000,
+            "the restore write happened before its readback was refused"
+        );
+        assert_eq!(
+            &machine.writes()[writes.len()..],
+            &[(FrequencyPolicyId::new(8), 5_700_000)]
+        );
+        assert!(matches!(
+            &offered.lock().unwrap()[..],
+            [intent, FrequencyEvent::Readback(readback)]
+                if restore_intent(intent)
+                    && readback.intent.action == FrequencyAction::Restore
+                    && readback.observed_khz == 5_700_000
+        ));
+        assert!(rig.exists(&pending), "a hardware readback is not an acknowledgment");
+
+        recover(&rig, Journal::recorded()).await.unwrap();
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            5_700_000
+        );
+        assert_eq!(rig.exists(&pending), false);
+    }));
+}
+
+#[test]
 fn a_sweep_needs_no_frequency_journal_and_leaves_a_pending_cap_for_a_journaled_recovery() {
     crate::testing::runtime(true).block_on(local(async {
         let machine = Fake::new(policies());
