@@ -324,6 +324,7 @@ impl Session<'_> {
                     "not started: stopped by signal".into(),
                     &[intent],
                 )?;
+                self.record_shutdown(&Stop::Signal);
                 return Ok(Some(Stop::Signal));
             }
             Err(error) => return Err(error.into()),

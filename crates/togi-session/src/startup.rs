@@ -94,11 +94,17 @@ impl Session<'_> {
         let control = if self.appender.handoff().is_some() {
             self.await_watchdog(&cancel)?
         } else {
+            if cancel.is_cancelled() {
+                return Ok(self.shut_down(Stop::Signal));
+            }
             let check = match self.host.watchdog(&cancel) {
                 Ok(check) => check,
                 Err(Error::Cancelled) => return Ok(self.shut_down(Stop::Signal)),
                 Err(error) => return Err(error.into()),
             };
+            if cancel.is_cancelled() {
+                return Ok(self.shut_down(Stop::Signal));
+            }
             if check.ok {
                 self.record_check("watchdog", check.detail, true)?;
                 Control::Continue
@@ -178,7 +184,13 @@ impl Session<'_> {
     /// Records a failed boundary check without yet stopping, so an unstarted trial can be closed first.
     /// Cancellation records no failed check; the caller closes any intent before stopping by signal.
     pub(crate) fn watchdog_refusal(&mut self) -> Result<Option<(DeadEnd, Seq)>, SessionError> {
+        if self.cancel.is_cancelled() {
+            return Err(Error::Cancelled.into());
+        }
         let check = self.host.watchdog(&self.cancel)?;
+        if self.cancel.is_cancelled() {
+            return Err(Error::Cancelled.into());
+        }
         if check.ok {
             return Ok(None);
         }

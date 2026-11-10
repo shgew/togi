@@ -326,6 +326,8 @@ fn a_lost_watchdog_stops_new_work_and_restores_verified_stock(
 struct CancelBoundaryWatchdog {
     inner: Box<dyn togi_machine::Host>,
     armed: std::rc::Rc<std::cell::Cell<bool>>,
+    failed_result: bool,
+    observed: std::rc::Rc<std::cell::RefCell<Vec<bool>>>,
 }
 
 impl togi_machine::Host for CancelBoundaryWatchdog {
@@ -364,17 +366,30 @@ impl togi_machine::Host for CancelBoundaryWatchdog {
         &mut self,
         cancel: &CancellationToken,
     ) -> Result<togi_machine::Check, togi_machine::Error> {
+        self.observed.borrow_mut().push(cancel.is_cancelled());
         if self.armed.get() {
             cancel.cancel();
+            if self.failed_result {
+                return Ok(togi_machine::Check {
+                    name: "watchdog".into(),
+                    detail: "hardware watchdog unavailable".into(),
+                    ok: false,
+                });
+            }
             return Err(togi_machine::Error::Cancelled);
         }
         self.inner.watchdog(cancel)
     }
 }
 
-#[test_case(false; "before nonzero profile")]
-#[test_case(true; "after durable trial intent")]
-fn cancelling_a_boundary_check_restores_stock_and_closes_any_intent(after_intent: bool) {
+#[test_case(false, false; "before nonzero profile cancelled while sampling")]
+#[test_case(true, false; "after durable trial intent cancelled while sampling")]
+#[test_case(false, true; "before nonzero profile fails while cancelled")]
+#[test_case(true, true; "after durable trial intent fails while cancelled")]
+fn cancelling_a_boundary_check_restores_stock_and_closes_any_intent(
+    after_intent: bool,
+    failed_result: bool,
+) {
     let sim = simulator();
     let mem = MemFs::new();
     let mut input = input(&sim, &mem);
@@ -382,6 +397,8 @@ fn cancelling_a_boundary_check_restores_stock_and_closes_any_intent(after_intent
     input.machine.host = Box::new(CancelBoundaryWatchdog {
         inner: input.machine.host,
         armed: armed.clone(),
+        failed_result,
+        observed: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
     });
     let cancel = input.cancel.clone();
     input.on_append = Some(Box::new(move |event| {
@@ -438,6 +455,118 @@ fn cancelling_a_boundary_check_restores_stock_and_closes_any_intent(after_intent
             Payload::SmuIntent(intent) if intent.command().offset() != togi_machine::TargetOffset::ZERO
         )));
     }
+    let shutdown = events
+        .iter()
+        .position(|event| matches!(
+            &event.payload,
+            Payload::Shutdown(shutdown) if shutdown.reason == togi_journal::ShutdownReason::Signal
+        ))
+        .unwrap();
+    // A stop before the first nonzero profile leaves nothing to restore; after it, cleanup restores stock first.
+    let restored = events
+        .iter()
+        .position(|event| matches!(event.payload, Payload::ProfileRestored(_)));
+    if after_intent {
+        assert!(restored.unwrap() < shutdown);
+    } else {
+        assert_eq!(restored, None);
+    }
+    assert_eq!(
+        shutdown,
+        events.len() - 1,
+        "signal shutdown is durable after cleanup"
+    );
+    for info in sim.seams().host.topology().unwrap() {
+        assert_eq!(sim.seams().smu.offset(info.core).unwrap().0, 0);
+    }
+}
+
+#[test_case(false; "cancelled during an immediately failing probe")]
+#[test_case(true; "cancelled before sampling")]
+fn a_cancelled_manual_watchdog_check_never_records_a_watchdog_failure(already_cancelled: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let observed = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    input.machine.host = Box::new(CancelBoundaryWatchdog {
+        inner: input.machine.host,
+        armed: std::rc::Rc::new(std::cell::Cell::new(true)),
+        failed_result: true,
+        observed: observed.clone(),
+    });
+    if already_cancelled {
+        input.cancel.cancel();
+    }
+    let ended = run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert!(matches!(ended.stop, Some(togi_session::Stop::Signal)));
+    let expected = if already_cancelled { vec![] } else { vec![false] };
+    assert_eq!(*observed.borrow(), expected);
+    let events = ended.journal.events();
+    assert!(!events.iter().any(|event| matches!(
+        &event.payload,
+        Payload::PreflightCheck(check) if check.check == "watchdog" && !check.ok
+    )));
+    assert!(!events.iter().any(|event| matches!(
+        event.payload,
+        Payload::DeadEnd(_) | Payload::SmuIntent(_) | Payload::TrialIntent(_) | Payload::TrialStart(_)
+    )));
+    assert!(matches!(
+        &events.last().unwrap().payload,
+        Payload::Shutdown(shutdown) if shutdown.reason == togi_journal::ShutdownReason::Signal
+    ));
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the fixture seeds inherited simulated offsets before same-boot reconciliation"
+)]
+fn a_cancelled_manual_restart_checks_watchdog_and_restores_inherited_offsets() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut first = input(&sim, &mem);
+    let cancel = first.cancel.clone();
+    first.on_append = Some(Box::new(move |event| {
+        if matches!(event.payload, Payload::ProfileApplied(_)) {
+            cancel.cancel();
+        }
+    }));
+    let ended = run(first);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert!(matches!(ended.stop, Some(togi_session::Stop::Signal)));
+    let earlier = ended.journal.events().len();
+    drop(ended.journal.close().unwrap());
+    sim.seams()
+        .smu
+        .set_all_offsets(togi_machine::TargetOffset::new(-20).unwrap())
+        .unwrap();
+
+    let mut resumed = input(&sim, &mem);
+    resumed.cancel.cancel();
+    let observed = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    resumed.machine.host = Box::new(CancelBoundaryWatchdog {
+        inner: resumed.machine.host,
+        armed: std::rc::Rc::new(std::cell::Cell::new(false)),
+        failed_result: false,
+        observed: observed.clone(),
+    });
+    let ended = run(resumed);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert!(matches!(ended.stop, Some(togi_session::Stop::Signal)));
+    assert_eq!(
+        *observed.borrow(),
+        [false],
+        "required startup reconciliation samples with an uncancelled token"
+    );
+    let events = &ended.journal.events()[earlier..];
+    let checked = events
+        .iter()
+        .position(|event| matches!(
+            &event.payload,
+            Payload::PreflightCheck(check) if check.check == "watchdog" && check.ok
+        ))
+        .unwrap();
     let restored = events
         .iter()
         .position(|event| matches!(event.payload, Payload::ProfileRestored(_)))
@@ -449,8 +578,21 @@ fn cancelling_a_boundary_check_restores_stock_and_closes_any_intent(after_intent
             Payload::Shutdown(shutdown) if shutdown.reason == togi_journal::ShutdownReason::Signal
         ))
         .unwrap();
-    assert!(restored < shutdown);
+    assert!(checked < restored && restored < shutdown);
+    assert_eq!(shutdown, events.len() - 1);
+    assert!(!events.iter().any(|event| matches!(
+        event.payload,
+        Payload::DeadEnd(_) | Payload::TrialIntent(_) | Payload::TrialStart(_)
+    )));
     for info in sim.seams().host.topology().unwrap() {
+        assert!(events[checked + 1..restored].iter().any(|event| matches!(
+            &event.payload,
+            Payload::SmuReadback(readback) if readback.core == info.core && readback.offset.0 == -20
+        )));
+        assert!(events[checked + 1..restored].iter().any(|event| matches!(
+            &event.payload,
+            Payload::SmuReadback(readback) if readback.core == info.core && readback.offset.0 == 0
+        )));
         assert_eq!(sim.seams().smu.offset(info.core).unwrap().0, 0);
     }
 }
