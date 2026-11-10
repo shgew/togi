@@ -19,42 +19,36 @@ When a design question comes up, recommend the option that reaches per-core offs
 
 ## Docs
 
-- `README.md`: status and common commands. `GLOSSARY.md`: vocabulary for code, events and docs.
-- `docs/how-togi-tunes.md`: read first for nights, days, costs and ruleset history; specs own the rules.
-- `docs/spec/`: normative behavior (`tuner.md`, `workloads.md`, `journal.md`, `runtime.md`). Read the relevant spec before changing behavior; update spec and code together, in one pull request or stack merged together.
-- `docs/adr/README.md`: product, architecture and safety decisions and their rejected alternatives. Specs win disagreements; reversing an ADR requires a new ADR and index update. Development-process choices live in `docs/development.md` and the review docs, each with a short rationale, and change there.
-- `docs/issues.md`: read before filing, triaging or claiming issues; owns labels, lifecycle, `Touches:` and the target-machine queue.
-- `REVIEW.md`: read before reviewing; `docs/review-record.md`: read before recording review. `.omp/commands/review-pr.md` owns independent review mechanics; `.omp/commands/retro.md` owns run retros.
-- `docs/prior-art.md`: check before proposing features. `docs/rust-migration.md`: history only; append migration measurements there.
-- `docs/benchmarking.md`: run before and after tuner-decision changes; also research campaigns.
-- [Development](docs/development.md): read for shell setup, choosing checks, new crates, platform-gated code or stacks. `docs/simulating.md`, `docs/reviewing.md`, `docs/releasing.md`, `CHANGELOG.md`, `changes/README.md`: read for their named activities.
+- `docs/model.md`: the one-page design being built, not yet the code's behavior; keep that notice until they match. `docs/how-togi-tunes.md` and `docs/spec/` describe shipped behavior until the loop lands.
+- `docs/decisions.md`: decisions in force and rejected ideas. `docs/adr/` is history, not authority; add no new ADRs.
+- `README.md`: status and commands. `GLOSSARY.md`: vocabulary. Update the relevant spec and operator guide with the code.
+- `docs/issues.md`: deferred work and hardware evidence. `REVIEW.md`: review criteria and merge units; `.omp/commands/review-pr.md`: review mechanics; `docs/review-record.md`: records.
+- `docs/development.md`: shell, checks, stacks and temporary tooling obligations. `docs/simulating.md`, `docs/reviewing.md` and `.omp/commands/retro.md`: on-demand tools; retros are owner-invoked, not required.
 
 ## Workflow
 
-Every change, docs included, lands through a pull request against `main` on `github.com/shgew/togi`, directly or through a stack. Only the release workflow's release commit bypasses this. Agents open and merge finished pull requests on their own, without per-pull-request authorization, unless told otherwise; releases remain a separate action.
+Every change lands through a pull request against `main` on `github.com/shgew/togi`:
 
-- Claim first with `just claim` ([issue workflow](docs/issues.md)); use a short descriptive branch from `main` in your own worktree.
-- Plan [merge units](REVIEW.md#merge-units) before coding: each pull request is independently acceptable and revertible. Follow that section for multi-crate designs, ruleset switches, hand-written-line estimates and the coordinator's reviewability decision. Commits separate behavior-preserving refactors and seams from the behavior they enable. Use short imperative messages.
-- Stack only independently worthwhile merge units, even if upper layers never land; follow [stack mechanics](docs/development.md#pull-request-stacks).
-- Use the owner's account through `gh`; `robotogi[bot]` only publishes reviews ([integration](docs/development.md#review-integration)).
-- Follow `.github/pull_request_template.md`: Summary, Evidence (before and after), Merge Danger (door and blast radius). Say `Closes #N` when finishing, otherwise `Refs #N`. Hardware-pending Acceptance uses `Refs #N`, merges otherwise green and retains `needs-hardware` ([queue](docs/issues.md)).
-- Start independent review immediately after opening, before reporting done. Merge requires CI's `check`, robotogi's `review` check on the exact head, resolved review threads and a branch up to date with `main` under its ruleset. The main session owns [merge ordering](.omp/commands/review-pr.md#main-session-merge) after coordinators report.
-- Address every finding on the same branch. Fix behavior, safety, security, journal, concurrency, Acceptance, inadequate behavior tests and contradictory-doc defects. Otherwise reply with reasons without edits: taste, optional tests/refactors or another layer's work do not justify changing this layer.
-- Schema/ruleset bumps (`togi_journal::SCHEMA`, `togi_tuner::RULESET`) require a `[BREAKING]` title, `breaking` label and `**BREAKING**` changelog line.
-- Decision-changing bug fixes add a defect entry and pre-fix fixture-journal replay test when decisions can be matched; otherwise the changelog tells the operator to run `togi reset --all` to archive the session and start over.
+1. The owner asks. Direct requests need no issue, claim or board entry; issues remember later work, and the tracking issue records a large change ([issues](docs/issues.md)).
+2. For behavior changes, edit `docs/model.md` first; the owner approves that diff in plain words before code changes. The owner does not read code.
+3. Work in your own worktree on a descriptive branch. Plan independently acceptable, revertible [merge units](REVIEW.md#merge-units) before coding; separate refactors from behavior and stack only independently worthwhile units. Run the [checks](docs/development.md#shell-and-checks).
+4. Start [risk-based review](.omp/commands/review-pr.md) on the frozen local commit while checks run: safety rules or their enforcement get full independent review wherever the file lives (hardware writes, offsets, journal intent/readback, crash recovery, zeroing, watchdog, containment, teardown); other code gets one independent reader; documents get CI only. Coverage is optional reviewer-requested evidence, subject to the [temporary tool requirements](docs/development.md#temporary-tooling-obligations).
+5. Open with the [pull request template](.github/pull_request_template.md), using the owner's account through `gh`; robotogi only publishes review evidence. Use `Refs #N` for partial or hardware-pending work and `Closes #N` only when complete.
+6. Fix defects on the same branch; explain rejected taste, optional refactors/tests or out-of-layer findings. The agent merges when CI `check` and the class's required review are green on the exact head, threads resolved and the branch up to date. The [main session orders merges](.omp/commands/review-pr.md#main-session-merge); the temporary robotogi `review` gate still applies to every pull request.
+7. End with a short report: what changed on the page, what merged, what is needed from the owner.
 
 ## Keeping docs current
 
-Update descriptions of the old state in the same pull request: changed commands' `--help`, README Status/Usage, specs and comments; `docs/how-togi-tunes.md` for tuner behavior and `docs/howto.md` for operator steps.
+Update changed commands' `--help`, README, specs, comments and operator guides with the code; keep design and shipped behavior explicitly distinct.
 
-For changes an operator of the shipped `togi` binary notices, follow [the changelog fragment rules](changes/README.md).
+Before 1.0, the target desktop follows `main` and the owner chooses when to update: no releases, new changelog fragments, or breaking-change titles/labels. Change `SCHEMA` or `RULESET` when existing journals become unreadable or recorded decisions unrepeatable so old journals are refused, and say so in the pull request. The history of `docs/model.md` records behavior changes; [release tooling still present](docs/releasing.md) is temporary.
 
 ## Writing
 
 - **Public:** this repository and its GitHub pages are public and permanent, history and pull request refs included: files, commits, branches, issues, comments, pull requests, reviews and releases. Publish what is true of togi and the hardware it runs on, never who or where is behind it: no personal details, whereabouts or routines, no credentials, no names, addresses or paths of private machines, networks or accounts, no identifier unique to one machine, nothing from other work or private projects. Machine output stays complete as evidence; replace only what identifies a person, place or machine, the same way each time. Reread the final text before it leaves the machine; when something ruled out here seems necessary, leave it out or ask the owner.
 - **Portable:** write for any reader's setup, nothing specific to one machine or tool. Where there are several ways to get somewhere, name them, then continue as if the reader got there.
 - Write commits, pull requests and docs for readers who have not seen the conversation that produced them.
-- Each rule has one owner, the spec. README, howto, ADRs and tool docs link to it instead of restating it.
+- Each rule has one owner: the model for design, specs for shipped behavior, and the linked process document for workflow; other documents point there.
 - Never overstate: claim only what the evidence or the checks showed.
 - Describe workflow steps by the action (open a pull request, set the milestone), so they hold whatever program performs them. Name the repository's own commands.
 
@@ -94,7 +88,7 @@ Idiom, required in pull requests and checked by `/review-pr`:
 ## Testing
 
 - **In memory:** [Development, Tests and simulations in memory](docs/development.md#tests-and-simulations-in-memory) owns the in-memory seams, permitted disk categories and I/O interfaces.
-- **Simulator first:** behavior is proven on `togi-sim` with fixed seeds, never by waiting for hardware.
+- **Hardware first:** the simulator proves only mechanics (crash recovery, safety rules, code following the page), never tuning policy. Run each tuning-behavior change on the target desktop before designing the next. Only the owner runs `togi night` there; afterwards a session there reads the journal read-only. Agents never run, reset or write togi's state there ([hardware evidence](docs/issues.md#work-that-waits-on-the-target-machine)).
 - Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Parametric cases are `#[test_case]` attributes or separate named tests, never a hand-written case list looped inside one test; a loop stays only for a generated or exhaustive sweep, and its assert names the failing input. Seeded `proptest` with failure persistence disabled for invariants, compile-time snapshot fixtures for rendered output, a fuzz target for the journal reader (`just fuzz`), whose properties and seeds live in `togi-journal`'s `tests/reader_fuzz`, where every test run replays the seeds. Compare values with `assert_eq!`.
 - Tests reach the tuner and the session through their public API, never through private fields or test-only mutators.
 - Ordinary integration tests share one binary per crate. `togi` groups command tests in `commands`; `run` stays separate for its re-executed panic and terminal helpers, and `vm_recovery` is installed and invoked by the VM checks. Keep module prefixes when filtering tests.
