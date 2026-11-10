@@ -1,7 +1,7 @@
 //! `manifest.json`: everything a coordinator needs from the frozen pull request, and everything render
 //! reads from it.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
 
 use crate::diff::FileDiff;
@@ -10,6 +10,34 @@ use crate::text::{join, json_indented, nullable};
 use crate::{Error, files};
 
 pub const MANIFEST_VERSION: i64 = 2;
+
+/// Declared by the coordinator after reading the diff's effects, never inferred from paths.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewClass {
+    #[default]
+    Safety,
+    Code,
+    Documents,
+}
+
+impl ReviewClass {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Safety => "safety",
+            Self::Code => "code",
+            Self::Documents => "documents",
+        }
+    }
+
+    /// Documents retain full sizing until R21 permits reviewer-free records.
+    pub fn reviewers(self, lines: i64, files: i64) -> i64 {
+        match self {
+            Self::Safety | Self::Documents => reviewer_count(lines, files),
+            Self::Code => i64::from(files > 0),
+        }
+    }
+}
 
 object_only! {
     #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -49,9 +77,12 @@ object_only! {
         /// L of the sizing rule, over the included files.
         #[serde(default, deserialize_with = "nullable")]
         pub included_lines: i64,
+        /// Missing in older manifests; conservative full safety review is the default.
+        #[serde(default)]
+        pub class: ReviewClass,
         #[serde(default, deserialize_with = "nullable")]
         pub reviewers: i64,
-        /// The small-pull-request rule applied to the pull request's whole diff.
+        /// Whether this declared class permits the coordinator to read a small whole diff itself.
         #[serde(default, deserialize_with = "nullable")]
         pub small: bool,
         #[serde(default, deserialize_with = "nullable")]
@@ -241,30 +272,13 @@ fn ceil_div(a: i64, b: i64) -> i64 {
     (a + b - 1) / b
 }
 
-const SMALL_PATHS: [&str; 5] = [
-    "crates/togi-smu",
-    "crates/togi-trial",
-    "crates/togi-session",
-    "crates/togi-journal",
-    "nix",
-];
-
-/// The small-pull-request rule applied to the whole diff: at most 2 files and under 100 changed lines,
-/// every file counted, none under a protected path.
-pub fn is_small(files: &[FileDiff]) -> bool {
-    let protected = |p: &str| {
-        SMALL_PATHS.iter().any(|dir| {
-            p.strip_prefix(dir)
-                .is_some_and(|rest| rest.starts_with('/'))
-        })
-    };
-    if files
-        .iter()
-        .any(|f| protected(&f.path) || protected(&f.old_path))
-    {
-        return false;
+/// Safety always uses separate readers. Other classes permit coordinator reading on a whole diff
+/// with at most two files and fewer than 100 changed lines, exclusions counted.
+pub fn is_small(files: &[FileDiff], class: ReviewClass) -> bool {
+    match class {
+        ReviewClass::Safety => false,
+        ReviewClass::Code | ReviewClass::Documents => files.len() <= 2 && total_lines(files) < 100,
     }
-    files.len() <= 2 && total_lines(files) < 100
 }
 
 pub fn total_lines(files: &[FileDiff]) -> i64 {
@@ -278,13 +292,16 @@ pub fn hunk_file_name(index: usize) -> String {
 pub fn read_manifest(dir: &str) -> Result<Manifest, Error> {
     let bytes = files::read(&join(dir, "manifest.json"))
         .map_err(|error| Error::wrap("read manifest", error))?;
-    let m: Manifest = serde_json::from_slice(&bytes)
+    let mut m: Manifest = serde_json::from_slice(&bytes)
         .map_err(|error| Error::wrap(format!("decode manifest in {dir}"), error))?;
     if m.version != MANIFEST_VERSION {
         return Err(Error::new(format!(
             "manifest in {dir} has version {}; this tool reads version {MANIFEST_VERSION}",
             m.version
         )));
+    }
+    if m.class == ReviewClass::Safety {
+        m.small = false;
     }
     Ok(m)
 }

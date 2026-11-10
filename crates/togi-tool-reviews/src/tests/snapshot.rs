@@ -16,8 +16,8 @@ use crate::fakes::{
     PREVIOUS_URL, check_golden, fail, read_file,
 };
 use crate::manifest::{
-    CoverRange, Coverage, Manifest, NotBuilt, PatchStatus, hunk_file_name, is_small, read_manifest,
-    reviewer_count, total_lines,
+    CoverRange, Coverage, Manifest, NotBuilt, PatchStatus, ReviewClass, hunk_file_name, is_small,
+    read_manifest, reviewer_count, total_lines,
 };
 use crate::parts::split_record;
 use crate::process::{CommandError, Output};
@@ -296,20 +296,23 @@ fn file(path: &str, added: i64) -> FileDiff {
     }
 }
 
-#[test_case(&[], true; "no files")]
-#[test_case(&[file("a.go", 50), file("b.go", 49)], true; "two files under 100 lines")]
-#[test_case(&[file("a.go", 50), file("b.go", 50)], false; "100 lines")]
-#[test_case(&[file("a", 1), file("b", 1), file("c", 1)], false; "three files")]
-#[test_case(&[file("a.go", 60), file("go.sum", 40)], false; "excluded files count")]
-#[test_case(&[file("nix/module.nix", 1)], false; "protected nix")]
-#[test_case(&[file("crates/togi-smu/src/lib.rs", 1)], false; "protected crate")]
-#[test_case(&[FileDiff { old_path: "crates/togi-trial/src/run.rs".to_owned(), ..file("docs/x.rs", 1) }], false; "protected crate rename source")]
-#[test_case(&[file("crates/togi-session/Cargo.toml", 1)], false; "protected session crate")]
-#[test_case(&[file("crates/togi-journal/src/lib.rs", 1)], false; "protected journal crate")]
-#[test_case(&[file("crates/togi-render/src/lib.rs", 1)], true; "other crate")]
-#[test_case(&[file("crates/togi-smu-extra/src/lib.rs", 1)], true; "lookalike crate")]
-fn is_small_by_rule(files: &[FileDiff], want: bool) {
-    assert_eq!(want, is_small(files));
+#[test_case(&[], ReviewClass::Code, true; "no files")]
+#[test_case(&[file("a.go", 50), file("b.go", 49)], ReviewClass::Code, true; "two files under 100 lines")]
+#[test_case(&[file("a.go", 50), file("b.go", 50)], ReviewClass::Code, false; "100 lines")]
+#[test_case(&[file("a", 1), file("b", 1), file("c", 1)], ReviewClass::Code, false; "three files")]
+#[test_case(&[file("a.go", 60), file("go.sum", 40)], ReviewClass::Code, false; "excluded files count")]
+#[test_case(&[file("nix/module.nix", 1)], ReviewClass::Safety, false; "safety nix")]
+#[test_case(&[file("crates/togi-smu/src/lib.rs", 1)], ReviewClass::Safety, false; "safety crate")]
+#[test_case(&[FileDiff { old_path: "crates/togi-trial/src/run.rs".to_owned(), ..file("docs/x.rs", 1) }], ReviewClass::Safety, false; "safety rename")]
+#[test_case(&[file("crates/togi-session/Cargo.toml", 1)], ReviewClass::Safety, false; "safety session")]
+#[test_case(&[file("crates/togi-journal/src/lib.rs", 1)], ReviewClass::Safety, false; "safety journal")]
+#[test_case(&[file("crates/togi-render/src/lib.rs", 1)], ReviewClass::Safety, false; "safety outside formerly protected paths")]
+#[test_case(&[file("docs/spec/runtime.md", 1)], ReviewClass::Safety, false; "safety documents")]
+#[test_case(&[file("crates/togi-smu-extra/src/lib.rs", 1)], ReviewClass::Safety, false; "safety lookalike crate")]
+#[test_case(&[file("crates/togi-smu/src/lib.rs", 1)], ReviewClass::Code, true; "ordinary inside formerly protected paths")]
+#[test_case(&[file("docs/development.md", 1)], ReviewClass::Documents, true; "ordinary documents")]
+fn is_small_by_rule(files: &[FileDiff], class: ReviewClass, want: bool) {
+    assert_eq!(want, is_small(files, class));
 }
 
 /// The frozen head's files that `SAMPLE_PR` modifies or renames; none carries a generated marker.
@@ -558,6 +561,70 @@ pub(crate) fn assert_no_snapshot(h: &Harness) {
         !Path::new(&h.tmp()).join("togi-review").exists(),
         "a refused snapshot left a directory behind"
     );
+}
+
+#[test_case(&[], ReviewClass::Safety, "crates/togi-watch/src/facts.rs", false; "omitted class is safety")]
+#[test_case(&["--class", "safety"], ReviewClass::Safety, "crates/togi-watch/src/facts.rs", false; "explicit safety outside protected paths")]
+#[test_case(&["--class", "safety"], ReviewClass::Safety, "docs/spec/runtime.md", false; "safety documentation")]
+#[test_case(&["--class", "code"], ReviewClass::Code, "crates/togi-smu/src/lib.rs", true; "ordinary code")]
+#[test_case(&["--class", "documents"], ReviewClass::Documents, "docs/development.md", true; "documents keep temporary independent review")]
+fn snapshot_selects_declared_risk(flags: &[&str], class: ReviewClass, path: &str, small: bool) {
+    let diff = format!(
+        "diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n"
+    );
+    let mut h = Harness::new(
+        Some(Box::new(pull_fake(
+            &diff,
+            contents(&[(path, "new\n")]),
+            frozen(),
+        ))),
+        None,
+    );
+    let mut args = flags.to_vec();
+    args.push("700");
+    snapshot(&mut h, &args).expect("snapshot");
+    let m = manifest(&h);
+    assert_eq!((class, small, 1), (m.class, m.small, m.reviewers));
+    assert!(
+        h.stdout()
+            .contains(&format!("review class: {}", class.as_str()))
+    );
+}
+
+#[test_case(ReviewClass::Safety, 2; "safety full sizing")]
+#[test_case(ReviewClass::Code, 1; "ordinary one independent reader")]
+#[test_case(ReviewClass::Documents, 2; "documents retain R21 exception")]
+fn declared_class_selects_reader_count(class: ReviewClass, expected: i64) {
+    assert_eq!(expected, class.reviewers(200, 3));
+    assert_eq!(0, class.reviewers(200, 0));
+}
+
+#[test_case("unsafe"; "unknown")]
+#[test_case("Safety"; "case sensitive")]
+fn snapshot_refuses_unknown_class(class: &str) {
+    let mut h = Harness::new(None, None);
+    let error = snapshot(&mut h, &["--class", class, "700"]).expect_err("class refused");
+    assert_eq!(
+        format!(
+            "unknown review class {}: expected safety, code or documents",
+            quote(class)
+        ),
+        error.render()
+    );
+    assert!(h.fake.gh_calls.is_empty());
+    assert_no_snapshot(&h);
+}
+
+#[test]
+fn an_older_manifest_defaults_to_safety() {
+    let h = Harness::new(None, None);
+    crate::files::write(
+        &format!("{}/manifest.json", h.tmp()),
+        br#"{"version":2,"small":true}"#,
+    )
+    .expect("write older manifest");
+    let m = read_manifest(&h.tmp()).expect("older manifest");
+    assert_eq!((ReviewClass::Safety, false), (m.class, m.small));
 }
 
 fn view_call() -> String {

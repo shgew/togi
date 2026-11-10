@@ -165,7 +165,7 @@ The approved process is in [AGENTS.md](../AGENTS.md#workflow). Tool removal is s
 | `quality`'s `changes` member | Existing fragment files must parse; the check only reads `changes/`, so no new fragment is needed for any pull request. | R23 |
 | Release workflow and its hardware/exact-head gates | Do not invoke it before 1.0; if invoked it still refuses `needs-hardware`, checks the exact head and assembles existing fragments. It does not gate owner-chosen main updates. | R23 |
 
-The PR check workflow has no breaking-title/label or missing-fragment gate. Dropping those steps therefore needs no tooling bypass. Safety routing by risk applies now; the manifest's path-only `small` hint does not override it (S14 adds the tooling regression proof).
+The PR check workflow has no breaking-title/label or missing-fragment gate. Dropping those steps therefore needs no tooling bypass. Safety routing follows the coordinator-declared `snapshot --class`, recorded in the manifest; omission defaults to safety, which always refuses the small path regardless of directory. Ordinary code selects one independent reader; documents retain the temporary R21 exception above.
 
 ## Safety-evidence ledger
 

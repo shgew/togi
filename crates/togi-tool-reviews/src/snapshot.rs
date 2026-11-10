@@ -15,8 +15,8 @@ use crate::diff::{
 };
 use crate::headlines;
 use crate::manifest::{
-    MANIFEST_VERSION, Manifest, ManifestFile, PreviousRecord, hunk_file_name, is_small,
-    reviewer_count, total_lines, write_manifest,
+    MANIFEST_VERSION, Manifest, ManifestFile, PreviousRecord, ReviewClass, hunk_file_name,
+    is_small, total_lines, write_manifest,
 };
 use crate::parts::{join_records, parse_part, robotogi_comments};
 use crate::rangediff::{DeltaResult, classify_range};
@@ -24,9 +24,11 @@ use crate::record::parse_record;
 use crate::text::{join, nullable, path_escape, quote, short};
 use crate::{Error, Programs, ROBOTOGI_BOT_LOGIN, Tools, files};
 
-pub const SNAPSHOT_USAGE: &str = "usage: reviews snapshot [--previous <record comment URL> [--previous-base <full base SHA>]] [--cover <file or ->] <PR number>\n       reviews snapshot --cover <file or -> <snapshot directory>";
+pub const SNAPSHOT_USAGE: &str = "usage: reviews snapshot [--class <safety|code|documents>] [--previous <record comment URL> [--previous-base <full base SHA>]] [--cover <file or ->] <PR number>\n       reviews snapshot --cover <file or -> <snapshot directory>";
 
 const FLAG_USAGE: &str = "Usage of snapshot:
+  -class string
+    \tcoordinator-declared review class: safety (default), code or documents
   -cover just cover
     \tfile with just cover output, or - for standard input
   -previous string
@@ -104,6 +106,7 @@ struct Flags {
     previous: String,
     previous_base: String,
     cover: String,
+    class: String,
 }
 
 /// Reads the flags that come before the first argument that is not one, `-name value`, `-name=value` or
@@ -141,6 +144,7 @@ fn parse_flags(args: &[String], stderr: &mut dyn Write) -> Result<(Flags, Vec<St
             "previous" => &mut flags.previous,
             "previous-base" => &mut flags.previous_base,
             "cover" => &mut flags.cover,
+            "class" => &mut flags.class,
             "help" | "h" => {
                 let _ = stderr.write_all(FLAG_USAGE.as_bytes());
                 return Err(Error::new("flag: help requested"));
@@ -178,7 +182,11 @@ pub fn run_snapshot(t: &mut Tools<'_>, args: &[String]) -> Result<(), Error> {
         String::new()
     };
     let Ok(pr) = target.parse::<i64>() else {
-        if flags.cover.is_empty() || !flags.previous.is_empty() || !flags.previous_base.is_empty() {
+        if flags.cover.is_empty()
+            || !flags.previous.is_empty()
+            || !flags.previous_base.is_empty()
+            || !flags.class.is_empty()
+        {
             return Err(Error::new(SNAPSHOT_USAGE));
         }
         let m = add_cover(target, &cover_text)?;
@@ -192,7 +200,18 @@ pub fn run_snapshot(t: &mut Tools<'_>, args: &[String]) -> Result<(), Error> {
             "--previous-base needs --previous and a full lower-case commit SHA\n{SNAPSHOT_USAGE}"
         )));
     }
-    let (dir, mut m) = create_snapshot(t, pr, &flags.previous, &flags.previous_base)?;
+    let class = match flags.class.as_str() {
+        "" | "safety" => ReviewClass::Safety,
+        "code" => ReviewClass::Code,
+        "documents" => ReviewClass::Documents,
+        other => {
+            return Err(Error::new(format!(
+                "unknown review class {}: expected safety, code or documents",
+                quote(other)
+            )));
+        }
+    };
+    let (dir, mut m) = create_snapshot(t, pr, &flags.previous, &flags.previous_base, class)?;
     if !flags.cover.is_empty() {
         m = add_cover(&dir, &cover_text)?;
     }
@@ -216,6 +235,7 @@ pub fn create_snapshot(
     pr: i64,
     previous_url: &str,
     previous_base: &str,
+    class: ReviewClass,
 ) -> Result<(String, Manifest), Error> {
     let before = view_pull(t.programs, pr)?;
     let repo = before.repository()?;
@@ -230,7 +250,8 @@ pub fn create_snapshot(
         pull_request: pr,
         head_sha: before.head.clone(),
         base_sha: before.base.clone(),
-        small: is_small(&pr_files),
+        class,
+        small: is_small(&pr_files, class),
         pr_files: crate::saturating_record_count(pr_files.len()),
         pr_lines: total_lines(&pr_files),
         ..Manifest::default()
@@ -323,7 +344,7 @@ pub fn create_snapshot(
         }
         m.files.push(mf);
     }
-    m.reviewers = reviewer_count(m.included_lines, m.included_files);
+    m.reviewers = class.reviewers(m.included_lines, m.included_files);
     write_manifest(&dir, &m)?;
     Ok((dir, m))
 }
@@ -975,6 +996,7 @@ pub fn print_summary(w: &mut dyn Write, dir: &str, m: &Manifest) -> Result<(), E
             );
         }
     }
+    let _ = writeln!(b, "review class: {}", m.class.as_str());
     let _ = writeln!(
         b,
         "L {}, F {}: {} reviewers",
