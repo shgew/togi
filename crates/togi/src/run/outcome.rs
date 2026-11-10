@@ -94,6 +94,16 @@ pub(super) fn conclude(
                 dead_end.detail
             );
             let _ = writeln!(err, "{}", renderer.text(Style::RedBold, &line));
+            if dead_end.condition == togi_journal::DeadEndCondition::Smu {
+                let _ = writeln!(
+                    err,
+                    "{}",
+                    renderer.text(
+                        Style::RedBold,
+                        "togi: stock not verified; current offsets unknown"
+                    )
+                );
+            }
             for seq in causes {
                 if let Some(event) = find(events, *seq) {
                     let _ = writeln!(

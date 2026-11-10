@@ -174,6 +174,10 @@ impl Facts {
                 self.recover = Some(recover);
             }
             Payload::DeadEnd(dead_end) => {
+                if dead_end.condition == togi_journal::DeadEndCondition::Smu {
+                    self.applied = PerCore::default();
+                    self.restored = false;
+                }
                 self.dead_end = Some(DeadEndView {
                     at: event.time,
                     condition: dead_end.condition,

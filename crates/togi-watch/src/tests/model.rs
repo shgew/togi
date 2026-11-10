@@ -345,7 +345,7 @@ fn write_after_restoration_is_not_saved() {
 }
 
 #[test]
-fn smu_dead_end_keeps_the_readback() {
+fn smu_dead_end_leaves_current_offsets_unknown() {
     let mut script = Script::three();
     script.append(smu_intent(0, -25), &[]);
     script.append(readback(0, 0), &[]);
@@ -362,10 +362,7 @@ fn smu_dead_end_keeps_the_readback() {
     script.append(shutdown(ShutdownReason::DeadEnd), &[]);
     let model = script.model();
     let first = &model.snapshot().cores[0];
-    assert_eq!(
-        (first.applied, first.profile),
-        (Some(ObservedOffset(0)), off(0))
-    );
+    assert_eq!((first.applied, first.profile), (None, off(0)));
 }
 
 #[test]

@@ -2,12 +2,12 @@
 //!
 //! The workload is joined before a step of the run returns, so a run that reaches the cleanup holds the proof that
 //! nothing runs, or holds a fault that says why it does not. Restoration needs that proof and no fault; a latched
-//! journal failure is answered by the emergency instead; the `shutdown` is recorded last, and only on a machine whose
-//! offsets are back at CO 0.
+//! journal failure is answered by the emergency instead. The final `shutdown` closes the lifecycle; an SMU
+//! dead end leaves stock unverified and must never stand in for a restoration receipt.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use togi_journal::{DeadEndCondition, Payload};
+use togi_journal::{DeadEndCondition, Payload, SessionWarning};
 
 use crate::emergency::{self, Access};
 use crate::error::{Flow, JournalFailure, SessionError};
@@ -15,7 +15,7 @@ use crate::session::{Ended, Fault, Panic, Session, Stop, message_of};
 
 /// How far the restoration at the end of a run that may still touch the machine got.
 enum Reached {
-    /// The machine is as the run found it, or the dead end the run stopped at settled what the restoration could not.
+    /// Cleanup completed, including a recorded dead end where stock could not be verified.
     Settled,
     /// The restoration found dead-end evidence and recorded the dead end, which settles it and replaces the stop.
     DeadEnd(Stop),
@@ -94,6 +94,9 @@ impl Session<'_> {
             }
         }
         let shutdown = catch_unwind(AssertUnwindSafe(|| {
+            if smu_dead_end(cleanup.stop.as_ref()) {
+                self.stock_not_verified()?;
+            }
             if self.unreconciled() {
                 Ok(())
             } else {
@@ -124,6 +127,17 @@ impl Session<'_> {
             self.lifecycle.crash();
         }
         error
+    }
+
+    fn stock_not_verified(&mut self) -> Result<(), SessionError> {
+        let warning = SessionWarning {
+            operation: "restore stock before stopping".into(),
+            trial: None,
+            error: "SMU dead end; stock not verified; current offsets unknown".into(),
+        };
+        self.appender
+            .append(Payload::SessionWarning(warning), &[])?;
+        Ok(())
     }
 
     fn restore_and_settle(&mut self, stop: Option<&Stop>) -> Reached {

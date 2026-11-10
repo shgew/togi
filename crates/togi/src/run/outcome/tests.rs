@@ -85,8 +85,13 @@ fn every_dead_end_exits_with_its_own_status_and_prints_its_detail(
     assert_eq!(
         err,
         format!(
-            "togi: dead end {}: operator intervention required\n",
-            condition.as_str()
+            "togi: dead end {}: operator intervention required\n{}",
+            condition.as_str(),
+            if condition == DeadEndCondition::Smu {
+                "togi: stock not verified; current offsets unknown\n"
+            } else {
+                ""
+            }
         )
     );
 }

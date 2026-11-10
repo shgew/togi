@@ -293,7 +293,7 @@ pub(crate) struct Session<'machine> {
     /// What a join of a workload after a failed record or a panic reported when it could not confirm the stop; the
     /// close reports it after the error that ended the run.
     pub(crate) unconfirmed: Vec<togi_machine::Error>,
-    /// The `shutdown` the cleanup records once the machine is restored.
+    /// The lifecycle closure cleanup records after restoration or an explicit stock-not-verified warning.
     pub(crate) shutdown: Option<Shutdown>,
 }
 
@@ -757,7 +757,7 @@ impl<'machine> Session<'machine> {
         Ok(())
     }
 
-    /// Ends the run with `reason`; the cleanup records the `shutdown` once the machine is restored.
+    /// Ends the run with `reason`; cleanup records lifecycle closure without implying verified offsets.
     pub(crate) fn shut_down(&mut self, stop: Stop) -> Control {
         self.record_shutdown(&stop);
         Control::Stop(stop)
