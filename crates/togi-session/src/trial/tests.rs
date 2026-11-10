@@ -259,6 +259,30 @@ fn frequency_sink_refuses_failed_ack_keeps_the_original_failure_and_never_append
     assert_eq!(rig.events().len(), before);
 }
 
+#[test_case(FrequencyEvent::Intent(frequency_intent()), Payload::FrequencyIntent(frequency_intent()); "intent")]
+#[test_case(FrequencyEvent::Readback(frequency_readback()), Payload::FrequencyReadback(frequency_readback()); "readback")]
+fn a_frequency_report_acknowledges_the_durable_typed_event_citing_the_trial_start(
+    event: FrequencyEvent,
+    payload: Payload,
+) {
+    let mut rig = Rig::new(2);
+    let start = rig.events().last().unwrap().seq;
+    let before = rig.events().len();
+    let cancel = CancellationToken::new();
+    let trial = trial();
+    rig.mem.record_history();
+    let mut reporter = Journaled::new(&mut rig.appender, &trial, start, &cancel);
+    reporter.frequency(event).unwrap();
+    assert!(reporter.into_failure().is_none());
+    assert_eq!(payloads(&rig, before), [payload]);
+    assert_eq!(rig.events().last().unwrap().cause, [start]);
+    assert_eq!(
+        rig.mem.log().iter().map(|(op, _)| *op).collect::<Vec<_>>(),
+        [Op::Write, Op::Sync],
+    );
+    assert_eq!(cancel.is_cancelled(), false);
+}
+
 #[test]
 fn a_failed_frequency_report_cancels_the_trial_and_refuses_later_write_acknowledgements() {
     let mut rig = Rig::new(2);
