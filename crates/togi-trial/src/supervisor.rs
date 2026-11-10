@@ -1392,13 +1392,10 @@ impl<O: Os> Supervisor<O> {
         let result = TrialResult {
             ran,
             failure: verdict.failure,
-            inconclusive: match (verdict.inconclusive, placement.inconclusive) {
-                (Some(reason), Some(placement)) => {
-                    Some(format!("{reason}; {placement}").into_boxed_str())
-                }
-                (Some(reason), None) | (None, Some(reason)) => Some(reason.into_boxed_str()),
-                (None, None) => None,
-            },
+            inconclusive: verdict
+                .inconclusive
+                .or(placement.inconclusive)
+                .map(String::into_boxed_str),
             excluded: placement.excluded,
             escaped: verdict.escaped,
             tctl_max_c: tctl_max,
