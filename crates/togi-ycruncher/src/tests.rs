@@ -724,6 +724,8 @@ fn carriage_return_separated_progress() {
 
 #[test_case("Running : Passed"; "missing test")]
 #[test_case("Running BKT: Passedgarbage"; "invalid completion token")]
+#[test_case("Running BKT: Passed garbage"; "garbage after completion")]
+#[test_case("Running BKT: Passed-failure"; "hyphenated completion")]
 fn malformed_results_are_setup_errors(line: &str) {
     assert_eq!(classify(line), Line::SetupError);
 }
