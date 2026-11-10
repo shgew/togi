@@ -44,8 +44,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// day, a stop or a dead end);
 /// session and BIOS context; then one table row per tuning unit with its physical cores,
 /// applied D, hard ceiling C, remaining D-C, hold hours and climbing/held/finished state.
-/// Tagged U retains observed-failure or censored write-limit witnesses. Statistical S is
-/// diagnostic and never authorizes a step. Day policy shows experimental hold + exact
+/// Tagged U retains observed-failure or censored write-limit witnesses.
+/// Day policy shows experimental hold + exact
 /// night qualification, applied/read-back versus proposed and paused-saved profiles,
 /// machine allowance and every classified event, finish/held reasons and current exact
 /// profile daily evidence under the 95% fixed-rate model. A Night part shows elapsed
@@ -61,7 +61,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Read-only, rendered from the journal. A different ruleset warns before rendering; a different
 /// schema is refused.
 /// With --evidence, also show exact-profile daily observations beside stock, provenance and
-/// unknown intervals, numeric cap/slope witnesses, qualification exposure, applied-step history
+/// unknown intervals, qualification exposure, applied-step history
 /// and comparable same-class night clocks and temperatures. No safety verdict or ETA is given.
 ///
 /// An event of a kind this build does not know is skipped and an unknown field is ignored; stderr

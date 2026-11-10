@@ -41,7 +41,7 @@ just togi --state-dir <dir> events --core 3
 just togi --state-dir <dir> watch
 ```
 
-`status` reports each CCD's D, S, slope and edge U, the covered and uncovered classes, the day policy, the night's queue shares and the Tctl peak ([Commands](spec/runtime.md#commands)).
+`status` reports each unit's D, hard ceiling C and tagged edge U, qualification and outstanding cells, the day policy, the night's queue shares and the Tctl peak ([Commands](spec/runtime.md#commands)).
 
 A finished simulation's `watch` shows only its last moment. `just replay --state-dir <dir>` plays the whole journal through the dashboard on a simulated clock, 300 simulated seconds per second by default (`--speed`, which must be finite and positive), starting at `--from SEQ`; the dashboard's keys work as in `watch`. `--at SEQ` prints one frame as of that event instead, `--after 40s` that long after it, `--view help` or `--view log` for those views, with `--width`, `--height` and `--color` as for a frame on a terminal. It also plays a copied real journal.
 
@@ -266,8 +266,8 @@ The tuner's simulation tests live under [`crates/togi-simrun/tests/sim/`](../cra
 They do not change the existing `Simulator`, machine-file model, or session runner.
 `day_night::run(scenario, seed, PolicyKind, CalendarConfig)` builds a fresh CO-0, fixed-margin or Ruleset 13
 adapter through `PolicyKind::build` and runs it; `run_with_policy` takes another implementation of the same `Policy`
-interface. The two diagnostics are comparators. `PolicyKind::Ruleset13 { fallback_slope }` is the policy under test (the
-gate role); its slope is the per-count hazard multiplier (1.5 or 2.0), so the policy's fallback slope is `beta = ln(multiplier)`.
+interface. The two diagnostics are comparators. `PolicyKind::Ruleset13` selects the production policy
+without statistical slope parameters; S computation is retired.
 The `ruleset13` registry label remains the frozen experiment's recorded identity; it is not
 the name of the live internal driver.
 

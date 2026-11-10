@@ -18,8 +18,8 @@ use super::stage::stage_line;
 use crate::frames::colours::Paint;
 use crate::frames::fit::{line_width, plain};
 use crate::frames::hand::{
-    Hand, bare, cap, ccd, ccd_row, censored, core_row, fallback, mapping_trial, measured, night,
-    observed, rate_bound, running_trial, with_cap,
+    Hand, bare, ccd, ccd_row, censored, core_row, mapping_trial, night, observed, running_trial,
+    with_edge,
 };
 use crate::frames::layout::SizeClass;
 use crate::frames::measure::{Ccd, CoreColumns, measure};
@@ -616,16 +616,11 @@ fn gauge_text(
 }
 
 fn capped(edge: Option<togi_journal::Edge>) -> togi_tuner::policy::UnitProjection {
-    with_cap(
-        ccd_row(0, &[0], -10),
-        cap(-26, rate_bound(), fallback(), 2, 0),
-        edge,
-        14,
-    )
+    with_edge(ccd_row(0, &[0], -10), edge, 16)
 }
 
 #[test]
-fn a_gauge_shows_the_applied_depth_the_cap_track_and_the_edge() {
+fn a_gauge_shows_the_applied_depth_the_ceiling_track_and_the_edge() {
     let mark = marks(Colours::None).applied;
     let projection = capped(Some(observed(-31)));
     let want = format!(
@@ -657,7 +652,7 @@ fn a_censored_edge_is_amber_and_an_unknown_one_is_not_drawn() {
     assert_eq!(last.style, Paint::Warn.style(Colours::Full));
     assert_eq!(last.content.trim_end().chars().count(), 1);
     let none = gauge_text(Colours::None, &capped(None), -12, 50);
-    assert_eq!(none, format!("{}{}", "▄".repeat(12), "·".repeat(14)));
+    assert_eq!(none, "▄".repeat(12));
 }
 
 #[test]
@@ -683,7 +678,7 @@ fn the_edge_cell_is_the_edge_even_where_the_applied_depth_passes_it() {
 }
 
 #[test_case(i64::MIN, 50, 0; "deeper than any count")]
-#[test_case(i64::MAX, 0, 26; "shallower than stock")]
+#[test_case(i64::MAX, 0, 0; "shallower than stock with unknown ceiling")]
 fn a_readback_outside_the_gauge_fills_all_or_none_of_it(readback: i64, filled: usize, dots: usize) {
     assert_eq!(
         gauge_text(Colours::None, &capped(None), readback, 50),
@@ -692,12 +687,7 @@ fn a_readback_outside_the_gauge_fills_all_or_none_of_it(readback: i64, filled: u
 }
 
 fn ccd_projection() -> togi_tuner::policy::UnitProjection {
-    with_cap(
-        ccd_row(0, &[0, 1], -10),
-        cap(-15, rate_bound(), fallback(), 2, 1),
-        Some(observed(-23)),
-        5,
-    )
+    with_edge(ccd_row(0, &[0, 1], -10), Some(observed(-23)), 8)
 }
 
 fn facts_text(projection: &togi_tuner::policy::UnitProjection, width: usize) -> String {
@@ -729,24 +719,19 @@ fn coverage_text(projection: &togi_tuner::policy::UnitProjection, width: usize) 
 }
 
 #[test]
-fn the_facts_row_names_day_ceiling_tagged_edge_and_diagnostic_s() {
+fn the_facts_row_names_day_ceiling_and_tagged_edge() {
     assert_eq!(
         facts_text(&ccd_projection(), 115),
-        "D -10 · C -15 · U observed at -23 · 5 counts to C · S -15 diagnostic only"
+        "D -10 · C -18 · U observed at -23 · 8 counts to C"
     );
-    let measured_cap = with_cap(
-        ccd_row(0, &[0, 1], -10),
-        cap(-15, rate_bound(), measured(), 2, 0),
-        Some(censored(-50)),
-        5,
-    );
-    let text = facts_text(&measured_cap, 115);
-    assert!(text.contains("S -15 diagnostic only"), "{text}");
+    let censored_row = with_edge(ccd_row(0, &[0, 1], -10), Some(censored(-50)), 35);
+    let text = facts_text(&censored_row, 115);
+    assert!(text.contains("C -45"), "{text}");
     assert!(text.contains("U censored at -50"), "{text}");
 }
 
 #[test]
-fn a_ccd_with_no_cap_or_edge_says_so() {
+fn a_ccd_with_no_ceiling_or_edge_says_so() {
     let text = facts_text(&ccd_row(0, &[0], 0), 115);
     assert!(text.starts_with("D 0 · "), "{text}");
     assert!(text.contains("C unknown"), "{text}");
@@ -767,12 +752,11 @@ fn the_second_row_shows_exact_hold_and_candidate_not_statistical_permission() {
 fn the_facts_row_never_cuts_a_value_whatever_the_width() {
     let whole = [
         "D -10",
-        "C -15",
-        "S -15 diagnostic only",
+        "C -18",
         "U observed at -23",
         "U observed -23",
-        "5 counts to C",
-        "5 to C",
+        "8 counts to C",
+        "8 to C",
     ];
     for width in 21..=120 {
         let text = facts_text(&ccd_projection(), width);
@@ -838,7 +822,7 @@ fn a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core() {
     let rows = table(&hand, 115, 5, Colours::None);
     assert!(rows[0].starts_with("CCD 0 one loaded"), "{:?}", rows[0]);
     assert!(rows[0].contains("-50"), "{:?}", rows[0]);
-    assert!(rows[1].starts_with("D -10 · C -15"), "{:?}", rows[1]);
+    assert!(rows[1].starts_with("D -10 · C -18"), "{:?}", rows[1]);
     assert!(
         rows[2].starts_with("climbing · hold 3 / 50 h"),
         "{:?}",
@@ -1109,11 +1093,21 @@ fn foreground(buf: &Buffer, x: usize, y: usize) -> ratatui::style::Color {
 }
 
 fn edge_hand(applied: i64, edge: i64) -> Hand {
-    let projection = with_cap(
+    let projection = with_edge(
         ccd_row(0, &[0], applied),
-        cap(-50, rate_bound(), fallback(), 1, 0),
         Some(observed(edge)),
-        3,
+        u32::try_from(
+            applied.abs_diff(
+                togi_tuner::night::EdgeU::Observed {
+                    offset: crate::tests::kit::off(edge),
+                    witness: crate::tests::kit::seq(7),
+                }
+                .ceiling()
+                .unwrap()
+                .get(),
+            ),
+        )
+        .unwrap(),
     );
     let mut hand = Hand::new(
         vec![core_row(0, 0, Some(applied), false)],
@@ -1296,48 +1290,13 @@ fn trial_bars_have_no_strip_under_their_track(width: u16, height: u16, colours: 
     assert!(below.chars().all(|c| c == ' '), "{below:?}");
 }
 
-#[test_case(togi_tuner::policy::CapReason::NoAdequateClass; "no mapping class")]
-#[test_case(togi_tuner::policy::CapReason::UnknownEdge; "unknown edge")]
-#[test_case(togi_tuner::policy::CapReason::NoJustifiedDecay; "no justified decay")]
-fn current_zero_reasons_never_move_d_c_u_or_grant_s_permission(
-    reason: togi_tuner::policy::CapReason,
-) {
-    let words = reason.label();
-    let baseline = ccd_projection();
-    let mut projection = baseline.clone();
-    projection.evidence = Some(togi_tuner::policy::CapEvidence {
-        offset: togi_machine::TargetOffset::ZERO,
-        reason,
-        slope: fallback(),
-        budget: togi_tuner::cap::Rate::MACHINE_BUDGET,
-        cells: vec![togi_journal::RateCell {
-            class: crate::frames::hand::class(Regime::R1, &[0]),
-            offset: togi_machine::TargetOffset::ZERO,
-            eligible_s: 5400,
-            failures: 0,
-            bound: togi_journal::RateBound::Unbounded {},
-        }],
-        projected: Vec::new(),
-        uncovered: vec![togi_journal::UncoveredClass {
-            class: crate::frames::hand::class(Regime::R3, &[0]),
-            reason: togi_journal::UncoveredReason::NonMappingOnly,
-        }],
-        slope_inputs: Vec::new(),
-    });
-    let (_, expected) = include_str!("snapshots/committed-cap-diagnostic-s.snap")
+#[test]
+fn the_facts_snapshot_preserves_day_ceiling_and_edge() {
+    let (_, expected) = include_str!("snapshots/unit-facts.snap")
         .split_once("\n---\n")
         .expect("an embedded insta snapshot header");
-    assert_eq!(format!("{}\n", facts_text(&projection, 180)), expected);
-    for width in [180, 115] {
-        let text = facts_text(&projection, width);
-        assert_eq!(text, facts_text(&baseline, width), "D, C and U moved");
-        assert!(text.contains("S -15 diagnostic only"), "{text}");
-        assert!(!text.contains("to S"), "S is never a destination: {text}");
-        assert!(!text.contains(words), "a zero reason leaked: {text}");
-    }
     assert_eq!(
-        coverage_text(&projection, 115),
-        coverage_text(&baseline, 115),
-        "a zero reason changed permission"
+        format!("{}\n", facts_text(&ccd_projection(), 180)),
+        expected
     );
 }

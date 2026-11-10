@@ -139,19 +139,13 @@ fn a_night_reads_in_order_from_plan_to_promotion() {
         .collect();
     assert_eq!(
         tags,
-        [
-            "start", "night", "edge", "cap", "qualify", "qualify", "step"
-        ]
+        ["start", "night", "edge", "qualify", "qualify", "step"]
     );
     assert_eq!(
         sentences[3],
-        "cap: CCD0 S 0 → -15 · diagnostic only, not permission · edge margin · fallback slope"
-    );
-    assert_eq!(
-        sentences[4],
         "qualify: qualifying CCD0 -10, CCD1 -5 (next step) · 0 cells to witness"
     );
-    assert_eq!(sentences[6], "step: promote CCD0 to CCD0 -15, CCD1 -5");
+    assert_eq!(sentences[5], "step: promote CCD0 to CCD0 -15, CCD1 -5");
 }
 
 #[test]

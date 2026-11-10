@@ -1,7 +1,7 @@
 //! The Ruleset 14 tuner (`docs/spec/tuner-ruleset14.md`): per-unit edge ceilings and an experimental
 //! applied-profile climb ([`climb`]), the night's mapping and reproduction rules ([`night`]), daily
 //! observations and exact-profile holds ([`day`]), and the composed [`State`] that folds the journal
-//! and answers what a night or day does next ([`policy`]). Statistical caps ([`cap`]) are diagnostics only.
+//! and answers what a night or day does next ([`policy`]).
 //! The crate also holds the machine's core [`Topology`], the honest partial chains
 //! R7 mapping derives ([`HonestChain`]), and crash classification for session recovery
 //! ([`classify_crash`]).
@@ -27,7 +27,7 @@ pub use class::Secs;
 pub use crash::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 pub use partial::{HonestChain, PartialBasis, UncoveredReason};
 pub use policy::{
-    Action, CapProjection, Contents, DayProjection, DayQuery, Decision, EndReason, EventProjection,
+    Action, Contents, DayProjection, DayQuery, Decision, EndReason, EventProjection,
     FirmwareValidity, FoldError, HoldProjection, MappingProjection, NightProjection, NightQuery,
     NotReady, Params, PlanError, PolicyPayload, Projection, QualificationProgress,
     QualificationProjection, QualificationStage, ReproductionProjection, State, TrialPlan,
@@ -37,7 +37,7 @@ pub use policy::{
     ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
     ClimbHoldProjection, ClimbPermissionMode, ClimbProfiles, ClimbProjection,
     ClimbProposalProjection, ClimbQualificationProjection, ClimbQualificationState,
-    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState,
 };
 pub use topology::{Topology, TopologyError};
 pub use unit::{Phase, TuningUnit, UnitId, UnitProfile, UnitProfileError, Units};

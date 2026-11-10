@@ -1,5 +1,5 @@
 //! Physical CCD topology with unit-generic D, hard ceiling C and tagged U.
-//! The policy supplies every permission fact; diagnostic S never draws the gauge.
+//! The policy supplies every permission fact.
 
 use ratatui::buffer::Buffer;
 use ratatui::text::{Line, Span};
@@ -135,7 +135,7 @@ pub(crate) fn edge_words(edge: Option<&Edge>) -> (String, String) {
     }
 }
 
-/// Unit facts fit whole values; there is deliberately no remaining-to-S display.
+/// Unit facts fit whole values.
 pub(super) fn facts_line(
     scene: &Scene<'_>,
     unit: &ClimbUnitProjection,
@@ -164,18 +164,6 @@ pub(super) fn facts_line(
             vec![
                 Form::new(text(format!("{remaining} counts to C")), 2),
                 Form::new(text(format!("{remaining} to C")), 1),
-                Form::empty(),
-            ],
-        ));
-    }
-    if let Some(diagnostic) = &unit.diagnostic_s {
-        clauses.push(Clause::new(
-            " · ",
-            vec![
-                Form::new(
-                    text(format!("S {} diagnostic only", diagnostic.cap.offset.get())),
-                    3,
-                ),
                 Form::empty(),
             ],
         ));

@@ -9,13 +9,11 @@ use test_case::test_case;
 use togi_journal::{
     Activity, ApplicationId, ApplyCause, CcdVector, CellEvidence, Classification, ClimbAction,
     ClimbDecision, ClimbRetreatCause, DayApplied, DayCheckpoint, DayCleanStop, DayOffsetsChanged,
-    DayUncleanEnd, Edge, ExposureClass, LoadMix, NightQualification, Payload, QualificationPurpose,
-    QualificationState, Queue, ReproductionState, Seq, Tested, UncoveredReason, WarningKind,
+    DayUncleanEnd, Edge, LoadMix, NightQualification, Payload, QualificationPurpose,
+    QualificationState, Queue, ReproductionState, Seq, Tested, WarningKind,
 };
-use togi_machine::{BootId, CcdProfile, EndEvidence, Regime, ResetReason};
-use togi_tuner::cap::Rate;
+use togi_machine::{BootId, CcdProfile, EndEvidence, ResetReason};
 use togi_tuner::day::{Invocation, Pause};
-use togi_tuner::night::Roles;
 use togi_tuner::policy::{Action, DayQuery, EndReason, Params, PolicyPayload, TrialPlan};
 
 use crate::fixture::{Ending, Journal, at, ccd, firmware, offsets_of, rebuilt, zero};
@@ -682,8 +680,6 @@ fn the_projection_after_a_provisional_retreat_matches_its_snapshot() {
                 "unit": unit["unit"],
                 "cores": unit["cores"],
                 "edge": unit["edge"],
-                "cap": unit["cap"]["offset"],
-                "binding": unit["cap"]["binding"]["kind"],
                 "day": unit["day"],
                 "remaining": unit["remaining"],
             }))
@@ -758,20 +754,9 @@ fn night_until_filler(journal: &mut Journal, boot: &str) -> Vec<TrialPlan> {
     panic!("the night never reached its filler");
 }
 
-/// The committed cap's offset on `ccd`.
-fn cap_of(journal: &Journal, ccd: usize) -> i64 {
-    serde_json::to_value(journal.state.project()).unwrap()["units"][ccd]["cap"]["offset"]
-        .as_i64()
-        .unwrap()
-}
-
 #[test]
 fn a_fallback_to_co_zero_qualifies_the_wanted_profile_first_and_the_day_restores_it() {
-    // A budget generous enough for caps several steps deep.
-    let params = Params {
-        machine_budget: Rate::per_hour(1.0).unwrap(),
-        ..Params::SPEC
-    };
+    let params = Params::SPEC;
     let (mut journal, first) = promoted_with(params);
     // The first D runs a full hold, then a night qualifies the next proposal and a cold boot promotes it.
     journal.append(
@@ -879,7 +864,7 @@ fn step_of(payloads: &[Payload], kind: impl Fn(&ClimbAction) -> bool) -> ClimbDe
 
 #[test]
 fn a_reclassified_step_back_commits_a_restoration_citing_its_answer_event_promotion_and_retreat() {
-    let (mut journal, first) = promoted_with(deep());
+    let (mut journal, first) = promoted_with(Params::SPEC);
     held_at(&mut journal, &first);
     night_until_filler(&mut journal, "tuning1");
     journal.boot_start_at("day2", "1", &first);
@@ -976,27 +961,10 @@ fn a_reclassified_step_back_commits_a_restoration_citing_its_answer_event_promot
     }
 }
 
-/// A budget generous enough for caps several steps deep.
-fn deep() -> Params {
-    Params {
-        machine_budget: Rate::per_hour(1.0).unwrap(),
-        ..Params::SPEC
-    }
-}
-
-/// The committed slope's kind on `ccd`.
-fn slope_kind(journal: &Journal, ccd: usize) -> String {
-    serde_json::to_value(journal.state.project()).unwrap()["units"][ccd]["cap"]["slope"]["kind"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
-
-/// A promoted D followed by real failures of one isolated class at two depths.
-/// Diagnostic slope fitting needs both depths; exact-D filler is not a depth probe.
-fn measured() -> Journal {
+/// A promoted D followed by isolated failures at two depths.
+fn isolated_failures() -> Journal {
     let isolated = std::cell::RefCell::new(None);
-    let (mut journal, _) = promoted_ending(deep(), |plan| {
+    let (mut journal, _) = promoted_ending(Params::SPEC, |plan| {
         if matches!(plan.tested, Tested::Isolated { ccd: unit, .. } if unit == ccd(0))
             && isolated.borrow().is_none()
         {
@@ -1020,21 +988,6 @@ fn measured() -> Journal {
         journal.run(&plan, Ending::Fail(None));
     }
     journal.until_trial(journal.now());
-    assert_ne!(slope_kind(&journal, 0), "fallback");
-    assert_eq!(cap_of(&journal, 0), 0);
-    let projected = journal.state.project();
-    assert_eq!(
-        projected.units[0].evidence.as_ref().unwrap().reason,
-        togi_tuner::policy::CapReason::NoJustifiedDecay
-    );
-    assert!(
-        !projected.units[0]
-            .evidence
-            .as_ref()
-            .unwrap()
-            .slope_inputs
-            .is_empty()
-    );
     journal
 }
 
@@ -1047,16 +1000,18 @@ fn edge_witnesses(edge: &Edge) -> Vec<Seq> {
     }
 }
 
-/// Asserts every edge and cap committed after `changed` cites only what came after it.
+/// Asserts every edge committed after `changed` cites only what came after it.
 fn cites_only_after(journal: &Journal, changed: Seq) {
+    let mut edges = 0;
     for event in journal.events.iter().filter(|event| event.seq > changed) {
         let edge = if let Payload::CcdEdge(committed) = &event.payload {
             &committed.edge
-        } else if let Payload::CcdCap(committed) = &event.payload {
-            &committed.edge
+        } else if let Payload::UnitEdge(committed) = &event.payload {
+            &committed.new
         } else {
             continue;
         };
+        edges += 1;
         let witnesses = edge_witnesses(edge);
         assert!(
             witnesses.iter().all(|&witness| witness > changed),
@@ -1064,11 +1019,12 @@ fn cites_only_after(journal: &Journal, changed: Seq) {
             event.seq
         );
     }
+    assert!(edges > 0, "no rebuilt edges after {changed:?}");
 }
 
 #[test]
-fn a_firmware_change_restarts_the_slopes_and_rebuilds_the_caps_from_new_evidence() {
-    let mut journal = measured();
+fn a_firmware_change_rebuilds_edges_from_new_evidence() {
+    let mut journal = isolated_failures();
     let changed = journal.boot_start_at("day2", "2", &zero());
     let committed = journal.settle_day(&cold_boot_at("day2", journal.now()));
     let step = steps(&committed)
@@ -1086,23 +1042,18 @@ fn a_firmware_change_restarts_the_slopes_and_rebuilds_the_caps_from_new_evidence
         };
         journal.run(&plan, Ending::Pass);
     }
-    assert_eq!(slope_kind(&journal, 0), "fallback");
-    assert!(cap_of(&journal, 0) < 0, "{}", cap_of(&journal, 0));
-    assert!(cap_of(&journal, 1) < 0, "{}", cap_of(&journal, 1));
     cites_only_after(&journal, changed);
 }
 
 #[test]
-fn a_rebuilt_backend_restarts_the_slopes_and_rebuilds_the_caps_from_new_evidence() {
-    let mut journal = measured();
+fn a_rebuilt_backend_rebuilds_edges_from_new_evidence() {
+    let mut journal = isolated_failures();
     let changed = journal.events.last().unwrap().seq;
     journal.rebuild(rebuilt());
     for _ in 0..1_500 {
         let plan = journal.until_trial(journal.now());
         journal.run(&plan, Ending::Pass);
     }
-    assert_eq!(slope_kind(&journal, 0), "fallback");
-    assert!(cap_of(&journal, 0) < 0, "{}", cap_of(&journal, 0));
     cites_only_after(&journal, changed);
 }
 
@@ -1161,151 +1112,13 @@ fn a_failure_is_warned_of_once_its_class_passes_deeper() {
 }
 
 #[test]
-fn a_cap_says_why_each_class_is_uncovered() {
+fn read_only_projection_does_not_change_state() {
     let mut journal = Journal::ready();
-    let _ = journal.until_filler(|_| Ending::Pass);
-    let caps: Vec<_> = journal
-        .events
-        .iter()
-        .filter_map(|event| {
-            if let Payload::CcdCap(cap) = &event.payload
-                && cap.ccd == ccd(0)
-            {
-                Some(cap)
-            } else {
-                None
-            }
-        })
-        .collect();
-    let reasons = |regime: Regime| -> Vec<UncoveredReason> {
-        caps.iter()
-            .flat_map(|cap| &cap.uncovered)
-            .filter(|uncovered| uncovered.class.regime == regime)
-            .map(|uncovered| uncovered.reason)
-            .collect()
-    };
-    // R3 lies outside the mapping projection, so qualification exposure leaves it uncovered, and says so.
-    let r3 = reasons(Regime::R3);
-    assert!(!r3.is_empty());
-    assert!(
-        r3.iter()
-            .all(|&reason| reason == UncoveredReason::NonMappingOnly),
-        "{r3:?}"
-    );
-    // R9 is a mapping class the night had not mapped yet when it first committed a cap.
-    let r9 = reasons(Regime::R9);
-    assert!(r9.contains(&UncoveredReason::NoObservations), "{r9:?}");
-}
-
-/// The uncovered classes of each cap the first night commits, every trial passing. With `crash`, the
-/// session is killed between the first R9 mapping trial's intent and its start, and the trial is rerun.
-fn uncovered_by_cap(crash: bool) -> Vec<Vec<ExposureClass>> {
-    let mut journal = Journal::ready();
-    let mut crashed = !crash;
-    for step in 0..3_500_i64 {
-        let Ok(plan) = journal.until_end(at(100 + step), &BTreeMap::new()) else {
-            break;
-        };
-        if plan.task.queue == Queue::Filler {
-            break;
-        }
-        if !crashed
-            && plan.activity == Activity::Mapping
-            && matches!(plan.cell.roles, Roles::AllThreads { .. })
-        {
-            journal.run_unstarted(&plan);
-            crashed = true;
-        }
-        journal.run(&plan, Ending::Pass);
-    }
-    assert!(crashed, "the night ran no R9 mapping trial");
-    journal
-        .events
-        .iter()
-        .filter_map(|event| {
-            let Payload::CcdCap(cap) = &event.payload else {
-                return None;
-            };
-            Some(
-                cap.uncovered
-                    .iter()
-                    .map(|uncovered| uncovered.class.clone())
-                    .collect(),
-            )
-        })
-        .collect()
-}
-
-#[test]
-fn a_trial_killed_before_its_start_adds_no_class_to_the_caps() {
-    let crashed = uncovered_by_cap(true);
-    assert!(
-        crashed
-            .iter()
-            .flatten()
-            .all(|class| class.regime != Regime::R9 || class.position.is_some()),
-        "{crashed:?}"
-    );
-    assert_eq!(crashed, uncovered_by_cap(false));
-}
-
-#[test]
-fn read_only_projection_distinguishes_missing_mapping_exposure_from_unknown_edge() {
-    let mut journal = Journal::ready();
-    assert_eq!(
-        journal.state.project().units[0]
-            .evidence
-            .as_ref()
-            .unwrap()
-            .reason,
-        togi_tuner::policy::CapReason::NoAdequateClass
-    );
-    loop {
-        let plan = journal.until_trial(journal.now());
-        let mapping = plan.activity == Activity::Mapping;
-        journal.run(&plan, Ending::Pass);
-        if mapping {
-            let _ = journal.until_trial(journal.now());
-            break;
-        }
-    }
+    let plan = journal.until_trial(journal.now());
+    journal.run(&plan, Ending::Pass);
     let before = serde_json::to_value(&journal.state).unwrap();
-    let projected = journal.state.project();
-    assert_eq!(
-        projected.units[0].evidence.as_ref().unwrap().reason,
-        togi_tuner::policy::CapReason::UnknownEdge
-    );
-    let evidence = projected.units[0].evidence.as_ref().unwrap();
-    assert!(!evidence.cells.is_empty());
-    assert!(evidence.cells[0].eligible_s > 0);
-    assert_eq!(evidence.cells.len(), evidence.projected.len());
+    let _ = journal.state.project();
     assert_eq!(serde_json::to_value(&journal.state).unwrap(), before);
-}
-
-#[test]
-fn a_zero_exposure_interruption_adds_no_slope_input() {
-    let evidence = |interrupted| {
-        let mut journal = Journal::ready();
-        loop {
-            let plan = journal.until_trial(journal.now());
-            if plan.activity == Activity::Mapping {
-                if interrupted {
-                    journal.run_unstarted(&plan);
-                }
-                journal.run(&plan, Ending::Pass);
-                let _ = journal.until_trial(journal.now());
-                return journal
-                    .state
-                    .project()
-                    .units
-                    .into_iter()
-                    .map(|ccd| ccd.evidence)
-                    .collect::<Vec<_>>();
-            }
-            journal.run(&plan, Ending::Pass);
-        }
-    };
-    assert_eq!(evidence(true), evidence(false));
 }
 
 fn observed_mapping_trial(ending: Ending) -> (Journal, togi_journal::ExposureObserved) {
@@ -1337,34 +1150,17 @@ fn observed_mapping_trial(ending: Ending) -> (Journal, togi_journal::ExposureObs
 #[test_case(Ending::Inconclusive { interrupted: false }; "inconclusive observation")]
 #[test_case(Ending::Inconclusive { interrupted: true }; "interrupted observation")]
 #[test_case(Ending::Withheld; "withheld placement")]
-fn an_unobserved_trial_adds_no_eligible_exposure_or_rate_input(ending: Ending) {
-    let (journal, observed) = observed_mapping_trial(ending);
+fn an_unobserved_trial_adds_no_eligible_exposure(ending: Ending) {
+    let (_, observed) = observed_mapping_trial(ending);
     assert_eq!(observed.eligible_s, 0);
     assert_eq!(observed.uninterrupted_s, 0);
     assert_eq!(observed.failures.len(), 0);
-    for unit in journal.state.project().units {
-        let evidence = unit.evidence.unwrap();
-        assert_eq!(
-            evidence
-                .slope_inputs
-                .iter()
-                .find(|cell| cell.class == observed.class),
-            None,
-        );
-        assert_eq!(
-            evidence
-                .cells
-                .iter()
-                .find(|cell| cell.class == observed.class),
-            None,
-        );
-    }
 }
 
 #[test_case(Ending::Fail(None), false; "live failure")]
 #[test_case(Ending::Interrupted, true; "recovered failure")]
 fn a_failed_trial_keeps_its_measured_exposure_and_failure(ending: Ending, interrupted: bool) {
-    let (journal, observed) = observed_mapping_trial(ending);
+    let (_, observed) = observed_mapping_trial(ending);
     let expected = observed.class.duration_s - observed.class.regime.warm_up_s();
     assert_eq!(observed.eligible_s, u64::from(expected));
     assert_eq!(
@@ -1372,20 +1168,10 @@ fn a_failed_trial_keeps_its_measured_exposure_and_failure(ending: Ending, interr
         if interrupted { 0 } else { u64::from(expected) },
     );
     assert_eq!(observed.failures.len(), 1);
-    let projected = journal.state.project();
-    let cell = projected
-        .units
-        .iter()
-        .filter_map(|unit| unit.evidence.as_ref())
-        .flat_map(|evidence| &evidence.slope_inputs)
-        .find(|cell| cell.class == observed.class)
-        .unwrap();
-    assert_eq!(cell.failures, 1);
-    assert_eq!(cell.hours, f64::from(expected) / 3600.0);
 }
 
 #[test]
-fn an_imported_inconclusive_exposure_adds_no_hours_or_mapping_seconds() {
+fn an_imported_inconclusive_exposure_preserves_the_raw_record() {
     let (_, mut observed) = observed_mapping_trial(Ending::Inconclusive { interrupted: true });
     observed.source.session = serde_json::from_str("\"20251231T000000Z\"").unwrap();
     observed.origin = togi_journal::ExposureOrigin::Imported {};
@@ -1396,48 +1182,10 @@ fn an_imported_inconclusive_exposure_adds_no_hours_or_mapping_seconds() {
         unreachable!();
     };
     assert_eq!(recorded, &observed, "the raw imported record is unchanged");
-    for unit in journal.state.project().units {
-        let evidence = unit.evidence.unwrap();
-        assert_eq!(
-            evidence
-                .slope_inputs
-                .iter()
-                .find(|cell| cell.class == observed.class),
-            None,
-        );
-        assert_eq!(
-            evidence
-                .cells
-                .iter()
-                .find(|cell| cell.class == observed.class),
-            None,
-        );
-    }
-    loop {
-        let plan = journal.until_trial(journal.now());
-        let mapping = plan.activity == Activity::Mapping;
-        journal.run(&plan, Ending::Pass);
-        if mapping {
-            let _ = journal.until_trial(journal.now());
-            break;
-        }
-    }
-    let projected = journal.state.project();
-    let cell = projected
-        .units
-        .iter()
-        .filter_map(|unit| unit.evidence.as_ref())
-        .flat_map(|evidence| &evidence.cells)
-        .find(|cell| cell.class == observed.class)
-        .unwrap();
-    assert_eq!(
-        cell.eligible_s, observed.eligible_s,
-        "only the later complete launch supplies mapping seconds",
-    );
 }
 
 #[test]
-fn an_interrupted_mapping_task_keeps_its_diagnostic_rotation() {
+fn an_interrupted_mapping_task_keeps_its_frozen_matrix() {
     let mut journal = Journal::ready();
     let plan = loop {
         let plan = journal.until_trial(journal.now());
@@ -1446,26 +1194,10 @@ fn an_interrupted_mapping_task_keeps_its_diagnostic_rotation() {
         }
         journal.run(&plan, Ending::Pass);
     };
-    let from = journal.events.len();
     journal.run(&plan, Ending::Inconclusive { interrupted: true });
     let retry = journal.until_trial(journal.now());
     assert_eq!(retry.task, plan.task);
     assert_eq!(retry.cell, plan.cell);
-    let caps: Vec<_> = journal.events[from..]
-        .iter()
-        .filter_map(|event| {
-            if let Payload::CcdCap(cap) = &event.payload {
-                Some(cap)
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(
-        caps.len(),
-        0,
-        "the unfinished task has not rotated its matrix"
-    );
 }
 
 #[test]

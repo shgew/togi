@@ -22,8 +22,8 @@ pub enum PolicyKind {
     CoZero,
     /// Diagnostic: observed night edge minus the calendar's fixed margin.
     FixedMargin,
-    /// The production Ruleset 13 policy; `fallback_slope` is the per-count hazard multiplier.
-    Ruleset13 { fallback_slope: f64 },
+    /// The production policy; the recorded label retains its original spelling.
+    Ruleset13,
 }
 
 /// Whether a policy's results may pass the registered gate.
@@ -40,10 +40,6 @@ pub enum PolicyRole {
 pub enum PolicyError {
     #[error("unknown day/night policy {name:?}; known policies: {known}")]
     Unknown { name: String, known: String },
-    #[error("policy {0} takes no fallback slope")]
-    SlopeUnused(&'static str),
-    #[error("policy {0} needs a fallback slope")]
-    SlopeRequired(&'static str),
 }
 
 impl PolicyKind {
@@ -56,34 +52,24 @@ impl PolicyKind {
         match self {
             Self::CoZero => "co-zero",
             Self::FixedMargin => "fixed-margin",
-            Self::Ruleset13 { .. } => "ruleset13",
+            Self::Ruleset13 => "ruleset13",
         }
     }
 
     pub fn role(self) -> PolicyRole {
         match self {
             Self::CoZero | Self::FixedMargin => PolicyRole::Diagnostic,
-            Self::Ruleset13 { .. } => PolicyRole::Gate,
+            Self::Ruleset13 => PolicyRole::Gate,
         }
     }
 
-    /// The fallback slope this policy was built with, when it takes one.
-    pub fn fallback_slope(self) -> Option<f64> {
-        match self {
-            Self::CoZero | Self::FixedMargin => None,
-            Self::Ruleset13 { fallback_slope } => Some(fallback_slope),
-        }
-    }
-
-    /// Resolves a label and the optional `--slope` to a policy.
+    /// Resolves a stable policy label.
     ///
     /// # Errors
-    /// Refuses an unknown label, and a slope for a policy that takes none.
-    pub fn by_label(label: &str, fallback_slope: Option<f64>) -> Result<Self, PolicyError> {
+    /// Refuses an unknown label.
+    pub fn by_label(label: &str) -> Result<Self, PolicyError> {
         if label == "ruleset13" {
-            return fallback_slope
-                .map(|fallback_slope| Self::Ruleset13 { fallback_slope })
-                .ok_or(PolicyError::SlopeRequired("ruleset13"));
+            return Ok(Self::Ruleset13);
         }
         let kind = Self::COMPARATORS
             .into_iter()
@@ -97,10 +83,7 @@ impl PolicyKind {
                     .collect::<Vec<_>>()
                     .join(", "),
             })?;
-        match fallback_slope {
-            Some(_) => Err(PolicyError::SlopeUnused(kind.label())),
-            None => Ok(kind),
-        }
+        Ok(kind)
     }
 
     /// Builds a fresh policy for one run; policies keep per-run state and are never reused.
@@ -113,7 +96,9 @@ impl PolicyKind {
             Self::FixedMargin => {
                 Box::new(FixedMargin::new(calendar.fixed_margin, calendar.day_step)?)
             }
-            Self::Ruleset13 { fallback_slope } => Box::new(ProductionPolicy::new(fallback_slope)?),
+            Self::Ruleset13 => Box::new(ProductionPolicy::with_params(
+                togi_tuner::policy::Params::SPEC,
+            )),
         })
     }
 }
@@ -166,8 +151,6 @@ pub enum RunError {
     Clock(#[from] togi_sim::ArithmeticError),
     #[error("validate the night trial's placement")]
     Roles(#[from] togi_machine::InvalidRoles),
-    #[error("fallback slope {0} must be a finite per-count hazard multiplier above one")]
-    Slope(f64),
     #[error("the Ruleset 13 policy never settled: {0}")]
     Unsettled(&'static str),
     #[error("fold a journal event into the Ruleset 13 state")]

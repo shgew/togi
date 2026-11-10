@@ -260,7 +260,7 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
             out.push_str("permission: experimental hold + exact night qualification\n");
         }
     }
-    out.push_str("S: diagnostic, non-authorizing; finishing is not a safety certificate\n");
+    out.push_str("finishing is not a safety certificate\n");
     let profiles = &policy.profiles;
     line(
         out,
@@ -407,17 +407,6 @@ pub(super) fn sections(out: &mut String, policy: &ClimbProjection, at: Where<'_>
                     vector(&step.before),
                     vector(&step.after),
                     witnesses(&step.witnesses)
-                ),
-            );
-        }
-        if let Some(diagnostic) = &unit.diagnostic_s {
-            line(
-                out,
-                "  diagnostic S (non-authorizing): ",
-                &format!(
-                    "{} [#{}]",
-                    diagnostic.cap.offset.get(),
-                    diagnostic.cap.witness
                 ),
             );
         }

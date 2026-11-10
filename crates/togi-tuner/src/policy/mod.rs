@@ -36,7 +36,6 @@ mod plan;
 mod projection;
 mod qualify;
 mod reproduce;
-mod statistical;
 mod stock;
 pub mod successor;
 pub(crate) mod wire;
@@ -47,7 +46,7 @@ pub use climb_projection::{
     ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
     ClimbHoldProjection, ClimbPermissionMode, ClimbProfiles, ClimbProjection,
     ClimbProposalProjection, ClimbQualificationProjection, ClimbQualificationState,
-    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState,
 };
 pub use day_query::DayQuery;
 pub use decision::{Decision, PolicyPayload};
@@ -56,13 +55,11 @@ pub use mapping::MappingRewind;
 pub use night_query::{Action, Contents, EndReason, NightQuery, NotReady};
 pub use plan::{PlanError, TrialPlan};
 pub use projection::{
-    CapEvidence, CapProjection, CapReason, DayProjection, EventProjection, EvidenceProfile,
-    FirmwareValidity, HoldProjection, MappingProjection, NightProjection, Projection,
-    QualificationProgress, QualificationProjection, QualificationStage, ReproductionProjection,
-    SlopeCell, UnitProjection, VetoProjection, VetoSource,
+    DayProjection, EventProjection, EvidenceProfile, FirmwareValidity, HoldProjection,
+    MappingProjection, NightProjection, Projection, QualificationProgress, QualificationProjection,
+    QualificationStage, ReproductionProjection, UnitProjection, VetoProjection, VetoSource,
 };
 
-use crate::cap::{Beta, Rate};
 use crate::day::DayParams;
 use crate::night::Budgets;
 use books::{Days, Ledger, Machine, Nights, Trials};
@@ -71,10 +68,6 @@ use togi_journal::Seq;
 /// The thresholds the policy decides by, explicit so a simulator can vary them.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Params {
-    /// The slope projected with before any class has failures at two offsets.
-    pub fallback_slope: Beta,
-    /// λ*: the machine's incremental hazard budget.
-    pub machine_budget: Rate,
     /// The day hold.
     pub hold: DayParams,
     /// The night scheduler's soft shares of a night's elapsed observed time.
@@ -84,8 +77,6 @@ pub struct Params {
 impl Params {
     /// The specification's values.
     pub const SPEC: Self = Self {
-        fallback_slope: Beta::FALLBACK,
-        machine_budget: Rate::MACHINE_BUDGET,
         hold: DayParams::SPEC,
         budgets: Budgets {
             mapping: crate::night::MAPPING_SHARE_PCT,
@@ -120,29 +111,10 @@ pub struct State {
     caches: Caches,
 }
 
-/// A cap outcome with what it was derived from.
-type CapCache = std::collections::BTreeMap<
-    togi_machine::CcdId,
-    (statistical::CapKey, std::sync::Arc<statistical::CapOutcome>),
->;
-
-/// A cap's journal payload with the outcome, committed cap and edge it was built from.
-type PayloadCache = std::collections::BTreeMap<
-    togi_machine::CcdId,
-    (
-        std::sync::Arc<statistical::CapOutcome>,
-        Option<Seq>,
-        togi_journal::Edge,
-        std::sync::Arc<Option<togi_journal::CcdCap>>,
-    ),
->;
-
 /// The memoized derivations of one state.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Caches {
     mapping: cache::Cache<mapping::MapReplay>,
-    payloads: cache::Cache<PayloadCache>,
-    caps: cache::Cache<CapCache>,
     records: cache::Cache<qualify::RecordCache>,
     statuses: cache::Cache<qualify::StatusCache>,
     filler_failures: cache::Cache<day_events::FillerFailures>,

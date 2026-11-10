@@ -41,8 +41,8 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~  t wwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttt
 │  █ ···       the hard night ceiling C for this tuning unit, not statistical permission
 ~  t www       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  │ red ▄     the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at Wide and Medium
-~  g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  █ red ▄     the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at Wide and Medium
+~  t wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  │ amber ▄   a censored edge: nothing failed down to the mapping limit
 ~  g wwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  │ cyan      running now
@@ -81,8 +81,8 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~  g
 │  │ NIGHT       Until you end it, togi maps each unit's edge U, sweeps uncovered cells from U toward C, qualifies exact profiles, reproduces daily events and
 ~  g wwwww       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  │             runs controls. Idle time repeats exact-current-D qualification cells, never S-directed probes.
-~  g             tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │             runs controls. Idle time repeats exact-current-D qualification cells.
+~  g             ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  │
 ~  g
 │

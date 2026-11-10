@@ -6,8 +6,8 @@ night since 08:00, 0s elapsed: reproduction (task reproduction #0)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#8185] trial night-trial-1721 core 00 offset -5 R1 mprime SSE 4K-21K
-  90 s together reproduction task reproduction #0 night #8181
+in flight: [#7182] trial night-trial-1721 core 00 offset -5 R1 mprime SSE 4K-21K
+  90 s together reproduction task reproduction #0 night #7178
 
 UNIT   CORES                  D  C    D-C  HOLD h  STATE
 CCD 0  0,1,2,3,4,5,6,7        0  -45  45   14/50   finished
@@ -15,7 +15,7 @@ CCD 1  8,9,10,11,12,13,14,15  0  -45  45   14/50   held
 
 Day policy
 permission: experimental hold + exact night qualification
-S: diagnostic, non-authorizing; finishing is not a safety certificate
+finishing is not a safety certificate
 applied profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
   core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core
   13 0, core 14 0, core 15 0
@@ -28,33 +28,32 @@ proposed profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
 paused-saved profile: none
 allowance: 1 consumed / 2 limit; 1 remaining; 1 provisional; 0 reclassified
 event: boot calendar-boot-19: learning, CPU-suspect, provisional true,
-  reclassified false [#8135]
+  reclassified false [#7133]
 unit: CCD 0, phase coarse, parent none, inherited start 0
-  U: censored -50 [#5365 #5370 #5375 #5380 #5385 #5390 #5395 #5400 #5405 #5410
-  #5415 #5420 #5425 #5430 #5435 #5440 #5445 #5450 #5455 #5460 #5465 #5470 #5475
-  #5480 #5485 #5490 #5495 #5500 #5505 #5510 #5550 #5555 #5560 #5565 #5570 #5575
-  #5580 #5585 #5590 #5595 #5600 #5605 #5610 #5615 #5620 #5625 #5630 #5635 #5640
-  #5645 #5650 #5655 #5660 #5665 #5670 #5675 #5680 #5685 #5690 #5695 #5700 #5705
-  #5710 #5715]
+  U: censored -50 [#4766 #4770 #4774 #4778 #4782 #4786 #4790 #4794 #4798 #4802
+  #4806 #4810 #4814 #4818 #4822 #4826 #4830 #4834 #4838 #4842 #4846 #4850 #4854
+  #4858 #4862 #4866 #4870 #4874 #4878 #4882 #4921 #4925 #4929 #4933 #4937 #4941
+  #4945 #4949 #4953 #4957 #4961 #4965 #4969 #4973 #4977 #4981 #4985 #4989 #4993
+  #4997 #5001 #5005 #5009 #5013 #5017 #5021 #5025 #5029 #5033 #5037 #5041 #5045
+  #5049 #5053]
   state: finished: stopped: first backstep after boot calendar-boot-19,
   application ApplicationId(12); last clean 0
   finished at: 2026-01-13T02:00:00Z; core 0 0, core 1 0, core 2 0, core 3 0,
   core 4 0, core 5 0, core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11
-  0, core 12 0, core 13 0, core 14 0, core 15 0 [#5717 #8139 #8131]
+  0, core 12 0, core 13 0, core 14 0, core 15 0 [#5055 #7137 #7129]
   latest applied step: retreat: CPU-suspect boot calendar-boot-19 at 02:00; core
   0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5 -5, core 6 -5, core 7
   -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core 13 0, core 14 0,
   core 15 0 -> core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0, core
   6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core 13 0,
-  core 14 0, core 15 0 [#8145 #8146]
-  diagnostic S (non-authorizing): 0 [#8180]
+  core 14 0, core 15 0 [#7143 #7144]
 unit: CCD 1, phase coarse, parent none, inherited start 0
-  U: censored -50 [#6884 #6902 #6945 #6988 #7009 #7041 #7077 #7093 #7098 #7103
-  #7108 #7113 #7118 #7123 #7128 #7133 #7138 #7143 #7148 #7153 #7158 #7163 #7168
-  #7173 #7178 #7183 #7188 #7193 #7198 #7203 #7208 #7213 #7218 #7223 #7228 #7233
-  #7238 #7243 #7248 #7253 #7258 #7263 #7268 #7273 #7278 #7283 #7288 #7293 #7298
-  #7303 #7308 #7313 #7318 #7323 #7328 #7333 #7338 #7343 #7348 #7353 #7358 #7363
-  #7368 #7373]
+  U: censored -50 [#5998 #6013 #6048 #6083 #6102 #6133 #6168 #6183 #6187 #6191
+  #6195 #6199 #6203 #6207 #6211 #6215 #6219 #6223 #6227 #6231 #6235 #6239 #6243
+  #6247 #6251 #6255 #6259 #6263 #6267 #6271 #6275 #6279 #6283 #6287 #6291 #6295
+  #6299 #6303 #6307 #6311 #6315 #6319 #6323 #6327 #6331 #6335 #6339 #6343 #6347
+  #6351 #6355 #6359 #6363 #6367 #6371 #6375 #6379 #6383 #6387 #6391 #6395 #6399
+  #6403 #6407]
   state: held: hold 14/50 h; exact-profile qualification required; boot
   calendar-boot-19 unresolved
   next proposal: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
@@ -354,12 +353,11 @@ unit: CCD 1, phase coarse, parent none, inherited start 0
   cores 0-15
     outstanding: R9 ycruncher-bkt-sftv4-all-threads serial cpu 17 600s exact
   cores 0-15
-  diagnostic S (non-authorizing): 0 [#7925]
-current exact profile daily evidence: 110 h; 0 crashes [#1384 #1385 #1386 #1387
-  #1397 #1398 #1399 #1400 #2636 #2637 #2638 #2639 #2649 #2650 #2651 #2652 #3985
-  #3986 #3987 #3988 #3998 #3999 #4000 #4001 #4012 #4013 #4014 #4015 #5519 #5520
-  #5521 #5522 #5532 #5533 #5534 #5535 #6847 #6848 #6849 #6850 #6860 #6861 #6862
-  #6863 #8125 #8126 #8127 #8128 #8153 #8154 #8155 #8166 #8167 #8168 #8169]
+current exact profile daily evidence: 110 h; 0 crashes [#1221 #1222 #1223 #1224
+  #1234 #1235 #1236 #1237 #2433 #2434 #2435 #2436 #2446 #2447 #2448 #2449 #3656
+  #3657 #3658 #3659 #3669 #3670 #3671 #3672 #3683 #3684 #3685 #3686 #4890 #4891
+  #4892 #4893 #4903 #4904 #4905 #4906 #5961 #5962 #5963 #5964 #5974 #5975 #5976
+  #5977 #7123 #7124 #7125 #7126 #7151 #7152 #7153 #7164 #7165 #7166 #7167]
 experimental: 110 clean hours; at most 1 crash per 36.7 h (95%, fixed-rate
   model)
 firmware restoration: none

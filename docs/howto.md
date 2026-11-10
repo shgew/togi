@@ -356,7 +356,7 @@ A night's mapping and qualification are evidence, not proof of stability. Qualif
 
 That coverage does not include light work on many cores at once or both threads of many cores at once beyond the matrix's own classes. The idle trial is not proof of stability through real desktop idle, sleep and wake, or changing background activity. Trial offsets also do not exercise the early boot stages before togi applies a profile. A qualified profile can still crash in ordinary use.
 
-Keep BIOS Curve Optimizer at **0**; never copy a proposed day profile into firmware. [Ruleset 14](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) requires 50 clean exact-profile hours even at initial stock, exact next-profile qualification and an eligible cold boot for each bounded step toward C. Status/watch show D/C/U, hold and campaign allowance, not “remaining to S”; S is diagnostic only. Evidence reads `experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`. Keep backups: neither a completed hold nor a finished climb proves stability.
+Keep BIOS Curve Optimizer at **0**; never copy a proposed day profile into firmware. [Ruleset 14](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) requires 50 clean exact-profile hours even at initial stock, exact next-profile qualification and an eligible cold boot for each bounded step toward C. Status/watch show D/C/U, hold and campaign allowance; statistical S computation and display are retired. Evidence reads `experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`. Keep backups: neither a completed hold nor a finished climb proves stability.
 
 ### If the profile crashes in daily use
 

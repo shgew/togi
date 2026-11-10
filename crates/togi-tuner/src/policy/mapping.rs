@@ -1,5 +1,4 @@
 //! Mapping replay derives isolated edges and the next uncovered mapping step.
-//! Statistical limits and their commitments are computed by `statistical`.
 
 use super::State;
 use super::books::Trial;
@@ -7,14 +6,12 @@ use super::decision::{Decision, PolicyPayload};
 use super::ledger::{Sig, is_adequate};
 use super::night_query::NotReady;
 use super::plan::workloads_of;
-use super::statistical::CapOutcome;
 use crate::UnitId;
 use crate::night::{
     Cursor, EdgeU, IsolatedObservation, IsolatedResult, Layout, Location, MappingBoard,
     MappingTarget, Matrix, StepResult, mapping_cells,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::Arc;
 use togi_journal::Outcome;
 use togi_journal::{Edge, ExposureClass, Seq, Tested, UnitEdge};
 use togi_machine::{CcdId, ContentId, TargetOffset, WorkloadId};
@@ -46,7 +43,6 @@ pub(super) struct Mapped {
 pub(super) struct MappingPlan {
     pub(super) mapped: Mapped,
     pub(super) edges: BTreeMap<CcdId, EdgeU>,
-    pub(super) caps: BTreeMap<CcdId, Arc<CapOutcome>>,
     pub(super) target: Option<MappingTarget>,
 }
 
@@ -486,15 +482,11 @@ impl State {
         Ok(wanted.iter().all(|sig| covered.contains_key(sig)))
     }
 
-    /// The mapping board, each CCD's edge and diagnostic cap, and the next uncovered mapping step.
+    /// The mapping board, each CCD's edge and the next uncovered mapping step.
     /// Covered steps finish as passed without spending night time; the sweep ends at C, never S.
-    pub(super) fn mapping_plan(
-        &self,
-        layout: &Layout<'_>,
-        contents: &BTreeMap<WorkloadId, ContentId>,
-    ) -> Result<MappingPlan, NotReady> {
+    pub(super) fn mapping_plan(&self, layout: &Layout<'_>) -> Result<MappingPlan, NotReady> {
         let mut mapped = self.replay_mapping(layout)?;
-        let mut plan = self.settle(layout, contents, &mapped)?;
+        let mut plan = Self::settle(&mapped);
         for _ in 0..MAX_ALIGN * 4 {
             let Some(target) = plan.target else {
                 break;
@@ -503,32 +495,23 @@ impl State {
                 break;
             }
             mapped.board.finish_step(target.unit, StepResult::Passed);
-            plan = self.settle(layout, contents, &mapped)?;
+            plan = Self::settle(&mapped);
         }
         Ok(MappingPlan { mapped, ..plan })
     }
 
-    fn settle(
-        &self,
-        layout: &Layout<'_>,
-        contents: &BTreeMap<WorkloadId, ContentId>,
-        mapped: &Mapped,
-    ) -> Result<MappingPlan, NotReady> {
+    fn settle(mapped: &Mapped) -> MappingPlan {
         let edges = mapped.edges();
         let limits: BTreeMap<UnitId, TargetOffset> = edges
             .iter()
             .filter_map(|(&ccd, edge)| edge.ceiling().map(|c| (UnitId::Ccd(ccd), c)))
             .collect();
         let target = mapped.board.next_target(&limits);
-        // An unfinished task retains its frozen matrix after an interrupted attempt.
-        let ordinal = target.map_or(mapped.next_ordinal, |target| mapped.ordinal_for(&target));
-        let caps = self.caps_of(layout, contents, &edges, ordinal)?;
-        Ok(MappingPlan {
+        MappingPlan {
             mapped: mapped.clone(),
             edges,
-            caps,
             target,
-        })
+        }
     }
 
     /// The journal's edge for what the board derived.

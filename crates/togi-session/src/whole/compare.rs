@@ -24,9 +24,8 @@ use togi_journal::{
     StepCauses, StepKind, TrialId, UnavailableBackend,
 };
 use togi_tuner::policy::{
-    CapProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
-    NightProjection, Projection, QualificationProjection, ReproductionProjection, UnitProjection,
-    VetoProjection,
+    DayProjection, EventProjection, FirmwareValidity, HoldProjection, NightProjection, Projection,
+    QualificationProjection, ReproductionProjection, UnitProjection, VetoProjection,
 };
 
 /// How identities are named.
@@ -857,8 +856,6 @@ impl<'events> Names<'events> {
             unit,
             cores,
             edge,
-            cap,
-            evidence,
             day,
             remaining,
         } = unit;
@@ -866,26 +863,7 @@ impl<'events> Names<'events> {
             Some(edge) => format!("Some({})", self.edge(edge)),
             None => "None".to_owned(),
         };
-        let cap = match cap {
-            Some(cap) => {
-                let CapProjection {
-                    offset,
-                    binding,
-                    slope,
-                    adequate,
-                    uncovered,
-                    witness,
-                } = cap;
-                format!(
-                    "Some({offset:?} {binding:?} {slope:?} {adequate:?} {uncovered:?} {})",
-                    self.seq(*witness)
-                )
-            }
-            None => "None".to_owned(),
-        };
-        format!(
-            "unit {unit:?} cores={cores:?} edge={edge} cap={cap} evidence={evidence:?} day={day:?} remaining={remaining:?}"
-        )
+        format!("unit {unit:?} cores={cores:?} edge={edge} day={day:?} remaining={remaining:?}")
     }
 
     fn day_projection(&mut self, day: &DayProjection) -> String {

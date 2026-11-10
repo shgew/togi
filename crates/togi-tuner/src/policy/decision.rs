@@ -1,8 +1,8 @@
 //! What the policy decides: a journal payload and the events it follows from.
 
 use togi_journal::{
-    CcdCap, CcdEdge, DayEvent, DayHold, DayInterval, DayStep, DayVeto, DeadEnd, ExposureObserved,
-    Failure, NightPlan, NightQualification, NightReproduction, Payload, Seq, TunerWarning,
+    CcdEdge, DayEvent, DayHold, DayInterval, DayStep, DayVeto, DeadEnd, ExposureObserved, Failure,
+    NightPlan, NightQualification, NightReproduction, Payload, Seq, TunerWarning,
 };
 
 /// A commitment the policy appends to the journal.
@@ -12,7 +12,6 @@ pub enum PolicyPayload {
     ExposureObserved(ExposureObserved),
     TunerWarning(TunerWarning),
     CcdEdge(CcdEdge),
-    CcdCap(CcdCap),
     UnitEdge(togi_journal::UnitEdge),
     UnitMapping(togi_journal::UnitMapping),
     ClimbDecision(togi_journal::ClimbDecision),
@@ -40,7 +39,6 @@ impl From<PolicyPayload> for Payload {
             PolicyPayload::ExposureObserved(p) => Self::ExposureObserved(p),
             PolicyPayload::TunerWarning(p) => Self::TunerWarning(p),
             PolicyPayload::CcdEdge(p) => Self::CcdEdge(p),
-            PolicyPayload::CcdCap(p) => Self::CcdCap(p),
             PolicyPayload::UnitEdge(p) => Self::UnitEdge(p),
             PolicyPayload::UnitMapping(p) => Self::UnitMapping(p),
             PolicyPayload::ClimbDecision(p) => Self::ClimbDecision(p),

@@ -474,10 +474,13 @@ fn observed_edges_at_the_stock_ceiling_leave_no_nonzero_work_and_name_it() {
                 && matches!(change.new, togi_journal::Edge::Observed { .. })
                 && change.ceiling == Some(togi_machine::TargetOffset::ZERO)
                 && change.margin == 5)));
-        assert!(journal.events.iter().any(|event| matches!(&event.payload,
-            Payload::CcdCap(cap) if cap.ccd.get() == ccd
-                && matches!(cap.edge, togi_journal::Edge::Observed { .. }))));
     }
+    assert!(
+        journal
+            .events
+            .iter()
+            .all(|event| !matches!(event.payload, Payload::CcdCap(_)))
+    );
     // The end is not an excluded backend's, and asked again it stands without another commitment.
     let before = journal.events.len();
     assert_eq!(

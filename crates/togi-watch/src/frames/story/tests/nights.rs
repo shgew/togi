@@ -319,7 +319,7 @@ fn a_filler_repeat_names_the_profile_the_trial_runs_not_the_open_qualification()
 }
 
 #[test]
-fn historical_mapping_filler_never_claims_s_unlocks_permission() {
+fn historical_mapping_filler_names_only_the_night_edge_and_ceiling() {
     let mut fx = Fx::new();
     filler_night(&mut fx);
     let trial = filler(
@@ -334,7 +334,7 @@ fn historical_mapping_filler_never_claims_s_unlocks_permission() {
     assert!(said.lines[0].starts_with("Mapping CCD 1 at -16"));
     assert!(said.lines[1].contains("sweeps uncovered cells from U toward hard ceiling C"));
     assert!(!said.lines[0].contains("cap"));
-    assert!(said.lines[1].contains("non-authorizing diagnostic"));
+    assert!(!said.lines[1].contains("diagnostic"));
     let scene = fx.scene(ts(1001));
     assert_eq!(
         plain(&operation(&scene, &trial), Colours::None),

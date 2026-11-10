@@ -21,7 +21,6 @@ use super::plan::workloads_of;
 use crate::EVIDENCE_EPOCH;
 use crate::Secs;
 use crate::Topology;
-use crate::cap;
 use crate::night::{
     Cell, Conclusion, Credit, Launch, PackageLoad, PlacementValidity, Purpose, Roles,
     SUSTAINED_DURATION, Workloads, adequately_exposed,
@@ -216,17 +215,6 @@ fn package_load(loaded: CoreSet, topology: &Topology) -> Option<PackageLoad> {
 /// Whole wall seconds from `from` to `to`; a clock that ran backwards counts as none.
 pub(super) fn wall_secs(from: Timestamp, to: Timestamp) -> u64 {
     (to.as_second() - from.as_second()).max(0).unsigned_abs()
-}
-
-/// The cap purpose of a trial activity; the old per-core activities carry no Ruleset 13 evidence.
-pub(super) const fn cap_purpose(activity: Activity) -> Option<cap::Purpose> {
-    match activity {
-        Activity::Mapping => Some(cap::Purpose::Mapping),
-        Activity::Qualification => Some(cap::Purpose::Qualification),
-        Activity::Reproduction => Some(cap::Purpose::Reproduction),
-        Activity::Control => Some(cap::Purpose::Control),
-        Activity::Search | Activity::Checking | Activity::Hunt | Activity::Deepening => None,
-    }
 }
 
 /// The physical core an exposure class tests, when it tests one.

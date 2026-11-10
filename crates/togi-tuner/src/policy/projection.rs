@@ -1,15 +1,15 @@
 //! What status and watch show of the policy, and the `tuner` key of `state.json`: the committed edges and
-//! caps, the applied profile and its hold, the events and vetoes, the qualifications and the latest night.
+//! the applied profile and its hold, the events and vetoes, the qualifications and the latest night.
 
 use crate::{UnitId, UnitProfile};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use togi_journal::{
-    Activity, Binding, Budget, Classification, DayEventId, DayStep, Edge, ExposureClass, NightId,
+    Activity, Budget, Classification, DayEventId, DayStep, Edge, ExposureClass, NightId,
     PlannedTask, QualificationPurpose, QualificationState, ReproductionState, Resolution, Seq,
-    Slope, TaskId, TaskStatus, UnavailableBackend, UncoveredClass, VetoState,
+    TaskId, TaskStatus, UnavailableBackend, VetoState,
 };
-use togi_machine::{BootId, CcdId, CoreSet, TargetOffset};
+use togi_machine::{BootId, CoreSet, TargetOffset};
 
 use super::State;
 use super::ledger::{Sig, saturating_u32};
@@ -17,83 +17,16 @@ use super::qualify::QualStatus;
 use crate::day::{Freeze, QuestionState};
 use crate::night::Cursor;
 
-/// The cap owner's reason, without the journal's lossy `baseline` label.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CapReason {
-    NoAdequateClass,
-    UnknownEdge,
-    NoJustifiedDecay,
-    Edge { rate_limited: TargetOffset },
-    Rate { class: ExposureClass },
-    Retained { recomputed: TargetOffset },
-}
-
-impl CapReason {
-    /// A concise label shared by evidence readers, never a safety verdict.
-    #[must_use]
-    pub const fn label(&self) -> &'static str {
-        match self {
-            Self::NoAdequateClass => "no adequate mapping class",
-            Self::UnknownEdge => "unknown edge",
-            Self::NoJustifiedDecay => "no justified decay",
-            Self::Edge { .. } => "edge margin",
-            Self::Rate { .. } => "mapping rate bound",
-            Self::Retained { .. } => "retained shallower cap",
-        }
-    }
-}
-
-/// A current-context input retained by the slope owner, including non-mapping purposes.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct SlopeCell {
-    pub class: ExposureClass,
-    pub offset: TargetOffset,
-    pub purpose: crate::cap::Purpose,
-    pub failures: u32,
-    pub hours: f64,
-}
-
-/// Current read-only calculation, distinct from the last committed S.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CapEvidence {
-    pub offset: TargetOffset,
-    pub reason: CapReason,
-    pub slope: Slope,
-    pub budget: crate::cap::Rate,
-    pub cells: Vec<togi_journal::RateCell>,
-    /// Each rate cell projected at `offset`, in the same order; absent without justified decay.
-    pub projected: Vec<togi_journal::RateBound>,
-    pub uncovered: Vec<UncoveredClass>,
-    /// Observations with no hours and no failures contribute nothing; interrupted empty cells are omitted.
-    pub slope_inputs: Vec<SlopeCell>,
-}
-/// A committed cap S and what produced it.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CapProjection {
-    pub offset: TargetOffset,
-    pub binding: Binding,
-    pub slope: Slope,
-    pub adequate: Vec<ExposureClass>,
-    pub uncovered: Vec<UncoveredClass>,
-    /// The `ccd.cap` event.
-    pub witness: Seq,
-}
-
-/// One tuning group's committed edge U, cap S, applied day offset D and their distance.
+/// One tuning group's committed edge U, applied day offset D and ceiling distance.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct UnitProjection {
     pub unit: UnitId,
     pub cores: CoreSet,
     /// `None` until a `ccd.edge` was committed; absence is not offset zero.
     pub edge: Option<Edge>,
-    pub cap: Option<CapProjection>,
-    /// Recomputed by the existing cap owner; absence means the evidence context is not queryable.
-    #[serde(default)]
-    pub evidence: Option<CapEvidence>,
     /// D: CO 0 before any `day.applied`.
     pub day: TargetOffset,
-    /// Counts from D down to C; unknown U gives no distance. Statistical S is diagnostic only.
+    /// Counts from D down to C; unknown U gives no distance.
     pub remaining: Option<u32>,
 }
 
@@ -423,10 +356,6 @@ impl State {
     }
 
     fn unit_projections(&self, applied: Option<&UnitProfile>) -> Vec<UnitProjection> {
-        let known = self.known_contents(None);
-        let plan = self
-            .with_layout(|layout| self.mapping_plan(layout, &known))
-            .ok();
         let Some(topology) = self.machine.topology.as_ref() else {
             return Vec::new();
         };
@@ -437,13 +366,9 @@ impl State {
                 let day = applied
                     .and_then(|profile| profile.get(UnitId::Ccd(ccd)))
                     .unwrap_or(TargetOffset::ZERO);
-                let cap = self.nights.caps.get(&ccd);
                 UnitProjection {
                     unit: UnitId::Ccd(ccd),
                     cores,
-                    evidence: plan
-                        .as_ref()
-                        .and_then(|plan| self.cap_evidence(ccd, plan.caps.get(&ccd)?).ok()),
                     edge: self
                         .nights
                         .edges
@@ -461,14 +386,6 @@ impl State {
                                     .unsigned_abs(),
                             )
                         }),
-                    cap: cap.map(|cap| CapProjection {
-                        offset: cap.payload.new,
-                        binding: cap.payload.binding.clone(),
-                        slope: cap.payload.slope,
-                        adequate: cap.payload.adequate.clone(),
-                        uncovered: cap.payload.uncovered.clone(),
-                        witness: cap.seq,
-                    }),
                     day,
                 }
             })
@@ -528,9 +445,8 @@ impl State {
     fn night_projection(&self) -> Option<NightProjection> {
         let (night, book) = self.nights.plans.iter().next_back()?;
         let plan = &book.latest.payload;
-        let known = self.known_contents(None);
         let mapping = self
-            .with_layout(|layout| self.mapping_plan(layout, &known))
+            .with_layout(|layout| self.mapping_plan(layout))
             .map(|plan| {
                 self.ccds()
                     .into_iter()
@@ -657,99 +573,5 @@ impl State {
             | QualificationState::Failed { witnesses, .. } => witnesses,
         };
         self.record_seconds(record, witnesses)
-    }
-
-    fn cap_evidence(
-        &self,
-        ccd: CcdId,
-        outcome: &super::statistical::CapOutcome,
-    ) -> Result<CapEvidence, super::NotReady> {
-        use super::statistical::{rate_bound, usize_of};
-        use crate::cap;
-        let cap = &outcome.cap;
-        let class = |id| outcome.classes[usize_of(id)].clone();
-        let reason = match cap.binding {
-            cap::Binding::NoAdequateClass => CapReason::NoAdequateClass,
-            cap::Binding::UnknownEdge => CapReason::UnknownEdge,
-            cap::Binding::NoJustifiedDecay => CapReason::NoJustifiedDecay,
-            cap::Binding::Edge { rate_limited } => CapReason::Edge { rate_limited },
-            cap::Binding::Rate { class: id } => CapReason::Rate { class: class(id) },
-            cap::Binding::Retained { recomputed } => CapReason::Retained { recomputed },
-        };
-        let cells = cap
-            .witnesses
-            .iter()
-            .map(|witness| {
-                Ok(togi_journal::RateCell {
-                    class: class(witness.class),
-                    offset: witness.offset,
-                    eligible_s: outcome
-                        .mapping_secs
-                        .get(&(witness.class, witness.offset))
-                        .copied()
-                        .unwrap_or(0),
-                    failures: witness.failures,
-                    bound: rate_bound(witness.bound)?,
-                })
-            })
-            .collect::<Result<Vec<_>, super::NotReady>>()?;
-        let projected = cap
-            .slope
-            .beta()
-            .map(|beta| {
-                cap.witnesses
-                    .iter()
-                    .map(|witness| rate_bound(cap::project(witness, beta, cap.offset)))
-                    .collect::<Result<Vec<_>, super::NotReady>>()
-            })
-            .transpose()?
-            .unwrap_or_default();
-        let slope = super::statistical::journal_slope(cap.slope, None)?;
-        let uncovered = cap
-            .uncovered
-            .iter()
-            .map(|gap| UncoveredClass {
-                class: class(gap.class),
-                reason: match gap.reason {
-                    cap::UncoveredReason::NoObservations => {
-                        togi_journal::UncoveredReason::NoObservations
-                    }
-                    cap::UncoveredReason::NonMappingOnly => {
-                        togi_journal::UncoveredReason::NonMappingOnly
-                    }
-                    cap::UncoveredReason::MappingInadequate => {
-                        togi_journal::UncoveredReason::MappingInadequate
-                    }
-                },
-            })
-            .collect();
-        let slope_inputs = self
-            .current_groups()
-            .filter_map(|group| group.cap.get(&ccd))
-            .flatten()
-            .flat_map(|class| {
-                class
-                    .cells
-                    .iter()
-                    .filter(|cell| cell.hours > 0.0 || cell.failures > 0)
-                    .map(|cell| SlopeCell {
-                        class: class.class.clone(),
-                        offset: cell.offset,
-                        purpose: cell.purpose,
-                        failures: cell.failures,
-                        hours: cell.hours,
-                    })
-            })
-            .collect();
-        Ok(CapEvidence {
-            offset: cap.offset,
-            reason,
-            slope,
-            budget: outcome.budget,
-            cells,
-            projected,
-            uncovered,
-            slope_inputs,
-        })
     }
 }

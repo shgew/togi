@@ -13,7 +13,7 @@ CCD 1  8,9,10,11,12,13,14,15  0  unknown  -    0/50    held
 
 Day policy
 permission: experimental hold + exact night qualification
-S: diagnostic, non-authorizing; finishing is not a safety certificate
+finishing is not a safety certificate
 applied profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
   core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core
   13 0, core 14 0, core 15 0
@@ -63,15 +63,12 @@ Last night #5: 0 recorded trial ends. mapping: 3600s observed task time.
   coverage gaps.
 
 Evidence
-Ruleset 14. Permission: experimental hold + exact night qualification. S is a
-  non-authorizing diagnostic: isolated mapping classes supply its rate coverage;
-  qualification, reproduction and controls can inform slope only. Coverage gaps
-  remain unknown.
+Ruleset 14. Permission: experimental hold + exact night qualification. Coverage
+  gaps remain unknown.
 The machine incremental hazard goal is 1 crash per 3,000 applied hours. Current
   exact-profile daily evidence alone supports its fixed-rate Poisson claim;
-  qualification, stock and previous-profile hours do not. Log-linear S
-  projections are modeling assumptions, not demonstrated rare-event guarantees.
-  CO 0 is a fallback, not proof that stock meets the goal.
+  qualification, stock and previous-profile hours do not. CO 0 is a fallback,
+  not proof that stock meets the goal.
 current exact profile daily evidence: 0 h; 0 crashes []
 experimental: rate bound unavailable (95%, fixed-rate model)
 Exact baseline stock profile: CCD 0 0, CCD 1 0
@@ -81,10 +78,6 @@ stock (CO 0): 0.0h observed, 0 crashes
 0 unknown intervals across recorded day intervals; downtime and uncheckpointed
   crash tails are not hours. Totals retain live/imported provenance, not a
   bound.
-
-Diagnostic cap calculation witnesses (S never authorizes or retreats D)
-CCD 0: current evidence context unavailable; no inferred rate or eligible hours
-CCD 1: current evidence context unavailable; no inferred rate or eligible hours
 
 Qualification exposure
 none recorded

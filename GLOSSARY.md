@@ -135,10 +135,6 @@ The compatibility version of trial outcomes: workload content, the backend confi
 A tuning unit's applied offset on normal boots; 0 before its first step ([Clean hold and steps](docs/spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step)).
 _Avoid_: resident offset
 
-**Cap (S)**:
-A non-authorizing statistical diagnostic projection of isolated night evidence; it neither permits promotion nor forces retreat in Ruleset 14.
-_Avoid_: limit
-
 **Edge (U)**:
 A tuning unit's isolated night edge: *unknown*, *observed* at its shallowest failing offset, or *censored* at the write limit when nothing failed ([Night edge and hard ceiling](docs/spec/tuner-ruleset14.md#2-night-edge-and-hard-ceiling)).
 _Avoid_: failure offset
@@ -152,11 +148,8 @@ A CCD in the coarse phase or a physical core in later refinement; the identity t
 **Machine allowance**:
 The campaign's lifetime ledger of two unique CPU-suspect learning events, shared across phases and retained through reclassification and transitions.
 
-**Slope**:
-How fast a class's failure rate grows with depth: a *fallback* until enough failures are observed, then *measured* from them ([Measured slope](docs/spec/tuner.md#measured-slope)).
-
 **Coverage**:
-A class is *covered* for the cap when mapping adequately exposed it at the CCD; any other class is *uncovered* for the cap, which never means safe ([Adequate exposure](docs/spec/tuner.md#adequate-exposure)).
+A qualification cell's adequately exposed workload class; a missing or partial cell remains outstanding, never assumed safe ([Coverage matrix](docs/spec/workloads.md#coverage-matrix)).
 
 **Hold**:
 Clean daily observation of the current exact applied profile, including the initial stock profile; fifty hours earn one bounded step subject to exact qualification and the other permission prerequisites.

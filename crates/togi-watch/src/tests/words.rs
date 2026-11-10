@@ -65,6 +65,7 @@ const SILENT: &[EventKind] = &[
 /// The kinds the log leaves out: the SMU dance and the preflight checks.
 const UNLISTED: &[EventKind] = &[
     EventKind::PreflightCheck,
+    EventKind::CcdCap,
     EventKind::SmuIntent,
     EventKind::SmuWrite,
     EventKind::SmuReadback,
@@ -96,7 +97,6 @@ const HISTORICAL: &[EventKind] = &[
 /// The Ruleset 13 kinds with a history line of their own, with the tag their events carry.
 const RULESET13: &[(EventKind, Tag)] = &[
     (EventKind::CcdEdge, Tag::Edge),
-    (EventKind::CcdCap, Tag::Cap),
     (EventKind::NightPlan, Tag::Night),
     (EventKind::NightQualification, Tag::Qualify),
     (EventKind::NightReproduction, Tag::Repro),
@@ -409,23 +409,24 @@ fn edges_read_as_the_dashboard_says_them() {
     assert_eq!(edge_words(&observed_edge(-23)), "fails at -23");
 }
 
-#[test_case(Binding::Rate { class: class(Regime::R2) }, Slope::Fallback { beta: Finite::new(0.2).unwrap() }, "CCD0 S 0 → -15 · diagnostic only, not permission · rate of R2 heavy vector · fallback slope"; "rate and fallback")]
+#[test_case(Binding::Rate { class: class(Regime::R2) }, Slope::Fallback { beta: Finite::new(0.2).unwrap() }; "rate and fallback")]
 #[test_case(
     Binding::EdgeMargin {},
-    Slope::Measured { lower: togi_journal::LowerEndpoint::Unbounded {}, historical_min: None },
-    "CCD0 S 0 → -15 · diagnostic only, not permission · edge margin · measured slope";
+    Slope::Measured { lower: togi_journal::LowerEndpoint::Unbounded {}, historical_min: None };
     "edge margin and measured"
 )]
-#[test_case(Binding::Baseline {}, Slope::Fallback { beta: Finite::new(0.2).unwrap() }, "CCD0 S 0 → -15 · diagnostic only, not permission · baseline diagnostic · fallback slope"; "baseline")]
-fn a_statistical_diagnostic_names_its_binding_without_authorizing_d(
+#[test_case(Binding::Baseline {}, Slope::Fallback { beta: Finite::new(0.2).unwrap() }; "baseline")]
+fn historical_statistical_caps_are_decodable_but_have_no_screen_words(
     binding: Binding,
     slope: Slope,
-    text: &str,
 ) {
-    assert_eq!(
-        said(&cap_event(binding, slope)),
-        (Tag::Cap, Tone::Plain, text.to_owned())
-    );
+    let event = Script::three().event(cap_event(binding, slope), &[]);
+    let encoded = event.encode().unwrap();
+    let decoded = togi_journal::Event::decode(&encoded).unwrap();
+    assert_eq!(decoded.payload, event.payload);
+    let table = words(decoded.kind());
+    assert!(matches!(table.history, History::Silent));
+    assert!(!table.listed);
 }
 
 #[test_case(None, "night opened · 2 tasks"; "the opening plan")]
@@ -758,7 +759,11 @@ fn the_ruleset13_kinds_all_have_a_line_or_are_named_silent() {
     ];
     for kind in ruleset13 {
         let spoken = RULESET13.iter().any(|&(spoken, _)| spoken == kind);
-        assert_eq!(spoken, !SILENT.contains(&kind), "{kind}");
+        assert_eq!(
+            spoken,
+            !SILENT.contains(&kind) && !UNLISTED.contains(&kind),
+            "{kind}"
+        );
     }
 }
 

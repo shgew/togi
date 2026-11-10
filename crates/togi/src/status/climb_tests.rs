@@ -8,10 +8,10 @@ use togi_journal::{
 use togi_machine::{BiosContext, CcdId, CoreId, ObservedOffset, TargetOffset};
 use togi_render::{OutputFacts, Renderer, Style};
 use togi_tuner::{
-    CapProjection, ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection,
-    ClimbGoalSupport, ClimbHoldProjection, ClimbProfiles, ClimbProjection, ClimbProposalProjection,
+    ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
+    ClimbHoldProjection, ClimbProfiles, ClimbProjection, ClimbProposalProjection,
     ClimbQualificationProjection, ClimbQualificationState, ClimbUnitProjection, ClimbUnitState,
-    DiagnosticStatisticalProjection, Phase, UnitId,
+    Phase, UnitId,
 };
 
 use super::policy::Where;
@@ -69,7 +69,11 @@ fn fixture() -> ClimbProjection {
                 offset: offset(-30),
                 witness: seq(4),
             },
-            ceiling: Some(offset(-25)),
+            ceiling: togi_tuner::night::EdgeU::Observed {
+                offset: offset(-30),
+                witness: seq(4),
+            }
+            .ceiling(),
             remaining: Some(20),
             hold: ClimbHoldProjection {
                 credited_s: 180_000,
@@ -79,18 +83,6 @@ fn fixture() -> ClimbProjection {
             next: None,
             state: ClimbUnitState::Climbing,
             latest_step: None,
-            diagnostic_s: Some(DiagnosticStatisticalProjection {
-                cap: CapProjection {
-                    offset: offset(0),
-                    binding: togi_journal::Binding::Baseline {},
-                    slope: togi_journal::Slope::Fallback {
-                        beta: togi_journal::Finite::new(1.0).unwrap(),
-                    },
-                    adequate: vec![],
-                    uncovered: vec![],
-                    witness: seq(3),
-                },
-            }),
         }],
         campaign: Some(ClimbCampaignProjection {
             campaign: CampaignId(Provenance {
@@ -131,7 +123,7 @@ fn fixture() -> ClimbProjection {
 enum Case {
     Provisional,
     Exhausted,
-    ZeroS,
+    QualifiedProposal,
     Blocked,
     Censored,
     Finished,
@@ -165,7 +157,7 @@ fn shown(policy: &ClimbProjection, color: bool) -> String {
 fn case_fixture(case: Case) -> ClimbProjection {
     let mut policy = fixture();
     match case {
-        Case::ZeroS => {
+        Case::QualifiedProposal => {
             policy.profiles.proposed = Some(vector(&[-10]));
             policy.units[0].next = Some(ClimbProposalProjection {
                 profile: vector(&[-10]),
@@ -251,7 +243,7 @@ fn case_fixture(case: Case) -> ClimbProjection {
                 limit: offset(-50),
                 witnesses: vec![seq(4)],
             };
-            policy.units[0].ceiling = Some(offset(-45));
+            policy.units[0].ceiling = togi_tuner::night::EdgeU::Censored.ceiling();
             policy.units[0].remaining = Some(40);
         }
         Case::Finished => {
@@ -277,8 +269,8 @@ fn case_fixture(case: Case) -> ClimbProjection {
 #[test_case(Case::Provisional, include_str!("climb-provisional.txt"), true; "provisional_color")]
 #[test_case(Case::Exhausted, include_str!("climb-exhausted.txt"), false; "exhausted_plain")]
 #[test_case(Case::Exhausted, include_str!("climb-exhausted.txt"), true; "exhausted_color")]
-#[test_case(Case::ZeroS, include_str!("climb-zero-s.txt"), false; "zero_s_permission_plain")]
-#[test_case(Case::ZeroS, include_str!("climb-zero-s.txt"), true; "zero_s_permission_color")]
+#[test_case(Case::QualifiedProposal, include_str!("climb-qualified-proposal.txt"), false; "qualified_proposal_plain")]
+#[test_case(Case::QualifiedProposal, include_str!("climb-qualified-proposal.txt"), true; "qualified_proposal_color")]
 #[test_case(Case::Blocked, include_str!("climb-blocked.txt"), false; "blocked_qualification_plain")]
 #[test_case(Case::Blocked, include_str!("climb-blocked.txt"), true; "blocked_qualification_color")]
 #[test_case(Case::Censored, include_str!("climb-censored.txt"), false; "censored_plain")]
