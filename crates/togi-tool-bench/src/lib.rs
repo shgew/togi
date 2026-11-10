@@ -18,7 +18,7 @@
 //! plain text reports, and one JSON file per cached run.
 //!
 //! Some modes do not measure the suite. [`same`] proves two trees decide the same on every simulated session, or
-//! only the suite's smoke sessions, by comparing their journals. [`research`] dispatches the steps of a bounded research campaign under its launch manifest.
+//! only the suite's smoke sessions, by comparing their journals.
 //!
 //! ```
 //! use togi_tool_bench::{Selection, Suite};
@@ -38,19 +38,12 @@ extern crate self as togi_tool_bench;
 
 pub mod cache;
 pub mod compare;
-pub mod day_night;
-pub mod day_night_gate;
-pub mod day_night_report;
-pub mod day_night_successor;
-#[cfg(test)]
-mod day_night_tests;
 mod error;
 mod git;
 mod metrics;
 mod pool;
 mod process;
 mod record;
-pub mod research;
 mod run;
 pub mod same;
 pub mod sanity;

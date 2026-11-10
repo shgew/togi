@@ -209,30 +209,6 @@ sql dir="/var/lib/togi" *args: _dev-shell
 bench *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- "$@"
 
-# Run frozen Ruleset 13 unchanged, or explicit successor profiles with per-criterion tables; combine every slope's JSONL with repeated --score-from for a registered read
-[group('run')]
-bench-day-night *args: _dev-shell
-    #!/usr/bin/env bash
-    set -euo pipefail
-    registration=tools/bench/day-night.json
-    next_registration=false
-    for arg in "$@"; do
-        if $next_registration; then registration=$arg; next_registration=false; continue; fi
-        case "$arg" in
-            --registration) next_registration=true ;;
-            --registration=*) registration=${arg#--registration=} ;;
-        esac
-    done
-    # Read JSON with the development shell's parser, not filename or flag heuristics.
-    identity=$(TOGI_BENCH_REGISTRATION="$registration" nu --no-config-file -c 'open --raw $env.TOGI_BENCH_REGISTRATION | from json | get id') || identity=
-    if [[ -n "$identity" && "$identity" != ruleset-13-day-night ]]; then
-        SECONDS=0
-        cargo build --release --locked -p togi-tool-bench
-        compilation_seconds=$SECONDS
-        exec cargo run --release --locked -p togi-tool-bench -- day-night "$@" --compilation-seconds "$compilation_seconds"
-    fi
-    exec cargo run --release --locked -p togi-tool-bench -- day-night "$@"
-
 # Audit the current and archived journals of state directories; `just bench` audits its own runs (`just audit COPY-OF-STATE-DIR`)
 [group('run')]
 audit *args: _dev-shell
@@ -277,11 +253,6 @@ fit-artifact out: _dev-shell
 [group('run')]
 forward-compare candidate reference *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --compare "$@"
-
-# Dispatch one step of a research campaign under its launch manifest, never the campaign itself (`just research 427 start --manifest FILE`; see docs/benchmarking.md#research-campaigns)
-[group('run')]
-research issue *args: _dev-shell
-    cargo run --release --locked -p togi-tool-bench -- research "$@"
 
 # Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]

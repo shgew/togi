@@ -12,8 +12,6 @@ use signal_hook::iterator::Signals;
 use togi_machine::error_chain;
 use togi_tool_bench::{Fleet, Options, Selection, execute, inspect, sanity};
 
-mod day_night_cli;
-mod research_cli;
 mod same_cli;
 
 const USAGE: u8 = 2;
@@ -38,10 +36,6 @@ enum Command {
     Sanity(SanityArgs),
     /// Prove two trees decide the same on every simulated session, or only the suite's smoke sessions.
     Same(same_cli::SameArgs),
-    /// Dispatch one step of a bounded research campaign under its launch manifest.
-    Research(research_cli::ResearchArgs),
-    /// Run the preregistered day/night comparators, without scoring the future real policy.
-    DayNight(day_night_cli::DayNightArgs),
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -111,8 +105,6 @@ fn main() -> ExitCode {
             None => bench(cli.run),
             Some(Command::Sanity(args)) => sanity_check(&args),
             Some(Command::Same(args)) => same_cli::run(args),
-            Some(Command::Research(args)) => research_cli::run(args),
-            Some(Command::DayNight(args)) => day_night_cli::run(args),
         },
         Err(error) => {
             if error.use_stderr() {
@@ -258,4 +250,28 @@ fn cancel_on_signals(fleet: &Arc<Fleet>) -> io::Result<()> {
             }
         })
         .map(drop)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::{CommandFactory as _, Parser as _};
+    use test_case::test_case;
+
+    #[test_case("day-night"; "day night gate")]
+    #[test_case("research"; "campaign dispatcher")]
+    fn retired_commands_are_refused(command: &str) {
+        let error = Cli::try_parse_from(["togi-tool-bench", command]).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::InvalidSubcommand);
+    }
+
+    #[test]
+    fn help_lists_only_retained_commands() {
+        let mut command = Cli::command();
+        let help = command.render_long_help().to_string();
+        assert!(help.contains("sanity"));
+        assert!(help.contains("same"));
+        assert!(!help.contains("day-night"));
+        assert!(!help.contains("research"));
+    }
 }
