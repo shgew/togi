@@ -229,11 +229,17 @@ impl State {
                 }
             }
             Payload::SmuIntent(_) => self.push_open(event, None),
-            Payload::SmuWrite(_) | Payload::SmuError(_) | Payload::SmuReadback(_) => {
+            Payload::SmuWrite(_)
+            | Payload::SmuError(_)
+            | Payload::SmuReadback(_)
+            | Payload::DayBootStart(_) => {
                 self.open.retain(|open| {
                     !(open.kind == EventKind::SmuIntent
-                        && open.boot == event.boot
-                        && event.cause.contains(&open.seq))
+                        && event.resolves_smu_intent(
+                            open.seq,
+                            &open.boot,
+                            self.cores.iter().map(|facts| facts.core),
+                        ))
                 });
             }
             Payload::TrialIntent(intent) => self.push_open(event, Some(intent.trial.clone())),
@@ -281,7 +287,6 @@ impl State {
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
-            | Payload::DayBootStart(_)
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)

@@ -284,6 +284,124 @@ fn cold_boot_applies_stock_without_permission_and_stop_verifies_before_clean_mar
     );
 }
 
+/// The real day transaction leaves a durable intent when recording its write is interrupted.
+fn interrupted_day(fs: &Arc<MemFs>) -> (Journal, Seq) {
+    let mut journal = seed_on(Arc::clone(fs));
+    append(
+        &mut journal,
+        &ActiveClock::one(),
+        DayBootStart {
+            build: current_build(),
+            bios: bios(),
+            offsets: offsets(0),
+            watchdog: Some(armed()),
+        },
+    )
+    .unwrap();
+    let mut hardware = Hardware::stock();
+    let requested = target(&journal, -5);
+    let topology = session_cores(journal.events()).unwrap().to_vec();
+    let validated = hardware.validated().unwrap();
+    let stopped = hardware.stop_workloads().unwrap();
+    fs.inject(Fault::before(Op::Write, 2).named("events.jsonl"));
+    assert!(
+        togi_session::apply_day_profile(
+            &mut journal,
+            &ActiveClock::one(),
+            &mut hardware,
+            validated,
+            &stopped,
+            &topology,
+            &requested,
+            &[],
+        )
+        .is_err()
+    );
+    fs.clear_faults();
+    let intent = journal.events().last().unwrap();
+    assert_eq!(intent.kind(), EventKind::SmuIntent);
+    let seq = intent.seq;
+    (journal, seq)
+}
+
+#[test_case("day-a"; "same boot restart")]
+#[test_case("day-b"; "later boot")]
+fn day_start_records_the_observation_retiring_an_interrupted_day_intent(boot: &str) {
+    let fs = Arc::new(MemFs::new());
+    let (journal, intent) = interrupted_day(&fs);
+    journal.close().unwrap();
+    let mut journal = state_dir(fs)
+        .open_at(boot.to_owned().into(), Timestamp::UNIX_EPOCH)
+        .unwrap();
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    serve(
+        &mut journal,
+        &mut Hardware::stock(),
+        &mut ActiveClock::one(),
+        &cancel,
+        &current_build(),
+    )
+    .unwrap();
+    let start = journal
+        .events()
+        .iter()
+        .find(|event| event.seq > intent && matches!(event.payload, Payload::DayBootStart(_)))
+        .unwrap();
+    assert_eq!(start.cause, [intent]);
+    assert_eq!(
+        journal
+            .events()
+            .iter()
+            .filter(|event| { matches!(event.payload, Payload::DayBootStart(_)) })
+            .count(),
+        2
+    );
+    let Payload::DayBootStart(observed) = &start.payload else {
+        unreachable!()
+    };
+    assert_eq!(observed.offsets, offsets(0));
+    let through_start = togi_journal::State::replay(
+        journal
+            .events()
+            .iter()
+            .take_while(|event| event.seq <= start.seq),
+    )
+    .unwrap();
+    assert_eq!(through_start.in_flight(), None);
+    assert_eq!(through_start.open, []);
+}
+
+#[test_case(1; "preflight read fails")]
+#[test_case(2; "start read fails after preflight")]
+fn failed_day_start_read_keeps_the_inherited_intent_open(read: usize) {
+    let fs = Arc::new(MemFs::new());
+    let (journal, intent) = interrupted_day(&fs);
+    journal.close().unwrap();
+    let mut journal = state_dir(fs)
+        .open_at("day-b".to_owned().into(), Timestamp::UNIX_EPOCH)
+        .unwrap();
+    let mut hardware = Hardware::stock();
+    hardware.failure = Failure::Read(read);
+    assert!(
+        serve(
+            &mut journal,
+            &mut hardware,
+            &mut ActiveClock::one(),
+            &CancellationToken::new(),
+            &current_build(),
+        )
+        .is_err()
+    );
+    assert!(
+        !journal.events().iter().any(|event| {
+            event.seq > intent && matches!(event.payload, Payload::DayBootStart(_))
+        })
+    );
+    let state = togi_journal::State::replay(journal.events()).unwrap();
+    assert_eq!(state.in_flight().unwrap().seq, intent);
+}
+
 #[test]
 fn a_nonzero_permitted_proposal_commits_the_applied_step_and_stop_zeroes() {
     let mut journal = seed();

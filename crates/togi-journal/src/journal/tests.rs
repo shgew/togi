@@ -64,6 +64,56 @@ fn command() -> SmuCommand {
     }
 }
 
+#[test_case(false, true; "generic append complete observation")]
+#[test_case(true, true; "dedicated append complete observation")]
+#[test_case(false, false; "generic append partial observation")]
+#[test_case(true, false; "dedicated append partial observation")]
+fn day_start_cites_all_inherited_intents_only_after_complete_observation(
+    dedicated: bool,
+    complete: bool,
+) {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    let first = journal
+        .append_smu_intent(stamp(1), command(), &[])
+        .unwrap()
+        .intent();
+    let second = journal
+        .append_smu_intent(stamp(2), command(), &[])
+        .unwrap()
+        .intent();
+    journal.reboot(boot(2)).unwrap();
+    let state = crate::State::replay(journal.events()).unwrap();
+    let cores = state.cores;
+    let offsets = cores
+        .iter()
+        .take(if complete { cores.len() } else { 0 })
+        .map(|facts| (facts.core, togi_machine::ObservedOffset(0)))
+        .collect();
+    let start = crate::DayBootStart {
+        build: state.session.unwrap().build,
+        bios: togi_machine::BiosContext::default(),
+        offsets,
+        watchdog: None,
+    };
+    let event = if dedicated {
+        journal.append_day_boot_start(stamp(3), start, &[Seq::FIRST])
+    } else {
+        journal.append(stamp(3), start.into(), &[Seq::FIRST])
+    }
+    .unwrap();
+    assert_eq!(
+        event.cause,
+        if complete {
+            vec![Seq::FIRST, first, second]
+        } else {
+            vec![Seq::FIRST]
+        }
+    );
+    let state = crate::State::replay(journal.events()).unwrap();
+    assert_eq!(state.open.len(), if complete { 0 } else { 2 });
+}
+
 fn nan_payload() -> Payload {
     Payload::HuntStart(HuntStart {
         hunt: std::num::NonZeroU32::MIN,

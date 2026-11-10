@@ -448,15 +448,18 @@ fn observe_with_socket(
     // journal records a verdict even when a stop signal has already fired, so it takes a fresh token
     // instead of the run's.
     let watchdog = observer.watchdog(&CancellationToken::new())?;
-    append(
-        journal,
-        clock,
+    journal.append_day_boot_start(
+        Stamp {
+            time: clock.now(),
+            mono: Some(clock.monotonic()?),
+        },
         DayBootStart {
             build: build.clone(),
             bios,
             offsets,
             watchdog: Some(watchdog.clone()),
         },
+        &[],
     )?;
     // The first read takes the whole boot. Its faults were logged under the profile read at start,
     // so it runs before application can change the offsets later reads attribute faults to.

@@ -29,6 +29,13 @@ object_only! {
     }
 }
 
+impl DayBootStart {
+    pub(crate) fn observes_cores(&self, cores: impl IntoIterator<Item = CoreId>) -> bool {
+        let mut cores = cores.into_iter().peekable();
+        cores.peek().is_some() && cores.all(|core| self.offsets.get(core).is_some())
+    }
+}
+
 object_only! {
     /// Periodic proof the observer is still running.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
