@@ -126,7 +126,8 @@ pub(crate) struct Selector {
     /// Indexed like the trial plan.
     instances: Vec<Instance>,
     /// Present cores are loaded; `None` means no instance on that core has verified a result.
-    verified: PerCore<Option<String>>,
+    /// Kept off the stack so readiness and teardown futures do not carry sixteen strings inline.
+    verified: Box<PerCore<Option<String>>>,
     failure: Option<TrialFailure>,
     escaped: Vec<CpuId>,
     inconclusive: Option<String>,
@@ -161,7 +162,7 @@ impl Selector {
                     setup_error: false,
                 })
                 .collect(),
-            verified: instances.iter().map(|&(core, _, _)| (core, None)).collect(),
+            verified: Box::new(instances.iter().map(|&(core, _, _)| (core, None)).collect()),
             failure: None,
             escaped: Vec::new(),
             inconclusive: None,
@@ -322,8 +323,13 @@ impl Selector {
         match line {
             Line::Other => Decision::default(),
             Line::Verified(detail) => {
-                self.verified.get_or_insert_with(core, || detail.clone());
-                self.line(instance, pid, stream, Line::Progress(detail), text)
+                if stream == Stream::Stdout {
+                    self.verified.get_or_insert_with(core, || detail.clone());
+                    self.line(instance, pid, stream, Line::Progress(detail), text)
+                } else {
+                    self.verified.get_or_insert_with(core, || detail);
+                    Decision::default()
+                }
             }
             Line::Progress(detail) => Decision {
                 stop: false,
