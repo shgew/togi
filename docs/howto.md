@@ -100,7 +100,7 @@ Then check that the machine is ready, without starting a session:
 sudo togi doctor
 ```
 
-It makes the checks `sudo togi run` makes before tuning ([Preflight](spec/runtime.md#preflight)) and prints one row per check: `ok`, `FAIL`, `warn` or `skipped`. The last line is `ready`, or `not ready:` with the failed checks; fix those first. A `warn` on `watchdog` means no hardware watchdog is active in this boot, which the tuning boot provides. A `warn` on `bios_context` means the recorded BIOS context changed: the next run records the new context in the same session and follows [firmware invalidation](spec/tuner.md#firmware), rather than archiving it; tuning there needs a new stock attestation from `sudo togi night` in a normal boot. `doctor` appends nothing to the journal and changes no offset; [Commands](spec/runtime.md#commands) describes what it does without `sudo`.
+It makes the checks `sudo togi run` makes before tuning ([Preflight](spec/runtime.md#preflight)) and prints one row per check: `ok`, `FAIL`, `warn` or `skipped`. The last line is `ready`, or `not ready:` with the failed checks; fix those first. A `FAIL` on `watchdog` means no hardware watchdog is armed in this boot; manual runs refuse too. A `warn` on `bios_context` means the recorded BIOS context changed: the next run records the new context in the same session and follows [firmware invalidation](spec/tuner.md#firmware), rather than archiving it; tuning there needs a new stock attestation from `sudo togi night` in a normal boot. `doctor` appends nothing to the journal and changes no offset; [Commands](spec/runtime.md#commands) describes what it does without `sudo`.
 
 ## 3. A quick in-session test
 
@@ -117,7 +117,7 @@ togi status
 togi events --kind trial
 ```
 
-If the machine freezes during an in-session trial, it needs a manual reset unless an active hardware watchdog provides reset protection. `sudo togi run` warns when none is active and continues; it does not arm one ([Preflight](spec/runtime.md#preflight)). The warning stays in `togi events --kind session.warning`. After a reset or crash reboot, the next run attributes the crash from the journal and continues ([Crashes](spec/tuner.md#crashes)).
+An in-session run requires an armed hardware watchdog, just like the tuning boot; `sudo togi run` checks once at startup and refuses immediately if it is unarmed. It does not arm one. It checks again before each nonzero profile application and each workload start; loss detected there stops new work and restores verified stock ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows a failed `watchdog` result. After a reset or crash reboot, the next run attributes the crash from the journal and continues ([Crashes](spec/tuner.md#crashes)).
 
 ## Daily observation
 
@@ -312,7 +312,7 @@ specialisation.togi.configuration.boot.kernelParams = lib.mkOverride 40 (
 );
 ```
 
-The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed the hardware watchdog. togi starts tuning only with an active hardware watchdog; otherwise it stops with a preflight dead end ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows the final `watchdog` result. A normal `sudo togi run` only warns.
+The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed the hardware watchdog. Every run requires an armed hardware watchdog; otherwise it stops with a preflight dead end ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows the final `watchdog` result. The tuning boot waits up to 30 seconds for readiness; a manual `sudo togi run` does not wait.
 
 The tuning boot also saves kernel messages on an orderly reboot or shutdown, as well as panic ([Tuning boot](spec/runtime.md#tuning-boot)). After an unclean togi boot, `togi events --json --kind crash.detected` includes `pstore.path` and the last lines of the saved kernel messages when it finds that boot's matching EFI pstore archive ([Trial outcome](spec/workloads.md#trial-outcome)). The archive stays under `/var/lib/systemd/pstore/`.
 

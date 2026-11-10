@@ -38,8 +38,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 ///
 /// Prints the check rows with ok, FAIL, warn or skipped, then ready, not fully checked, or not
 /// ready with the failed checks: those run would refuse at startup. A missing
-/// hardware watchdog is a warning, as in a run started outside the tuning boot. A changed BIOS
-/// context is a warning too: run records the new context and the session continues under it. A journal with a
+/// hardware watchdog is a failure for every run. A changed BIOS
+/// context is a warning: run records the new context and the session continues under it. A journal with a
 /// newer schema, ruleset or evidence epoch, or with unknown event kinds, is refused as run refuses
 /// it. On a platform other than
 /// Linux it reports that hardware runs need Linux and exits 1 before reading anything.
@@ -64,7 +64,7 @@ pub struct Args {
 const COMMAND: &str = "doctor";
 /// Checks whose failure is reported as `warn` and never makes the machine not ready: backend availability excludes
 /// only the backend from a night.
-const WARNINGS: [&str; 3] = ["watchdog", "bios_context", "backends"];
+const WARNINGS: [&str; 2] = ["bios_context", "backends"];
 
 /// Makes the checks and prints the table.
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
@@ -136,7 +136,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             &topology,
         ));
     }
-    let (table, failed) = table(&diagnosis, args.day);
+    let (table, failed) = table(&diagnosis);
     if let Err(exit) = ctx.out.write_all(table.as_bytes()).map_err(|error| {
         ctx.error(format!(
             "write output: {}",
@@ -309,13 +309,13 @@ fn refuse(ctx: &mut Context<'_>, renderer: Renderer, message: &str) -> Exit {
 }
 
 /// The check table and the names of the failed checks.
-fn table(diagnosis: &Diagnosis, day: bool) -> (String, Vec<&str>) {
+fn table(diagnosis: &Diagnosis) -> (String, Vec<&str>) {
     let mut failed = Vec::new();
     let mut rows: Vec<(&str, &str, String)> = Vec::new();
     for check in &diagnosis.ran {
         let result = if check.ok {
             "ok"
-        } else if WARNINGS.contains(&check.name.as_str()) && !(day && check.name == "watchdog") {
+        } else if WARNINGS.contains(&check.name.as_str()) {
             "warn"
         } else {
             failed.push(check.name.as_str());
