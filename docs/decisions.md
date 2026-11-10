@@ -14,7 +14,7 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - The supervising process uses an unloaded core when available and shares a loaded one otherwise; it never requires a stock-offset core.
 - The three scheduled test shapes are build, game and idle; they represent the target desktop's use without the compulsory nine-shape matrix.
 - A pass requires verified results from every loaded core; CPU-time progress alone is not correctness evidence.
-- The first night must expose a known-bad profile within minutes; tests that miss the known failure cannot justify deeper tuning.
+- The first night runs a known-bad profile through each shape for up to 10 minutes and at least one shape must fail; tests that miss the known failure cannot justify deeper tuning.
 - Short calibrated probes find edges and one whole-profile soak tests them together; isolated results alone do not qualify a profile.
 - The firmware stays at stock and offsets are applied after boot; a reset must start from stock.
 - Offsets remain in [-50, 0], with durable intent before each normal write and readback after; loss of control returns the CPU to stock.
