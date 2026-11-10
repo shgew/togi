@@ -56,7 +56,7 @@ fn ready_checks() -> Vec<Check> {
         ),
         check("backend_user", "togi-trial: uid 990 gid 990", true),
         check("systemd_run", "scope confined to cpu 0 created", true),
-        check("watchdog", "no hardware watchdog state available", false),
+        check("watchdog", "hardware watchdog active", true),
     ]
 }
 
@@ -168,6 +168,28 @@ fn an_unavailable_backend_is_a_warning_not_a_failure() {
         ran.out
     );
     assert!(ran.out.ends_with("\nready\n"), "{}", ran.out);
+}
+
+#[test]
+fn a_missing_watchdog_is_a_failure_for_manual_runs_too() {
+    let mut diagnosis = ready();
+    let watchdog = diagnosis
+        .ran
+        .iter_mut()
+        .find(|check| check.name == "watchdog")
+        .unwrap();
+    *watchdog = check("watchdog", "no hardware watchdog state available", false);
+    let session = Session::new();
+    let host = host_with(diagnosis, session.fs.clone());
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Preflight);
+    assert_eq!(ran.err, "togi doctor: not ready: watchdog\n");
+    assert!(
+        ran.out
+            .lines()
+            .any(|line| line.starts_with("watchdog      FAIL"))
+    );
+    assert!(ran.out.ends_with("not ready: watchdog\n"));
 }
 
 #[test]

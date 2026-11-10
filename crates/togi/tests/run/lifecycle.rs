@@ -962,30 +962,33 @@ fn position(events: &[togi_journal::Event], wanted: impl Fn(&Payload) -> bool) -
     events.iter().position(|event| wanted(&event.payload))
 }
 
-#[test]
-fn a_missing_watchdog_is_journaled_as_a_warning_before_the_first_offset_write_with_the_dashboard_up()
- {
+#[test_case::test_case(true; "dashboard")]
+#[test_case::test_case(false; "event log")]
+fn a_manual_run_without_a_watchdog_refuses_before_any_write_or_workload(interactive: bool) {
     let mut fake = Fake::new();
     fake.attest_stock();
-    fake.interactive = true;
+    fake.interactive = interactive;
     fake.sim.fail_check("watchdog", "no /dev/watchdog");
     fake.wrap = Box::new(interrupt_on_first_write);
     let (exit, _, err) = fake.run(&["run"]);
-    assert_eq!(exit, Exit::Ok, "{err}");
+    assert_eq!(exit, Exit::Preflight, "{err}");
     let events = fake.events();
-    let warned = position(&events, |payload| {
-        matches!(payload, Payload::SessionWarning(warning) if warning.operation == "check hardware watchdog"
-            && warning.error.starts_with("no active hardware watchdog (no /dev/watchdog)"))
+    let checked = position(&events, |payload| {
+        matches!(payload, Payload::PreflightCheck(check) if check.check == "watchdog"
+            && !check.ok && check.detail.starts_with("no /dev/watchdog"))
     })
     .unwrap();
-    let first_write =
-        position(&events, |payload| matches!(payload, Payload::SmuIntent(_))).unwrap();
-    assert!(warned < first_write, "{warned} before {first_write}");
+    let refused = position(&events, |payload| {
+        matches!(payload, Payload::DeadEnd(dead) if dead.condition == togi_journal::DeadEndCondition::Preflight)
+    })
+    .unwrap();
+    assert!(checked < refused);
     assert!(
-        !events
-            .iter()
-            .any(|event| matches!(&event.payload, Payload::PreflightCheck(check) if check.check == "watchdog")),
-        "a manual run does not wait for the watchdog"
+        !events.iter().any(|event| matches!(
+            event.payload,
+            Payload::SmuIntent(_) | Payload::TrialIntent(_) | Payload::TrialStart(_)
+        )),
+        "no offset write or workload is allowed without reset protection"
     );
 }
 
@@ -997,22 +1000,19 @@ fn the_tuning_boot_waits_for_the_watchdog_and_a_manual_run_does_not() {
         fake.sim.fail_check("watchdog", "no /dev/watchdog");
         fake.wrap = Box::new(interrupt_on_first_write);
         let (exit, _, err) = fake.run(&["run", "--no-tui"]);
-        assert_eq!(exit, Exit::Ok, "{err}");
+        assert_eq!(exit, Exit::Preflight, "{err}");
         assert!(
-            !fake
-                .events()
-                .iter()
-                .any(|event| matches!(&event.payload, Payload::PreflightCheck(check) if check.check == "watchdog")),
-            "a manual run does not wait for a watchdog handoff"
+            fake.events().iter().any(
+                |event| matches!(&event.payload, Payload::PreflightCheck(check) if check.check == "watchdog" && !check.ok)
+            ),
+            "a manual run checks once without waiting for a watchdog handoff"
         );
         fake
     };
-    assert!(
-        manual
-            .events()
-            .iter()
-            .any(|event| matches!(&event.payload, Payload::SmuIntent(_)))
-    );
+    assert!(!manual.events().iter().any(|event| matches!(
+        &event.payload,
+        Payload::SmuIntent(_) | Payload::TrialStart(_)
+    )));
 
     let mut boot = Fake::new();
     boot.attest_stock();

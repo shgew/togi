@@ -13,7 +13,7 @@ use jiff::tz::TimeZone;
 use togi_config::{Config, DeadEndThreshold};
 use togi_journal::{
     Build, ConfigLoaded, DeadEnd, DeadEndAction, DeadEndCondition, Journal, Mce, Operation,
-    Payload, Seq, SessionStart, SessionWarning, Shutdown, ShutdownReason, TrialId, Verdict,
+    Payload, Seq, SessionStart, Shutdown, ShutdownReason, TrialId, Verdict,
 };
 use togi_machine::{
     Backend, BootId, CancellationToken, ContentId, CoreInfo, CoreSet, Error, Host, Kernel,
@@ -491,30 +491,7 @@ impl<'machine> Session<'machine> {
             kernel_error: boundary.error,
         };
         self.appender.append(Payload::ConfigLoaded(loaded), &[])?;
-        self.warn_watchdog()?;
         Ok(Control::Continue)
-    }
-
-    fn warn_watchdog(&mut self) -> Result<(), SessionError> {
-        if self.appender.handoff().is_some() {
-            return Ok(());
-        }
-        let check = self.host.watchdog();
-        if check.ok {
-            return Ok(());
-        }
-        let warning = SessionWarning {
-            operation: "check hardware watchdog".into(),
-            trial: None,
-            error: format!(
-                "no active hardware watchdog ({}), so a freeze needs a manual reset; start sessions from the tuning \
-                 boot, especially after a breaking update",
-                check.detail
-            ),
-        };
-        self.appender
-            .append(Payload::SessionWarning(warning), &[])?;
-        Ok(())
     }
 
     /// Reads the kernel log from the cursor recorded for this boot and records each new machine check: inside

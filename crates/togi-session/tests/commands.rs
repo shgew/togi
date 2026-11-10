@@ -130,6 +130,146 @@ fn kinds(journal: &Journal) -> Vec<&'static str> {
 }
 
 #[test]
+fn an_unarmed_manual_run_refuses_before_any_offset_write_or_trial() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    sim.fail_check("watchdog", "hardware watchdog inactive");
+    let before = sim.monotonic();
+    let ended = run(input(&sim, &mem));
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert!(matches!(
+        ended.stop,
+        Some(togi_session::Stop::DeadEnd { ref dead_end, .. })
+            if dead_end.condition == togi_journal::DeadEndCondition::Preflight
+    ));
+    assert_eq!(sim.monotonic(), before, "manual startup never waits");
+    let events = ended.journal.events();
+    let checked = events
+        .iter()
+        .find(|event| {
+            matches!(&event.payload, Payload::PreflightCheck(check)
+            if check.check == "watchdog" && !check.ok)
+        })
+        .unwrap();
+    let refused = events
+        .iter()
+        .find(|event| matches!(event.payload, Payload::DeadEnd(_)))
+        .unwrap();
+    assert_eq!(refused.cause, [checked.seq]);
+    assert!(!events.iter().any(|event| matches!(
+        event.payload,
+        Payload::SmuIntent(_) | Payload::TrialIntent(_) | Payload::TrialStart(_)
+    )));
+}
+
+#[test]
+fn watchdog_loss_after_preflight_refuses_the_first_nonzero_profile() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let fault = sim.clone();
+    input.on_append = Some(Box::new(move |event| {
+        if matches!(event.payload, Payload::TaskStart(_)) {
+            fault.fail_check("watchdog", "hardware watchdog lost");
+        }
+    }));
+    let ended = run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert!(matches!(
+        ended.stop,
+        Some(togi_session::Stop::DeadEnd { ref dead_end, .. })
+            if dead_end.condition == togi_journal::DeadEndCondition::Preflight
+    ));
+    assert!(!ended.journal.events().iter().any(|event| matches!(
+        &event.payload,
+        Payload::SmuIntent(intent) if intent.command().offset() != togi_machine::TargetOffset::ZERO
+    )));
+    assert!(!ended.journal.events().iter().any(|event| matches!(
+        event.payload,
+        Payload::TrialIntent(_) | Payload::TrialStart(_)
+    )));
+}
+
+#[test_case(false, false; "after profile application before workload")]
+#[test_case(false, true; "after trial intent before workload")]
+#[test_case(true, false; "during trial before next profile or workload")]
+fn a_lost_watchdog_stops_new_work_and_restores_verified_stock(
+    during_trial: bool,
+    at_trial_intent: bool,
+) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let fault = sim.clone();
+    input.on_append = Some(Box::new(move |event| {
+        if matches!(&event.payload, Payload::TrialStart(_)) && during_trial
+            || matches!(&event.payload, Payload::TrialIntent(_)) && at_trial_intent
+            || matches!(&event.payload, Payload::ProfileApplied(_))
+                && !during_trial
+                && !at_trial_intent
+        {
+            fault.fail_check("watchdog", "hardware watchdog lost");
+        }
+    }));
+    let ended = run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert!(matches!(
+        ended.stop,
+        Some(togi_session::Stop::DeadEnd { ref dead_end, .. })
+            if dead_end.condition == togi_journal::DeadEndCondition::Preflight
+                && dead_end.detail.contains("hardware watchdog lost")
+    ));
+    let events = ended.journal.events();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.payload, Payload::TrialStart(_)))
+            .count(),
+        usize::from(during_trial),
+        "no workload starts after loss is detected"
+    );
+    let loss = events
+        .iter()
+        .position(|event| {
+            matches!(&event.payload, Payload::PreflightCheck(check)
+            if check.check == "watchdog" && !check.ok)
+        })
+        .unwrap();
+    let cleanup = &events[loss + 1..];
+    assert!(!cleanup.iter().any(|event| matches!(
+        &event.payload,
+        Payload::SmuIntent(intent) if intent.command().offset() != togi_machine::TargetOffset::ZERO
+    )));
+    assert!(
+        cleanup
+            .iter()
+            .any(|event| matches!(event.payload, Payload::SmuIntent(_)))
+    );
+    assert!(
+        cleanup
+            .iter()
+            .any(|event| matches!(event.payload, Payload::SmuWrite(_)))
+    );
+    assert!(
+        cleanup
+            .iter()
+            .any(|event| matches!(event.payload, Payload::SmuReadback(_)))
+    );
+    let restored = cleanup
+        .iter()
+        .position(|event| matches!(event.payload, Payload::ProfileRestored(_)))
+        .unwrap();
+    let shutdown = cleanup
+        .iter()
+        .position(|event| matches!(event.payload, Payload::Shutdown(_)))
+        .unwrap();
+    assert!(restored < shutdown);
+    for info in sim.seams().host.topology().unwrap() {
+        assert_eq!(sim.seams().smu.offset(info.core).unwrap().0, 0);
+    }
+}
+
+#[test]
 fn a_tuning_boot_that_crashes_before_any_trial_is_still_detected() {
     let (sim, mem) = (simulator(), MemFs::new());
     let journal = started(&sim, &mem);
