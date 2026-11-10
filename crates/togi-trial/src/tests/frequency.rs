@@ -492,7 +492,7 @@ fn an_unacknowledged_restore_readback_keeps_the_pending_record_for_recovery() {
             machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
             5_700_000
         );
-        assert_eq!(rig.exists(&pending), false);
+        assert!(!rig.exists(&pending));
     }));
 }
 
@@ -586,10 +586,7 @@ fn a_late_wait_acknowledges_restoration_and_collects_the_finished_capped_trial()
                 // collector cannot accidentally win a race with a fast acknowledgment.
                 clock.until_waiting();
                 completed.await.unwrap();
-                assert_eq!(
-                    rig.exists(rig.env.dir.join("controller-frequency.pending.json")),
-                    false
-                );
+                assert!(!rig.exists(rig.env.dir.join("controller-frequency.pending.json")));
             }));
         }
     });

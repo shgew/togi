@@ -126,6 +126,13 @@ fn startup_frequency_recovery_round_trips_acknowledgments_through_the_runner() {
         CpuFrequency as _, FrequencyAction, FrequencyEvent, FrequencyIntent, FrequencyJournal,
         FrequencyPolicy, FrequencyPolicyId, FrequencyReadback,
     };
+    struct Refuse(crate::testing::Frequencies);
+    impl FrequencyJournal for Refuse {
+        fn record(&mut self, event: FrequencyEvent) -> std::io::Result<()> {
+            self.0.record(event)?;
+            Err(std::io::Error::other("restore intent refused"))
+        }
+    }
 
     let policy = FrequencyPolicyId::new(0);
     let machine = crate::frequency::fake::Fake::new(vec![FrequencyPolicy {
@@ -163,13 +170,6 @@ fn startup_frequency_recovery_round_trips_acknowledgments_through_the_runner() {
     let saved = fs.contents(pending).unwrap();
     let writes = machine.writes();
 
-    struct Refuse(crate::testing::Frequencies);
-    impl FrequencyJournal for Refuse {
-        fn record(&mut self, event: FrequencyEvent) -> std::io::Result<()> {
-            self.0.record(event)?;
-            Err(std::io::Error::other("restore intent refused"))
-        }
-    }
     let intent = FrequencyIntent {
         policy,
         related_cpus: vec![CpuId::from(0), CpuId::from(32)],
