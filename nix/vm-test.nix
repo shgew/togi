@@ -229,101 +229,80 @@ let
       '';
     };
 
-    kmscon-display = {
-      name = "togi-kmscon-display";
-      enableOCR = true;
+    console-display = {
+      name = "togi-console-display";
       nodes.machine = {
         imports = [ tuningBoot ];
         virtualisation.cores = 3;
-        virtualisation.memorySize = 2048;
-        virtualisation.qemu.options = [
-          "-vga none"
-          "-device virtio-gpu-pci,xres=2560,yres=1440"
-        ];
-        virtualisation.resolution = {
-          x = 2560;
-          y = 1440;
-        };
-        boot.initrd.kernelModules = [ "virtio_gpu" ];
-        services.togi.tuning.display = "kmscon";
       };
       testScript = ''
+        from datetime import timedelta
+
         machine.start(allow_reboot=True)
         machine.wait_for_unit("multi-user.target")
+        normal_system = machine.succeed("readlink -f /run/current-system").strip()
         tuning_system = machine.succeed("readlink -f /run/current-system/specialisation/togi").strip()
         machine.succeed("grub-set-default 'NixOS - togi'")
         machine.reboot()
         machine.wait_for_unit("multi-user.target")
         assert machine.succeed("readlink -f /run/current-system").strip() == tuning_system
-        machine.wait_for_unit("togi-kmscon.service")
-        machine.wait_until_succeeds("pgrep -f '^/nix/store/[^ ]*/bin/togi watch --tuning-boot$'")
-        kmscon_pid = machine.succeed("systemctl show togi-kmscon.service -p MainPID --value").strip()
-        watch_pid = machine.succeed(f"pgrep -P {kmscon_pid} -x togi").strip()
-        assert watch_pid, "kmscon did not launch the shipped watcher"
-        machine.succeed(f"grep -zqx 'COLORTERM=truecolor' /proc/{watch_pid}/environ")
-        machine.succeed(f"grep -zqx 'TERM=xterm-256color' /proc/{watch_pid}/environ")
+        machine.wait_for_unit("togi-watch.service")
+        watch_pid = machine.succeed("systemctl show togi-watch.service -p MainPID --value").strip()
+        machine.succeed(f"grep -zqx 'TERM=linux' /proc/{watch_pid}/environ")
         machine.succeed(f"test $(stat -c %u /proc/{watch_pid}) -eq 0")
-        machine.succeed("test $(fgconsole) -eq 1")
-        machine.succeed(f"test $(readlink /proc/{kmscon_pid}/fd/0) = /dev/tty1")
-        machine.fail("systemctl is-active --quiet togi-watch.service")
-        machine.wait_for_text("preflight", timeout=120)
-        machine.screenshot("kmscon-dashboard")
+        machine.succeed(f"test $(readlink /proc/{watch_pid}/fd/0) = /dev/tty1")
+        machine.succeed("chvt 1")
+        machine.wait_until_succeeds("grep -aq 'preflight: failed checks' /dev/vcs1")
+        machine.screenshot("plain-console-dashboard")
+        machine.wait_until_succeeds("systemctl is-failed togi.service")
         tuner_before = machine.succeed("systemctl show togi.service -p InvocationID -p ActiveState -p NRestarts")
         boot_before = machine.succeed("cat /proc/sys/kernel/random/boot_id")
 
-        with subtest("kmscon lockdown leaves the dashboard and its single session intact"):
-            for key in [
-                "ctrl-meta_r-backspace", "ctrl-meta_r-ret",
-                "ctrl-meta_r-left", "ctrl-meta_r-right",
-                "shift-up", "shift-down", "shift-pgup", "shift-pgdn",
-                "ctrl-minus", "ctrl-equal", "meta_r-equal", "meta_r-minus",
-                "q", "ctrl-c", "ctrl-d",
-            ]:
+        with subtest("quit keys leave the installed console watcher running"):
+            for key in ["q", "shift-q", "ctrl-c", "ctrl-d"]:
                 machine.send_key(key)
-            assert machine.succeed("systemctl show togi-kmscon.service -p MainPID --value").strip() == kmscon_pid
-            assert machine.succeed(f"pgrep -P {kmscon_pid} -x togi").strip() == watch_pid
-            machine.wait_for_text("preflight")
+            assert machine.succeed("systemctl show togi-watch.service -p MainPID --value").strip() == watch_pid
+            machine.wait_until_succeeds("grep -aq 'preflight: failed checks' /dev/vcs1")
 
-        with subtest("Ctrl Alt Fn reaches the login and logs while kmscon owns tty1"):
-            machine.send_key("ctrl-alt-f2")
+        with subtest("Alt Fn reaches the login and logs from the plain console"):
+            machine.send_key("alt-f2")
             machine.wait_until_succeeds("test $(fgconsole) -eq 2")
             machine.wait_for_unit("getty@tty2.service")
-            machine.send_key("ctrl-alt-f3")
+            machine.send_key("alt-f3")
             machine.wait_until_succeeds("test $(fgconsole) -eq 3")
             machine.succeed("systemctl is-active --quiet togi-console.service")
-            machine.send_key("ctrl-alt-f1")
+            machine.send_key("alt-f1")
             machine.wait_until_succeeds("test $(fgconsole) -eq 1")
-            machine.wait_for_text("preflight")
-
-        with subtest("three killed kmscon starts fall back to the Linux console"):
-            # Fresh start-limit window, independent of how long the earlier subtests took.
-            machine.succeed("systemctl reset-failed togi-kmscon.service && systemctl restart togi-kmscon.service")
-            machine.wait_until_succeeds(
-                "systemctl is-active --quiet togi-kmscon.service && "
-                "test $(systemctl show togi-kmscon.service -p NRestarts --value) -eq 0"
-            )
-            machine.wait_until_succeeds("pgrep -f '^/nix/store/[^ ]*/bin/togi watch --tuning-boot$'")
-            machine.fail("systemctl is-active --quiet togi-watch.service")
-            for attempt in range(3):
-                machine.succeed("systemctl kill --kill-whom=main --signal=SIGKILL togi-kmscon.service")
-                if attempt < 2:
-                    machine.wait_until_succeeds(
-                        "systemctl is-active --quiet togi-kmscon.service && "
-                        f"test $(systemctl show togi-kmscon.service -p NRestarts --value) -eq {attempt + 1}"
-                    )
-                    machine.fail("systemctl is-active --quiet togi-watch.service")
-            machine.wait_until_succeeds(
-                "test $(systemctl show togi-kmscon.service -p Result --value) = start-limit-hit"
-            )
-            machine.wait_for_unit("togi-watch.service")
-            console_pid = machine.succeed("systemctl show togi-watch.service -p MainPID --value").strip()
-            machine.succeed(f"test $(readlink /proc/{console_pid}/fd/0) = /dev/tty1")
-            machine.succeed(f"grep -zqx 'TERM=linux' /proc/{console_pid}/environ")
             machine.wait_until_succeeds("grep -aq 'preflight: failed checks' /dev/vcs1")
-            machine.screenshot("console-fallback")
+
+        with subtest("watcher restart does not restart tuning or reboot"):
+            machine.succeed("systemctl kill --kill-whom=main --signal=SIGKILL togi-watch.service")
+            machine.wait_until_succeeds(
+                "systemctl is-active --quiet togi-watch.service && "
+                f"test $(systemctl show togi-watch.service -p MainPID --value) != {watch_pid}"
+            )
+            machine.wait_until_succeeds("grep -aq 'preflight: failed checks' /dev/vcs1")
             assert machine.succeed("systemctl show togi.service -p InvocationID -p ActiveState -p NRestarts") == tuner_before
             assert machine.succeed("cat /proc/sys/kernel/random/boot_id") == boot_before
-            machine.log(machine.succeed("journalctl -b -u togi-kmscon -u togi-watch-fallback -u togi-watch --no-pager"))
+
+        with subtest("F10 asks before ending the night and returns to the day"):
+            machine.send_key("f10")
+            machine.wait_until_succeeds("grep -aq 'Reboot into the day cycle?' /dev/vcs1")
+            machine.send_key("n")
+            machine.wait_until_succeeds("! grep -aq 'Reboot into the day cycle?' /dev/vcs1")
+            assert machine.succeed("cat /proc/sys/kernel/random/boot_id") == boot_before
+            machine.send_key("f10")
+            machine.wait_until_succeeds("grep -aq 'Reboot into the day cycle?' /dev/vcs1")
+            assert machine.qmp_client is not None
+            machine.qmp_client.send("query-status")
+            list(machine.qmp_client.events())
+            machine.send_key("y")
+            machine.wait_for_qmp_event(lambda event: event["event"] == "RESET", timeout=timedelta(seconds=120))
+            machine.connected = False
+            machine.wait_for_unit("multi-user.target")
+            assert machine.succeed("cat /proc/sys/kernel/random/boot_id") != boot_before
+            assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
+            machine.fail("systemctl is-active --quiet togi.service")
       '';
     };
 
@@ -1508,6 +1487,6 @@ in
     }
   ];
   day-apply-profile = import ./day-apply-profile.nix { inherit pkgs package vmRecovery; };
-  display = oneScenario "display" "kmscon-display";
+  display = oneScenario "display" "console-display";
   efi = oneScenario "efi" "night-systemd-boot";
 }

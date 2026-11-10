@@ -293,24 +293,7 @@ Ending restores the previous boot policy, not a normal generation chosen by togi
 
 You can also pick the tuning specialisation in the boot menu. GRUB remembers that choice automatically. systemd-boot remembers it only with effective `@saved`; with an explicit default or pattern, crash reboots follow that policy instead. Prefer `togi night` for unattended crash recovery with any policy. A menu-picked tuning boot runs no stock confirmation of its own: without a current attestation from an earlier `togi night` in a normal boot, it ends before any trial with `stock_unattested` (exit 12); a reset, a ruleset transition or a firmware change needs a new answer first ([Night and day](spec/runtime.md#night-and-day)). The module installs the loader tools and writes `/etc/togi/night.json`; see [Night and day](spec/runtime.md#night-and-day) for the exact restoration rules.
 
-For a GPU-rendered terminal instead of the Linux console, enable kmscon and rebuild before selecting the tuning boot:
-
-```nix
-services.togi.tuning.display = "kmscon";
-services.togi.tuning.kmscon.fontSize = 27; # Default: 160x45 cells at 2560x1440.
-```
-
-The module ships DejaVu Sans Mono, so no host font setup is needed. With kmscon, use Ctrl+Alt+F2 for the login prompt, Ctrl+Alt+F3 for logs, and Ctrl+Alt+F1 to return. Stop `togi-kmscon.service` rather than `togi-watch.service` to close that display. Failed starts or repeated crashes automatically hand tty1 back to the console watcher; tuning is independent of both displays ([Tuning boot](spec/runtime.md#tuning-boot)).
-
-kmscon clones every connected output and fits the dashboard to the smallest grid. To keep a monitor dark, for example an OLED, disable its connector with `video=<connector>:d`. Find connector names under `/sys/class/drm/` (for example, `card0-HDMI-A-1` means `HDMI-A-1`). To limit this to the tuning boot, use the following in a NixOS module taking `{ config, lib, ... }`; replace the connector name. Priority 40 overrides the module's forced console routing, so retain the normal system's other parameters and the tuning boot's console parameters:
-
-```nix
-specialisation.togi.configuration.boot.kernelParams = lib.mkOverride 40 (
-  lib.filter (p: builtins.match "console=tty[0-9]+(,.*)?" p == null)
-    config.boot.kernelParams
-  ++ [ "console=tty3" "printk.always_kmsg_dump=1" "video=HDMI-A-1:d" ]
-);
-```
+The tuning display uses the Linux console's 16-colour profile and built-in font, which covers the dashboard's block and box glyphs even when the normal system uses another font. It needs no GPU terminal, font setup or display option. Alt+F2 opens the login prompt, Alt+F3 shows logs, and Alt+F1 returns to the dashboard. Restarting the watcher does not restart tuning.
 
 The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed the hardware watchdog. Every run requires an armed, counting hardware watchdog; otherwise it stops with a preflight dead end ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows the final `watchdog` result. The tuning boot retries readiness until 30 seconds have passed; a final check can take up to four more seconds per candidate device. A manual `sudo togi run` checks once without retrying for readiness; countdown sampling still takes time.
 
