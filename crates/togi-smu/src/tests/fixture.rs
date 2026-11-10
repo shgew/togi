@@ -1,5 +1,5 @@
 use crate::files::{Files, Readers};
-use crate::mailbox::{Command, MailboxError, Status, Transport};
+use crate::mailbox::{Command, MailboxError, Poison, Status, Transport};
 use crate::pm_table::{PmFile, PmSource};
 #[cfg(target_os = "linux")]
 use crate::pm_table::{TABLE_LEN, VERSION};
@@ -423,7 +423,13 @@ impl PmSource for Fake {
 }
 
 impl Transport for Fake {
-    fn command(&mut self, command: Command, args: [u32; 6]) -> Result<[u32; 6], MailboxError> {
+    fn command(
+        &mut self,
+        command: Command,
+        args: [u32; 6],
+        poison: &Poison,
+    ) -> Result<[u32; 6], MailboxError> {
+        poison.check()?;
         let (hook, result) = {
             let mut state = self.state();
             state.commands.push((command, args[0]));
@@ -442,7 +448,8 @@ impl Transport for Fake {
         result
     }
 
-    fn read_smn(&mut self, address: u32) -> Result<u32, MailboxError> {
+    fn read_smn(&mut self, address: u32, poison: &Poison) -> Result<u32, MailboxError> {
+        poison.check()?;
         let (value, hook) = {
             let mut state = self.state();
             state.smn.push(address);
