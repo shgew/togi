@@ -641,56 +641,24 @@ impl Watched {
         }
     }
 
-    /// The first post-start drain establishes a conservative byte fence, not a timestamp inferred
-    /// from a later read. Its whole backlog and any partial line stay unverified; only later
-    /// complete lines read before the deadline may verify a core.
+    /// Reads plain lines without granting verification; the measured reader uses `poll_interval`.
+    pub(crate) async fn poll(
+        &mut self,
+        until: Instant,
+        sink: &mut impl FnMut(&str) -> ControlFlow<()>,
+        stop: &mut impl FnMut() -> bool,
+    ) -> Poll {
+        self.poll_interval(until, None, &mut |line, _verification| sink(line), stop)
+            .await
+    }
+
+    /// Fences the first post-start backlog, and each replacement or observed truncation, before
+    /// granting verification. Polls remain bounded to 64 KiB and leave any unread bytes in place.
     pub(crate) async fn poll_interval(
         &mut self,
         until: Instant,
         deadline: Option<Instant>,
         sink: &mut impl FnMut(&str, Verification) -> ControlFlow<()>,
-        stop: &mut impl FnMut() -> bool,
-    ) -> Poll {
-        let mut next = self.verification;
-        let poll = self
-            .poll(
-                until,
-                &mut |line| {
-                    let verification = if next == Some(Verification::Measured)
-                        && deadline.is_some_and(|end| Instant::now() < end)
-                    {
-                        Verification::Measured
-                    } else {
-                        Verification::Outside
-                    };
-                    if next.is_some() {
-                        next = Some(Verification::Measured);
-                    }
-                    sink(line, verification)
-                },
-                stop,
-            )
-            .await;
-        if next.is_none() && matches!(poll, Poll::Idle | Poll::Drained) {
-            next = Some(if self.framer.pending() {
-                Verification::Outside
-            } else {
-                Verification::Measured
-            });
-        }
-        self.verification = next;
-        poll
-    }
-
-    /// Reads at most 64 KiB from the saved offset and frames it in 4 KiB chunks. `sink` breaks
-    /// to stop after a line; `stop` is asked before each chunk and after each line, and a
-    /// stop leaves the offset exactly after the last consumed byte, so the next poll resumes
-    /// without loss or duplication. The wait for the blocking read ends at `until`, leaving the
-    /// read in flight and the poll pending.
-    pub(crate) async fn poll(
-        &mut self,
-        until: Instant,
-        sink: &mut impl FnMut(&str) -> ControlFlow<()>,
         stop: &mut impl FnMut() -> bool,
     ) -> Poll {
         if matches!(self.state, State::Stopped) {
@@ -713,6 +681,7 @@ impl Watched {
             Outcome::Missing if self.backlog() => self.reject(WatchError::Lost),
             Outcome::Missing => {
                 self.buffer = buffer;
+                self.verification = Some(Verification::Measured);
                 Poll::Idle
             }
             Outcome::Other => self.reject(WatchError::Unsupported),
@@ -726,13 +695,46 @@ impl Watched {
                 got,
                 error,
             } => {
+                let restarted = matches!(
+                    self.state,
+                    State::Tailing { id: previous, size: accepted, .. }
+                        if previous != id || size < accepted
+                );
+                let mut next = if restarted { None } else { self.verification };
                 self.state = State::Tailing {
                     id,
                     offset: start,
                     size,
                     drained: false,
                 };
-                let poll = self.consume(&buffer[..got], start, size, error, sink, stop);
+                let poll = self.consume(
+                    &buffer[..got],
+                    start,
+                    size,
+                    error,
+                    &mut |line| {
+                        let verification = if next == Some(Verification::Measured)
+                            && deadline.is_some_and(|end| Instant::now() < end)
+                        {
+                            Verification::Measured
+                        } else {
+                            Verification::Outside
+                        };
+                        if next.is_some() {
+                            next = Some(Verification::Measured);
+                        }
+                        sink(line, verification)
+                    },
+                    stop,
+                );
+                if next.is_none() && matches!(poll, Poll::Drained) {
+                    next = Some(if self.framer.pending() {
+                        Verification::Outside
+                    } else {
+                        Verification::Measured
+                    });
+                }
+                self.verification = next;
                 self.buffer = buffer;
                 poll
             }
@@ -962,6 +964,24 @@ mod tests {
             (poll, lines)
         }
 
+        async fn poll_interval(&mut self) -> (Poll, Vec<(String, Verification)>) {
+            let mut lines = Vec::new();
+            let until = far();
+            let poll = self
+                .watched
+                .poll_interval(
+                    until,
+                    Some(until),
+                    &mut |line, verification| {
+                        lines.push((line.to_owned(), verification));
+                        ControlFlow::Continue(())
+                    },
+                    &mut || false,
+                )
+                .await;
+            (poll, lines)
+        }
+
         async fn finish(&mut self, until: Instant) -> (Poll, Vec<String>) {
             let mut lines = Vec::new();
             let poll = self
@@ -973,6 +993,65 @@ mod tests {
                 .await;
             (poll, lines)
         }
+    }
+
+    #[derive(Clone, Copy)]
+    enum Change {
+        Replacement,
+        Truncation,
+    }
+
+    #[test_case::test_case(Change::Replacement; "replacement")]
+    #[test_case::test_case(Change::Truncation; "truncation")]
+    fn changed_file_content_must_be_fenced_again_before_it_can_verify(change: Change) {
+        crate::testing::runtime(true).block_on(async {
+            let mut f = fixture();
+            f.append(b"ordinary startup record longer than a checked result\n");
+            let replacement = f.directory().join("previous-results");
+            f.memory()
+                .write_file(&replacement, b"verified self-test\n", None)
+                .unwrap();
+            assert_eq!(
+                f.poll_interval().await.1,
+                [(
+                    "ordinary startup record longer than a checked result".to_owned(),
+                    Verification::Outside
+                )]
+            );
+            tokio::time::advance(Duration::from_secs(1)).await;
+            match change {
+                Change::Replacement => f.memory().rename(&replacement, f.path()).unwrap(),
+                Change::Truncation => f
+                    .memory()
+                    .write_file(f.path(), b"verified self-test\n", None)
+                    .unwrap(),
+            }
+            let (poll, lines) = f.poll_interval().await;
+            assert!(matches!(poll, Poll::Drained));
+            assert_eq!(
+                lines,
+                [("verified self-test".to_owned(), Verification::Outside)]
+            );
+            f.append(b"verified next-test\n");
+            assert_eq!(
+                f.poll_interval().await.1,
+                [("verified next-test".to_owned(), Verification::Measured)]
+            );
+        });
+    }
+
+    #[test]
+    fn a_file_absent_at_the_first_poll_can_verify_later_appended_results() {
+        crate::testing::runtime(true).block_on(async {
+            let mut f = fixture();
+            assert!(matches!(f.poll_interval().await.0, Poll::Idle));
+            tokio::time::advance(Duration::from_secs(1)).await;
+            f.append(b"verified self-test\n");
+            assert_eq!(
+                f.poll_interval().await.1,
+                [("verified self-test".to_owned(), Verification::Measured)]
+            );
+        });
     }
 
     #[test]

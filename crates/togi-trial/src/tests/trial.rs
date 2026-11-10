@@ -149,6 +149,38 @@ fn a_checked_result_before_another_instances_readiness_does_not_verify_its_core(
 }
 
 #[test]
+fn slow_scope_readiness_does_not_spend_the_next_instances_preparation_budget() {
+    crate::testing::runtime(true).block_on(local(async {
+        let rig = rig();
+        rig.fake.set_ready_default(false);
+        let delay = rig.env.timing.prepare + secs(1);
+        let (release, released) = tokio::sync::watch::channel(());
+        rig.fake.on_launch(move |index, _| {
+            let mut released = released.clone();
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                if index == 0 {
+                    tokio::time::sleep(delay).await;
+                }
+                ctx.shared.ready.set(true);
+                released.changed().await.unwrap();
+                ctx.print("verified self-test\n").await;
+                ctx.until_killed().await;
+            }))
+        });
+        let begun = Instant::now();
+        let handle = rig.start(spec(Regime::R7, &[1, 5], secs(3))).await.unwrap();
+        assert!(begun.elapsed() >= delay);
+        assert_eq!(rig.fake.process_count(), 2);
+        release.send_replace(());
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.ran, secs(3));
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(run.finished.result.inconclusive, None);
+        assert!(run.finished.teardown.is_ok());
+    }));
+}
+
+#[test]
 fn readiness_delay_is_not_measured_trial_time() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
