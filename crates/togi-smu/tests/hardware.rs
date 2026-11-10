@@ -51,8 +51,7 @@ fn validated_driver() -> Driver {
 #[test]
 fn hardware_smu_round_trips_sixteen_distinct_offsets_and_restores_stock() {
     let _serial = exclusive();
-    let mut session = Restoring::new(validated_driver());
-    let driver = session.driver();
+    let mut driver = validated_driver();
     for check in [
         driver.check_cpu(),
         driver.check_driver(),
@@ -67,6 +66,8 @@ fn hardware_smu_round_trips_sixteen_distinct_offsets_and_restores_stock() {
         OffsetWitness::fixture(cores.iter().map(|info| info.core)),
         "prepare sixteen distinct offsets",
     );
+    // Armed only now: a refused precheck or topology must not write to a machine it rejected.
+    let mut session = Restoring::new(driver);
     let readback = must(session.round_trip(&witness), "round trip distinct offsets");
     for (core, target) in witness.targets().iter() {
         println!(
