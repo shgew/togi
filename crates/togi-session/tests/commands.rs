@@ -191,11 +191,11 @@ fn watchdog_loss_after_preflight_refuses_the_first_nonzero_profile() {
 }
 
 #[test_case(false, false; "after profile application before workload")]
-#[test_case(false, true; "after trial intent before workload")]
+#[test_case(false, true; "after first trial before workload at the applied profile")]
 #[test_case(true, false; "during trial before next profile or workload")]
 fn a_lost_watchdog_stops_new_work_and_restores_verified_stock(
     during_trial: bool,
-    at_trial_intent: bool,
+    after_first_trial: bool,
 ) {
     let sim = simulator();
     let mem = MemFs::new();
@@ -203,10 +203,10 @@ fn a_lost_watchdog_stops_new_work_and_restores_verified_stock(
     let fault = sim.clone();
     input.on_append = Some(Box::new(move |event| {
         if matches!(&event.payload, Payload::TrialStart(_)) && during_trial
-            || matches!(&event.payload, Payload::TrialIntent(_)) && at_trial_intent
+            || matches!(&event.payload, Payload::TrialEnd(_)) && after_first_trial
             || matches!(&event.payload, Payload::ProfileApplied(_))
                 && !during_trial
-                && !at_trial_intent
+                && !after_first_trial
         {
             fault.fail_check("watchdog", "hardware watchdog lost");
         }
@@ -225,7 +225,7 @@ fn a_lost_watchdog_stops_new_work_and_restores_verified_stock(
             .iter()
             .filter(|event| matches!(event.payload, Payload::TrialStart(_)))
             .count(),
-        usize::from(during_trial),
+        usize::from(during_trial || after_first_trial),
         "no workload starts after loss is detected"
     );
     let loss = events
@@ -235,6 +235,31 @@ fn a_lost_watchdog_stops_new_work_and_restores_verified_stock(
             if check.check == "watchdog" && !check.ok)
         })
         .unwrap();
+    if after_first_trial {
+        // One completed cell does not finish the mapping step's R1/R2 and interaction matrix.
+        // The next cell keeps its profile, so ensure_profile returns without checking the watchdog.
+        let first_end = events
+            .iter()
+            .position(|event| matches!(event.payload, Payload::TrialEnd(_)))
+            .unwrap();
+        assert!(
+            !events[first_end + 1..loss]
+                .iter()
+                .any(|event| matches!(event.payload, Payload::SmuIntent(_))),
+            "the next trial keeps the applied profile and reaches the workload-start check"
+        );
+    }
+    for event in events {
+        if let Payload::TrialIntent(intent) = &event.payload {
+            assert!(
+                events.iter().any(|event| {
+                    matches!(&event.payload, Payload::TrialEnd(end) if end.trial == intent.trial)
+                }),
+                "trial {} has an end even when the next workload is refused",
+                intent.trial.as_str()
+            );
+        }
+    }
     let cleanup = &events[loss + 1..];
     assert!(!cleanup.iter().any(|event| matches!(
         &event.payload,

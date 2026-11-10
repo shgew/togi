@@ -242,6 +242,9 @@ impl Session<'_> {
         }
         let id = self.appender.recovery().next_trial_id();
         let boundary = self.kernel_boundary(None, false, &[])?;
+        if let Control::Stop(stop) = self.check_watchdog()? {
+            return Ok(Some(stop));
+        }
         let mut intent = plan
             .intent(id.clone(), &self.topology, content)
             .map_err(SessionError::Plan)?;
@@ -308,9 +311,6 @@ impl Session<'_> {
             roles: spec.roles.clone(),
             controller,
         };
-        if let Control::Stop(stop) = self.check_watchdog()? {
-            return Ok(Some(stop));
-        }
         let Lifecycle::Swept(Swept {
             stopped,
             confirmed: Some(confirmed),
