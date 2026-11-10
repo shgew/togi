@@ -1,8 +1,8 @@
 use std::convert::Infallible;
 
 use togi_machine::{
-    CancellationToken, ContentId, Partial, Reporter, Running, Started, Stopped, Swept,
-    TrialConditions, TrialResult, TrialSpec, Trials, WorkloadId,
+    CancellationToken, ContentId, FrequencyJournal, Partial, Reporter, Running, Started, Stopped,
+    Swept, TrialConditions, TrialResult, TrialSpec, Trials, WorkloadId,
 };
 
 use crate::error::Error;
@@ -36,11 +36,20 @@ impl Trials for Runner {
         match self.0 {}
     }
 
+    fn recover_frequency(
+        &mut self,
+        _: &Stopped,
+        _: &mut dyn FrequencyJournal,
+    ) -> Result<String, togi_machine::Error> {
+        match self.0 {}
+    }
+
     fn start(
         &mut self,
         _: &CancellationToken,
         _: TrialSpec,
         _: Stopped,
+        _: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         match self.0 {}
     }
@@ -81,7 +90,7 @@ impl Running for Trial {
         match self.0 {}
     }
 
-    fn stop(self: Box<Self>) -> Result<Stopped, togi_machine::Error> {
+    fn stop(self: Box<Self>, _: &mut dyn FrequencyJournal) -> Result<Stopped, togi_machine::Error> {
         match self.0 {}
     }
 }
