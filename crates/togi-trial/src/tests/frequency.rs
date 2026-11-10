@@ -319,7 +319,10 @@ fn an_uncapped_trial_recovers_a_failed_restore_first_or_is_refused() {
         );
 
         machine.refuse_write(false);
+        let (print, release) = super::harness::printing_when_released("verified self-test\n");
+        rig.fake.on_launch(print);
         let handle = rig.start(uncapped()).await.unwrap();
+        release.send_replace(());
         assert_eq!(
             machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
             5_700_000,

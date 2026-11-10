@@ -189,7 +189,10 @@ fn a_computation_error_produced_before_readiness_still_fails(source: Source) {
         let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
         let run = finish(&handle).await;
         assert_eq!(
-            run.finished.result.failure.map(|failure| (failure.core, failure.signal)),
+            run.finished
+                .result
+                .failure
+                .map(|failure| (failure.core, failure.signal)),
             Some((super::harness::core(2), Signal::ComputationError))
         );
         assert_eq!(run.finished.teardown.is_ok(), true);
@@ -251,7 +254,9 @@ fn a_watched_result_appended_after_the_startup_backlog_is_drained_verifies_its_c
                 ctx.write_file(&file, "ordinary\n").unwrap();
                 released.changed().await.unwrap();
                 tokio::time::sleep(Duration::from_millis(1500)).await;
-                ctx.memory.append_file(&file, b"verified self-test\n", None).unwrap();
+                ctx.memory
+                    .append_file(&file, b"verified self-test\n", None)
+                    .unwrap();
                 ctx.until_killed().await;
             }))
         });
@@ -379,7 +384,12 @@ fn computation_and_affinity_errors_win_over_the_cap_in_either_order(
                         tokio::time::sleep(Duration::from_millis(10)).await;
                         let _ = ctx.stdout.write_all(&vec![b'x'; 1 << 20]).await;
                     } else {
-                        let _ = ctx.stdout.write_all(&vec![b'x'; 1 << 20]).await;
+                        // Exceed the fake pipe's capacity, so the write cannot finish until the
+                        // reader closes its end after detecting the oversized line.
+                        assert_eq!(
+                            ctx.stdout.write_all(&vec![b'x'; 2 << 20]).await.is_err(),
+                            true
+                        );
                         tokio::time::sleep(Duration::from_millis(10)).await;
                         ctx.eprint(text).await;
                     }
