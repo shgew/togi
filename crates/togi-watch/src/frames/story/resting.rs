@@ -13,7 +13,7 @@ use crate::model::{RecoveryView, TrialEndView, TrialView};
 use crate::words::{core_ids, kind_words, lateness, on_cores, signal_words};
 
 const NEXT_TRIAL: &str = "next trial: ";
-const SAVED_ROWS: &str = "Rows show the saved profile, not applied now.";
+const READBACK_ROWS: &str = "Rows show hardware readback, not the saved profile.";
 
 /// The resting band: no trial in flight, a stop, a dead end, a crashed trial or a recovery.
 pub(crate) fn resting_band(scene: &Scene<'_>) -> RestingBand {
@@ -32,7 +32,7 @@ fn band(scene: &Scene<'_>) -> RestingBand {
             dead_end.detail
         )];
         if s.stopped.is_some_and(|stopped| stopped.saved) {
-            lines.push(SAVED_ROWS.to_owned());
+            lines.push(READBACK_ROWS.to_owned());
         }
         return RestingBand {
             title: "DEAD END",
@@ -43,7 +43,7 @@ fn band(scene: &Scene<'_>) -> RestingBand {
     if s.policy.stopped {
         let mut lines = vec!["platform unstable at stock: a conclusive failure at CO 0".to_owned()];
         if s.stopped.is_some_and(|stopped| stopped.saved) {
-            lines.push(SAVED_ROWS.to_owned());
+            lines.push(READBACK_ROWS.to_owned());
         }
         return RestingBand {
             title: "STOCK FAILURE",
@@ -65,7 +65,7 @@ fn band(scene: &Scene<'_>) -> RestingBand {
             stop_words(stopped.reason)
         )];
         if stopped.saved {
-            lines.push(SAVED_ROWS.to_owned());
+            lines.push(READBACK_ROWS.to_owned());
         }
         return RestingBand {
             title: "STOPPED",

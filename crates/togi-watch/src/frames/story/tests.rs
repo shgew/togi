@@ -423,7 +423,7 @@ mod the_story {
                     "{} · stopped at a run limit an earlier version supported",
                     crate::frames::scene::wall_second(&UTC, ts(100))
                 ),
-                "Rows show the saved profile, not applied now.".to_owned()
+                "Rows show hardware readback, not the saved profile.".to_owned()
             ]
         );
     }
@@ -479,7 +479,7 @@ mod the_story {
     }
 
     #[test]
-    fn a_dead_end_shows_the_saved_profile() {
+    fn a_restored_dead_end_says_its_rows_are_readback() {
         let mut fx = Fx::new();
         fx.dead_end = Some(DeadEndView {
             at: ts(1),
@@ -496,7 +496,7 @@ mod the_story {
                 .lines
                 .last()
                 .map(String::as_str),
-            Some("Rows show the saved profile, not applied now.")
+            Some("Rows show hardware readback, not the saved profile.")
         );
     }
 
@@ -933,7 +933,7 @@ mod the_simulated_sessions {
     }
 
     #[test]
-    fn an_operator_ended_night_is_stopped_and_labels_saved_offsets_only_when_it_saved_them() {
+    fn an_operator_ended_night_is_stopped_and_says_rows_are_readback_only_when_it_restored() {
         let (model, at) = model_of(Scenario::Stopped);
         let scene = scene_of(&model, at);
         let band = resting_band(&scene);
@@ -943,7 +943,7 @@ mod the_simulated_sessions {
         assert_eq!(
             band.lines
                 .iter()
-                .any(|line| line == "Rows show the saved profile, not applied now."),
+                .any(|line| line == "Rows show hardware readback, not the saved profile."),
             saved,
             "{:?}",
             band.lines
