@@ -15,7 +15,7 @@ Start review on a frozen local commit while its checks run, rather than waiting 
 
 Classify by the effect of the change, not its directory:
 
-- **Safety:** changing a safety rule or its enforcement gets full independent review, including documentation: hardware writes, offsets, journal intent/readback, crash recovery, zeroing, watchdog, containment and teardown. Use the full sizing below even outside protected paths.
+- **Safety:** changing a safety rule or its enforcement gets full independent review, including documentation: hardware writes, offsets, journal intent/readback, crash recovery, zeroing, watchdog, containment and teardown. Use the full sizing below wherever the changed files live.
 - **Other code:** one independent reader, who may be the coordinator if not the author.
 - **Documents:** CI only is the approved rule. **Temporary exception until R21:** current `render` requires reviewers for every included Markdown file. Keep the existing independent review and sizing below; publish a normal record. A reviewer-free "documents only" record is not supported, so do not invent a reader or exclude hand-written documents to pass it.
 
