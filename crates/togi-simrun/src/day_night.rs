@@ -2,7 +2,7 @@
 
 mod machine;
 mod policy;
-mod ruleset13;
+mod production;
 
 use std::time::Duration;
 
@@ -11,7 +11,7 @@ use togi_machine::{Machine, TargetOffset, TrialSpec};
 use togi_sim::day_night::{FailureCause, Scenario, TrialClass, TruthError};
 
 pub use policy::{CoZero, FixedMargin};
-pub use ruleset13::Ruleset13;
+pub use production::ProductionPolicy;
 
 /// One policy the runner can build afresh for every scenario and seed. Each variant carries the
 /// parameters its construction needs, so a run is reproducible from its `PolicyKind` alone.
@@ -113,7 +113,7 @@ impl PolicyKind {
             Self::FixedMargin => {
                 Box::new(FixedMargin::new(calendar.fixed_margin, calendar.day_step)?)
             }
-            Self::Ruleset13 { fallback_slope } => Box::new(Ruleset13::new(fallback_slope)?),
+            Self::Ruleset13 { fallback_slope } => Box::new(ProductionPolicy::new(fallback_slope)?),
         })
     }
 }

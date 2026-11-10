@@ -69,8 +69,8 @@ struct Started {
     contents: Contents,
 }
 
-/// Ruleset 13 at one fallback slope, driving the real policy state.
-pub struct Ruleset13 {
+/// The production policy at one fallback slope, driving the real policy state.
+pub struct ProductionPolicy {
     state: State,
     /// How many events the adapter wrote.
     appended: u64,
@@ -84,8 +84,8 @@ pub struct Ruleset13 {
     trials: u64,
 }
 
-impl Ruleset13 {
-    /// Ruleset 13 whose fallback slope is `multiplier`, the hazard multiplier per CO count (the
+impl ProductionPolicy {
+    /// The production policy whose fallback slope is `multiplier`, the hazard multiplier per CO count (the
     /// specification's 1.5× is `beta = ln 1.5`).
     ///
     /// # Errors
@@ -101,7 +101,7 @@ impl Ruleset13 {
         }))
     }
 
-    /// Ruleset 13 deciding by `params`.
+    /// The production policy deciding by `params`.
     #[must_use]
     pub fn with_params(params: Params) -> Self {
         Self {
@@ -554,7 +554,7 @@ impl Ruleset13 {
     }
 }
 
-impl Policy for Ruleset13 {
+impl Policy for ProductionPolicy {
     fn firmware_changed(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
         if self.started.is_none() {
             // The session's own context record already carries the new firmware.
@@ -652,7 +652,7 @@ impl Policy for Ruleset13 {
     }
 }
 
-impl Ruleset13 {
+impl ProductionPolicy {
     /// Records the firmware context and the simulated operator's confirmed stock stability.
     fn record_firmware(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
         let firmware = machine.host.bios_context()?;

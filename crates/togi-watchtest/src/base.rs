@@ -9,7 +9,7 @@ use togi_config::Config;
 use togi_journal::{Activity, DayBootStart, Event, EventKind, Payload, Queue, SessionStart, Stamp};
 use togi_machine::Machine;
 use togi_simrun::day_night::{
-    CalendarConfig, DayClassification, DayObservation, EndAnswer, Night, Policy, Ruleset13,
+    CalendarConfig, DayClassification, DayObservation, EndAnswer, Night, Policy, ProductionPolicy,
     RunError, run_with_policy,
 };
 use togi_tuner::policy::Params;
@@ -91,7 +91,7 @@ impl Base {
 
 fn calendar(goal: CalendarGoal) -> Result<Vec<Event>, Error> {
     let mut policy = CpuAnswerAfterPromotion {
-        inner: Ruleset13::with_params(Params::SPEC).recording(),
+        inner: ProductionPolicy::with_params(Params::SPEC).recording(),
         progress: CalendarProgress::AwaitingPromotion,
         goal,
     };
@@ -125,7 +125,7 @@ fn calendar(goal: CalendarGoal) -> Result<Vec<Event>, Error> {
 
 /// The real ruleset policy, with an optional operator CPU answer after the first promotion.
 struct CpuAnswerAfterPromotion {
-    inner: Ruleset13,
+    inner: ProductionPolicy,
     progress: CalendarProgress,
     goal: CalendarGoal,
 }

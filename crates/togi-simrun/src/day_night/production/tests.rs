@@ -9,7 +9,7 @@ use togi_machine::{CcdProfile, Machine, TargetOffset};
 use togi_tuner::day::HOLD_SECS;
 use togi_tuner::policy::{Params, State};
 
-use super::{OPERATOR_UID, Ruleset13};
+use super::{OPERATOR_UID, ProductionPolicy};
 use crate::day_night::{
     CalendarConfig, DayClassification, DayObservation, DayStart, EndAnswer, Night, Policy,
     PolicyKind, RunError, run_controlled, run_with_policy,
@@ -47,7 +47,7 @@ fn run_until<P: Policy>(policy: &mut P, mut start: impl FnMut(&P) -> DayStart) {
 }
 
 /// Whether `policy` applies a nonzero day profile.
-fn holds_promotion(policy: &Ruleset13) -> bool {
+fn holds_promotion(policy: &ProductionPolicy) -> bool {
     policy
         .state()
         .project()
@@ -106,7 +106,7 @@ fn the_gate_policy_builds_from_its_slope_and_refuses_a_non_multiplier() {
     assert!(kind.build(&calendar(1)).is_ok());
     for slope in [1.0, 0.5, f64::NAN, f64::INFINITY] {
         assert!(matches!(
-            Ruleset13::new(slope),
+            ProductionPolicy::new(slope),
             Err(RunError::Slope(rejected)) if rejected.to_bits() == slope.to_bits()
         ));
     }
@@ -114,7 +114,7 @@ fn the_gate_policy_builds_from_its_slope_and_refuses_a_non_multiplier() {
 
 #[test]
 fn the_journal_folds_identically_when_replayed() {
-    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
     run_with_policy(SCENARIO, 1, calendar(PROMOTION_DAYS), &mut policy).unwrap();
     let mut replayed = State::new(Params {
         fallback_slope: togi_tuner::cap::Beta::new(1.5_f64.ln()).unwrap(),
@@ -139,9 +139,9 @@ fn the_journal_folds_identically_when_replayed() {
 
 #[test]
 fn an_adapter_not_recording_keeps_no_journal_and_decides_alike() {
-    let mut recording = Ruleset13::new(1.5).unwrap().recording();
+    let mut recording = ProductionPolicy::new(1.5).unwrap().recording();
     run_with_policy(SCENARIO, 1, calendar(3), &mut recording).unwrap();
-    let mut bare = Ruleset13::new(1.5).unwrap();
+    let mut bare = ProductionPolicy::new(1.5).unwrap();
     run_with_policy(SCENARIO, 1, calendar(3), &mut bare).unwrap();
     assert!(bare.events().is_none());
     assert!(!recording.events().unwrap().is_empty());
@@ -153,7 +153,7 @@ fn an_adapter_not_recording_keeps_no_journal_and_decides_alike() {
 
 #[test]
 fn a_first_promotion_follows_a_completed_night_qualification() {
-    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
     run_until(&mut policy, |policy| {
         if holds_promotion(policy) {
             DayStart::Stop
@@ -227,7 +227,7 @@ fn previous_profile(before: &[Event]) -> Option<CcdProfile> {
 
 #[test]
 fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
-    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
     // The firmware changes once a promotion holds, and the run ends once the promoted profile is
     // qualified afresh under the new firmware and a nonzero profile is applied again.
     let mut changed = false;
@@ -306,10 +306,10 @@ fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
     }
 }
 
-/// Delegates to [`Ruleset13`], replacing the first day observation after a promotion with an end the
+/// Delegates to [`ProductionPolicy`], replacing the first day observation after a promotion with an end the
 /// operator answers as a freeze.
 struct FreezeAfterPromotion {
-    inner: Ruleset13,
+    inner: ProductionPolicy,
     frozen: Option<DayClassification>,
 }
 
@@ -366,7 +366,7 @@ fn retreat_and_stop(events: &[Event]) -> Option<(&ClimbDecision, &DayApplied, &U
 #[test]
 fn a_cpu_suspect_answer_leads_to_a_retreat() {
     let mut policy = FreezeAfterPromotion {
-        inner: Ruleset13::new(1.5).unwrap().recording(),
+        inner: ProductionPolicy::new(1.5).unwrap().recording(),
         frozen: None,
     };
     // The run ends once the retreat the CPU-suspect answer caused is applied and its unit stopped.
@@ -429,11 +429,11 @@ fn a_cpu_suspect_answer_leads_to_a_retreat() {
     assert_eq!(stop.profile.cores, retreat.proposed.cores);
 }
 
-/// Delegates to [`Ruleset13`], replacing one day observation with an unanswered end: the first day
+/// Delegates to [`ProductionPolicy`], replacing one day observation with an unanswered end: the first day
 /// unless `after_promotion`, otherwise the first day after a promotion. With `late`, the operator
 /// answers that end at the next day boot, through the same journal the adapter folds.
 struct UnansweredEnd {
-    inner: Ruleset13,
+    inner: ProductionPolicy,
     after_promotion: bool,
     late: Option<DayAnswerKind>,
     /// The journal's original event identity and classification, before any late answer.
@@ -444,7 +444,7 @@ struct UnansweredEnd {
 impl UnansweredEnd {
     fn new(after_promotion: bool, late: Option<DayAnswerKind>) -> Self {
         Self {
-            inner: Ruleset13::new(1.5).unwrap().recording(),
+            inner: ProductionPolicy::new(1.5).unwrap().recording(),
             after_promotion,
             late,
             ended: None,
@@ -588,6 +588,7 @@ fn a_reclassified_restoration_applies_its_actual_retreat_with_fresh_guards() {
                 if event == identity)
         })
         .unwrap();
+    assert!(events[decided_at].cause.contains(&events[retreat_at].seq));
     assert_eq!(receipt.target.cores(), &restored.proposed.cores);
     assert_eq!(restored.proposed.cores, retreat.before.cores);
     assert_eq!(
@@ -616,6 +617,11 @@ fn a_reclassified_restoration_applies_its_actual_retreat_with_fresh_guards() {
     assert!(retreat_at < reclassified && reclassified < decided_at && decided_at < applied_at);
     assert!(restored.hold.eligible_s >= HOLD_SECS);
     assert!(!restored.hold.credited.is_empty());
+    assert!(events[..decided_at].iter().any(|event| {
+        matches!(&event.payload, Payload::DayApplied(applied)
+            if applied.application == restored.hold.application
+                && applied.target.cores() == &restored.before.cores)
+    }));
     for witness in &restored.hold.credited {
         assert!(
             events[..decided_at]
@@ -678,7 +684,7 @@ fn the_operator_ends_a_night_mid_trial_by_signal_before_the_next_day_boot() {
         night_hours: 0.01,
         ..CalendarConfig::default()
     };
-    let mut policy = Ruleset13::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
     run_with_policy(SCENARIO, 1, calendar, &mut policy).unwrap();
     let events = policy.events().unwrap();
     let (end, trial) = events

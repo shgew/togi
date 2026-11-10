@@ -268,8 +268,10 @@ They do not change the existing `Simulator`, machine-file model, or session runn
 adapter through `PolicyKind::build` and runs it; `run_with_policy` takes another implementation of the same `Policy`
 interface. The two diagnostics are comparators. `PolicyKind::Ruleset13 { fallback_slope }` is the policy under test (the
 gate role); its slope is the per-count hazard multiplier (1.5 or 2.0), so the policy's fallback slope is `beta = ln(multiplier)`.
+The `ruleset13` registry label remains the frozen experiment's recorded identity; it is not
+the name of the live internal driver.
 
-The Ruleset 13 adapter (`Ruleset13`) runs the production `togi_tuner::policy::State`, not a second tuner. It keeps the journal
+The production adapter (`ProductionPolicy`) runs the production `togi_tuner::policy::State`, not a second tuner. It keeps the journal
 `togi run` and `togi day` would write as an in-memory list of events (envelopes with consecutive `seq`, a boot id per boot,
 and timestamps from the calendar clock) and folds each appended event into the state. A firmware change appends a new
 `session.context`. A day starts as a cold boot: `day.boot_start`, then `State::day` staged until it owes nothing (every
