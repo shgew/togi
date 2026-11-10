@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::rc::Rc;
@@ -80,6 +80,12 @@ struct Reading {
     watchdog: VecDeque<WatchdogState>,
     times: VecDeque<Vec<CpuTime>>,
     live: Box<LiveLog>,
+    /// Whether a read under a cancelled token fails like the hardware read, which gives up its wait.
+    /// Off by default: a read that finished before the signal still returns its scripted state.
+    cancellable: bool,
+    /// The shared active clock and how long each successive watchdog read advances it, as the counter
+    /// wait does; the last duration repeats.
+    waits: Option<(Rc<Cell<Duration>>, VecDeque<Duration>)>,
 }
 
 fn armed() -> WatchdogState {
@@ -101,6 +107,8 @@ impl Reading {
             }]]
             .into(),
             live: Box::new(|_| Ok(KernelRead::default())),
+            cancellable: false,
+            waits: None,
         }
     }
 
@@ -161,12 +169,23 @@ impl Observer for Reading {
     fn end_evidence(&mut self, _: &BootId) -> togi_machine::EndEvidence {
         togi_machine::EndEvidence::unknown()
     }
-    fn watchdog(&mut self) -> WatchdogState {
-        if self.watchdog.len() > 1 {
+    fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, MachineError> {
+        if self.cancellable && cancel.is_cancelled() {
+            return Err(MachineError::Cancelled);
+        }
+        if let Some((clock, waits)) = &mut self.waits {
+            let wait = if waits.len() > 1 {
+                waits.pop_front().unwrap()
+            } else {
+                waits.front().copied().unwrap()
+            };
+            clock.set(clock.get() + wait);
+        }
+        Ok(if self.watchdog.len() > 1 {
             self.watchdog.pop_front().unwrap()
         } else {
             self.watchdog.front().unwrap().clone()
-        }
+        })
     }
     fn live_faults(
         &mut self,
@@ -232,8 +251,8 @@ impl Observer for FailingAfter {
     fn end_evidence(&mut self, boot: &BootId) -> togi_machine::EndEvidence {
         self.reading.end_evidence(boot)
     }
-    fn watchdog(&mut self) -> WatchdogState {
-        self.reading.watchdog()
+    fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, MachineError> {
+        self.reading.watchdog(cancel)
     }
     fn live_faults(
         &mut self,
@@ -1081,5 +1100,71 @@ fn a_restart_within_the_boot_continues_the_recorded_load_mix() {
             .load_mix
             .all_threads_ms,
         10_000
+    );
+}
+
+/// An active clock the observer shares, so a watchdog read that waits moves the time the loop sees.
+struct SharedClock {
+    active: Rc<Cell<Duration>>,
+    sleeps: usize,
+}
+
+impl Clock for SharedClock {
+    fn now(&self) -> Timestamp {
+        Timestamp::UNIX_EPOCH
+            .checked_add(self.active.get())
+            .unwrap()
+    }
+    fn monotonic(&self) -> Result<Duration, MachineError> {
+        Ok(self.active.get())
+    }
+    fn sleep(
+        &mut self,
+        cancel: &CancellationToken,
+        duration: Duration,
+    ) -> Result<(), MachineError> {
+        self.active.set(self.active.get() + duration);
+        self.sleeps -= 1;
+        if self.sleeps == 0 {
+            cancel.cancel();
+            return Err(MachineError::Cancelled);
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn cpu_times_are_credited_to_when_they_were_read_not_to_when_the_pass_began() {
+    let active = Rc::new(Cell::new(Duration::ZERO));
+    let mut reading = Reading {
+        times: [busy_ticks(0, 0), busy_ticks(1, 100)].into(),
+        waits: Some((
+            Rc::clone(&active),
+            [Duration::from_secs(1), Duration::from_secs(3)].into(),
+        )),
+        ..Reading::fixed()
+    };
+    let mut journal = journal();
+    observe(
+        &mut journal,
+        &mut reading,
+        &mut SharedClock { active, sleeps: 1 },
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    // The boot-start read waits 1 s before the baseline counters are read at 1 s; the sleep ends at 6 s
+    // and the stop's watchdog read waits 3 s more before the counters are read at 9 s. The counters
+    // cover those 8 s: anchoring both reads to their pass's start would give 6 s, and the baseline alone
+    // 9 s.
+    assert_eq!(
+        Ledger::of(journal.events())
+            .boots
+            .values()
+            .next()
+            .unwrap()
+            .load_mix
+            .all_threads_ms,
+        8_000
     );
 }

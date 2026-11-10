@@ -427,7 +427,10 @@ fn observe_with_socket(
     let started = clock.monotonic()?;
     let bios = observer.bios_context()?;
     let offsets = observer.offsets()?;
-    let watchdog = observer.watchdog();
+    // The boot-start check samples for at most four seconds per candidate device and must finish so the
+    // journal records a verdict even when a stop signal has already fired, so it takes a fresh token
+    // instead of the run's.
+    let watchdog = observer.watchdog(&CancellationToken::new())?;
     append(
         journal,
         clock,
@@ -488,12 +491,15 @@ fn observe_with_socket(
         }
     }
     let applied_offsets = live.as_deref().map_or(offsets, apply::Live::applied);
-    sampler.record(started, observer.cpu_times()?)?;
+    // The boot-start check above waited, so the baseline belongs to the clock reading taken when the
+    // counters are read, not to `started`: the first interval must not be credited that wait.
+    let baseline = observer.cpu_times()?;
+    let mut sampled = clock.monotonic()?;
+    sampler.record(sampled, baseline)?;
     if live.is_some() {
         progress.checkpoint(journal, clock, &sampler, applied_offsets)?;
         progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
     }
-    let mut sampled = started;
     let mut polled = started;
     loop {
         if let Some(socket) = socket {
@@ -540,10 +546,17 @@ fn observe_with_socket(
         // while the timer loses its MMIO decoding. Changes get a checkpoint immediately.
         let watchdog_read = stopping || sample || due;
         let watchdog_changed = if watchdog_read {
-            let checked = observer.watchdog();
-            let changed = checked != progress.watchdog;
-            progress.watchdog = checked;
-            changed
+            match observer.watchdog(cancel) {
+                Ok(checked) => {
+                    let changed = checked != progress.watchdog;
+                    progress.watchdog = checked;
+                    changed
+                }
+                // A cancelled reading says nothing about the timer: the previous reading stands, so the
+                // unarmed gate below and the final checkpoint still act on what was last known.
+                Err(togi_machine::Error::Cancelled) => false,
+                Err(error) => return Err(error.into()),
+            }
         } else {
             false
         };
@@ -564,8 +577,12 @@ fn observe_with_socket(
             return Err(Error::Watchdog);
         }
         if stopping || sample {
-            sampler.record(now, observer.cpu_times()?)?;
-            sampled = now;
+            let times = observer.cpu_times()?;
+            // The watchdog read above may have waited, so the interval ends when the counters were read,
+            // not when this pass began; crediting the earlier `now` would drop that wait from the interval.
+            let read_at = clock.monotonic()?;
+            sampler.record(read_at, times)?;
+            sampled = read_at;
         }
         if stopping || now.checked_sub(polled).ok_or(Error::ClockReversed)? >= FAULT_POLL {
             faults.poll(journal, observer, clock, progress.offsets)?;

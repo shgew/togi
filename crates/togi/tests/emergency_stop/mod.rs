@@ -137,8 +137,8 @@ impl MachineHost for NoCores {
         self.inner.backends()
     }
 
-    fn watchdog(&mut self) -> Check {
-        self.inner.watchdog()
+    fn watchdog(&mut self, cancel: &CancellationToken) -> Result<Check, Error> {
+        self.inner.watchdog(cancel)
     }
 }
 

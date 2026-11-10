@@ -1,14 +1,35 @@
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use togi_machine::{Check, WatchdogState, error_chain};
+use togi_machine::{CancellationToken, Check, WatchdogState, error_chain};
 
 use crate::checks::{CheckName, failed, passed};
 use crate::files::read_attribute;
 
 const CLASS_DIR: &str = "sys/class/watchdog";
 const SOFTWARE: &str = "Software Watchdog";
+
+// One refresh and a coarse counter's equal reading on either side use three
+// intervals. The fourth must decrease: PID 1 waits at least a quarter timeout
+// between pings, so the shipped 30 s and 60 s timeouts allow at most one refresh
+// in four seconds, and a value persisting under two seconds cannot repeat over
+// two consecutive refresh-free intervals.
+const SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
+const SAMPLE_INTERVALS: usize = 4;
+
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+#[error("watchdog sampling interrupted")]
+pub(crate) struct Cancelled;
+
+#[derive(Debug, thiserror::Error)]
+enum ExamineError {
+    #[error(transparent)]
+    Refused(#[from] Refusal),
+    #[error(transparent)]
+    Cancelled(#[from] Cancelled),
+}
 
 #[derive(Debug, thiserror::Error)]
 enum Refusal {
@@ -43,11 +64,13 @@ enum Refusal {
         timeleft: u64,
         timeout: u64,
     },
+    #[error("{name} open but not counting: timeleft did not decrease between samples")]
+    NoProgress { name: String },
     #[error("read PID 1 descriptors")]
     ReadPid1(#[source] io::Error),
 }
 
-/// An active hardware watchdog whose counter passed validation, where supported.
+/// An active hardware watchdog with observed countdown progress.
 pub(crate) struct Ready {
     pub(crate) name: String,
     pub(crate) identity: String,
@@ -95,7 +118,8 @@ fn examine(
     name: &str,
     dir: &Path,
     read_attribute: &impl Fn(&Path) -> io::Result<String>,
-) -> Result<Option<Ready>, Refusal> {
+    wait: &impl Fn(Duration) -> Result<(), Cancelled>,
+) -> Result<Option<Ready>, ExamineError> {
     let state = match read_attribute(&dir.join("state")) {
         Ok(state) => state,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -103,7 +127,8 @@ fn examine(
             return Err(Refusal::ReadState {
                 name: name.to_owned(),
                 source,
-            });
+            }
+            .into());
         }
     };
     let state = state.trim();
@@ -111,7 +136,8 @@ fn examine(
         return Err(Refusal::NotActive {
             name: name.to_owned(),
             state: state.to_owned(),
-        });
+        }
+        .into());
     }
     let identity =
         read_attribute(&dir.join("identity")).map_err(|source| Refusal::ReadIdentity {
@@ -123,10 +149,11 @@ fn examine(
         return Err(Refusal::NotHardware {
             name: name.to_owned(),
             identity: identity.to_owned(),
-        });
+        }
+        .into());
     }
-    let counter = |attribute, value: io::Result<String>| {
-        value
+    let counter = |attribute| {
+        read_attribute(&dir.join(attribute))
             .and_then(|text| {
                 text.trim()
                     .parse::<u64>()
@@ -138,14 +165,9 @@ fn examine(
                 source,
             })
     };
-    let timeleft = match read_attribute(&dir.join("timeleft")) {
-        Err(source) if source.kind() == io::ErrorKind::NotFound => None,
-        value => Some(counter("timeleft", value)?),
-    };
-    // Drivers without get_timeleft expose no attribute. Preserve their state-only readiness;
-    // a present attribute that fails to read or parse is not the same as unsupported.
-    if let Some(timeleft) = timeleft {
-        let timeout = counter("timeout", read_attribute(&dir.join("timeout")))?;
+    let timeout = counter("timeout")?;
+    let sample = || {
+        let timeleft = counter("timeleft")?;
         if timeleft > timeout {
             return Err(Refusal::NotCounting {
                 name: name.to_owned(),
@@ -153,43 +175,76 @@ fn examine(
                 timeout,
             });
         }
+        Ok(timeleft)
+    };
+    let mut previous = sample()?;
+    for _ in 0..SAMPLE_INTERVALS {
+        wait(SAMPLE_INTERVAL)?;
+        let current = sample()?;
+        if current < previous {
+            return Ok(Some(Ready {
+                name: name.to_owned(),
+                identity: identity.to_owned(),
+            }));
+        }
+        // PID 1 may have petted the watchdog between samples, even when the
+        // rounded seconds are equal. Require a later decrease, not the pet itself.
+        previous = current;
     }
-    Ok(Some(Ready {
+    Err(Refusal::NoProgress {
         name: name.to_owned(),
-        identity: identity.to_owned(),
-    }))
+    }
+    .into())
 }
 
-/// Whether some hardware watchdog under `root` is active and its counter is plausible, where supported.
-/// A present but unreadable counter or lost MMIO decode fails; an absent counter preserves state-only probing.
-pub(crate) fn probe(root: &Path) -> Check {
-    probe_with(root, devices, read_attribute)
+/// Whether some hardware watchdog under `root` is active with observed countdown progress.
+/// Missing, unreadable, implausible or nondecreasing counters fail.
+pub(crate) fn probe(root: &Path, cancel: &CancellationToken) -> Result<Check, Cancelled> {
+    probe_with(root, devices, read_attribute, |duration| {
+        wait(cancel, duration)
+    })
+}
+
+/// Waits for the next sample unless `cancel` fires first.
+pub(crate) fn wait(cancel: &CancellationToken, duration: Duration) -> Result<(), Cancelled> {
+    if cancel.wait_timeout(duration) {
+        Err(Cancelled)
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) fn probe_with<I>(
     root: &Path,
     list: impl Fn(&Path) -> io::Result<I>,
     read_attribute: impl Fn(&Path) -> io::Result<String>,
-) -> Check
+    wait: impl Fn(Duration) -> Result<(), Cancelled>,
+) -> Result<Check, Cancelled>
 where
     I: IntoIterator<Item = io::Result<OsString>>,
 {
-    match scan_with(root, list, read_attribute) {
+    Ok(match scan_with(root, list, read_attribute, wait)? {
         Ok(active) => passed(CheckName::Watchdog, active.first.detail()),
         Err(check) => check,
-    }
+    })
 }
 
 /// Every active hardware watchdog under `root`, or the failed check saying why there is none.
-pub(crate) fn scan(root: &Path) -> Result<Active, Check> {
-    scan_with(root, devices, read_attribute)
+pub(crate) fn scan(
+    root: &Path,
+    cancel: &CancellationToken,
+) -> Result<Result<Active, Check>, Cancelled> {
+    scan_with(root, devices, read_attribute, |duration| {
+        wait(cancel, duration)
+    })
 }
 
 fn scan_with<I>(
     root: &Path,
     list: impl Fn(&Path) -> io::Result<I>,
     read_attribute: impl Fn(&Path) -> io::Result<String>,
-) -> Result<Active, Check>
+    wait: impl Fn(Duration) -> Result<(), Cancelled>,
+) -> Result<Result<Active, Check>, Cancelled>
 where
     I: IntoIterator<Item = io::Result<OsString>>,
 {
@@ -198,10 +253,10 @@ where
         Ok(entries) => Some(entries),
         Err(error) if error.kind() == io::ErrorKind::NotFound => None,
         Err(error) => {
-            return Err(failed(
+            return Ok(Err(failed(
                 CheckName::Watchdog,
                 error_chain(&Refusal::List(error)),
-            ));
+            )));
         }
     };
     let mut devices = Vec::new();
@@ -209,10 +264,10 @@ where
         let name = match entry {
             Ok(name) => name,
             Err(error) => {
-                return Err(failed(
+                return Ok(Err(failed(
                     CheckName::Watchdog,
                     error_chain(&Refusal::List(error)),
-                ));
+                )));
             }
         };
         if let Some(name) = name.to_str().filter(|name| name.starts_with("watchdog")) {
@@ -223,26 +278,27 @@ where
     let mut refusals = Vec::new();
     let mut ready = Vec::new();
     for (name, dir) in &devices {
-        match examine(name, dir, &read_attribute) {
+        match examine(name, dir, &read_attribute, &wait) {
             Ok(Some(device)) => ready.push(device),
             Ok(None) => {}
-            Err(refusal) => refusals.push(error_chain(&refusal)),
+            Err(ExamineError::Refused(refusal)) => refusals.push(error_chain(&refusal)),
+            Err(ExamineError::Cancelled(cancelled)) => return Err(cancelled),
         }
     }
     let mut ready = ready.into_iter();
     if let Some(first) = ready.next() {
-        return Ok(Active {
+        return Ok(Ok(Active {
             first,
             rest: ready.collect(),
-        });
+        }));
     }
     if refusals.is_empty() {
-        return Err(failed(
+        return Ok(Err(failed(
             CheckName::Watchdog,
             "no hardware watchdog state available",
-        ));
+        )));
     }
-    Err(failed(CheckName::Watchdog, refusals.join("; ")))
+    Ok(Err(failed(CheckName::Watchdog, refusals.join("; "))))
 }
 
 /// The device paths PID 1's open descriptors point at. A descriptor that closes between the listing and its
@@ -259,8 +315,8 @@ pub(crate) fn pid1_descriptors(root: &Path) -> io::Result<Vec<PathBuf>> {
 
 /// Whether PID 1 holds a hardware watchdog passing the shared probe under `root` (`scan`).
 /// The shared probe also supplies preflight, so every armed check rejects a stopped MMIO timer.
-pub(crate) fn arming(root: &Path) -> WatchdogState {
-    arming_with(&scan(root), pid1_descriptors(root))
+pub(crate) fn arming(root: &Path, cancel: &CancellationToken) -> Result<WatchdogState, Cancelled> {
+    Ok(arming_with(&scan(root, cancel)?, pid1_descriptors(root)))
 }
 
 pub(crate) fn arming_with(

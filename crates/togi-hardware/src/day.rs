@@ -28,7 +28,13 @@ pub trait Observer: Smu {
     fn end_evidence(&mut self, boot: &BootId) -> EndEvidence;
     /// Whether PID 1's hardware watchdog is armed right now, for the day service and the gate that applies
     /// offsets only while a hang would reset the machine.
-    fn watchdog(&mut self) -> WatchdogState;
+    ///
+    /// The reading waits on the counter's one-second advance, so `cancel` ends the wait early.
+    ///
+    /// # Errors
+    /// `Error::Cancelled` when `cancel` fired before the reading finished; a cancelled reading says nothing
+    /// about the watchdog, so the caller keeps its previous one.
+    fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, Error>;
     /// The faults the running `boot`'s kernel log holds after `after`, or in the whole boot when `after` is `None`.
     /// An unresumable cursor is `Error::CursorMissing`; the partial value keeps what was read before a failure.
     fn live_faults(
@@ -103,8 +109,8 @@ impl Observer for DayHardware<'_> {
         self.kernel.end_evidence(boot)
     }
 
-    fn watchdog(&mut self) -> WatchdogState {
-        crate::watchdog::arming(Path::new("/"))
+    fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, Error> {
+        crate::watchdog::arming(Path::new("/"), cancel).map_err(|_cancelled| Error::Cancelled)
     }
 
     fn live_faults(

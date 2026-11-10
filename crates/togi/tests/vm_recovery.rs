@@ -278,8 +278,8 @@ mod vm_recovery {
             Vec::new()
         }
 
-        fn watchdog(&mut self) -> Check {
-            Check::default()
+        fn watchdog(&mut self, _cancel: &CancellationToken) -> Result<Check, Error> {
+            Ok(Check::default())
         }
     }
 
@@ -419,7 +419,11 @@ mod vm_recovery {
                 })
         }
 
-        fn watchdog(&mut self) -> togi_machine::WatchdogState {
+        /// Reads sysfs and PID 1's descriptors once without waiting, so cancellation has nothing to interrupt.
+        fn watchdog(
+            &mut self,
+            _cancel: &CancellationToken,
+        ) -> Result<togi_machine::WatchdogState, Error> {
             let device = Path::new("/sys/class/watchdog/watchdog0");
             let active = std::fs::read_to_string(device.join("state"))
                 .is_ok_and(|state| state.trim() == "active");
@@ -448,11 +452,11 @@ mod vm_recovery {
             });
             let detail =
                 format!("VM watchdog active={active} counting={counting} held-by-PID1={held}");
-            if active && counting && held {
+            Ok(if active && counting && held {
                 togi_machine::WatchdogState::Armed { detail }
             } else {
                 togi_machine::WatchdogState::Unarmed { detail }
-            }
+            })
         }
 
         fn live_faults(

@@ -6,9 +6,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use togi_config::Config;
-use togi_machine::{Check, CoreInfo, CoreRank, Partial};
+use togi_machine::{CancellationToken, Check, CoreInfo, CoreRank, Partial};
 use togi_smu::Driver;
 use togi_trial::{BackendIdentity, IdentityError};
 
@@ -17,6 +18,7 @@ use crate::assemble::Parts;
 use crate::host::HostReadings;
 use crate::host::{Privilege, ScopeProbe, SystemHost};
 use crate::preflight::Account;
+use crate::watchdog::Cancelled;
 
 pub(super) const MAILBOX_AND_PM_FILES: [&str; 5] = [
     "smu_args",
@@ -190,10 +192,46 @@ impl Tree {
     }
 
     pub(super) fn watchdog(&self) -> Check {
+        let sampled = self.watchdog_with(|duration| {
+            assert_eq!(duration, Duration::from_secs(1));
+            for (path, entry) in lock(&self.entries).iter_mut() {
+                if path.file_name().is_some_and(|name| name == "timeleft") {
+                    if let Entry::File(bytes) = entry {
+                        if let Ok(seconds) = String::from_utf8_lossy(bytes).trim().parse::<u64>() {
+                            *bytes = seconds.saturating_sub(1).to_string().into_bytes();
+                        }
+                    }
+                }
+            }
+            Ok(())
+        });
+        match sampled {
+            Ok(check) => check,
+            Err(Cancelled) => panic!("the decrementing wait never cancels"),
+        }
+    }
+
+    pub(super) fn watchdog_with(
+        &self,
+        wait: impl Fn(Duration) -> Result<(), Cancelled>,
+    ) -> Result<Check, Cancelled> {
+        self.watchdog_observing(wait, |_| {})
+    }
+
+    /// Like `watchdog_with`, telling `read` each attribute path the probe reads, before it reads it.
+    pub(super) fn watchdog_observing(
+        &self,
+        wait: impl Fn(Duration) -> Result<(), Cancelled>,
+        read: impl Fn(&Path),
+    ) -> Result<Check, Cancelled> {
         crate::watchdog::probe_with(
             self.root(),
             |path| self.list(path).map(|entries| entries.into_iter().map(Ok)),
-            |path| self.attribute(path),
+            |path| {
+                read(path);
+                self.attribute(path)
+            },
+            wait,
         )
     }
 
@@ -215,8 +253,8 @@ impl Tree {
 }
 
 impl HostReadings for Tree {
-    fn watchdog(&self, _root: &Path) -> Check {
-        self.watchdog()
+    fn watchdog(&self, _root: &Path, _cancel: &CancellationToken) -> Result<Check, Cancelled> {
+        Ok(self.watchdog())
     }
 
     fn ranking(

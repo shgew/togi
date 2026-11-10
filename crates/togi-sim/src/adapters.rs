@@ -321,12 +321,12 @@ impl Host for SimHost {
             .collect()
     }
 
-    fn watchdog(&mut self) -> Check {
-        failed_or(
+    fn watchdog(&mut self, _cancel: &CancellationToken) -> Result<Check, Error> {
+        Ok(failed_or(
             &self.0.borrow(),
             "watchdog",
             "simulated hardware watchdog active",
-        )
+        ))
     }
 }
 

@@ -2,7 +2,9 @@
 
 use togi_hardware::day::Observer;
 use togi_journal::{ApplicationId, ApplyCause, CcdVector, DayApplied, Event, Payload, Seq, Stamp};
-use togi_machine::{CcdProfile, Clock, ObservedOffset, PerCore, Stopped, WatchdogState};
+use togi_machine::{
+    CancellationToken, CcdProfile, Clock, ObservedOffset, PerCore, Stopped, WatchdogState,
+};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, Params, State};
 
@@ -28,7 +30,9 @@ impl Live {
     ) -> Result<Self, Error> {
         let topology = super::session_cores(journal.events())?;
         let offsets = observer.offsets()?;
-        let watchdog = observer.watchdog();
+        // The check samples for at most four seconds per candidate device and its verdict gates the
+        // first write, so it takes a fresh token and a stop signal deliberately does not interrupt it.
+        let watchdog = observer.watchdog(&CancellationToken::new())?;
         if offsets.len() != topology.len()
             || topology
                 .iter()
@@ -210,7 +214,13 @@ impl Live {
         observer: &mut dyn Observer,
         clock: &dyn Clock,
     ) -> Result<(), Error> {
-        if !matches!(observer.watchdog(), WatchdogState::Armed { .. }) {
+        // A reapplication is bounded work that follows a pause or resume the journal already holds, so its
+        // watchdog read takes a fresh token: a stop signal during it must not skip the gate and restore a
+        // nonzero profile unchecked. A cancelled fresh token cannot occur; an error refuses the reapplication.
+        if !matches!(
+            observer.watchdog(&CancellationToken::new())?,
+            WatchdogState::Armed { .. }
+        ) {
             return Err(Error::Watchdog);
         }
         // Firmware invalidation is queried even on resume; SameBoot never promotes.

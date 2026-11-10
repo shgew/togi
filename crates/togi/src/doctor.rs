@@ -45,8 +45,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Linux it reports that hardware runs need Linux and exits 1 before reading anything.
 ///
 /// With --day, check CPU and `ryzen_smu` identity, current offset readback, PID 1's armed hardware
-/// watchdog (including the shared counting check where supported), this boot's entries in the
-/// persistent system journal, and the installed GRUB or systemd-boot setup. Also require a
+/// watchdog, this boot's entries in the persistent system journal, and the installed GRUB or
+/// systemd-boot setup. Counting must be observed: a missing, unreadable or static counter fails;
+/// a PID 1 refresh needs a later decrease. This does not test physical expiry. Also require a
 /// recorded, complete CO-0 baseline or restoration receipt citing this boot's zero readbacks.
 /// Applied D, a day boot's observations, and a current zero readback are not historical baseline
 /// proof. These read-only diagnostics neither apply a profile nor give a stability verdict.

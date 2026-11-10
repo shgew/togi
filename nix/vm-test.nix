@@ -17,7 +17,7 @@ let
       done
     '';
   # The tuning VM tests share this node: the NixOS module with the tuning specialisation, GRUB on a virtual disk
-  # and an i6300esb watchdog that resets the machine. Their nodes disable DHCP.
+  # and the ICH9 TCO watchdog with a readable countdown and guest reset. Their nodes disable DHCP.
   tuningBoot =
     { pkgs, lib, ... }:
     {
@@ -27,11 +27,12 @@ let
       boot.loader.grub.enable = true;
       boot.loader.timeout = 1;
       virtualisation.qemu.options = [
-        "-device i6300esb"
+        "-machine q35"
+        "-global ICH9-LPC.noreboot=false"
         "-watchdog-action reset"
       ];
+      boot.initrd.kernelModules = [ "iTCO_wdt" ];
       specialisation.togi.configuration = {
-        boot.initrd.kernelModules = [ "i6300esb" ];
         # The module check pins the shipped 30s; only the test waits less for a reset.
         systemd.settings.Manager.RuntimeWatchdogSec = lib.mkForce "10s";
       };
@@ -84,7 +85,7 @@ let
             "test \"$(busctl get-property org.freedesktop.systemd1 /org/freedesktop/systemd1 "
             "org.freedesktop.systemd1.Manager RuntimeWatchdogUSec)\" = 't 0'"
         )
-        # Stopping sleep.target follows the resume path. SP5100 cannot probe on i6300esb; its failure
+        # Stopping sleep.target follows the resume path. SP5100 cannot probe on ICH9; its failure
         # must not prevent PID 1 re-arming the existing hardware watchdog.
         machine.succeed("systemctl stop sleep.target togi-sleep-hold.service")
         machine.wait_until_succeeds("grep -qx active /sys/class/watchdog/watchdog0/state")
@@ -105,7 +106,13 @@ let
         booted_system = machine.succeed("readlink -f /run/current-system").strip()
         assert booted_system == tuning_system, (booted_system, tuning_system)
         machine.wait_until_succeeds("grep -qx active /sys/class/watchdog/watchdog0/state")
-        machine.succeed("grep -qx 'i6300ESB timer' /sys/class/watchdog/watchdog0/identity")
+        machine.succeed("grep -qx iTCO_wdt /sys/class/watchdog/watchdog0/identity")
+        machine.succeed("test -r /sys/class/watchdog/watchdog0/timeleft")
+        machine.wait_until_succeeds(
+            "before=$(cat /sys/class/watchdog/watchdog0/timeleft); sleep 1; "
+            "after=$(cat /sys/class/watchdog/watchdog0/timeleft); test \"$after\" -lt \"$before\"",
+            timeout=10,
+        )
         # PID 1 may close an unrelated descriptor between the glob and its readlink.
         pid1_files = machine.succeed("readlink /proc/1/fd/* || true").splitlines()
         assert any(f.startswith("/dev/watchdog") for f in pid1_files), pid1_files
@@ -137,7 +144,7 @@ let
             for line in machine.succeed("togi events --json --kind preflight.check").splitlines()
         ]
         watchdog = [e for e in preflight if e["data"]["check"] == "watchdog"]
-        # i6300esb has no get_timeleft operation, so its state-only readiness remains supported.
+        # The emulated ICH9 timer must pass the same observed-countdown check as physical hardware.
         assert len(watchdog) == 1 and watchdog[0]["data"]["ok"], preflight
         assert preflight[0]["data"]["check"] == "watchdog", preflight
         machine.log(f"armed watchdog preflight: {watchdog[0]}")
@@ -1167,7 +1174,7 @@ let
           '';
         };
         hardware.cpu.amd.ryzen-smu.enable = false;
-        boot.initrd.kernelModules = [ "i6300esb" ];
+        boot.initrd.kernelModules = [ "iTCO_wdt" ];
         users.users.alice.isNormalUser = true;
         users.users.mallory.isNormalUser = true;
         systemd.tmpfiles.rules = [
@@ -1353,7 +1360,8 @@ let
           virtualisation.useBootLoader = true;
           # Hardware belongs to the shared QEMU process, not just the activated generation.
           virtualisation.qemu.options = [
-            "-device i6300esb"
+            "-machine q35"
+            "-global ICH9-LPC.noreboot=false"
             "-watchdog-action reset"
           ];
           networking.useDHCP = false;

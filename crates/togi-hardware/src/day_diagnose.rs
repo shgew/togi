@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use togi_command::{Invocation, Output};
 use togi_config::Config;
-use togi_machine::{BootId, Check, WatchdogState};
+use togi_machine::{BootId, CancellationToken, Check, WatchdogState};
 
 use crate::diagnose::{Diagnosis, diagnosis_host};
 use crate::error::Error;
@@ -33,12 +33,16 @@ pub(crate) fn at(
             false,
         ),
     };
-    Ok(with_host(
-        &host,
-        privileged,
-        crate::watchdog::arming(root),
-        persistent,
-    ))
+    // Nothing owns a token here: the diagnostic samples for at most four seconds per candidate device
+    // and nobody cancels it. If the reading is interrupted anyway, the check fails rather than claiming
+    // an armed timer.
+    let watchdog =
+        crate::watchdog::arming(root, &CancellationToken::new()).unwrap_or_else(|_cancelled| {
+            WatchdogState::Unarmed {
+                detail: "watchdog check interrupted".to_owned(),
+            }
+        });
+    Ok(with_host(&host, privileged, watchdog, persistent))
 }
 
 pub(crate) fn with_host<R: HostReadings>(

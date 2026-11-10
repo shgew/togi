@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use togi_config::Config;
-use togi_machine::{BiosContext, Check};
+use togi_machine::{BiosContext, CancellationToken, Check};
 use togi_smu::Driver;
 
 use crate::assemble::Parts;
@@ -9,6 +9,7 @@ use crate::checks::{CheckName, Skip, Skipped, failed, passed};
 use crate::error::Error;
 use crate::host::{HostReadings, Privilege, SystemHost};
 use crate::preflight::Outcome;
+use crate::watchdog;
 
 /// What `togi doctor` found. The checks made before a BIOS context read failed stay in `ran`.
 #[derive(Debug)]
@@ -42,8 +43,12 @@ impl<R: HostReadings> Survey for SystemHost<R> {
         self.run_steps(&crate::preflight::STEPS, privileged)
     }
 
+    /// Doctor never cancels; an interrupted check still reports as a failed one.
     fn watchdog(&self) -> Check {
-        self.watchdog_check()
+        self.watchdog_check(&CancellationToken::new())
+            .unwrap_or_else(|watchdog::Cancelled| {
+                failed(CheckName::Watchdog, "watchdog check interrupted")
+            })
     }
 
     fn bios_context(&self) -> Result<BiosContext, togi_smu::Error> {
