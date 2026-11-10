@@ -280,7 +280,7 @@ fn a_frequency_report_acknowledges_the_durable_typed_event_citing_the_trial_star
         rig.mem.log().iter().map(|(op, _)| *op).collect::<Vec<_>>(),
         [Op::Write, Op::Sync],
     );
-    assert_eq!(cancel.is_cancelled(), false);
+    assert!(!cancel.is_cancelled());
 }
 
 #[test]
