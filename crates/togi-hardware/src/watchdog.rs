@@ -205,7 +205,8 @@ pub(crate) fn probe(root: &Path, cancel: &CancellationToken) -> Result<Check, Ca
     })
 }
 
-fn wait(cancel: &CancellationToken, duration: Duration) -> Result<(), Cancelled> {
+/// Waits for the next sample unless `cancel` fires first.
+pub(crate) fn wait(cancel: &CancellationToken, duration: Duration) -> Result<(), Cancelled> {
     if cancel.wait_timeout(duration) {
         Err(Cancelled)
     } else {

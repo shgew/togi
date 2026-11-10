@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use test_case::test_case;
-use togi_machine::{Check, WatchdogState};
+use togi_machine::{CancellationToken, Check, WatchdogState};
 
 use super::support::Tree;
-use crate::watchdog::{Active, Cancelled, Ready, arming_with};
+use crate::watchdog::{Active, Cancelled, Ready, arming_with, wait};
 
 fn device(root: &Tree, index: usize, state: &str, identity: Option<&str>) {
     let dir = format!("sys/class/watchdog/watchdog{index}");
@@ -246,6 +246,20 @@ fn a_cancelled_wait_outranks_an_earlier_ready_device() {
     });
     assert_eq!(result, Err(Cancelled));
     assert_eq!(waits.get(), 2);
+}
+
+#[test]
+fn the_probe_wait_ends_when_its_token_is_cancelled() {
+    assert_eq!(wait(&CancellationToken::new(), Duration::ZERO), Ok(()));
+    let root = Tree::empty();
+    device(&root, 0, "active\n", Some("SP5100 TCO timer\n"));
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    // A cancelled token returns from the wait at once, so the full interval is never slept.
+    assert_eq!(
+        root.watchdog_with(|duration| wait(&cancel, duration)),
+        Err(Cancelled)
+    );
 }
 
 #[test]
