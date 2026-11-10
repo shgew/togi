@@ -266,6 +266,8 @@ struct Shared {
     fail_alive: Cell<bool>,
     hang_scans: Cell<bool>,
     scan_fault: Cell<Option<ScanFault>>,
+    hang_threads: Cell<bool>,
+    observer_blocked: Cell<bool>,
     signal_error_default: Cell<Option<SignalErrorKind>>,
     fail_once: Rc<RefCell<Vec<(GroupSignal, SignalErrorKind)>>>,
     recovered: RefCell<Vec<(ScopeProcess, Recovered)>>,
@@ -357,6 +359,8 @@ impl Fake {
                 fail_alive: Cell::new(false),
                 hang_scans: Cell::new(false),
                 scan_fault: Cell::new(None),
+                hang_threads: Cell::new(false),
+                observer_blocked: Cell::new(false),
                 signal_error_default: Cell::new(None),
                 fail_once: Rc::default(),
                 recovered: RefCell::default(),
@@ -394,6 +398,19 @@ impl Fake {
     /// with no process state borrowed, so it may change a process or burn real time.
     pub(crate) fn on_threads(&self, hook: impl FnMut(u32) + 'static) {
         *self.shared.threads_hook.borrow_mut() = Some(Box::new(hook));
+    }
+
+    /// A required thread observation blocks its owner, which stays blocked after the caller stops
+    /// awaiting it, until `release_threads`; like the real scan owner, every later thread
+    /// observation and scope scan meanwhile fails at once as stuck.
+    pub(crate) fn hang_threads(&self) {
+        self.shared.hang_threads.set(true);
+    }
+
+    /// Every blocked thread observation's owner returns; later observations answer at once.
+    pub(crate) fn release_threads(&self) {
+        self.shared.hang_threads.set(false);
+        self.shared.observer_blocked.set(false);
     }
 
     /// Every signal to a new process fails like this.
@@ -625,7 +642,11 @@ impl Os for Fake {
         }
     }
 
-    fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError> {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the fake answers readiness immediately"
+    )]
+    async fn in_scope(&self, pid: u32, scope: &ScopeName, _: Instant) -> Result<bool, ProcError> {
         let processes = self.shared.processes.borrow();
         let process = processes.iter().find(|process| process.pid == pid);
         Ok(process.is_some_and(|process| {
@@ -633,7 +654,11 @@ impl Os for Fake {
         }))
     }
 
-    fn usage(&self, pid: u32) -> Result<Usage, ProcError> {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the fake answers CPU usage immediately"
+    )]
+    async fn usage(&self, pid: u32, _: Instant) -> Result<Usage, ProcError> {
         let processes = self.shared.processes.borrow();
         processes
             .iter()
@@ -643,7 +668,16 @@ impl Os for Fake {
             })
     }
 
-    fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
+    async fn threads(&self, pid: u32, deadline: Instant) -> Result<Threads, ProcError> {
+        if self.shared.observer_blocked.get() {
+            return Err(ProcError::Stuck);
+        }
+        if self.shared.hang_threads.get() {
+            // Like the real blocking owner: it outlives an abandoned wait until it returns.
+            self.shared.observer_blocked.set(true);
+            sleep_until(deadline).await;
+            return Err(ProcError::Deadline);
+        }
         if let Some(hook) = self.shared.threads_hook.borrow_mut().as_mut() {
             hook(pid);
         }
@@ -658,6 +692,14 @@ impl Os for Fake {
                 Err(error) => Err(replay(error)),
             },
         )
+    }
+
+    fn observations_finished(&self) -> Result<(), ProcError> {
+        if self.shared.observer_blocked.get() {
+            Err(ProcError::Abandoned)
+        } else {
+            Ok(())
+        }
     }
 
     async fn systemd(
@@ -724,6 +766,9 @@ impl Os for Fake {
         if let Some(hook) = self.shared.scan_hook.borrow_mut().as_mut() {
             hook();
         }
+        if self.shared.observer_blocked.get() {
+            return Err(ProcError::Stuck);
+        }
         match self.shared.scan_fault.get() {
             Some(ScanFault::Fail) => return Err(lost_read()),
             Some(ScanFault::Late) => {
@@ -767,6 +812,9 @@ impl Os for Fake {
         captured: &[ScopeProcess],
         deadline: Instant,
     ) -> Result<usize, ProcError> {
+        if self.shared.observer_blocked.get() {
+            return Err(ProcError::Stuck);
+        }
         if self.shared.fail_alive.get() {
             return Err(lost_read());
         }
@@ -820,6 +868,7 @@ fn replay(error: &ProcError) -> ProcError {
         ProcError::CpuTimeOverflow { pid } => ProcError::CpuTimeOverflow { pid: *pid },
         ProcError::Deadline => ProcError::Deadline,
         ProcError::Stuck => ProcError::Stuck,
+        ProcError::Abandoned => ProcError::Abandoned,
         ProcError::ScanLost => ProcError::ScanLost,
     }
 }

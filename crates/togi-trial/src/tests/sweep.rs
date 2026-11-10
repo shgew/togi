@@ -1159,16 +1159,25 @@ mod killed_owner {
             Err(std::io::Error::other("the sweep launches nothing").into())
         }
 
-        fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError> {
-            self.linux.in_scope(pid, scope)
+        async fn in_scope(
+            &self,
+            pid: u32,
+            scope: &ScopeName,
+            deadline: Instant,
+        ) -> Result<bool, ProcError> {
+            self.linux.in_scope(pid, scope, deadline).await
         }
 
-        fn usage(&self, pid: u32) -> Result<Usage, ProcError> {
-            self.linux.usage(pid)
+        async fn usage(&self, pid: u32, deadline: Instant) -> Result<Usage, ProcError> {
+            self.linux.usage(pid, deadline).await
         }
 
-        fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
-            self.linux.threads(pid)
+        async fn threads(&self, pid: u32, deadline: Instant) -> Result<Threads, ProcError> {
+            self.linux.threads(pid, deadline).await
+        }
+
+        fn observations_finished(&self) -> Result<(), ProcError> {
+            self.linux.observations_finished()
         }
 
         #[expect(

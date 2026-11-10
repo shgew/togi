@@ -345,10 +345,12 @@ impl<'a, O: Os> Teardown<'a, O, Reaped> {
 }
 
 impl<'a, O: Os> Teardown<'a, O, ReadersDone> {
-    /// A scope kill acknowledges delivery, not exit, so a descendant can outlive it: scans `/proc`
-    /// until no process remains in any known scope, within the absolute deadline. Writers count as
-    /// stopped only for instances whose scope was seen empty.
+    /// Waits within the absolute deadline for every abandoned `/proc` observation to return, so
+    /// none outlives the proof. A scope kill acknowledges delivery, not exit, so a descendant can
+    /// outlive it: scans `/proc` until no process remains in any known scope, within the absolute
+    /// deadline. Writers count as stopped only for instances whose scope was seen empty.
     pub(crate) async fn verify(mut self) -> Teardown<'a, O, Verified> {
+        self.await_observers().await;
         if !self.live.scoped || self.live.scopes.is_empty() {
             return self.advance(Verified);
         }
@@ -404,6 +406,24 @@ impl<'a, O: Os> Teardown<'a, O, ReadersDone> {
             }
         }
         self.advance(Verified)
+    }
+
+    /// An abandoned `/proc` observation whose blocking owner is still running could race later
+    /// hardware use, so it withholds the proof. Teardown waits for such owners only within what
+    /// remains of the absolute deadline.
+    async fn await_observers(&mut self) {
+        let deadline = self.budget.deadline();
+        while let Err(source) = self.os.observations_finished() {
+            let now = Instant::now();
+            if now >= deadline {
+                self.failures.record(CleanupFailure::Observe {
+                    what: "the outstanding process observations",
+                    source: Box::new(source),
+                });
+                return;
+            }
+            sleep_until(deadline.min(now + VERIFY_POLL)).await;
+        }
     }
 }
 

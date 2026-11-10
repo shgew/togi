@@ -157,6 +157,8 @@ pub(crate) enum ProcError {
     Deadline,
     #[error("an earlier /proc scan is still blocked")]
     Stuck,
+    #[error("a /proc observation was abandoned before reporting")]
+    Abandoned,
     #[error("the /proc scan thread failed before reporting")]
     ScanLost,
 }

@@ -157,9 +157,17 @@ pub(crate) trait Os: 'static {
     type Child: Child;
 
     fn launch(&self, command: &LaunchCommand) -> Result<Self::Child, LaunchFailure<Self::Child>>;
-    fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError>;
-    fn usage(&self, pid: u32) -> Result<Usage, ProcError>;
-    fn threads(&self, pid: u32) -> Result<Threads, ProcError>;
+    /// Required observations run off the runtime thread and share their caller's absolute deadline.
+    async fn in_scope(
+        &self,
+        pid: u32,
+        scope: &ScopeName,
+        deadline: Instant,
+    ) -> Result<bool, ProcError>;
+    async fn usage(&self, pid: u32, deadline: Instant) -> Result<Usage, ProcError>;
+    async fn threads(&self, pid: u32, deadline: Instant) -> Result<Threads, ProcError>;
+    /// An abandoned observation withholds cleanup proof while its blocking owner is still running.
+    fn observations_finished(&self) -> Result<(), ProcError>;
     /// Runs through `togi_command::run`; a timed-out call is an error even when it printed text.
     async fn systemd(
         &self,
