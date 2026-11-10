@@ -505,26 +505,23 @@ pub(crate) fn assert_day_chain(
         } else {
             boot = Some(event.boot.clone());
         }
-        match &event.payload {
-            Payload::SmuIntent(record) => {
-                assert!(intent.is_none());
-                intent = Some((event.seq, record.command()));
-            }
-            Payload::SmuWrite(record) => {
-                let (seq, command) = intent.take().unwrap();
-                assert_eq!(event.cause, [seq]);
-                assert_eq!(record.command(), command);
-                write = Some(event.seq);
-            }
-            Payload::SmuReadback(record) => {
-                assert_eq!(event.cause, [write.unwrap()]);
-                assert_eq!(
-                    Some(record.offset),
-                    record.expected.map(TargetOffset::observed)
-                );
-                observed.set(record.core, record.offset);
-            }
-            other => panic!("unexpected day transaction: {other:?}"),
+        if let Payload::SmuIntent(record) = &event.payload {
+            assert!(intent.is_none());
+            intent = Some((event.seq, record.command()));
+        } else if let Payload::SmuWrite(record) = &event.payload {
+            let (seq, command) = intent.take().unwrap();
+            assert_eq!(event.cause, [seq]);
+            assert_eq!(record.command(), command);
+            write = Some(event.seq);
+        } else if let Payload::SmuReadback(record) = &event.payload {
+            assert_eq!(event.cause, [write.unwrap()]);
+            assert_eq!(
+                Some(record.offset),
+                record.expected.map(TargetOffset::observed)
+            );
+            observed.set(record.core, record.offset);
+        } else {
+            panic!("unexpected day transaction: {:?}", event.payload);
         }
     }
     assert!(intent.is_none());
