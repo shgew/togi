@@ -681,7 +681,7 @@ impl Watched {
             Outcome::Missing if self.backlog() => self.reject(WatchError::Lost),
             Outcome::Missing => {
                 self.buffer = buffer;
-                self.verification = Some(Verification::Measured);
+                self.verification = None;
                 Poll::Idle
             }
             Outcome::Other => self.reject(WatchError::Unsupported),
@@ -1040,16 +1040,35 @@ mod tests {
         });
     }
 
-    #[test]
-    fn a_file_absent_at_the_first_poll_can_verify_later_appended_results() {
+    #[derive(Clone, Copy)]
+    enum Arrival {
+        Created,
+        Renamed,
+    }
+
+    #[test_case::test_case(Arrival::Created; "created after absence")]
+    #[test_case::test_case(Arrival::Renamed; "old results renamed after absence")]
+    fn a_file_first_accepted_after_absence_is_fenced_before_later_appends_verify(arrival: Arrival) {
         crate::testing::runtime(true).block_on(async {
             let mut f = fixture();
+            let replacement = f.directory().join("previous-results");
+            f.memory()
+                .write_file(&replacement, b"verified self-test\n", None)
+                .unwrap();
             assert!(matches!(f.poll_interval().await.0, Poll::Idle));
             tokio::time::advance(Duration::from_secs(1)).await;
-            f.append(b"verified self-test\n");
+            match arrival {
+                Arrival::Created => f.append(b"verified self-test\n"),
+                Arrival::Renamed => f.memory().rename(&replacement, f.path()).unwrap(),
+            }
             assert_eq!(
                 f.poll_interval().await.1,
-                [("verified self-test".to_owned(), Verification::Measured)]
+                [("verified self-test".to_owned(), Verification::Outside)]
+            );
+            f.append(b"verified next-test\n");
+            assert_eq!(
+                f.poll_interval().await.1,
+                [("verified next-test".to_owned(), Verification::Measured)]
             );
         });
     }
