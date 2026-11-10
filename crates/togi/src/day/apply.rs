@@ -21,77 +21,165 @@ pub(crate) fn current_baseline(
     let mut readings = PerCore::default();
     let mut last_write = None;
     for event in events.iter().filter(|event| &event.boot == boot) {
-        if let Payload::DayBootStart(start) = &event.payload {
-            readings = PerCore::default();
-            last_write = None;
-            verified = stock_readback(&start.offsets, topology).then_some(event.seq);
-        } else if let Payload::SmuIntent(intent) = &event.payload {
-            invalidate_readings(&mut readings, intent.command().core());
-            last_write = None;
-            verified = None;
-        } else if let Payload::SmuWrite(write) = &event.payload {
-            invalidate_readings(&mut readings, write.command().core());
-            last_write = Some(event.seq);
-            verified = None;
-        } else if matches!(
-            event.payload,
-            Payload::SmuError(_) | Payload::DayOffsetsChanged(_) | Payload::CommandReset(_)
-        ) {
-            readings = PerCore::default();
-            last_write = None;
-            verified = None;
-        } else if let Payload::SmuReadback(readback) = &event.payload {
-            verified = None;
-            if readback.offset != ObservedOffset(0)
-                || readback
-                    .expected
-                    .is_some_and(|expected| expected != TargetOffset::ZERO)
-            {
+        match &event.payload {
+            Payload::DayBootStart(start) => {
                 readings = PerCore::default();
-                continue;
+                last_write = None;
+                verified = stock_readback(&start.offsets, topology).then_some(event.seq);
             }
-            let written_zero = readback.expected == Some(TargetOffset::ZERO)
-                && event.cause.iter().any(|seq| {
-                    let Ok(index) = events.binary_search_by_key(seq, |event| event.seq) else {
-                        return false;
-                    };
-                    let write = &events[index];
-                    Some(write.seq) == last_write
-                        && write.seq < event.seq
-                        && write.boot == *boot
-                        && matches!(&write.payload, Payload::SmuWrite(write)
-                            if write.command().offset() == TargetOffset::ZERO
-                                && write.command().core().is_none_or(|core| core == readback.core))
-                });
-            readings.set(readback.core, Some((event.seq, written_zero)));
-            if !topology.is_empty()
-                && readings.len() == topology.len()
-                && topology.iter().all(|info| {
-                    readings
-                        .get(info.core)
-                        .flatten()
-                        .is_some_and(|(_, written_zero)| written_zero)
-                })
-            {
-                verified = Some(event.seq);
-            }
-        } else if let Payload::SessionBaseline(baseline) = &event.payload {
-            verified = (stock_readback(&baseline.offsets, topology)
-                && cited_readbacks(event, &readings, topology))
-            .then_some(event.seq);
-        } else if let Payload::ProfileRestored(restored) = &event.payload {
-            verified = (!topology.is_empty()
-                && restored.offsets.len() == topology.len()
-                && topology
-                    .iter()
-                    .all(|info| restored.offsets.get(info.core) == Some(TargetOffset::ZERO))
-                && cited_readbacks(event, &readings, topology))
-            .then_some(event.seq);
-        } else if let Payload::DayApplied(applied) = &event.payload {
-            if !stock_readback(&applied.readbacks, topology) {
+            Payload::SmuIntent(intent) => {
+                invalidate_readings(&mut readings, intent.command().core());
+                last_write = None;
                 verified = None;
-                readings = PerCore::default();
             }
+            Payload::SmuWrite(write) => {
+                invalidate_readings(&mut readings, write.command().core());
+                last_write = Some(event.seq);
+                verified = None;
+            }
+            Payload::SmuError(_) | Payload::CommandReset(_) => {
+                readings = PerCore::default();
+                last_write = None;
+                verified = None;
+            }
+            Payload::DayOffsetsChanged(changed) => {
+                if !stock_readback(&changed.offsets, topology) {
+                    readings = PerCore::default();
+                    last_write = None;
+                    verified = None;
+                }
+            }
+            Payload::SmuReadback(readback) => {
+                verified = None;
+                if readback.offset != ObservedOffset(0)
+                    || readback
+                        .expected
+                        .is_some_and(|expected| expected != TargetOffset::ZERO)
+                {
+                    readings = PerCore::default();
+                    continue;
+                }
+                let written_zero = readback.expected == Some(TargetOffset::ZERO)
+                    && event.cause.iter().any(|seq| {
+                        let Ok(index) = events.binary_search_by_key(seq, |event| event.seq) else {
+                            return false;
+                        };
+                        let write = &events[index];
+                        Some(write.seq) == last_write
+                            && write.seq < event.seq
+                            && write.boot == *boot
+                            && matches!(&write.payload, Payload::SmuWrite(write)
+                                if write.command().offset() == TargetOffset::ZERO
+                                    && write.command().core().is_none_or(|core| core == readback.core))
+                    });
+                readings.set(readback.core, Some((event.seq, written_zero)));
+                if !topology.is_empty()
+                    && readings.len() == topology.len()
+                    && topology.iter().all(|info| {
+                        readings
+                            .get(info.core)
+                            .flatten()
+                            .is_some_and(|(_, written_zero)| written_zero)
+                    })
+                {
+                    verified = Some(event.seq);
+                }
+            }
+            Payload::SessionBaseline(baseline) => {
+                verified = (stock_readback(&baseline.offsets, topology)
+                    && cited_readbacks(event, &readings, topology))
+                .then_some(event.seq);
+            }
+            Payload::ProfileRestored(restored) => {
+                verified = (!topology.is_empty()
+                    && restored.offsets.len() == topology.len()
+                    && topology
+                        .iter()
+                        .all(|info| restored.offsets.get(info.core) == Some(TargetOffset::ZERO))
+                    && cited_readbacks(event, &readings, topology))
+                .then_some(event.seq);
+            }
+            Payload::DayApplied(applied) => {
+                if !stock_readback(&applied.readbacks, topology) {
+                    verified = None;
+                    readings = PerCore::default();
+                }
+            }
+            Payload::SessionStart(_)
+            | Payload::SessionContext(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionImported(_)
+            | Payload::SessionCarried(_)
+            | Payload::ConfigLoaded(_)
+            | Payload::PreflightCheck(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileChange(_)
+            | Payload::TrialIntent(_)
+            | Payload::TrialStart(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialEnd(_)
+            | Payload::TrialCarried(_)
+            | Payload::Failure(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::CrashDetected(_)
+            | Payload::TunerDecision(_)
+            | Payload::CorePhase(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntStart(_)
+            | Payload::HuntGroup(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::Combination(_)
+            | Payload::DeepeningRound(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
+            | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
+            | Payload::DayFault(_)
+            | Payload::ExposureObserved(_)
+            | Payload::CcdEdge(_)
+            | Payload::CcdCap(_)
+            | Payload::NightPlan(_)
+            | Payload::TaskStart(_)
+            | Payload::NightQualification(_)
+            | Payload::NightReproduction(_)
+            | Payload::DayStep(_)
+            | Payload::DayEvent(_)
+            | Payload::DayVeto(_)
+            | Payload::DayHold(_)
+            | Payload::DayFreeze(_)
+            | Payload::DayInterval(_)
+            | Payload::DayImported(_)
+            | Payload::UnitMapping(_)
+            | Payload::UnitEdge(_)
+            | Payload::ClimbDecision(_)
+            | Payload::UnitStop(_)
+            | Payload::CampaignStart(_)
+            | Payload::CampaignCharge(_)
+            | Payload::CampaignReclassified(_)
+            | Payload::FirmwareRestoration(_)
+            | Payload::SuccessorImported(_)
+            | Payload::DayPause(_)
+            | Payload::StockAttested(_) => {}
         }
     }
     verified

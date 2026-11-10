@@ -48,10 +48,10 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// watchdog, this boot's entries in the persistent system journal, and the installed GRUB or
 /// systemd-boot setup. Counting must be observed: a missing, unreadable or static counter fails;
 /// a PID 1 refresh needs a later decrease. This does not test physical expiry. Also require a
-/// recorded, current all-core CO-0 baseline verified in this boot by the day service's start or a
-/// cited baseline/restoration readback chain. Missing, failed, partial or superseded readback refuses.
-/// Applied D or an old receipt alone is not proof. These read-only diagnostics neither apply a
-/// profile nor give a stability verdict.
+/// recorded, current all-core CO-0 baseline verified in this boot by the day service's start, a
+/// cited baseline/restoration readback chain, or a complete verified zero-write transaction.
+/// Missing, failed, partial or superseded readback refuses. Applied D or an old receipt alone is
+/// not proof. These read-only diagnostics neither apply a profile nor give a stability verdict.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
