@@ -179,7 +179,9 @@ fn startup_frequency_recovery_round_trips_acknowledgments_through_the_runner() {
     };
     let mut refused = Refuse(crate::testing::Frequencies::default());
     let stopped = nothing_runs();
-    let error = runner.recover_frequency(&stopped, &mut refused).unwrap_err();
+    let error = runner
+        .recover_frequency(&stopped, &mut refused)
+        .unwrap_err();
     assert!(togi_machine::error_chain(&error).contains("restore intent refused"));
     assert_eq!(refused.0.0, [FrequencyEvent::Intent(intent.clone())]);
     assert_eq!(machine.writes(), writes);

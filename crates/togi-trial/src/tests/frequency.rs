@@ -482,7 +482,10 @@ fn an_unacknowledged_restore_readback_keeps_the_pending_record_for_recovery() {
                     && readback.intent.action == FrequencyAction::Restore
                     && readback.observed_khz == 5_700_000
         ));
-        assert!(rig.exists(&pending), "a hardware readback is not an acknowledgment");
+        assert!(
+            rig.exists(&pending),
+            "a hardware readback is not an acknowledgment"
+        );
 
         recover(&rig, Journal::recorded()).await.unwrap();
         assert_eq!(
