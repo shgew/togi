@@ -429,7 +429,7 @@ pub(crate) async fn start<O: Os>(
             .map(|instance| (instance.core, instance.cpus[0], instance.workload.backend))
             .collect::<Vec<_>>(),
     );
-    let judge = Judge::new(selector, backends.clone(), events_tx.clone());
+    let mut judge = Judge::new(selector, backends.clone(), events_tx.clone());
     let mut live = Live {
         instances: Vec::with_capacity(plan.instances.len()),
         scopes: Vec::new(),
@@ -454,6 +454,14 @@ pub(crate) async fn start<O: Os>(
     .await;
     if let Err(cause) = outcome {
         return Err(roll_back(&env, live, judge, &mut inbound_rx, logs, cause).await);
+    }
+    for instance in &live.instances {
+        if !instance.observed.ready {
+            judge.observe(Observation::NeverEntered {
+                instance: instance.index,
+                scope: instance.scope.to_string(),
+            });
+        }
     }
 
     let started_at = Instant::now();
@@ -743,13 +751,13 @@ async fn launch_all<O: Os>(
                 .collect();
         }
         launched.files.extend(files.inputs);
+        let readiness = await_scope(env, &live.instances[index], commands).await;
+        if matches!(readiness, Readiness::Ready) {
+            live.instances[index].observed.ready = true;
+        }
         if suspend_first(instance) {
-            let readiness = await_scope(env, &live.instances[index], commands).await;
             let now = Instant::now();
             let instance = &mut live.instances[index];
-            if matches!(readiness, Readiness::Ready) {
-                instance.observed.ready = true;
-            }
             match instance.signal(GroupSignal::Stop) {
                 Ok(()) | Err(SignalError::Gone) => {}
                 Err(SignalError::Failed(source)) => {
@@ -762,9 +770,9 @@ async fn launch_all<O: Os>(
             }
             instance.observed.suspend(now);
             launched.stops += 1;
-            if matches!(readiness, Readiness::Cancelled) {
-                return Err(Error::Cancelled);
-            }
+        }
+        if matches!(readiness, Readiness::Cancelled) {
+            return Err(Error::Cancelled);
         }
     }
     Ok(())
@@ -1384,10 +1392,13 @@ impl<O: Os> Supervisor<O> {
         let result = TrialResult {
             ran,
             failure: verdict.failure,
-            inconclusive: verdict
-                .inconclusive
-                .or(placement.inconclusive)
-                .map(String::into_boxed_str),
+            inconclusive: match (verdict.inconclusive, placement.inconclusive) {
+                (Some(reason), Some(placement)) => {
+                    Some(format!("{reason}; {placement}").into_boxed_str())
+                }
+                (Some(reason), None) | (None, Some(reason)) => Some(reason.into_boxed_str()),
+                (None, None) => None,
+            },
             excluded: placement.excluded,
             escaped: verdict.escaped,
             tctl_max_c: tctl_max,

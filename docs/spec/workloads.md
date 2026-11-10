@@ -205,8 +205,8 @@ Every systemd CLI invocation has a context deadline. The preflight `systemd-run`
 
 A trial passes when all of these hold:
 - it ran for its full duration;
-- the backend reported no computation error;
-- the backend kept making progress;
+- every loaded physical core returned a backend-checked self-test result from one of the instances assigned to that core;
+- the backend reported no computation error and kept making CPU-time progress;
 - no failure signal named a core;
 - every sampled thread was on an allowed logical CPU.
 - for a managed trial, controller placement and any required cap were established and read back.
@@ -220,8 +220,12 @@ Both successful waits and runner errors use the same evidence precedence, includ
 | Relevant managed controller, dashboard or worker process fault inside the trial window | Failure; kernel-reported executing CPU locates it when available |
 | MCE inside the trial's window | Failure |
 | Reset reason | Applies only without higher-precedence evidence |
-| Required sampling, current-boot kernel log or setup observation missing | Inconclusive |
-| Full duration, every required observation valid and no failure | Pass |
+| Required sampling, current-boot kernel log, setup observation or backend-checked result missing | Inconclusive; the reason names the core whose result is missing |
+| Full measured duration, every loaded core verified, every required observation valid and no failure | Pass |
+
+CPU time is liveness evidence, never proof of a correct computation. An mprime `Self-test … passed` or y-cruncher `Running …: Passed` identifies the self-test the backend checked; the trial plan assigns that instance to one physical core. An instance never verifies another core, including the two instances per core in R9. A quiet backend, malformed result or missing required mprime `results.txt` cannot pass, even if CPU time advanced or another output stream reported success. A reported wrong result, stall, early exit or reset retains the failure precedence above.
+
+The measured interval and load schedule begin only after readiness waits finish. A scope-readiness timeout remains a setup error, not measured testing time or a successful observation. Readiness and preparation time earn no exposure.
 
 Runner errors remain diagnostics in the trial's reason; they never replace a classified failure. A failed kernel-log boundary read or an unresumable cursor leaves its interval unobserved, making an intersecting trial inconclusive unless higher-precedence evidence survives. Later successful reads do not erase that trial's lost observation. MCEs returned with a read error remain evidence.
 

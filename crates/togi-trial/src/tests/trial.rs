@@ -37,7 +37,7 @@ fn secs(n: u64) -> Duration {
 }
 
 #[test]
-fn a_quiet_trial_runs_its_whole_duration_and_teardown_stops_it() {
+fn a_quiet_trial_runs_its_whole_duration_but_never_passes() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
@@ -50,7 +50,7 @@ fn a_quiet_trial_runs_its_whole_duration_and_teardown_stops_it() {
             let result = &run.finished.result;
             assert_eq!(
                 (result.failure, result.inconclusive.as_deref()),
-                (None, None)
+                (None, Some("core 02 has no backend-verified result"))
             );
             assert_eq!(result.ran, secs(10));
             let process = rig.fake.process(0);
@@ -59,6 +59,80 @@ fn a_quiet_trial_runs_its_whole_duration_and_teardown_stops_it() {
                 process.signals.borrow()[..],
                 [GroupSignal::Cont, GroupSignal::Term, GroupSignal::Kill]
             );
+        })
+        .await;
+    });
+}
+
+#[test]
+fn a_missing_result_for_one_loaded_core_withholds_the_pass_and_names_it() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig();
+            rig.fake.on_launch(|index, command| {
+                printing(if index == 0 {
+                    "verified self-test\n"
+                } else {
+                    "ok working\n"
+                })(index, command)
+            });
+            let handle = rig.start(spec(Regime::R7, &[1, 5], secs(3))).await.unwrap();
+            let run = finish(&handle).await;
+            assert_eq!(run.finished.result.failure, None);
+            assert_eq!(
+                run.finished.result.inconclusive.as_deref(),
+                Some("core 05 has no backend-verified result")
+            );
+        })
+        .await;
+    });
+}
+
+#[test]
+fn every_loaded_core_with_a_verified_result_passes() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig();
+            rig.fake.on_launch(printing("verified self-test\n"));
+            let handle = rig.start(spec(Regime::R7, &[1, 5], secs(3))).await.unwrap();
+            let run = finish(&handle).await;
+            assert_eq!(
+                (
+                    run.finished.result.failure,
+                    run.finished.result.inconclusive.as_deref()
+                ),
+                (None, None)
+            );
+            assert!(run.progress().contains(&"core 01 self-test"));
+            assert!(run.progress().contains(&"core 05 self-test"));
+        })
+        .await;
+    });
+}
+
+#[test]
+fn readiness_delay_is_not_measured_trial_time() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig();
+            rig.fake.set_ready_default(false);
+            rig.fake.on_launch(printing("verified self-test\n"));
+            let fake = rig.fake.clone();
+            tokio::task::spawn_local(async move {
+                while fake.process_count() == 0 {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                tokio::time::sleep(secs(2)).await;
+                fake.process(0).ready.set(true);
+            });
+            let begun = Instant::now();
+            let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
+            assert!(begun.elapsed() >= secs(2));
+            let measured = Instant::now();
+            let run = finish(&handle).await;
+            assert!(measured.elapsed() >= secs(3));
+            assert_eq!(run.finished.result.ran, secs(3));
+            assert_eq!(run.finished.result.inconclusive, None);
         })
         .await;
     });
@@ -309,8 +383,8 @@ fn a_scope_that_is_never_entered_makes_the_trial_inconclusive_not_failed() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
+            rig.fake.set_ready_default(false);
             let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
-            rig.fake.process(0).ready.set(false);
             let run = finish(&handle).await;
             assert_eq!(run.finished.result.failure, None);
             assert_eq!(
@@ -352,6 +426,7 @@ fn a_disappearing_process_is_not_a_sampling_loss() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
+            rig.fake.on_launch(printing("verified self-test\n"));
             let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
             let process = rig.fake.process(0);
             *process.usage.borrow_mut() = Err(ProcError::Gone);
@@ -369,6 +444,7 @@ fn a_sampling_read_cut_at_its_tick_deadline_is_not_a_sampling_loss() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
+            rig.fake.on_launch(printing("verified self-test\n"));
             let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
             rig.fake.hang_threads();
             // The tick at 1 s waits for its thread read until 2 s; the read's owner returns first.

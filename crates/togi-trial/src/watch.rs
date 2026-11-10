@@ -34,6 +34,8 @@ pub(crate) enum Refusal {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum WatchError {
+    #[error("required backend result file is missing")]
+    Missing,
     #[error("unsupported watched output file")]
     Unsupported,
     #[error("refused watched output file: {0}")]
@@ -562,8 +564,8 @@ impl Watched {
         }
     }
 
-    /// Nothing more will be read now: fully read, never created, or rejected. A read still in
-    /// flight, or a final read that ended unfinished, is not drained, whatever the last poll saw.
+    /// No accepted bytes remain unread; absence is checked separately by `finish` and never
+    /// supplies a verified result. An in-flight or unfinished final read is not drained.
     pub(crate) const fn drained(&self) -> bool {
         if self.final_read_pending || self.inflight.is_some() {
             return false;
@@ -754,7 +756,7 @@ impl Watched {
 
     /// The final read, once the writers are confirmed stopped: polls to the end of the file,
     /// whatever an earlier poll saw, then classifies the unterminated last line exactly once.
-    /// Anything but `Drained` or `Idle` leaves the file undrained or failed.
+    /// A missing required output is an error, even when another stream reported success.
     pub(crate) async fn finish(
         &mut self,
         _writers: WritersStopped,
@@ -768,8 +770,9 @@ impl Watched {
         };
         let poll = loop {
             match self.poll(until, &mut every, &mut late).await {
+                Poll::Idle => break self.stop(WatchError::Missing),
                 Poll::Pending if Instant::now() < until => {}
-                other @ (Poll::Idle | Poll::Drained | Poll::Pending | Poll::Failed(_)) => {
+                other @ (Poll::Drained | Poll::Pending | Poll::Failed(_)) => {
                     break other;
                 }
             }
@@ -927,12 +930,19 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_file_is_idle_and_harmless() {
+    fn a_missing_file_is_idle_until_the_required_final_read() {
         crate::testing::runtime(false).block_on(async {
             let mut f = fixture();
             let (poll, lines) = f.poll().await;
             assert!(matches!(poll, Poll::Idle) && lines.is_empty());
             assert!(f.watched.drained() && !f.watched.backlog());
+            let (poll, lines) = f.finish(far()).await;
+            assert!(matches!(poll, Poll::Failed(WatchError::Missing)));
+            assert!(lines.is_empty());
+            assert!(
+                f.watched.drained(),
+                "missing output is not unread accepted output"
+            );
         });
     }
 

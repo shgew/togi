@@ -614,6 +614,7 @@ fn samples_setup_blocked_past_the_join_bound_reports_timeout_after_teardown() {
     let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
         env.storage = Some(open_fails_when_released(gate, Arc::clone(&entered)));
     });
+    rig.fake.on_launch(super::harness::printing("verified self-test\n"));
     let handle = rig.start(spec(Regime::R1, &[0], duration)).await.unwrap();
     notified_without_advancing(&entered).await;
     tokio::time::sleep(duration).await;
@@ -667,6 +668,8 @@ fn an_open_failure_during_the_post_teardown_join_keeps_the_original_create_error
                     })
                 }));
             });
+            rig.fake
+                .on_launch(super::harness::printing("verified self-test\n"));
             let handle = rig.start(spec(Regime::R1, &[0], duration)).await.unwrap();
             notified_without_advancing(&entered).await;
             tokio::time::sleep(duration).await;

@@ -12,7 +12,7 @@ use togi_backend::{Backend, Line, Plan, Ready};
 use togi_machine::{CancellationToken, CpuId, Regime, Signal, Workload};
 use tokio::io::AsyncWriteExt as _;
 
-use super::harness::{Landed, finish, local, rig_edit, rig_with, spec};
+use super::harness::{Landed, finish, local, printing, rig_edit, rig_with, spec};
 use crate::error::{CleanupFailure, Error};
 use crate::os::fake::{Delivery, Launch, ProcCtx, Reply, SignalErrorKind, script};
 use crate::os::{ExitInfo, GroupSignal, Systemd};
@@ -713,14 +713,18 @@ fn rejecting_a_symlinked_watched_file_without_backlog_is_an_ordinary_diagnostic(
 }
 
 #[test]
-fn a_watched_file_that_is_never_created_is_harmless() {
+fn a_missing_required_result_file_withholds_a_pass_even_after_stdout_verified() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig_with(watching(), Timing::default());
+            rig.fake.on_launch(printing("verified self-test\n"));
             let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
             let run = finish(&handle).await;
             assert_eq!(run.finished.result.ran, secs(3));
-            assert_eq!(run.finished.result.inconclusive, None);
+            assert_eq!(
+                run.finished.result.inconclusive.as_deref(),
+                Some("core 00 required backend result file is missing")
+            );
             assert!(run.finished.teardown.is_ok());
         })
         .await;

@@ -31,7 +31,7 @@ fn policies() -> Vec<FrequencyPolicy> {
 }
 
 fn rig(machine: &Fake) -> super::harness::Rig {
-    rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+    let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
         env.controller = Arc::new(Recording::default());
         env.frequency = Arc::new(Limits::new(
             Arc::new(machine.clone()),
@@ -39,7 +39,9 @@ fn rig(machine: &Fake) -> super::harness::Rig {
             env.preparer.fs.clone(),
             env.durability,
         ));
-    })
+    });
+    rig.fake.on_launch(printing("verified self-test\n"));
+    rig
 }
 
 fn managed() -> togi_machine::TrialSpec {
@@ -199,6 +201,7 @@ fn single_ccd_excludes_only_host_and_keeps_other_workers_uncapped() {
                 env.durability,
             ));
         });
+        rig.fake.on_launch(printing("verified self-test\n"));
         let mut trial = spec(
             Regime::R7,
             &[0, 1, 2, 3, 4, 5, 6, 7],
