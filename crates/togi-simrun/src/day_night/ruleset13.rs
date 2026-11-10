@@ -29,8 +29,6 @@ use togi_tuner::policy::{
 
 use super::{DayClassification, DayObservation, EndAnswer, Night, Policy, RunError};
 
-mod witnesses;
-
 /// How a night trial ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Ended {
@@ -84,9 +82,6 @@ pub struct Ruleset13 {
     observer: Observer,
     applications: u64,
     trials: u64,
-    report_events: Vec<(DayEventId, super::successor::LearningEvent)>,
-    witnesses: witnesses::Witnesses,
-    pub(super) successor: Option<super::successor_policy::JournalFold>,
 }
 
 impl Ruleset13 {
@@ -119,9 +114,6 @@ impl Ruleset13 {
             observer: Observer::Off,
             applications: 0,
             trials: 0,
-            report_events: Vec::new(),
-            witnesses: witnesses::Witnesses::default(),
-            successor: None,
         }
     }
 
@@ -167,10 +159,6 @@ impl Ruleset13 {
             payload,
         );
         self.state.fold(&event)?;
-        self.witnesses.observe(&event);
-        if let Some(successor) = &mut self.successor {
-            successor.fold(&event)?;
-        }
         self.appended = seq.get();
         if let Some(recorded) = &mut self.recorded {
             recorded.push(event);
@@ -567,49 +555,6 @@ impl Ruleset13 {
 }
 
 impl Policy for Ruleset13 {
-    fn report(&self) -> super::successor::PolicyReport {
-        // Ruleset 13 has no successor first-finish contract or shared learning account.
-        // Leaving both unavailable prevents a metric-derived convergence from masquerading
-        // as a policy commitment, and leaves post-finish risk unavailable for this comparator.
-        let mut report = super::successor::PolicyReport::unavailable();
-        report.events = self
-            .report_events
-            .iter()
-            .map(|(_, event)| event.clone())
-            .collect();
-        let projected = self.state.project();
-        for (event, (identity, _)) in report.events.iter_mut().zip(&self.report_events) {
-            if let Some(current) = projected
-                .events
-                .iter()
-                .find(|current| &current.event == identity)
-            {
-                let (classification, provisional) =
-                    reported_classification(Some(current.classification));
-                if event.classification != classification {
-                    event.reclassified_from.get_or_insert(event.classification);
-                    event.classification = classification;
-                }
-                event.provisional = provisional;
-            }
-        }
-        report
-            .events
-            .extend_from_slice(self.witnesses.night_events());
-        if let Observer::Watching(day) = &self.observer {
-            report.readback = day
-                .offsets
-                .iter()
-                .map(|(core, offset)| u8::try_from(-offset.0).ok().map(|depth| (core, depth)))
-                .collect::<Option<PerCore<_>>>();
-        }
-        report
-    }
-
-    fn applications(&self) -> super::successor::PolicyApplications {
-        self.witnesses.applications()
-    }
-
     fn firmware_changed(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
         if self.started.is_none() {
             // The session's own context record already carries the new firmware.
@@ -690,7 +635,6 @@ impl Policy for Ruleset13 {
             .into_iter()
             .find(|projected| projected.event == event)
             .map(|projected| projected.classification);
-        let (reported, provisional) = reported_classification(classification);
         let classification = match classification {
             Some(togi_journal::Classification::CpuSuspect { .. }) => DayClassification::CpuSuspect,
             Some(
@@ -699,21 +643,6 @@ impl Policy for Ruleset13 {
             )
             | None => DayClassification::NotCpuSuspect,
         };
-        let reported_id = witnesses::event_id(&event);
-        self.report_events.push((
-            event,
-            super::successor::LearningEvent {
-                id: reported_id,
-                day: 1.0 + machine.clock.monotonic()?.as_secs_f64() / 86_400.0,
-                classification: reported,
-                provisional,
-                reclassified_from: None,
-                charged: false,
-                phase: super::successor::Phase::Learning,
-                unit_phase: super::successor::UnitPhase::Coarse,
-                newest_step: None,
-            },
-        ));
         Ok(classification)
     }
 
@@ -851,27 +780,6 @@ fn read_offsets(
         offsets.set(info.core, machine.smu.offset(info.core)?);
     }
     Ok(offsets)
-}
-
-fn reported_classification(
-    classification: Option<togi_journal::Classification>,
-) -> (super::successor::Classification, bool) {
-    match classification {
-        Some(togi_journal::Classification::CpuSuspect { certainty }) => match certainty {
-            togi_journal::Certainty::Definite => {
-                (super::successor::Classification::CpuSuspect, false)
-            }
-            togi_journal::Certainty::Provisional => {
-                (super::successor::Classification::Unanswered, true)
-            }
-        },
-        Some(togi_journal::Classification::NonCpu {}) => {
-            (super::successor::Classification::NonCpu, false)
-        }
-        Some(togi_journal::Classification::Unexplained {}) | None => {
-            (super::successor::Classification::Unexplained, false)
-        }
-    }
 }
 
 fn build() -> Build {
