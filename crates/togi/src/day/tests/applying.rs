@@ -478,6 +478,65 @@ fn offset_drift_is_recorded_before_restoring_stock(fail_readback: bool, drift_at
     assert_eq!(stock, !fail_readback);
 }
 
+#[test_case(false; "verified stock")]
+#[test_case(true; "failed stock readback")]
+fn boot_start_drift_restores_stock_before_any_application(fail_readback: bool) {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    // Read 1 is the baseline check and read 2 the boot-start read, so the drift predates the application.
+    hardware.drift_at = Some(2);
+    if fail_readback {
+        hardware.failure = Failure::Read(3);
+    }
+    let result = serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    );
+    if fail_readback {
+        assert!(matches!(result, Err(Error::Apply(_))));
+    } else {
+        assert!(matches!(result, Err(Error::OffsetDrift)));
+    }
+    assert!(applications(&journal).is_empty());
+    let mut expected = vec![TargetOffset::ZERO];
+    if fail_readback {
+        // The transaction's existing failure recovery retries stock, never the day profile.
+        expected.push(TargetOffset::ZERO);
+    }
+    assert_eq!(hardware.writes, expected);
+    let start = journal
+        .events()
+        .iter()
+        .position(|event| matches!(&event.payload, Payload::DayBootStart(_)))
+        .unwrap();
+    let Payload::DayBootStart(boot) = &journal.events()[start].payload else {
+        panic!("a day.boot_start event carries a DayBootStart payload");
+    };
+    assert_eq!(boot.offsets, offsets(-12));
+    let first_write = journal
+        .events()
+        .iter()
+        .position(|event| event.kind() == EventKind::SmuIntent)
+        .unwrap();
+    assert!(start < first_write);
+    // The restore cites nothing; the startup application's first write would cite the proposed step.
+    assert!(journal.events()[first_write].cause.is_empty());
+    assert!(
+        !journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
+    );
+    let stock = journal.events()[start..].iter().any(|event| {
+        matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(0))
+    });
+    assert_eq!(stock, !fail_readback);
+}
+
 #[test]
 fn drift_from_an_applied_stock_profile_still_writes_and_verifies_stock() {
     let mut journal = seed();

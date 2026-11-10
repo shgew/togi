@@ -445,10 +445,31 @@ fn observe_with_socket(
     let mut pause = pause::Pause::of(journal);
     let starts_paused = pause.starts_paused(journal.boot(), clock);
     let expired_at_start = pause.expired(journal.boot(), clock);
+    let mut sampler = Sampler::new(
+        session_cores(journal.events())?,
+        ledger
+            .boots
+            .get(journal.boot())
+            .map_or_else(LoadMix::default, |boot| boot.load_mix),
+    );
+    let mut progress = Progress {
+        started,
+        accumulated,
+        checkpointed: started,
+        offsets,
+        watchdog,
+    };
     if let Some(live) = live.as_deref_mut() {
+        // Preflight verified stock, so a boot-start read that differs is drift like any later read:
+        // `day.boot_start` already holds it durably, and nothing is applied over it. Drift decides before
+        // the watchdog because the hardware is no longer at the verified stock either refusal assumes.
+        if offsets != live.applied() {
+            progress.restore_stock(journal, observer, clock, &sampler, live)?;
+            return Err(Error::OffsetDrift);
+        }
         // Preflight's armed read may no longer hold: the read journaled above decides, by the rule
         // every later read follows.
-        if matches!(watchdog, WatchdogState::Unarmed { .. }) {
+        if matches!(progress.watchdog, WatchdogState::Unarmed { .. }) {
             return Err(Error::Watchdog);
         }
         live.start(
@@ -467,21 +488,7 @@ fn observe_with_socket(
         }
     }
     let applied_offsets = live.as_deref().map_or(offsets, apply::Live::applied);
-    let mut sampler = Sampler::new(
-        session_cores(journal.events())?,
-        ledger
-            .boots
-            .get(journal.boot())
-            .map_or_else(LoadMix::default, |boot| boot.load_mix),
-    );
     sampler.record(started, observer.cpu_times()?)?;
-    let mut progress = Progress {
-        started,
-        accumulated,
-        checkpointed: started,
-        offsets,
-        watchdog,
-    };
     if live.is_some() {
         progress.checkpoint(journal, clock, &sampler, applied_offsets)?;
         progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
