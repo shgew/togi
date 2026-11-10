@@ -89,7 +89,7 @@ pub(super) fn gauge(
         let hits = |point: i64| (lo..=hi).contains(&-point);
         let (glyph, paint) = if let Some((_, paint)) = edge.filter(|&(at, _)| hits(at)) {
             (marks.edge, Some(paint))
-        } else if applied.is_some_and(|applied| -applied >= lo) {
+        } else if applied.is_some_and(|applied| applied <= -lo) {
             (
                 marks.applied,
                 Some(if core.loaded {

@@ -682,6 +682,15 @@ fn the_edge_cell_is_the_edge_even_where_the_applied_depth_passes_it() {
     assert_eq!(gauge_text(Colours::Full, &projection, -40, 50), want);
 }
 
+#[test_case(i64::MIN, 50, 0; "deeper than any count")]
+#[test_case(i64::MAX, 0, 26; "shallower than stock")]
+fn a_readback_outside_the_gauge_fills_all_or_none_of_it(readback: i64, filled: usize, dots: usize) {
+    assert_eq!(
+        gauge_text(Colours::None, &capped(None), readback, 50),
+        format!("{}{}", "▄".repeat(filled), "·".repeat(dots))
+    );
+}
+
 fn ccd_projection() -> togi_tuner::policy::UnitProjection {
     with_cap(
         ccd_row(0, &[0, 1], -10),
