@@ -125,7 +125,10 @@ impl Observer for Hardware {
 }
 
 fn seed_on(fs: Arc<MemFs>) -> Journal {
-    let mut journal = journal_on(fs);
+    seeded(journal_on(fs))
+}
+
+fn seeded(mut journal: Journal) -> Journal {
     append(
         &mut journal,
         &ActiveClock::one(),
@@ -286,7 +289,13 @@ fn cold_boot_applies_stock_without_permission_and_stop_verifies_before_clean_mar
 
 /// The real day transaction leaves a durable intent when recording its write is interrupted.
 fn interrupted_day(fs: &Arc<MemFs>) -> (Journal, Seq) {
-    let mut journal = seed_on(Arc::clone(fs));
+    // The session envelope is a run's: seed it in its own boot so the day boot holds no tuning run.
+    let mut seed = journal_on(Arc::clone(fs));
+    seed.reboot("seed".to_owned().into()).unwrap();
+    seeded(seed).close().unwrap();
+    let mut journal = state_dir(Arc::clone(fs))
+        .open_at("day-a".to_owned().into(), Timestamp::UNIX_EPOCH)
+        .unwrap();
     append(
         &mut journal,
         &ActiveClock::one(),

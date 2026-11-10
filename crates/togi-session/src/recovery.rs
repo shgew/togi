@@ -640,7 +640,7 @@ impl RecoveryState {
             EventKind::SessionWarning | EventKind::BootLeaveReason
         );
         let tuning = match event.kind().writer() {
-            Writer::Run => !note,
+            Writer::Run => event.kind().admits_tuning_boot(),
             Writer::Shared => false,
             Writer::Day | Writer::Outside => return,
         };
