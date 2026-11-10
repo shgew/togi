@@ -164,11 +164,8 @@ fn examine(
                 identity: identity.to_owned(),
             }));
         }
-        if current == previous {
-            break;
-        }
-        // PID 1 may have petted the watchdog between samples. Require a decrease
-        // from that refreshed value, rather than accepting the refresh itself.
+        // PID 1 may have petted the watchdog between samples, even when the
+        // rounded seconds are equal. Require a later decrease, not the pet itself.
         previous = current;
     }
     Err(Refusal::NoProgress {

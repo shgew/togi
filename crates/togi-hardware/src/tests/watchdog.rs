@@ -90,6 +90,8 @@ fn counter(root: &Tree, attribute: &str, sample: Option<Result<&str, ()>>) {
 #[test_case(&[Some(Err(()))], false; "present but unreadable")]
 #[test_case(&[Some(Ok("invalid\n"))], false; "malformed")]
 #[test_case(&[Some(Ok("58\n")), Some(Ok("60\n")), Some(Ok("59\n"))], true; "refreshed then counting")]
+#[test_case(&[Some(Ok("58\n")), Some(Ok("58\n")), Some(Ok("57\n"))], true; "equal refresh then counting")]
+#[test_case(&[Some(Ok("58\n")), Some(Ok("58\n")), Some(Ok("58\n"))], false; "static across all samples")]
 #[test_case(&[Some(Ok("58\n")), Some(Ok("60\n")), Some(Ok("60\n"))], false; "refreshed then static")]
 #[test_case(&[Some(Ok("58\n")), Some(Ok("59\n")), Some(Ok("60\n"))], false; "repeated refresh is not countdown")]
 #[test_case(&[Some(Ok("58\n")), None], false; "counter disappears")]
