@@ -26,6 +26,10 @@ pub(crate) struct SameArgs {
     /// Compare only the sessions the suite lists under `smoke`.
     #[arg(long)]
     smoke: bool,
+    /// Compare R04 semantics: drop only base ccd.cap, rebase all sequence references on both sides.
+    /// Runs every selected session freshly on both sides and reports all differing classes, including messages.
+    #[arg(long)]
+    semantic: bool,
     /// Report every differing session instead of stopping at the first.
     #[arg(long)]
     keep_going: bool,
@@ -69,6 +73,7 @@ pub(crate) fn run(args: SameArgs) -> ExitCode {
         head: args.head,
         suite: args.suite,
         smoke: args.smoke,
+        semantic: args.semantic,
         keep_going: args.keep_going,
         no_cache: args.no_cache,
         keep: args.keep,

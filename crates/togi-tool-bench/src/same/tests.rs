@@ -327,6 +327,7 @@ struct Fake<'a> {
     behave: Behave,
     hook: Option<Hook<'a>>,
     launches: Mutex<Vec<String>>,
+    semantic: bool,
 }
 
 impl<'a> Fake<'a> {
@@ -342,6 +343,7 @@ impl<'a> Fake<'a> {
             behave: Box::new(behave),
             hook: None,
             launches: Mutex::new(Vec::new()),
+            semantic: false,
         }
     }
 
@@ -400,6 +402,18 @@ impl Launcher for Fake<'_> {
 
     fn difference(&self, base: &Path, head: &Path) -> Result<Option<Difference>, JournalError> {
         journal::compare_dirs_with(&*self.fs, base, head)
+    }
+
+    fn semantic_comparison(
+        &self,
+        base: &Path,
+        head: &Path,
+    ) -> Result<Option<journal::semantic::Comparison>, JournalError> {
+        if self.semantic {
+            journal::semantic::compare_with(&*self.fs, base, head).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     fn remove(&self, dir: &Path) -> std::io::Result<()> {
@@ -1132,6 +1146,7 @@ fn options() -> super::Options {
         head: PathBuf::from("/head"),
         suite: PathBuf::from("suite.json"),
         smoke: false,
+        semantic: false,
         keep_going: false,
         no_cache: false,
         keep: None,
@@ -1183,6 +1198,11 @@ fn two_trees_that_build_the_same_simulator_from_the_same_inputs_run_nothing(case
     let mut options = options;
     options.no_cache = no_cache;
     options.keep = keep.then(|| PathBuf::from("/kept"));
+    assert!(super::identical_report(&options, 4, true, super::Timings::default()).is_none());
+
+    options.semantic = true;
+    options.no_cache = false;
+    options.keep = None;
     assert!(super::identical_report(&options, 4, true, super::Timings::default()).is_none());
 }
 
@@ -1495,4 +1515,65 @@ fn a_simulator_that_leaves_no_journal_fails_the_comparison_and_keeps_the_runs() 
         kept.contains(&"head/default/dev-1/events.jsonl".to_owned()),
         "{kept:?}"
     );
+}
+
+#[test]
+fn semantic_comparison_retains_reference_meaning_after_base_caps_disappear() {
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let mut fake = Fake::new(&root, &fleet, |side, _| {
+        journal(match side {
+            Side::Base => {
+                "{\"seq\":1,\"kind\":\"trial.start\",\"msg\":\"target\",\"data\":{\"target\":-10}}\n{\"seq\":2,\"kind\":\"ccd.cap\",\"msg\":\"cap\",\"data\":{}}\n{\"seq\":3,\"kind\":\"unit.edge\",\"cause\":[1],\"msg\":\"permission\",\"data\":{\"ceiling\":-5}}\n"
+            }
+            Side::Head => {
+                "{\"seq\":1,\"kind\":\"trial.start\",\"msg\":\"target\",\"data\":{\"target\":-10}}\n{\"seq\":2,\"kind\":\"unit.edge\",\"cause\":[1],\"msg\":\"permission\",\"data\":{\"ceiling\":-5}}\n"
+            }
+        })
+    });
+    fake.semantic = true;
+    let mut config = config(&fleet);
+    config.fresh = true;
+    config.keep_going = true;
+    let outcome = compare::run(&same_sessions(&[1]), &config, &fake).unwrap();
+    assert_eq!(outcome.different(), false);
+    assert_eq!(outcome.scheduled, [1, 1]);
+    assert_eq!(outcome.semantic.unwrap().dropped_caps, 1);
+}
+
+#[test]
+fn semantic_mode_never_uses_raw_digest_equality_to_hide_head_caps() {
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let mut fake = Fake::new(&root, &fleet, |_, _| {
+        journal("{\"seq\":1,\"kind\":\"ccd.cap\",\"msg\":\"cap\",\"data\":{}}\n")
+    });
+    fake.semantic = true;
+    let mut config = config(&fleet);
+    config.fresh = true;
+    config.keep_going = true;
+    let outcome = compare::run(&same_sessions(&[1]), &config, &fake).unwrap();
+    assert_eq!(outcome.different(), true);
+    assert_eq!(outcome.semantic.unwrap().classes["ccd.cap"].head, 1);
+}
+
+#[test]
+fn semantic_equality_does_not_hide_changed_simulator_exit_status() {
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let mut fake = Fake::new(&root, &fleet, |side, _| {
+        let mut run =
+            journal("{\"seq\":1,\"kind\":\"trial.start\",\"msg\":\"target\",\"data\":{}}\n");
+        if side == Side::Head {
+            run.exit = 3;
+        }
+        run
+    });
+    fake.semantic = true;
+    let mut config = config(&fleet);
+    config.fresh = true;
+    config.keep_going = true;
+    let outcome = compare::run(&same_sessions(&[1]), &config, &fake).unwrap();
+    assert_eq!(outcome.differences[0].difference.file, "<exit code>");
+    assert_eq!(outcome.differences[0].difference.head, "3");
 }

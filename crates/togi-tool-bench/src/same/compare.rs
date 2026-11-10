@@ -127,6 +127,14 @@ pub(crate) trait Launcher: Sync {
         journal::compare_dirs(base, head)
     }
 
+    fn semantic_comparison(
+        &self,
+        _base: &Path,
+        _head: &Path,
+    ) -> Result<Option<journal::semantic::Comparison>, journal::JournalError> {
+        Ok(None)
+    }
+
     fn remove(&self, dir: &Path) -> io::Result<()> {
         fs::remove_dir_all(dir)
     }
@@ -177,6 +185,7 @@ pub struct Outcome {
     /// The compared sessions whose head was slow, slowest first.
     pub slow: Vec<Slow>,
     pub warnings: Vec<String>,
+    pub semantic: Option<journal::semantic::Summary>,
 }
 
 impl Outcome {
@@ -186,6 +195,13 @@ impl Outcome {
 
     /// Writes the differences, the time of the compared sessions and the verdict.
     pub fn write(&self, w: &mut impl io::Write) -> io::Result<()> {
+        if let Some(summary) = &self.semantic {
+            writeln!(
+                w,
+                "semantic: normalized journal comparison, not raw equality; every remaining record and message is compared"
+            )?;
+            summary.write(w)?;
+        }
         for found in &self.differences {
             let difference = &found.difference;
             write!(w, "same: {}\n  {}", found.key, difference.file)?;
@@ -277,6 +293,7 @@ struct State {
     total_s: [f64; 2],
     slow: Vec<usize>,
     warnings: Vec<String>,
+    semantic: Option<journal::semantic::Summary>,
 }
 
 struct Comparison<'a> {
@@ -306,6 +323,7 @@ pub(crate) fn run(
             total_s: [0.0; 2],
             slow: Vec::new(),
             warnings: Vec::new(),
+            semantic: None,
         }),
     };
     comparison.run()
@@ -417,6 +435,7 @@ impl Comparison<'_> {
             total_s: state.total_s,
             slow,
             warnings: std::mem::take(&mut state.warnings),
+            semantic: state.semantic.take(),
         }
     }
 
@@ -488,13 +507,42 @@ impl Comparison<'_> {
             if base.wall_s > 0.0 && head.wall_s > SLOW_RATIO * base.wall_s {
                 state.slow.push(i);
             }
+            let dirs = state.pairs[i].dirs.clone();
             drop(state);
+            if let [Some(base_dir), Some(head_dir)] = dirs
+                && let Some(compared) = self
+                    .launcher
+                    .semantic_comparison(&base_dir, &head_dir)
+                    .map_err(|source| SameError::Compare {
+                        key: pair.key.to_string(),
+                        source,
+                    })?
+            {
+                self.state()
+                    .semantic
+                    .get_or_insert_default()
+                    .merge(compared.summary);
+                if compared.first.is_none() && base.exit == head.exit {
+                    return Ok(self.remove_runs(i)?);
+                }
+                let difference = compared.first.unwrap_or_else(|| Difference {
+                    file: "<exit code>".to_owned(),
+                    line: None,
+                    base: base.exit.to_string(),
+                    head: head.exit.to_string(),
+                });
+                return self.report_difference(i, difference);
+            }
             if base.digest == head.digest && base.exit == head.exit {
                 return Ok(self.remove_runs(i)?);
             }
         }
         self.rerun_cached(i)?;
         let difference = self.difference(i)?;
+        self.report_difference(i, difference)
+    }
+
+    fn report_difference(&self, i: usize, difference: Difference) -> Result<(), Halt> {
         let reported = {
             let mut state = self.state();
             if self.config.fleet.cancelled() || (!self.config.keep_going && !state.found.is_empty())
