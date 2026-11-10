@@ -321,6 +321,8 @@ struct FakeState {
     responses: HashMap<Command, [u32; 6]>,
     commands: Vec<(Command, u32)>,
     smn: Vec<u32>,
+    offsets: Option<HashMap<u32, u32>>,
+    fail_command_at: Option<usize>,
     status: Option<Status>,
     failing_smn_reads: Vec<usize>,
     smn_hook: Option<SmnHook>,
@@ -343,6 +345,8 @@ impl Fake {
             commands: Vec::new(),
             smn: Vec::new(),
             status: None,
+            offsets: None,
+            fail_command_at: None,
             failing_smn_reads: Vec::new(),
             smn_hook: None,
             command_hook: None,
@@ -364,6 +368,18 @@ impl Fake {
         self.state()
             .responses
             .insert(command, [word, 0, 0, 0, 0, 0]);
+    }
+
+    pub(super) fn remember_offsets(&self) {
+        self.state().offsets = Some(HashMap::new());
+    }
+
+    pub(super) fn fail_command_at(&self, index: usize) {
+        self.state().fail_command_at = Some(index);
+    }
+
+    pub(super) fn offsets(&self) -> HashMap<u32, u32> {
+        self.state().offsets.clone().unwrap()
     }
 
     pub(super) fn fail_commands(&self, status: Status) {
@@ -427,12 +443,36 @@ impl Transport for Fake {
         let (hook, result) = {
             let mut state = self.state();
             state.commands.push((command, args[0]));
-            let result = match state.status {
-                Some(status) => Err(MailboxError::Status {
+            let status = if state.fail_command_at == Some(state.commands.len()) {
+                Some(Status::Failed)
+            } else {
+                state.status
+            };
+            let result = if let Some(status) = status {
+                Err(MailboxError::Status {
                     command: command.code(),
                     status,
-                }),
-                None => Ok(state.responses.get(&command).copied().unwrap_or_default()),
+                })
+            } else {
+                let slot = args[0] & 0xffff_0000;
+                let mut response = [0; 6];
+                if let Some(offsets) = &mut state.offsets {
+                    match command {
+                        Command::SetOffset => {
+                            offsets.insert(slot, args[0] & 0xffff);
+                        }
+                        Command::ReadOffset => {
+                            response[0] = offsets.get(&slot).copied().unwrap_or_default();
+                        }
+                        Command::SetAllOffsets => {
+                            for value in offsets.values_mut() {
+                                *value = args[0] & 0xffff;
+                            }
+                        }
+                        Command::BoostLimit => {}
+                    }
+                }
+                Ok(state.responses.get(&command).copied().unwrap_or(response))
             };
             (state.command_hook.clone(), result)
         };

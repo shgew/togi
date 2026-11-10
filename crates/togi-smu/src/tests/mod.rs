@@ -4,4 +4,5 @@ mod pm;
 mod safety;
 mod slots;
 mod sysfs;
+mod witness;
 mod worker;
