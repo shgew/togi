@@ -58,7 +58,6 @@ let
         services.togi.hardwareTestGroup = "togi-hardware";
         # Exercise the shipped normal-boot sleep unit without needing SP5100 or actual ACPI sleep.
         services.togi.day.enable = true;
-        services.togi.day.watchdog = true;
         users.groups.togi-hardware = { };
       };
 
@@ -1162,7 +1161,6 @@ let
         services.togi = {
           enable = true;
           day.enable = true;
-          day.watchdog = true;
           day.users = [ "alice" ];
           package = pkgs.writeShellScriptBin "togi" ''
             exec ${vmRecovery}/bin/togi-vm-recovery --exact vm_recovery::helper --nocapture -- togi "$@"

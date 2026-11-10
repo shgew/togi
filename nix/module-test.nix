@@ -1,5 +1,5 @@
 # Evaluates the x86_64-linux NixOS configuration on every host, VM-free: loader selection and mount
-# dependencies, GRUB mirror constraints, package overrides and the tuning specialisation's 30s watchdog.
+# dependencies, GRUB mirror constraints, package overrides, the tuning boot's 30s watchdog and day sleep hooks.
 {
   pkgs,
   hostPkgs,
@@ -128,11 +128,6 @@ let
   overriddenTuning = overridden.specialisation.togi.configuration;
   day = evaluateDay [ (mirror "/boot") ] null null null 27 { enable = true; };
   dayTuning = day.specialisation.togi.configuration;
-  watched = evaluateDay [ (mirror "/boot") ] null null null 27 {
-    enable = true;
-    watchdog = true;
-  };
-  watchedTuning = watched.specialisation.togi.configuration;
   dayUsers = evaluateDay [ (mirror "/boot") ] null null null 27 {
     enable = true;
     users = [ "alice" ];
@@ -347,40 +342,37 @@ assert builtins.elem pkgs.libnotify dayUsers.systemd.user.services.togi-day-noti
 assert
   dayUsers.systemd.user.services.togi-day-notify.serviceConfig.ExecCondition
   != dayTwoUsers.systemd.user.services.togi-day-notify.serviceConfig.ExecCondition;
-# The watchdog is off by default; on, the normal boot's PID 1 watchdog is 60s without lockup panics.
-assert !day.services.togi.day.watchdog;
-assert !(day.systemd.settings.Manager ? RuntimeWatchdogSec);
+# Day enablement alone installs the normal boot's 60s watchdog without lockup panics.
+assert day.systemd.settings.Manager.RuntimeWatchdogSec == "60s";
+assert builtins.elem "sp5100_tco" day.boot.initrd.kernelModules;
 assert !(one.systemd.settings.Manager ? RuntimeWatchdogSec);
-assert watched.services.togi.day.watchdog;
-assert watched.systemd.settings.Manager.RuntimeWatchdogSec == "60s";
-assert builtins.elem "sp5100_tco" watched.boot.initrd.kernelModules;
-assert !(builtins.elem "sp5100_tco" day.boot.initrd.kernelModules);
-assert lockupPanics watched == [ ];
+assert !(builtins.elem "sp5100_tco" one.boot.initrd.kernelModules);
 assert lockupPanics day == [ ];
-assert watchedTuning.systemd.settings.Manager.RuntimeWatchdogSec == "30s";
+assert dayTuning.systemd.settings.Manager.RuntimeWatchdogSec == "30s";
 # Around sleep the watchdog is stopped and restarted through the manager's RuntimeWatchdogUSec property: 0 disarms
-# it, infinity restores the configured 60s. Without the option, and in the tuning boot, there is no such unit.
-assert watched.systemd.services.togi-day-watchdog-sleep.wantedBy == [ "sleep.target" ];
-assert watched.systemd.services.togi-day-watchdog-sleep.before == [ "sleep.target" ];
-assert watched.systemd.services.togi-day-watchdog-sleep.unitConfig.StopWhenUnneeded;
+# it, infinity restores the configured 60s. Without day enablement, and in the tuning boot, there is no such unit.
+assert day.systemd.services.togi-day-watchdog-sleep.wantedBy == [ "sleep.target" ];
+assert day.systemd.services.togi-day-watchdog-sleep.before == [ "sleep.target" ];
+assert day.systemd.services.togi-day-watchdog-sleep.unitConfig.StopWhenUnneeded;
+assert day.systemd.services.togi-day-watchdog-sleep.serviceConfig.Type == "oneshot";
+assert day.systemd.services.togi-day-watchdog-sleep.serviceConfig.RemainAfterExit;
 assert lib.hasSuffix "RuntimeWatchdogUSec t 0" (
-  builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStart
+  builtins.unsafeDiscardStringContext day.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStart
 );
 assert
-  map builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStopPost
+  map builtins.unsafeDiscardStringContext day.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStopPost
   == [
     "-${builtins.unsafeDiscardStringContext "${pkgs.coreutils}/bin/timeout"} --verbose --kill-after=2s 5s ${builtins.unsafeDiscardStringContext "${pkgs.kmod}/bin/modprobe"} -r sp5100_tco"
     "-${builtins.unsafeDiscardStringContext "${pkgs.coreutils}/bin/timeout"} --verbose --kill-after=2s 5s ${builtins.unsafeDiscardStringContext "${pkgs.kmod}/bin/modprobe"} sp5100_tco"
-    "${builtins.unsafeDiscardStringContext "${watched.systemd.package}/bin/busctl"} set-property org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager RuntimeWatchdogUSec t 18446744073709551615"
+    "${builtins.unsafeDiscardStringContext "${day.systemd.package}/bin/busctl"} set-property org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager RuntimeWatchdogUSec t 18446744073709551615"
   ];
-assert watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.TimeoutStopSec == "30s";
-assert lib.hasInfix "TimeoutStopSec=30s"
-  watched.systemd.units."togi-day-watchdog-sleep.service".text;
+assert day.systemd.services.togi-day-watchdog-sleep.serviceConfig.TimeoutStopSec == "30s";
+assert lib.hasInfix "TimeoutStopSec=30s" day.systemd.units."togi-day-watchdog-sleep.service".text;
 assert lib.hasInfix "--verbose --kill-after=2s 5s"
-  watched.systemd.units."togi-day-watchdog-sleep.service".text;
-assert !(watched.systemd.services.togi-day-watchdog-sleep.serviceConfig ? ExecStop);
-assert !(day.systemd.services ? togi-day-watchdog-sleep);
-assert !(watchedTuning.systemd.services ? togi-day-watchdog-sleep);
+  day.systemd.units."togi-day-watchdog-sleep.service".text;
+assert !(day.systemd.services.togi-day-watchdog-sleep.serviceConfig ? ExecStop);
+assert !(one.systemd.services ? togi-day-watchdog-sleep);
+assert !(dayTuning.systemd.services ? togi-day-watchdog-sleep);
 assert lib.hasInfix ''[ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0''
   restartLimitScript;
 assert lib.hasInfix

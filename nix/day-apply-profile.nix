@@ -24,7 +24,6 @@ pkgs.testers.runNixOSTest {
     services.togi = {
       enable = true;
       day.enable = true;
-      day.watchdog = true;
     };
     hardware.cpu.amd.ryzen-smu.enable = false;
     systemd.tmpfiles.rules = [
