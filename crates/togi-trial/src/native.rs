@@ -554,8 +554,9 @@ impl Trial {
     }
 
     /// Waits up to `budget` for the supervisor's end, handing reports to `report`; with `block`
-    /// false it takes only what is already queued. False when the end never came.
-    fn await_end(&mut self, budget: Duration, block: bool, report: &mut dyn Reporter) -> bool {
+    /// false it drains queued events until a frequency request proves the supervisor is waiting
+    /// on us, then blocks for the remaining budget. False when the end never came.
+    fn await_end(&mut self, budget: Duration, mut block: bool, report: &mut dyn Reporter) -> bool {
         let begun = self.clock.now();
         while self.ended.is_none() {
             let elapsed = self.clock.now().duration_since(begun);
@@ -574,6 +575,7 @@ impl Trial {
                 Some(Event::Frequency(request)) => {
                     let result = report.frequency(request.event);
                     let _ = request.reply.send(result);
+                    block = true;
                 }
                 Some(Event::Sample(sample)) => report.sample(sample),
                 Some(Event::Signal {
@@ -660,8 +662,8 @@ impl Running for Trial {
         let remaining = self
             .bound
             .saturating_sub(self.clock.now().duration_since(self.created));
-        // A wait after the supervisor's bound has passed still collects what already finished:
-        // it reads what is queued, bounded by the stop bound for reports, and never blocks.
+        // A wait after the supervisor's bound still collects what already finished. It drains
+        // queued reports within the stop bound, blocking only to finish frequency acknowledgments.
         let (budget, block) = if remaining.is_zero() {
             (self.stop_bound, false)
         } else {

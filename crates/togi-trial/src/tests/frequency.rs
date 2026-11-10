@@ -548,3 +548,78 @@ fn a_sweep_needs_no_frequency_journal_and_leaves_a_pending_cap_for_a_journaled_r
         );
     }));
 }
+
+#[test]
+fn a_late_wait_acknowledges_restoration_and_collects_the_finished_capped_trial() {
+    use togi_machine::{FrequencyJournal as _, Reporter, Running as _, Sample};
+
+    struct Report(crate::testing::Frequencies);
+    impl Reporter for Report {
+        fn frequency(&mut self, event: FrequencyEvent) -> io::Result<()> {
+            self.0.record(event)
+        }
+        fn progress(&mut self, _: &str) {}
+        fn sample(&mut self, _: Sample) {}
+        fn signal(&mut self, _: togi_machine::CoreId, _: Signal, _: Option<u32>, _: &str) {}
+    }
+
+    let machine = Fake::new(policies());
+    let clock = crate::clock::Manual::new();
+    let (started, handle) = mpsc::sync_channel(1);
+    let (queued, ready) = mpsc::sync_channel(1);
+    let (done, completed) = tokio::sync::oneshot::channel();
+    let supervisor = std::thread::spawn({
+        let machine = machine.clone();
+        let clock = Arc::clone(&clock);
+        move || {
+            crate::testing::runtime(true).block_on(local(async {
+                let rig = rig(&machine);
+                started.send(rig.start(managed()).await.unwrap()).unwrap();
+                // Virtual time lets teardown reach its unacknowledged restore intent.
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                queued.send(()).unwrap();
+                // Hold the runtime until the synchronous collector blocks. A try_recv-only
+                // collector cannot accidentally win a race with a fast acknowledgment.
+                clock.until_waiting();
+                completed.await.unwrap();
+                assert_eq!(
+                    rig.exists(rig.env.dir.join("controller-frequency.pending.json")),
+                    false
+                );
+            }));
+        }
+    });
+    let mut trial = crate::native::Trial::new(
+        handle.recv().unwrap(),
+        &Timing::default(),
+        crate::clock::Clock::Manual(Arc::clone(&clock)),
+    );
+    ready.recv().unwrap();
+    clock.advance(trial.wait_budget() + Duration::from_millis(1));
+    assert_eq!(trial.wait_budget(), Duration::ZERO);
+    assert_eq!(
+        machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+        400_000
+    );
+    let mut report = Report(crate::testing::Frequencies::default());
+    let result = trial.wait(&CancellationToken::new(), &mut report);
+    // Stop also releases the gate on a broken nonblocking wait, so a failed regression does
+    // not leave a runtime thread waiting for the acknowledgment it needs to clean up.
+    let stopped = Box::new(trial).stop(&mut crate::testing::Frequencies::default());
+    done.send(()).unwrap();
+    supervisor.join().unwrap();
+    stopped.unwrap();
+    let result = result.map_err(|partial| partial.error).unwrap();
+    assert_eq!(result.ran, managed().duration);
+    assert_eq!(result.failure, None);
+    assert_eq!(result.inconclusive, None);
+    assert!(report.0.0.iter().any(|event| {
+        matches!(event, FrequencyEvent::Readback(readback)
+            if readback.intent.action == FrequencyAction::Restore
+                && readback.observed_khz == 5_700_000)
+    }));
+    assert_eq!(
+        machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+        5_700_000
+    );
+}
