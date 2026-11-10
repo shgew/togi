@@ -7,9 +7,9 @@ use super::night_query::NotReady;
 use super::{State, mapping::MappingPlan};
 use crate::UnitId;
 use crate::cap::{
-    self, Beta, CapLimits, EDGE_MARGIN, Hours, LikelihoodCutoff, Rate, Refresh, Slope,
+    self, Beta, CapLimits, Hours, LikelihoodCutoff, Rate, Refresh, Slope,
 };
-use crate::night::{EdgeU, Layout, mapping_cells};
+use crate::night::{EDGE_MARGIN, EdgeU, Layout, mapping_cells};
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 use std::sync::Arc;

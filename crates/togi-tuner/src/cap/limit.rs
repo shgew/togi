@@ -7,8 +7,7 @@ use super::{
     Beta, Bound, Cell, Exposure, Hours, Purpose, Rate, Slope, offset_value, poisson_upper,
 };
 
-/// The edge margin: S stays this many counts shallower than the observed failing edge U.
-pub const EDGE_MARGIN: u8 = 5;
+use crate::night::EDGE_MARGIN;
 
 /// The parameters the cap takes explicitly; [`CapLimits::new`] holds the spec values.
 #[derive(Clone, Copy, Debug, PartialEq)]

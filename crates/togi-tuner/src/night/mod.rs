@@ -8,7 +8,7 @@ mod reproduction;
 mod schedule;
 
 pub use edge::{
-    BRACKET_STEP, COARSE_STEP, Cursor, EdgeU, IsolatedObservation, IsolatedResult, Location,
+    BRACKET_STEP, COARSE_STEP, EDGE_MARGIN, Cursor, EdgeU, IsolatedObservation, IsolatedResult, Location,
     MappingBoard, MappingKind, MappingTarget, StepResult, UnitMapping, write_limit,
 };
 pub use exposure::{Conclusion, Credit, Launch, PlacementValidity, adequately_exposed};

@@ -576,7 +576,7 @@ impl State {
                     old,
                     new: edge,
                     ceiling: plan.edges.get(&ccd).and_then(EdgeU::ceiling),
-                    margin: u32::from(crate::cap::EDGE_MARGIN),
+                    margin: u32::from(crate::night::EDGE_MARGIN),
                 }),
                 causes,
             ))

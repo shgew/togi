@@ -14,7 +14,7 @@ use togi_machine::TargetOffset;
 
 pub use bound::{Bound, Confidence, InvalidConfidence, chi_square_quantile, poisson_upper};
 pub use limit::{
-    Binding, Cap, CapLimits, EDGE_MARGIN, Refresh, Uncovered, UncoveredReason, Witness, cap,
+    Binding, Cap, CapLimits, Refresh, Uncovered, UncoveredReason, Witness, cap,
     project,
 };
 pub use slope::{
