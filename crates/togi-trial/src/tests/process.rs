@@ -1105,16 +1105,33 @@ impl Os for Rollback {
         }
     }
 
-    fn in_scope(&self, _: u32, _: &crate::id::ScopeName) -> Result<bool, ProcError> {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the fake answers readiness immediately"
+    )]
+    async fn in_scope(
+        &self,
+        _: u32,
+        _: &crate::id::ScopeName,
+        _: tokio::time::Instant,
+    ) -> Result<bool, ProcError> {
         Ok(true)
     }
 
-    fn usage(&self, pid: u32) -> Result<Usage, ProcError> {
-        self.linux.usage(pid)
+    async fn usage(&self, pid: u32, deadline: tokio::time::Instant) -> Result<Usage, ProcError> {
+        self.linux.usage(pid, deadline).await
     }
 
-    fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
-        self.linux.threads(pid)
+    async fn threads(
+        &self,
+        pid: u32,
+        deadline: tokio::time::Instant,
+    ) -> Result<Threads, ProcError> {
+        self.linux.threads(pid, deadline).await
+    }
+
+    fn observations_finished(&self) -> Result<(), ProcError> {
+        self.linux.observations_finished()
     }
 
     #[expect(

@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::io;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 
 use rustix::process::{
     Pid, PidfdFlags, Signal, WaitId, WaitIdOptions, kill_process_group, pidfd_open, waitid,
@@ -232,16 +232,34 @@ impl Os for Linux {
         }
     }
 
-    fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError> {
-        self.proc.in_scope(pid, scope)
+    async fn in_scope(
+        &self,
+        pid: u32,
+        scope: &ScopeName,
+        deadline: Instant,
+    ) -> Result<bool, ProcError> {
+        let (proc, scope) = (self.proc.clone(), scope.clone());
+        self.scans
+            .run(deadline, move || proc.in_scope(pid, &scope))
+            .await
     }
 
-    fn usage(&self, pid: u32) -> Result<Usage, ProcError> {
-        self.proc.usage(pid)
+    async fn usage(&self, pid: u32, deadline: Instant) -> Result<Usage, ProcError> {
+        let proc = self.proc.clone();
+        self.scans.run(deadline, move || proc.usage(pid)).await
     }
 
-    fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
-        self.proc.threads(pid)
+    async fn threads(&self, pid: u32, deadline: Instant) -> Result<Threads, ProcError> {
+        let proc = self.proc.clone();
+        self.scans.run(deadline, move || proc.threads(pid)).await
+    }
+
+    fn observations_finished(&self) -> Result<(), ProcError> {
+        if self.scans.lost.load(Ordering::Acquire) {
+            Err(ProcError::Abandoned)
+        } else {
+            Ok(())
+        }
     }
 
     async fn systemd(
@@ -298,6 +316,7 @@ const DONE: u8 = 2;
 #[derive(Default)]
 struct Scans {
     abandoned: AtomicUsize,
+    lost: AtomicBool,
 }
 
 /// Marks one scan finished, whether its closure returned, panicked or was dropped unrun, and
@@ -328,12 +347,14 @@ impl Drop for Awaiting<'_> {
             return;
         }
         self.scans.abandoned.fetch_add(1, Ordering::AcqRel);
-        if self
+        match self
             .state
             .compare_exchange(RUNNING, ABANDONED, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
         {
-            self.scans.abandoned.fetch_sub(1, Ordering::AcqRel);
+            Ok(_) => self.scans.lost.store(true, Ordering::Release),
+            Err(_) => {
+                self.scans.abandoned.fetch_sub(1, Ordering::AcqRel);
+            }
         }
     }
 }
@@ -349,6 +370,10 @@ impl Scans {
         deadline: Instant,
         scan: impl FnOnce() -> Result<T, ProcError> + Send + 'static,
     ) -> Result<T, ProcError> {
+        if Instant::now() >= deadline {
+            self.lost.store(true, Ordering::Release);
+            return Err(ProcError::Deadline);
+        }
         if self.abandoned.load(Ordering::Acquire) > 0 {
             return Err(ProcError::Stuck);
         }
@@ -365,11 +390,19 @@ impl Scans {
             let _finished = finished;
             scan()
         });
-        match tokio::time::timeout_at(deadline, work).await {
+        let result = match tokio::time::timeout_at(deadline, work).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(ProcError::ScanLost),
             Err(_) => Err(ProcError::Deadline),
+        };
+        if Instant::now() > deadline {
+            self.lost.store(true, Ordering::Release);
+            return Err(ProcError::Deadline);
         }
+        if matches!(result, Err(ProcError::Deadline | ProcError::ScanLost)) {
+            self.lost.store(true, Ordering::Release);
+        }
+        result
     }
 }
 
@@ -722,5 +755,56 @@ mod tests {
         });
         assert!(matches!(lost, Err(ProcError::ScanLost)));
         assert!(matches!(next, Ok(1)));
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Observation {
+        Scope,
+        Usage,
+        Threads,
+    }
+
+    #[test_case::test_case(Observation::Scope; "scope readiness")]
+    #[test_case::test_case(Observation::Usage; "process CPU time")]
+    #[test_case::test_case(Observation::Threads; "thread containment")]
+    fn real_process_required_observations_share_the_bounded_scan_owner(observation: Observation) {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let memory = Arc::new(togi_journal::fs::MemFs::new());
+        let os = Linux::new(
+            Proc::with_inputs("/proc".into(), 100, crate::procfs::Inputs::memory(memory)),
+            false,
+        );
+        let (release, blocked) = std::sync::mpsc::channel::<()>();
+        let (started, running) = tokio::sync::oneshot::channel();
+        runtime.block_on(async {
+            let hog = tokio::task::spawn_blocking(move || {
+                let _ = started.send(());
+                let _ = blocked.recv_timeout(secs(30));
+            });
+            running.await.unwrap();
+            let deadline = Instant::now() + Duration::from_millis(100);
+            let scope = ScopeName::from_unit("togi-trial-observation.scope").unwrap();
+            let observed = match observation {
+                Observation::Scope => os.in_scope(10, &scope, deadline).await.map(drop),
+                Observation::Usage => os.usage(10, deadline).await.map(drop),
+                Observation::Threads => os.threads(10, deadline).await.map(drop),
+            };
+            let loss = os.observations_finished();
+            let replacement = os.scope_processes(Instant::now() + secs(10)).await;
+            release.send(()).unwrap();
+            hog.await.unwrap();
+            tokio::task::spawn_blocking(|| {}).await.unwrap();
+            assert!(matches!(observed, Err(ProcError::Deadline)));
+            assert!(matches!(loss, Err(ProcError::Abandoned)));
+            assert!(matches!(replacement, Err(ProcError::Stuck)));
+            assert!(
+                matches!(os.observations_finished(), Err(ProcError::Abandoned)),
+                "a late result cannot retroactively authorize restoration"
+            );
+        });
     }
 }

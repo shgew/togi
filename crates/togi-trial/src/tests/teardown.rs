@@ -120,6 +120,107 @@ fn teardown_shares_one_fifteen_second_budget_across_instances(count: u8) {
     });
 }
 
+#[test_case(1, false; "one scoped instance")]
+#[test_case(16, false; "sixteen scoped instances")]
+#[test_case(1, true; "an unscoped instance")]
+fn a_stalled_process_observation_cannot_delay_stop_or_authorize_restoration(
+    count: u8,
+    unscoped: bool,
+) {
+    use crate::controller::{Call, Recording};
+    use crate::os::Os as _;
+    use crate::supervisor::TrialCommand;
+
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let controller = Arc::new(Recording::default());
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+                env.unscoped = unscoped;
+                env.controller = controller.clone();
+            });
+            let cores: Vec<u8> = (0..count).collect();
+            let regime = if count == 1 { Regime::R1 } else { Regime::R7 };
+            let handle = rig.start(spec(regime, &cores, secs(600))).await.unwrap();
+            rig.fake.hang_threads();
+            // Enter the first sample, then stop halfway through its observation budget.
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            assert!(rig.fake.observations_finished().is_err());
+            if !unscoped {
+                // The verification scan must use only what remains of teardown's budget.
+                rig.fake.hang_scans();
+            }
+            let begun = tokio::time::Instant::now();
+            handle.commands.send(TrialCommand::Stop).unwrap();
+            let run = finish(&handle).await;
+            assert!(
+                begun.elapsed() <= secs(15) + Duration::from_millis(50),
+                "{:?}",
+                begun.elapsed()
+            );
+            if !unscoped {
+                assert!(begun.elapsed() >= secs(15));
+            }
+            let containment = run.finished.teardown.unwrap_err();
+            assert!(
+                containment.failures().iter().any(|failure| {
+                    matches!(failure, CleanupFailure::Observe { source, .. }
+                    if matches!(source.downcast_ref::<ProcError>(), Some(ProcError::Abandoned)))
+                }),
+                "{:?}",
+                containment.failures()
+            );
+            assert!(
+                controller
+                    .calls()
+                    .iter()
+                    .all(|call| matches!(call, Call::Confine(_)))
+            );
+            for index in 0..usize::from(count) {
+                let process = rig.fake.process(index);
+                assert!(process.reaped.get());
+                assert!(
+                    process
+                        .signal_times
+                        .borrow()
+                        .iter()
+                        .all(|(at, _)| *at <= begun + secs(15))
+                );
+            }
+        })
+        .await;
+    });
+}
+
+#[test]
+fn a_timed_out_process_observation_withholds_the_proof_after_its_wait_has_ended() {
+    use crate::controller::{Call, Recording};
+
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let controller = Arc::new(Recording::default());
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+                env.controller = controller.clone();
+            });
+            let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
+            rig.fake.hang_threads();
+            let run = finish(&handle).await;
+            let containment = run.finished.teardown.unwrap_err();
+            assert!(matches!(
+                containment.failures().first(),
+                Some(CleanupFailure::Observe { .. })
+            ));
+            assert!(rig.fake.process(0).reaped.get());
+            assert!(
+                controller
+                    .calls()
+                    .iter()
+                    .all(|call| matches!(call, Call::Confine(_)))
+            );
+        })
+        .await;
+    });
+}
+
 #[test]
 fn a_timed_out_scope_kill_is_never_read_as_a_missing_scope() {
     crate::testing::runtime(true).block_on(async move {

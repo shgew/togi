@@ -157,6 +157,12 @@ impl<'a, O: Os> Teardown<'a, O, Running> {
         mut live: Live<O>,
         budget: Budget,
     ) -> Self {
+        if let Err(source) = os.observations_finished() {
+            live.failures.record(CleanupFailure::Observe {
+                what: "the outstanding process observations",
+                source: Box::new(source),
+            });
+        }
         let failures = std::mem::take(&mut live.failures);
         Teardown {
             os,

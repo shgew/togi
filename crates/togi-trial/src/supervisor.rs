@@ -781,15 +781,15 @@ async fn await_scope<O: Os>(
     }
     let end = Instant::now() + env.timing.readiness();
     loop {
-        if matches!(env.os.in_scope(instance.pid, &instance.scope), Ok(true)) {
+        let observed = tokio::select! {
+            _ = commands.recv() => return Readiness::Cancelled,
+            observed = env.os.in_scope(instance.pid, &instance.scope, end) => observed,
+        };
+        if matches!(observed, Ok(true)) {
             return Readiness::Ready;
         }
         tokio::select! {
-            command = commands.recv() => {
-                if matches!(command, Some(TrialCommand::Cancel)) {
-                    return Readiness::Cancelled;
-                }
-            }
+            _ = commands.recv() => return Readiness::Cancelled,
             () = sleep(READINESS_POLL) => {}
             () = sleep_until(end) => return Readiness::TimedOut,
         }
@@ -1113,11 +1113,27 @@ impl<O: Os> Supervisor<O> {
                 // A watched poll or an earlier sample may have used the rest of the duration; the
                 // observations after it are no part of the trial, and they must not delay the
                 // teardown or turn a late read failure into evidence.
-                if Instant::now() >= deadline {
+                if Instant::now() >= halt_at || cancelled.load(Ordering::Acquire) {
                     break;
                 }
                 let index = (self.rotation + step) % count;
-                stop |= self.sample(index, now, &mut workers);
+                let observed = Self::sample(
+                    &self.env,
+                    &mut self.live.instances[index],
+                    &mut self.judge,
+                    now,
+                    &mut workers,
+                    halt_at,
+                );
+                stop |= tokio::select! {
+                    biased;
+                    command = self.commands.recv() => return Some(match command {
+                        Some(TrialCommand::Cancel) => End::Cancelled,
+                        Some(TrialCommand::Stop) => End::Stopped,
+                        Some(TrialCommand::Abandon) | None => End::Abandoned,
+                    }),
+                    stop = observed => stop,
+                };
             }
         }
         self.rotation = self.rotation.wrapping_add(1);
@@ -1126,32 +1142,43 @@ impl<O: Os> Supervisor<O> {
     }
 
     /// Reads the required observations of one ready instance: its threads and its CPU time.
-    fn sample(&mut self, index: usize, now: Instant, workers: &mut PerCore<i64>) -> bool {
-        let env = Rc::clone(&self.env);
-        let instance = &mut self.live.instances[index];
+    async fn sample(
+        env: &Env<O>,
+        instance: &mut LiveInstance<O>,
+        judge: &mut Judge,
+        now: Instant,
+        workers: &mut PerCore<i64>,
+        deadline: Instant,
+    ) -> bool {
+        let index = instance.index;
         if !instance.observed.ready {
-            if !matches!(env.os.in_scope(instance.pid, &instance.scope), Ok(true)) {
+            if !matches!(
+                env.os
+                    .in_scope(instance.pid, &instance.scope, deadline)
+                    .await,
+                Ok(true)
+            ) {
                 return false;
             }
             instance.observed.ready = true;
         }
         let pid = instance.pid;
         let mut stop = false;
-        match env.os.threads(pid) {
+        match env.os.threads(pid, deadline).await {
             Ok(found) => {
                 let outside = found
                     .threads
                     .iter()
                     .find(|thread| !instance.plan.cpus.contains(&thread.cpu));
                 if let Some(thread) = outside {
-                    stop |= self.judge.observe(Observation::Escape {
+                    stop |= judge.observe(Observation::Escape {
                         cpu: thread.cpu,
                         pid,
                         tid: thread.tid,
                     });
                 }
                 for error in found.errors {
-                    self.judge.observe(Observation::SamplingLoss {
+                    judge.observe(Observation::SamplingLoss {
                         instance: index,
                         what: format!("thread sampling lost: {}", error_chain(&error)),
                     });
@@ -1159,13 +1186,13 @@ impl<O: Os> Supervisor<O> {
             }
             Err(ProcError::Gone) => {}
             Err(error) => {
-                self.judge.observe(Observation::SamplingLoss {
+                judge.observe(Observation::SamplingLoss {
                     instance: index,
                     what: format!("thread sampling lost: {}", error_chain(&error)),
                 });
             }
         }
-        match env.os.usage(pid) {
+        match env.os.usage(pid, deadline).await {
             Ok(usage) => {
                 // The two threads of an SMT core run as separate instances, so a core's time is
                 // the sum of its instances'.
@@ -1178,7 +1205,7 @@ impl<O: Os> Supervisor<O> {
                     workers.set(instance.plan.core, total);
                 } else {
                     let error = ProcError::CpuTimeOverflow { pid };
-                    self.judge.observe(Observation::SamplingLoss {
+                    judge.observe(Observation::SamplingLoss {
                         instance: index,
                         what: format!("usage sampling lost: {}", error_chain(&error)),
                     });
@@ -1186,7 +1213,7 @@ impl<O: Os> Supervisor<O> {
                 }
                 let active = instance.observed.active_at(now);
                 if let Some(stalled) = instance.observed.stall.observe(active, usage.cpu_time) {
-                    stop |= self.judge.observe(Observation::Stall {
+                    stop |= judge.observe(Observation::Stall {
                         instance: index,
                         pid,
                         cpu: usage.cpu,
@@ -1196,7 +1223,7 @@ impl<O: Os> Supervisor<O> {
             }
             Err(ProcError::Gone) => {}
             Err(error) => {
-                self.judge.observe(Observation::SamplingLoss {
+                judge.observe(Observation::SamplingLoss {
                     instance: index,
                     what: format!("usage sampling lost: {}", error_chain(&error)),
                 });

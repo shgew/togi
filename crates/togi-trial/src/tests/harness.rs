@@ -871,7 +871,7 @@ mod tests {
             };
             let child = fake.launch(&command).unwrap_or_else(|_| panic!("launch"));
             let pid = crate::os::Child::pid(&child);
-            assert!(fake.threads(pid).is_ok());
+            assert!(fake.threads(pid, Instant::now() + Duration::from_secs(1)).await.is_ok());
             let process = fake.process(0);
             let seen = Rc::new(std::cell::Cell::new(None));
             let recorded = Rc::clone(&seen);
@@ -880,7 +880,7 @@ mod tests {
                 *process.threads.borrow_mut() = Err(crate::os::fake::lost_read());
             });
             assert!(matches!(
-                fake.threads(pid),
+                fake.threads(pid, Instant::now() + Duration::from_secs(1)).await,
                 Err(crate::procfs::ProcError::Read { .. })
             ));
             assert_eq!(seen.get(), Some(pid));

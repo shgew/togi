@@ -464,20 +464,29 @@ impl Os for Probe {
         self.inner.launch(command)
     }
 
-    fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError> {
-        self.inner.in_scope(pid, scope)
+    async fn in_scope(
+        &self,
+        pid: u32,
+        scope: &ScopeName,
+        deadline: Instant,
+    ) -> Result<bool, ProcError> {
+        self.inner.in_scope(pid, scope, deadline).await
     }
 
-    fn usage(&self, pid: u32) -> Result<Usage, ProcError> {
-        self.inner.usage(pid)
+    async fn usage(&self, pid: u32, deadline: Instant) -> Result<Usage, ProcError> {
+        self.inner.usage(pid, deadline).await
     }
 
-    fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
-        let read = self.inner.threads(pid);
+    async fn threads(&self, pid: u32, deadline: Instant) -> Result<Threads, ProcError> {
+        let read = self.inner.threads(pid, deadline).await;
         if matches!(&read, Err(error) if !matches!(error, ProcError::Gone)) {
             self.lost_threads.set(self.lost_threads.get() + 1);
         }
         read
+    }
+
+    fn observations_finished(&self) -> Result<(), ProcError> {
+        self.inner.observations_finished()
     }
 
     async fn systemd(

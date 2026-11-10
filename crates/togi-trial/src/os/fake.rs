@@ -266,6 +266,8 @@ struct Shared {
     fail_alive: Cell<bool>,
     hang_scans: Cell<bool>,
     scan_fault: Cell<Option<ScanFault>>,
+    hang_threads: Cell<bool>,
+    observation_lost: Cell<bool>,
     signal_error_default: Cell<Option<SignalErrorKind>>,
     fail_once: Rc<RefCell<Vec<(GroupSignal, SignalErrorKind)>>>,
     recovered: RefCell<Vec<(ScopeProcess, Recovered)>>,
@@ -357,6 +359,8 @@ impl Fake {
                 fail_alive: Cell::new(false),
                 hang_scans: Cell::new(false),
                 scan_fault: Cell::new(None),
+                hang_threads: Cell::new(false),
+                observation_lost: Cell::new(false),
                 signal_error_default: Cell::new(None),
                 fail_once: Rc::default(),
                 recovered: RefCell::default(),
@@ -394,6 +398,11 @@ impl Fake {
     /// with no process state borrowed, so it may change a process or burn real time.
     pub(crate) fn on_threads(&self, hook: impl FnMut(u32) + 'static) {
         *self.shared.threads_hook.borrow_mut() = Some(Box::new(hook));
+    }
+
+    /// A required thread observation never reports, including after the caller stops awaiting it.
+    pub(crate) fn hang_threads(&self) {
+        self.shared.hang_threads.set(true);
     }
 
     /// Every signal to a new process fails like this.
@@ -625,7 +634,11 @@ impl Os for Fake {
         }
     }
 
-    fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError> {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the fake answers readiness immediately"
+    )]
+    async fn in_scope(&self, pid: u32, scope: &ScopeName, _: Instant) -> Result<bool, ProcError> {
         let processes = self.shared.processes.borrow();
         let process = processes.iter().find(|process| process.pid == pid);
         Ok(process.is_some_and(|process| {
@@ -633,7 +646,11 @@ impl Os for Fake {
         }))
     }
 
-    fn usage(&self, pid: u32) -> Result<Usage, ProcError> {
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the fake answers CPU usage immediately"
+    )]
+    async fn usage(&self, pid: u32, _: Instant) -> Result<Usage, ProcError> {
         let processes = self.shared.processes.borrow();
         processes
             .iter()
@@ -643,7 +660,13 @@ impl Os for Fake {
             })
     }
 
-    fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
+    async fn threads(&self, pid: u32, deadline: Instant) -> Result<Threads, ProcError> {
+        if self.shared.hang_threads.get() {
+            // Like the real blocking owner: abandoning the wait cannot confirm cleanup later.
+            self.shared.observation_lost.set(true);
+            sleep_until(deadline).await;
+            return Err(ProcError::Deadline);
+        }
         if let Some(hook) = self.shared.threads_hook.borrow_mut().as_mut() {
             hook(pid);
         }
@@ -658,6 +681,14 @@ impl Os for Fake {
                 Err(error) => Err(replay(error)),
             },
         )
+    }
+
+    fn observations_finished(&self) -> Result<(), ProcError> {
+        if self.shared.observation_lost.get() {
+            Err(ProcError::Abandoned)
+        } else {
+            Ok(())
+        }
     }
 
     async fn systemd(
@@ -820,6 +851,7 @@ fn replay(error: &ProcError) -> ProcError {
         ProcError::CpuTimeOverflow { pid } => ProcError::CpuTimeOverflow { pid: *pid },
         ProcError::Deadline => ProcError::Deadline,
         ProcError::Stuck => ProcError::Stuck,
+        ProcError::Abandoned => ProcError::Abandoned,
         ProcError::ScanLost => ProcError::ScanLost,
     }
 }
