@@ -16,10 +16,11 @@ pkgs.testers.runNixOSTest {
     networking.useDHCP = false;
     virtualisation.cores = 8;
     virtualisation.qemu.options = [
-      "-device i6300esb"
+      "-machine q35"
+      "-global ICH9-LPC.noreboot=false"
       "-watchdog-action reset"
     ];
-    boot.initrd.kernelModules = [ "i6300esb" ];
+    boot.initrd.kernelModules = [ "iTCO_wdt" ];
     boot.kernelModules = [ "fuse" ];
     services.togi = {
       enable = true;
@@ -120,6 +121,13 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("multi-user.target")
     machine.wait_for_unit("togi-fake-smu.service")
     machine.wait_until_succeeds("grep -qx active /sys/class/watchdog/watchdog0/state")
+    machine.succeed("grep -qx iTCO_wdt /sys/class/watchdog/watchdog0/identity")
+    machine.succeed("test -r /sys/class/watchdog/watchdog0/timeleft")
+    machine.wait_until_succeeds(
+        "before=$(cat /sys/class/watchdog/watchdog0/timeleft); sleep 1; "
+        "after=$(cat /sys/class/watchdog/watchdog0/timeleft); test \"$after\" -lt \"$before\"",
+        timeout=10,
+    )
     machine.wait_until_succeeds("journalctl -u togi-day.service -o cat --no-pager | grep -F 'no session journal'")
     machine.succeed("systemctl stop togi-day.service; systemctl reset-failed togi-day.service")
     machine.succeed(f"test ! -e {journal}")
