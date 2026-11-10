@@ -1,6 +1,21 @@
 # togi
 
-Rust CLI that finds and keeps testing per-CCD Curve Optimizer offsets on Zen 5 desktop CPUs, with per-core tuning as the later goal. Runs on NixOS; development also supports macOS.
+Rust CLI for Curve Optimizer tuning on Zen 5 desktop CPUs; the shipped tuner works per CCD today, runs on NixOS, and development also supports macOS.
+
+## Intent
+
+togi finds per-core Curve Optimizer offsets for its owner's desktop, automatically, as fast as it safely can. The owner is the first user; the design serves him, and others are welcome to what results.
+
+- **Per-core is the product.** Finding an offset for every core by hand takes too long; that is the work being automated. A per-CCD profile comes first: it pays off early and gives the per-core search its floor.
+- **Automatic.** Once enabled, togi searches, applies, observes and backs off by itself. The operator's one job is to accept that the desktop can crash. Operator input may refine a decision; it never gates one.
+- **Fast.** Good offsets in days. Crashes, including of the desktop in daily use, are an accepted cost of tuning and a measurement.
+- **Balanced.** Speed, crash frequency and safety trade against each other; togi makes the trade and reports what it chose.
+- **Safe where it counts, at any speed.** Offsets stay in [-50, 0]; every write is journaled before and read back after; the CPU returns to stock whenever togi loses control (crash, lost watchdog, failed journal).
+- **Nights test, days apply and observe.**
+- **Simple.** The whole design fits on one page the owner can follow; a rule that does not fit there is too complicated.
+- **It does what it says and nothing else.**
+
+When a design question comes up, recommend the option that reaches per-core offsets sooner with less operator involvement, state its cost in crash risk, and keep the safety rules fixed.
 
 ## Docs
 
