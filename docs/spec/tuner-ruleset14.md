@@ -27,7 +27,7 @@ Use signed offsets in [−50, 0], with smaller values deeper. For each unit i:
 
 A proposal may not be deeper than any applicable C. A newly observed shallower edge is genuinely adverse evidence: if it makes `D_i < C_i`, retreat to a componentwise shallower permitted profile without waiting for a hold. Apply that target only if its exact qualification is valid; otherwise use CO 0 until it qualifies. A unit whose applied step is undone by this adverse retreat stops climbing under §5. Unknown or incompatible evidence after firmware change takes the reset path, not an assumed edge of zero.
 
-The U+5 choice is a margin, not proof about daily hazard. The successor gate must show the physical −50 frontier and the operational −45 ceiling separately on censored write-limit cases. Neither design changes that margin after seeing scores.
+The U+5 choice is a margin, not proof about daily hazard. The [retired](../benchmarking.md#daynight-gate) successor gate was specified to show the physical −50 frontier and the operational −45 ceiling separately on censored write-limit cases. Neither design changes that margin after seeing scores.
 
 ### Operator-attested stock stability
 
@@ -171,7 +171,7 @@ CCD tuning is coarse preparation. The subsequent core phase uses the **same stat
 
 At eight applied hours/day the 700 h coarse example is 87.5 days; adding one or two core steps each makes approximately **1,500–2,300 h total**, or **188–288 active-use days**. Five additional counts per core makes 3,100 h total, approximately 388 days. **[INFERENCE: arithmetic with fixed ceilings, all clean holds and certificates ready on time; no empirical claim that real core gaps will be one or two counts.]** If nights reveal larger gaps, apply the same rule and report the larger cost; do not silently truncate refinement and call the per-core goal complete.
 
-At the existing 5.38 h certificate size, fourteen coarse steps schedule about 75 h of qualification execution; sixteen or thirty-two core steps schedule about 86 h or 172 h more, before controls, mapping, requalification, overhead and repeats. **[INFERENCE: unchanged matrix sizing, not measured hardware throughput.]** Exact-profile certificate reuse and preparing candidates during holds keep nights from needlessly repeating unchanged local cells. They cannot remove the linear daily-hour floor. The successor gate must include actual per-core truth and report the two phases separately; if useful refinement needs too many serial holds, D has a tractability failure to submit for an explicit policy decision, not permission to shorten holds or relax coverage.
+At the existing 5.38 h certificate size, fourteen coarse steps schedule about 75 h of qualification execution; sixteen or thirty-two core steps schedule about 86 h or 172 h more, before controls, mapping, requalification, overhead and repeats. **[INFERENCE: unchanged matrix sizing, not measured hardware throughput.]** Exact-profile certificate reuse and preparing candidates during holds keep nights from needlessly repeating unchanged local cells. They cannot remove the linear daily-hour floor. The [retired](../benchmarking.md#daynight-gate) successor gate was specified to include actual per-core truth and report the two phases separately. If useful refinement needs too many serial holds, D has a tractability failure to submit for an explicit policy decision, not permission to shorten holds or relax coverage.
 
 ## 9. Safety and activation
 
