@@ -18,7 +18,7 @@ The design being built, agreed with the owner on 2026-11-10. It is not yet what 
 
 The owner starts it with `togi night`. The first time, the command states the risk and asks once; after that it reboots at once. The machine reboots into the tuning boot and togi runs everything from there. A night ends when its work is done or the owner ends it; there is no time limit. A crash during a night is expected: the watchdog resets the machine, the tuning boot comes back and the night continues.
 
-1. **Self-check** (first night only). A profile known to freeze this desktop must fail the tests within minutes. If it passes, togi stops and says its tests cannot see that failure.
+1. **Self-check** (first night only). A profile known to freeze this desktop is run through each shape for up to 10 minutes (start). At least one shape must fail. If none does, togi stops and says its tests cannot see that failure. A shape that did not fail is recorded as not seeing it.
 2. **Baseline** (first night only). Measure the three shapes at stock: power, temperature, clock speed.
 3. **Find edges.** The first probes move every core together until one fails; that gives every unit a value that is not stock. Then each unit is probed on its own: step deeper with short probes until one fails. A probe loads only the cores of the unit under test. Every other core sits idle at its day value (its edge backed off by the margin), so a probe sees the neighbours the day will have. The whole-profile soak is the test of all edges together.
 4. **Soak.** Run the whole edge profile through all three shapes for longer. A failure that names a core moves that unit's edge back; a reset moves every edge back.
@@ -33,7 +33,7 @@ Three test shapes, named after what the desktop is used for:
 - **game**: one or a few cores at full boost.
 - **idle**: mostly idle, with short bursts hopping between cores.
 
-togi's own supervising process runs on a core that is not loaded when there is one and shares a loaded core when there is none; it never needs a core at stock. A test passes only when every loaded core returned verified results. Wrong result, error, hang or reset is a failure. Probe length is a multiple of how long the self-check took to fail under that shape.
+togi's own supervising process runs on a core that is not loaded when there is one and shares a loaded core when there is none; it never needs a core at stock. A test passes only when every loaded core returned verified results. Wrong result, error, hang or reset is a failure. Probe length is a multiple of how long the self-check took to fail under that shape; a shape that did not fail there runs for the self-check's full time.
 
 ## Day
 
