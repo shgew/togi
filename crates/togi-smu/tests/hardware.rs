@@ -1,14 +1,17 @@
 #![cfg(all(feature = "hardware", target_os = "linux"))]
 
 use std::error::Error;
-use std::io::{self, Write};
 use std::path::Path;
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 use togi_hostlock::{DEFAULT_PATH, HostLock, Policy};
-use togi_machine::{CoreId, ObservedOffset, PmTableReader, Smu, TargetOffset, error_chain};
-use togi_smu::Driver;
+use togi_machine::{PmTableReader, error_chain};
+use togi_smu::{Driver, OffsetWitness, WitnessError};
+
+#[path = "../src/tests/witness_guard.rs"]
+mod witness_guard;
+use witness_guard::Restoring;
 
 /// Taken on first use, held until process exit and never dropped: a transaction past its
 /// deadline leaves its worker inside an uncancellable sysfs call that may still complete a
@@ -45,72 +48,11 @@ fn validated_driver() -> Driver {
     driver
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "hardware test: writes under the host lock and restores every original offset with a readback"
-)]
-fn write(
-    driver: &mut Driver,
-    core: CoreId,
-    target: TargetOffset,
-) -> Result<(), togi_machine::Error> {
-    driver.set_offset(core, target)
-}
-
-/// Writes every original offset back and reads each one to confirm. One bounded pass: each
-/// transaction has the driver's own deadline, and a poisoned driver fails the rest at once.
-fn restore(driver: &mut Driver, originals: &[(CoreId, ObservedOffset)]) -> Vec<String> {
-    let mut failures = Vec::new();
-    for (core, original) in originals {
-        let Ok(target) = TargetOffset::new(original.0) else {
-            failures.push(format!(
-                "core {core:02}: original {} is not writable",
-                original.0
-            ));
-            continue;
-        };
-        if let Err(error) = write(driver, *core, target) {
-            failures.push(format!("restore core {core:02}: {}", error_chain(&error)));
-            continue;
-        }
-        match driver.offset(*core) {
-            Ok(read) if read == *original => {}
-            Ok(read) => failures.push(format!(
-                "core {core:02}: restored {}, read back {}",
-                original.0, read.0
-            )),
-            Err(error) => {
-                failures.push(format!("read back core {core:02}: {}", error_chain(&error)));
-            }
-        }
-    }
-    failures
-}
-
-struct Restoring {
-    driver: Driver,
-    originals: Vec<(CoreId, ObservedOffset)>,
-}
-
-impl Drop for Restoring {
-    fn drop(&mut self) {
-        let failures = restore(&mut self.driver, &self.originals);
-        if failures.is_empty() {
-            return;
-        }
-        let report = failures.join("; ");
-        if thread::panicking() {
-            let _ = writeln!(io::stderr(), "offsets not restored: {report}");
-        } else {
-            panic!("offsets not restored: {report}");
-        }
-    }
-}
-
 #[test]
-fn hardware_smu_round_trips_every_offset_and_restores_them() {
+fn hardware_smu_round_trips_sixteen_distinct_offsets_and_restores_stock() {
     let _serial = exclusive();
-    let mut driver = validated_driver();
+    let mut session = Restoring::new(validated_driver());
+    let driver = session.driver();
     for check in [
         driver.check_cpu(),
         driver.check_driver(),
@@ -121,45 +63,32 @@ fn hardware_smu_round_trips_every_offset_and_restores_them() {
         println!("{}: {}", check.name, check.detail);
     }
     let cores = must(driver.topology(), "read the topology");
-    let mut originals = Vec::with_capacity(cores.len());
-    for info in &cores {
-        let offset = must(
-            driver.offset(info.core),
-            &format!("read core {:02}", info.core),
+    let witness = must(
+        OffsetWitness::fixture(cores.iter().map(|info| info.core)),
+        "prepare sixteen distinct offsets",
+    );
+    let readback = must(session.round_trip(&witness), "round trip distinct offsets");
+    for (core, target) in witness.targets().iter() {
+        println!(
+            "core {core:02}: wrote {}, read back {:?}",
+            target.get(),
+            readback.get(core)
         );
-        assert!(
-            TargetOffset::new(offset.0).is_ok(),
-            "core {:02} reads {}, outside the writable range: writing it back would change it",
-            info.core,
-            offset.0
-        );
-        originals.push((info.core, offset));
     }
-    let mut session = Restoring { driver, originals };
-    for (core, original) in session.originals.clone() {
-        let target = must(
-            TargetOffset::new(original.0),
-            &format!("core {core:02} target"),
-        );
-        must(
-            write(&mut session.driver, core, target),
-            &format!("write core {core:02}"),
-        );
-        let read = must(session.driver.offset(core), &format!("read core {core:02}"));
-        assert_eq!(
-            read, original,
-            "core {core:02} wrote {}, read back {}",
-            original.0, read.0
-        );
-        println!("core {core:02}: wrote {}, read back {}", original.0, read.0);
-    }
-    let context = must(session.driver.bios_context(), "read the BIOS context");
+    let context = must(session.driver().bios_context(), "read the BIOS context");
     assert!(
         context.boost_limit_mhz > 0,
         "boost limit {} MHz",
         context.boost_limit_mhz
     );
     println!("BIOS context: {context:?}");
+    let failures = session.finish();
+    assert!(
+        failures.is_empty(),
+        "stock not verified: {}",
+        failures.join("; ")
+    );
+    println!("stock restored and verified on all sixteen cores");
 }
 
 #[test]
