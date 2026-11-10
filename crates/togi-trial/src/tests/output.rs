@@ -130,8 +130,8 @@ fn a_checked_result_produced_before_readiness_cannot_verify_a_core(
             run.finished.result.inconclusive.as_deref(),
             Some("core 02 has no backend-verified result")
         );
-        assert_eq!(run.finished.errors.is_empty(), true);
-        assert_eq!(run.finished.teardown.is_ok(), true);
+        assert!(run.finished.errors.is_empty());
+        assert!(run.finished.teardown.is_ok());
     }));
 }
 
@@ -161,7 +161,7 @@ fn a_checked_result_first_read_during_teardown_cannot_verify_a_core(source: Sour
             run.finished.result.inconclusive.as_deref(),
             Some("core 02 has no backend-verified result")
         );
-        assert_eq!(run.finished.teardown.is_ok(), true);
+        assert!(run.finished.teardown.is_ok());
     }));
 }
 
@@ -195,7 +195,7 @@ fn a_computation_error_produced_before_readiness_still_fails(source: Source) {
                 .map(|failure| (failure.core, failure.signal)),
             Some((super::harness::core(2), Signal::ComputationError))
         );
-        assert_eq!(run.finished.teardown.is_ok(), true);
+        assert!(run.finished.teardown.is_ok());
     }));
 }
 
@@ -238,7 +238,7 @@ fn completing_a_startup_partial_during_the_interval_does_not_verify_a_core(sourc
             run.finished.result.inconclusive.as_deref(),
             Some("core 02 has no backend-verified result")
         );
-        assert_eq!(run.finished.teardown.is_ok(), true);
+        assert!(run.finished.teardown.is_ok());
     }));
 }
 
@@ -265,7 +265,7 @@ fn a_watched_result_appended_after_the_startup_backlog_is_drained_verifies_its_c
         let run = finish(&handle).await;
         assert_eq!(run.finished.result.failure, None);
         assert_eq!(run.finished.result.inconclusive, None);
-        assert_eq!(run.finished.teardown.is_ok(), true);
+        assert!(run.finished.teardown.is_ok());
     }));
 }
 
@@ -386,10 +386,7 @@ fn computation_and_affinity_errors_win_over_the_cap_in_either_order(
                     } else {
                         // Exceed the fake pipe's capacity, so the write cannot finish until the
                         // reader closes its end after detecting the oversized line.
-                        assert_eq!(
-                            ctx.stdout.write_all(&vec![b'x'; 2 << 20]).await.is_err(),
-                            true
-                        );
+                        assert!(ctx.stdout.write_all(&vec![b'x'; 2 << 20]).await.is_err());
                         tokio::time::sleep(Duration::from_millis(10)).await;
                         ctx.eprint(text).await;
                     }

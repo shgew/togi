@@ -143,8 +143,8 @@ fn a_checked_result_before_another_instances_readiness_does_not_verify_its_core(
             run.finished.result.inconclusive.as_deref(),
             Some("core 01 has no backend-verified result")
         );
-        assert_eq!(run.progress().contains(&"core 01 self-test"), true);
-        assert_eq!(run.progress().contains(&"core 05 self-test"), true);
+        assert!(run.progress().contains(&"core 01 self-test"));
+        assert!(run.progress().contains(&"core 05 self-test"));
     }));
 }
 
