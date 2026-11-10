@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use togi_machine::{Check, WatchdogState, error_chain};
 
@@ -43,11 +44,13 @@ enum Refusal {
         timeleft: u64,
         timeout: u64,
     },
+    #[error("{name} open but not counting: timeleft did not decrease between samples")]
+    NoProgress { name: String },
     #[error("read PID 1 descriptors")]
     ReadPid1(#[source] io::Error),
 }
 
-/// An active hardware watchdog whose counter passed validation, where supported.
+/// An active hardware watchdog with observed countdown progress.
 pub(crate) struct Ready {
     pub(crate) name: String,
     pub(crate) identity: String,
@@ -95,6 +98,7 @@ fn examine(
     name: &str,
     dir: &Path,
     read_attribute: &impl Fn(&Path) -> io::Result<String>,
+    sleep: &impl Fn(Duration),
 ) -> Result<Option<Ready>, Refusal> {
     let state = match read_attribute(&dir.join("state")) {
         Ok(state) => state,
@@ -125,8 +129,8 @@ fn examine(
             identity: identity.to_owned(),
         });
     }
-    let counter = |attribute, value: io::Result<String>| {
-        value
+    let counter = |attribute| {
+        read_attribute(&dir.join(attribute))
             .and_then(|text| {
                 text.trim()
                     .parse::<u64>()
@@ -138,14 +142,9 @@ fn examine(
                 source,
             })
     };
-    let timeleft = match read_attribute(&dir.join("timeleft")) {
-        Err(source) if source.kind() == io::ErrorKind::NotFound => None,
-        value => Some(counter("timeleft", value)?),
-    };
-    // Drivers without get_timeleft expose no attribute. Preserve their state-only readiness;
-    // a present attribute that fails to read or parse is not the same as unsupported.
-    if let Some(timeleft) = timeleft {
-        let timeout = counter("timeout", read_attribute(&dir.join("timeout")))?;
+    let timeout = counter("timeout")?;
+    let sample = || {
+        let timeleft = counter("timeleft")?;
         if timeleft > timeout {
             return Err(Refusal::NotCounting {
                 name: name.to_owned(),
@@ -153,28 +152,46 @@ fn examine(
                 timeout,
             });
         }
+        Ok(timeleft)
+    };
+    let mut previous = sample()?;
+    for _ in 0..2 {
+        sleep(Duration::from_secs(1));
+        let current = sample()?;
+        if current < previous {
+            return Ok(Some(Ready {
+                name: name.to_owned(),
+                identity: identity.to_owned(),
+            }));
+        }
+        if current == previous {
+            break;
+        }
+        // PID 1 may have petted the watchdog between samples. Require a decrease
+        // from that refreshed value, rather than accepting the refresh itself.
+        previous = current;
     }
-    Ok(Some(Ready {
+    Err(Refusal::NoProgress {
         name: name.to_owned(),
-        identity: identity.to_owned(),
-    }))
+    })
 }
 
-/// Whether some hardware watchdog under `root` is active and its counter is plausible, where supported.
-/// A present but unreadable counter or lost MMIO decode fails; an absent counter preserves state-only probing.
+/// Whether some hardware watchdog under `root` is active with observed countdown progress.
+/// Missing, unreadable, implausible or nondecreasing counters fail.
 pub(crate) fn probe(root: &Path) -> Check {
-    probe_with(root, devices, read_attribute)
+    probe_with(root, devices, read_attribute, std::thread::sleep)
 }
 
 pub(crate) fn probe_with<I>(
     root: &Path,
     list: impl Fn(&Path) -> io::Result<I>,
     read_attribute: impl Fn(&Path) -> io::Result<String>,
+    sleep: impl Fn(Duration),
 ) -> Check
 where
     I: IntoIterator<Item = io::Result<OsString>>,
 {
-    match scan_with(root, list, read_attribute) {
+    match scan_with(root, list, read_attribute, sleep) {
         Ok(active) => passed(CheckName::Watchdog, active.first.detail()),
         Err(check) => check,
     }
@@ -182,13 +199,14 @@ where
 
 /// Every active hardware watchdog under `root`, or the failed check saying why there is none.
 pub(crate) fn scan(root: &Path) -> Result<Active, Check> {
-    scan_with(root, devices, read_attribute)
+    scan_with(root, devices, read_attribute, std::thread::sleep)
 }
 
 fn scan_with<I>(
     root: &Path,
     list: impl Fn(&Path) -> io::Result<I>,
     read_attribute: impl Fn(&Path) -> io::Result<String>,
+    sleep: impl Fn(Duration),
 ) -> Result<Active, Check>
 where
     I: IntoIterator<Item = io::Result<OsString>>,
@@ -223,7 +241,7 @@ where
     let mut refusals = Vec::new();
     let mut ready = Vec::new();
     for (name, dir) in &devices {
-        match examine(name, dir, &read_attribute) {
+        match examine(name, dir, &read_attribute, &sleep) {
             Ok(Some(device)) => ready.push(device),
             Ok(None) => {}
             Err(refusal) => refusals.push(error_chain(&refusal)),

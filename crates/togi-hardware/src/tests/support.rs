@@ -6,6 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use togi_config::Config;
 use togi_machine::{Check, CoreInfo, CoreRank, Partial};
@@ -190,10 +191,26 @@ impl Tree {
     }
 
     pub(super) fn watchdog(&self) -> Check {
+        self.watchdog_with(|duration| {
+            assert_eq!(duration, Duration::from_secs(1));
+            for (path, entry) in lock(&self.entries).iter_mut() {
+                if path.file_name().is_some_and(|name| name == "timeleft") {
+                    if let Entry::File(bytes) = entry {
+                        if let Ok(seconds) = String::from_utf8_lossy(bytes).trim().parse::<u64>() {
+                            *bytes = seconds.saturating_sub(1).to_string().into_bytes();
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    pub(super) fn watchdog_with(&self, sleep: impl Fn(Duration)) -> Check {
         crate::watchdog::probe_with(
             self.root(),
             |path| self.list(path).map(|entries| entries.into_iter().map(Ok)),
             |path| self.attribute(path),
+            sleep,
         )
     }
 

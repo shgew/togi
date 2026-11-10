@@ -1,4 +1,6 @@
+use std::cell::Cell;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use test_case::test_case;
 use togi_machine::{Check, WatchdogState};
@@ -70,27 +72,45 @@ fn an_active_hardware_device_is_ready() {
     );
 }
 
-#[test_case(Some(Ok("58\n")), true; "counting")]
-#[test_case(Some(Ok("60\n")), true; "at timeout")]
-#[test_case(Some(Ok("0\n")), true; "at expiry")]
-#[test_case(Some(Ok("4294967295\n")), false; "all ones after deep sleep")]
-#[test_case(Some(Ok("61\n")), false; "larger than timeout")]
-#[test_case(None, true; "driver does not report timeleft")]
-#[test_case(Some(Err(())), false; "present but unreadable")]
-#[test_case(Some(Ok("invalid\n")), false; "malformed")]
-fn counter_readiness_preserves_unsupported_but_refuses_noncounting(
-    timeleft: Option<Result<&str, ()>>,
+fn counter(root: &Tree, attribute: &str, sample: Option<Result<&str, ()>>) {
+    let path = format!("sys/class/watchdog/watchdog0/{attribute}");
+    root.remove(&path);
+    match sample {
+        Some(Ok(value)) => root.put(&path, value),
+        Some(Err(())) => root.mkdir(&path),
+        None => {}
+    }
+}
+
+#[test_case(&[Some(Ok("58\n")), Some(Ok("57\n"))], true; "counting")]
+#[test_case(&[Some(Ok("60\n")), Some(Ok("59\n"))], true; "at timeout")]
+#[test_case(&[Some(Ok("1\n")), Some(Ok("0\n"))], true; "at expiry")]
+#[test_case(&[Some(Ok("4294967295\n"))], false; "all ones after deep sleep")]
+#[test_case(&[Some(Ok("61\n"))], false; "larger than timeout")]
+#[test_case(&[Some(Err(()))], false; "present but unreadable")]
+#[test_case(&[Some(Ok("invalid\n"))], false; "malformed")]
+#[test_case(&[Some(Ok("58\n")), Some(Ok("60\n")), Some(Ok("59\n"))], true; "refreshed then counting")]
+#[test_case(&[Some(Ok("58\n")), Some(Ok("60\n")), Some(Ok("60\n"))], false; "refreshed then static")]
+#[test_case(&[Some(Ok("58\n")), Some(Ok("59\n")), Some(Ok("60\n"))], false; "repeated refresh is not countdown")]
+#[test_case(&[Some(Ok("58\n")), None], false; "counter disappears")]
+#[test_case(&[Some(Ok("58\n")), Some(Err(()))], false; "later sample unreadable")]
+#[test_case(&[Some(Ok("58\n")), Some(Ok("invalid\n"))], false; "later sample malformed")]
+#[test_case(&[Some(Ok("58\n")), Some(Ok("61\n"))], false; "refresh exceeds timeout")]
+#[test_case(&[Some(Ok("58\n")), Some(Ok("60\n")), Some(Err(()))], false; "refreshed sample unreadable")]
+fn counter_readiness_requires_observed_progress(
+    samples: &[Option<Result<&str, ()>>],
     counting: bool,
 ) {
     let root = Tree::empty();
     device(&root, 0, "active\n", Some("SP5100 TCO timer\n"));
-    root.remove("sys/class/watchdog/watchdog0/timeleft");
-    match timeleft {
-        Some(Ok(value)) => root.put("sys/class/watchdog/watchdog0/timeleft", value),
-        Some(Err(())) => root.mkdir("sys/class/watchdog/watchdog0/timeleft"),
-        None => {}
-    }
-    let check = root.watchdog();
+    counter(&root, "timeleft", samples[0]);
+    let next = Cell::new(1);
+    let check = root.watchdog_with(|duration| {
+        assert_eq!(duration, Duration::from_secs(1));
+        counter(&root, "timeleft", samples[next.get()]);
+        next.set(next.get() + 1);
+    });
+    assert_eq!(next.get(), samples.len());
     assert_eq!(check.ok, counting, "{}", check.detail);
     if !counting {
         assert!(
@@ -100,6 +120,38 @@ fn counter_readiness_preserves_unsupported_but_refuses_noncounting(
         );
         assert!(!arming_with(&Err(check), Ok(held(&["/dev/watchdog0"]))).is_armed());
     }
+}
+
+#[test_case(true; "static counter")]
+#[test_case(false; "missing counter")]
+fn a_counter_without_observed_progress_is_not_ready(present: bool) {
+    let root = Tree::empty();
+    device(&root, 0, "active\n", Some("SP5100 TCO timer\n"));
+    if !present {
+        root.remove("sys/class/watchdog/watchdog0/timeleft");
+    }
+    let check = root.watchdog_with(|_| {});
+    assert!(!check.ok, "{}", check.detail);
+    assert!(!arming_with(&Err(check), Ok(held(&["/dev/watchdog0"]))).is_armed());
+}
+
+#[test_case(None; "missing timeout")]
+#[test_case(Some(Err(())); "unreadable timeout")]
+#[test_case(Some(Ok("invalid\n")); "malformed timeout")]
+fn an_unreadable_timeout_is_not_ready(timeout: Option<Result<&str, ()>>) {
+    let root = Tree::empty();
+    device(&root, 0, "active\n", Some("SP5100 TCO timer\n"));
+    counter(&root, "timeout", timeout);
+    let check = root.watchdog_with(|_| panic!("invalid timeout must refuse before waiting"));
+    assert!(!check.ok, "{}", check.detail);
+    assert!(
+        check
+            .detail
+            .starts_with("watchdog0 open but not counting: read timeout:"),
+        "{}",
+        check.detail
+    );
+    assert!(!arming_with(&Err(check), Ok(held(&["/dev/watchdog0"]))).is_armed());
 }
 
 #[test]
