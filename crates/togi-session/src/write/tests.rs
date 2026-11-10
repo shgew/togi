@@ -492,6 +492,39 @@ fn startup_readback_resolves_the_inherited_intent_on_its_core_without_a_write() 
     assert_fold_consistent(&rig.appender);
 }
 
+#[test_case(Some(1), Some(1), 1; "two writes to one core")]
+#[test_case(None, Some(0), 0; "a write to every core then one to its first")]
+fn startup_readback_resolves_every_inherited_intent_on_its_core(
+    first: Option<i64>,
+    second: Option<i64>,
+    citing: usize,
+) {
+    let mut rig = Rig::new(2);
+    rig.start_at_zero();
+    let intents = [first, second].map(|written| {
+        let offset = target(0);
+        let command = written.map_or(togi_journal::SmuCommand::SetAll { offset }, |n| {
+            togi_journal::SmuCommand::Set {
+                core: core(n),
+                offset,
+            }
+        });
+        rig.appender.smu_intent(command, &[]).unwrap().intent()
+    });
+    let before = rig.events().len();
+    let reading = super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware).unwrap();
+    assert_eq!(rig.kinds()[before..], ["smu.readback", "smu.readback"]);
+    assert_eq!(reading.readbacks.len(), 2);
+    assert_eq!(rig.events()[before + citing].cause, intents);
+    assert_eq!(rig.events()[before + 1 - citing].cause, []);
+    assert_eq!(
+        rig.appender.recovery().latest_unmatched_intent(&rig.boot),
+        None
+    );
+    assert_eq!(rig.appender.folds.facts.in_flight(), None);
+    assert_fold_consistent(&rig.appender);
+}
+
 #[test]
 fn a_nonzero_machine_is_read_as_it_stands_and_a_value_no_write_can_set_is_unknown() {
     let mut rig = Rig::defined(&MachineDefinition {
