@@ -111,7 +111,7 @@ impl Patterns {
             )?,
             setup: pattern(r"(?i)InvalidParametersException|Invalid Parameter")?,
             progress: pattern(
-                r"(?i)Running[\t\n\x0c\r ]+([^\t\n\x0c\r :]+):[\t\n\x0c\r ]*Passed\b",
+                r"(?i)^Running[\t\n\x0c\r ]+([^\t\n\x0c\r :]+):[\t\n\x0c\r ]*Passed(?:[\t ]+Test Speed:[\t ]+[0-9]+(?:\.[0-9]+)?[\t ]+\*[\t ]+10\^[+-]?[0-9]+[\t ]+bits[\t ]*/[\t ]*sec)?[\t\n\x0c\r ]*$",
             )?,
             result_like: pattern(r"(?i)Running.*(?:Pass|FAIL)")?,
         })
