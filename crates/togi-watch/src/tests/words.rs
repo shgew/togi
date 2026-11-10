@@ -36,6 +36,9 @@ const SILENT: &[EventKind] = &[
     EventKind::ProfileApplied,
     EventKind::ProfileChange,
     EventKind::ProfileRestored,
+    EventKind::FrequencyIntent,
+    EventKind::FrequencyReadback,
+    EventKind::FrequencyDiscarded,
     EventKind::TrialIntent,
     EventKind::TaskStart,
     EventKind::TrialStart,
@@ -112,7 +115,7 @@ const RULESET13: &[(EventKind, Tag)] = &[
 
 #[test]
 fn every_kind_has_its_words_or_says_it_is_silent() {
-    assert_eq!(EventKind::ALL.len(), 85);
+    assert_eq!(EventKind::ALL.len(), 88);
     for &kind in EventKind::ALL {
         let table = words(kind);
         let silent = SILENT.contains(&kind) || UNLISTED.contains(&kind);
