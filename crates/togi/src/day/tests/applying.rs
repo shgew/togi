@@ -364,10 +364,11 @@ fn a_lost_watchdog_zeroes_the_nonzero_profile_and_stops_without_reapplying(ticks
     assert_eq!(applications(&journal).len(), 1);
     assert_eq!(hardware.reading.watchdog, [armed()]);
     assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
-    let tail = &journal.events()[journal.events().len() - 5..];
+    let tail = &journal.events()[journal.events().len() - 6..];
     assert_eq!(
         tail.iter().map(Event::kind).collect::<Vec<_>>(),
         [
+            EventKind::DayCheckpoint,
             EventKind::SmuIntent,
             EventKind::SmuWrite,
             EventKind::SmuReadback,
@@ -375,7 +376,7 @@ fn a_lost_watchdog_zeroes_the_nonzero_profile_and_stops_without_reapplying(ticks
             EventKind::DayCheckpoint,
         ]
     );
-    if let Payload::SmuReadback(readback) = &tail[2].payload {
+    if let Payload::SmuReadback(readback) = &tail[3].payload {
         assert_eq!(readback.offset, ObservedOffset(0));
     } else {
         panic!("stock readback missing");
@@ -395,14 +396,10 @@ fn failed_watchdog_loss_cleanup_never_claims_verified_stock(failure: Failure) {
     proposed_climb(&mut journal);
     let mut hardware = Hardware::stock();
     hardware.failure = failure;
-    hardware.reading.watchdog = [
-        armed(),
-        armed(),
-        WatchdogState::Unarmed {
-            detail: "watchdog stopped counting".into(),
-        },
-    ]
-    .into();
+    let lost = WatchdogState::Unarmed {
+        detail: "watchdog stopped counting".into(),
+    };
+    hardware.reading.watchdog = [armed(), armed(), lost.clone()].into();
     let result = serve(
         &mut journal,
         &mut hardware,
@@ -413,6 +410,7 @@ fn failed_watchdog_loss_cleanup_never_claims_verified_stock(failure: Failure) {
     assert!(matches!(result, Err(Error::Apply(_))));
     assert_eq!(hardware.emergency, 1);
     assert_eq!(applications(&journal).len(), 1);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
     assert!(!journal.events().iter().any(|event| {
         matches!(&event.payload, Payload::DayCleanStop(_))
             || matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(0))

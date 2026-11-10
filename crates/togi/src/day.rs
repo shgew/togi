@@ -538,6 +538,9 @@ fn observe_with_socket(
                 .any(|(_, offset)| offset != ObservedOffset(0))
             && let Some(live) = live.as_deref_mut()
         {
+            // The loss is journaled before the fallible restore so a failed cleanup keeps its cause.
+            let applied = progress.offsets;
+            progress.checkpoint(journal, clock, &sampler, applied)?;
             let readback = live.zero(journal, observer, clock)?;
             progress.checkpoint(journal, clock, &sampler, readback)?;
             return Err(Error::Watchdog);
