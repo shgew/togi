@@ -15,14 +15,14 @@ expression: body
  CCD 0 one loaded 0  2 counts/cell       -50                 CCD 1 idle       0  2 counts/cell       -50
  D 0 · C unknown · U unknown                                 D 0 · C unknown · U unknown
  held: unknown edge for CCD 0, unknown edge for CCD 1        held: unknown edge for CCD 0, unknown edge for CCD 1
- ► 00  -5 LOADED                                               08   0
-   01  -5                                                      09   0
-   02  -5                                                      10   0
-   03  -5                                                      11   0
-   04  -5                                                      12   0
-   05  -5                                                      13   0
-   06  -5                                                      14   0
-   07  -5                                                      15   0
+ ► 00  -5 LOADED   ▄▄▄                                         08   0
+   01  -5          ▄▄▄                                         09   0
+   02  -5          ▄▄▄                                         10   0
+   03  -5          ▄▄▄                                         11   0
+   04  -5          ▄▄▄                                         12   0
+   05  -5          ▄▄▄                                         13   0
+   06  -5          ▄▄▄                                         14   0
+   07  -5          ▄▄▄                                         15   0
 
  NIGHT since 00:00 · 0h00m elapsed ───────────────────────   WHAT HAPPENED ─────────────────────────────── l: last 400
  task        mapping task 0 · 0 of 1 planned tasks done
