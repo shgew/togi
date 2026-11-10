@@ -383,6 +383,46 @@ fn a_sampling_read_cut_at_its_tick_deadline_is_not_a_sampling_loss() {
     });
 }
 
+#[test_case(false; "cancellation")]
+#[test_case(true; "abandonment")]
+fn a_command_arriving_during_a_pending_sample_ends_the_trial_at_once_with_its_own_outcome(
+    abandon: bool,
+) {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig();
+            let cancel = CancellationToken::new();
+            let handle = rig
+                .start_with(&cancel, spec(Regime::R1, &[0], secs(600)))
+                .await
+                .unwrap();
+            rig.fake.hang_threads();
+            // The tick at 1 s waits for its thread read until 2 s; the command arrives before then.
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            if abandon {
+                handle.commands.send(TrialCommand::Abandon).unwrap();
+            } else {
+                cancel.cancel();
+            }
+            rig.fake.release_threads();
+            let run = finish(&handle).await;
+            assert_eq!(run.finished.result.ran, Duration::from_millis(1500));
+            assert_eq!(run.finished.abandoned, abandon);
+            if abandon {
+                assert!(run.finished.errors.is_empty(), "{:?}", run.finished.errors);
+            } else {
+                assert!(
+                    matches!(run.finished.errors[..], [Error::Cancelled]),
+                    "{:?}",
+                    run.finished.errors
+                );
+            }
+            assert!(run.finished.teardown.is_ok());
+        })
+        .await;
+    });
+}
+
 #[test]
 fn a_partial_thread_listing_still_proves_an_escape_despite_other_failures() {
     crate::testing::runtime(true).block_on(async move {
