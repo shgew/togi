@@ -493,6 +493,24 @@ mod tests {
         }
     }
 
+    #[test_case::test_case(Verification::Outside, Some("core 03 has no backend-verified result"); "outside measured interval")]
+    #[test_case::test_case(Verification::Measured, None; "inside measured interval")]
+    fn a_checked_result_verifies_its_core_only_in_the_measured_interval(
+        verification: Verification,
+        inconclusive: Option<&str>,
+    ) {
+        let mut s = selector();
+        s.observe(Observation::Line {
+            instance: 0,
+            pid: 42,
+            stream: Stream::Stdout,
+            verification,
+            line: Line::Verified("self-test".to_owned()),
+            text: "verified self-test".to_owned(),
+        });
+        assert_eq!(conclude(s).inconclusive.as_deref(), inconclusive);
+    }
+
     #[test]
     fn progress_is_not_a_checked_result() {
         let mut s = selector();
