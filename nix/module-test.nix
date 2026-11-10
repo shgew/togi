@@ -367,8 +367,7 @@ assert
     "${builtins.unsafeDiscardStringContext "${day.systemd.package}/bin/busctl"} set-property org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager RuntimeWatchdogUSec t 18446744073709551615"
   ];
 assert day.systemd.services.togi-day-watchdog-sleep.serviceConfig.TimeoutStopSec == "30s";
-assert lib.hasInfix "TimeoutStopSec=30s"
-  day.systemd.units."togi-day-watchdog-sleep.service".text;
+assert lib.hasInfix "TimeoutStopSec=30s" day.systemd.units."togi-day-watchdog-sleep.service".text;
 assert lib.hasInfix "--verbose --kill-after=2s 5s"
   day.systemd.units."togi-day-watchdog-sleep.service".text;
 assert !(day.systemd.services.togi-day-watchdog-sleep.serviceConfig ? ExecStop);
