@@ -16,8 +16,8 @@ use togi_machine::{
 use tokio::time::Instant;
 
 use super::harness::{
-    Rig, burn, core, crate_error, finish, local, nothing_runs, printing, printing_when_released, rig,
-    rig_edit, rig_with, spec,
+    Rig, burn, core, crate_error, finish, local, nothing_runs, printing, printing_when_released,
+    rig, rig_edit, rig_with, spec,
 };
 use crate::error::{Error, InvalidTrial, PrepareError};
 use crate::files::Chown;

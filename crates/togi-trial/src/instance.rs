@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::future::poll_fn;
 use std::io;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::task::Poll as TaskPoll;
 use std::time::Duration;
 
@@ -68,13 +68,17 @@ pub(crate) enum Run {
 pub(crate) struct Reader {
     pub(crate) task: JoinHandle<()>,
     pub(crate) closed: bool,
-    capture: Option<Rc<RefCell<Capture>>>,
+    /// Only the task owns the pipe: keeping the start fence must not keep a finished read end open.
+    capture: Weak<RefCell<Capture>>,
 }
 
 #[derive(Clone, Copy)]
 enum Interval {
     Startup,
-    Measured { cutoff: u64, deadline: Instant },
+    Measured {
+        cutoff: u64,
+        deadline: Instant,
+    },
     /// A failed backlog snapshot cannot establish when any later bytes were produced.
     Uncertain,
 }
@@ -131,14 +135,14 @@ impl Reader {
         Self {
             task: tokio::task::spawn_local(async {}),
             closed: true,
-            capture: None,
+            capture: Weak::new(),
         }
     }
 
     /// Snapshot after the measured start: bytes already read, queued or still in the kernel pipe
     /// remain classifiable but cannot verify a core. A later snapshot only discards extra bytes.
     pub(crate) fn begin_interval(&self, deadline: Instant) {
-        if let Some(capture) = &self.capture {
+        if let Some(capture) = self.capture.upgrade() {
             capture.borrow_mut().begin(deadline);
         }
     }
@@ -216,6 +220,9 @@ impl Reader {
                     break PipeEnd::Exceeded;
                 }
             };
+            // Closing the read end releases a writer blocked in a large write, so it can still
+            // report stronger failure evidence on its other stream during teardown.
+            drop(reading);
             let _ = events
                 .send(Inbound::Closed {
                     instance,
@@ -227,7 +234,7 @@ impl Reader {
         Self {
             task,
             closed: false,
-            capture: Some(capture),
+            capture: Rc::downgrade(&capture),
         }
     }
 }
@@ -325,7 +332,13 @@ pub(crate) fn dispatch<O: Os>(
             stream,
             text,
             verification,
-        } => stop(judge.line(instance, instances[instance].pid, stream, verification, text)),
+        } => stop(judge.line(
+            instance,
+            instances[instance].pid,
+            stream,
+            verification,
+            text,
+        )),
         Inbound::LogError {
             instance,
             stream,
@@ -349,11 +362,9 @@ pub(crate) fn dispatch<O: Os>(
             let pid = inst.pid;
             let label = inst.plan.name.dir_name();
             match end {
-                PipeEnd::Eof { partial } => {
-                    stop(partial.is_some_and(|(text, verification)| {
-                        judge.line(instance, pid, stream, verification, text)
-                    }))
-                }
+                PipeEnd::Eof { partial } => stop(partial.is_some_and(|(text, verification)| {
+                    judge.line(instance, pid, stream, verification, text)
+                })),
                 PipeEnd::Exceeded => {
                     stop(judge.observe(Observation::LineTooLong { instance, stream }))
                 }
