@@ -219,7 +219,7 @@ A hardware watchdog may keep counting during s2idle, which has not been measured
 
 ### Deliberately letting the watchdog fire
 
-This is a **destructive reset test**, not a routine health check or a stability test. It deliberately panics the kernel while the day service is running. Unsaved data will be lost; `sync` reduces pending writes but cannot make an abrupt reset safe. Save work, stop unrelated workloads, keep backups, and have local access to reset or power-cycle the machine if the watchdog fails. Run only in a normal boot, with BIOS Curve Optimizer at **0 on every core**, an existing compatible session, and the day/watchdog options above enabled. Do not test with an offset profile you want to qualify: this creates real, permanent crash evidence in that session.
+This is a **destructive reset test**, not a routine health check or a stability test. It deliberately panics the kernel while the day service is running. Unsaved data will be lost; `sync` reduces pending writes but cannot make an abrupt reset safe. Save work, stop unrelated workloads, keep backups, and have local access to reset or power-cycle the machine if the watchdog fails. Run only in a normal boot, with BIOS Curve Optimizer at **0 on every core**, an existing compatible session, and `services.togi.day.enable` set as above. Do not test with an offset profile you want to qualify: this creates real, permanent crash evidence in that session.
 
 1. **Check before crashing.** Leave `togi-day.service` running; stopping it would write a clean-stop marker. Record these outputs somewhere you can read after reboot:
 
