@@ -15,8 +15,7 @@ use togi_machine::{
 };
 
 use super::harness::{
-    core, crate_error, finish, local, nothing_runs, printing, rig_edit, spec as base_spec,
-    topology, with_roles,
+    core, crate_error, finish, local, nothing_runs, rig_edit, spec as base_spec, topology, with_roles,
 };
 use super::process::{Helper, allowed_cpus, linux, timing};
 use crate::Error;
