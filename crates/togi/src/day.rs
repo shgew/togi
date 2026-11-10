@@ -66,7 +66,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// With no subcommand, requires an all-core CO-0 baseline and PID1's armed, counting watchdog,
 /// then applies the committed profile through durable intent, write and readback. It records active hours excluding
 /// suspend and journals kernel faults. Stop signals zero and verify every core before the final
-/// checkpoint and clean marker. It requires root and an existing compatible session journal.
+/// checkpoint and clean marker. Losing the watchdog with a nonzero profile zeroes and verifies,
+/// then fails without a clean marker or reapplication. It requires root and an existing compatible session journal.
 /// The service holds the host and writer locks: stop it before tuning; status/watch stay lock-free.
 ///
 /// Answer, notify, pause/resume and freeze/unfreeze use the credential-checked day socket without
@@ -529,6 +530,18 @@ fn observe_with_socket(
         } else {
             false
         };
+        if watchdog_changed
+            && matches!(progress.watchdog, WatchdogState::Unarmed { .. })
+            && progress
+                .offsets
+                .iter()
+                .any(|(_, offset)| offset != ObservedOffset(0))
+            && let Some(live) = live.as_deref_mut()
+        {
+            let readback = live.zero(journal, observer, clock)?;
+            progress.checkpoint(journal, clock, &sampler, readback)?;
+            return Err(Error::Watchdog);
+        }
         if stopping || sample {
             sampler.record(now, observer.cpu_times()?)?;
             sampled = now;
