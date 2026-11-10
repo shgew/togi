@@ -275,6 +275,8 @@ pub enum Error {
     Baseline,
     #[error("daily application requires PID1's hardware watchdog to be armed and counting")]
     Watchdog,
+    #[error("daily offsets drifted from the applied profile; stock was restored and verified")]
+    OffsetDrift,
     #[error("nonzero daily application is blocked by an unresolved too-aggressive defect")]
     Defect,
     #[error("day application identity overflowed")]
@@ -464,11 +466,7 @@ fn observe_with_socket(
             pause.ended(journal, clock, source)?;
         }
     }
-    let applied_offsets = if live.is_some() {
-        observer.offsets()?
-    } else {
-        offsets
-    };
+    let applied_offsets = live.as_deref().map_or(offsets, apply::Live::applied);
     let mut sampler = Sampler::new(
         session_cores(journal.events())?,
         ledger
@@ -486,6 +484,7 @@ fn observe_with_socket(
     };
     if live.is_some() {
         progress.checkpoint(journal, clock, &sampler, applied_offsets)?;
+        progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
     }
     let mut sampled = started;
     let mut polled = started;
@@ -503,12 +502,16 @@ fn observe_with_socket(
             })?;
         }
         if let Some(source) = pause.expired(journal.boot(), clock) {
-            progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
+            let observed =
+                progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
+            progress.checkpoint(journal, clock, &sampler, observed)?;
             live.as_deref_mut()
                 .ok_or(Error::NotApplying)?
                 .reapply(journal, observer, clock)?;
             pause.ended(journal, clock, source)?;
-            progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
+            let observed =
+                progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
+            progress.checkpoint(journal, clock, &sampler, observed)?;
         }
         let wait = if socket.is_some() {
             Duration::from_secs(1)
@@ -550,8 +553,7 @@ fn observe_with_socket(
             // The loss is journaled before the fallible restore so a failed cleanup keeps its cause.
             let applied = progress.offsets;
             progress.checkpoint(journal, clock, &sampler, applied)?;
-            let readback = live.zero(journal, observer, clock)?;
-            progress.checkpoint(journal, clock, &sampler, readback)?;
+            progress.restore_stock(journal, observer, clock, &sampler, live)?;
             return Err(Error::Watchdog);
         }
         if stopping || sample {
@@ -565,11 +567,13 @@ fn observe_with_socket(
         if !stopping && !due && !watchdog_changed {
             continue;
         }
+        let observed =
+            progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
         let readback = if stopping && let Some(live) = live.as_deref_mut() {
-            progress.checkpoint(journal, clock, &sampler, observer.offsets()?)?;
+            progress.checkpoint(journal, clock, &sampler, observed)?;
             live.zero(journal, observer, clock)?
         } else {
-            observer.offsets()?
+            observed
         };
         progress.checkpoint(journal, clock, &sampler, readback)?;
         if stopping {
@@ -604,8 +608,15 @@ impl Controls<'_> {
                 | socket::Control::Reapply
         );
         if !matches!(control, socket::Control::Status) {
+            let observed = self.progress.read_offsets(
+                journal,
+                self.observer,
+                clock,
+                self.sampler,
+                self.live.as_deref_mut(),
+            )?;
             self.progress
-                .checkpoint(journal, clock, self.sampler, self.observer.offsets()?)?;
+                .checkpoint(journal, clock, self.sampler, observed)?;
         }
         let status = self.pause.control(
             journal,
@@ -615,8 +626,15 @@ impl Controls<'_> {
             control,
         )?;
         if changes_profile {
+            let observed = self.progress.read_offsets(
+                journal,
+                self.observer,
+                clock,
+                self.sampler,
+                self.live.as_deref_mut(),
+            )?;
             self.progress
-                .checkpoint(journal, clock, self.sampler, self.observer.offsets()?)?;
+                .checkpoint(journal, clock, self.sampler, observed)?;
         }
         Ok(status)
     }
@@ -632,6 +650,43 @@ struct Progress {
 }
 
 impl Progress {
+    fn read_offsets(
+        &mut self,
+        journal: &mut Journal,
+        observer: &mut dyn Observer,
+        clock: &dyn Clock,
+        sampler: &Sampler,
+        live: Option<&mut apply::Live>,
+    ) -> Result<PerCore<ObservedOffset>, Error> {
+        let observed = observer.offsets()?;
+        // Every fresh read decides, including a stop read: drift is never an accepted profile.
+        if let Some(live) = live {
+            let applied = live.applied();
+            if applied != self.offsets {
+                self.checkpoint(journal, clock, sampler, applied)?;
+            }
+            if observed != applied {
+                // The preceding profile and this read remain durable if restoring stock fails.
+                self.checkpoint(journal, clock, sampler, observed)?;
+                self.restore_stock(journal, observer, clock, sampler, live)?;
+                return Err(Error::OffsetDrift);
+            }
+        }
+        Ok(observed)
+    }
+
+    fn restore_stock(
+        &mut self,
+        journal: &mut Journal,
+        observer: &mut dyn Observer,
+        clock: &dyn Clock,
+        sampler: &Sampler,
+        live: &mut apply::Live,
+    ) -> Result<(), Error> {
+        let readback = live.zero(journal, observer, clock)?;
+        self.checkpoint(journal, clock, sampler, readback)
+    }
+
     fn checkpoint(
         &mut self,
         journal: &mut Journal,

@@ -22,6 +22,7 @@ struct Hardware {
     emergency: usize,
     failure: Failure,
     firmware: BiosContext,
+    drift_at: Option<usize>,
 }
 
 impl Hardware {
@@ -34,6 +35,7 @@ impl Hardware {
             emergency: 0,
             failure: Failure::None,
             firmware: bios(),
+            drift_at: None,
         }
     }
 
@@ -50,6 +52,9 @@ impl Hardware {
 impl Smu for Hardware {
     fn offset(&mut self, _: CoreId) -> Result<ObservedOffset, MachineError> {
         self.read_count += 1;
+        if self.drift_at == Some(self.read_count) {
+            self.current = -12;
+        }
         if matches!(self.failure, Failure::Read(at) if at == self.read_count) {
             return Err(MachineError::BootMissing);
         }
@@ -415,6 +420,97 @@ fn failed_watchdog_loss_cleanup_never_claims_verified_stock(failure: Failure) {
         matches!(&event.payload, Payload::DayCleanStop(_))
             || matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(0))
     }));
+}
+
+#[test_case(false, 6; "startup drift verified stock")]
+#[test_case(true, 6; "startup drift failed stock readback")]
+#[test_case(false, 7; "checkpoint drift verified stock")]
+#[test_case(true, 7; "checkpoint drift failed stock readback")]
+fn offset_drift_is_recorded_before_restoring_stock(fail_readback: bool, drift_at: usize) {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    hardware.drift_at = Some(drift_at);
+    if fail_readback {
+        hardware.failure = Failure::Read(drift_at + 1);
+    }
+    let result = serve(
+        &mut journal,
+        &mut hardware,
+        &mut ticking(2, CHECKPOINT, CHECKPOINT),
+        &CancellationToken::new(),
+        &current_build(),
+    );
+    if fail_readback {
+        assert!(matches!(result, Err(Error::Apply(_))));
+    } else {
+        assert!(matches!(result, Err(Error::OffsetDrift)));
+    }
+    assert_eq!(hardware.current, 0);
+    assert_eq!(applications(&journal).len(), 1);
+    let mut expected = vec![
+        TargetOffset::ZERO,
+        TargetOffset::new(-5).unwrap(),
+        TargetOffset::ZERO,
+    ];
+    if fail_readback {
+        // The transaction's existing failure recovery retries stock, never the day profile.
+        expected.push(TargetOffset::ZERO);
+    }
+    assert_eq!(hardware.writes, expected);
+    let drift = journal.events().iter().position(|event| {
+        matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(-12))
+    }).unwrap();
+    assert!(journal.events()[..drift].iter().any(|event| {
+        matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(-5))
+    }));
+    assert_eq!(journal.events()[drift + 1].kind(), EventKind::DayCheckpoint);
+    assert_eq!(journal.events()[drift + 2].kind(), EventKind::SmuIntent);
+    assert!(
+        !journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
+    );
+    let stock = journal.events()[drift..].iter().any(|event| {
+        matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(0))
+    });
+    assert_eq!(stock, !fail_readback);
+}
+
+#[test]
+fn drift_from_an_applied_stock_profile_still_writes_and_verifies_stock() {
+    let mut journal = seed();
+    let mut hardware = Hardware::stock();
+    hardware.drift_at = Some(5);
+    let result = serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    );
+    assert!(matches!(result, Err(Error::OffsetDrift)));
+    assert_eq!(hardware.writes, [TargetOffset::ZERO, TargetOffset::ZERO]);
+    assert_eq!(hardware.current, 0);
+    assert!(
+        !journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
+    );
+    let changes = journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::DayOffsetsChanged(change) = &event.payload {
+                Some(change.offsets)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(changes, [offsets(-12), offsets(0)]);
 }
 
 #[test]

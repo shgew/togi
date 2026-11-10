@@ -14,9 +14,14 @@ pub(super) struct Live {
     stopped: Stopped,
     validated: togi_machine::SmuValidated,
     topology: Vec<togi_machine::CoreInfo>,
+    applied: PerCore<ObservedOffset>,
 }
 
 impl Live {
+    pub(super) fn applied(&self) -> PerCore<ObservedOffset> {
+        self.applied
+    }
+
     pub(super) fn preflight(
         journal: &togi_journal::Journal,
         observer: &mut dyn Observer,
@@ -40,6 +45,7 @@ impl Live {
             topology: topology.to_vec(),
             stopped: observer.stop_workloads()?,
             validated: observer.validated()?,
+            applied: offsets,
         })
     }
 
@@ -142,7 +148,7 @@ impl Live {
     }
 
     fn apply(
-        &self,
+        &mut self,
         journal: &mut togi_journal::Journal,
         observer: &mut dyn Observer,
         clock: &dyn Clock,
@@ -178,6 +184,7 @@ impl Live {
             requested,
             causes,
         )?;
+        self.applied = verified.readbacks;
         let transaction_causes = verified.transactions.clone();
         journal.append(
             stamp(clock)?,
@@ -211,7 +218,7 @@ impl Live {
     }
 
     pub(super) fn zero(
-        &self,
+        &mut self,
         journal: &mut togi_journal::Journal,
         observer: &mut dyn Observer,
         clock: &dyn Clock,
@@ -226,6 +233,7 @@ impl Live {
             &self.target,
             &[],
         )?;
+        self.applied = verified.readbacks;
         Ok(verified.readbacks)
     }
 }
