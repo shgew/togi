@@ -445,6 +445,7 @@ fn an_unacknowledged_restore_readback_keeps_the_pending_record_for_recovery() {
     crate::testing::runtime(true).block_on(local(async {
         let machine = Fake::new(policies());
         let rig = rig(&machine);
+        rig.create_dir_all(&rig.env.dir).unwrap();
         rig.env
             .frequency
             .cap(
@@ -608,7 +609,7 @@ fn a_late_wait_acknowledges_restoration_and_collects_the_finished_capped_trial()
     let stopped = Box::new(trial).stop(&mut crate::testing::Frequencies::default());
     done.send(()).unwrap();
     supervisor.join().unwrap();
-    stopped.unwrap();
+    let _stopped = stopped.unwrap();
     let result = result.map_err(|partial| partial.error).unwrap();
     assert_eq!(result.ran, managed().duration);
     assert_eq!(result.failure, None);
