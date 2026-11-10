@@ -58,6 +58,10 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// another event is written; reset --all archives that session. Journal lines are colored on terminals and in
 /// the system journal unless the environment asks for no colour.
 ///
+/// Every run requires an armed hardware watchdog before each nonzero profile application and each workload start.
+/// Manual startup checks once and refuses immediately; --tuning-boot waits up to 30 seconds.
+/// Loss detected at a later boundary stops the run and restores CO 0.
+///
 /// Only one day observer, run or reset can own this machine, even with different state directories.
 /// Stop the day service before tuning. A busy /run/lock/togi.lock stops the command before any hardware access or event.
 ///
