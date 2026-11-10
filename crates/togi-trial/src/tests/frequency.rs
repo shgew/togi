@@ -192,8 +192,10 @@ fn incomplete_managed_affinity_withholds_pass() {
                 env.durability,
             ));
         });
-        rig.fake.on_launch(printing("verified self-test\n"));
+        let (print, release) = super::harness::printing_when_released("verified self-test\n");
+        rig.fake.on_launch(print);
         let handle = rig.start(managed()).await.unwrap();
+        release.send_replace(());
         let run = finish(&handle).await;
         assert!(
             run.finished
@@ -220,7 +222,8 @@ fn single_ccd_excludes_only_host_and_keeps_other_workers_uncapped() {
                 env.durability,
             ));
         });
-        rig.fake.on_launch(printing("verified self-test\n"));
+        let (print, release) = super::harness::printing_when_released("verified self-test\n");
+        rig.fake.on_launch(print);
         let mut trial = spec(
             Regime::R7,
             &[0, 1, 2, 3, 4, 5, 6, 7],
@@ -231,6 +234,7 @@ fn single_ccd_excludes_only_host_and_keeps_other_workers_uncapped() {
             purpose: Purpose::Exact,
         };
         let handle = rig.start(trial).await.unwrap();
+        release.send_replace(());
         assert_eq!(
             machine.scaling_max_khz(FrequencyPolicyId::new(2)).unwrap(),
             400_000

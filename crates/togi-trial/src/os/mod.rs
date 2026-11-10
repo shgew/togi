@@ -18,7 +18,12 @@ pub(crate) mod fake;
 #[cfg(target_os = "linux")]
 pub(crate) mod linux;
 
-pub(crate) type Pipe = Pin<Box<dyn AsyncRead>>;
+/// A pipe reports its unread bytes synchronously so the measured start can fence its backlog.
+pub(crate) trait OutputPipe: AsyncRead {
+    fn unread(&self) -> io::Result<u64>;
+}
+
+pub(crate) type Pipe = Pin<Box<dyn OutputPipe>>;
 
 pub(crate) struct Pipes {
     pub(crate) stdout: Pipe,

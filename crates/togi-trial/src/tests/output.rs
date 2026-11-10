@@ -83,6 +83,187 @@ fn log(rig: &super::harness::Rig, name: &str) -> Vec<u8> {
         .unwrap()
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Backlog {
+    OneLine,
+    BeyondChannel,
+}
+
+#[test_case(Source::Stdout, Backlog::OneLine; "queued stdout")]
+#[test_case(Source::Stderr, Backlog::OneLine; "queued stderr")]
+#[test_case(Source::Stdout, Backlog::BeyondChannel; "buffered stdout")]
+#[test_case(Source::Stderr, Backlog::BeyondChannel; "buffered stderr")]
+#[test_case(Source::Watched, Backlog::OneLine; "watched backlog")]
+fn a_checked_result_produced_before_readiness_cannot_verify_a_core(
+    source: Source,
+    backlog: Backlog,
+) {
+    crate::testing::runtime(true).block_on(local(async move {
+        let rig = rig_with(watching(), Timing::default());
+        rig.fake.set_ready_default(false);
+        rig.fake.on_launch(move |_, command| {
+            let file = results(command);
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                ctx.write_file(&file, "").unwrap();
+                // More than 1024 events and more than one reader chunk leave the final result
+                // in the pipe while launch waits: the supervisor cannot drain its channel yet.
+                let mut bytes = match backlog {
+                    Backlog::OneLine => Vec::new(),
+                    Backlog::BeyondChannel => b"ordinary\n".repeat(4096),
+                };
+                bytes.extend_from_slice(b"verified self-test\n");
+                match source {
+                    Source::Stdout => ctx.stdout.write_all(&bytes).await.unwrap(),
+                    Source::Stderr => ctx.stderr.write_all(&bytes).await.unwrap(),
+                    Source::Watched => ctx.write_file(&file, &bytes).unwrap(),
+                }
+                tokio::time::sleep(secs(2)).await;
+                ctx.shared.ready.set(true);
+                ctx.until_killed().await;
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.ran, secs(3));
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(
+            run.finished.result.inconclusive.as_deref(),
+            Some("core 02 has no backend-verified result")
+        );
+        assert_eq!(run.finished.errors.is_empty(), true);
+        assert_eq!(run.finished.teardown.is_ok(), true);
+    }));
+}
+
+#[test_case(Source::Stdout; "stdout")]
+#[test_case(Source::Stderr; "stderr")]
+#[test_case(Source::Watched; "watched")]
+fn a_checked_result_first_read_during_teardown_cannot_verify_a_core(source: Source) {
+    crate::testing::runtime(true).block_on(local(async move {
+        let rig = rig_with(watching(), Timing::default());
+        rig.fake.on_launch(move |_, command| {
+            let file = results(command);
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                ctx.write_file(&file, "").unwrap();
+                ctx.until_killed().await;
+                match source {
+                    Source::Stdout => ctx.print("verified self-test\n").await,
+                    Source::Stderr => ctx.eprint("verified self-test\n").await,
+                    Source::Watched => ctx.write_file(&file, "verified self-test\n").unwrap(),
+                }
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.ran, secs(3));
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(
+            run.finished.result.inconclusive.as_deref(),
+            Some("core 02 has no backend-verified result")
+        );
+        assert_eq!(run.finished.teardown.is_ok(), true);
+    }));
+}
+
+#[test_case(Source::Stdout; "stdout")]
+#[test_case(Source::Stderr; "stderr")]
+#[test_case(Source::Watched; "watched")]
+fn a_computation_error_produced_before_readiness_still_fails(source: Source) {
+    crate::testing::runtime(true).block_on(local(async move {
+        let rig = rig_with(watching(), Timing::default());
+        rig.fake.set_ready_default(false);
+        rig.fake.on_launch(move |_, command| {
+            let file = results(command);
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                ctx.write_file(&file, "").unwrap();
+                match source {
+                    Source::Stdout => ctx.print("COMPUTE ERROR\n").await,
+                    Source::Stderr => ctx.eprint("COMPUTE ERROR\n").await,
+                    Source::Watched => ctx.write_file(&file, "COMPUTE ERROR\n").unwrap(),
+                }
+                tokio::time::sleep(secs(2)).await;
+                ctx.shared.ready.set(true);
+                ctx.until_killed().await;
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
+        let run = finish(&handle).await;
+        assert_eq!(
+            run.finished.result.failure.map(|failure| (failure.core, failure.signal)),
+            Some((super::harness::core(2), Signal::ComputationError))
+        );
+        assert_eq!(run.finished.teardown.is_ok(), true);
+    }));
+}
+
+#[test_case(Source::Stdout; "stdout")]
+#[test_case(Source::Stderr; "stderr")]
+#[test_case(Source::Watched; "watched")]
+fn completing_a_startup_partial_during_the_interval_does_not_verify_a_core(source: Source) {
+    crate::testing::runtime(true).block_on(local(async move {
+        let rig = rig_with(watching(), Timing::default());
+        rig.fake.set_ready_default(false);
+        let (release, released) = tokio::sync::watch::channel(());
+        rig.fake.on_launch(move |_, command| {
+            let file = results(command);
+            let mut released = released.clone();
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                ctx.write_file(&file, "").unwrap();
+                match source {
+                    Source::Stdout => ctx.print("verified self-").await,
+                    Source::Stderr => ctx.eprint("verified self-").await,
+                    Source::Watched => ctx.write_file(&file, "verified self-").unwrap(),
+                }
+                tokio::time::sleep(secs(2)).await;
+                ctx.shared.ready.set(true);
+                released.changed().await.unwrap();
+                // The watched file's first post-start poll sees the partial at 1 s.
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                match source {
+                    Source::Stdout => ctx.print("test\n").await,
+                    Source::Stderr => ctx.eprint("test\n").await,
+                    Source::Watched => ctx.memory.append_file(&file, b"test\n", None).unwrap(),
+                }
+                ctx.until_killed().await;
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
+        release.send_replace(());
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(
+            run.finished.result.inconclusive.as_deref(),
+            Some("core 02 has no backend-verified result")
+        );
+        assert_eq!(run.finished.teardown.is_ok(), true);
+    }));
+}
+
+#[test]
+fn a_watched_result_appended_after_the_startup_backlog_is_drained_verifies_its_core() {
+    crate::testing::runtime(true).block_on(local(async move {
+        let rig = rig_with(watching(), Timing::default());
+        let (release, released) = tokio::sync::watch::channel(());
+        rig.fake.on_launch(move |_, command| {
+            let file = results(command);
+            let mut released = released.clone();
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                ctx.write_file(&file, "ordinary\n").unwrap();
+                released.changed().await.unwrap();
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                ctx.memory.append_file(&file, b"verified self-test\n", None).unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
+        release.send_replace(());
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(run.finished.result.inconclusive, None);
+        assert_eq!(run.finished.teardown.is_ok(), true);
+    }));
+}
+
 #[test_case(Source::Stdout, "stdout.log"; "stdout")]
 #[test_case(Source::Stderr, "stderr.log"; "stderr")]
 #[test_case(Source::Watched, "watched output"; "watched file")]

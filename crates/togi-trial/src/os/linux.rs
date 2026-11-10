@@ -41,6 +41,12 @@ fn io_pipe(file: impl Into<OwnedFd>) -> io::Result<super::Pipe> {
     Ok(Box::pin(receiver))
 }
 
+impl super::OutputPipe for Receiver {
+    fn unread(&self) -> io::Result<u64> {
+        rustix::io::ioctl_fionread(self).map_err(io::Error::from)
+    }
+}
+
 impl Child for Leader {
     fn pid(&self) -> u32 {
         self.pid

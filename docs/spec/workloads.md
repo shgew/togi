@@ -221,13 +221,13 @@ Both successful waits and runner errors use the same evidence precedence, includ
 | MCE inside the trial's window | Failure |
 | Reset reason | Applies only without higher-precedence evidence |
 | Required sampling, current-boot kernel log, setup observation or backend-checked result missing | Inconclusive; the reason names the core whose result is missing |
-| Full measured duration, every loaded core verified, every required observation valid and no failure | Pass |
+| Full measured duration, every loaded core verified by a checked result produced within that interval, every required observation valid and no failure | Pass |
 
 CPU time is liveness evidence, never proof of a correct computation. An mprime `Self-test … passed` or y-cruncher `Running …: Passed` identifies the self-test the backend checked; the trial plan assigns that instance to one physical core. An instance never verifies another core, including the two instances per core in R9. A quiet backend, malformed result or missing required mprime `results.txt` cannot pass, even if CPU time advanced or another output stream reported success. A reported wrong result, stall, early exit or reset retains the failure precedence above.
 
 An instance-evidence reason, including a core's missing verified result, takes precedence over a concurrent controller-placement reason, which remains in progress diagnostics.
 
-The measured interval and load schedule begin only after readiness waits finish. A scope-readiness timeout remains a setup error, not measured testing time or a successful observation. Readiness and preparation time earn no exposure.
+The measured interval and load schedule begin only after readiness waits finish. Checked results produced before readiness or the measured start, or at or after the measured deadline, do not verify a core. Output already queued in readers or pipes at the start remains classified but earns no verification. Watched files conservatively exclude their first post-start backlog and any partial line it leaves; only later complete lines read before the deadline can verify a core. Output first classified during teardown earns no verification, even if it might have been produced earlier. Failure, setup and affinity evidence is retained throughout. A scope-readiness timeout remains a setup error, not measured testing time or a successful observation. Readiness and preparation time earn no exposure.
 
 Runner errors remain diagnostics in the trial's reason; they never replace a classified failure. A failed kernel-log boundary read or an unresumable cursor leaves its interval unobserved, making an intersecting trial inconclusive unless higher-precedence evidence survives. Later successful reads do not erase that trial's lost observation. MCEs returned with a read error remain evidence.
 

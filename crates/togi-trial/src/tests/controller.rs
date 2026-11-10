@@ -309,10 +309,12 @@ fn an_incomplete_confinement_and_restoration_warn_in_the_trials_progress(
         local(async {
             let (controller, install) = reporting(moved, moved);
             let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-            rig.fake.on_launch(printing("verified self-test\n"));
+            let (print, release) = super::harness::printing_when_released("verified self-test\n");
+            rig.fake.on_launch(print);
             let spec = base_spec(Regime::R1, &[2], secs(5));
             let loaded = cpus_list(&spec.cpus);
             let handle = rig.start(spec).await.unwrap();
+            release.send_replace(());
             let run = finish(&handle).await;
             assert!(run.finished.teardown.is_ok(), "{moved:?}");
             assert_eq!(

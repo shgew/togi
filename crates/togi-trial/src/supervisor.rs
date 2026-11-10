@@ -465,6 +465,13 @@ pub(crate) async fn start<O: Os>(
     }
 
     let started_at = Instant::now();
+    let deadline = started_at + plan.duration;
+    judge.begin_interval(deadline);
+    for instance in &live.instances {
+        for reader in &instance.readers {
+            reader.begin_interval(deadline);
+        }
+    }
     let sensors =
         match Sensors::with_inputs(&env.roots, &env.topology, started_at, env.inputs.clone()) {
             Ok(sensors) => sensors,
@@ -1299,6 +1306,8 @@ impl<O: Os> Supervisor<O> {
             mut placement,
             ..
         } = self;
+        // Teardown still classifies every line, but never creates new passing evidence.
+        judge.end_interval();
         for instance in &live.instances {
             if !instance.observed.ready && live.scoped {
                 judge.observe(Observation::NeverEntered {

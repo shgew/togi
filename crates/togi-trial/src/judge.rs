@@ -3,8 +3,9 @@ use std::sync::Arc;
 use std::sync::mpsc::Sender;
 
 use togi_backend::{Backend, Line};
+use tokio::time::Instant;
 
-use crate::evidence::{Decision, Observation, Report, Selector, Stream, Verdict};
+use crate::evidence::{Decision, Observation, Report, Selector, Stream, Verdict, Verification};
 use crate::supervisor::{Event, panic_text};
 
 /// Classifies each instance's output with that instance's own backend, feeds the one selector and
@@ -18,6 +19,7 @@ pub(crate) struct Judge {
     events: Sender<Event>,
     panic: Option<String>,
     invalid_affinity: Vec<togi_backend::InvalidAffinityCpu>,
+    interval: Option<Instant>,
 }
 
 impl Judge {
@@ -32,6 +34,7 @@ impl Judge {
             events,
             panic: None,
             invalid_affinity: Vec::new(),
+            interval: None,
         }
     }
 
@@ -44,13 +47,37 @@ impl Judge {
         std::mem::take(&mut self.invalid_affinity)
     }
 
+    pub(crate) fn begin_interval(&mut self, deadline: Instant) {
+        self.interval = Some(deadline);
+    }
+
+    pub(crate) fn end_interval(&mut self) {
+        self.interval = None;
+    }
+
+    pub(crate) fn deadline(&self) -> Option<Instant> {
+        self.interval
+    }
+
     /// Returns whether the evidence says the trial must end.
     pub(crate) fn observe(&mut self, observation: Observation) -> bool {
         let decision = self.selector.observe(observation);
         self.forward(decision)
     }
 
-    pub(crate) fn line(&mut self, instance: usize, pid: u32, stream: Stream, text: String) -> bool {
+    pub(crate) fn line(
+        &mut self,
+        instance: usize,
+        pid: u32,
+        stream: Stream,
+        verification: Verification,
+        text: String,
+    ) -> bool {
+        let verification = if self.interval.is_some() {
+            verification
+        } else {
+            Verification::Outside
+        };
         let (line, panicked) =
             match catch_unwind(AssertUnwindSafe(|| self.backends[instance].classify(&text))) {
                 Ok(line) => (line, false),
@@ -67,6 +94,7 @@ impl Judge {
             instance,
             pid,
             stream,
+            verification,
             line,
             text,
         });
