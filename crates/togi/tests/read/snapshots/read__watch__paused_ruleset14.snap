@@ -24,14 +24,14 @@ expression: text(&ran.stdout)
   CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
   D -5 · C unknown · U unknown                                                                                            D 0 · C unknown · U unknown
   held: unknown edge for CCD 0, unknown edge for CCD 1, campaign history unavailable, paused · hold 0 / 50 h              held: unknown edge for CCD 0, unknown edge for CCD 1, campaign history unavailable, paused · hold 0 / 50 h
-    00    ?            ▄▄▄▄▄                                                                                                08    ?
-    01    ?            ▄▄▄▄▄                                                                                                09    ?
-    02    ?            ▄▄▄▄▄                                                                                                10    ?
-    03    ?            ▄▄▄▄▄                                                                                                11    ?
-    04    ?            ▄▄▄▄▄                                                                                                12    ?
-    05    ?            ▄▄▄▄▄                                                                                                13    ?
-    06    ?            ▄▄▄▄▄                                                                                                14    ?
-    07    ?            ▄▄▄▄▄                                                                                                15    ?
+    00    ?                                                                                                                 08    ?
+    01    ?                                                                                                                 09    ?
+    02    ?                                                                                                                 10    ?
+    03    ?                                                                                                                 11    ?
+    04    ?                                                                                                                 12    ?
+    05    ?                                                                                                                 13    ?
+    06    ?                                                                                                                 14    ?
+    07    ?                                                                                                                 15    ?
 
   DAY ─────────────────────────────── applied D 0:0 1:0 2:0 3:0 4:0 5:0 6:0 7:0 8:0 9:0 10:0 11:0 12:0 13:0 14:0 15:0     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
   permission: experimental hold + exact night qualification

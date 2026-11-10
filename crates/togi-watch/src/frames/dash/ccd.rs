@@ -27,14 +27,9 @@ pub(super) fn state_word(scene: &Scene<'_>, core: &CoreView) -> &'static str {
     }
 }
 
-/// The offset a row shows: the saved profile once a stopped session restored its offsets, else the readback,
-/// never clamped.
-fn shown_offset(scene: &Scene<'_>, core: &CoreView) -> Option<i64> {
-    if scene.s.stopped.is_some_and(|stop| stop.saved) {
-        Some(core.profile.get())
-    } else {
-        core.applied.map(|offset| offset.0)
-    }
+/// Only observed hardware offsets supply the numeric row and its applied-depth fill.
+fn shown_offset(core: &CoreView) -> Option<i64> {
+    core.applied.map(|offset| offset.0)
 }
 
 /// The glyphs a gauge draws applied depth and the edge with. The help legend and examples use the same set.
@@ -68,7 +63,7 @@ fn edge_mark(unit: Option<&ClimbUnitProjection>) -> Option<(i64, Paint)> {
     }
 }
 
-/// Committed day D, the hard ceiling's dotted track and tagged edge, independent of a trial's readback.
+/// Observed hardware depth, the hard ceiling's dotted track and tagged edge.
 pub(super) fn gauge(
     scene: &Scene<'_>,
     core: &CoreView,
@@ -94,7 +89,7 @@ pub(super) fn gauge(
         let hits = |point: i64| (lo..=hi).contains(&-point);
         let (glyph, paint) = if let Some((_, paint)) = edge.filter(|&(at, _)| hits(at)) {
             (marks.edge, Some(paint))
-        } else if applied.is_some_and(|applied| -applied >= lo) {
+        } else if applied.is_some_and(|applied| applied <= -lo) {
             (
                 marks.applied,
                 Some(if core.loaded {
@@ -413,7 +408,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             put(buf, r, 0, y, &line, colours);
         }
         let y = y + u16::from(core_phase);
-        let applied = shown_offset(scene, core);
+        let applied = shown_offset(core);
         let own = if core.loaded {
             Paint::White
         } else {
@@ -454,13 +449,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             r,
             saturating_cells(col.gauge),
             y,
-            &gauge(
-                scene,
-                core,
-                projection,
-                projection.map(|unit| unit.applied.get()),
-                col.cells,
-            ),
+            &gauge(scene, core, projection, applied, col.cells),
             colours,
         );
     }

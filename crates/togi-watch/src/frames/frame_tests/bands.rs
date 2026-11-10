@@ -47,15 +47,15 @@ fn between_trials_names_the_last_outcome_and_not_a_countdown() {
 }
 
 #[test]
-fn a_stopped_frame_shows_the_saved_profile_and_no_running_stage() {
+fn a_stopped_frame_says_its_rows_are_readback_and_shows_no_running_stage() {
     let fx = Staged::Stopped.hand();
     assert!(fx.snapshot().stopped.is_some_and(|stop| stop.saved));
     for (width, height) in ALL_SIZES {
         let (buf, _) = fx.main(width, height);
         let shown = text(&buf).to_lowercase();
         assert!(
-            shown.contains("stopped") && shown.contains("saved"),
-            "{width}x{height} hides the saved profile:\n{shown}"
+            shown.contains("stopped") && shown.contains("rows show hardware readback"),
+            "{width}x{height} does not say what its rows show:\n{shown}"
         );
         let stage = stage_line(&buf, &main_screen(width, height));
         assert!(

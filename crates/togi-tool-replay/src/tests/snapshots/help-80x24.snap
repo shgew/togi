@@ -20,6 +20,6 @@ expression: body
  │                     at -45, not physical -50
  │
  │ ►         the core carries load in this trial
- │ ▄▄▄       committed day offset D, distinct from the numeric hardware
- │           readback; white when this trial loads the core
- │ ?         no hardware offset has been read back for this core
+ │ ▄▄▄       the depth of the hardware offset read back in this boot; white
+ │           when this trial loads the core
+ │ ?         no hardware offset read back for this core in this boot

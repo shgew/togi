@@ -11,7 +11,7 @@ expression: body
 │
 │  STOPPED ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  22:13:20 · stopped by a signal
-│  Rows show the saved profile, not applied now.
+│  Rows show hardware readback, not the saved profile.
 │
 │  CCD 0 idle          0       -10       -20       -30       -40       -50                                                 CCD 1 idle          0       -10       -20       -30       -40       -50
 │  D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                              D -8 · C -45 · U censored at -50 · 37 counts to C · S -15 diagnostic only

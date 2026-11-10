@@ -46,6 +46,7 @@ pub(crate) struct Facts {
     pub(crate) intents: HashMap<TrialId, TrialIntent>,
     pub(crate) starts: HashMap<TrialId, Timestamp>,
     pub(crate) applied: PerCore<Option<ObservedOffset>>,
+    applied_boot: Option<BootId>,
     pub(crate) current: Option<Current>,
     lifecycle: RuntimeLifecycle,
     pub(crate) restored: bool,
@@ -85,6 +86,10 @@ pub(crate) fn trial_cores(intent: &TrialIntent) -> CoreSet {
 impl Facts {
     /// Takes one event, after the journal's state took it.
     pub(crate) fn fold(&mut self, event: &Event, journal: &JournalState) {
+        if self.applied_boot.as_ref() != Some(&event.boot) {
+            self.applied = PerCore::default();
+            self.applied_boot = Some(event.boot.clone());
+        }
         self.tuning.fold(event);
         self.day.apply(event);
         self.day_totals.apply(event);

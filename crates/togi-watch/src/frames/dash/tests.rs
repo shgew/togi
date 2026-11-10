@@ -682,6 +682,15 @@ fn the_edge_cell_is_the_edge_even_where_the_applied_depth_passes_it() {
     assert_eq!(gauge_text(Colours::Full, &projection, -40, 50), want);
 }
 
+#[test_case(i64::MIN, 50, 0; "deeper than any count")]
+#[test_case(i64::MAX, 0, 26; "shallower than stock")]
+fn a_readback_outside_the_gauge_fills_all_or_none_of_it(readback: i64, filled: usize, dots: usize) {
+    assert_eq!(
+        gauge_text(Colours::None, &capped(None), readback, 50),
+        format!("{}{}", "▄".repeat(filled), "·".repeat(dots))
+    );
+}
+
 fn ccd_projection() -> togi_tuner::policy::UnitProjection {
     with_cap(
         ccd_row(0, &[0, 1], -10),
@@ -845,12 +854,12 @@ fn a_ccd_table_has_a_heading_two_fact_rows_and_a_row_per_core() {
 }
 
 #[test]
-fn numeric_trial_readback_does_not_replace_committed_day_d_in_the_gauge() {
+fn numeric_trial_readback_supplies_the_gauge_not_committed_day_d() {
     let rows = table(&two_cores(), 115, 5, Colours::None);
     assert!(rows[4].contains("-4"), "numeric readback: {:?}", rows[4]);
     assert!(
-        rows[4].contains(&format!("{}{}", "▄".repeat(10), "·".repeat(5))),
-        "D -10, C -15: {:?}",
+        rows[4].contains(&format!("{}{}", "▄".repeat(4), "·".repeat(11))),
+        "readback -4, C -15: {:?}",
         rows[4]
     );
 }
@@ -863,6 +872,11 @@ fn a_core_with_no_readback_shows_a_question_mark_not_zero() {
     );
     let rows = table(&hand, 115, 4, Colours::None);
     assert!(rows[3][..WIDE.state].contains('?'), "{:?}", rows[3]);
+    assert!(
+        rows[3][WIDE.gauge..].starts_with(&"·".repeat(15)),
+        "unknown has no applied fill: {:?}",
+        rows[3]
+    );
 }
 
 #[test]
@@ -876,7 +890,7 @@ fn a_readback_is_never_clamped() {
 }
 
 #[test]
-fn a_restored_session_shows_the_saved_profile_in_its_rows() {
+fn a_restored_session_does_not_substitute_the_saved_profile_for_readback() {
     let mut hand = Hand::new(
         vec![CoreView {
             profile: crate::tests::kit::off(-7),
@@ -903,7 +917,8 @@ fn a_restored_session_shows_the_saved_profile_in_its_rows() {
         },
         &scene,
     );
-    assert!(rows_of(&buf)[3].contains("-7"), "{:?}", rows_of(&buf)[3]);
+    assert!(rows_of(&buf)[3].contains('?'), "{:?}", rows_of(&buf)[3]);
+    assert!(!rows_of(&buf)[3].contains("-7"), "{:?}", rows_of(&buf)[3]);
     hand.cores.clear();
 }
 

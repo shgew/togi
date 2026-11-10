@@ -408,6 +408,23 @@ fn sparse_readbacks_do_not_fill_other_topology_cores() {
     );
 }
 
+#[test_case(false; "no new readback")]
+#[test_case(true; "partial new readback")]
+fn earlier_boot_readbacks_are_not_current(partial: bool) {
+    let mut script = Script::three();
+    script.append(readback(0, -20), &[]);
+    script.append(readback(1, -15), &[]);
+    script.boot = "next".to_owned();
+    script.append(config_loaded(), &[]);
+    if partial {
+        script.append(readback(1, -4), &[]);
+    }
+    let model = script.model();
+    let snap = model.snapshot();
+    assert_eq!(snap.cores[0].applied, None);
+    assert_eq!(snap.cores[1].applied, partial.then_some(ObservedOffset(-4)));
+}
+
 #[test_case::test_case(false, false; "offset related crash")]
 #[test_case::test_case(false, true; "power reset")]
 #[test_case::test_case(true, false; "before offsets")]
