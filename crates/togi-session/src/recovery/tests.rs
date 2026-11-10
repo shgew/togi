@@ -581,18 +581,79 @@ fn the_latest_unanswered_intent_of_a_boot_is_found_not_the_last_event() {
 }
 
 #[test]
-fn a_new_smu_intent_replaces_one_nothing_answered_and_a_crash_clears_its_boots() {
+fn two_interrupted_writes_replay_without_inventing_a_completion() {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
-    log.intent(0, -10, &[]);
+    let first = log.intent(0, -10, &[]);
     let second = log.intent(8, -5, &[]);
-    assert_eq!(log.state().unmatched_intents().len(), 1);
+    let state = log.state();
+    assert_eq!(
+        state
+            .unmatched_intents()
+            .iter()
+            .map(|open| open.seq)
+            .collect::<Vec<_>>(),
+        vec![first, second]
+    );
+    assert_eq!(state.latest_unmatched_intent(&boot("b0")), Some(second));
+    assert_eq!(state.smu_evidence(), None);
+
+    log.written(8, -5, second);
+    let state = log.state();
+    let facts = togi_journal::State::replay(&log.events).unwrap();
+    assert_eq!(state.unmatched_intents().len(), 1);
+    assert_eq!(state.latest_unmatched_intent(&boot("b0")), Some(first));
+    assert_eq!(facts.in_flight().unwrap().seq, first);
+
+    log.at("b1", 0).written(0, -10, first);
     assert_eq!(
         log.state().latest_unmatched_intent(&boot("b0")),
-        Some(second)
+        Some(first)
     );
-    log.at("b1", 0).crashed("b0", &[]);
-    assert_eq!(log.state().latest_unmatched_intent(&boot("b0")), None);
+    let current = log.intent(0, 0, &[]);
+    log.crashed("b0", &[first]);
+    let state = log.state();
+    assert_eq!(state.latest_unmatched_intent(&boot("b0")), None);
+    assert_eq!(state.latest_unmatched_intent(&boot("b1")), Some(current));
+}
+
+#[test_case(true, true; "same boot cited error")]
+#[test_case(true, false; "uncited error")]
+#[test_case(false, true; "next boot error")]
+fn a_failed_command_does_not_resolve_another_write_intent(same_boot: bool, cited: bool) {
+    let mut log = Log::new();
+    let first = log.intent(0, -10, &[]);
+    let second = log.intent(8, -5, &[]);
+    if !same_boot {
+        log.at("b1", 0);
+    }
+    log.add(
+        Payload::SmuError(SmuError {
+            op: SmuOp::Set,
+            core: Some(core(8)),
+            offset: Some(target(-5)),
+            error: "mailbox timeout".into(),
+        }),
+        if cited {
+            std::slice::from_ref(&second)
+        } else {
+            &[]
+        },
+    );
+    let state = log.state();
+    let remaining = if same_boot && cited {
+        vec![first]
+    } else {
+        vec![first, second]
+    };
+    assert_eq!(
+        state
+            .unmatched_intents()
+            .iter()
+            .map(|open| open.seq)
+            .collect::<Vec<_>>(),
+        remaining
+    );
 }
 
 #[test_case(true, true, false; "same boot cited intent closes")]

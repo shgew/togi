@@ -228,16 +228,8 @@ impl State {
                     session.build.fixes = config.build.fixes;
                 }
             }
-            Payload::SmuIntent(_) => {
-                self.open.retain(|open| open.kind != EventKind::SmuIntent);
-                self.push_open(event, None);
-            }
-            Payload::SmuWrite(_) | Payload::SmuError(_) => {
-                self.open.retain(|open| {
-                    !(open.kind == EventKind::SmuIntent && event.cause.contains(&open.seq))
-                });
-            }
-            Payload::SmuReadback(_) => {
+            Payload::SmuIntent(_) => self.push_open(event, None),
+            Payload::SmuWrite(_) | Payload::SmuError(_) | Payload::SmuReadback(_) => {
                 self.open.retain(|open| {
                     !(open.kind == EventKind::SmuIntent
                         && open.boot == event.boot

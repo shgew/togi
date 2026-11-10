@@ -339,9 +339,9 @@ impl RecoveryState {
                 record.applied = None;
             }
             Payload::SmuIntent(intent) => self.smu_intent(event, intent.command()),
-            Payload::SmuWrite(_) => self.drop_smu_intent(),
+            Payload::SmuWrite(_) => self.resolve_smu_intents(event),
             Payload::SmuError(error) => {
-                self.drop_smu_intent();
+                self.resolve_smu_intents(event);
                 self.smu = Some(Cited {
                     seq,
                     detail: format!("SMU command failed: {}", error.error),
@@ -667,13 +667,15 @@ impl RecoveryState {
         self.backends.entry(backend).or_default()
     }
 
-    fn drop_smu_intent(&mut self) {
-        self.unmatched
-            .retain(|open| !matches!(open.kind, IntentKind::Smu));
+    fn resolve_smu_intents(&mut self, event: &Event) {
+        self.unmatched.retain(|open| {
+            !(matches!(open.kind, IntentKind::Smu)
+                && open.boot == event.boot
+                && event.cause.contains(&open.seq))
+        });
     }
 
     fn smu_intent(&mut self, event: &Event, command: SmuCommand) {
-        self.drop_smu_intent();
         self.unmatched.push(OpenIntent {
             seq: event.seq,
             boot: event.boot.clone(),
@@ -692,11 +694,7 @@ impl RecoveryState {
     }
 
     fn smu_readback(&mut self, event: &Event, readback: &togi_journal::SmuReadback) {
-        self.unmatched.retain(|open| {
-            !(matches!(open.kind, IntentKind::Smu)
-                && open.boot == event.boot
-                && event.cause.contains(&open.seq))
-        });
+        self.resolve_smu_intents(event);
         if let Some(expected) = readback.expected
             && expected.observed() != readback.offset
         {

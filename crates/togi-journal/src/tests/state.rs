@@ -137,12 +137,62 @@ fn config_loaded_refreshes_only_version_rev_and_fixes() {
 }
 
 #[test]
-fn a_new_smu_intent_replaces_the_older_one_and_the_write_citing_it_clears_it() {
-    let state = replay(&[start(), smu_intent(2, "boot-a"), smu_intent(3, "boot-a")]).unwrap();
-    assert_eq!(state.open.len(), 1);
-    assert_eq!(state.in_flight().unwrap().seq, Seq::new(3).unwrap());
-    let state = replay(&[start(), smu_intent(2, "boot-a"), smu_write(3, "boot-a", 2)]).unwrap();
-    assert!(state.in_flight().is_none());
+fn two_interrupted_smu_intents_survive_replay_until_each_is_answered() {
+    let mut events = vec![start(), smu_intent(2, "boot-a"), smu_intent(3, "boot-a")];
+    let mut incremental = replay(&events).unwrap();
+    assert_eq!(
+        incremental
+            .open
+            .iter()
+            .map(|open| open.seq)
+            .collect::<Vec<_>>(),
+        vec![Seq::new(2).unwrap(), Seq::new(3).unwrap()]
+    );
+    assert_eq!(incremental.in_flight().unwrap().seq, Seq::new(3).unwrap());
+
+    events.push(smu_write(4, "boot-a", 3));
+    incremental.apply(&events[3]).unwrap();
+    assert_eq!(incremental, replay(&events).unwrap());
+    assert_eq!(incremental.open.len(), 1);
+    assert_eq!(incremental.in_flight().unwrap().seq, Seq::new(2).unwrap());
+
+    events.push(smu_write(5, "boot-a", 2));
+    incremental.apply(&events[4]).unwrap();
+    assert_eq!(incremental, replay(&events).unwrap());
+    assert_eq!(incremental.in_flight(), None);
+}
+
+#[test_case::test_case(EventKind::SmuWrite, "boot-a", &[2], &[3]; "write answers earlier intent")]
+#[test_case::test_case(EventKind::SmuWrite, "boot-a", &[3], &[2]; "write answers later intent")]
+#[test_case::test_case(EventKind::SmuWrite, "boot-a", &[1], &[2, 3]; "unrelated write")]
+#[test_case::test_case(EventKind::SmuWrite, "boot-b", &[2], &[2, 3]; "next boot write")]
+#[test_case::test_case(EventKind::SmuError, "boot-a", &[2], &[3]; "error answers earlier intent")]
+#[test_case::test_case(EventKind::SmuError, "boot-a", &[3], &[2]; "error answers later intent")]
+#[test_case::test_case(EventKind::SmuError, "boot-a", &[], &[2, 3]; "uncited error")]
+#[test_case::test_case(EventKind::SmuError, "boot-b", &[2], &[2, 3]; "next boot error")]
+#[test_case::test_case(EventKind::SmuReadback, "boot-a", &[2], &[3]; "readback answers earlier intent")]
+#[test_case::test_case(EventKind::SmuReadback, "boot-a", &[3], &[2]; "readback answers later intent")]
+fn smu_completion_resolves_only_its_cited_same_boot_intent(
+    kind: EventKind,
+    boot: &str,
+    causes: &[u64],
+    remaining: &[u64],
+) {
+    let events = [
+        start(),
+        smu_intent(2, "boot-a"),
+        smu_intent(3, "boot-a"),
+        at(4, boot, 2, causes, sample(kind)),
+    ];
+    let state = replay(&events).unwrap();
+    assert_eq!(
+        state
+            .open
+            .iter()
+            .map(|open| open.seq.get())
+            .collect::<Vec<_>>(),
+        remaining
+    );
 }
 
 #[test]
