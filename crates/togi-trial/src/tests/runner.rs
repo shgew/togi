@@ -73,6 +73,15 @@ fn runner_on(
     setup: impl FnOnce(&Fake) + Send + 'static,
     timing: Timing,
 ) -> (Runner, Arc<MemFs>) {
+    runner_on_frequency(clock, setup, timing, super::harness::frequency(&topology()))
+}
+
+fn runner_on_frequency(
+    clock: Clock,
+    setup: impl FnOnce(&Fake) + Send + 'static,
+    timing: Timing,
+    frequency: Arc<dyn togi_machine::CpuFrequency>,
+) -> (Runner, Arc<MemFs>) {
     let fs = Arc::new(MemFs::default());
     let root = Path::new("/rig");
     let memory = crate::watch::Memory::new(fs.clone());
@@ -95,7 +104,7 @@ fn runner_on(
         unscoped: false,
         user_manager: false,
         controller: Arc::new(crate::controller::Recording::default()),
-        frequency: super::harness::frequency(&topology()),
+        frequency,
         fs: Some(fs.clone()),
         inputs: crate::procfs::Inputs::memory(fs.clone()),
         memory: Some(memory.clone()),
@@ -109,6 +118,87 @@ fn runner_on(
     })
     .unwrap();
     (runner, fs)
+}
+
+#[test]
+fn startup_frequency_recovery_round_trips_acknowledgments_through_the_runner() {
+    use togi_machine::{
+        CpuFrequency as _, FrequencyAction, FrequencyEvent, FrequencyIntent, FrequencyJournal,
+        FrequencyPolicy, FrequencyPolicyId, FrequencyReadback,
+    };
+
+    let policy = FrequencyPolicyId::new(0);
+    let machine = crate::frequency::fake::Fake::new(vec![FrequencyPolicy {
+        id: policy,
+        related_cpus: vec![CpuId::from(0), CpuId::from(32)],
+        cpuinfo_min_khz: 400_000,
+        scaling_min_khz: 400_000,
+        scaling_max_khz: 5_700_123,
+        available_khz: None,
+    }]);
+    let (mut runner, fs) = runner_on_frequency(
+        Clock::Manual(Manual::new()),
+        |_| {},
+        fast(),
+        Arc::new(machine.clone()),
+    );
+    let limits = crate::frequency::Limits::new(
+        Arc::new(machine.clone()),
+        "/rig/trials".into(),
+        Some(fs.clone()),
+        crate::samples::Durability::Unsynced,
+    );
+    crate::testing::runtime(true)
+        .block_on(limits.cap(
+            &[CpuId::from(0)],
+            &[],
+            &CancellationToken::new(),
+            &mut Vec::new(),
+            &crate::frequency::Journal::recorded(),
+        ))
+        .unwrap();
+    let pending = Path::new("/rig/trials/controller-frequency.pending.json");
+    let saved = fs.contents(pending).unwrap();
+    let writes = machine.writes();
+
+    struct Refuse(crate::testing::Frequencies);
+    impl FrequencyJournal for Refuse {
+        fn record(&mut self, event: FrequencyEvent) -> std::io::Result<()> {
+            self.0.record(event)?;
+            Err(std::io::Error::other("restore intent refused"))
+        }
+    }
+    let intent = FrequencyIntent {
+        policy,
+        related_cpus: vec![CpuId::from(0), CpuId::from(32)],
+        original_khz: 5_700_123,
+        cap_khz: 400_000,
+        action: FrequencyAction::Restore,
+    };
+    let mut refused = Refuse(crate::testing::Frequencies::default());
+    let stopped = nothing_runs();
+    let error = runner.recover_frequency(&stopped, &mut refused).unwrap_err();
+    assert!(togi_machine::error_chain(&error).contains("restore intent refused"));
+    assert_eq!(refused.0.0, [FrequencyEvent::Intent(intent.clone())]);
+    assert_eq!(machine.writes(), writes);
+    assert_eq!(machine.scaling_max_khz(policy).unwrap(), 400_000);
+    assert_eq!(fs.contents(pending), Some(saved));
+
+    let mut journal = crate::testing::Frequencies::default();
+    runner.recover_frequency(&stopped, &mut journal).unwrap();
+    assert_eq!(
+        journal.0,
+        [
+            FrequencyEvent::Intent(intent.clone()),
+            FrequencyEvent::Readback(FrequencyReadback {
+                intent,
+                observed_khz: 5_700_123,
+            }),
+        ]
+    );
+    assert_eq!(machine.scaling_max_khz(policy).unwrap(), 5_700_123);
+    assert_eq!(&machine.writes()[writes.len()..], &[(policy, 5_700_123)]);
+    assert_eq!(fs.contents(pending), None);
 }
 
 #[derive(Default)]
