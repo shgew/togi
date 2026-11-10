@@ -445,7 +445,14 @@
                 rustToolchain
                 pkgs.cargo-deny
                 pkgs.cargo-fuzz
-                pkgs.cargo-llvm-cov
+                # nixpkgs' own rustc builds instrumented binaries that crash in this package's
+                # Darwin test suite (NixOS/nixpkgs#576588); togi runs it with rustToolchain.
+                (
+                  if pkgs.stdenv.hostPlatform.isDarwin then
+                    pkgs.cargo-llvm-cov.overrideAttrs { doCheck = false; }
+                  else
+                    pkgs.cargo-llvm-cov
+                )
                 pkgs.cargo-nextest
                 pkgs.cargo-shear
                 pkgs.mold
