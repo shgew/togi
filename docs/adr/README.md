@@ -1,12 +1,12 @@
 # Architecture decisions
 
-The specs describe current behavior; ADRs record why and the alternatives rejected. Where they disagree, the spec wins and this index is out of date.
+This directory is history, not authority. [The model](../model.md) is the design being built; [the decisions page](../decisions.md) lists decisions in force and rejected ideas. Specs and [the tuning guide](../how-togi-tunes.md) describe shipped behavior until the loop lands.
 
-ADRs cover product, architecture and safety decisions. Development-process choices (checks, CI, caching, releases, review, tooling) live in [Development](../development.md), [REVIEW.md](../../REVIEW.md), [the review record](../review-record.md) or [the review command](../../.omp/commands/review-pr.md), each with a short rationale, and change by editing that document. The process ADRs below remain as history.
+Add no new ADRs. Change the decisions page or relevant spec and put the reasoning in the pull request, including when reversing an old ADR. R15 will archive these files behind a tag; until then their old status annotations below record what was believed at the time, not present authority.
 
-A new ADR adds its line here and updates the status of any ADR it supersedes. No ADR file is deleted or moved: a historical ADR keeps its text, and its line names what replaced it. ADRs 0001–0034 keep their historical vocabulary; [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0037](0037-cycles-and-trials.md) translate it to `GLOSSARY.md`, and [ADR 0020's terms](0020-hunt-and-refine.md#terms-today) map its pre-Ruleset-13 rules. [Ruleset history](../how-togi-tunes.md#ruleset-history) owns the chronology of ruleset changes.
+Historical vocabulary is translated by [0034](0034-one-vocabulary-from-screen-to-journal.md), [0037](0037-cycles-and-trials.md) and [ADR 0020's terms](0020-hunt-and-refine.md#terms-today). [Ruleset history](../how-togi-tunes.md#ruleset-history) owns the shipped chronology.
 
-## Current
+## Former current records
 
 - [0002](0002-clean-room-rewrite.md) Clean-room rewrite, not a port of linux-corecycler — in force.
 - [0005](0005-grub-tuning-boot.md) Unattended tuning is a GRUB boot entry — in force.

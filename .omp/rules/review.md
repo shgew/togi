@@ -3,4 +3,4 @@ agents: reviewer
 alwaysApply: true
 ---
 
-Read `REVIEW.md` at the repository root before reviewing. Apply its defect criteria and Lessons to the assigned diff. Check the linked issue's Acceptance. Report concrete defects with priority and evidence, not style or optional refactors. Load no skills: the assignment, `REVIEW.md` and the code are your whole brief.
+Read root `REVIEW.md` before reviewing the frozen assigned diff. Apply its defects, safety and survivor criteria and the PR's scope, including any linked Acceptance; direct requests may have no issue. Trace safety-rule or enforcement changes wherever they live. Report concrete defects with priority and evidence, not taste or optional refactors. The assignment, `REVIEW.md` and frozen code are the brief.

@@ -1,13 +1,13 @@
 ## Summary
 
-<!-- The smallest view that makes the key point clear: pseudocode for logic, a call tree for control flow, a shallow file tree for a refactor, a Mermaid diagram for interaction or data flow, or a `diff` of one of these when the surrounding shape already exists. Keep only what the reader needs. Brief prose next to it, in GLOSSARY.md terms, no preamble. -->
+<!-- Briefly say what changes, using the smallest useful view: prose, pseudocode, a call tree or a diff. For behavior, link the owner-approved docs/model.md diff; distinguish design from shipped behavior. Direct owner requests need no separate issue; reference the tracking issue for a large change. -->
 
 ## Evidence
 
 - **Before:** <!-- screenshot, output or failing test run -->
   **After:** <!-- screenshot, output or passing test run -->
 
-<!-- A screenshot when the change is visible, such as the dashboard. Otherwise execution: the exact test that fails before and passes after, a `just sim` session log, a journal excerpt or a command transcript, and the checks that ran. -->
+<!-- List exact checks and their results, not planned runs. Code: failing-before/passing-after proof or a scoped reason it is impractical. Documents: quality/link check and CI; note the temporary independent-review requirement until R21. Tuning behavior: link the target-desktop result still owed before the next design; only the owner runs togi there. Coverage is optional evidence except where the current record renderer requires it until R21. -->
 
 ## Merge Danger
 
@@ -17,6 +17,6 @@
 
 **Blast Radius:** <!-- one word -->
 
-<!-- Optional: what merging could affect, such as tuner decisions, the journal, the hardware write path, the dashboard or operators' configuration. -->
+<!-- Name affected behavior or safety invariants. If existing journals become unreadable or recorded decisions unrepeatable, say which SCHEMA or RULESET changed and that old journals are refused. Before 1.0, no breaking title/label or new changelog fragment. Map every removed/narrowed test assertion to its surviving proof or approved retirement. -->
 
-<!-- Closes #N when this pull request finishes the issue, otherwise Refs #N. -->
+<!-- Closes #N only when all Acceptance is met; otherwise Refs #N. Omit for a direct request without an issue. -->

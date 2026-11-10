@@ -2,13 +2,13 @@
 
 ## Records and gate
 
-The review coordinator writes this record for each reviewed head; `.omp/commands/review-pr.md` says when. Reviewers apply the criteria in [`REVIEW.md`](../REVIEW.md) and do not need this document.
+The coordinator writes this record when [the review command](../.omp/commands/review-pr.md) requires it. Risk classes come from [AGENTS.md](../AGENTS.md#workflow). Until R21, the universal robotogi gate and renderer still require an independent reader for included documents and coverage for Rust deltas; CI-only documents and optional coverage are the approved destination, not supported shortcuts today.
 
 The GitHub App robotogi posts one review record comment for each reviewed head commit, after fix commits have also been reviewed; the coordinator prepares it. A pull request's first record covers its whole diff. Each later record covers only what changed since the previous record, as `.omp/commands/review-pr.md` defines that delta, and links it; it does not repeat earlier files, reviewers or findings. A pull request's review is the chain of its records. Nothing per pull request is committed to the repository.
 
 Exception: when a version-1 record's historical base cannot be recovered, the next record links it but covers the whole current layer conservatively, and states why a minimal delta could not be established. It may repeat files and reviewers for that coverage; prior findings are still inherited through the chain.
 
-Passing builds and tests do not establish that anyone read the diff. The public record names the exact head, coverage, reviewers and every finding's priority and outcome; the App's `review` check links it on that head. [Workflow](../AGENTS.md#workflow) owns the merge gates. Success needs an outcome for every finding accumulated through the chain and no open P0/P1; deferring one does not clear the gate. The record is evidence of independent review, not a guarantee of no defects.
+Passing builds and tests do not establish that anyone read the diff. The public record names the exact head, coverage when required, readers and every finding's priority/outcome; robotogi's `review` check links it on that head. [Workflow](../AGENTS.md#workflow) owns merge gates. Success needs an outcome for every finding in the chain and no open P0/P1; deferring one does not clear the gate. The record is evidence of independent reading, not a guarantee of no defects. A document-only record without readers cannot truthfully be produced through today's renderer; retain independent review until R21 changes it.
 
 Rejected:
 
