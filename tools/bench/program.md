@@ -1,12 +1,10 @@
 # togi tuner research: improve the registered day/night metrics
 
-**Ruleset 13: implemented and shipped in v0.12.0; registered gate not met; superseded by the successor design.**
-
-This program is a versioned historical record of the original Ruleset 13 experiment, not authorization for a new campaign; see [the day/night gate](../../docs/benchmarking.md#daynight-gate) for the read's scope, provenance and reproduction.
+**Historical only.** Day/night scoring and campaign launching are [retired](../../docs/benchmarking.md#daynight-gate). This retained program is not executable guidance or authorization for a new campaign. Use the [original program at `archive/pre-cut`](https://github.com/shgew/togi/blob/archive/pre-cut/tools/bench/program.md) when reading historical results.
 
 ## Successor registration
 
-[`day-night-successor.json`](day-night-successor.json) owns the separate
+The [archived successor registration](https://github.com/shgew/togi/blob/archive/pre-cut/tools/bench/day-night-successor.json) owned the separate
 successor experiment's numbers and implemented comparator commands; see
 [its registration status](../../docs/benchmarking.md#successor-registration).
 D's source stays explicitly pending until a separate reviewed pinning commit
@@ -19,7 +17,7 @@ compatibility switch or deployment.
 
 ## Original Ruleset 13 program
 
-Rules for the **production policy experiment** mode of a [research campaign](../../docs/benchmarking.md#research-campaigns). The objective is the Ruleset 13 [day/night gate's registered metrics](../../docs/benchmarking.md#daynight-gate) on development seeds, not a session's time to conclusion. [`day-night.json`](day-night.json) owns the scenarios, seeds, calendar, hazard budget, thresholds and tail treatment. The campaign's limits, prohibitions, record and end state are in [Research campaigns](../../docs/benchmarking.md#research-campaigns).
+Historical rules for the **production policy experiment** mode of a [research campaign](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#research-campaigns). The objective was the Ruleset 13 [day/night gate's registered metrics](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#daynight-gate) on development seeds, not a session's time to conclusion. The [archived registration](https://github.com/shgew/togi/blob/archive/pre-cut/tools/bench/day-night.json) owns the scenarios, seeds, calendar, hazard budget, thresholds and tail treatment.
 
 Observation campaigns change no tuner code: they measure the unchanged tuner, adding only the analysis tools and research-only fixtures their brief names and leaving the frozen environment below as it is. Their brief:
 
@@ -31,7 +29,7 @@ Observation campaigns change no tuner code: they measure the unchanged tuner, ad
 
 Branch from `main` and follow `AGENTS.md`. Read the [tuner spec](../../docs/spec/tuner.md), [workload spec](../../docs/spec/workloads.md), [journal spec](../../docs/spec/journal.md), [prior art](../../docs/prior-art.md) and [benchmarking guide](../../docs/benchmarking.md). State one falsifiable hypothesis, the registered metrics it should improve and the evidence rules it preserves.
 
-A campaign needs an approved issue brief, a finite hypothesis queue, writable paths, pinned inputs, limits and a confirmation allowance. The current `just research` dispatcher reads those from its manifest and registered brief; it does not read this program as an executable plan. It currently registers only model-development and fixed-policy-observation briefs, forbids tuner edits and does not allow `bench-day-night` as an evaluator. Production-policy campaign support is therefore a missing prerequisite, not permission to bypass the dispatcher.
+The retired dispatcher read a campaign's approved brief, finite hypothesis queue, writable paths, pinned inputs, limits and confirmation allowance from its manifest. It registered only model-development and fixed-policy-observation briefs and forbade tuner edits. There is no current campaign-launch interface.
 
 `tools/bench/baseline.jsonl` is the historical legacy session-suite baseline. Model development's F5 check still pins it; it is not the day/night objective or a reference for its scores. This program changes neither that guard nor the baseline.
 
@@ -64,12 +62,7 @@ Breaking any rule invalidates an experiment, however good its metrics look.
 
 ## Method
 
-Use the real policy, not a comparator, on the development split:
-
-```sh
-just bench-day-night --split dev --policy ruleset13 --slope 1.5
-just bench-day-night --split dev --policy ruleset13 --slope 2.0
-```
+The [historical commands](https://github.com/shgew/togi/blob/archive/pre-cut/tools/bench/program.md#method) require the archived evaluator, not the current checkout.
 
 - Compare each candidate with the unchanged reference on the same registered development seeds and fallback slopes. Record every applicable metric and per-scenario verdict, not only an aggregate gain.
 - Judge results under the [registered criteria](../../docs/benchmarking.md#daynight-gate). Keep censored and nonconverged runs in their denominators; comparator scores cannot pass the real policy's gate.

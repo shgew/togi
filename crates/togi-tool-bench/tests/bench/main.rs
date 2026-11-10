@@ -11,7 +11,6 @@ mod cli;
 mod compare;
 mod measure;
 mod records;
-mod research;
 mod run;
 mod same;
 mod sanity;

@@ -1,5 +1,7 @@
 # togi model research: predict the next real session
 
+**Historical campaign protocol.** Campaign launching and its dispatcher are [retired](../../docs/benchmarking.md#research-campaigns). The retained fit and forward-comparison commands still exist, but the campaign procedure below is not an active launch interface or authorization.
+
 Rules for the **model development** mode of a [research campaign](../../docs/benchmarking.md#research-campaigns): improving the simulator's failure model so that a fit to earlier real sessions predicts the next one. The tuner bench (`tools/bench/program.md`) bases its target-machine claims on fitted machines, and a bench win is only as good as they are ([#306](https://github.com/shgew/togi/issues/306)). The campaign's limits, prohibitions, record and end state are in [Research campaigns](../../docs/benchmarking.md#research-campaigns); the issue's brief names its hypotheses and data:
 
 - [#427](research/427.md): one structured single-core hazard, from 12 [bounded](research/427.md#bounds) candidates that keep its [fixtures](research/427.md#fixtures).

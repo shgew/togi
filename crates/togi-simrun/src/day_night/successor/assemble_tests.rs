@@ -1016,6 +1016,45 @@ fn runner_nested_machine_budget_error_is_truncation_not_harness_failure() {
     assert_eq!(record.exposure.observed_seconds, 0.0);
 }
 
+#[test_case::test_case(UnitMode::CcdUniform, 2; "ccd units")]
+#[test_case::test_case(UnitMode::PerCore, 16; "physical core units")]
+fn stock_reports_each_decision_unit_finished_on_its_first_day(mode: UnitMode, units: usize) {
+    use crate::day_night::Policy as _;
+
+    let scenario = truth::Scenario::builtin("successor-edge-deep", 20_001).unwrap();
+    let mut policy = crate::day_night::CoZero::new(mode);
+    assert!(
+        policy.report().finishes.is_empty(),
+        "no day has started yet"
+    );
+    let record = crate::day_night::successor::run(config(&scenario, 1, mode), &mut policy).unwrap();
+    record.validate().unwrap();
+    assert_eq!(record.units.len(), units);
+    assert_eq!(record.policy.finishes.len(), units);
+    assert_eq!(record.policy.unit_membership, record.provenance.membership);
+    assert!(record.policy.allowance.is_none());
+    assert!(record.steps.is_empty());
+    for unit in &record.units {
+        let finish = unit.finish.as_ref().unwrap();
+        assert_eq!(finish.reason, FinishReason::FixedStock);
+        assert_eq!(finish.day, 1.0);
+        assert_eq!(finish.witnesses, ["fixed-stock-policy"]);
+    }
+    assert!(!record.intervals.is_empty());
+    for interval in &record.intervals {
+        assert_eq!(interval.phase, Phase::PostFinish);
+        assert!(interval.profile.iter().all(|(_, depth)| depth == 0));
+    }
+    let readback = record.policy.readback.as_ref().unwrap();
+    assert!(readback.iter().all(|(_, depth)| depth == 0));
+    assert_eq!(
+        Record::parse(&serde_json::to_vec(&record).unwrap())
+            .unwrap()
+            .policy,
+        record.policy
+    );
+}
+
 #[test]
 fn reclassified_restoration_witnesses_qualify_only_restored_units_without_promotion() {
     let scenario = truth::Scenario::builtin("successor-core-interactions", 20_001).unwrap();

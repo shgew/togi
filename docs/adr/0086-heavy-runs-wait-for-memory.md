@@ -30,6 +30,8 @@ This partly supersedes ADR 0072's statement that "agents do not queue checks or 
 - A run may wait at the start instead of slowing everyone down.
 - Queue time is not run time, so reported wall times exclude it.
 - Timing-sensitive measurements run alone, asking the host job queue for an exclusive run where available, or say they were contended. ADR 0072's caveat still applies: benchmarks taken while other runs contend are noisier, and claims state only what was measured.
-- The research dispatcher's per-benchmark lock in [Research campaign limits](../benchmarking.md#limits) is unchanged by this decision. [#1320](https://github.com/shgew/togi/issues/1320) decides whether a host job queue's exclusive run replaces it.
+- The research dispatcher's per-benchmark lock in [Research campaign limits](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#limits) is unchanged by this decision. [#1320](https://github.com/shgew/togi/issues/1320) decides whether a host job queue's exclusive run replaces it.
 
 Amendment (2026-10-29): [#1320](https://github.com/shgew/togi/issues/1320) removed the research dispatcher's per-benchmark lock; the campaign's other limits remain.
+
+Amendment (2026-11-10): [R01 in #1559](https://github.com/shgew/togi/issues/1559) retired campaign launching together with its limits.

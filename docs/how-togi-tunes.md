@@ -80,7 +80,7 @@ Status and watch distinguish applied/read-back, proposed and paused saved profil
 
 ## Costs
 
-A qualification completes a composite certificate for the proposed profile, so each step can cost a night or several. Time already spent never counts twice: a pass at an unchanged CCD can be reused where [the workload spec](spec/workloads.md#coverage-matrix) allows. The simulated benchmarks for this policy are scored by [the registered day/night gate](benchmarking.md#daynight-gate); this document states no measured duration.
+A qualification completes a composite certificate for the proposed profile, so each step can cost a night or several. Time already spent never counts twice: a pass at an unchanged CCD can be reused where [the workload spec](spec/workloads.md#coverage-matrix) allows. The external [day/night scorer is retired](benchmarking.md#daynight-gate); this document states no measured duration.
 
 Earlier rulesets are recorded in [Ruleset history](#ruleset-history), the changelog and the [ADR index](adr/README.md). Historical ADRs keep their original terms and decisions; follow their supersession links rather than treating every old decision as active.
 

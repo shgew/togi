@@ -2,7 +2,7 @@
 
 `togi-tool-sim` (`just sim`) runs a whole tuning session on the seeded simulator of the `togi-sim` crate: a 16-core Zen 5 machine with hidden per-core limits, random failures and crashes. It needs no hardware and no root, and works on every development platform. It is a development program: the package does not ship it, so it runs from a source checkout.
 
-The simulator is a model, not the machine. Research that runs it follows [Research campaigns](benchmarking.md#research-campaigns): model development changes the model under the [model program](../tools/fit/program.md), every other mode keeps the simulator frozen, and a simulated gain never lifts the tuner program's [evidence volume](../tools/bench/program.md#hard-rules) freeze. A simulated night ends where a real one does: when the operator ends it (`--night-hours`) or a dead end stops it.
+The simulator is a model, not the machine. [Campaign launching and day/night scoring are retired](benchmarking.md#research-campaigns). The existing simulator and research libraries remain for their current callers; they prove mechanics, not tuning policy or hardware reliability ([simulator role](development.md#simulations-and-research)). A simulated night ends where a real one does: when the operator ends it (`--night-hours`) or a dead end stops it.
 
 ```sh
 just sim [--seed N] [--machine FILE] [--replay-facts] [--recorded-content] [--night-hours N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
@@ -302,9 +302,9 @@ failed or unfinished qualifications are not counted as completed application evi
 failures carry the adapter's CPU-suspect classification; interrupted or inconclusive trials do not invent a failure.
 These read-only diagnostics remain available without retaining the full event list and do not change tuner decisions.
 The calendar idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat.
-Its gate scores omit that overhead; actual overhead must be measured on hardware under the
+The retired gate scores omitted that overhead; actual overhead must be measured on hardware under the
 [production workload rules](spec/workloads.md#durations-and-checking-schedule).
-The registered benchmark and its gate reporting are described in [benchmarking](benchmarking.md).
+[Benchmarking](benchmarking.md#daynight-gate) records the retirement and historical-source access.
 
 The default calendar contains 730 days, with day zero on Monday, eight active daily hours,
 and an allocation of eight testing hours on Monday, Wednesday and Friday. The allocation is
@@ -499,7 +499,7 @@ feasibility or authorize nonzero deployment.
 
 ### Successor calendar runner
 
-`togi_simrun::day_night::successor` is the run path for the successor registration ([#1457](https://github.com/shgew/togi/issues/1457), [#1481](https://github.com/shgew/togi/issues/1481)), separate from the frozen Ruleset 13 adapter above, whose behavior it does not change. [Benchmarking](benchmarking.md#successor-daynight-run-path) documents the commands. It runs a policy through the [successor physical-core truth](#successor-physical-core-truth) and fills a policy-neutral `Record`; it applies no thresholds and issues no verdict.
+`togi_simrun::day_night::successor` remains a library for its current callers, separate from the Ruleset 13 adapter above. Its external registration, run and score commands are [retired](benchmarking.md#successor-daynight-run-path). It runs a policy through the [successor physical-core truth](#successor-physical-core-truth) and fills a policy-neutral `Record`; it applies no thresholds and issues no verdict.
 
 `run(config, policy)` takes a `RunConfig` (calendar, provenance identifying scenario, seed, unit membership and mode, epochs, daily mix, `jobs`, resource class, compilation seconds and an optional wall-clock deadline) and a `&mut dyn Policy`. An empty `epochs` is filled from the truth's reference epochs, and an empty daily mix derives the truth's registered mix. A policy reports finishes, its allowance ledger, learning events with their classifications and its stopped units through `Policy::report`, which returns the `PolicyReport`. The policy never sees the scenario, true event cause, hazard or safe profile; truth stays on the record's metric side. The comparators are stock forever (`CoZero`) and the shipped Ruleset 13 adapter. Neither defines a shared successor allowance. The Ruleset 13 adapter reports classified learning events from its actual daily observations and conclusive night failures; stock reports none, and its unavailable events are classified `Unreported`.
 
@@ -509,7 +509,7 @@ Readbacks are exact per-core vectors, never collapsed to a CCD value. The runner
 
 On a firmware change the runner resets to stock and records the exact previous whole profile and the stock readback. It includes only the qualification witnesses, clean stock hours and restoration step that the policy's report supplies; the runtime invents none of them, so a restoration the policy does not report is recorded as blocked with its reason, never as a fabricated qualification or a restoration. A restoration after the original first-finish boundary carries both the restoration-learning and post-finish tags, which overlap rather than add. A crash on it records the step back to stock and the stopped units. No grace interval follows a truth or firmware transition.
 
-Elapsed execution is bounded by `deadline`. When it passes, `run` returns `Ok` with a `Record` whose outcome is `truncated`, and no verdict; it never shortens the horizon or marks an unfinished trajectory crash-free. The CLI persists the records and a manifest. `Record` carries the `jobs`, resource class, compilation and wall-time fields for that manifest, and an absent timing stays absent, not zero. The record's status is one of `complete-converged`, `complete-unconverged-crash-free`, `complete-unconverged-with-co-crashes`, `truncated` and `harness-error`.
+Elapsed execution is bounded by `deadline`. When it passes, `run` returns `Ok` with a `Record` whose outcome is `truncated`, and no verdict; it never shortens the horizon or marks an unfinished trajectory crash-free. The retired external commands persisted the records and a manifest. `Record` still carries the `jobs`, resource class, compilation and wall-time fields they wrote, and an absent timing stays absent, not zero. The record's status is one of `complete-converged`, `complete-unconverged-crash-free`, `complete-unconverged-with-co-crashes`, `truncated` and `harness-error`.
 
 The calendar still idealizes zero setup and teardown and omits hardware controller-placement exclusions and required repeats; these records establish no real-night feasibility. No successor candidate policy is available on this layer, and no registration scoring run has been made.
 

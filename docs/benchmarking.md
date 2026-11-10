@@ -1,8 +1,8 @@
 # Benchmarking
 
-`togi-tool-bench` (`just bench`) runs the legacy session suite and compares simulated session metrics for on-demand research. Its historical time-to-conclusion objective is not the Ruleset 13 production-policy objective; use the registered [day/night gate](#daynight-gate) for that. Like `togi-tool-sim`, it is a development program and is not shipped.
+`togi-tool-bench` (`just bench`) runs the legacy session suite and compares simulated session metrics for on-demand research. It is a development program and is not shipped. Its metrics do not establish a profile's daily-use safety.
 
-Autonomous research follows [Research campaigns](#research-campaigns): its modes, limits, prohibitions, record and end state, then the mode's program and the issue's brief. [Methodology](#methodology) owns the evidence required for target-machine claims.
+[Methodology](#methodology) owns the limitations of fitted-model evidence. Day/night scoring and campaign launching are [retired](#daynight-gate); normal bench, baseline, same/smoke, simulator, audit, stats and original trial evidence remain.
 
 ```sh
 just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR] [--jobs N] [--max-boots 1000]
@@ -39,7 +39,7 @@ Rejected: a Holm correction across the then-52 eligible groups would have made t
 
 ### Crash cost and stray-crash exclusion
 
-A crash is evidence like another failure, and a cost beside time when choosing tuner rules. Between comparably deep profiles, fewer crashes is better; added crashes need evidence of the depth or safety they buy. Median crash count is a gate criterion when registering a search comparison: the historical Ruleset 11 gate required a median below Ruleset 10's 426.5 on `target-shared-voltage`. That threshold is history, not a new condition on the [Ruleset 13 day/night gate](#daynight-gate), whose registration owns its crash criteria.
+A crash is evidence like another failure, and a cost beside time when choosing tuner rules. Between comparably deep profiles, fewer crashes is better; added crashes need evidence of the depth or safety they buy. The historical Ruleset 11 gate required a median crash count below Ruleset 10's 426.5 on `target-shared-voltage`; that threshold is history, not a current gate.
 
 Exclude stray crashes from this tuner-rule cost: no togi offset was in force, either before any offset was applied in the boot or after the baseline was restored. The tuner cannot act on them; stray-crash streaks remain a recovery concern ([tuner spec](spec/tuner.md)). This exclusion survives the earlier decision to count only reboot time.
 
@@ -80,174 +80,23 @@ Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds s
 
 ### Gates
 
-The legacy session suite registers no gate and `just bench` judges none: a session's conclusion cannot measure a profile's daily-use safety. Ruleset 13 registers the separate [day/night gate](#daynight-gate) below. Earlier rulesets' gates are historical records, kept under [`tools/bench/gates/`](../tools/bench/gates/) and not re-scored.
+The legacy session suite registers no gate and `just bench` judges none: a session's conclusion cannot measure a profile's daily-use safety. Earlier rulesets' gates are historical records, kept under [`tools/bench/gates/`](../tools/bench/gates/) and not re-scored.
 
 ### Day/night gate
 
-**Ruleset 13: implemented and shipped in v0.12.0; registered gate not met; superseded by the successor design.**
+Day/night experiment gates, successor registration/scoring and campaign launching were retired by [R01 in #1559](https://github.com/shgew/togi/issues/1559). They are not product acceptance conditions. This removal changes neither production tuning decisions nor `SCHEMA` or `RULESET`.
 
-This section and [`tools/bench/program.md`](../tools/bench/program.md) preserve the original registration as a versioned historical record, not an active acceptance target. The registration's SHA-256 is `c3a5c447cb245d973951c03f34d97f25aa19dff7970e1b8e31d3a7de883f6918`, pinned in the bench's archive tests; its bytes and the registered rules below remain unchanged.
+The annotated historical-source tag [`archive/pre-cut`](https://github.com/shgew/togi/tree/archive/pre-cut) retains the evaluator sources, registrations and [original instructions](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#daynight-gate). It is not a product release. Reproducing those experiments requires that historical source, not current commands.
 
-The [2026-10-25 read](https://github.com/shgew/togi/issues/1217#issuecomment-6403197212) was a reduced development read: seeds 1–10, 22 scenarios, 730 days and fallback slopes 1.5 and 2.0. Policy A, the Ruleset 13 policy as drafted in [#1261](https://github.com/shgew/togi/pull/1261) at an unrecorded revision, passed 0/22 scenarios at each slope; this is not a measurement of the v0.12.0 release. It was **not the registered 200-seed score**; no full registered pass was obtained, and holdout was never run. Independently, the −50/−45 contradiction ([#1457, defect 1](https://github.com/shgew/togi/issues/1457)) rejects the old acceptance: the no-write-limit truth reference demands depth 50, while the policy's censored-edge margin limits depth to 45. The [B′ research note](research/bprime-research-note.md) preserves the exploratory comparator's evidence and provenance limitations; it is not product behavior.
-
-Reproduce the historical evaluator at release tag **`v0.12.0`**, commit `db742596a05511713eb503324fad826fb1124f34`. The bench evaluator sources (`crates/togi-tool-bench/src/day_night*.rs`) are identical at that release and commit `361e1bf1618259e21ba761a477cac2f66c3e4994`; the calendar runner/adapter sources in `togi-simrun` have changed, so use the release checkout for historical reproduction. The old scoring commands, recorded here without executing them, are:
-
-```sh
-just bench-day-night --split dev --policy ruleset13 --slope 1.5
-just bench-day-night --split dev --policy ruleset13 --slope 2.0
-```
-
-Outstanding hardware acceptance remains in [#1459](https://github.com/shgew/togi/issues/1459).
-
-Successor registration is tracked in [#1457](https://github.com/shgew/togi/issues/1457).
-
-#### Original Ruleset 13 registration
-
-[`tools/bench/day-night.json`](../tools/bench/day-night.json) is the Ruleset 13 registration for [#1216](https://github.com/shgew/togi/issues/1216). It is committed before any scoring. It freezes 200 development seeds and 200 disjoint holdout seeds, 730 calendar days, eight active daily hours, three eight-hour nights a week, the scenario set, incremental hazard budget, thresholds and tail treatment. Iterate on development seeds; reserve holdout for the real policy's once-only confirmation, separately at the fallback slopes 1.5× and 2×. Neither comparator is the real policy, and comparator results cannot pass this gate. The real policy is `--policy ruleset13 --slope <1.5|2.0>` (the slope is the per-count hazard multiplier; the policy's `beta` is its natural log) and is the only policy whose verdict fails the gate.
-
-```sh
-just bench-day-night --split dev
-just bench-day-night --split dev --out day-night.jsonl
-```
-
-The command runs **CO 0 forever** and **fixed margin** over every registered scenario, or only the policies named by repeating `--policy <name>`. `--slope <1.5|2.0>` sets the fallback slope of a policy that takes one; it must be a slope the registration lists, and a policy without a slope refuses it. `--jobs N` runs that many scenario × seed × policy runs at once (default the available parallelism); records, JSON Lines and tables keep registered scenario order, then seed, then policy order, whatever order the threads finish in. Output is a per-scenario metrics table, then for each policy a Markdown verdict table: each criterion's measured value, its relation to the registered threshold, `✗` on a failing cell, and PASS or FAIL per scenario, ending in `ruleset-13-day-night: PASS|FAIL`. A comparator's table is labelled *diagnostic (not a gate pass)* and the command exits 0; a failing policy under test exits nonzero. A final table gives each scenario's mean night hours and mean run wall seconds, then the total wall time. `--out` preserves per-seed metrics and the run's wall seconds (`wall_s`) as JSON Lines, written once every run has finished. This experiment is in memory, independent of the legacy session suite and baseline. It does not run hardware. [Simulating](simulating.md#calendar-daynight-experiments) owns the truth, calendar, policy seam and comparator behavior.
-
-True safe uses the hazard **CO adds over stock**, not total failures: λ* = 1/3,000 active hours jointly and λ*/CCD-count on each CCD. It is the deepest admissible profile in the write range; both-CCD interaction risk must satisfy the joint bound too. The reference repeats the ordered eight-hour daily mix and sixteen-hour sleep at periodic thermal equilibrium, integrating hidden classes, delayed onsets and intended durations. Policy-dependent night heating changes actual simulated risk, not this reference target. Total depth wins, then balanced CCD depth, then lexicographically smaller depths break ties. Only metrics can inspect the oracle; policies see machine-seam observations, never true safe.
-
-The table distinguishes true CO-caused daily crashes from CPU-suspect classifications, which can include wrong or missing answers to non-CPU unclean ends. Per-CCD metrics retain first-year crashes, convergence day, maximum overshoot, cap-promotion steps, first converged and final depth, and counts retreated on background alone versus new CO evidence. Sleep is wall time only, not daily or trial exposure. A moving-cap scenario reports steps separately; its count does not enter the fixed-cap bound. A firmware change invalidates prior qualification and returns day offsets to stock.
-
-The calendar gate idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat. Its scores therefore omit that overhead. Actual overhead must be measured on hardware; the [production workload rules](spec/workloads.md#durations-and-checking-schedule) still charge launch/cleanup and required repeats to task time.
-
-The registration is authoritative: covered-class climb is crash-free in at least 90% of seeds; hidden-class first-year crashes are at most two per CCD in at least 90%; maximum overshoot is at most one count in at least 95% and never more than three; median days within one count of true safe is at most 90; after two years on the stock-background scenario at least 90% keep converged depth minus one; fixed caps need at most seven promotions per CCD. Each criterion is evaluated per scenario using each seed's worst CCD, never pooled. Every censored or nonconverged run stays in the denominator, with infinite convergence time; partial counts cannot earn a pass. The committed registration describes applicable scenarios and exact empirical fractions. A failed score is an owner decision, not a reason to relax thresholds.
+Ruleset 13's gate was not met: the [reduced development read](https://github.com/shgew/togi/issues/1217#issuecomment-6403197212) was not the registered full score, and holdout was never run. The [B′ research note](research/bprime-research-note.md) and original trial evidence remain historical evidence. Outstanding hardware acceptance is recorded in [#1459](https://github.com/shgew/togi/issues/1459).
 
 ### Successor day/night run path
 
-This section is separate from the frozen [Ruleset 13 gate](#daynight-gate) above, whose registration, commands and rules it does not change. It documents the successor registration for [#1457](https://github.com/shgew/togi/issues/1457). The runner records physical-core trajectories; `successor` drives the production D tuner and projects its journal into finish, allowance, classification and application witnesses. Running the commands alone establishes neither acceptance nor hardware reliability.
-
-```text
-just bench-day-night --registration tools/bench/day-night-successor.json
-  --run-profile (reduced-dev | registered) --split dev --policy (co-zero | ruleset13 | successor)
-  [--slope (1.5 | 2.0)] [--mode ccd-uniform] [--jobs N] --out FILE
-just bench-day-night --registration tools/bench/day-night-successor.json
-  --run-profile (reduced-dev | registered) --split dev --policy (co-zero | ruleset13 | successor)
-  [--slope (1.5 | 2.0)] --score-from FILE [--score-from FILE ...]
-```
-
-The first form runs and then renders the scorer's tables; the second scores records written by earlier invocations without running anything. Concrete forms, shown as the intended commands and not as runs that have been made:
-
-```sh
-# Exploratory reduced read of the stock comparator at the first registered slope
-just bench-day-night --registration tools/bench/day-night-successor.json \
-  --run-profile reduced-dev --split dev --policy co-zero --slope 1.5 \
-  --out reduced-co-zero-1.5.jsonl
-
-# Registered development read of the shipped comparator at each slope
-just bench-day-night --registration tools/bench/day-night-successor.json \
-  --run-profile registered --split dev --policy ruleset13 --slope 1.5 \
-  --out dev-ruleset13-1.5.jsonl
-just bench-day-night --registration tools/bench/day-night-successor.json \
-  --run-profile registered --split dev --policy ruleset13 --slope 2.0 \
-  --out dev-ruleset13-2.0.jsonl
-
-# Score both retained slopes together, with no run
-just bench-day-night --registration tools/bench/day-night-successor.json \
-  --run-profile registered --split dev --policy ruleset13 \
-  --score-from dev-ruleset13-1.5.jsonl --score-from dev-ruleset13-2.0.jsonl
-```
-
-`--jobs` is omitted above, so each run uses the registration's pinned job count.
-
-`--registration` selects the successor registration; without it the command keeps its Ruleset 13 behavior. The registration is strictly parsed before anything runs, so a file that alters a settled threshold, seed range, run profile, budget or calendar constant is refused as not this experiment. The command prints the resolved registration and policy identity, including the registration's id, version and SHA-256 and the policy source identity, and refuses an incompatible slope or mode. The profile, split and policy are explicit selectors, and `--out` is required. The scored unit mode is CCD-uniform (`--mode ccd-uniform` is optional); a per-core mode needs its own registration and is refused. `--jobs` must equal the registration's pinned job count when given and defaults to it. The run writes `FILE.manifest.json` beside the records, described below.
-
-Every record also carries three hashes. The registration's raw-bytes SHA-256 is recorded as computed; the registration has no pin for it. The input hash is the SHA-256 of the deterministic serialization of the resolved registration with only `sources.input_sha256` set to null, so it does not refer to itself. The executing binary's SHA-256 is the third. The run compares the input and binary hashes against the registration's optional pins, refuses a mismatch and records the actual values.
-
-The comparators are `co-zero`, stock forever, and `ruleset13`, comparator `A` only at its registered Ruleset 13 source revision. On a Ruleset 14 stack that driver uses the current production tuner and is not comparator A. Use `--policy successor --slope 1.5` or `2.0` for D. The adapter derives its reports and application witnesses from journal records, never truth. `co-zero` has no policy parameter; on the successor path `--slope` selects its registered evaluation cell (default the first registered slope), whereas the frozen Ruleset 13 path refuses a slope for it. A candidate source still pending its reviewed pin is refused for both execution and retained-record scoring. The fixed-margin comparator does not exist in this registration.
-
-D's adapter uses `climb.decision` proposals only after their matching `day.applied` readback. `unit.edge`, `unit.stop`, campaign charge/reclassification and firmware-restoration records supply the remaining policy facts. Complete `night.qualification` records resolve their original fresh/reused exposure references to the source trial IDs used by the runner. Passing zero-profile control trials are linked by the certificate's exact recorded firmware and evidence epoch, not a time-window guess. Failed `trial.end` records supply classified night interruptions; a requalification citing that failure shares its event identity rather than duplicating the charge. A missing witness stays missing. These observations use one-based continuous calendar days.
-
-Reclassified-event restorations have their own application kind, separate from firmware restoration. Their causal receipt identifies the original retreat and exactly the units whose physical depths it reverted. The report retains the subsequent non-CPU reclassification, original allowance consumption, journaled hold and qualification, and any later crash veto; reclassification never refunds the allowance.
-
-Stock reports every decision unit finished on its first day with the explicit `fixed-stock` reason: choosing not to climb is a policy fact, not a discovered ceiling. It defines no allowance, so the ledger remains absent. Its observed all-zero history and absence of climb or restoration applications establish that the learning contract is inapplicable without inventing allowance evidence. This gives stock real post-finish exposure; it can meet the safety rows and non-benign usefulness rows while failing benign depth and convergence requirements.
-
-Comparator `A` has no terminal finish notion and no shared successor allowance. Its missing convergence, post-finish and learning-contract evidence therefore leaves those criteria unmet; this is unavailable evidence, not a measurement that its behavior is unsafe. Its final-profile admissibility and observed costs remain measurable. Comparator promotions, retreats and truth-cause losses come from observed summaries, independently of permission or qualification applications; a retreat without an identified event stays unattributed rather than asserting an unobserved cause.
-
-Each invocation runs one policy at one slope:
-
-|Run profile|Seeds and horizon|Budget (elapsed, excluding compilation)|Output|
-|---|---|---|---|
-|`reduced-dev`|first 10 dev seeds (20001–20010), every registered scenario, full 730 days|30 minutes|records, then the scorer's tables with per-criterion values, labelled **EXPLORATORY REDUCED DEV — NOT A REGISTERED SCORE**; no gate verdict or PASS|
-|`registered`, `--split dev`|all 200 dev seeds (20001–20200), every scenario, full horizon|12 hours|records, then the scorer's tables; a PASS or FAIL verdict needs records for every registered slope|
-
-These budgets are settled operational limits, not measured runtimes, and no completion time is forecast. The manifest records `--jobs` and the registration's resource class, compilation time apart from run time, total wall time, summed and maximum run wall time and the completion count. `just bench-day-night` measures its own build as compilation time; a direct run of an already built binary records zero compilation seconds, which is not a measurement of any build. A reduced read supplies no validated runtime estimate for a registered one.
-
-**Scoring.** After an invocation completes, both profiles render the scorer's tables against the registration's criteria. A registered verdict requires every registered slope: a single-slope invocation prints that the other slope's records are needed and issues no gate verdict. A comparator's table never reads as a candidate PASS. `--score-from` re-renders the same tables from retained JSON Lines (repeat it to combine invocations) with no run, manifest, `--out` or `--jobs`; omitting `--slope` scores every registered slope. Records whose pinned source identity does not match, or that are pending a pin, are refused. Scoring-only exits non-zero on FAIL, INCOMPLETE or an error; complete exploratory and diagnostic output exits zero. Budget expiry or a harness error retains the manifest and records, skips scoring and issues no verdict.
-
-**Budget expiry** is an interruption, not a result. The run persists its JSON Lines records and manifest, with the unfinished trajectory as a `truncated` record, and issues no verdict. The seed set, horizon and exposure are never reduced, and an unfinished trajectory is never marked crash-free. A truncated or missing record makes the experiment INCOMPLETE. The registration allows a development run to continue only under its deterministic continuation rule, and the holdout never; this run path does not implement resuming, so an expired run is not continued.
-
-**The holdout is refused.** The run path accepts `--split dev` only; `--split holdout` fails with an explicit error. The holdout has one confirmation per candidate and slope, spent when started, and only the registration's named once-only procedure and authority may run it. That procedure is not part of this recipe, and an interrupted confirmation stays spent. Neither the reduced profile nor any exploratory sweep authorizes it.
-
-#### Outcome statuses
-
-Run completeness is separate from utility and from observed crashes. Each record carries one status:
-
-- `complete-converged`: the full horizon was observed and a final qualifying settled interval exists.
-- `complete-unconverged-crash-free`: the full horizon was observed with no settled interval and no true CO-caused daily crash. Suspect and background events print beside it; zero CO-added crashes is not zero interruptions.
-- `complete-unconverged-with-co-crashes`: the full horizon was observed with no settled interval and at least one true CO-caused daily crash.
-- `truncated`: the trajectory stopped before its horizon, with the observed-until day, reason and lower-bound counts and exposure. A runner that actually stops may not claim completion.
-- `harness-error`: invalid execution, not a stochastic policy outcome; the error and provenance are retained.
-
-Any truncated, missing, duplicate, errored or incompatible record makes the overall experiment INCOMPLETE, never PASS. Partial counts print separately and are never zeros. Nonconvergence is not censoring: a complete unconverged run contributes its observed safety and fails convergence, retention and depth as applicable.
-
-#### Risk and learning accounts
-
-The learning allowance is a machine account, two CPU-suspect events per machine, shared across unit modes and never replenished by reset, firmware or mode change. Consumption is an uncapped count; remaining is `max(limit − consumed, 0)`; overspend is separate. Reclassifying an event neither refunds its charge nor reopens a stopped unit. Each event counts once, by its unique identity.
-
-The allowance bounds permission to keep climbing. It is not post-finish risk: a later crash is neither prevented nor excused by finishing, and an event at a nonzero profile remains charged after its phase ends. Learning and post-finish events, expected failures, true CO crashes and active hours therefore stay in separate accounts. A firmware restoration after the first-finish boundary is tagged both **restoration learning** and **post-finish exposure**. These overlapping labels are not disjoint counts, so do not sum them; each machine event still counts once in the totals.
-
-Actual-history expected failures are integrated over the trajectory's real thermal history, daily exposure, interruptions and preceding nights. The reference rate repeats the registered daily mix at periodic equilibrium and excludes policy-dependent night heating. The two are reported side by side and never substituted for each other.
-
-**Firmware restoration** records the previous whole profile and the stock reset with its exact per-core readback. The new-context exact-profile qualification witnesses, 50 clean verified daily stock hours and the single whole-profile restoration step appear only when the policy's report supplies them; the runtime never invents them. Current session stock attestation is an application safety prerequisite, not a stock-control workload witness. A restoration the policy does not report is recorded as blocked with its reason. A CPU-suspect crash on a restoration charges the unchanged account, steps back to stock and stops the restored units. No grace interval or exclusion applies to the transition: a restored profile that is physically unsafe fails despite valid qualification.
-
-**Reclassified restoration** is a separate additive step, not a firmware restoration or a new climb. Its retreat/event links identify all units restored together to exactly their contradicted pre-retreat depths. The record supplies the non-CPU answer time, fresh current-profile hold witness, exact-profile certificate, historical consumed counts and whole-profile crash veto witnesses. The learning audit checks these against the observed applications, daily hours, classifications and observable certificate contexts. Permanent stops and raw charges survive restoration; later promotions, refunded charges and restored-profile crashes without ordinary escalating retreat, veto and charge are violations. The per-seed learning table reports these steps and their units separately. [Ruleset 14 §5 and §7](spec/tuner-ruleset14.md#5-newest-step-blame-stop-and-the-machine-allowance) own the permission rules; certificate safety checks attest the remaining application blockers. This record extension changes no existing criterion or comparator outcome.
-
-**Exact per-core readbacks.** The successor path keeps the whole physical-core vector at every readback and application; it never collapses to a CCD minimum or average as the Ruleset 13 path does. Readbacks that omit or add a core are refused.
-
-**Stock and the shipped comparator.** Stock's day-one `fixed-stock` finishes establish its post-finish boundary without claiming a discovered ceiling. Neither comparator reports a shared learning allowance, successor climb permission, or a ceiling witness at the successor's retained margin, and the runner does not invent them. Comparator `A` also reports no successor-style first finish: the shipped policy's own stop and ceiling notions are not equivalent to that contract. `ruleset13` reports classified learning events and reclassifications taken from its actual daily observations and conclusive night failures, with the exact readback. Its applied climb and restoration certificates retain the production journal's qualification evidence without asserting successor permission. Stock reports no event classifications, so its unavailable classifications are `Unreported`. Promotions and retreat costs are still observed from the trajectory, and the safety and exposure accounts still come from the truth side.
-
-**Qualification launch counts.** Unit summaries count observed trials cited by applied climb or restoration certificates, including their fresh and reused witnesses. They do not count failed, incomplete or unapplied qualification attempts. These counts describe the evidence supporting applied profiles, not every qualification launch attempted by the policy.
-
-Qualification context checks resolve the certificate's epoch to its observable context. A hidden moving-limit epoch in the same context does not invalidate qualification; a firmware context change does. An unknown certificate epoch remains invalid.
-
-#### Limitations
-
-The calendar idealizes zero trial setup and teardown and applies no controller-placement exclusion or required repeat, so these records omit that overhead, as the [Ruleset 13 gate](#daynight-gate) does. The hardware's actual overhead must be measured and the [production workload rules](spec/workloads.md#durations-and-checking-schedule) still charge it. The Poisson upper rate is a model-based diagnostic, not an adaptive-policy guarantee. Synthetic trajectories and their hazard are not hardware evidence, establish no real-night feasibility and authorize no nonzero deployment.
+The external run and score commands are retired. The calendar runner, policy reports and physical-core truth libraries remain for their existing callers; they are not a surviving scoring interface.
 
 #### Successor registration
 
-[`tools/bench/day-night-successor.json`](../tools/bench/day-night-successor.json)
-owns the numbers, applicability, source pins, commands, profiles and execution
-limits for [#1483](https://github.com/shgew/togi/issues/1483), separately from the
-frozen Ruleset 13 record. It registers CCD-uniform evaluation against all
-successor physical-core truths, not per-core-policy acceptance.
-
-D's source is explicitly `{"kind":"pending"}`. A separate reviewed commit must
-pin it and register implemented candidate commands before any D scoring.
-The registered development commands name the implemented comparators only.
-Comparator A's complete-unconverged outcomes and observed safety remain as
-reported; unavailable finish evidence is not fabricated convergence.
-
-The holdout remains sealed and is refused by the pinned runner: its command
-field records refused invocations, not executable confirmations. A later
-reviewed implementation and the repository owner's explicit authorization in
-the issue are required, and only the owner runs the confirmation. Any executed
-confirmation is spent, interrupted included; failure
-stays failed. Registration does not authorize scoring, a campaign, a
-compatibility switch or deployment.
-
-Concurrency is fixed by the registration. Changing it requires separately
-identified registration/input provenance; the execution budget can affect
-completeness, so a different job count is not the same registered invocation.
-
+The [archived registration](https://github.com/shgew/togi/blob/archive/pre-cut/tools/bench/day-night-successor.json) is historical only. It authorizes no campaign, confirmation or deployment.
 
 ### Historical gates
 
@@ -488,124 +337,13 @@ sudo chown -R "$(id -u):$(id -g)" "$copy"
 
 ## Research campaigns
 
-A research campaign is a finite run of experiments by an agent following one issue's brief. Only the owner starts one, naming the issue, the limits and the output directory; a brief, a readiness change or a scheduled issue is not authorization. This section owns the rules every campaign shares; a mode's program and an issue's brief add only their own.
+The campaign dispatcher and its launch, resume, evaluator, ledger and report interfaces are retired by [R01 in #1559](https://github.com/shgew/togi/issues/1559). There is no current campaign-launch command or compatibility path.
 
-### Modes
-
-| Mode | Rules | May change | Ends in |
-|---|---|---|---|
-| Model development | [`tools/fit/program.md`](../tools/fit/program.md) | the failure model and the fitter | a report; a kept model becomes a model-only pull request |
-| Production policy experiment | [`tools/bench/program.md`](../tools/bench/program.md) | tuner decisions in `crates/togi-tuner/src/policy/` | a report; kept changes become sub-issues of the open `Ruleset N` |
-| Fixed-policy observation | the issue's brief | analysis tools and research-only fixtures; the tuner, configuration and simulator stay unchanged | a report |
-
-Observation measures the unchanged tuner. Its conclusions about another policy are labelled counterfactual: removing events from an observed journal is not what a different tuner would have done. #503 starts only in this mode. A simulated gain never lifts its evidence freeze or the [evidence volume](../tools/bench/program.md#hard-rules) rule; a production change for either needs a validated #480 forward score and an owner-approved design under #979.
-
-| Issue | Mode | Brief |
-|---|---|---|
-| [#427](https://github.com/shgew/togi/issues/427) | model development | [`tools/fit/research/427.md`](../tools/fit/research/427.md) |
-| [#480](https://github.com/shgew/togi/issues/480) | model development, diagnostic only | [`tools/fit/research/480.md`](../tools/fit/research/480.md) |
-| [#503](https://github.com/shgew/togi/issues/503) | fixed-policy observation, feasibility only | [`tools/bench/research/503.md`](../tools/bench/research/503.md) |
-
-An issue without a brief has no campaign; #428's brief waits for #427's parameterization, and #490 and #896 were retired by Ruleset 13 ([#1217](https://github.com/shgew/togi/issues/1217)) together with the stats analyses they read. Each brief names its mode, its finite candidate queue, permitted and forbidden data, writable paths, metrics, keep and stop rules, result format and prerequisites. A prerequisite that has not landed stops the campaign before its first candidate. Every campaign runs through the `just research` dispatcher, which validates its manifest and writes its record ([below](#the-dispatcher)).
-
-### Limits
-
-By default a campaign runs at most 8 hours of wall time and 12 substantive candidates. It stops at the first exhausted limit. A substantive candidate is one entry of the brief's queue evaluated against the reference; reference runs and a confirmation belong to the candidate they serve. The owner may override any limit at launch. A monetary or API spending cap is a launch parameter of the agent runner, never chosen by a brief; without one, a paid agent does not continue unattended.
-
-The bench's per-simulator `--timeout` and `--max-boots` bound one simulated session. They are not campaign limits, and a campaign keeps them.
-
-### Prohibitions
-
-In every mode a campaign never:
-
-- runs `togi run`, `togi reset` or `just hardware`, or touches hardware, the SMU, the watchdog, the boot loader or a live state directory;
-- refreshes evidence (`just facts`), regenerates fitted machines, the anchor or overlays into `tools/bench/machines/`, or re-records a baseline (`just bench-baseline`);
-- acquires target evidence, deploys or merges;
-- writes outside its brief's writable paths and the campaign's output directory.
-
-Launch it unprivileged, in its own worktree, with no access to live state or hardware and no privileged credentials. The manifest and diff checks catch mistakes; they are not a security sandbox.
-
-### The record
-
-A campaign writes its record to the output directory the owner names, outside the checkout, so nothing it commits can include it:
-
-- `manifest.json`: a byte copy of the launch manifest: issue, mode and hypothesis queue; checkout and reference revisions; the approved session allowlist and canonical input hashes; the suite and split, which fix scenarios and seeds; frozen-file hashes, which always include the brief and the build environment (`Cargo.lock`, `flake.lock`, `rust-toolchain.toml`); writable paths; limits; output directory; and the confirmation allowance. A missing or changed manifest, or a frozen input whose hash changed, stops the campaign; nothing refreshes it silently.
-- `experiments.jsonl`: append-only, never edited. Each evaluation run has a start line, written before it runs, and an end line. A confirmation run has its own lines, which name the candidate they serve. A start line without an end line is an incomplete run. A start line holds the candidate, its role, the command, `HEAD`, the hash of the candidate's changes, the reference revision and every pinned hash. An outcome line holds the typed outcome, its reason, full-precision metrics and the runs it rests on. What killed or failed writes left, the bytes after the last newline and any cut-off lines before them, is never a record, even a complete record that lost only its newline: the next append ends it with a newline and keeps it, hex-encoded, in a `ledger_torn` line. A complete line that does not decode stays an error. A `confirmation_failed` outcome or a timed-out run stops the campaign even if a torn write lost the stop line written with it.
-- the raw stdout and stderr of every evaluation command;
-- `report.md`: the final report.
-
-Rules for the record:
-
-- Decide each outcome from the typed metrics and the brief's keep rule, never from exit status: the bench exits 0 on REJECT and NEUTRAL, and model flags change neither verdict nor exit ([Comparing two versions](#comparing-two-versions)).
-- Never select a winner from an incomplete or unpaired comparison. Record every candidate, rejected, negative and invalid ones included.
-- On rejection, restore only the experiment's own changes and keep unrelated work.
-- A confirmation is spent when it starts: its start line binds the candidate, reference and data hashes. An interrupted confirmation stays spent, and a resumed campaign never repeats it.
-- A resumed campaign appends to the same ledger; its interrupted experiments stay incomplete.
-
-The campaign stops with one reason: its queue is exhausted, a limit is exhausted (wall time or candidates), a confirmation failed, evidence or a frozen input changed, a forbidden diff appeared, a comparison was unpaired, a prerequisite is missing, or it was interrupted.
-
-### The dispatcher
-
-`just research ISSUE ACTION` runs one step of a campaign; it is `togi-tool-bench research`. It chooses no experiment and runs no agent: the researcher calls it for each step, and it refuses whatever the brief and manifest do not allow. Every action that writes holds the run directory's lock without waiting, so a second dispatcher on the same campaign is refused.
-
-| Action | What it does |
-|---|---|
-| `check --manifest FILE` | Validates the manifest against the tree and creates nothing. |
-| `start --manifest FILE` | Validates the manifest, requires `HEAD` at its checkout with no changes, a reference that differs from it only at writable paths and a new output directory outside the checkout, copies the manifest and writes the ledger's first line. |
-| `exec --run DIR --candidate ID --role ROLE -- RECIPE ARGS` | Runs one evaluator through `just`, as described below, keeping its stdout and stderr under `raw/`. |
-| `outcome --run DIR --candidate ID --outcome OUTCOME --reason TEXT --metrics FILE` | Records the researcher's outcome (`kept`, `rejected`, `invalid`, `confirmation-passed` or `confirmation-failed`) with the metrics it read, as a JSON object of numbers. |
-| `stop --run DIR --reason REASON` | Stops the campaign with one of the stop reasons above. |
-| `resume --run DIR` | Records the runs a killed dispatcher left unfinished as incomplete, then lets the campaign continue. |
-| `report --run DIR --notes FILE` | Writes `report.md` from the ledger and the researcher's notes on the remaining uncertainty. |
-
-A manifest is JSON. Hashes are SHA-256 in lowercase hex; a gzip input is pinned by its decompressed bytes. `inputs` is for model development and `suite` (`path`, `sha256`, `split`) for observation. `limits` defaults to the values above. The owner writes, for example:
-
-```json
-{
-  "issue": 427,
-  "mode": "model-development",
-  "hypotheses": [{"id": "shared-core", "statement": "a shared per-core term improves the forward score"}],
-  "checkout": "<40-hex commit>",
-  "reference": "<40-hex commit>",
-  "inputs": [{"path": "<approved artifact>", "sha256": "4b47590e…",
-              "development": ["20260924T204352Z", "…", "20261002T235548Z"], "confirmation": ["20261004T000701Z"]}],
-  "suite": null,
-  "frozen": [{"path": "Cargo.lock", "sha256": "…"}, {"path": "flake.lock", "sha256": "…"},
-             {"path": "rust-toolchain.toml", "sha256": "…"}, {"path": "tools/fit/research/427.md", "sha256": "…"}],
-  "writable": ["crates/togi-sim/src"],
-  "limits": {"wall_minutes": 480, "candidates": 12},
-  "output": "/absolute/path/outside/the/checkout/run-1",
-  "confirmations": 1
-}
-```
-
-The dispatcher refuses a manifest whose issue has no brief or names another mode, whose sessions are not that issue's approved ones, which leaves the environment or the brief unpinned, or whose writable paths overlap evidence, fitted machines, baselines, the tuner, the run loop, the hardware path, the dispatcher, the programs and briefs, the build environment or a pinned file. Observation may not write the simulator or the fitter either.
-
-Before `exec` and `outcome` record anything, the dispatcher checks that the campaign has not stopped, that no run is left unfinished, that wall time remains, that every pinned file still has its hash and that each facts input still holds exactly its named sessions. It also checks that `HEAD` descends from the checkout and that every changed path is a writable one. A failed check after the start stops the campaign with its reason. A refused command records nothing.
-
-If the current wall time precedes the campaign's recorded start, the dispatcher refuses the action with an elapsed-time error and records nothing. It does not treat an inverted interval as zero or restore the full wall-time budget.
-
-`exec` allows only its mode's evaluators. Model development's `forward` evaluator invokes `just fit --forward-only` (`--facts`, `--seal`, `--jobs`, `--records`); `fit` finalizes a confirmed candidate (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`), alongside the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the committed extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation runs only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`). The campaign neither sets nor bounds evaluator worker counts: `--jobs` passes through like any other allowed flag, and the evaluator's own default applies when it is absent. Each run makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
-
-An evaluator that ignores that termination gets 5 seconds to exit before the dispatcher kills its process group, so a campaign can run at most that long past its wall limit.
-
-An observation campaign analyses what its `bench` run kept with tools that simulate nothing. They are not evaluators and run outside `exec`: they read the run directory and the frozen fixtures, write only under the run directory, and the report names each command.
-
-The roles enforce the comparison's order:
-
-- A `reference` run needs the tree at the reference revision.
-- A `candidate` run past the candidate limit stops the campaign.
-- In model development, `kept` needs a complete candidate run paired with a complete reference run of the same command and data, where each run's `--records` path may differ; otherwise the campaign stops as unpaired. Observation needs a complete candidate run.
-- A `confirmation` needs a kept candidate whose changes are unchanged since its run, and a confirmation the manifest allows. It is spent when its start line is written. Its `confirmation-reference` run follows it, and its outcome needs both to be complete.
-- `confirmation-failed` stops the campaign. A `finalization` run needs a passed confirmation at the same changes.
-
-### End state
-
-A campaign completes its approved experiments, records every outcome, writes the report, may open a reviewable result pull request when its brief allows one, and stops. The report reconciles the ledger, the exact comparisons, the limits used, the confirmation status and the remaining uncertainty; it names the run directory only as `$RUN` and lists any outcome that rests on an incomplete run. A negative, no-change or interrupted campaign is a complete deliverable, never a reason to relax a gate. Published summaries and artifacts follow [Writing](../AGENTS.md#writing): no private state paths, raw host journals or identifying data.
+The [historical campaign instructions](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#research-campaigns), programs and issue briefs remain source history, not authorization to launch a campaign. Individual retained development tools still have the commands documented on this page. Simulations prove mechanics, not tuning policy or hardware reliability ([simulator role](development.md#simulations-and-research)).
 
 ## The bench (`togi-tool-bench`)
 
-`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same` and `just smoke` run its `same` command ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). `just research` runs its `research` command, the [campaign dispatcher](#the-dispatcher).
+`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same` and `just smoke` run its `same` command ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command).
 
 ```sh
 just bench --split dev --baseline BEFORE.jsonl --out AFTER.jsonl

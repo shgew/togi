@@ -27,7 +27,7 @@ Use signed offsets in [−50, 0], with smaller values deeper. For each unit i:
 
 A proposal may not be deeper than any applicable C. A newly observed shallower edge is genuinely adverse evidence: if it makes `D_i < C_i`, retreat to a componentwise shallower permitted profile without waiting for a hold. Apply that target only if its exact qualification is valid; otherwise use CO 0 until it qualifies. A unit whose applied step is undone by this adverse retreat stops climbing under §5. Unknown or incompatible evidence after firmware change takes the reset path, not an assumed edge of zero.
 
-The U+5 choice is a margin, not proof about daily hazard. The successor gate must show the physical −50 frontier and the operational −45 ceiling separately on censored write-limit cases. Neither design changes that margin after seeing scores.
+The U+5 choice is a margin, not proof about daily hazard. The [retired](../benchmarking.md#daynight-gate) successor gate was specified to show the physical −50 frontier and the operational −45 ceiling separately on censored write-limit cases. Neither design changes that margin after seeing scores.
 
 ### Operator-attested stock stability
 
@@ -171,7 +171,7 @@ CCD tuning is coarse preparation. The subsequent core phase uses the **same stat
 
 At eight applied hours/day the 700 h coarse example is 87.5 days; adding one or two core steps each makes approximately **1,500–2,300 h total**, or **188–288 active-use days**. Five additional counts per core makes 3,100 h total, approximately 388 days. **[INFERENCE: arithmetic with fixed ceilings, all clean holds and certificates ready on time; no empirical claim that real core gaps will be one or two counts.]** If nights reveal larger gaps, apply the same rule and report the larger cost; do not silently truncate refinement and call the per-core goal complete.
 
-At the existing 5.38 h certificate size, fourteen coarse steps schedule about 75 h of qualification execution; sixteen or thirty-two core steps schedule about 86 h or 172 h more, before controls, mapping, requalification, overhead and repeats. **[INFERENCE: unchanged matrix sizing, not measured hardware throughput.]** Exact-profile certificate reuse and preparing candidates during holds keep nights from needlessly repeating unchanged local cells. They cannot remove the linear daily-hour floor. The successor gate must include actual per-core truth and report the two phases separately; if useful refinement needs too many serial holds, D has a tractability failure to submit for an explicit policy decision, not permission to shorten holds or relax coverage.
+At the existing 5.38 h certificate size, fourteen coarse steps schedule about 75 h of qualification execution; sixteen or thirty-two core steps schedule about 86 h or 172 h more, before controls, mapping, requalification, overhead and repeats. **[INFERENCE: unchanged matrix sizing, not measured hardware throughput.]** Exact-profile certificate reuse and preparing candidates during holds keep nights from needlessly repeating unchanged local cells. They cannot remove the linear daily-hour floor. The [retired](../benchmarking.md#daynight-gate) successor gate was specified to include actual per-core truth and report the two phases separately. If useful refinement needs too many serial holds, D has a tractability failure to submit for an explicit policy decision, not permission to shorten holds or relax coverage.
 
 ## 9. Safety and activation
 
@@ -239,15 +239,13 @@ Identities with no recoverable timeline, such as a failed re-qualification, stay
 
 The consolidated architectural rationale and predecessor dispositions are
 [ADR 0094](../adr/0094-two-ends-bounded-exploration.md), with activation amended by
-[ADR 0096](../adr/0096-activate-permitted-day-profiles.md). The original Ruleset 13 gate remains failed;
-[#1457](https://github.com/shgew/togi/issues/1457) owns successor registration and scoring as research,
-not an activation condition.
+[ADR 0096](../adr/0096-activate-permitted-day-profiles.md). The original Ruleset 13 gate remains failed.
+The external successor registration/scoring commands are [retired](../benchmarking.md#daynight-gate);
+they are not an activation condition.
 
 ## 11. Shared scoring/reporting interface
 
 D exposes actual applied history and raw witnesses, not simulator truth. Per unit: phase/identity, inherited starting depth, D/U/C, each promotion/retreat, current hold, qualification identity/outstanding cells, stopped/finished/held reason and resulting depth. Per machine: campaign allowance/consumed/remaining, unique classified events with provisional/reclassified state, event identity and phase, escalation actions, applied-profile hours and post-finish events. Certificate and allowance states must be recoverable even if a derived commitment was interrupted.
 
-The scorer independently adds simulator-truth CO-caused vs background crashes and joint hazard. Report unique machine crashes, not a sum of per-unit charges; distinguish **learning**, **post-finish**, **policy-classified CPU-suspect**, **provisional**, **later reclassified** and **truth CO-caused** quantities. A crash-free but unfinished horizon-complete run is not right-censored; actual truncation, harness failure and blocked/unfinished progress have separate outcomes. A stop at the first backstep or allowance exhaustion is a policy result, not automatic useful-depth success.
-
-The successor gate freezes criteria before scoring D, rewards actual benign depth (stock forever must fail utility), removes the −50/−45 contradiction, evaluates joint-profile admissibility rather than coordinate distance from one arbitrary tie-broken optimum, and includes per-core truth now. The rule is that the actual per-core policy receives its own later registration; per-core-truth fixtures now must not be presented as a score of an unimplemented core policy. λ* remains fixed; any sweep is exploratory only. Use `just bench-day-night` directly, not a research-dispatcher campaign or infrastructure changes. Holdout remains sealed until its pre-registered final confirmation. The original Ruleset 13 registration and failing results stay frozen.
+The external scorer, successor registration and campaign launcher are retired by [R01 in #1559](https://github.com/shgew/togi/issues/1559). Their [historical contracts](https://github.com/shgew/togi/blob/archive/pre-cut/docs/spec/tuner-ruleset14.md#11-shared-scoringreporting-interface) are not current acceptance conditions. The policy's journal-derived reporting interface remains for its existing library consumers; no production decision or safety requirement is retired here.
 
