@@ -863,7 +863,11 @@ fn a_core_with_no_readback_shows_a_question_mark_not_zero() {
     );
     let rows = table(&hand, 115, 4, Colours::None);
     assert!(rows[3][..WIDE.state].contains('?'), "{:?}", rows[3]);
-    assert!(rows[3][WIDE.gauge..].starts_with(&"·".repeat(15)), "unknown has no applied fill: {:?}", rows[3]);
+    assert!(
+        rows[3][WIDE.gauge..].starts_with(&"·".repeat(15)),
+        "unknown has no applied fill: {:?}",
+        rows[3]
+    );
 }
 
 #[test]

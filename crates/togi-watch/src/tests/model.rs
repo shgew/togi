@@ -422,10 +422,7 @@ fn earlier_boot_readbacks_are_not_current(partial: bool) {
     let model = script.model();
     let snap = model.snapshot();
     assert_eq!(snap.cores[0].applied, None);
-    assert_eq!(
-        snap.cores[1].applied,
-        partial.then_some(ObservedOffset(-4))
-    );
+    assert_eq!(snap.cores[1].applied, partial.then_some(ObservedOffset(-4)));
 }
 
 #[test_case::test_case(false, false; "offset related crash")]

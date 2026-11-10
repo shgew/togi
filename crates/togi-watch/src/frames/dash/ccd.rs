@@ -449,13 +449,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             r,
             saturating_cells(col.gauge),
             y,
-            &gauge(
-                scene,
-                core,
-                projection,
-                applied,
-                col.cells,
-            ),
+            &gauge(scene, core, projection, applied, col.cells),
             colours,
         );
     }

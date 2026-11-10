@@ -161,7 +161,10 @@ fn unknown_readback_frames_never_show_requested_offsets(earlier_boot: bool) {
     let fixture = Fixture::of(&script.events);
     let (buf, _) = fixture.main(120, 33);
     let rows = crate::frames::testing::rows_of(&buf);
-    let row = rows.iter().find(|row| row.trim_start().starts_with("00")).expect("core row");
+    let row = rows
+        .iter()
+        .find(|row| row.trim_start().starts_with("00"))
+        .expect("core row");
     assert!(row.contains('?'), "{row}");
     assert!(!row.contains("-25"), "{row}");
     assert!(!row.contains('▄'), "{row}");
