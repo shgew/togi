@@ -59,8 +59,7 @@ in
       description = "An explicitly authorized existing group whose members may acquire the root-owned host lock for delegated hardware tests. The default permits root only. This does not grant access to hardware or a delegated cpuset controller.";
     };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB or systemd-boot entry that tunes unattended";
-    day.enable = lib.mkEnableOption "the togi permitted day-profile application and observer in the normal boot. It requires a CO 0 baseline and an armed, counting PID 1 hardware watchdog, applies the committed profile with all-core readback, and reapplies without promotion after restart or resume. Pause, stop and emergency recovery still zero offsets. It holds the host lock and journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops; `togi day record` hands records to the running service. It refuses to start without a session, never exists in the tuning boot, and keeps the journal on disk with a 5s sync interval";
-    day.watchdog = lib.mkEnableOption "the PID 1 hardware watchdog in the normal boot with the day observer, RuntimeWatchdogSec=60s, so a hang resets the machine and the observer can record the unclean end. A unit ordered before sleep.target releases the watchdog before suspend or hibernation, reloads sp5100_tco after resume to restore its timer decoding after deep sleep, and re-arms PID 1's watchdog even if the reload fails. The pause is retained for s2idle, where the timer may keep counting. It sets no lockup panic kernel parameter and never applies in the tuning boot, which keeps its own 30s watchdog";
+    day.enable = lib.mkEnableOption "the togi permitted day-profile application and observer in the normal boot, including PID 1's 60s hardware watchdog and its suspend/resume hooks. It loads sp5100_tco, releases the watchdog before sleep, reloads the driver after resume and re-arms PID 1's watchdog even if the reload fails, without adding lockup panics or changing the tuning boot's 30s watchdog. It requires a CO 0 baseline and an armed, counting watchdog, applies the committed profile with all-core readback, and reapplies without promotion after restart or resume. Pause, stop and emergency recovery still zero offsets. It holds the host lock and journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops; `togi day record` hands records to the running service. It refuses to start without a session, never exists in the tuning boot, and keeps the journal on disk with a 5s sync interval";
     day.users = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -204,7 +203,7 @@ in
           };
         };
       })
-      (lib.mkIf (cfg.day.enable && cfg.day.watchdog) (
+      (lib.mkIf cfg.day.enable (
         let
           busctl = "${config.systemd.package}/bin/busctl";
           runtimeWatchdog =
