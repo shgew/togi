@@ -64,17 +64,16 @@ impl Sysfs {
     fn read<const N: usize>(&self, name: &str, poison: &Poison) -> Result<[u8; N], MailboxError> {
         poison.check()?;
         let path = self.dir.join(name);
-        let bytes = match &self.files {
-            Files::System => File::open(&path)
-                .and_then(|file| read_limited(GatedRead { file, poison }, MAX_FILE, N)),
-            Files::Readers(_) => self.files.read(&path, MAX_FILE, N),
+        match &self.files {
+            Files::System => {
+                let input = File::open(&path);
+                read_gated(path, input, poison)
+            }
+            Files::Readers(_) => {
+                let bytes = self.files.read(&path, MAX_FILE, N);
+                exactly(path, bytes)
+            }
         }
-        .map_err(|source| MailboxError::Read {
-            path: path.clone(),
-            source,
-        })?;
-        let got = bytes.len();
-        <[u8; N]>::try_from(bytes).map_err(|_| MailboxError::Length { path, got, want: N })
     }
 
     pub(crate) fn transact(
@@ -121,15 +120,37 @@ impl Transport for Sysfs {
     }
 }
 
+/// Reads `input`, opened from `path`, checking `poison` before every underlying read.
+pub(crate) fn read_gated<const N: usize>(
+    path: PathBuf,
+    input: io::Result<impl Read>,
+    poison: &Poison,
+) -> Result<[u8; N], MailboxError> {
+    let bytes = input.and_then(|input| read_limited(GatedRead { input, poison }, MAX_FILE, N));
+    exactly(path, bytes)
+}
+
+fn exactly<const N: usize>(
+    path: PathBuf,
+    bytes: io::Result<Vec<u8>>,
+) -> Result<[u8; N], MailboxError> {
+    let bytes = match bytes {
+        Ok(bytes) => bytes,
+        Err(source) => return Err(MailboxError::Read { path, source }),
+    };
+    let got = bytes.len();
+    <[u8; N]>::try_from(bytes).map_err(|_| MailboxError::Length { path, got, want: N })
+}
+
 /// `read_to_end` can make several kernel calls; each needs its own poison check.
-struct GatedRead<'a> {
-    file: File,
+struct GatedRead<'a, R> {
+    input: R,
     poison: &'a Poison,
 }
 
-impl Read for GatedRead<'_> {
+impl<R: Read> Read for GatedRead<'_, R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         self.poison.check().map_err(io::Error::other)?;
-        self.file.read(buffer)
+        self.input.read(buffer)
     }
 }
