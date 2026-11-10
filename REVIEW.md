@@ -4,6 +4,8 @@ These criteria apply to independent readers. Report concrete defects with their 
 
 [AGENTS.md](AGENTS.md#workflow) defines the risk classes. Full safety review follows the rule or enforcement wherever it lives, including safety documentation; classify by consequence, not path. Other code gets one independent reader; documents otherwise need CI only. [The review command](.omp/commands/review-pr.md) owns mechanics and temporary tool constraints, including the document-review exception until R21. [The record format](docs/review-record.md) owns published evidence.
 
+The coordinator declares `safety`, `code` or `documents` to `snapshot --class` after reading the diff's effects. The manifest records that declaration, defaults to safety when omitted, and refuses unknown classes. Paths cannot establish whether an invariant changed. Safety never selects coordinator-only small-PR review; ordinary code selects one independent reader. Document records retain the temporary independent-review requirement until R21.
+
 ## Defects
 
 - **Offset writes:** normal hardware writes go only through the session's write transaction over `togi-smu`, are typed `TargetOffset` in [-50, 0], record intent before the write and readback after it; the one other path is a constrained zero-only emergency ([runtime.md](docs/spec/runtime.md#offset-types-and-the-write-transaction)). Failure must not claim an offset was applied or verified. Weakening hardware safety or journal durability is P1.
