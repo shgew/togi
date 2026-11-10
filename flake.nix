@@ -445,7 +445,9 @@
                 rustToolchain
                 pkgs.cargo-deny
                 pkgs.cargo-fuzz
-                pkgs.cargo-llvm-cov
+                # This package's own test suite fails on Linux and Darwin with nixpkgs' rustc
+                # (NixOS/nixpkgs#576588); togi runs the tool with rustToolchain.
+                (pkgs.cargo-llvm-cov.overrideAttrs { doCheck = false; })
                 pkgs.cargo-nextest
                 pkgs.cargo-shear
                 pkgs.mold
