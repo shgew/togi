@@ -1,5 +1,7 @@
 # togi adversarial search: find machines the tuner gets wrong
 
+**Historical research instructions, not a current product-policy gate.** Fitting and bench model checks were retired by R03 in [#1559](https://github.com/shgew/togi/issues/1559), following the [approved decisions](../../docs/decisions.md#rejected). The protocol below is retained as originally recorded; its model-check entry condition and P1 gate cannot be executed with current tools and authorize no current research gate. The annotated historical-source tag [`archive/pre-cut`](https://github.com/shgew/togi/tree/archive/pre-cut) retains the [original instructions and implementation](https://github.com/shgew/togi/blob/archive/pre-cut/tools/bench/adversary.md). Existing machines and original evidence remain unchanged.
+
 Rules for an autonomous researcher searching for simulated machines, consistent with the real evidence, on which the tuner concludes with a profile that still fails, or fails to conclude at all. Each confirmed finding becomes a bench scenario the tuner research must then pass ([research program](program.md)), or a documented limit of the evidence rules.
 
 This loop never changes the tuner, the simulator or the bench. It writes only untracked machine and suite files until a finding becomes a pull request. Its entry condition is a passing target fit: while every committed fit is flagged, there is no plausible starting point.

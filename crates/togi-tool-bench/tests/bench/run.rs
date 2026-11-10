@@ -102,12 +102,13 @@ fn real_process_a_replayed_scenario_names_its_machine_and_asks_for_the_facts() {
     assert!(args.contains("--replay-facts"), "{args}");
     let record = &report.records[0];
     assert_eq!(record.machine.as_deref(), machine.to_str());
-    assert!(
-        record
-            .model_check
-            .is_some_and(|check| check.eligible_groups > 0)
-    );
-    assert_eq!(report.checks.len(), 1);
+    let encoded = serde_json::to_value(record).unwrap();
+    assert!(encoded.get("model_check").is_none());
+    let mut text = Vec::new();
+    report.write(&mut text).unwrap();
+    let text = String::from_utf8(text).unwrap();
+    assert!(!text.contains("Model check"), "{text}");
+    assert!(!text.contains("mean_p"), "{text}");
 }
 
 #[test]

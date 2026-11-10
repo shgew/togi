@@ -104,6 +104,7 @@ fn real_process_the_baseline_out_file_is_a_baseline_the_command_accepts_and_prin
     );
     let full = fs::read_to_string(bench.path("out.jsonl")).unwrap();
     assert!(full.contains("wall_s"), "{full}");
+    assert!(!full.contains("model_check"), "{full}");
 
     let against = |file: &str| {
         let mut command = bench_command(&bench);
@@ -220,6 +221,7 @@ fn real_process_a_usage_error_exits_2_and_help_exits_0() {
     let help = run(Command::new(env!("CARGO_BIN_EXE_togi-tool-bench")).arg("--help"));
     assert_eq!(help.status.code(), Some(0));
     assert!(text(&help.stdout).contains("sanity"));
+    assert!(!text(&help.stdout).contains("model_check"));
 }
 
 #[test]

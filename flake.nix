@@ -59,7 +59,6 @@
                 (bench + "/baseline.jsonl")
                 (bench + "/gates")
               ];
-              togi-tool-fit = [ (bench + "/facts") ];
               togi-tool-sim = [
                 (bench + "/machines")
                 (bench + "/suite.json")
@@ -80,11 +79,9 @@
             "togi-statecopy"
             "togi-tool-audit"
             "togi-tool-bench"
-            "togi-tool-modelcheck"
             "togi-tool-trialfacts"
             "togi-tool-copy-state"
             "togi-tool-facts"
-            "togi-tool-fit"
             "togi-tool-replay"
             "togi-tool-sim"
             "togi-tool-stats"

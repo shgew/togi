@@ -42,16 +42,6 @@ impl Status {
 }
 
 object_only! {
-    /// The model check of the run's machine against its facts extract, reduced to its verdict; the flagged groups
-    /// are in the report.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-    #[serde(deny_unknown_fields)]
-    pub struct ModelCheck {
-        pub eligible_groups: usize,
-        pub flagged_groups: usize,
-        pub idle_failures: usize,
-    }
-
     /// The measurements of one simulated session, with the identity of the run and the tree that made it.
     #[derive(Clone, Debug, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
@@ -69,8 +59,6 @@ object_only! {
         pub ruleset: u32,
         pub evidence: u32,
         pub status: Status,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub model_check: Option<ModelCheck>,
         pub exit_code: i32,
         /// Real seconds the simulator took; a cached record keeps the wall time of the run that made it. A baseline
         /// file leaves it out, and no comparison reads it.
@@ -96,12 +84,10 @@ impl Record {
         (&self.scenario, self.seed)
     }
 
-    /// The record as a baseline file keeps it: without the model check, which every run of its machine repeats,
-    /// and without the wall time. Comparison and gates read neither.
+    /// The record as a baseline file keeps it: without the wall time, which comparison does not read.
     #[must_use]
     pub fn baseline(&self) -> Self {
         Self {
-            model_check: None,
             wall_s: None,
             ..self.clone()
         }

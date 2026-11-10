@@ -146,7 +146,7 @@ Otherwise-green changes can merge before hardware evidence, so the owner can ins
 
 The simulator proves mechanics: crash recovery, safety rules and code following the model. It does not choose the tuning method or predict hardware results. Ordinary nextest tests and short in-memory simulations retain their safety and replay proofs.
 
-Use `same` or `smoke` for unchanged-decision mechanics when appropriate. Existing research commands and the long suite remain available pending R01–R03 and R24–R26, but are not a policy-design gate. [Simulating](simulating.md) describes the commands that still exist; [Benchmarking](benchmarking.md) describes the old research machinery until those removals.
+Use `same` or `smoke` for exact journal comparison on unchanged-decision mechanics when appropriate. Bench retains simulated session metrics, summaries, journal audits, baseline comparison and caching; simulator, replay, facts extraction and stats remain available. Fitting, fit-artifact generation, forward comparison and bench calibration/model-check output are retired, alongside campaign launching and day/night scoring. The long session suite remains on-demand research pending R24–R26, not a policy-design gate. [Simulating](simulating.md) and [Benchmarking](benchmarking.md) describe the remaining commands and historical-source access.
 
 ## Releases and changelog
 

@@ -22,7 +22,6 @@ proptest = "1"
 pulldown-cmark = { version = "0.13", default-features = false }
 rand = { version = "=0.10.3", default-features = false, features = ["std_rng"] }
 ratatui = { version = "0.30", default-features = false, features = ["std"] }
-rayon = "1"
 regex = "1"
 rustix = { version = "1", features = ["fs", "process"] }
 serde = { version = "1", features = ["derive", "rc"] }
@@ -52,7 +51,6 @@ togi-simrun = { path = "crates/togi-simrun" }
 togi-smu = { path = "crates/togi-smu" }
 togi-statecopy = { path = "crates/togi-statecopy" }
 togi-tool-audit = { path = "crates/togi-tool-audit" }
-togi-tool-modelcheck = { path = "crates/togi-tool-modelcheck" }
 togi-tool-sim = { path = "crates/togi-tool-sim" }
 togi-tool-trialfacts = { path = "crates/togi-tool-trialfacts" }
 togi-trial = { path = "crates/togi-trial" }
@@ -126,8 +124,6 @@ togi-smu = { opt-level = 0 }
 togi-tool-audit = { opt-level = 0 }
 togi-tool-bench = { opt-level = 0 }
 togi-tool-facts = { opt-level = 0 }
-togi-tool-fit = { opt-level = 0 }
-togi-tool-modelcheck = { opt-level = 0 }
 togi-tool-replay = { opt-level = 0 }
 togi-tool-sim = { opt-level = 0 }
 togi-tool-stats = { opt-level = 0 }

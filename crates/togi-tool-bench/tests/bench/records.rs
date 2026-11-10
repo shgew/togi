@@ -1,6 +1,6 @@
 use crate::common::record;
 use togi_tool_bench::{
-    Error, ModelCheck, Record, Status, encode_baseline_records, encode_records, read_records_from,
+    Error, Record, Status, encode_baseline_records, encode_records, read_records_from,
 };
 
 fn read_text(text: &str) -> Result<Vec<Record>, Error> {
@@ -60,11 +60,6 @@ fn a_run_listed_twice_is_refused_even_across_splits() {
 fn complete(scenario: &str, seed: u64) -> Record {
     Record {
         machine: Some("machine.json".to_owned()),
-        model_check: Some(ModelCheck {
-            eligible_groups: 1,
-            flagged_groups: 2,
-            idle_failures: 3,
-        }),
         ..record(scenario, seed)
     }
 }
@@ -78,7 +73,7 @@ fn measured(scenario: &str, seed: u64) -> Record {
 }
 
 #[test]
-fn the_baseline_writer_leaves_out_the_model_check_and_the_wall_time_and_nothing_else() {
+fn the_baseline_writer_leaves_out_the_wall_time_and_nothing_else() {
     let records = vec![measured("a", 1), measured("a", 2)];
     let mut bytes = Vec::new();
     encode_baseline_records(&mut bytes, &records).unwrap();
@@ -96,14 +91,14 @@ fn the_baseline_writer_leaves_out_the_model_check_and_the_wall_time_and_nothing_
         let want: Vec<&str> = FIELDS
             .iter()
             .copied()
-            .filter(|name| !matches!(*name, "model_check" | "wall_s"))
+            .filter(|name| *name != "wall_s")
             .collect();
         assert_eq!(kept, want);
         assert_eq!(object.len(), want.len(), "{line}");
     }
     assert_eq!(
-        records[0].model_check.map(|check| check.flagged_groups),
-        Some(2),
+        records[0].wall_s,
+        Some(12.5),
         "the writer does not change the records it is given"
     );
 }
@@ -121,10 +116,7 @@ fn a_baseline_file_round_trips_through_the_reader() {
     .unwrap();
     let want: Vec<Record> = records.iter().map(Record::baseline).collect();
     assert_eq!(read, want);
-    assert!(
-        read.iter()
-            .all(|r| r.wall_s.is_none() && r.model_check.is_none())
-    );
+    assert!(read.iter().all(|r| r.wall_s.is_none()));
     assert_eq!(read[0].machine.as_deref(), Some("machine.json"));
 }
 
@@ -136,7 +128,7 @@ fn a_full_file_and_a_baseline_file_both_read_but_an_absent_wall_time_is_not_a_de
     assert_eq!(read_text(&value.to_string()).unwrap()[0].wall_s, None);
 }
 
-const FIELDS: [&str; 21] = [
+const FIELDS: [&str; 20] = [
     "scenario",
     "machine",
     "seed",
@@ -146,7 +138,6 @@ const FIELDS: [&str; 21] = [
     "ruleset",
     "evidence",
     "status",
-    "model_check",
     "exit_code",
     "wall_s",
     "sim_hours",
@@ -178,13 +169,16 @@ fn a_record_is_refused_in_the_positional_array_form() {
     let array = serde_json::Value::Array(FIELDS.iter().map(|name| object[*name].clone()).collect());
     let error = togi_machine::error_chain(&read_text(&array.to_string()).unwrap_err());
     assert!(error.contains("an object"), "{error}");
+}
 
-    let mut nested = object.clone();
-    nested.insert("model_check".to_owned(), serde_json::json!([1, 2, 3]));
-    let error = togi_machine::error_chain(
-        &read_text(&serde_json::Value::Object(nested).to_string()).unwrap_err(),
-    );
-    assert!(error.contains("an object"), "{error}");
+#[test_case::test_case(serde_json::json!({"eligible_groups": 1, "flagged_groups": 0, "idle_failures": 0}); "old object")]
+#[test_case::test_case(serde_json::Value::Null; "null")]
+#[test_case::test_case(serde_json::json!([1, 0, 0]); "array")]
+fn a_retired_model_check_field_is_refused(check: serde_json::Value) {
+    let mut value = serde_json::to_value(measured("a", 1)).unwrap();
+    value["model_check"] = check;
+    let error = togi_machine::error_chain(&read_text(&value.to_string()).unwrap_err());
+    assert!(error.contains("unknown field `model_check`"), "{error}");
 }
 
 #[test]

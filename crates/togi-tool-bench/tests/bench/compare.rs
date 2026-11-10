@@ -1,7 +1,7 @@
 use crate::common::{self, record};
 use togi_tool_bench::compare::{Pair, Verdict, compare, pairing, report};
 use togi_tool_bench::summary;
-use togi_tool_bench::{ModelCheck, Record, Status, set_scenario_shares};
+use togi_tool_bench::{Record, Status, set_scenario_shares};
 use togi_tool_sim::Split;
 
 fn pair<'a>(candidate: &'a Record, baseline: &'a Record) -> Pair<'a> {
@@ -34,11 +34,6 @@ fn a_baseline_file_compares_exactly_as_the_full_records_do() {
         .map(|n| Record {
             seed: u64::from(n),
             wall_s: Some(30.0 + f64::from(n)),
-            model_check: Some(ModelCheck {
-                eligible_groups: 3,
-                flagged_groups: 1,
-                idle_failures: 0,
-            }),
             machine: Some("m.json".to_owned()),
             sim_hours: 10.0 + f64::from(n),
             ..base()
@@ -48,7 +43,6 @@ fn a_baseline_file_compares_exactly_as_the_full_records_do() {
         .iter()
         .map(|run| Record {
             wall_s: Some(1.0),
-            model_check: None,
             crashes: 2,
             sim_hours: run.sim_hours * 1.5,
             ..run.clone()
