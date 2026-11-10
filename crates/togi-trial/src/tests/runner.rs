@@ -142,6 +142,8 @@ fn startup_frequency_recovery_round_trips_acknowledgments_through_the_runner() {
         fast(),
         Arc::new(machine.clone()),
     );
+    fs.create_dir(Path::new("/rig")).unwrap();
+    fs.create_dir(Path::new("/rig/trials")).unwrap();
     let limits = crate::frequency::Limits::new(
         Arc::new(machine.clone()),
         "/rig/trials".into(),
