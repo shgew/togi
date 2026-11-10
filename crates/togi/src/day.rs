@@ -491,12 +491,15 @@ fn observe_with_socket(
         }
     }
     let applied_offsets = live.as_deref().map_or(offsets, apply::Live::applied);
-    sampler.record(started, observer.cpu_times()?)?;
+    // The boot-start check above waited, so the baseline belongs to the clock reading taken when the
+    // counters are read, not to `started`: the first interval must not be credited that wait.
+    let baseline = observer.cpu_times()?;
+    let mut sampled = clock.monotonic()?;
+    sampler.record(sampled, baseline)?;
     if live.is_some() {
         progress.checkpoint(journal, clock, &sampler, applied_offsets)?;
         progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
     }
-    let mut sampled = started;
     let mut polled = started;
     loop {
         if let Some(socket) = socket {

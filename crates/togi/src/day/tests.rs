@@ -83,8 +83,9 @@ struct Reading {
     /// Whether a read under a cancelled token fails like the hardware read, which gives up its wait.
     /// Off by default: a read that finished before the signal still returns its scripted state.
     cancellable: bool,
-    /// The shared active clock and how long every watchdog read advances it, as the counter wait does.
-    waits: Option<(Rc<Cell<Duration>>, Duration)>,
+    /// The shared active clock and how long each successive watchdog read advances it, as the counter
+    /// wait does; the last duration repeats.
+    waits: Option<(Rc<Cell<Duration>>, VecDeque<Duration>)>,
 }
 
 fn armed() -> WatchdogState {
@@ -172,8 +173,13 @@ impl Observer for Reading {
         if self.cancellable && cancel.is_cancelled() {
             return Err(MachineError::Cancelled);
         }
-        if let Some((clock, wait)) = &self.waits {
-            clock.set(clock.get() + *wait);
+        if let Some((clock, waits)) = &mut self.waits {
+            let wait = if waits.len() > 1 {
+                waits.pop_front().unwrap()
+            } else {
+                waits.front().copied().unwrap()
+            };
+            clock.set(clock.get() + wait);
         }
         Ok(if self.watchdog.len() > 1 {
             self.watchdog.pop_front().unwrap()
@@ -1132,7 +1138,10 @@ fn cpu_times_are_credited_to_when_they_were_read_not_to_when_the_pass_began() {
     let active = Rc::new(Cell::new(Duration::ZERO));
     let mut reading = Reading {
         times: [busy_ticks(0, 0), busy_ticks(1, 100)].into(),
-        waits: Some((Rc::clone(&active), Duration::from_secs(1))),
+        waits: Some((
+            Rc::clone(&active),
+            [Duration::from_secs(1), Duration::from_secs(3)].into(),
+        )),
         ..Reading::fixed()
     };
     let mut journal = journal();
@@ -1144,8 +1153,10 @@ fn cpu_times_are_credited_to_when_they_were_read_not_to_when_the_pass_began() {
         &current_build(),
     )
     .unwrap();
-    // The boot-start read waits 1 s after `started`, the sleep adds 5 s and the stop's watchdog read 1 s
-    // more before the counters are read: crediting the pass's start would have given 6 s.
+    // The boot-start read waits 1 s before the baseline counters are read at 1 s; the sleep ends at 6 s
+    // and the stop's watchdog read waits 3 s more before the counters are read at 9 s. The counters
+    // cover those 8 s: anchoring both reads to their pass's start would give 6 s, and the baseline alone
+    // 9 s.
     assert_eq!(
         Ledger::of(journal.events())
             .boots
@@ -1154,6 +1165,6 @@ fn cpu_times_are_credited_to_when_they_were_read_not_to_when_the_pass_began() {
             .unwrap()
             .load_mix
             .all_threads_ms,
-        7_000
+        8_000
     );
 }
