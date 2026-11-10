@@ -1,4 +1,4 @@
-use togi_machine::{Check, Host};
+use togi_machine::{CancellationToken, Check, Host};
 
 use super::support::{Scope, Tree, Watch, host, refused_account, resolved_account};
 use crate::host::Privilege;
@@ -310,7 +310,7 @@ fn the_host_watchdog_reads_its_root() {
     );
     tree.put("sys/class/watchdog/watchdog0/timeout", "60\n");
     tree.put("sys/class/watchdog/watchdog0/timeleft", "58\n");
-    let check = host.watchdog();
+    let check = host.watchdog(&CancellationToken::new()).unwrap();
     assert!(check.ok, "{check:?}");
 }
 

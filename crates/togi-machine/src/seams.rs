@@ -90,7 +90,9 @@ pub trait Host {
     /// Each backend's availability for the night: what was found, or why it cannot run. An unavailable backend is
     /// excluded from the night on its own, never a failed safety check.
     fn backends(&mut self) -> Vec<BackendCheck>;
-    fn watchdog(&mut self) -> Check;
+    /// Whether an active hardware watchdog is observed counting down. Observing a counter waits up to four
+    /// seconds per candidate device; cancelling `cancel` ends the wait with [`Error::Cancelled`].
+    fn watchdog(&mut self, cancel: &CancellationToken) -> Result<Check, Error>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -115,7 +117,7 @@ pub struct BackendCheck {
 }
 
 object_only! {
-    /// Whether PID 1 holds an active hardware watchdog whose counter is plausible, where supported.
+    /// Whether PID 1 holds an active hardware watchdog observed counting down.
     /// `detail` names the device, or what prevents establishing reset protection.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]

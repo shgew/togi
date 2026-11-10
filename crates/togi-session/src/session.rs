@@ -499,7 +499,13 @@ impl<'machine> Session<'machine> {
         if self.appender.handoff().is_some() {
             return Ok(());
         }
-        let check = self.host.watchdog();
+        let check = match self.host.watchdog(&self.waiting_token()) {
+            Ok(check) => check,
+            // The warning is advisory and the run's own cancellation is handled at its next wait, so an
+            // interrupted check records nothing.
+            Err(Error::Cancelled) => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
         if check.ok {
             return Ok(());
         }

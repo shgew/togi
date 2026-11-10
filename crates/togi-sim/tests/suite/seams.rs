@@ -162,7 +162,9 @@ fn root_check_does_not_block_smu_validation() {
 fn watchdog_check_is_separate(detail: &str, ok: bool) {
     let mut rig = Rig::new(&two_cores(), 1);
     rig.sim.fail_check("watchdog", detail);
-    let check = rig.machine.host.watchdog();
+    let Ok(check) = rig.machine.host.watchdog(&CancellationToken::new()) else {
+        panic!("the simulated check never waits, so nothing cancels it")
+    };
     assert_eq!(check.name, "watchdog");
     assert_eq!(check.ok, ok);
     if !detail.is_empty() {

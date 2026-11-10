@@ -68,7 +68,7 @@ impl Session<'_> {
 
     /// A boot whose earlier run left offsets must reconcile them even when asked to stop, so waits ignore the
     /// cancellation until then.
-    fn waiting_token(&self) -> CancellationToken {
+    pub(crate) fn waiting_token(&self) -> CancellationToken {
         if self.unreconciled() {
             CancellationToken::new()
         } else {
@@ -162,7 +162,11 @@ impl Session<'_> {
             if cancel.is_cancelled() {
                 return Ok(self.shut_down(Stop::Signal));
             }
-            let check = self.host.watchdog();
+            let check = match self.host.watchdog(cancel) {
+                Ok(check) => check,
+                Err(Error::Cancelled) => return Ok(self.shut_down(Stop::Signal)),
+                Err(error) => return Err(error.into()),
+            };
             let waited = self
                 .appender
                 .clock()

@@ -4,7 +4,7 @@
 use togi_cli::Exit;
 use togi_hostlock::Policy;
 use togi_journal::{EventKind, Payload, ShutdownReason};
-use togi_machine::{CoreId, Machine, TargetOffset};
+use togi_machine::{CancellationToken, CoreId, Machine, TargetOffset};
 use togi_render::OutputFacts;
 
 use crate::support::{CORES, Fake, interrupt_at_first_trial, interrupt_on_first_write};
@@ -1034,6 +1034,76 @@ fn the_tuning_boot_waits_for_the_watchdog_and_a_manual_run_does_not() {
             .iter()
             .any(|event| matches!(&event.payload, Payload::SmuIntent(_))),
         "no offset is written before the watchdog is armed"
+    );
+}
+
+fn cancels_the_watchdog_check(
+    machine: Machine<'static>,
+    cancel: &CancellationToken,
+) -> Machine<'static> {
+    Machine {
+        host: Box::new(crate::support::CancelledWatchdog {
+            inner: machine.host,
+            cancel: cancel.clone(),
+        }),
+        ..machine
+    }
+}
+
+fn is_watchdog_check(payload: &Payload) -> bool {
+    matches!(payload, Payload::PreflightCheck(check) if check.check == "watchdog")
+}
+
+#[test]
+fn a_cancelled_tuning_boot_watchdog_wait_stops_by_signal_without_a_watchdog_check() {
+    let mut boot = Fake::new();
+    boot.attest_stock();
+    boot.wrap = Box::new(cancels_the_watchdog_check);
+    let grubenv = boot.grubenv();
+    let (exit, _, err) = boot.run(&[
+        "run",
+        "--no-tui",
+        "--tuning-boot",
+        grubenv.to_str().unwrap(),
+    ]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    let events = boot.events();
+    let last = events.last().unwrap();
+    assert!(
+        matches!(&last.payload, Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal),
+        "{}",
+        last.kind().as_str()
+    );
+    assert!(
+        !events.iter().any(|event| is_watchdog_check(&event.payload)),
+        "an interrupted wait records no watchdog check"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::SmuIntent(_))),
+        "no offset is written once the wait is cancelled"
+    );
+}
+
+#[test]
+fn a_cancelled_watchdog_warning_check_records_nothing() {
+    let mut fake = Fake::new();
+    fake.attest_stock();
+    fake.wrap = Box::new(cancels_the_watchdog_check);
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    let events = fake.events();
+    assert!(
+        !events.iter().any(|event| matches!(
+            &event.payload,
+            Payload::SessionWarning(warning) if warning.operation == "check hardware watchdog"
+        )),
+        "an interrupted check is not a missing watchdog"
+    );
+    assert!(
+        !events.iter().any(|event| is_watchdog_check(&event.payload)),
+        "a manual run records no watchdog check"
     );
 }
 

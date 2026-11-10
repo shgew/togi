@@ -427,7 +427,10 @@ fn observe_with_socket(
     let started = clock.monotonic()?;
     let bios = observer.bios_context()?;
     let offsets = observer.offsets()?;
-    let watchdog = observer.watchdog();
+    // The boot-start check samples for at most four seconds per candidate device and must finish so the
+    // journal records a verdict even when a stop signal has already fired, so it takes a fresh token
+    // instead of the run's.
+    let watchdog = observer.watchdog(&CancellationToken::new())?;
     append(
         journal,
         clock,
@@ -540,10 +543,17 @@ fn observe_with_socket(
         // while the timer loses its MMIO decoding. Changes get a checkpoint immediately.
         let watchdog_read = stopping || sample || due;
         let watchdog_changed = if watchdog_read {
-            let checked = observer.watchdog();
-            let changed = checked != progress.watchdog;
-            progress.watchdog = checked;
-            changed
+            match observer.watchdog(cancel) {
+                Ok(checked) => {
+                    let changed = checked != progress.watchdog;
+                    progress.watchdog = checked;
+                    changed
+                }
+                // A cancelled reading says nothing about the timer: the previous reading stands, so the
+                // unarmed gate below and the final checkpoint still act on what was last known.
+                Err(togi_machine::Error::Cancelled) => false,
+                Err(error) => return Err(error.into()),
+            }
         } else {
             false
         };
@@ -564,8 +574,12 @@ fn observe_with_socket(
             return Err(Error::Watchdog);
         }
         if stopping || sample {
-            sampler.record(now, observer.cpu_times()?)?;
-            sampled = now;
+            let times = observer.cpu_times()?;
+            // The watchdog read above may have waited, so the interval ends when the counters were read,
+            // not when this pass began; crediting the earlier `now` would drop that wait from the interval.
+            let read_at = clock.monotonic()?;
+            sampler.record(read_at, times)?;
+            sampled = read_at;
         }
         if stopping || now.checked_sub(polled).ok_or(Error::ClockReversed)? >= FAULT_POLL {
             faults.poll(journal, observer, clock, progress.offsets)?;

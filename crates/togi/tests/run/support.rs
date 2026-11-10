@@ -840,8 +840,11 @@ impl togi_machine::Host for UnvalidatedHost {
         self.inner.backends()
     }
 
-    fn watchdog(&mut self) -> togi_machine::Check {
-        self.inner.watchdog()
+    fn watchdog(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> Result<togi_machine::Check, MachineError> {
+        self.inner.watchdog(cancel)
     }
 }
 
@@ -885,7 +888,57 @@ impl togi_machine::Host for FourCcds {
         self.0.backends()
     }
 
-    fn watchdog(&mut self) -> togi_machine::Check {
-        self.0.watchdog()
+    fn watchdog(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> Result<togi_machine::Check, MachineError> {
+        self.0.watchdog(cancel)
+    }
+}
+
+/// A host whose watchdog check is interrupted by the run's cancellation, as a signal during the wait is.
+pub(crate) struct CancelledWatchdog {
+    pub(crate) inner: Box<dyn togi_machine::Host>,
+    pub(crate) cancel: CancellationToken,
+}
+
+impl togi_machine::Host for CancelledWatchdog {
+    fn boot_id(&mut self) -> Result<BootId, MachineError> {
+        self.inner.boot_id()
+    }
+
+    fn topology(&mut self) -> Result<Vec<togi_machine::CoreInfo>, MachineError> {
+        self.inner.topology()
+    }
+
+    fn validate_smu(&mut self) -> Result<SmuValidated, MachineError> {
+        self.inner.validate_smu()
+    }
+
+    fn bios_context(&mut self) -> Result<togi_machine::BiosContext, MachineError> {
+        self.inner.bios_context()
+    }
+
+    fn ranking(
+        &mut self,
+    ) -> Result<Vec<togi_machine::CoreRank>, togi_machine::Partial<Vec<togi_machine::CoreRank>>>
+    {
+        self.inner.ranking()
+    }
+
+    fn preflight(&mut self) -> Vec<togi_machine::Check> {
+        self.inner.preflight()
+    }
+
+    fn backends(&mut self) -> Vec<togi_machine::BackendCheck> {
+        self.inner.backends()
+    }
+
+    fn watchdog(
+        &mut self,
+        _cancel: &CancellationToken,
+    ) -> Result<togi_machine::Check, MachineError> {
+        self.cancel.cancel();
+        Err(MachineError::Cancelled)
     }
 }

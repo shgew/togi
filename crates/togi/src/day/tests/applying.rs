@@ -99,8 +99,8 @@ impl Observer for Hardware {
         .into_iter()
         .collect())
     }
-    fn watchdog(&mut self) -> WatchdogState {
-        self.reading.watchdog()
+    fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, MachineError> {
+        self.reading.watchdog(cancel)
     }
     fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, MachineError> {
         self.reading.reset_reason_after(boot)
@@ -703,6 +703,126 @@ fn repeated_unarmed_reads_at_stock_write_nothing_and_keep_observing() {
     assert_eq!(
         journal.events().last().map(Event::kind),
         Some(EventKind::DayCleanStop)
+    );
+}
+
+#[test]
+fn a_cancelled_stop_read_keeps_the_armed_reading_and_still_restores_stock_with_a_clean_marker() {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    // The stop signal fires during the sleep, so the stop's watchdog read gives up its wait.
+    hardware.reading.cancellable = true;
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    assert_eq!(
+        hardware.writes,
+        [
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO
+        ]
+    );
+    assert_eq!(hardware.current, 0);
+    assert_eq!(hardware.emergency, 0);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(armed()));
+    let Some(Payload::DayCheckpoint(last)) = journal
+        .events()
+        .iter()
+        .rev()
+        .map(|event| &event.payload)
+        .find(|payload| matches!(payload, Payload::DayCheckpoint(_)))
+    else {
+        panic!("no checkpoint")
+    };
+    assert_eq!(last.watchdog, Some(armed()));
+    assert_eq!(
+        journal.events().last().map(Event::kind),
+        Some(EventKind::DayCleanStop)
+    );
+}
+
+#[test]
+fn a_cancelled_stop_read_after_an_unarmed_read_still_zeroes_the_reapplied_profile_without_a_clean_marker()
+ {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    hardware.writes.clear();
+    append(
+        &mut journal,
+        &ActiveClock::one(),
+        togi_journal::DayPause {
+            state: togi_journal::PauseState::Until {
+                deadline: Timestamp::UNIX_EPOCH
+                    .checked_add(Duration::from_hours(1))
+                    .unwrap(),
+            },
+            source: togi_journal::PauseSource::Command { uid: 1000 },
+        },
+    )
+    .unwrap();
+    journal
+        .reboot("paused-cold-boot".to_owned().into())
+        .unwrap();
+    let lost = WatchdogState::Unarmed {
+        detail: "watchdog stopped counting".into(),
+    };
+    // Preflight and start read armed, the check while paused at stock reads unarmed and the pause end's
+    // own read is armed; the stop's read is cancelled, so the unarmed reading stands against the
+    // reapplied profile.
+    hardware.reading.watchdog = [armed(), armed(), lost.clone(), armed()].into();
+    hardware.reading.cancellable = true;
+    let mut clock = ActiveClock {
+        active: Duration::ZERO,
+        wall: Duration::ZERO,
+        sleeps: [
+            (Duration::from_secs(5), Duration::from_hours(1)),
+            (Duration::from_secs(5), Duration::from_secs(5)),
+        ]
+        .into(),
+    };
+    let result = serve(
+        &mut journal,
+        &mut hardware,
+        &mut clock,
+        &CancellationToken::new(),
+        &current_build(),
+    );
+    assert!(matches!(result, Err(Error::Watchdog)));
+    assert_eq!(
+        hardware.writes,
+        [
+            TargetOffset::ZERO,
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO
+        ]
+    );
+    assert_eq!(hardware.current, 0);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
+    assert_eq!(
+        journal
+            .events()
+            .iter()
+            .filter(|event| event.kind() == EventKind::DayCleanStop)
+            .count(),
+        1,
+        "only the first invocation stopped cleanly"
     );
 }
 

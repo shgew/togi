@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use rustix::process::geteuid;
 use togi_machine::{
-    BackendCheck, BiosContext, BootId, Check, CoreInfo, CoreRank, Error as MachineError, Host,
-    Partial, SmuValidated, error_chain,
+    BackendCheck, BiosContext, BootId, CancellationToken, Check, CoreInfo, CoreRank,
+    Error as MachineError, Host, Partial, SmuValidated, error_chain,
 };
 use togi_smu::Driver;
 use togi_trial::{Backends, Runner};
@@ -55,7 +55,11 @@ impl ScopeProbe for Runner {
 }
 
 pub(crate) trait HostReadings {
-    fn watchdog(&self, root: &Path) -> Check;
+    fn watchdog(
+        &self,
+        root: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<Check, watchdog::Cancelled>;
     fn ranking(
         &self,
         root: &Path,
@@ -66,8 +70,12 @@ pub(crate) trait HostReadings {
 pub(crate) struct SystemReadings;
 
 impl HostReadings for SystemReadings {
-    fn watchdog(&self, root: &Path) -> Check {
-        watchdog::probe(root)
+    fn watchdog(
+        &self,
+        root: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<Check, watchdog::Cancelled> {
+        watchdog::probe(root, cancel)
     }
 
     fn ranking(
@@ -155,8 +163,11 @@ impl<R: HostReadings> SystemHost<R> {
         preflight::run(steps, privileged, |step| self.step(step))
     }
 
-    pub(crate) fn watchdog_check(&self) -> Check {
-        self.readings.watchdog(&self.root)
+    pub(crate) fn watchdog_check(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Result<Check, watchdog::Cancelled> {
+        self.readings.watchdog(&self.root, cancel)
     }
 
     pub(crate) fn current_bios_context(&self) -> Result<BiosContext, togi_smu::Error> {
@@ -216,7 +227,8 @@ impl<R: HostReadings> Host for SystemHost<R> {
         preflight::backend_checks(&self.backends)
     }
 
-    fn watchdog(&mut self) -> Check {
-        self.watchdog_check()
+    fn watchdog(&mut self, cancel: &CancellationToken) -> Result<Check, MachineError> {
+        self.watchdog_check(cancel)
+            .map_err(|watchdog::Cancelled| MachineError::Cancelled)
     }
 }
