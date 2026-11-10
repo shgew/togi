@@ -594,7 +594,7 @@ async fn launch_all<O: Os>(
     container: &Arc<Container>,
     confinement: Confinement,
     backends: &[Arc<dyn Backend>],
-    prepare_until: Instant,
+    mut prepare_until: Instant,
     logs: &LogWriter,
     live: &mut Live<O>,
     inbound: &Sender<Inbound>,
@@ -758,7 +758,10 @@ async fn launch_all<O: Os>(
                 .collect();
         }
         launched.files.extend(files.inputs);
+        let readiness_started = Instant::now();
         let readiness = await_scope(env, &live.instances[index], commands).await;
+        // Scope entry has its own per-instance budget, separate from shared file preparation.
+        prepare_until += readiness_started.elapsed();
         if matches!(readiness, Readiness::Ready) {
             live.instances[index].observed.ready = true;
         }
