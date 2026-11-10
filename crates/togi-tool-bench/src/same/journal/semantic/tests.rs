@@ -102,6 +102,38 @@ fn a_dependency_on_a_removed_cap_is_an_error(field: &str) {
     assert!(error.contains("references removed ccd.cap"), "{error}");
 }
 
+#[test_case::test_case("night.plan", json!({}), true; "plan cursor")]
+#[test_case::test_case("night.qualification", json!({"state":{"kind":"start"}}), true; "qualification cutoff")]
+#[test_case::test_case("deadend", json!({"condition":"failure_at_zero"}), true; "stock failure cursor")]
+#[test_case::test_case("night.qualification", json!({"state":{"kind":"complete"}}), false; "qualification evidence")]
+#[test_case::test_case("deadend", json!({"condition":"smu"}), false; "other dead end")]
+#[test_case::test_case("deadend", json!({"condition":"failure_at_zero","core":0}), false; "attributed dead end")]
+#[test_case::test_case("deadend", json!({"condition":"failure_at_zero","action":"exit"}), false; "session dead end")]
+#[test_case::test_case("trial.start", json!({}), false; "other commitment")]
+fn last_event_cursor_producer_table_is_closed(kind: &str, data: Value, allowed: bool) {
+    let start = event(1, "session.start", json!({"session":"s"}));
+    let mut record = event(3, kind, data);
+    record["cause"] = json!([2]);
+    let mut head_record = record.clone();
+    head_record["seq"] = json!(2);
+    head_record["cause"] = json!([1]);
+    let base = [start.clone(), event(2, "ccd.cap", json!({})), record];
+    let head = [start, head_record];
+    if allowed {
+        let result = compare(&base, &head).unwrap();
+        assert!(result.first.is_none());
+        assert_eq!(result.summary.rebased_cursor_causes, 1);
+    } else {
+        assert!(
+            compare(&base, &head)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("references removed ccd.cap")
+        );
+    }
+}
+
 #[test]
 fn a_night_plan_latest_event_cursor_crosses_only_its_immediately_preceding_cap() {
     let start = event(1, "session.start", json!({"session": "s"}));
@@ -116,7 +148,7 @@ fn a_night_plan_latest_event_cursor_crosses_only_its_immediately_preceding_cap()
     let head = vec![start, fact, head_plan];
     let result = compare(&base, &head).unwrap();
     assert!(result.first.is_none());
-    assert_eq!(result.summary.rebased_plan_causes, 1);
+    assert_eq!(result.summary.rebased_cursor_causes, 1);
     assert_eq!(result.summary.classes["night.plan"].identical, 1);
 
     // Explicit payload evidence is never a latest-event cursor.

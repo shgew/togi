@@ -32,14 +32,14 @@ pub struct ClassCounts {
 #[derive(Clone, Debug, Default)]
 pub struct Summary {
     pub dropped_caps: usize,
-    pub rebased_plan_causes: usize,
+    pub rebased_cursor_causes: usize,
     pub classes: BTreeMap<String, ClassCounts>,
 }
 
 impl Summary {
     pub(crate) fn merge(&mut self, other: Self) {
         self.dropped_caps += other.dropped_caps;
-        self.rebased_plan_causes += other.rebased_plan_causes;
+        self.rebased_cursor_causes += other.rebased_cursor_causes;
         for (kind, counts) in other.classes {
             let total = self.classes.entry(kind).or_default();
             total.base += counts.base;
@@ -59,8 +59,8 @@ impl Summary {
         )?;
         writeln!(
             w,
-            "semantic: rebased {} night.plan latest-event causes across retired caps",
-            self.rebased_plan_causes
+            "semantic: rebased {} last-event cursor causes across retired caps",
+            self.rebased_cursor_causes
         )?;
         for (kind, counts) in &self.classes {
             writeln!(
@@ -218,7 +218,7 @@ fn load(source: &impl Source, dir: &Path) -> Result<Journals, JournalError> {
 
 fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usize), JournalError> {
     let mut identities = Identities::new();
-    let (mut dropped, mut rebased_plan_causes) = (0, 0);
+    let (mut dropped, mut rebased_cursor_causes) = (0, 0);
     for journal in journals.values_mut() {
         let mut map = BTreeMap::new();
         let mut ordinal = 0_u64;
@@ -235,20 +235,31 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usiz
                 previous_cap = Some(seq);
                 None
             } else {
-                // Night plans cite State::last, not S evidence. Retiring the
-                // immediately preceding cap moves that cursor to the last fact.
-                if event["kind"] == "night.plan"
+                // Cause is the last-event cursor, not evidence. This is the
+                // complete producer set: night_next::{plan_owed,schedule,dead_end}
+                // and qualify::start_qualification. Other cap dependencies fail.
+                let cursor = match event["kind"].as_str() {
+                    Some("night.plan") => true,
+                    Some("night.qualification") => event["data"]["state"]["kind"] == "start",
+                    Some("deadend") => {
+                        event["data"]["condition"] == "failure_at_zero"
+                            && event["data"]["core"].is_null()
+                            && event["data"]["action"].is_null()
+                    }
+                    _ => false,
+                };
+                if cursor
                     && let (Some(cap), Some(last)) = (previous_cap, retained)
                     && let Some(causes) = event["cause"].as_array_mut()
                 {
-                    let before = rebased_plan_causes;
+                    let before = rebased_cursor_causes;
                     for cause in causes.iter_mut() {
                         if cause.as_u64() == Some(cap) {
                             *cause = Value::from(last);
-                            rebased_plan_causes += 1;
+                            rebased_cursor_causes += 1;
                         }
                     }
-                    if rebased_plan_causes != before {
+                    if rebased_cursor_causes != before {
                         causes.sort_by_key(Value::as_u64);
                         causes.dedup();
                     }
@@ -281,7 +292,7 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usiz
             )?;
         }
     }
-    Ok((dropped, rebased_plan_causes))
+    Ok((dropped, rebased_cursor_causes))
 }
 
 // These are the journal's Seq fields (including transparent NightId), not durable
@@ -452,10 +463,10 @@ pub(in crate::same) fn compare_with(
 ) -> Result<Comparison, JournalError> {
     let mut base = load(source, base)?;
     let mut head = load(source, head)?;
-    let (dropped_caps, rebased_plan_causes) = canonicalize(&mut base, true)?;
+    let (dropped_caps, rebased_cursor_causes) = canonicalize(&mut base, true)?;
     let mut summary = Summary {
         dropped_caps,
-        rebased_plan_causes,
+        rebased_cursor_causes,
         ..Summary::default()
     };
     canonicalize(&mut head, false)?;

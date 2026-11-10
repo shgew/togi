@@ -199,13 +199,13 @@ To control concurrency, caching or retention directly, run `togi-tool-bench same
 
 ### Comparing the R04 cap retirement
 
-`just same-semantic [base]` is an on-demand semantic comparison, not a CI gate or a raw-journal equality claim. Its base defaults to `020772580` (`020772580ca4f5015193cdcbebf294ca0910163e`), before statistical cap S retirement. It uses the existing `same` harness and each tree's existing `togi-tool-sim`, built with the same locked release-build command; it does not replace the simulator or change its inputs to obtain equality. Paired sessions must have identical machine, facts and replay inputs, or the command refuses the comparison.
+`just same-semantic [base]` is an on-demand semantic comparison, not a CI gate or a raw-journal equality claim. Its base defaults to `131f99c1` (`131f99c1afc817bfb457234ca3db2a7a6050a73e`), the rebased predecessor before statistical cap S retirement (patch-identical to original comparison base `020772580`). It uses the existing `same` harness and each tree's existing `togi-tool-sim`, built with the same locked release-build command; it does not replace the simulator or change its inputs to obtain equality. Paired sessions must have identical machine, facts and replay inputs, or the command refuses the comparison.
 
 ```sh
 # Bounded selection: only the suite's existing smoke sessions.
-just same-semantic 020772580 --smoke --jobs 1 --keep semantic-runs
+just same-semantic 131f99c1 --smoke --jobs 1 --keep semantic-runs
 # Every existing dev and holdout session.
-just same-semantic 020772580 --jobs 1 --keep semantic-runs
+just same-semantic 131f99c1 --jobs 1 --keep semantic-runs
 ```
 
 The recipe exports the base exactly as `same` does and passes `--semantic` to `togi-tool-bench same`. This mode runs both sides freshly, bypasses digest-cache reads and writes and the identical-binary shortcut, and always compares every selected session rather than stopping at the first difference. Build artifacts and scheduling costs still reuse the existing harness cache. Missing sessions/journals and changed simulator exit statuses remain differences; an unreadable journal is an error. `--keep` retains all runs; without it, only differing runs remain.
@@ -214,7 +214,7 @@ Normalization is deliberately narrow:
 
 1. Remove **only base-side `ccd.cap` records**, reporting their count. No head-side event and no other class is removed.
 2. On **both sides**, give remaining records consecutive sequence identities, starting at one separately in each journal. Rebase envelope causes and all numeric payload `Seq` references, including `NightId`, nested witnesses, qualification/certificate/ceiling references, and original-source identities whose session journal is present among the live or archived journals. Immutable provenance into external input sessions remains unchanged. Decision/application ordinals, trial IDs, offsets, durations and other numbers are not sequence references.
-3. A `night.plan` envelope cause naming its immediately preceding retired cap is the production planner's `State::last` cursor, not S evidence (`policy/night_next.rs::plan_owed`). Rebase that cursor to the preceding retained event and report its count; retain the planner's sorted, deduplicated causes. A nonadjacent cap cause, any other event's cap cause, or a payload cap reference is an **error**, not a deleted dependency or empty witness list. An unresolved local reference also refuses comparison.
+3. Rebase an envelope **last-event cursor, not evidence**, only when it names immediately preceding retired cap output: `night.plan` (`night_next::{plan_owed,schedule}`), `night.qualification` in state `start` (`qualify::start_qualification`, the frozen fact-prefix cutoff), and `deadend` for `failure_at_zero` with no core/action (`night_next::dead_end`). This is the complete tuner-source producer table. Move that cursor to the preceding retained event, retain sorted/deduplicated causes, and report its count. Nonadjacent cap causes, causes outside that table, and all payload cap references remain errors; unresolved local references also refuse comparison.
 4. Retain `same`'s exact build normalization: remove `version`/`rev` and only the recognized build description from `session.start`/`config.loaded`. Schema, ruleset, fixes and evidence epoch remain compared.
 5. Compare every remaining record as a JSON value in journal order, ignoring JSON key order/spacing only. `day.imported.raw`, which carries a typed payload as JSON text, is parsed, canonically serialized and rebased in its original session's context too. Other strings, including all message text and strings containing old sequence numbers, are not rewritten or discarded; resulting message differences are reported.
 
