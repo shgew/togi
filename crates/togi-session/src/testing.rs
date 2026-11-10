@@ -482,3 +482,60 @@ pub(crate) fn finished_with_day_records(
     drop(journal.close().unwrap());
     (session, context)
 }
+
+/// A successful day application carries the real, boot-local authorization/write/readback chain.
+pub(crate) fn assert_day_chain(
+    events: &[Event],
+    transactions: &[Seq],
+    target: &togi_journal::CcdVector,
+    readbacks: &PerCore<ObservedOffset>,
+) {
+    assert!(
+        !transactions.is_empty(),
+        "day application has no transactions"
+    );
+    let mut intent = None;
+    let mut write = None;
+    let mut observed = PerCore::default();
+    let mut boot = None;
+    for seq in transactions {
+        let event = events.iter().find(|event| event.seq == *seq).unwrap();
+        if let Some(boot) = &boot {
+            assert_eq!(&event.boot, boot);
+        } else {
+            boot = Some(event.boot.clone());
+        }
+        match &event.payload {
+            Payload::SmuIntent(record) => {
+                assert!(intent.is_none());
+                intent = Some((event.seq, record.command()));
+            }
+            Payload::SmuWrite(record) => {
+                let (seq, command) = intent.take().unwrap();
+                assert_eq!(event.cause, [seq]);
+                assert_eq!(record.command(), command);
+                write = Some(event.seq);
+            }
+            Payload::SmuReadback(record) => {
+                assert_eq!(event.cause, [write.unwrap()]);
+                assert_eq!(
+                    Some(record.offset),
+                    record.expected.map(TargetOffset::observed)
+                );
+                observed.set(record.core, record.offset);
+            }
+            other => panic!("unexpected day transaction: {other:?}"),
+        }
+    }
+    assert!(intent.is_none());
+    assert!(write.is_some());
+    assert_eq!(&observed, readbacks);
+    assert_eq!(
+        observed,
+        target
+            .cores()
+            .iter()
+            .map(|(core, offset)| (core, offset.observed()))
+            .collect()
+    );
+}

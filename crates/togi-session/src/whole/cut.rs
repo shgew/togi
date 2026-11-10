@@ -2,8 +2,8 @@
 //! same projection and commitments as an uninterrupted scenario.
 //!
 //! Nights run through the public `run`. Days run through [`day`], a day host that, like `togi day`, derives
-//! everything it writes from the journal and the policy state it folds, so a day cut after any record resumes where
-//! it stopped.
+//! everything it writes from the journal and the policy state it folds, and applies the uniform profile through
+//! `apply_day_profile`'s durable intent, write and readback chain. A cut after any record resumes where it stopped.
 //!
 //! The swept window starts with the first mapped unit edge and ends with the final day:
 //! every durable event, without a stride. Projections and policy commitments compare all rendered values exactly,
@@ -150,11 +150,145 @@ fn access<T>(result: Result<T, Error>, crashed: &mut bool) -> Option<T> {
         .ok()
 }
 
+fn assert_day_transactions(events: &[Event]) {
+    for event in events {
+        if let Payload::DayApplied(applied) = &event.payload {
+            crate::testing::assert_day_chain(
+                events,
+                &applied.transactions,
+                &applied.target,
+                &applied.readbacks,
+            );
+            for seq in &applied.transactions {
+                let transaction = events.iter().find(|event| event.seq == *seq).unwrap();
+                assert_eq!(transaction.boot, event.boot);
+                assert!(transaction.seq < event.seq);
+            }
+        }
+    }
+}
+
+/// A power cut unwinds immediately after a durable append, before the writer can access the SMU again.
+#[derive(Debug)]
+struct DayPowerCut(Event);
+
+#[derive(Debug)]
+struct DayFs {
+    mem: MemFs,
+    after: usize,
+}
+
+#[derive(Debug)]
+struct DayFile {
+    inner: Box<dyn togi_journal::fs::FsFile>,
+    lines: usize,
+    after: usize,
+    landed: Option<Event>,
+}
+
+impl togi_journal::fs::FsFile for DayFile {
+    fn write_all(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        self.inner.write_all(bytes)?;
+        self.lines += 1;
+        if self.lines == self.after {
+            self.landed = Some(serde_json::from_slice(bytes).unwrap());
+        }
+        Ok(())
+    }
+
+    fn sync(&mut self) -> std::io::Result<()> {
+        self.inner.sync()?;
+        if let Some(event) = self.landed.take() {
+            std::panic::panic_any(DayPowerCut(event));
+        }
+        Ok(())
+    }
+
+    fn set_len(&mut self, len: u64) -> std::io::Result<()> {
+        self.inner.set_len(len)
+    }
+}
+
+impl Fs for DayFs {
+    fn create_dir(&self, path: &std::path::Path) -> std::io::Result<()> {
+        self.mem.create_dir(path)
+    }
+    fn open_append(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<Box<dyn togi_journal::fs::FsFile>> {
+        let lines = match self.mem.read(path) {
+            Ok(bytes) => bytes.iter().filter(|&&byte| byte == b'\n').count(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(error) => return Err(error),
+        };
+        let inner = self.mem.open_append(path)?;
+        if path.file_name().is_some_and(|name| name == "events.jsonl") {
+            Ok(Box::new(DayFile {
+                inner,
+                lines,
+                after: self.after,
+                landed: None,
+            }))
+        } else {
+            Ok(inner)
+        }
+    }
+    fn create_new(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<Box<dyn togi_journal::fs::FsFile>> {
+        self.mem.create_new(path)
+    }
+    fn create_truncate(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<Box<dyn togi_journal::fs::FsFile>> {
+        self.mem.create_truncate(path)
+    }
+    fn open_read(&self, path: &std::path::Path) -> std::io::Result<Box<dyn std::io::Read + Send>> {
+        self.mem.open_read(path)
+    }
+    fn rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+        self.mem.rename(from, to)
+    }
+    fn rename_noreplace(
+        &self,
+        from: &std::path::Path,
+        to: &std::path::Path,
+    ) -> std::io::Result<()> {
+        self.mem.rename_noreplace(from, to)
+    }
+    fn remove_file(&self, path: &std::path::Path) -> std::io::Result<()> {
+        self.mem.remove_file(path)
+    }
+    fn remove_dir(&self, path: &std::path::Path) -> std::io::Result<()> {
+        self.mem.remove_dir(path)
+    }
+    fn sync_dir(&self, path: &std::path::Path) -> std::io::Result<()> {
+        self.mem.sync_dir(path)
+    }
+    fn set_dir_mode(&self, path: &std::path::Path, mode: u32) -> std::io::Result<()> {
+        self.mem.set_dir_mode(path, mode)
+    }
+    fn read_dir(&self, path: &std::path::Path) -> std::io::Result<Vec<togi_journal::fs::DirEntry>> {
+        self.mem.read_dir(path)
+    }
+    fn kind(&self, path: &std::path::Path) -> std::io::Result<Option<FileKind>> {
+        self.mem.kind(path)
+    }
+    fn try_lock(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<Option<togi_journal::fs::FsLock>> {
+        self.mem.try_lock(path)
+    }
+}
+
 /// The day host's journal and the policy state folded from it.
 struct DayJournal {
     journal: Journal,
     state: State,
-    power: Option<(AppendTrigger, Simulator)>,
 }
 
 impl DayJournal {
@@ -168,12 +302,6 @@ impl DayJournal {
         let stamp = stamp(machine);
         let event = self.journal.append(stamp, payload, causes).ok()?.clone();
         self.state.fold(&event).unwrap();
-        if let Some((trigger, sim)) = &self.power
-            && trigger.lands(&event)
-        {
-            sim.power_loss();
-            return None;
-        }
         Some(())
     }
 
@@ -207,195 +335,240 @@ impl DayJournal {
 /// the day boot before, the cold-boot invocation's owed commitments and its application, `hours` of use, and a
 /// clean stop unless `clean` is false. Every record is written only when the journal lacks it, so a day host killed
 /// after any of them and run again on the same boot finishes the day. False when an append failed.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the day host applies the day profile to simulated registers only"
-)]
+// Power cuts use the filesystem's successful sync boundary, including appends inside the real writer.
 fn day(
     bench: &Bench,
     trigger: Option<&AppendTrigger>,
+    power_after: Option<usize>,
     fate: Fate,
     hours: u64,
     clean: bool,
 ) -> RunEnd {
     let mut machine = bench.sim.seams();
     let boot = machine.host.boot_id().unwrap();
-    let journal = simulated(&bench.mem)
-        .open_at(boot.clone(), bench.sim.now())
-        .unwrap();
+    let directory = if let Some(after) = power_after {
+        togi_journal::StateDir::lock_with_fs(
+            std::sync::Arc::new(DayFs {
+                mem: bench.mem.clone(),
+                after,
+            }),
+            std::path::Path::new("/state"),
+        )
+        .unwrap()
+    } else {
+        simulated(&bench.mem)
+    };
+    let journal = directory.open_at(boot.clone(), bench.sim.now()).unwrap();
     if let Some(trigger) = trigger {
         trigger.arm(&bench.mem, journal.events().len());
     }
     let state = folded(journal.events());
-    let mut day = DayJournal {
-        journal,
-        state,
-        power: trigger
-            .filter(|_| matches!(fate, Fate::PowerLoss))
-            .map(|trigger| (trigger.clone(), bench.sim.clone())),
-    };
+    let mut day = DayJournal { journal, state };
     let mut machine_crashed = false;
-    let ran = (|| {
-        if !day
-            .in_boot(&boot)
-            .any(|event| matches!(event.payload, Payload::DayBootStart(_)))
-        {
-            let offsets = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
-            let bios = machine.host.bios_context().unwrap();
-            let start = DayBootStart {
-                build: build(),
-                bios,
-                offsets,
-                watchdog: None,
-            };
-            day.append(&mut machine, start.into(), &[])?;
-        }
-        let crashed = day
-            .events()
-            .iter()
-            .rev()
-            .find(|event| matches!(event.payload, Payload::DayBootStart(_)) && event.boot != boot)
-            .map(|event| event.boot.clone());
-        let ended = |crashed: &BootId| {
-            day.events().iter().any(|event| {
+    let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let ran = (|| {
+            if !day
+                .in_boot(&boot)
+                .any(|event| matches!(event.payload, Payload::DayBootStart(_)))
+            {
+                let offsets = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
+                let bios = machine.host.bios_context().unwrap();
+                let start = DayBootStart {
+                    build: build(),
+                    bios,
+                    offsets,
+                    watchdog: None,
+                };
+                day.append(&mut machine, start.into(), &[])?;
+            }
+            let crashed = day
+                .events()
+                .iter()
+                .rev()
+                .find(|event| {
+                    matches!(event.payload, Payload::DayBootStart(_)) && event.boot != boot
+                })
+                .map(|event| event.boot.clone());
+            let ended = |crashed: &BootId| {
+                day.events().iter().any(|event| {
                 matches!(event.payload, Payload::DayCleanStop(_)) && event.boot == *crashed
                     || matches!(&event.payload, Payload::DayUncleanEnd(end) if end.boot == *crashed)
             })
-        };
-        if let Some(crashed) = crashed.filter(|crashed| !ended(crashed)) {
-            let last_checkpoint = day
-                .in_boot(&crashed)
-                .filter(|event| matches!(event.payload, Payload::DayCheckpoint(_)))
-                .map(|event| event.seq)
-                .last();
-            let end = DayUncleanEnd {
-                offsets: day.recorded_offsets(&crashed).unwrap(),
-                boot: crashed,
-                last_checkpoint,
-                reset_reason: ResetReason {
-                    kind: None,
-                    raw: Vec::new(),
-                    supported: false,
-                },
-                evidence: EndEvidence::unknown(),
             };
-            day.append(&mut machine, end.into(), &[])?;
-        }
-        // The cold-boot invocation settles what the day query owes and ends with the boot's application.
-        if !day
-            .in_boot(&boot)
-            .any(|event| matches!(event.payload, Payload::DayApplied(_)))
-        {
-            loop {
-                let owed = day
-                    .state
-                    .day(&DayQuery {
-                        boot: boot.clone(),
-                        invocation: Invocation::ColdBoot {
-                            pause: Pause::Running,
-                        },
-                        now: machine.clock.now(),
-                    })
-                    .unwrap();
-                if owed.is_empty() {
-                    break;
-                }
-                for decision in owed {
-                    day.append(&mut machine, decision.payload.into(), &decision.causes)?;
-                }
+            if let Some(crashed) = crashed.filter(|crashed| !ended(crashed)) {
+                let last_checkpoint = day
+                    .in_boot(&crashed)
+                    .filter(|event| matches!(event.payload, Payload::DayCheckpoint(_)))
+                    .map(|event| event.seq)
+                    .last();
+                let end = DayUncleanEnd {
+                    offsets: day.recorded_offsets(&crashed).unwrap(),
+                    boot: crashed,
+                    last_checkpoint,
+                    reset_reason: ResetReason {
+                        kind: None,
+                        raw: Vec::new(),
+                        supported: false,
+                    },
+                    evidence: EndEvidence::unknown(),
+                };
+                day.append(&mut machine, end.into(), &[])?;
             }
-            let step = day.events().iter().rev().find_map(|event| {
-                if let Payload::ClimbDecision(step) = &event.payload
-                    && step.cold_boot == boot
-                    && !matches!(step.decision, togi_journal::ClimbAction::Hold { .. })
-                {
-                    let ccds = step
-                        .proposed
-                        .mapping
-                        .units
-                        .iter()
-                        .map(|unit| {
-                            let togi_journal::UnitId::Ccd(ccd) = unit.unit else {
-                                panic!("coarse fixture")
-                            };
-                            let offset = step
-                                .proposed
-                                .cores
-                                .get(unit.cores.first().unwrap())
-                                .unwrap();
-                            (ccd, offset)
+            // The cold-boot invocation settles what the day query owes and ends with the boot's application.
+            if !day
+                .in_boot(&boot)
+                .any(|event| matches!(event.payload, Payload::DayApplied(_)))
+            {
+                loop {
+                    let owed = day
+                        .state
+                        .day(&DayQuery {
+                            boot: boot.clone(),
+                            invocation: Invocation::ColdBoot {
+                                pause: Pause::Running,
+                            },
+                            now: machine.clock.now(),
                         })
-                        .collect::<BTreeMap<_, _>>();
-                    let profile = togi_machine::CcdProfile::try_from(ccds).unwrap();
-                    let target =
-                        CcdVector::expand(profile, &machine.host.topology().unwrap()).unwrap();
-                    Some((togi_journal::DecisionId(event.seq.get()), target))
-                } else {
-                    None
+                        .unwrap();
+                    if owed.is_empty() {
+                        break;
+                    }
+                    for decision in owed {
+                        day.append(&mut machine, decision.payload.into(), &decision.causes)?;
+                    }
                 }
-            });
-            let (cause, target) = if let Some((decision, proposed)) = step {
-                (ApplyCause::Step { decision }, proposed)
-            } else {
-                let applied = day.state.project().applied.unwrap().to_ccd().unwrap();
-                let cores = machine.host.topology().unwrap();
-                let target = CcdVector::expand(applied, &cores).unwrap();
-                (ApplyCause::Reapplication {}, target)
-            };
-            for (core, offset) in target.cores().iter() {
-                access(machine.smu.set_offset(core, offset), &mut machine_crashed)?;
+                let step = day.events().iter().rev().find_map(|event| {
+                    if let Payload::ClimbDecision(step) = &event.payload
+                        && step.cold_boot == boot
+                        && !matches!(step.decision, togi_journal::ClimbAction::Hold { .. })
+                    {
+                        let ccds = step
+                            .proposed
+                            .mapping
+                            .units
+                            .iter()
+                            .map(|unit| {
+                                let togi_journal::UnitId::Ccd(ccd) = unit.unit else {
+                                    panic!("coarse fixture")
+                                };
+                                let offset = step
+                                    .proposed
+                                    .cores
+                                    .get(unit.cores.first().unwrap())
+                                    .unwrap();
+                                (ccd, offset)
+                            })
+                            .collect::<BTreeMap<_, _>>();
+                        let profile = togi_machine::CcdProfile::try_from(ccds).unwrap();
+                        let target =
+                            CcdVector::expand(profile, &machine.host.topology().unwrap()).unwrap();
+                        Some((togi_journal::DecisionId(event.seq.get()), target))
+                    } else {
+                        None
+                    }
+                });
+                let (cause, target) = if let Some((decision, proposed)) = step {
+                    (ApplyCause::Step { decision }, proposed)
+                } else {
+                    let applied = day.state.project().applied.unwrap().to_ccd().unwrap();
+                    let cores = machine.host.topology().unwrap();
+                    let target = CcdVector::expand(applied, &cores).unwrap();
+                    (ApplyCause::Reapplication {}, target)
+                };
+                let topology = machine.host.topology().unwrap();
+                let validated = machine.host.validate_smu().unwrap();
+                let swept = machine.trials.sweep(&CancellationToken::new()).unwrap();
+                let start = day.events().len();
+                let result = crate::write::apply_day_profile(
+                    &mut day.journal,
+                    &*machine.clock,
+                    &mut *machine.smu,
+                    validated,
+                    &swept.stopped,
+                    &topology,
+                    &target,
+                    &[],
+                );
+                for event in &day.journal.events()[start..] {
+                    day.state.fold(event).unwrap();
+                }
+                let written = match result {
+                    Ok(written) => written,
+                    Err(error) => {
+                        if matches!(&error, crate::write::DayWriteError::Write(failure)
+                        if matches!(failure.recovery.as_ref(), crate::write::DayRecovery::Crashed))
+                        {
+                            machine_crashed = true;
+                        }
+                        return None;
+                    }
+                };
+                let applications = day
+                    .events()
+                    .iter()
+                    .filter(|event| matches!(event.payload, Payload::DayApplied(_)))
+                    .count();
+                let applied = DayApplied {
+                    application: ApplicationId(u64::try_from(applications).unwrap() + 1),
+                    cause,
+                    target: written.target,
+                    readbacks: written.readbacks,
+                    transactions: written.transactions,
+                    boot: boot.clone(),
+                    mono_ns: u64::try_from(machine.clock.monotonic().unwrap().as_nanos()).unwrap(),
+                };
+                day.append(&mut machine, applied.into(), &[])?;
+                assert_day_transactions(day.events());
             }
             let readbacks = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
-            let applications = day
-                .events()
-                .iter()
-                .filter(|event| matches!(event.payload, Payload::DayApplied(_)))
-                .count();
-            let applied = DayApplied {
-                application: ApplicationId(u64::try_from(applications).unwrap() + 1),
-                cause,
-                target,
-                readbacks,
-                transactions: Vec::new(),
-                boot: boot.clone(),
-                mono_ns: u64::try_from(machine.clock.monotonic().unwrap().as_nanos()).unwrap(),
-            };
-            day.append(&mut machine, applied.into(), &[])?;
-        }
-        let readbacks = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
-        if day.recorded_offsets(&boot) != Some(readbacks) {
-            let changed = DayOffsetsChanged { offsets: readbacks };
-            day.append(&mut machine, changed.into(), &[])?;
-        }
-        if !day
-            .in_boot(&boot)
-            .any(|event| matches!(event.payload, Payload::DayCheckpoint(_)))
-        {
-            machine
-                .clock
-                .sleep(&CancellationToken::new(), Duration::from_secs(hours * 3600))
-                .unwrap();
-            let checkpoint = DayCheckpoint {
-                applied_secs: hours * 3600,
-                load_mix: togi_journal::LoadMix::default(),
-                watchdog: None,
-            };
-            day.append(&mut machine, checkpoint.into(), &[])?;
-        }
-        if clean
-            && !day
+            if day.recorded_offsets(&boot) != Some(readbacks) {
+                let changed = DayOffsetsChanged { offsets: readbacks };
+                day.append(&mut machine, changed.into(), &[])?;
+            }
+            if !day
                 .in_boot(&boot)
-                .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
-        {
-            day.append(&mut machine, DayCleanStop {}.into(), &[])?;
-        }
-        Some(())
-    })()
-    .is_some();
+                .any(|event| matches!(event.payload, Payload::DayCheckpoint(_)))
+            {
+                machine
+                    .clock
+                    .sleep(&CancellationToken::new(), Duration::from_secs(hours * 3600))
+                    .unwrap();
+                let checkpoint = DayCheckpoint {
+                    applied_secs: hours * 3600,
+                    load_mix: togi_journal::LoadMix::default(),
+                    watchdog: None,
+                };
+                day.append(&mut machine, checkpoint.into(), &[])?;
+            }
+            if clean
+                && !day
+                    .in_boot(&boot)
+                    .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
+            {
+                day.append(&mut machine, DayCleanStop {}.into(), &[])?;
+            }
+            Some(())
+        })()
+        .is_some();
+        ran
+    }));
+    let ran = match outcome {
+        Ok(ran) => ran,
+        Err(payload) => match payload.downcast::<DayPowerCut>() {
+            Ok(cut) => {
+                assert!(trigger.unwrap().lands(&cut.0));
+                bench.sim.power_loss();
+                machine_crashed = true;
+                false
+            }
+            Err(payload) => std::panic::resume_unwind(payload),
+        },
+    };
     let fired = trigger.is_some_and(|trigger| trigger.disarm(&bench.mem));
     if ran {
         assert!(!fired, "the day continued after its cut");
         let events = day.events().to_vec();
+        assert_day_transactions(&events);
         if matches!(fate, Fate::Killed) {
             let replay = folded(&events);
             assert_eq!(
@@ -573,8 +746,24 @@ fn play(
                 return (None, durable(bench));
             }
             Phase::Run { trials } => segment(bench, trigger.as_ref(), fate, base, trials),
-            Phase::Day { hours } => day(bench, trigger.as_ref(), fate, hours, true),
-            Phase::Crash { hours } => day(bench, trigger.as_ref(), fate, hours, false),
+            Phase::Day { hours } => day(
+                bench,
+                trigger.as_ref(),
+                cut.filter(|(_, fate)| matches!(fate, Fate::PowerLoss))
+                    .map(|(after, _)| after),
+                fate,
+                hours,
+                true,
+            ),
+            Phase::Crash { hours } => day(
+                bench,
+                trigger.as_ref(),
+                cut.filter(|(_, fate)| matches!(fate, Fate::PowerLoss))
+                    .map(|(after, _)| after),
+                fate,
+                hours,
+                false,
+            ),
         };
         match ended {
             RunEnd::Stopped(stop, events) => {
