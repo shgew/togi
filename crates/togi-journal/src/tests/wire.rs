@@ -31,7 +31,7 @@ fn frequency_events_are_run_audit_without_trial_or_core_association(kind: EventK
     assert_eq!(kind.group(), "frequency");
     assert_eq!(payload.trial(), None);
     for id in 0..16 {
-        assert_eq!(payload.names_core(super::fixtures::core(id)), false);
+        assert!(!payload.names_core(super::fixtures::core(id)));
     }
     assert_eq!(SCHEMA, 1);
 }

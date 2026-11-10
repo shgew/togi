@@ -379,7 +379,7 @@ fn ended(handle: &Handle) -> bool {
         match event {
             Event::Finished(_) => return true,
             Event::Frequency(request) => super::harness::acknowledge(request),
-            _ => {}
+            Event::Progress(_) | Event::Sample(_) | Event::Signal { .. } => {}
         }
     }
     false
