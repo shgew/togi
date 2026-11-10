@@ -32,12 +32,14 @@ pub struct ClassCounts {
 #[derive(Clone, Debug, Default)]
 pub struct Summary {
     pub dropped_caps: usize,
+    pub rebased_plan_causes: usize,
     pub classes: BTreeMap<String, ClassCounts>,
 }
 
 impl Summary {
     pub(crate) fn merge(&mut self, other: Self) {
         self.dropped_caps += other.dropped_caps;
+        self.rebased_plan_causes += other.rebased_plan_causes;
         for (kind, counts) in other.classes {
             let total = self.classes.entry(kind).or_default();
             total.base += counts.base;
@@ -54,6 +56,11 @@ impl Summary {
             w,
             "semantic: dropped {} base ccd.cap records; no head records dropped",
             self.dropped_caps
+        )?;
+        writeln!(
+            w,
+            "semantic: rebased {} night.plan latest-event causes across retired caps",
+            self.rebased_plan_causes
         )?;
         for (kind, counts) in &self.classes {
             writeln!(
@@ -209,13 +216,14 @@ fn load(source: &impl Source, dir: &Path) -> Result<Journals, JournalError> {
     Ok(journals)
 }
 
-fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<usize, JournalError> {
+fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usize), JournalError> {
     let mut identities = Identities::new();
-    let mut dropped = 0;
-    for journal in journals.values() {
+    let (mut dropped, mut rebased_plan_causes) = (0, 0);
+    for journal in journals.values_mut() {
         let mut map = BTreeMap::new();
         let mut ordinal = 0_u64;
-        for (line, event) in journal.records.iter().enumerate() {
+        let (mut previous_cap, mut retained) = (None, None);
+        for (line, event) in journal.records.iter_mut().enumerate() {
             let seq = event["seq"]
                 .as_u64()
                 .ok_or_else(|| invalid(&journal.path, line + 1, "invalid sequence"))?;
@@ -224,8 +232,29 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<usize, Journ
             }
             let canonical = if drop_caps && event["kind"] == "ccd.cap" {
                 dropped += 1;
+                previous_cap = Some(seq);
                 None
             } else {
+                // Night plans cite State::last, not S evidence. Retiring the
+                // immediately preceding cap moves that cursor to the last fact.
+                if event["kind"] == "night.plan"
+                    && let (Some(cap), Some(last)) = (previous_cap, retained)
+                    && let Some(causes) = event["cause"].as_array_mut()
+                {
+                    let before = rebased_plan_causes;
+                    for cause in causes.iter_mut() {
+                        if cause.as_u64() == Some(cap) {
+                            *cause = Value::from(last);
+                            rebased_plan_causes += 1;
+                        }
+                    }
+                    if rebased_plan_causes != before {
+                        causes.sort_by_key(Value::as_u64);
+                        causes.dedup();
+                    }
+                }
+                previous_cap = None;
+                retained = Some(seq);
                 ordinal += 1;
                 Some(ordinal)
             };
@@ -252,7 +281,7 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<usize, Journ
             )?;
         }
     }
-    Ok(dropped)
+    Ok((dropped, rebased_plan_causes))
 }
 
 // These are the journal's Seq fields (including transparent NightId), not durable
@@ -423,8 +452,10 @@ pub(in crate::same) fn compare_with(
 ) -> Result<Comparison, JournalError> {
     let mut base = load(source, base)?;
     let mut head = load(source, head)?;
+    let (dropped_caps, rebased_plan_causes) = canonicalize(&mut base, true)?;
     let mut summary = Summary {
-        dropped_caps: canonicalize(&mut base, true)?,
+        dropped_caps,
+        rebased_plan_causes,
         ..Summary::default()
     };
     canonicalize(&mut head, false)?;

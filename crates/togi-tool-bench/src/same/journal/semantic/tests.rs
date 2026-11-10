@@ -103,6 +103,45 @@ fn a_dependency_on_a_removed_cap_is_an_error(field: &str) {
 }
 
 #[test]
+fn a_night_plan_latest_event_cursor_crosses_only_its_immediately_preceding_cap() {
+    let start = event(1, "session.start", json!({"session": "s"}));
+    let fact = event(2, "exposure.observed", json!({}));
+    let cap = event(3, "ccd.cap", json!({}));
+    let mut plan = event(4, "night.plan", json!({"night": 1, "tasks": []}));
+    plan["cause"] = json!([1, 3]);
+    let mut head_plan = plan.clone();
+    head_plan["seq"] = json!(3);
+    head_plan["cause"] = json!([1, 2]);
+    let mut base = vec![start.clone(), fact.clone(), cap, plan];
+    let head = vec![start, fact, head_plan];
+    let result = compare(&base, &head).unwrap();
+    assert!(result.first.is_none());
+    assert_eq!(result.summary.rebased_plan_causes, 1);
+    assert_eq!(result.summary.classes["night.plan"].identical, 1);
+
+    // Explicit payload evidence is never a latest-event cursor.
+    base[3]["data"]["witnesses"] = json!([3]);
+    assert!(
+        compare(&base, &head)
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("references removed ccd.cap")
+    );
+    base[3]["data"].as_object_mut().unwrap().remove("witnesses");
+    // A nonadjacent cap cause is not the State::last dependency either.
+    base.insert(3, event(4, "task.start", json!({})));
+    base[4]["seq"] = json!(5);
+    assert!(
+        compare(&base, &head)
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("references removed ccd.cap")
+    );
+}
+
+#[test]
 fn head_caps_are_never_dropped() {
     let [base, mut head] = histories();
     head.push(event(4, "ccd.cap", json!({"new": -5})));
