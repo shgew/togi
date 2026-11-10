@@ -333,6 +333,90 @@ fn a_nonzero_permitted_proposal_commits_the_applied_step_and_stop_zeroes() {
     );
 }
 
+#[test_case(1; "loss with a stop signal")]
+#[test_case(2; "loss before a stop signal")]
+fn a_lost_watchdog_zeroes_the_nonzero_profile_and_stops_without_reapplying(ticks: usize) {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let lost = WatchdogState::Unarmed {
+        detail: "watchdog stopped counting".into(),
+    };
+    let mut hardware = Hardware::stock();
+    hardware.reading.watchdog = [armed(), armed(), lost.clone(), armed()].into();
+    let cancel = CancellationToken::new();
+    let result = serve(
+        &mut journal,
+        &mut hardware,
+        &mut ticking(ticks, SAMPLE, SAMPLE),
+        &cancel,
+        &current_build(),
+    );
+    assert!(matches!(result, Err(Error::Watchdog)));
+    assert_eq!(
+        hardware.writes,
+        [
+            TargetOffset::ZERO,
+            TargetOffset::new(-5).unwrap(),
+            TargetOffset::ZERO,
+        ]
+    );
+    assert_eq!(hardware.current, 0);
+    assert_eq!(applications(&journal).len(), 1);
+    assert_eq!(hardware.reading.watchdog, [armed()]);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
+    let tail = &journal.events()[journal.events().len() - 6..];
+    assert_eq!(
+        tail.iter().map(Event::kind).collect::<Vec<_>>(),
+        [
+            EventKind::DayCheckpoint,
+            EventKind::SmuIntent,
+            EventKind::SmuWrite,
+            EventKind::SmuReadback,
+            EventKind::DayOffsetsChanged,
+            EventKind::DayCheckpoint,
+        ]
+    );
+    if let Payload::SmuReadback(readback) = &tail[3].payload {
+        assert_eq!(readback.offset, ObservedOffset(0));
+    } else {
+        panic!("stock readback missing");
+    }
+    assert!(
+        !journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
+    );
+}
+
+#[test_case(Failure::Write(3); "stock write fails")]
+#[test_case(Failure::Read(7); "stock readback fails")]
+fn failed_watchdog_loss_cleanup_never_claims_verified_stock(failure: Failure) {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let mut hardware = Hardware::stock();
+    hardware.failure = failure;
+    let lost = WatchdogState::Unarmed {
+        detail: "watchdog stopped counting".into(),
+    };
+    hardware.reading.watchdog = [armed(), armed(), lost.clone()].into();
+    let result = serve(
+        &mut journal,
+        &mut hardware,
+        &mut ticking(2, SAMPLE, SAMPLE),
+        &CancellationToken::new(),
+        &current_build(),
+    );
+    assert!(matches!(result, Err(Error::Apply(_))));
+    assert_eq!(hardware.emergency, 1);
+    assert_eq!(applications(&journal).len(), 1);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
+    assert!(!journal.events().iter().any(|event| {
+        matches!(&event.payload, Payload::DayCleanStop(_))
+            || matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(0))
+    }));
+}
+
 #[test]
 fn a_fault_logged_before_the_service_started_keeps_the_startup_profile_not_the_applied_one() {
     let mut journal = seed();
@@ -410,6 +494,61 @@ fn an_unarmed_or_noncounting_watchdog_refuses_without_a_write(detail: &str) {
     ));
     assert_eq!(hardware.writes, []);
     assert_eq!(hardware.emergency, 0);
+}
+
+#[test]
+fn an_unarmed_read_after_an_armed_preflight_applies_nothing() {
+    let mut journal = seed();
+    proposed_climb(&mut journal);
+    let lost = WatchdogState::Unarmed {
+        detail: "watchdog stopped counting".into(),
+    };
+    let mut hardware = Hardware::stock();
+    hardware.reading.watchdog = [armed(), lost.clone()].into();
+    let result = serve(
+        &mut journal,
+        &mut hardware,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    );
+    assert!(matches!(result, Err(Error::Watchdog)));
+    assert_eq!(hardware.writes, []);
+    assert_eq!(hardware.emergency, 1);
+    assert_eq!(applications(&journal).len(), 0);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
+    assert!(!journal.events().iter().any(|event| {
+        matches!(
+            event.payload,
+            Payload::SmuIntent(_) | Payload::DayCleanStop(_)
+        )
+    }));
+}
+
+#[test]
+fn repeated_unarmed_reads_at_stock_write_nothing_and_keep_observing() {
+    let mut journal = seed();
+    let lost = WatchdogState::Unarmed {
+        detail: "watchdog stopped counting".into(),
+    };
+    let mut hardware = Hardware::stock();
+    hardware.reading.watchdog = [armed(), armed(), lost.clone()].into();
+    serve(
+        &mut journal,
+        &mut hardware,
+        &mut ticking(3, SAMPLE, SAMPLE),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    // The cold boot's stock application and the stop's zero: no unarmed read between them wrote.
+    assert_eq!(hardware.writes, [TargetOffset::ZERO, TargetOffset::ZERO]);
+    assert_eq!(hardware.emergency, 0);
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
+    assert_eq!(
+        journal.events().last().map(Event::kind),
+        Some(EventKind::DayCleanStop)
+    );
 }
 
 #[test]
