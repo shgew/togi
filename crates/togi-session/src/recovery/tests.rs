@@ -611,7 +611,7 @@ fn two_interrupted_writes_replay_without_inventing_a_completion() {
         Some(first)
     );
     let current = log.intent(0, 0, &[]);
-    log.crashed("b0", &[first]);
+    log.crashed("b0", &[]);
     let state = log.state();
     assert_eq!(state.latest_unmatched_intent(&boot("b0")), None);
     assert_eq!(state.latest_unmatched_intent(&boot("b1")), Some(current));
