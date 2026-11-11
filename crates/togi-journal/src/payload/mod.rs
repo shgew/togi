@@ -530,6 +530,12 @@ impl EventKind {
         }
     }
 
+    /// A kind only a tuning run appends, excluding its notes `session.warning` and `boot.leave_reason`.
+    pub const fn admits_tuning_boot(self) -> bool {
+        matches!(self.writer(), Writer::Run)
+            && !matches!(self, Self::SessionWarning | Self::BootLeaveReason)
+    }
+
     /// Whether this is a day observer event or a day-policy decision, event or import.
     /// Day kinds come from normal boots and the day policy, not from a tuning boot, so tuning-boot tracking such as
     /// crash detection and boot continuity skips them. The observer's raw records are inputs to the day policy.

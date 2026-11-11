@@ -431,6 +431,7 @@ impl RecoveryState {
             },
             Payload::DeadEnd(dead_end) => self.dead_ended(seq, &event.cause, dead_end),
             Payload::DayBootStart(_) => {
+                self.resolve_smu_intents(event);
                 if self
                     .night_boot
                     .as_ref()
@@ -639,7 +640,7 @@ impl RecoveryState {
             EventKind::SessionWarning | EventKind::BootLeaveReason
         );
         let tuning = match event.kind().writer() {
-            Writer::Run => !note,
+            Writer::Run => event.kind().admits_tuning_boot(),
             Writer::Shared => false,
             Writer::Day | Writer::Outside => return,
         };
@@ -670,8 +671,11 @@ impl RecoveryState {
     fn resolve_smu_intents(&mut self, event: &Event) {
         self.unmatched.retain(|open| {
             !(matches!(open.kind, IntentKind::Smu)
-                && open.boot == event.boot
-                && event.cause.contains(&open.seq))
+                && event.resolves_smu_intent(
+                    open.seq,
+                    &open.boot,
+                    self.topology.iter().map(|(core, _)| core),
+                ))
         });
     }
 

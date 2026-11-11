@@ -64,6 +64,116 @@ fn command() -> SmuCommand {
     }
 }
 
+#[derive(Clone, Copy)]
+enum IntentBootHistory {
+    DayOnly,
+    CrashedTuning,
+    DayThenTuning,
+    ShutdownTuning,
+    SameBoot,
+}
+
+#[test_case(false, true, IntentBootHistory::DayOnly; "generic day complete")]
+#[test_case(true, true, IntentBootHistory::DayOnly; "dedicated day complete")]
+#[test_case(false, false, IntentBootHistory::DayOnly; "generic day partial")]
+#[test_case(true, false, IntentBootHistory::DayOnly; "dedicated day partial")]
+#[test_case(true, true, IntentBootHistory::CrashedTuning; "crashed tuning boot")]
+#[test_case(false, true, IntentBootHistory::DayThenTuning; "day then tuning")]
+#[test_case(true, true, IntentBootHistory::ShutdownTuning; "tuning shutdown before intents")]
+#[test_case(false, true, IntentBootHistory::SameBoot; "same tuning boot")]
+fn day_start_cites_intents_no_crash_attribution_awaits(
+    dedicated: bool,
+    complete: bool,
+    history: IntentBootHistory,
+) {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    let state = crate::State::replay(journal.events()).unwrap();
+    let initial_start = crate::DayBootStart {
+        build: state.session.unwrap().build,
+        bios: togi_machine::BiosContext::default(),
+        offsets: state
+            .cores
+            .iter()
+            .map(|facts| (facts.core, togi_machine::ObservedOffset(0)))
+            .collect(),
+        watchdog: None,
+    };
+    if matches!(history, IntentBootHistory::DayThenTuning) {
+        journal
+            .append_day_boot_start(stamp(1), initial_start, &[])
+            .unwrap();
+    }
+    if !matches!(history, IntentBootHistory::DayOnly) {
+        journal
+            .append(
+                stamp(1),
+                crate::SessionContext::from(togi_machine::BiosContext::default()).into(),
+                &[],
+            )
+            .unwrap();
+    }
+    if matches!(history, IntentBootHistory::ShutdownTuning) {
+        journal
+            .append(
+                stamp(1),
+                crate::Shutdown {
+                    reason: crate::ShutdownReason::Cycles,
+                    kernel_cursor: None,
+                    kernel_error: None,
+                    cycles: Some(std::num::NonZeroU32::MIN),
+                }
+                .into(),
+                &[],
+            )
+            .unwrap();
+    }
+    let first = journal
+        .append_smu_intent(stamp(2), command(), &[])
+        .unwrap()
+        .intent();
+    let second = journal
+        .append_smu_intent(stamp(3), command(), &[])
+        .unwrap()
+        .intent();
+    if !matches!(history, IntentBootHistory::SameBoot) {
+        journal.reboot(boot(2)).unwrap();
+    }
+    let eligible = !matches!(
+        history,
+        IntentBootHistory::CrashedTuning | IntentBootHistory::DayThenTuning
+    );
+    let state = crate::State::replay(journal.events()).unwrap();
+    let cores = state.cores;
+    let offsets = cores
+        .iter()
+        .take(if complete { cores.len() } else { 0 })
+        .map(|facts| (facts.core, togi_machine::ObservedOffset(0)))
+        .collect();
+    let start = crate::DayBootStart {
+        build: state.session.unwrap().build,
+        bios: togi_machine::BiosContext::default(),
+        offsets,
+        watchdog: None,
+    };
+    let event = if dedicated {
+        journal.append_day_boot_start(stamp(5), start, &[Seq::FIRST])
+    } else {
+        journal.append(stamp(5), start.into(), &[Seq::FIRST])
+    }
+    .unwrap();
+    assert_eq!(
+        event.cause,
+        if complete && eligible {
+            vec![Seq::FIRST, first, second]
+        } else {
+            vec![Seq::FIRST]
+        }
+    );
+    let state = crate::State::replay(journal.events()).unwrap();
+    assert_eq!(state.open.len(), if complete && eligible { 0 } else { 2 });
+}
+
 fn nan_payload() -> Payload {
     Payload::HuntStart(HuntStart {
         hunt: std::num::NonZeroU32::MIN,

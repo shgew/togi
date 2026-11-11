@@ -13,7 +13,7 @@ use crate::dir::{ArchiveKind, DirError, StateDir, StateError};
 use crate::event::{Event, Seq, Stamp};
 use crate::fs::FsFile;
 use crate::payload::{
-    EventKind, Payload, SessionArchived, SmuCommand, SmuIntentRecord, SmuWriteRecord,
+    DayBootStart, EventKind, Payload, SessionArchived, SmuCommand, SmuIntentRecord, SmuWriteRecord,
 };
 use crate::reader::{FileError, LookupError};
 use crate::receipt::{JournalId, SmuIntentReceipt, SmuWritten};
@@ -62,6 +62,8 @@ pub enum AppendError {
     Lossy,
     #[error("the receipt belongs to another journal")]
     ForeignReceipt,
+    #[error("fold journal before day observation")]
+    Fold(#[from] crate::FoldError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -243,7 +245,49 @@ impl Journal {
         if let Payload::SmuIntent(_) | Payload::SmuWrite(_) = payload {
             return Err(AppendError::Refused(payload.kind()));
         }
+        if let Payload::DayBootStart(start) = payload {
+            return self.append_day_boot_start(stamp, start, cause);
+        }
         self.commit(stamp, payload, cause)
+    }
+
+    /// Records the start readback, citing open SMU intents not awaiting crash attribution.
+    ///
+    /// Own-boot intents are always eligible. Another boot's intents are eligible only
+    /// when it has no non-note tuning-run event or its last such event is shutdown.
+    /// Generic [`Self::append`] also routes day starts here. Partial readbacks carry no
+    /// inherited-intent citations; the fold independently requires complete observation.
+    ///
+    /// # Errors
+    /// Returns a fold error or the ordinary durable append failure.
+    pub fn append_day_boot_start(
+        &mut self,
+        stamp: Stamp,
+        start: DayBootStart,
+        cause: &[Seq],
+    ) -> Result<&Event, AppendError> {
+        let state = crate::State::replay(&self.events)?;
+        let mut causes = cause.to_vec();
+        if start.observes_cores(state.cores.iter().map(|facts| facts.core)) {
+            let mut tuning_ends = std::collections::HashMap::new();
+            for event in &self.events {
+                if event.kind().admits_tuning_boot() {
+                    tuning_ends.insert(&event.boot, event.kind());
+                }
+            }
+            for open in &state.open {
+                if open.kind == EventKind::SmuIntent
+                    && (&open.boot == self.boot()
+                        || tuning_ends
+                            .get(&open.boot)
+                            .is_none_or(|kind| *kind == EventKind::Shutdown))
+                    && !causes.contains(&open.seq)
+                {
+                    causes.push(open.seq);
+                }
+            }
+        }
+        self.commit(stamp, start.into(), &causes)
     }
 
     /// Records the intent to run `command` and returns the receipt that authorizes writing it. A buffered journal

@@ -8,7 +8,7 @@ use serde::de::Error as _;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
-use togi_machine::{BootId, serde_object::Object};
+use togi_machine::{BootId, CoreId, serde_object::Object};
 
 use crate::payload::{EventKind, Payload, UnknownKind};
 use crate::unknown::{self, Step, Unknown, is_unknown_field};
@@ -283,6 +283,28 @@ impl Event {
 
     pub const fn kind(&self) -> EventKind {
         self.payload.kind()
+    }
+
+    /// Whether this recorded observation or completion retires the cited SMU intent.
+    ///
+    /// Direct SMU results remain boot-local. A day start may instead observe an inherited
+    /// obligation across boots, but only with every recorded core present in its readback.
+    pub fn resolves_smu_intent(
+        &self,
+        intent: Seq,
+        boot: &BootId,
+        cores: impl IntoIterator<Item = CoreId>,
+    ) -> bool {
+        if !self.cause.contains(&intent) {
+            return false;
+        }
+        if let Payload::DayBootStart(start) = &self.payload {
+            return start.observes_cores(cores);
+        }
+        matches!(
+            self.payload,
+            Payload::SmuWrite(_) | Payload::SmuError(_) | Payload::SmuReadback(_)
+        ) && self.boot == *boot
     }
 
     pub fn decode(line: &str) -> Result<Self, DecodeError> {
