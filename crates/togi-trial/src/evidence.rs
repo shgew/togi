@@ -1,5 +1,5 @@
 use togi_backend::Line;
-use togi_machine::{Backend, CoreId, CpuId, Sample, Signal, TrialFailure};
+use togi_machine::{Backend, CoreId, CpuId, PerCore, Sample, Signal, TrialFailure};
 
 const SYSTEMD_STARTUP_FAILURES: [&str; 2] =
     ["Failed to start transient scope unit", "Failed to execute"];
@@ -21,6 +21,13 @@ impl Stream {
     }
 }
 
+/// Only output whose bytes are known to belong to the measured interval can verify a core.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Verification {
+    Outside,
+    Measured,
+}
+
 /// What the supervisor saw, in the order it saw it; instances are indices into the trial plan.
 #[derive(Debug)]
 pub(crate) enum Observation {
@@ -28,6 +35,7 @@ pub(crate) enum Observation {
         instance: usize,
         pid: u32,
         stream: Stream,
+        verification: Verification,
         line: Line,
         text: String,
     },
@@ -125,6 +133,10 @@ struct Instance {
 pub(crate) struct Selector {
     /// Indexed like the trial plan.
     instances: Vec<Instance>,
+    /// Present cores are loaded; `None` means no instance on that core reported a checked result
+    /// known to have been produced during the measured interval, excluding readiness and teardown.
+    /// Kept off the stack so readiness and teardown futures do not carry sixteen strings inline.
+    verified: Box<PerCore<Option<String>>>,
     failure: Option<TrialFailure>,
     escaped: Vec<CpuId>,
     inconclusive: Option<String>,
@@ -159,6 +171,7 @@ impl Selector {
                     setup_error: false,
                 })
                 .collect(),
+            verified: Box::new(instances.iter().map(|&(core, _, _)| (core, None)).collect()),
             failure: None,
             escaped: Vec::new(),
             inconclusive: None,
@@ -207,8 +220,9 @@ impl Selector {
                 pid,
                 stream,
                 line,
+                verification,
                 text,
-            } => self.line(instance, pid, stream, line, text),
+            } => self.line(instance, pid, stream, verification, line, text),
             Observation::UnexpectedExit {
                 instance,
                 pid,
@@ -303,6 +317,7 @@ impl Selector {
         instance: usize,
         pid: u32,
         stream: Stream,
+        verification: Verification,
         line: Line,
         text: String,
     ) -> Decision {
@@ -318,6 +333,26 @@ impl Selector {
         };
         match line {
             Line::Other => Decision::default(),
+            Line::Verified(detail) => {
+                if stream == Stream::Stdout {
+                    if verification == Verification::Measured {
+                        self.verified.get_or_insert_with(core, || detail.clone());
+                    }
+                    self.line(
+                        instance,
+                        pid,
+                        stream,
+                        verification,
+                        Line::Progress(detail),
+                        text,
+                    )
+                } else {
+                    if verification == Verification::Measured {
+                        self.verified.get_or_insert_with(core, || detail);
+                    }
+                    Decision::default()
+                }
+            }
             Line::Progress(detail) => Decision {
                 stop: false,
                 reports: if stream == Stream::Stdout {
@@ -358,7 +393,7 @@ impl Selector {
             Line::SetupError => {
                 self.instances[instance].setup_error = true;
                 let backend = self.instances[instance].backend;
-                self.weak_reason(|| format!("{backend} setup error: {text}"));
+                self.weak_reason(|| format!("core {core:02} {backend} setup error: {text}"));
                 Decision {
                     stop: true,
                     reports: Vec::new(),
@@ -410,6 +445,19 @@ impl Selector {
         if !self.escaped() && self.failure.is_none() {
             self.diagnostics.append(&mut self.line_caps);
         }
+        if self.inconclusive.is_none() && self.failure.is_none() && !self.escaped() {
+            let missing: Vec<_> = self
+                .verified
+                .iter_ref()
+                .filter_map(|(core, result)| match result {
+                    Some(_) => None,
+                    None => Some(format!("core {core:02} has no backend-verified result")),
+                })
+                .collect();
+            if !missing.is_empty() {
+                self.inconclusive = Some(missing.join("; "));
+            }
+        }
         (
             Verdict {
                 failure: self.failure,
@@ -439,9 +487,66 @@ mod tests {
             instance: 0,
             pid: 42,
             stream,
+            verification: Verification::Measured,
             line,
             text: text.to_owned(),
         }
+    }
+
+    #[test_case::test_case(Verification::Outside, Some("core 03 has no backend-verified result"); "outside measured interval")]
+    #[test_case::test_case(Verification::Measured, None; "inside measured interval")]
+    fn a_checked_result_verifies_its_core_only_in_the_measured_interval(
+        verification: Verification,
+        inconclusive: Option<&str>,
+    ) {
+        let mut s = selector();
+        s.observe(Observation::Line {
+            instance: 0,
+            pid: 42,
+            stream: Stream::Stdout,
+            verification,
+            line: Line::Verified("self-test".to_owned()),
+            text: "verified self-test".to_owned(),
+        });
+        assert_eq!(conclude(s).inconclusive.as_deref(), inconclusive);
+    }
+
+    #[test]
+    fn progress_is_not_a_checked_result() {
+        let mut s = selector();
+        s.observe(line(
+            Stream::Stdout,
+            Line::Progress("working".into()),
+            "working",
+        ));
+        assert_eq!(
+            conclude(s).inconclusive.as_deref(),
+            Some("core 03 has no backend-verified result")
+        );
+    }
+
+    #[test]
+    fn a_checked_result_on_either_smt_instance_only_verifies_its_own_core() {
+        let mut s = Selector::new(
+            Backend::Ycruncher,
+            &[
+                (core(1), CpuId::from(1)),
+                (core(1), CpuId::from(33)),
+                (core(7), CpuId::from(7)),
+            ],
+        );
+        s.observe(Observation::Line {
+            instance: 1,
+            pid: 42,
+            stream: Stream::Stdout,
+            verification: Verification::Measured,
+            line: Line::Verified("BKT passed".into()),
+            text: "Running BKT: Passed".into(),
+        });
+        assert_eq!(
+            conclude(s).inconclusive.as_deref(),
+            Some("core 07 has no backend-verified result")
+        );
     }
 
     fn compute() -> Observation {
@@ -501,6 +606,7 @@ mod tests {
             instance: 1,
             pid: 1,
             stream: Stream::Stdout,
+            verification: Verification::Measured,
             line: Line::Progress("ok".into()),
             text: "ok".into(),
         });
@@ -547,6 +653,7 @@ mod tests {
             instance: 1,
             pid: 2,
             stream: Stream::Stdout,
+            verification: Verification::Measured,
             line: Line::ComputationError,
             text: "COMPUTE ERROR".into(),
         });
@@ -771,6 +878,7 @@ mod tests {
             instance: 1,
             pid: 43,
             stream: Stream::Stdout,
+            verification: Verification::Measured,
             line: Line::SetupError,
             text: "PIN FAILED".into(),
         });
@@ -820,6 +928,7 @@ mod tests {
             instance,
             pid: 40 + u32::try_from(instance).unwrap(),
             stream,
+            verification: Verification::Measured,
             line,
             text: text.to_owned(),
         }
@@ -869,7 +978,7 @@ mod tests {
         assert_eq!(verdict.failure, None, "every exit has its own setup error");
         assert_eq!(
             verdict.inconclusive.as_deref(),
-            Some("mprime setup error: PIN FAILED")
+            Some("core 03 mprime setup error: PIN FAILED")
         );
     }
 
@@ -1054,7 +1163,7 @@ mod tests {
         assert_eq!(verdict.failure, None);
         assert_eq!(
             verdict.inconclusive.as_deref(),
-            Some(&*format!("mprime setup error: {text}"))
+            Some(&*format!("core 03 mprime setup error: {text}"))
         );
     }
 
@@ -1068,6 +1177,7 @@ mod tests {
             instance: 1,
             pid: 43,
             stream: Stream::Stdout,
+            verification: Verification::Measured,
             line: Line::SetupError,
             text: "PIN FAILED".to_owned(),
         });
@@ -1080,7 +1190,7 @@ mod tests {
         assert_eq!(verdict.failure, None);
         assert_eq!(
             verdict.inconclusive.as_deref(),
-            Some("ycruncher setup error: PIN FAILED")
+            Some("core 04 ycruncher setup error: PIN FAILED")
         );
     }
 

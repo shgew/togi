@@ -503,6 +503,28 @@ pub(super) fn printing(
     }
 }
 
+/// Prints only when the caller releases it after `start` returned, including when the script
+/// has not been polled yet. Every instance sees the same release.
+pub(super) fn printing_when_released(
+    lines: &'static str,
+) -> (
+    impl FnMut(usize, &crate::launch::LaunchCommand) -> Launch,
+    tokio::sync::watch::Sender<()>,
+) {
+    let (release, released) = tokio::sync::watch::channel(());
+    (
+        move |_, _| {
+            let mut released = released.clone();
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                let _ = released.changed().await;
+                ctx.print(lines).await;
+                ctx.until_killed().await;
+            }))
+        },
+        release,
+    )
+}
+
 /// Makes the process burn `cpus` CPUs worth of CPU time, reported every second.
 pub(super) fn burn(shared: &std::rc::Rc<ProcShared>, cpus: u32) {
     let shared = std::rc::Rc::clone(shared);

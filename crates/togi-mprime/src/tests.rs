@@ -435,18 +435,28 @@ fn every_setup_alternative_is_recognised(line: &str) {
 #[test_case("Self-test 288 passed", "self-test 288 passed"; "size without unit")]
 #[test_case("SELF-TEST 8k PASSED", "self-test 8k passed"; "upper case")]
 #[test_case("Self-test 6K (thread 12 of 16) passed", "self-test 6K passed"; "thread without exclamation")]
-fn progress_keeps_the_reported_spelling(line: &str, want: &str) {
-    assert_eq!(classify(line), Line::Progress(want.to_owned()), "{line}");
+fn verified_result_keeps_the_reported_self_test(line: &str, want: &str) {
+    assert_eq!(classify(line), Line::Verified(want.to_owned()), "{line}");
 }
 
 #[test_case(""; "empty")]
 #[test_case("Torture Test completed 100 - 0 errors"; "zero errors")]
 #[test_case("Torture Test completed 4 tests in 1 minutes - 0 errors, 0 warnings."; "tests with zero errors")]
-#[test_case("Self-test 4K failed"; "self-test failed")]
-#[test_case("Self-test passed"; "self-test without size")]
 #[test_case("[Worker #1] Test 1, 1600000 Lucas-Lehmer in-place iterations of M83839 using FFT length 4K."; "lucas-lehmer status")]
 fn ordinary_lines_are_other(line: &str) {
     assert_eq!(classify(line), Line::Other, "{line:?}");
+}
+
+#[test_case("Self-test passed"; "missing size")]
+#[test_case("Self-test 0K passed"; "zero size")]
+#[test_case("Self-test 4K passedgarbage"; "invalid completion token")]
+fn malformed_results_are_setup_errors(line: &str) {
+    assert_eq!(classify(line), Line::SetupError);
+}
+
+#[test]
+fn a_failed_self_test_is_a_computation_error() {
+    assert_eq!(classify("Self-test 4K failed"), Line::ComputationError);
 }
 
 #[test]
@@ -476,7 +486,7 @@ fn kinds(data: &str) -> Vec<Line> {
 fn pass_stdout_fixture_progresses_without_errors() {
     let lines = kinds(include_str!("../testdata/pass-stdout.txt"));
     for size in ["4K", "5K", "6K", "8K"] {
-        assert!(lines.contains(&Line::Progress(format!("self-test {size} passed"))));
+        assert!(lines.contains(&Line::Verified(format!("self-test {size} passed"))));
     }
     assert!(!lines.contains(&Line::ComputationError));
     assert!(!lines.contains(&Line::SetupError));
@@ -488,7 +498,7 @@ fn pass_results_fixture_has_no_errors() {
     assert_eq!(
         lines
             .iter()
-            .filter(|l| matches!(l, Line::Progress(_)))
+            .filter(|l| matches!(l, Line::Verified(_)))
             .count(),
         4
     );
@@ -505,5 +515,5 @@ fn spliced_errors_are_not_erased_by_later_success() {
             .count(),
         2
     );
-    assert!(lines.iter().any(|l| matches!(l, Line::Progress(_))));
+    assert!(lines.iter().any(|l| matches!(l, Line::Verified(_))));
 }

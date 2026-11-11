@@ -97,6 +97,7 @@ struct Patterns {
     computation: [Regex; 2],
     setup: Regex,
     progress: Regex,
+    result_like: Regex,
 }
 
 fn pattern(source: &str) -> Result<Regex, Error> {
@@ -108,7 +109,7 @@ impl Patterns {
         Ok(Self {
             computation: [
                 pattern(
-                    r"(?i)FATAL ERROR|ERROR: ILLEGAL SUMOUT|Possible hardware failure|Hardware failure detected|Maximum number of warnings exceeded|TORTURE TEST FAILED|Torture Test completed .* - [1-9][0-9]* errors",
+                    r"(?i)FATAL ERROR|ERROR: ILLEGAL SUMOUT|Possible hardware failure|Hardware failure detected|Maximum number of warnings exceeded|TORTURE TEST FAILED|Self-test .* failed|Torture Test completed .* - [1-9][0-9]* errors",
                 )?,
                 pattern(
                     r"(?i)ERROR: SUM\(INPUTS\) != SUM\(OUTPUTS\)|ERROR: Shift counter corrupt|ERROR: Illegal double encountered|ERROR: FFT data has been zeroed|ERROR: Jacobi error check failed|Warning: ILLEGAL SUMOUT|Warning: SUMOUT MISMATCH",
@@ -117,7 +118,10 @@ impl Patterns {
             setup: pattern(
                 r"(?i)Error allocating memory|Out of memory|Unable to allocate memory|Cannot initialize FFT code",
             )?,
-            progress: pattern(r"(?i)Self-test ([0-9]+K?)(?: \(thread [0-9]+ of [0-9]+\))? passed")?,
+            progress: pattern(
+                r"(?i)Self-test ([1-9][0-9]*K?)(?: \(thread [1-9][0-9]* of [1-9][0-9]*\))? passed!?[ \t]*$",
+            )?,
+            result_like: pattern(r"(?i)Self-test")?,
         })
     }
 }
@@ -219,7 +223,9 @@ impl Backend for Mprime {
         } else if patterns.setup.is_match(line) {
             Line::SetupError
         } else if let Some(size) = patterns.progress.captures(line).and_then(|c| c.get(1)) {
-            Line::Progress(format!("self-test {} passed", size.as_str()))
+            Line::Verified(format!("self-test {} passed", size.as_str()))
+        } else if patterns.result_like.is_match(line) {
+            Line::SetupError
         } else {
             Line::Other
         }

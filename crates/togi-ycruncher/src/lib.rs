@@ -91,6 +91,7 @@ struct Patterns {
     computation: Regex,
     setup: Regex,
     progress: Regex,
+    result_like: Regex,
 }
 
 fn pattern(source: &str) -> Result<Regex, Error> {
@@ -109,7 +110,10 @@ impl Patterns {
                 r"(?i)Error\(s\) encountered|Coefficient is too large|Checksum mismatch|Running[\t\n\x0c\r ]+[^\t\n\x0c\r ]+:[\t\n\x0c\r ]*FAIL",
             )?,
             setup: pattern(r"(?i)InvalidParametersException|Invalid Parameter")?,
-            progress: pattern(r"(?i)Running[\t\n\x0c\r ]+([^\t\n\x0c\r ]+):[\t\n\x0c\r ]*Passed")?,
+            progress: pattern(
+                r"(?i)^Running[\t\n\x0c\r ]+([^\t\n\x0c\r :]+):[\t\n\x0c\r ]*Passed(?:[\t ]+Test Speed:[\t ]+[0-9]+(?:\.[0-9]+)?[\t ]+\*[\t ]+10\^[+-]?[0-9]+[\t ]+bits[\t ]*/[\t ]*sec)?[\t\n\x0c\r ]*$",
+            )?,
+            result_like: pattern(r"(?i)Running.*(?:Pass|FAIL)")?,
         })
     }
 }
@@ -315,7 +319,9 @@ impl Backend for Ycruncher {
         } else if patterns.setup.is_match(&line) {
             Line::SetupError
         } else if let Some(test) = patterns.progress.captures(&line).and_then(|c| c.get(1)) {
-            Line::Progress(format!("{} passed", test.as_str()))
+            Line::Verified(format!("{} passed", test.as_str()))
+        } else if patterns.result_like.is_match(&line) {
+            Line::SetupError
         } else {
             Line::Other
         }

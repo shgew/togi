@@ -1,14 +1,17 @@
+use std::cell::RefCell;
+use std::future::poll_fn;
 use std::io;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
+use std::task::Poll as TaskPoll;
 use std::time::Duration;
 
-use tokio::io::AsyncReadExt as _;
+use tokio::io::ReadBuf;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::error::CleanupFailure;
-use crate::evidence::{Observation, Stream};
+use crate::evidence::{Observation, Stream, Verification};
 use crate::id::ScopeName;
 use crate::judge::Judge;
 use crate::logs::LogHandle;
@@ -26,6 +29,7 @@ pub(crate) enum Inbound {
         instance: usize,
         stream: Stream,
         text: String,
+        verification: Verification,
     },
     /// The log file could not take bytes; reading goes on.
     LogError {
@@ -48,7 +52,7 @@ pub(crate) enum Inbound {
 pub(crate) enum PipeEnd {
     /// End of input; the unterminated final line, unless the line was oversized.
     Eof {
-        partial: Option<String>,
+        partial: Option<(String, Verification)>,
     },
     Exceeded,
     Failed(io::Error),
@@ -64,6 +68,64 @@ pub(crate) enum Run {
 pub(crate) struct Reader {
     pub(crate) task: JoinHandle<()>,
     pub(crate) closed: bool,
+    /// Only the task owns the pipe: keeping the start fence must not keep a finished read end open.
+    capture: Weak<RefCell<Capture>>,
+}
+
+#[derive(Clone, Copy)]
+enum Interval {
+    Startup,
+    Measured {
+        cutoff: u64,
+        deadline: Instant,
+    },
+    /// A failed backlog snapshot cannot establish when any later bytes were produced.
+    Uncertain,
+}
+
+struct Capture {
+    pipe: Pipe,
+    consumed: u64,
+    interval: Interval,
+}
+
+impl Capture {
+    fn begin(&mut self, deadline: Instant) {
+        self.interval = match self.pipe.as_ref().get_ref().unread() {
+            Ok(queued) => Interval::Measured {
+                cutoff: self.consumed + queued,
+                deadline,
+            },
+            Err(_) => Interval::Uncertain,
+        };
+    }
+
+    async fn read(capture: &RefCell<Self>, buffer: &mut [u8]) -> io::Result<(usize, Verification)> {
+        poll_fn(|cx| {
+            let mut capture = capture.borrow_mut();
+            let mut buf = ReadBuf::new(buffer);
+            match tokio::io::AsyncRead::poll_read(capture.pipe.as_mut(), cx, &mut buf) {
+                TaskPoll::Ready(Ok(())) => {
+                    let count = buf.filled().len();
+                    let verification = match capture.interval {
+                        Interval::Measured { cutoff, deadline }
+                            if capture.consumed >= cutoff && Instant::now() < deadline =>
+                        {
+                            Verification::Measured
+                        }
+                        Interval::Startup | Interval::Measured { .. } | Interval::Uncertain => {
+                            Verification::Outside
+                        }
+                    };
+                    capture.consumed += count as u64;
+                    TaskPoll::Ready(Ok((count, verification)))
+                }
+                TaskPoll::Ready(Err(error)) => TaskPoll::Ready(Err(error)),
+                TaskPoll::Pending => TaskPoll::Pending,
+            }
+        })
+        .await
+    }
 }
 
 impl Reader {
@@ -73,6 +135,15 @@ impl Reader {
         Self {
             task: tokio::task::spawn_local(async {}),
             closed: true,
+            capture: Weak::new(),
+        }
+    }
+
+    /// Snapshot after the measured start: bytes already read, queued or still in the kernel pipe
+    /// remain classifiable but cannot verify a core. A later snapshot only discards extra bytes.
+    pub(crate) fn begin_interval(&self, deadline: Instant) {
+        if let Some(capture) = self.capture.upgrade() {
+            capture.borrow_mut().begin(deadline);
         }
     }
 
@@ -80,27 +151,45 @@ impl Reader {
     pub(crate) fn spawn(
         instance: usize,
         stream: Stream,
-        mut pipe: Pipe,
+        pipe: Pipe,
         mut log: LogHandle,
         events: Sender<Inbound>,
     ) -> Self {
+        let capture = Rc::new(RefCell::new(Capture {
+            pipe,
+            consumed: 0,
+            interval: Interval::Startup,
+        }));
+        let reading = Rc::clone(&capture);
         let task = tokio::task::spawn_local(async move {
             let mut framer = Framer::default();
             let mut buffer = [0_u8; CHUNK];
+            let mut partial = Verification::Outside;
             let end = loop {
-                let count = match pipe.read(&mut buffer).await {
-                    Ok(0) => {
+                let (count, verification) = match Capture::read(&reading, &mut buffer).await {
+                    Ok((0, verification)) => {
                         break PipeEnd::Eof {
-                            partial: framer.finish(),
+                            partial: framer.finish().map(|text| {
+                                let stamp = if verification == Verification::Measured {
+                                    partial
+                                } else {
+                                    Verification::Outside
+                                };
+                                (text, stamp)
+                            }),
                         };
                     }
-                    Ok(count) => count,
+                    Ok(read) => read,
                     Err(error) => break PipeEnd::Failed(error),
                 };
+                if !framer.pending() || verification == Verification::Outside {
+                    partial = verification;
+                }
                 let mut lines = Vec::new();
                 let consumed = framer.push(&buffer[..count], &mut |frame| {
                     if let Frame::Line(text) = frame {
-                        lines.push(text);
+                        lines.push((text, partial));
+                        partial = verification;
                     }
                     std::ops::ControlFlow::Continue(())
                 });
@@ -116,11 +205,12 @@ impl Reader {
                         return;
                     }
                 }
-                for text in lines {
+                for (text, verification) in lines {
                     let event = Inbound::Line {
                         instance,
                         stream,
                         text,
+                        verification,
                     };
                     if events.send(event).await.is_err() {
                         return;
@@ -130,6 +220,9 @@ impl Reader {
                     break PipeEnd::Exceeded;
                 }
             };
+            // Closing the read end releases a writer blocked in a large write, so it can still
+            // report stronger failure evidence on its other stream during teardown.
+            drop(reading);
             let _ = events
                 .send(Inbound::Closed {
                     instance,
@@ -141,6 +234,7 @@ impl Reader {
         Self {
             task,
             closed: false,
+            capture: Rc::downgrade(&capture),
         }
     }
 }
@@ -237,7 +331,14 @@ pub(crate) fn dispatch<O: Os>(
             instance,
             stream,
             text,
-        } => stop(judge.line(instance, instances[instance].pid, stream, text)),
+            verification,
+        } => stop(judge.line(
+            instance,
+            instances[instance].pid,
+            stream,
+            verification,
+            text,
+        )),
         Inbound::LogError {
             instance,
             stream,
@@ -261,9 +362,9 @@ pub(crate) fn dispatch<O: Os>(
             let pid = inst.pid;
             let label = inst.plan.name.dir_name();
             match end {
-                PipeEnd::Eof { partial } => {
-                    stop(partial.is_some_and(|text| judge.line(instance, pid, stream, text)))
-                }
+                PipeEnd::Eof { partial } => stop(partial.is_some_and(|(text, verification)| {
+                    judge.line(instance, pid, stream, verification, text)
+                })),
                 PipeEnd::Exceeded => {
                     stop(judge.observe(Observation::LineTooLong { instance, stream }))
                 }
@@ -314,10 +415,11 @@ pub(crate) async fn poll_watched<O: Os>(
     for file in &mut instance.watched {
         let mut ended = false;
         let poll = file
-            .poll(
+            .poll_interval(
                 until,
-                &mut |line| {
-                    if judge.line(index, pid, Stream::Watched, line.to_owned()) {
+                judge.deadline(),
+                &mut |line, verification| {
+                    if judge.line(index, pid, Stream::Watched, verification, line.to_owned()) {
                         ended = true;
                         std::ops::ControlFlow::Break(())
                     } else {
@@ -357,7 +459,13 @@ pub(crate) async fn finish_watched<O: Os>(
     for file in &mut instance.watched {
         let poll = file
             .finish(writers, until, &mut |line| {
-                if judge.line(index, pid, Stream::Watched, line.to_owned()) {
+                if judge.line(
+                    index,
+                    pid,
+                    Stream::Watched,
+                    Verification::Outside,
+                    line.to_owned(),
+                ) {
                     std::ops::ControlFlow::Break(())
                 } else {
                     std::ops::ControlFlow::Continue(())
@@ -380,6 +488,10 @@ fn report(
     error: &WatchError,
 ) -> bool {
     let observation = match error {
+        WatchError::Missing => Observation::SamplingLoss {
+            instance: index,
+            what: error.to_string(),
+        },
         WatchError::LineTooLong => Observation::LineTooLong {
             instance: index,
             stream: Stream::Watched,

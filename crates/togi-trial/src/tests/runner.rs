@@ -812,6 +812,50 @@ fn start_failure(
 }
 
 #[test]
+fn all_threads_start_budgets_readiness_for_each_logical_cpu_instance() {
+    let timing = fast();
+    let delay = timing.readiness().checked_sub(secs(1)).unwrap();
+    let spec = super::harness::all_threads_spec(0, 0, secs(3));
+    let total_readiness = delay * u32::try_from(spec.roles.len()).unwrap();
+    assert!(total_readiness > timing.start_bound(u32::try_from(spec.cores.len()).unwrap()));
+    assert!(total_readiness < timing.start_bound(u32::try_from(spec.roles.len()).unwrap()));
+    let clock = Manual::new();
+    let budget = Arc::new(Mutex::new(None));
+    let setup = {
+        let clock = Arc::clone(&clock);
+        let budget = Arc::clone(&budget);
+        move |fake: &Fake| {
+            fake.set_ready_default(false);
+            fake.on_launch(move |index, _| {
+                if index == 0 {
+                    *budget.lock().unwrap() = Some(clock.waiting_budget());
+                }
+                let clock = Arc::clone(&clock);
+                Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                    tokio::time::sleep(delay).await;
+                    clock.advance(delay);
+                    ctx.shared.ready.set(true);
+                    ctx.until_killed().await;
+                }))
+            });
+        }
+    };
+    let (mut runner, _fs) = runner_on(Clock::Manual(Arc::clone(&clock)), setup, timing);
+    let mut trial = runner
+        .start(&CancellationToken::new(), spec, nothing_runs())
+        .map_err(|partial| partial.error)
+        .unwrap();
+    assert!(budget.lock().unwrap().unwrap() > total_readiness);
+    assert_eq!(clock.elapsed(), total_readiness);
+    let result = trial
+        .wait(&CancellationToken::new(), &mut Collect::default())
+        .map_err(|partial| partial.error)
+        .unwrap();
+    assert_eq!(result.ran, secs(3));
+    assert!(trial.stop().is_ok());
+}
+
+#[test]
 fn a_stalled_start_is_containment_without_a_value_and_the_trial_it_finishes_late_is_abandoned() {
     let mut stall = stalled(true);
     let partial = start_failure(&mut stall.runner, Regime::R1, &[0], secs(600));

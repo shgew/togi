@@ -703,8 +703,8 @@ fn every_setup_alternative_is_recognised(line: &str) {
 #[test_case("Running FFTv4: Passed  Test Speed:  3.9 * 10^09  bits / sec", "FFTv4 passed"; "pass with speed")]
 #[test_case("running snt:passed", "snt passed"; "lower case without space")]
 #[test_case("Running   VT3:   PASSED", "VT3 passed"; "upper case with spaces")]
-fn progress_names_the_test(line: &str, want: &str) {
-    assert_eq!(classify(line), Line::Progress(want.to_owned()), "{line:?}");
+fn verified_result_names_the_checked_test(line: &str, want: &str) {
+    assert_eq!(classify(line), Line::Verified(want.to_owned()), "{line:?}");
 }
 
 #[test]
@@ -716,10 +716,18 @@ fn carriage_return_separated_progress() {
     assert_eq!(
         passed,
         [
-            Line::Progress("BKT passed".to_owned()),
-            Line::Progress("SFTv4 passed".to_owned())
+            Line::Verified("BKT passed".to_owned()),
+            Line::Verified("SFTv4 passed".to_owned())
         ]
     );
+}
+
+#[test_case("Running : Passed"; "missing test")]
+#[test_case("Running BKT: Passedgarbage"; "invalid completion token")]
+#[test_case("Running BKT: Passed garbage"; "garbage after completion")]
+#[test_case("Running BKT: Passed-failure"; "hyphenated completion")]
+fn malformed_results_are_setup_errors(line: &str) {
+    assert_eq!(classify(line), Line::SetupError);
 }
 
 #[test_case(""; "empty")]
@@ -756,7 +764,7 @@ fn fixture(data: &str) -> Vec<Line> {
 }
 
 fn progress(test: &str) -> Line {
-    Line::Progress(format!("{test} passed"))
+    Line::Verified(format!("{test} passed"))
 }
 
 #[test_case(include_str!("../testdata/lowest-pass.txt"), "BKT"; "lowest-pass.txt")]

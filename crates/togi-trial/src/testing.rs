@@ -29,7 +29,7 @@ macro_rules! test {
 pub(crate) use test;
 
 /// A backend that classifies `COMPUTE ERROR` anywhere as a computation error, `PIN FAILED` as
-/// a setup error, `AFFINITY:<n>` as an affinity error and `ok` as a progress line.
+/// a setup error, `AFFINITY:<n>` as an affinity error, `ok` as progress and `verified` as a checked result.
 #[derive(Clone, Debug)]
 pub(crate) struct TestBackend {
     pub(crate) kind: togi_machine::Backend,
@@ -125,6 +125,8 @@ impl Backend for TestBackend {
                 }
                 Err(_) => Line::AffinityError(None),
             }
+        } else if let Some(test) = line.strip_prefix("verified ") {
+            Line::Verified(test.to_owned())
         } else if line.starts_with("ok") {
             Line::Progress(line.to_owned())
         } else {
