@@ -4,6 +4,7 @@
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::error::Error as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -1082,11 +1083,17 @@ fn a_repeated_wait_reports_the_failure_the_first_one_did() {
     let cancel = CancellationToken::new();
     cancel.cancel();
     let first = trial.wait(&cancel, &mut Collect::default()).unwrap_err();
-    assert!(matches!(first.error, togi_machine::Error::Cancelled));
+    let again_cancelled = trial.wait(&cancel, &mut Collect::default()).unwrap_err();
+    for error in [&first.error, &again_cancelled.error] {
+        assert!(matches!(error, togi_machine::Error::Cancelled), "{error:?}");
+        assert!(error.source().is_none());
+    }
     let again = trial
         .wait(&CancellationToken::new(), &mut Collect::default())
         .unwrap_err();
     assert!(matches!(again.error, togi_machine::Error::Cancelled));
+    assert!(again.error.source().is_none());
+    assert_eq!(again_cancelled.value, first.value);
     assert_eq!(again.value, first.value);
     assert!(
         trial
@@ -1127,16 +1134,14 @@ fn shared_errors_render_each_cause_once(error: Error, expected: &str) {
 fn a_kept_joined_error_is_reachable_through_the_public_source_chain(error: Error, is_other: bool) {
     let error = Error::join_after(error, vec![Error::Cancelled]);
     let seam = crate::error::Shared::seam(&Arc::new(error));
-    let (togi_machine::Error::Other(inner) | togi_machine::Error::Containment(inner)) = &seam
-    else {
-        panic!("{seam:?}");
-    };
-    assert_eq!(matches!(seam, togi_machine::Error::Other(_)), is_other);
-    let kept = std::iter::successors(
-        Some(&**inner as &(dyn std::error::Error + 'static)),
-        |error| error.source(),
-    )
-    .find_map(|error| error.downcast_ref::<Error>());
+    assert!(
+        matches!(
+            (&seam, is_other),
+            (togi_machine::Error::Other(_), true) | (togi_machine::Error::Containment(_), false)
+        ),
+        "{seam:?}"
+    );
+    let kept = kept_wait_error(&seam);
     assert!(matches!(kept, Some(Error::Joined(_))), "{seam:?}");
 }
 
@@ -1262,29 +1267,39 @@ fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
     let mut trial = start(&mut runner, Regime::R1, &[0], secs(600));
     let cancel = CancellationToken::new();
     cancel.cancel();
-    let waited = trial.wait(&cancel, &mut Collect::default());
-    let Err(Partial {
-        error: togi_machine::Error::Other(inner),
-        ..
-    }) = waited
-    else {
-        panic!("a cancellation that carries an output failure must not read as a bare one");
-    };
-    let Some(Error::Joined(joined)) = inner
-        .source()
-        .and_then(|source| source.downcast_ref::<Error>())
-    else {
-        panic!("{inner}");
+    let first = trial.wait(&cancel, &mut Collect::default()).unwrap_err();
+    let again = trial.wait(&cancel, &mut Collect::default()).unwrap_err();
+    for error in [&first.error, &again.error] {
+        assert!(
+            matches!(error, togi_machine::Error::Other(_)),
+            "a cancellation with an output failure is not a bare one: {error:?}"
+        );
+    }
+    let kept = kept_wait_error(&first.error).expect("the first wait exposes its trial error");
+    let Error::Joined(joined) = kept else {
+        panic!("{kept:?}");
     };
     assert!(
-        matches!(joined.errors(), [Error::Cancelled, Error::Output(_)]),
+        matches!(
+            joined.errors(),
+            [Error::Cancelled, Error::Output(output)] if !output.diagnostics().is_empty()
+        ),
         "{joined}"
     );
+    let repeated = kept_wait_error(&again.error).expect("the repeated wait exposes its trial error");
+    assert!(std::ptr::eq(kept, repeated));
+    assert_eq!(first.error.to_string(), again.error.to_string());
     assert!(
         trial
             .stop(&mut crate::testing::Frequencies::default())
             .is_ok()
     );
+}
+
+fn kept_wait_error(error: &togi_machine::Error) -> Option<&Error> {
+    let start: &(dyn std::error::Error + 'static) = error;
+    std::iter::successors(Some(start), |&cause| cause.source())
+        .find_map(|cause| cause.downcast_ref::<Error>())
 }
 
 /// Timings whose supervisor bound is short: a trial's wait bound is its duration plus 600 ms.

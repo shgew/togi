@@ -115,6 +115,7 @@
             files = [
               ./crates/togi-trial/tests/hardware.rs
               ./crates/togi-trial/tests/cached_errors.rs
+              ./crates/togi-trial/tests/support/stray_cleanup.rs
             ];
           };
           # The recovery tests compile only the `vm_recovery` target of `togi`; its other test files are stubs.

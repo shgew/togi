@@ -3,6 +3,9 @@
 //! Real systemd scopes. These need root, systemd and an unprivileged backend account named by
 //! `TOGI_TRIAL_HARDWARE_USER`; the owner runs them as root under the host lock.
 
+#[path = "support/stray_cleanup.rs"]
+mod stray_cleanup;
+
 #[cfg(test)]
 mod hardware {
     use std::ffi::OsString;
@@ -13,7 +16,7 @@ mod hardware {
     use std::path::{Path, PathBuf};
     use std::process::{Child, Command, Stdio};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
+    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
     use std::time::{Duration, Instant};
 
     use rustix::fs::{AtFlags, CWD, FileType, Mode, OFlags};
@@ -25,6 +28,8 @@ mod hardware {
         Signal, Stopped, TrialSpec, Trials, Workload, pick_workload,
     };
     use togi_trial::{BackendIdentity, Backends, Options, Runner, TrialRole};
+
+    use super::stray_cleanup::{StrayWaiter, cleanup_stray, join_errors, kill_stray, stray_stop_error};
 
     const HELPER: &str = "hardware::helper";
     const ROOT_ENV: &str = "TOGI_TRIAL_HARDWARE_ROOT";
@@ -351,7 +356,7 @@ mod hardware {
             let tree = &self.staged.tree;
             // Building the runner looks up the backend account and can panic; a second panic
             // during this unwind would abort the binary before the record is preserved.
-            let outcome = isolated(
+            let outcome = super::stray_cleanup::isolated(
                 "the unwind sweep",
                 |_| {
                     let mut runner = try_runner(tree, Helper::new(tree, "owner"))
@@ -774,138 +779,6 @@ mod hardware {
         condition()
     }
 
-    trait StrayChild: Send + 'static {
-        fn kill(&mut self) -> io::Result<()>;
-        fn try_wait(&mut self) -> io::Result<bool>;
-        fn wait(&mut self) -> io::Result<()>;
-    }
-
-    impl StrayChild for Child {
-        fn kill(&mut self) -> io::Result<()> {
-            Child::kill(self)
-        }
-
-        fn try_wait(&mut self) -> io::Result<bool> {
-            Child::try_wait(self).map(|status| status.is_some())
-        }
-
-        fn wait(&mut self) -> io::Result<()> {
-            Child::wait(self).map(|_| ())
-        }
-    }
-
-    struct StrayWaiter<C> {
-        child: mpsc::Sender<C>,
-        done: mpsc::Receiver<io::Result<()>>,
-    }
-
-    impl<C: StrayChild> StrayWaiter<C> {
-        fn start() -> io::Result<Self> {
-            let (child, waiting) = mpsc::channel::<C>();
-            let (finished, done) = mpsc::channel();
-            std::thread::Builder::new()
-                .name("trial-test-reaper".to_owned())
-                .spawn(move || {
-                    if let Ok(mut child) = waiting.recv() {
-                        let _ = finished.send(child.wait());
-                    }
-                })?;
-            Ok(Self { child, done })
-        }
-
-        fn wait_until(self, child: C, deadline: Instant) -> io::Result<()> {
-            self.child
-                .send(child)
-                .map_err(|_| io::Error::other("stray reaper disappeared"))?;
-            self.done
-                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                .map_err(|error| match error {
-                    mpsc::RecvTimeoutError::Timeout => {
-                        io::Error::new(io::ErrorKind::TimedOut, "stray reap deadline elapsed")
-                    }
-                    mpsc::RecvTimeoutError::Disconnected => {
-                        io::Error::other("stray reaper ended without reporting")
-                    }
-                })?
-        }
-    }
-
-    fn kill_stray<C: StrayChild>(
-        mut child: C,
-        waiter: StrayWaiter<C>,
-        deadline: Instant,
-    ) -> Result<(), String> {
-        let mut errors = Vec::new();
-        if let Err(error) = child.kill() {
-            errors.push(format!("kill stray child: {error}"));
-        }
-        match child.try_wait() {
-            Ok(true) => return join_errors(&errors),
-            Ok(false) => {}
-            Err(error) => errors.push(format!("poll stray child: {error}")),
-        }
-        let reap = deadline.min(Instant::now() + STRAY_REAP);
-        if let Err(error) = waiter.wait_until(child, reap) {
-            errors.push(format!("reap stray child: {error}"));
-        }
-        join_errors(&errors)
-    }
-
-    fn join_errors(errors: &[String]) -> Result<(), String> {
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors.join("; "))
-        }
-    }
-
-    fn isolated(
-        what: &str,
-        step: impl FnOnce(Instant) -> Result<(), String>,
-        deadline: Instant,
-    ) -> Result<(), String> {
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| step(deadline))).unwrap_or_else(
-            |payload| {
-                let reason = payload
-                    .downcast_ref::<&str>()
-                    .map(|text| (*text).to_owned())
-                    .or_else(|| payload.downcast_ref::<String>().cloned())
-                    .unwrap_or_else(|| "non-text panic".to_owned());
-                Err(format!("{what} panicked: {reason}"))
-            },
-        )
-    }
-
-    fn cleanup_stray(
-        deadline: Instant,
-        kill: impl FnOnce(Instant) -> Result<(), String>,
-        stop: impl FnOnce(Instant) -> Result<(), String>,
-    ) -> Result<(), String> {
-        let mut errors = Vec::new();
-        if let Err(error) = isolated("stray kill", kill, deadline) {
-            errors.push(error);
-        }
-        if let Err(error) = isolated("stray scope stop", stop, deadline) {
-            errors.push(error);
-        }
-        join_errors(&errors)
-    }
-
-    const SYSTEMCTL_NOT_LOADED: i32 = 5;
-
-    fn stray_stop_error(
-        scope: &str,
-        stop: &Result<std::process::ExitStatus, String>,
-        gone: bool,
-    ) -> Option<String> {
-        match stop {
-            Ok(status) if status.success() => None,
-            Ok(status) if gone && status.code() == Some(SYSTEMCTL_NOT_LOADED) => None,
-            Ok(status) => Some(format!("systemctl stop {scope}: {status}")),
-            Err(error) => Some(format!("systemctl stop {scope}: {error}")),
-        }
-    }
-
     fn stop_stray_scope(unit: &str, deadline: Instant) -> Result<(), String> {
         let scope = format!("{unit}.scope");
         let stop = systemctl_until(&["stop", &scope], deadline).map(|output| output.status);
@@ -943,168 +816,6 @@ mod hardware {
         join_errors(&errors)
     }
 
-    #[test]
-    fn stray_cleanup_accepts_an_unloaded_scope_only_once_it_is_gone() {
-        use std::os::unix::process::ExitStatusExt as _;
-        let exited = |code: i32| Ok(std::process::ExitStatus::from_raw(code << 8));
-        let scope = "togi-unrelated-hardware.scope";
-        assert_eq!(stray_stop_error(scope, &exited(0), true), None);
-        assert_eq!(
-            stray_stop_error(scope, &exited(SYSTEMCTL_NOT_LOADED), true),
-            None
-        );
-        let unloaded_but_listed = stray_stop_error(scope, &exited(SYSTEMCTL_NOT_LOADED), false);
-        assert!(
-            unloaded_but_listed
-                .as_deref()
-                .is_some_and(|error| error.contains("exit status: 5")),
-            "{unloaded_but_listed:?}"
-        );
-        let refused = stray_stop_error(scope, &exited(1), true);
-        assert!(
-            refused
-                .as_deref()
-                .is_some_and(|error| error.contains("exit status: 1")),
-            "{refused:?}"
-        );
-        let unrun = stray_stop_error(scope, &Err("injected spawn failure".to_owned()), true);
-        assert!(
-            unrun
-                .as_deref()
-                .is_some_and(|error| error.contains("injected spawn failure")),
-            "{unrun:?}"
-        );
-    }
-
-    struct ReapFault {
-        caller: std::thread::ThreadId,
-        events: mpsc::Sender<&'static str>,
-        released: mpsc::Receiver<()>,
-        kill_fails: bool,
-        poll_fails: bool,
-    }
-
-    impl StrayChild for ReapFault {
-        fn kill(&mut self) -> io::Result<()> {
-            let _ = self.events.send("kill");
-            if self.kill_fails {
-                Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "injected kill refusal",
-                ))
-            } else {
-                Ok(())
-            }
-        }
-
-        fn try_wait(&mut self) -> io::Result<bool> {
-            let _ = self.events.send("try_wait");
-            if self.poll_fails {
-                Err(io::Error::other("injected reap failure"))
-            } else {
-                Ok(false)
-            }
-        }
-
-        fn wait(&mut self) -> io::Result<()> {
-            if std::thread::current().id() == self.caller {
-                let _ = self.events.send("unbounded wait");
-                return Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "injected blocked child wait",
-                ));
-            }
-            self.released
-                .recv_timeout(Duration::from_secs(1))
-                .map_err(io::Error::other)
-        }
-    }
-
-    #[test]
-    fn stray_cleanup_stops_the_scope_after_a_reap_timeout() {
-        let (record, events) = mpsc::channel();
-        let (release, released) = mpsc::channel();
-        let child = ReapFault {
-            caller: std::thread::current().id(),
-            events: record.clone(),
-            released,
-            kill_fails: false,
-            poll_fails: false,
-        };
-        let waiter = StrayWaiter::start().unwrap();
-        let deadline = Instant::now();
-        let result = cleanup_stray(
-            deadline,
-            |bound| kill_stray(child, waiter, bound),
-            |bound| {
-                assert_eq!(bound, deadline);
-                let _ = record.send("stop");
-                let _ = release.send(());
-                Ok(())
-            },
-        );
-        assert_eq!(
-            events.try_iter().collect::<Vec<_>>(),
-            ["kill", "try_wait", "stop"]
-        );
-        assert!(result.unwrap_err().contains("stray reap deadline elapsed"));
-    }
-
-    #[test]
-    fn stray_cleanup_preserves_kill_reap_and_scope_failures() {
-        let (record, events) = mpsc::channel();
-        let (release, released) = mpsc::channel();
-        let child = ReapFault {
-            caller: std::thread::current().id(),
-            events: record.clone(),
-            released,
-            kill_fails: true,
-            poll_fails: true,
-        };
-        let waiter = StrayWaiter::start().unwrap();
-        let result = cleanup_stray(
-            Instant::now(),
-            |bound| kill_stray(child, waiter, bound),
-            |_| {
-                let _ = record.send("stop");
-                let _ = release.send(());
-                Err("injected scope stop failure".to_owned())
-            },
-        );
-        assert_eq!(
-            events.try_iter().collect::<Vec<_>>(),
-            ["kill", "try_wait", "stop"]
-        );
-        let error = result.unwrap_err();
-        let kill = error.find("injected kill refusal");
-        let reap = error.find("injected reap failure");
-        let stop = error.find("injected scope stop failure");
-        assert!(
-            kill.is_some() && reap.is_some() && stop.is_some(),
-            "{error}"
-        );
-        assert!(kill < reap && reap < stop, "{error}");
-    }
-
-    #[test]
-    fn stray_cleanup_stops_the_scope_after_a_kill_panic() {
-        let (record, events) = mpsc::channel();
-        let result = cleanup_stray(
-            Instant::now(),
-            |_| panic!("injected kill panic"),
-            |_| {
-                let _ = record.send("stop");
-                panic!("injected stop panic")
-            },
-        );
-        assert_eq!(events.try_iter().collect::<Vec<_>>(), ["stop"]);
-        let error = result.unwrap_err();
-        let kill = error.find("injected kill panic");
-        let stop = error.find("injected stop panic");
-        assert!(kill.is_some() && stop.is_some(), "{error}");
-        assert!(kill < stop, "{error}");
-    }
-
     /// A process the test started and the scope it leaves behind: on drop, even while unwinding,
     /// the process is killed and reaped and the scope stopped, each within a bound.
     struct Stray {
@@ -1113,8 +824,6 @@ mod hardware {
         waiter: Option<StrayWaiter<Child>>,
         ended: bool,
     }
-
-    const STRAY_REAP: Duration = Duration::from_secs(5);
 
     impl Stray {
         /// An unrelated scope that the sweep must leave alone.
