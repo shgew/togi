@@ -260,11 +260,11 @@ fn night(saved: &str) -> Fake {
         .value(DAY_ENTRY_VARIABLE, DAY)
 }
 
-#[test_case(Fake::with(DAY).sticky(), true; "ignored selection write")]
-#[test_case(Fake::with(DAY).failing(2, false), false; "selection write failed before effect")]
-#[test_case(Fake::with(DAY).failing(2, true), true; "selection write failed after effect")]
-#[test_case(Fake::with(DAY).failing(3, false), true; "selection readback failed")]
-fn a_failed_begin_leaves_the_day_selected_or_recoverable(fake: Fake, needs_restore: bool) {
+#[test_case(&Fake::with(DAY).sticky(), true; "ignored selection write")]
+#[test_case(&Fake::with(DAY).failing(2, false), false; "selection write failed before effect")]
+#[test_case(&Fake::with(DAY).failing(2, true), true; "selection write failed after effect")]
+#[test_case(&Fake::with(DAY).failing(3, false), true; "selection readback failed")]
+fn a_failed_begin_leaves_the_day_selected_or_recoverable(fake: &Fake, needs_restore: bool) {
     let tuning = Entry::try_from("NixOS - togi".to_owned()).unwrap();
     let mut selection = BootSelection::new(Box::new(fake.grub()));
     assert!(selection.begin(&tuning).is_err());
