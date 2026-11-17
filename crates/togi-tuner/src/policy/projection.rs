@@ -18,7 +18,7 @@ use crate::day::{Freeze, QuestionState};
 use crate::night::Cursor;
 
 /// One tuning group's committed edge U, applied day offset D and ceiling distance.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UnitProjection {
     pub unit: UnitId,
     pub cores: CoreSet,

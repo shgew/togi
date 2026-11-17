@@ -66,7 +66,7 @@ use books::{Days, Ledger, Machine, Nights, Trials};
 use togi_journal::Seq;
 
 /// The thresholds the policy decides by, explicit so a simulator can vary them.
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Params {
     /// The day hold.
     pub hold: DayParams,

@@ -6,7 +6,7 @@ use togi_journal::{
 };
 
 /// A commitment the policy appends to the journal.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PolicyPayload {
     Failure(Failure),
     ExposureObserved(ExposureObserved),
@@ -62,7 +62,7 @@ impl From<PolicyPayload> for Payload {
 }
 
 /// One payload to append and the journal events it cites as `cause`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Decision {
     pub payload: PolicyPayload,
     pub causes: Vec<Seq>,

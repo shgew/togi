@@ -1384,7 +1384,6 @@ const KINDS: &[&str] = &[
     "unit.mapping",
     "campaign.charge",
     "unit.stop",
-    "ccd.cap",
     "night.qualification",
     "night.reproduction",
     "climb.decision",

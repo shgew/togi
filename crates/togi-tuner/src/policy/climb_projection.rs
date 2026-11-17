@@ -44,7 +44,7 @@ pub struct ClimbProfiles {
     pub paused_saved: Option<UnitVector>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ClimbUnitProjection {
     pub unit: UnitId,
     pub phase: Phase,

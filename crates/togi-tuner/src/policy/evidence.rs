@@ -91,24 +91,20 @@ impl Group {
         cores: &[CoreInfo],
         ccds: &[CcdId],
     ) {
-        let sig = Sig::of_class(&observed.class);
-        let adequate = is_adequate(observed, cores);
-        let zero = observed.profile.ccd().is_zero();
-        if let Tested::Isolated { ccd, offset } = observed.tested {
-            if adequate {
-                self.isolated_passes
-                    .entry((ccd, sig.clone()))
-                    .or_default()
-                    .push((offset, seq));
-            }
+        if let Tested::Isolated { ccd, offset } = observed.tested
+            && is_adequate(observed, cores)
+        {
+            self.isolated_passes
+                .entry((ccd, Sig::of_class(&observed.class)))
+                .or_default()
+                .push((offset, seq));
         }
-        if zero {
-            if observed.outcome == Outcome::Failure
-                && !observed.failures.is_empty()
-                && self.zero_failure.is_none()
-            {
-                self.zero_failure = Some(index);
-            }
+        if observed.profile.ccd().is_zero()
+            && observed.outcome == Outcome::Failure
+            && !observed.failures.is_empty()
+            && self.zero_failure.is_none()
+        {
+            self.zero_failure = Some(index);
         }
         for &ccd in ccds {
             let Some(offset) = ccd_scope(cores, observed, ccd) else {
