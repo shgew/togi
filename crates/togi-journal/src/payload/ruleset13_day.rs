@@ -324,6 +324,26 @@ object_only! {
     }
 }
 
+impl ImportCounts {
+    /// Convert a locally computed record tally, saturating at the journal field's maximum.
+    pub fn saturating_record_count(count: u128) -> u64 {
+        u64::try_from(count).unwrap_or(u64::MAX)
+    }
+}
+
+#[cfg(test)]
+mod import_count_tests {
+    use super::ImportCounts;
+    use test_case::test_case;
+
+    #[test_case(u128::from(u64::MAX) - 1, u64::MAX - 1; "below maximum")]
+    #[test_case(u128::from(u64::MAX), u64::MAX; "at maximum")]
+    #[test_case(u128::from(u64::MAX) + 1, u64::MAX; "above maximum")]
+    fn import_record_count_saturates_at_the_wire_limit(count: u128, expected: u64) {
+        assert_eq!(ImportCounts::saturating_record_count(count), expected);
+    }
+}
+
 object_only! {
     /// The commitment that closes a fresh-transition import.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

@@ -96,12 +96,16 @@ fn a_journal_of_another_ruleset_archives_and_selects_raw_observations_and_campai
     );
     assert!(manifest.records().iter().all(|r| r.original.session == id));
     assert!(manifest.unknown().is_empty());
-    let counts = manifest.commitment().counts;
     assert_eq!(
-        (counts.selected, counts.imported, counts.duplicates),
-        (6, 6, 0)
+        manifest.commitment().counts,
+        togi_journal::ImportCounts {
+            selected: 6,
+            imported: 6,
+            duplicates: 0,
+            unknown: 0,
+            excluded: 0,
+        }
     );
-    assert_eq!(counts.excluded, 0);
 }
 
 #[test]
@@ -299,11 +303,26 @@ fn an_import_the_live_journal_committed_clears_its_marker_and_is_not_imported_ag
         .filter(|event| matches!(&event.payload, Payload::DayImported(_)))
         .count();
     assert_eq!(imported, 6);
-    assert!(
-        committed
-            .events()
-            .iter()
-            .any(|event| matches!(&event.payload, Payload::SessionImported(_)))
+    let counts = committed
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::SessionImported(receipt) = &event.payload {
+                Some(receipt.counts)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(
+        counts,
+        togi_journal::ImportCounts {
+            selected: 6,
+            imported: 6,
+            duplicates: 0,
+            unknown: 0,
+            excluded: 0,
+        }
     );
     assert_eq!(marked(&committed), [(Marker::ImportPending, id)]);
     drop(committed.close().unwrap());
