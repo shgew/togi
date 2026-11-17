@@ -13,9 +13,8 @@ use togi_sim::day_night::{FailureCause, Scenario, TrialClass, TruthError};
 pub use policy::{CoZero, FixedMargin};
 pub use production::ProductionPolicy;
 
-/// One policy the runner can build afresh for every scenario and seed. Each variant carries the
-/// parameters its construction needs, so a run is reproducible from its `PolicyKind` alone.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// A policy the runner can build afresh for every scenario and seed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PolicyKind {
     /// Diagnostic: stock CO forever, no night experiments.
@@ -35,7 +34,7 @@ pub enum PolicyRole {
     Gate,
 }
 
-/// A policy name or slope the registry refuses.
+/// A policy name the registry refuses.
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
 pub enum PolicyError {
     #[error("unknown day/night policy {name:?}; known policies: {known}")]
@@ -43,8 +42,7 @@ pub enum PolicyError {
 }
 
 impl PolicyKind {
-    /// Every diagnostic comparator, in report order. A policy under test is not listed: it needs
-    /// parameters, so it is only reachable through [`PolicyKind::by_label`].
+    /// Every diagnostic comparator, in report order.
     pub const COMPARATORS: [Self; 2] = [Self::CoZero, Self::FixedMargin];
 
     /// The stable label records and reports carry.
