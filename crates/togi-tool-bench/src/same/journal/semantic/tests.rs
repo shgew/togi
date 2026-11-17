@@ -88,6 +88,143 @@ fn changed_permission_fails_semantic_equality() {
     );
 }
 
+fn random_history(cap: bool, stops: u32, conts: u32) -> Vec<Value> {
+    let mut log = vec![event(1, "session.start", json!({"session":"s"}))];
+    if cap {
+        log.push(event(2, "ccd.cap", json!({})));
+    }
+    let intent = if cap { 3 } else { 2 };
+    let start = intent + 1;
+    let trial = "0001";
+    log.push(event(
+        intent,
+        "trial.intent",
+        json!({"trial":trial,"duration_s": 90}),
+    ));
+    log.push(event(start, "trial.start", json!({
+        "trial":trial, "roles":[{"core":0, "schedule":{"kind":"steps","load":{"kind":"random","seed":intent}}}]
+    })));
+    log.last_mut().unwrap()["cause"] = json!([intent]);
+    log.push(event(
+        start + 1,
+        "trial.signal",
+        json!({"trial":trial,"schedule":{"kind":"random","seed":intent}}),
+    ));
+    log.last_mut().unwrap()["cause"] = json!([start]);
+    log.push(event(
+        start + 2,
+        "trial.signal",
+        json!({"trial":trial,"stops":stops,"conts":conts}),
+    ));
+    log.last_mut().unwrap()["cause"] = json!([start]);
+    log.last_mut().unwrap()["msg"] = json!(format!(
+        "trial 0001 load steps: {stops} stops, {conts} continues"
+    ));
+    log.push(event(
+        start + 3,
+        "trial.end",
+        json!({"trial":trial,"outcome":"failure","core":0}),
+    ));
+    log
+}
+
+#[test]
+fn own_intent_seeds_rebase_and_changed_phase_counts_are_reported_by_field() {
+    let comparison = compare(
+        &random_history(true, 49, 48),
+        &random_history(false, 49, 49),
+    )
+    .unwrap();
+    assert_eq!(comparison.first, None);
+    assert_eq!(
+        comparison.summary.declared_fields,
+        [
+            ("trial.start.data.roles[*].schedule.load.seed", 1),
+            ("trial.signal.data.schedule.seed", 1),
+            ("trial.signal.data.conts", 1),
+            ("trial.signal.msg.phase_counts", 1),
+        ]
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(comparison.summary.classes["trial.signal"].identical, 2);
+    assert_eq!(comparison.summary.classes["trial.end"].identical, 1);
+}
+
+#[test_case::test_case(2, "/data/roles/0/schedule/load/seed"; "role seed")]
+#[test_case::test_case(3, "/data/schedule/seed"; "signal seed")]
+fn a_seed_that_is_not_its_own_intent_is_rejected(at: usize, field: &str) {
+    let base = random_history(true, 49, 48);
+    let mut head = random_history(false, 50, 49);
+    *head[at].pointer_mut(field).unwrap() = json!(1);
+    let error = compare(&base, &head).err().unwrap().to_string();
+    assert!(
+        error.contains("not this trial's own intent sequence"),
+        "{error}"
+    );
+}
+
+#[test_case::test_case(2, "/data/roles/0/core", json!(1); "loaded core")]
+#[test_case::test_case(3, "/data/schedule/kind", json!("duty"); "signal kind")]
+#[test_case::test_case(4, "/msg", json!("changed diagnostic wording"); "count message")]
+#[test_case::test_case(5, "/data/outcome", json!("pass"); "outcome")]
+#[test_case::test_case(5, "/data/core", json!(1); "failing core")]
+fn only_the_declared_phase_fields_can_vary(at: usize, field: &str, changed: Value) {
+    let base = random_history(true, 49, 48);
+    let mut head = random_history(false, 50, 49);
+    *head[at].pointer_mut(field).unwrap() = changed;
+    assert!(compare(&base, &head).unwrap().first.is_some());
+}
+
+#[test]
+fn phase_counts_cannot_change_without_a_moved_random_seed() {
+    let comparison = compare(
+        &random_history(false, 49, 48),
+        &random_history(false, 50, 49),
+    )
+    .unwrap();
+    assert!(comparison.first.is_some());
+    assert!(comparison.summary.declared_fields.is_empty());
+}
+
+fn observed_edge(seq: u64, witness: u64) -> Value {
+    let mut edge = event(
+        seq,
+        "unit.edge",
+        json!({
+            "unit":{"ccd":0},
+            "firmware":{"bios_version":"F31","board":"X570","cpu_model":"5950X","microcode":"0xa201016","boost_limit_mhz":5000},
+            "epoch":1,"old":{"kind":"unknown"},
+            "new":{"kind":"observed","offset":-30,"witness":witness},
+            "ceiling":-25,"margin":5
+        }),
+    );
+    edge["msg"] = json!(format!(
+        "CCD0 edge unknown -> observed -30 (failure #{witness}); ceiling -25, margin 5"
+    ));
+    edge
+}
+
+#[test]
+fn edge_message_rebases_the_witness_but_not_arbitrary_wording() {
+    let start = event(1, "session.start", json!({"session":"s"}));
+    let base = [
+        start.clone(),
+        event(2, "ccd.cap", json!({})),
+        event(3, "failure", json!({})),
+        observed_edge(4, 3),
+    ];
+    let mut head = [start, event(2, "failure", json!({})), observed_edge(3, 2)];
+    let comparison = compare(&base, &head).unwrap();
+    assert_eq!(comparison.first, None);
+    assert_eq!(
+        comparison.summary.declared_fields["unit.edge.msg.failure_witness"],
+        1
+    );
+    head[2]["msg"] = json!("CCD0 edge unknown -> observed -30 (failure #2); ceiling -24, margin 5");
+    assert!(compare(&base, &head).unwrap().first.is_some());
+}
+
 #[test_case::test_case("cause"; "envelope cause")]
 #[test_case::test_case("witnesses"; "payload witnesses")]
 #[test_case::test_case("caps"; "payload cap evidence")]

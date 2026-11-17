@@ -226,7 +226,7 @@ smoke base="origin/main" *args: _dev-shell
 
 # Compare R04 semantics against its base, retiring only base ccd.cap records; on demand, never a CI gate
 [group('run')]
-same-semantic base="131f99c1" *args: _dev-shell
+same-semantic base="fe80c49dd" *args: _dev-shell
     dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" --semantic "${@:2}"
 
 # Re-record the committed bench baseline over all seeds, without wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)

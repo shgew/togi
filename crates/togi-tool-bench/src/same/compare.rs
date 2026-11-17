@@ -198,7 +198,7 @@ impl Outcome {
         if let Some(summary) = &self.semantic {
             writeln!(
                 w,
-                "semantic: normalized journal comparison, not raw equality; every remaining record and message is compared"
+                "semantic: normalized journal comparison, not raw equality; declared field changes are counted separately"
             )?;
             summary.write(w)?;
         }

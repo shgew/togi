@@ -8,13 +8,17 @@ use serde_json::Value;
 
 use super::{Difference, Disk, JournalError, Source, normalize};
 
-type Identities = BTreeMap<String, BTreeMap<u64, Option<u64>>>;
+mod derived;
+
+type Sequences = BTreeMap<u64, Option<u64>>;
+type Identities = BTreeMap<String, Sequences>;
 type Journals = BTreeMap<String, Journal>;
 
 struct Journal {
     path: PathBuf,
     session: String,
     records: Vec<Value>,
+    derived: Vec<derived::Record>,
 }
 
 /// Counts compare the nth remaining record of each class, without hiding other classes.
@@ -34,12 +38,22 @@ pub struct Summary {
     pub dropped_caps: usize,
     pub rebased_cursor_causes: usize,
     pub classes: BTreeMap<String, ClassCounts>,
+    pub declared_fields: BTreeMap<&'static str, usize>,
 }
 
 impl Summary {
+    fn declare(&mut self, field: &'static str, changed: bool) {
+        if changed {
+            *self.declared_fields.entry(field).or_default() += 1;
+        }
+    }
+
     pub(crate) fn merge(&mut self, other: Self) {
         self.dropped_caps += other.dropped_caps;
         self.rebased_cursor_causes += other.rebased_cursor_causes;
+        for (field, count) in other.declared_fields {
+            *self.declared_fields.entry(field).or_default() += count;
+        }
         for (kind, counts) in other.classes {
             let total = self.classes.entry(kind).or_default();
             total.base += counts.base;
@@ -62,6 +76,9 @@ impl Summary {
             "semantic: rebased {} last-event cursor causes across retired caps",
             self.rebased_cursor_causes
         )?;
+        for (field, count) in &self.declared_fields {
+            writeln!(w, "semantic: declared {field}: differing_records={count}")?;
+        }
         for (kind, counts) in &self.classes {
             writeln!(
                 w,
@@ -96,6 +113,15 @@ impl Summary {
                     "night.qualification",
                     "day.freeze",
                     "day.veto",
+                ][..],
+            ),
+            (
+                "outcome",
+                &[
+                    "trial.end",
+                    "trial.progress",
+                    "failure",
+                    "exposure.observed",
                 ][..],
             ),
             (
@@ -139,7 +165,7 @@ pub struct Comparison {
     pub first: Option<Difference>,
 }
 
-/// Compares every remaining JSON record, in order, including all message text.
+/// Compares every remaining JSON record, in order, after the declared R04 field rebasing.
 /// Missing journals and changed journal order are differences, not filtered data.
 pub fn compare_dirs(base: &Path, head: &Path) -> Result<Comparison, JournalError> {
     compare_with(&Disk, base, head)
@@ -207,6 +233,7 @@ fn load(source: &impl Source, dir: &Path) -> Result<Journals, JournalError> {
                 path,
                 session,
                 records,
+                derived: Vec::new(),
             },
         );
     }
@@ -281,6 +308,7 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usiz
         journal
             .records
             .retain(|event| !(drop_caps && event["kind"] == "ccd.cap"));
+        journal.derived = derived::prepare(journal, &identities[&journal.session])?;
         for (line, event) in journal.records.iter_mut().enumerate() {
             rebase(
                 event,
@@ -291,6 +319,7 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usiz
                 line + 1,
             )?;
         }
+        derived::finish_messages(journal)?;
     }
     Ok((dropped, rebased_cursor_causes))
 }
@@ -470,6 +499,11 @@ pub(in crate::same) fn compare_with(
         ..Summary::default()
     };
     canonicalize(&mut head, false)?;
+    for (name, base) in &mut base {
+        if let Some(head) = head.get_mut(name) {
+            derived::compare_fields(base, head, &mut summary);
+        }
+    }
     let names: BTreeSet<&String> = base.keys().chain(head.keys()).collect();
     let mut first = None;
     for name in names {

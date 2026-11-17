@@ -199,13 +199,13 @@ To control concurrency, caching or retention directly, run `togi-tool-bench same
 
 ### Comparing the R04 cap retirement
 
-`just same-semantic [base]` is an on-demand semantic comparison, not a CI gate or a raw-journal equality claim. Its base defaults to `131f99c1` (`131f99c1afc817bfb457234ca3db2a7a6050a73e`), the rebased predecessor before statistical cap S retirement (patch-identical to original comparison base `020772580`). It uses the existing `same` harness and each tree's existing `togi-tool-sim`, built with the same locked release-build command; it does not replace the simulator or change its inputs to obtain equality. Paired sessions must have identical machine, facts and replay inputs, or the command refuses the comparison.
+`just same-semantic [base]` is an on-demand semantic comparison, not a CI gate or a raw-journal equality claim. Its base defaults to `fe80c49dd`, the merged predecessor before statistical cap S retirement. It uses the existing `same` harness and each tree's existing `togi-tool-sim`, built with the same locked release-build command; it does not replace the simulator or change its inputs to obtain equality. Paired sessions must have identical machine, facts and replay inputs, or the command refuses the comparison.
 
 ```sh
 # Bounded selection: only the suite's existing smoke sessions.
-just same-semantic 131f99c1 --smoke --jobs 1 --keep semantic-runs
+just same-semantic fe80c49dd --smoke --jobs 1 --keep semantic-runs
 # Every existing dev and holdout session.
-just same-semantic 131f99c1 --jobs 1 --keep semantic-runs
+just same-semantic fe80c49dd --jobs 1 --keep semantic-runs
 ```
 
 The recipe exports the base exactly as `same` does and passes `--semantic` to `togi-tool-bench same`. This mode runs both sides freshly, bypasses digest-cache reads and writes and the identical-binary shortcut, and always compares every selected session rather than stopping at the first difference. Build artifacts and scheduling costs still reuse the existing harness cache. Missing sessions/journals and changed simulator exit statuses remain differences; an unreadable journal is an error. `--keep` retains all runs; without it, only differing runs remain.
@@ -216,17 +216,20 @@ Normalization is deliberately narrow:
 2. On **both sides**, give remaining records consecutive sequence identities, starting at one separately in each journal. Rebase envelope causes and all numeric payload `Seq` references, including `NightId`, nested witnesses, qualification/certificate/ceiling references, and original-source identities whose session journal is present among the live or archived journals. Immutable provenance into external input sessions remains unchanged. Decision/application ordinals, trial IDs, offsets, durations and other numbers are not sequence references.
 3. Rebase an envelope **last-event cursor, not evidence**, only when it names immediately preceding retired cap output: `night.plan` (`night_next::{plan_owed,schedule}`), `night.qualification` in state `start` (`qualify::start_qualification`, the frozen fact-prefix cutoff), and `deadend` for `failure_at_zero` with no core/action (`night_next::dead_end`). This is the complete tuner-source producer table. Move that cursor to the preceding retained event, retain sorted/deduplicated causes, and report its count. Nonadjacent cap causes, causes outside that table, and all payload cap references remain errors; unresolved local references also refuse comparison.
 4. Retain `same`'s exact build normalization: remove `version`/`rev` and only the recognized build description from `session.start`/`config.loaded`. Schema, ruleset, fixes and evidence epoch remain compared.
-5. Compare every remaining record as a JSON value in journal order, ignoring JSON key order/spacing only. `day.imported.raw`, which carries a typed payload as JSON text, is parsed, canonically serialized and rebased in its original session's context too. Other strings, including all message text and strings containing old sequence numbers, are not rewritten or discarded; resulting message differences are reported.
+5. A random load seed in `trial.start` roles or `trial.signal` is another journal reference: verify it equals that trial's own intent sequence on each side before rebasing it. Later seeds and therefore the actual load phases of simulated and real trials shift when earlier cap records disappear. For paired signals from the same trial with a verified random schedule and a shifted seed, count changes to `stops`, `conts` and exactly the generated count message separately. Only those count fields and their generated text may vary; the trial, signal kinds, causes, timing, outcomes and failing cores must still match. `togi-sim` counts these toggles from the seed and elapsed trial time; the tuner does not consume the counts.
+6. Rebase the `failure #N` reference of an observed `unit.edge` only when the entire original message matches the journal's renderer. Its payload, computed edge and ceiling, and all other wording remain compared. Report changed witness references separately.
+7. Compare every remaining record as a JSON value in journal order, ignoring JSON key order/spacing only. `day.imported.raw`, which carries a typed payload as JSON text, is parsed, canonically serialized and rebased in its original session's context. No other strings or fields are rewritten or discarded.
 
 For every record class the report shows base/head counts, identical and differing records, message differences and evidence differences. Counts pair the nth record of a class within its journal; full-record equality additionally checks the original cross-class order. Missing records count as differences. A message-only difference **fails equality**, even when that class's evidence is identical; no whole class is silently filtered.
 
-The target, schedule, permission and replay evidence summaries compare the indicated complete normalized records **excluding only `msg`**:
+The target, schedule, permission, outcome and replay evidence summaries compare the indicated complete normalized records **excluding only `msg`**:
 
 | Evidence | Record classes |
 |---|---|
 | Target | `trial.intent`, `trial.start`, `smu.intent`, `day.applied`, `climb.decision` |
 | Schedule | `night.plan`, `task.start`, `trial.start` |
 | Permission | `ccd.edge`, `unit.edge`, `unit.stop`, `climb.decision`, `night.qualification`, `day.freeze`, `day.veto` |
+| Outcome | `trial.end`, `trial.progress`, `failure`, `exposure.observed` |
 | Replay | `exposure.observed`, `session.imported`, `successor.imported`, `day.imported`, `trial.carried`, `failure.carried`, `state.rebuilt` |
 
 Each summary reports `identical`, `different` or `absent` with record and differing counts. These are journal-evidence comparisons, not an independent replay execution, a `state.json` comparison, or proof about unexercised paths or physical hardware. Every other record class still participates in the equality verdict.
