@@ -22,10 +22,6 @@ pub(crate) fn replay(events: &[Event]) -> State {
     state
 }
 
-pub(crate) fn snapshot(state: &State) -> State {
-    serde_json::from_slice(&serde_json::to_vec(state).unwrap()).unwrap()
-}
-
 pub(crate) fn drain(state: &mut State, query: &DayQuery, mut sequence: u64) -> Vec<Payload> {
     let mut commitments = Vec::new();
     for _ in 0..100 {
@@ -93,18 +89,18 @@ pub(crate) fn retreated() -> Journal {
 #[test]
 fn a_full_fold_equals_every_interrupted_and_replayed_fold() {
     let journal = retreated();
-    let expected = serde_json::to_value(replay(&journal.events)).unwrap();
+    let expected = replay(&journal.events);
     for cut in 0..=journal.events.len() {
         let mut state = replay(&journal.events[..cut]);
         for event in &journal.events {
             state.fold(event).unwrap();
         }
-        assert_eq!(serde_json::to_value(state).unwrap(), expected, "cut {cut}");
+        assert_eq!(state, expected, "cut {cut}");
     }
 }
 
 #[test]
-fn a_snapshot_rebuild_reconstructs_permission_allowance_and_stops() {
+fn replay_preserves_permission_allowance_and_stops_at_every_cut() {
     let journal = retreated();
     let expected = journal.state.project();
     assert_eq!(expected.climb.campaign.as_ref().unwrap().consumed, 1);
@@ -113,11 +109,11 @@ fn a_snapshot_rebuild_reconstructs_permission_allowance_and_stops() {
         togi_tuner::policy::ClimbUnitState::Finished { .. }
     )));
     for cut in 0..=journal.events.len() {
-        let mut rebuilt = snapshot(&replay(&journal.events[..cut]));
+        let mut rebuilt = replay(&journal.events[..cut]);
         for event in &journal.events[cut..] {
             rebuilt.fold(event).unwrap();
         }
-        assert_eq!(rebuilt.project(), expected, "snapshot cut {cut}");
+        assert_eq!(rebuilt.project(), expected, "journal cut {cut}");
     }
 }
 
@@ -126,8 +122,8 @@ fn a_kill_between_observation_and_derived_commitment_resumes_to_the_same_state()
     let journal = adverse();
     let mut query = cold_boot("day2", 60_000);
     query.now = journal.now();
-    let mut uninterrupted = replay(&journal.events);
-    let mut restarted = snapshot(&uninterrupted);
+    let mut uninterrupted = journal.state;
+    let mut restarted = replay(&journal.events);
     let seq = journal.events.last().unwrap().seq.get() + 1;
     assert_eq!(
         drain(&mut uninterrupted, &query, seq),
@@ -206,10 +202,10 @@ fn a_lost_qualification_or_retreat_commitment_is_recomputed() {
 #[test]
 fn event_identity_is_unique_across_provisional_manual_and_imported_witnesses() {
     let mut journal = adverse();
-    // Replaying the raw provisional event, including after a snapshot, is not a new event.
+    // Replaying the raw provisional event, including after a restart, is not a new event.
     let raw = journal.events.last().unwrap().clone();
     journal.state.fold(&raw).unwrap();
-    journal.state = snapshot(&journal.state);
+    journal.state = replay(&journal.events);
     journal.state.fold(&raw).unwrap();
     let projection = journal.state.project();
     assert_eq!(projection.climb.campaign.as_ref().unwrap().consumed, 1);
@@ -258,7 +254,7 @@ fn event_identity_is_unique_across_provisional_manual_and_imported_witnesses() {
     );
     let manual = journal.events.last().unwrap().clone();
     journal.append(imported(&manual).into(), &[]);
-    journal.state = snapshot(&journal.state);
+    journal.state = replay(&journal.events);
     journal.append(imported(&manual).into(), &[]);
     assert_eq!(journal.state.project().climb.campaign.unwrap().consumed, 1);
 }

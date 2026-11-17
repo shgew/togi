@@ -279,19 +279,15 @@ fn a_cold_boot_at_zero_holds_once() {
 }
 
 #[test]
-fn a_serialized_state_resumes_as_the_same_state() {
+fn replay_resumes_as_the_same_state() {
     let mut journal = Journal::ready();
     for step in 0..40_i64 {
         let plan = journal.until_trial(at(100 + step));
         journal.run(&plan, Ending::Pass);
     }
-    let saved = serde_json::to_string(&journal.state).unwrap();
-    let restored: State = serde_json::from_str(&saved).unwrap();
+    let restored = crate::climb::replay(&journal.events);
     assert_eq!(restored, journal.state);
-    assert_eq!(
-        serde_json::to_string(&restored.project()).unwrap(),
-        serde_json::to_string(&journal.state.project()).unwrap()
-    );
+    assert_eq!(restored.project(), journal.state.project());
     let contents = fixture::contents();
     let query = NightQuery {
         now: at(200),
@@ -331,15 +327,12 @@ fn the_projection_names_the_units_the_day_and_the_running_task() {
 }
 
 #[test]
-fn the_incremental_state_equals_a_full_refold_and_a_resumed_capsule() {
+fn the_incremental_state_equals_a_full_refold_and_a_resumed_prefix() {
     let mut journal = Journal::ready();
-    let mut capsule: Option<(String, usize)> = None;
+    let mut cut = None;
     for step in 0..120_i64 {
         if step == 60 {
-            capsule = Some((
-                serde_json::to_string(&journal.state).unwrap(),
-                journal.events.len(),
-            ));
+            cut = Some(journal.events.len());
         }
         let plan = journal.until_trial(at(100 + step));
         journal.run(&plan, Ending::Pass);
@@ -349,8 +342,8 @@ fn the_incremental_state_equals_a_full_refold_and_a_resumed_capsule() {
         refolded.fold(event).unwrap();
     }
     assert_eq!(refolded, journal.state);
-    let (saved, cut) = capsule.unwrap();
-    let mut resumed: State = serde_json::from_str(&saved).unwrap();
+    let cut = cut.unwrap();
+    let mut resumed = crate::climb::replay(&journal.events[..cut]);
     for event in &journal.events[cut..] {
         resumed.fold(event).unwrap();
     }
