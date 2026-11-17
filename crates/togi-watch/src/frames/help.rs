@@ -88,7 +88,7 @@ const TUNING: Section = Section {
     items: &[
         (
             "NIGHT",
-            "Until you end it, togi maps each unit's edge U, sweeps uncovered cells from U toward C, qualifies exact profiles, reproduces daily events and runs controls. Idle time repeats exact-current-D qualification cells, never S-directed probes.",
+            "Until you end it, togi maps each unit's edge U, sweeps uncovered cells from U toward C, qualifies exact profiles, reproduces daily events and runs controls. Idle time repeats exact-current-D qualification cells.",
         ),
         (
             "DAY",
@@ -96,7 +96,7 @@ const TUNING: Section = Section {
         ),
         (
             "CCD TABLES",
-            "Physical CCD tables keep the topology visible. Each tuning unit shows applied D, hard ceiling C and tagged U; core rows retain their hardware readback. S is diagnostic only and never authorizes a step.",
+            "Physical CCD tables keep the topology visible. Each tuning unit shows applied D, hard ceiling C and tagged U; core rows retain their hardware readback.",
         ),
         (
             "R6",
@@ -130,20 +130,8 @@ const WORDS: Section = Section {
             "the hard night ceiling, with its edge and margin witnesses; unknown U blocks ordinary promotion",
         ),
         (
-            "S",
-            "non-authorizing statistical diagnostic, with its slope, witnesses and gaps; never permission or a retreat trigger",
-        ),
-        (
             "U",
             "the night edge: the shallowest offset that failed in isolation; unknown until mapped, censored when nothing failed down to the limit",
-        ),
-        (
-            "slope",
-            "how fast a class's failure rate grows with depth: a fallback until enough is measured",
-        ),
-        (
-            "bound by",
-            "what limits diagnostic S: a class's failure rate, edge margin, or baseline; not what permits D",
         ),
         (
             "covered",
@@ -673,7 +661,6 @@ mod tests {
         for said in [
             "the night edge U of its tuning unit: the shallowest offset that failed in isolation",
             "the night edge: the shallowest offset that failed in isolation",
-            "non-authorizing statistical diagnostic",
             "permission: experimental hold + exact night qualification",
             "clean observed hours at the current exact D",
         ] {
@@ -782,7 +769,7 @@ mod tests {
             .join(" ");
         for explanation in [
             "D the tuning unit's applied day offset; saved and proposed profiles are not hardware readback",
-            "S non-authorizing statistical diagnostic",
+            "C the hard night ceiling",
             "U the night edge: the shallowest offset that failed in isolation; unknown until mapped, censored when nothing failed down to the limit",
             "covered a class with diagnostic exposure",
             "veto a profile an event forbids until the veto clears",

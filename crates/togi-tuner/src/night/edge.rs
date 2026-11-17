@@ -1,6 +1,9 @@
 //! The night edge U and the per-unit mapping cursor (`docs/spec/tuner.md`, Night edge U and Night
 //! order and reserved budgets).
 
+/// Counts backed off from the night edge to obtain the ceiling.
+pub const EDGE_MARGIN: u8 = 5;
+
 use std::collections::BTreeMap;
 use std::ops::Bound;
 
@@ -50,7 +53,7 @@ impl EdgeU {
     #[must_use]
     pub fn ceiling(&self) -> Option<TargetOffset> {
         self.offset()
-            .map(|offset| TargetOffset::clamped(offset.get() + i64::from(crate::cap::EDGE_MARGIN)))
+            .map(|offset| TargetOffset::clamped(offset.get() + i64::from(EDGE_MARGIN)))
     }
     /// This edge after a failure charged to the tested unit. A shallower failure replaces a deeper
     /// one; a censored or unknown edge takes any failure.

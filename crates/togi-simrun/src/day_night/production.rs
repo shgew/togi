@@ -21,7 +21,6 @@ use togi_machine::{
     ObservedOffset, Partial, PerCore, Reporter, ResetReason, Sample, Signal, TargetOffset,
     TrialRole, TrialSpec,
 };
-use togi_tuner::cap::Beta;
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{
     Action, Contents, DayQuery, EndReason, NightQuery, Params, PolicyPayload, State, TrialPlan,
@@ -69,7 +68,7 @@ struct Started {
     contents: Contents,
 }
 
-/// The production policy at one fallback slope, driving the real policy state.
+/// The production policy, driving the real policy state.
 pub struct ProductionPolicy {
     state: State,
     /// How many events the adapter wrote.
@@ -85,22 +84,6 @@ pub struct ProductionPolicy {
 }
 
 impl ProductionPolicy {
-    /// The production policy whose fallback slope is `multiplier`, the hazard multiplier per CO count (the
-    /// specification's 1.5× is `beta = ln 1.5`).
-    ///
-    /// # Errors
-    /// Refuses a multiplier that is not finite and above one.
-    pub fn new(multiplier: f64) -> Result<Self, RunError> {
-        if !multiplier.is_finite() || multiplier <= 1.0 {
-            return Err(RunError::Slope(multiplier));
-        }
-        let fallback_slope = Beta::new(multiplier.ln()).map_err(|_| RunError::Slope(multiplier))?;
-        Ok(Self::with_params(Params {
-            fallback_slope,
-            ..Params::SPEC
-        }))
-    }
-
     /// The production policy deciding by `params`.
     #[must_use]
     pub fn with_params(params: Params) -> Self {

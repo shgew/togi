@@ -1,13 +1,13 @@
-//! Journal-derived D status, with statistical S explicitly confined to diagnostics.
+//! Journal-derived D status.
 
 use super::climb_projection::{
     ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
     ClimbHoldProjection, ClimbPermissionMode, ClimbProfiles, ClimbProjection,
     ClimbProposalProjection, ClimbQualificationProjection, ClimbQualificationState,
-    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+    ClimbStepProjection, ClimbUnitProjection, ClimbUnitState,
 };
 use super::qualify::QualStatus;
-use super::{CapProjection, State, ledger::saturating_u32, permission::vector};
+use super::{State, ledger::saturating_u32, permission::vector};
 use crate::{
     UnitProfile,
     cap::{Bound, Hours, Rate, poisson_upper},
@@ -166,20 +166,6 @@ impl State {
                         witnesses: vec![commitment.seq, application.seq],
                     })
                 });
-                let diagnostic_s = unit
-                    .id
-                    .ccd()
-                    .and_then(|ccd| self.nights.caps.get(&ccd))
-                    .map(|cap| DiagnosticStatisticalProjection {
-                        cap: CapProjection {
-                            offset: cap.payload.new,
-                            binding: cap.payload.binding.clone(),
-                            slope: cap.payload.slope,
-                            adequate: cap.payload.adequate.clone(),
-                            uncovered: cap.payload.uncovered.clone(),
-                            witness: cap.seq,
-                        },
-                    });
                 let next = candidate
                     .as_ref()
                     .filter(|candidate| {
@@ -218,7 +204,6 @@ impl State {
                     next,
                     state,
                     latest_step,
-                    diagnostic_s,
                 })
             })
             .collect();

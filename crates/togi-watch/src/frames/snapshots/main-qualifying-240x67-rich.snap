@@ -33,8 +33,8 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 │
 │  CCD 0 all loaded    0       -10       -20       -30       -40       -50                                                 CCD 1 all loaded    0       -10       -20       -30       -40       -50
 ~  wwwww gggggggggg    g       ggg       ggg       ggg       ggg       ggg                                                 wwwww gggggggggg    g       ggg       ggg       ggg       ggg       ggg
-│  D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only                                              D -8 · C -45 · U censored at -50 · 37 counts to C · S -15 diagnostic only
-~  ttttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt                                              tttt   ttttt   ttttttttttttttttt   tttttttttttttt   ttttttttttttttttttttt
+│  D -10 · C -26 · U observed at -31 · 16 counts to C                                                                      D -8 · C -45 · U censored at -50 · 37 counts to C
+~  ttttt   ttttt   ttttttttttttttttt   tttttttttttttt                                                                      tttt   ttttt   ttttttttttttttttt   tttttttttttttt
 │  climbing · hold 3 / 50 h · no candidate                                                                                 climbing · hold 3 / 50 h · no candidate
 ~  tttttttt   ttttttttttttt   tttttttttttt                                                                                 tttttttt   ttttttttttttt   tttttttttttt
 │  ► 00  -10  LOADED    ▆▆▆▆▆▆▆▆▆▆················    ▆                                                                    ► 08   -8  LOADED    ▆▆▆▆▆▆▆▆·····································    ▆

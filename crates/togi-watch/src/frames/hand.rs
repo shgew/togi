@@ -8,15 +8,15 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use ratatui::buffer::Buffer;
 use togi_journal::{
-    Activity, Binding, Budget, Classification, DayEventId, DayStep, DeadEndCondition, DecisionId,
-    Edge, ExposureClass, Finite, LowerEndpoint, NightId, Outcome, Placement, PlannedTask,
-    QualificationPurpose, Queue, ReproductionState, Resolution, ShutdownReason, Slope, StepCauses,
-    StepKind, TaskId, TaskStatus, Tested, UncoveredClass, UncoveredReason,
+    Activity, Budget, Classification, DayEventId, DayStep, DeadEndCondition, DecisionId, Edge,
+    ExposureClass, NightId, Outcome, Placement, PlannedTask, QualificationPurpose, Queue,
+    ReproductionState, Resolution, ShutdownReason, StepCauses, StepKind, TaskId, TaskStatus,
+    Tested,
 };
 use togi_machine::{BootId, CcdId, ObservedOffset, Regime, ResetKind, TargetOffset};
 use togi_tuner::policy::{
-    CapProjection, DayProjection, EventProjection, FirmwareValidity, HoldProjection,
-    MappingProjection, NightProjection, Projection, QualificationProgress, QualificationProjection,
+    DayProjection, EventProjection, FirmwareValidity, HoldProjection, MappingProjection,
+    NightProjection, Projection, QualificationProgress, QualificationProjection,
     QualificationStage, ReproductionProjection, UnitProjection,
 };
 use togi_tuner::unit::{UnitId, UnitProfile};
@@ -156,7 +156,7 @@ pub(crate) fn mapping_trial(ordinal: u32, ccd_id: u8, offset: i64, cores: &[u8])
     }
 }
 
-/// The projection of a machine with no committed edge, cap, day or night.
+/// The projection of a machine with no committed edge, day or night.
 pub(crate) fn bare(ccds: Vec<UnitProjection>) -> Projection {
     Projection {
         climb: togi_tuner::policy::ClimbProjection::default(),
@@ -177,14 +177,12 @@ pub(crate) fn bare(ccds: Vec<UnitProjection>) -> Projection {
     }
 }
 
-/// CCD `id` over `cores` at day offset `day`, with no edge and no cap.
+/// CCD `id` over `cores` at day offset `day`, with no edge.
 pub(crate) fn ccd_row(id: u8, cores: &[u8], day: i64) -> UnitProjection {
     UnitProjection {
         unit: UnitId::Ccd(ccd(id)),
         cores: set(cores),
         edge: None,
-        cap: None,
-        evidence: None,
         day: off(day),
         remaining: None,
     }
@@ -204,10 +202,17 @@ pub(crate) fn censored(limit: i64) -> Edge {
     }
 }
 
-/// Adapt a historical test row into an explicit D fixture; this is not a production ceiling calculation.
+/// Adapt a test row into D facts, deriving C from its tagged night edge.
 pub(crate) fn climb_row(row: &UnitProjection) -> togi_tuner::policy::ClimbUnitProjection {
-    use togi_tuner::policy::{
-        ClimbHoldProjection, ClimbUnitProjection, ClimbUnitState, DiagnosticStatisticalProjection,
+    use togi_tuner::night::EdgeU;
+    use togi_tuner::policy::{ClimbHoldProjection, ClimbUnitProjection, ClimbUnitState};
+    let edge = match row.edge.as_ref() {
+        None | Some(Edge::Unknown {}) => EdgeU::Unknown,
+        Some(Edge::Observed { offset, witness }) => EdgeU::Observed {
+            offset: *offset,
+            witness: *witness,
+        },
+        Some(Edge::Censored { .. }) => EdgeU::Censored,
     };
     ClimbUnitProjection {
         unit: row.unit,
@@ -217,8 +222,10 @@ pub(crate) fn climb_row(row: &UnitProjection) -> togi_tuner::policy::ClimbUnitPr
         inherited_start: off(0),
         applied: row.day,
         edge: row.edge.clone().unwrap_or(Edge::Unknown {}),
-        ceiling: row.cap.as_ref().map(|cap| cap.offset),
-        remaining: row.remaining,
+        ceiling: edge.ceiling(),
+        remaining: edge.ceiling().map(|ceiling| {
+            u32::try_from(row.day.get().abs_diff(ceiling.get())).expect("offset distance fits")
+        }),
         hold: ClimbHoldProjection {
             credited_s: 3 * 3600,
             required_s: 50 * 3600,
@@ -227,10 +234,6 @@ pub(crate) fn climb_row(row: &UnitProjection) -> togi_tuner::policy::ClimbUnitPr
         next: None,
         state: ClimbUnitState::Climbing,
         latest_step: None,
-        diagnostic_s: row
-            .cap
-            .clone()
-            .map(|cap| DiagnosticStatisticalProjection { cap }),
     }
 }
 
@@ -277,56 +280,12 @@ pub(crate) fn class(regime: Regime, cores: &[u8]) -> ExposureClass {
     }
 }
 
-/// A cap at `offset` that `binding` limits, backed by `covered` classes with `uncovered` still missing.
-pub(crate) fn cap(
-    offset: i64,
-    binding: Binding,
-    slope: Slope,
-    covered: usize,
-    uncovered: usize,
-) -> CapProjection {
-    CapProjection {
-        offset: off(offset),
-        binding,
-        slope,
-        adequate: (0..covered).map(|_| class(Regime::R1, &[0])).collect(),
-        uncovered: (0..uncovered)
-            .map(|_| UncoveredClass {
-                class: class(Regime::R7, &[0, 1]),
-                reason: UncoveredReason::MappingInadequate,
-            })
-            .collect(),
-        witness: seq(11),
-    }
-}
-
-pub(crate) fn fallback() -> Slope {
-    Slope::Fallback {
-        beta: Finite::new(0.15).expect("a finite slope"),
-    }
-}
-
-pub(crate) fn measured() -> Slope {
-    Slope::Measured {
-        lower: LowerEndpoint::Unbounded {},
-        historical_min: None,
-    }
-}
-
-pub(crate) fn rate_bound() -> Binding {
-    Binding::Rate {
-        class: class(Regime::R1, &[0]),
-    }
-}
-
-/// `ccd` with its cap, edge and remaining distance set.
-pub(crate) fn with_cap(
+/// `ccd` with its edge and remaining distance set.
+pub(crate) fn with_edge(
     mut ccd: UnitProjection,
-    cap: CapProjection,
     edge: Option<Edge>,
     remaining: u32,
 ) -> UnitProjection {
-    ccd.cap = Some(cap);
     ccd.edge = edge;
     ccd.remaining = Some(remaining);
     ccd
@@ -455,27 +414,23 @@ fn load(cores: &mut [CoreView], ids: std::ops::Range<u8>) {
     }
 }
 
-/// A policy with two CCDs: CCD 0 capped and observed to fail, CCD 1 capped with a censored edge.
+/// A policy with two CCDs: CCD 0 observed to fail and CCD 1 with a censored edge.
 fn two_ccds() -> Projection {
-    let first = with_cap(
+    let first = with_edge(
         ccd_row(0, &[0, 1, 2, 3, 4, 5, 6, 7], -10),
-        cap(-26, rate_bound(), fallback(), 3, 1),
         Some(observed(-31)),
         16,
     );
-    let second = with_cap(
+    let second = with_edge(
         ccd_row(1, &[8, 9, 10, 11, 12, 13, 14, 15], -8),
-        cap(-15, rate_bound(), measured(), 4, 0),
         Some(censored(-50)),
-        7,
+        37,
     );
     let mut projection = bare(vec![first, second]);
     projection.applied = Some(profile_of(&[(0, -10), (1, -8)]));
     projection.day.hold = Some(hold(&[(0, -10), (1, -8)], 3 * 3600, 8 * 3600));
     projection.day.firmware = FirmwareValidity::Valid;
     projection.climb.units = projection.units.iter().map(climb_row).collect();
-    projection.climb.units[1].ceiling = Some(off(-45));
-    projection.climb.units[1].remaining = Some(37);
     projection.climb.profiles.applied = Some(unit_vector(&projection.climb.units));
     projection.climb.campaign = Some(togi_tuner::policy::ClimbCampaignProjection {
         campaign: togi_journal::CampaignId(togi_journal::Provenance {

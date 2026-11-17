@@ -314,35 +314,10 @@ fn the_projection_names_the_units_the_day_and_the_running_task() {
     assert_eq!(
         json["units"],
         serde_json::json!([
-            {"unit": {"ccd": 0}, "cores": json["units"][0]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null, "evidence": json["units"][0]["evidence"]},
-            {"unit": {"ccd": 1}, "cores": json["units"][1]["cores"], "edge": null, "cap": null, "day": 0, "remaining": null, "evidence": json["units"][1]["evidence"]},
+            {"unit": {"ccd": 0}, "cores": json["units"][0]["cores"], "edge": null, "day": 0, "remaining": null},
+            {"unit": {"ccd": 1}, "cores": json["units"][1]["cores"], "edge": null, "day": 0, "remaining": null},
         ])
     );
-    for unit in json["units"].as_array().unwrap() {
-        let evidence = &unit["evidence"];
-        let uncovered = evidence["uncovered"].as_array().unwrap();
-        assert!(!uncovered.is_empty(), "{evidence}");
-        for gap in uncovered {
-            assert_eq!(gap["reason"], serde_json::json!("no_observations"));
-            assert!(!gap["class"]["cores"].as_array().unwrap().is_empty());
-        }
-        assert_eq!(
-            evidence,
-            &serde_json::json!({
-                "offset": 0,
-                "reason": {"kind": "no_adequate_class"},
-                "budget": Params::SPEC.machine_budget.get() / 2.0,
-                "cells": [],
-                "projected": [],
-                "slope": {
-                    "kind": "fallback",
-                    "beta": Params::SPEC.fallback_slope.get(),
-                },
-                "slope_inputs": [],
-                "uncovered": uncovered,
-            })
-        );
-    }
     assert_eq!(
         json["day"]["firmware"],
         serde_json::json!({"kind": "valid"})

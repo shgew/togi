@@ -17,7 +17,7 @@ mod embedded;
 enum Case {
     Provisional,
     Exhausted,
-    ZeroS,
+    QualifiedProposal,
     Blocked,
     Censored,
     Finished,
@@ -28,7 +28,7 @@ impl Case {
     const ALL: [Self; 7] = [
         Self::Provisional,
         Self::Exhausted,
-        Self::ZeroS,
+        Self::QualifiedProposal,
         Self::Blocked,
         Self::Censored,
         Self::Finished,
@@ -39,7 +39,7 @@ impl Case {
         match self {
             Self::Provisional => "allowance-provisional",
             Self::Exhausted => "allowance-exhausted",
-            Self::ZeroS => "s-zero-permission",
+            Self::QualifiedProposal => "qualified-proposal",
             Self::Blocked => "qualification-blocked",
             Self::Censored => "censored-ceiling",
             Self::Finished => "finished-experimental",
@@ -112,7 +112,7 @@ impl Case {
                     }
                 }
             }
-            Self::ZeroS => {
+            Self::QualifiedProposal => {
                 for unit in &mut climb.units {
                     unit.applied = off(0);
                     unit.latest_step = None;
@@ -124,8 +124,11 @@ impl Case {
                 let applied = hand::unit_vector(&climb.units);
                 climb.profiles.applied = Some(applied.clone());
                 climb.daily.as_mut().unwrap().profile = applied;
-                climb.units[0].diagnostic_s.as_mut().unwrap().cap.offset = off(0);
-                climb.units[0].ceiling = Some(off(-25));
+                climb.units[0].ceiling = togi_tuner::night::EdgeU::Observed {
+                    offset: off(-30),
+                    witness: crate::tests::kit::seq(7),
+                }
+                .ceiling();
                 climb.units[0].edge = hand::observed(-30);
                 climb.units[0].remaining = Some(25);
                 climb.units[1].remaining = Some(45);
@@ -166,7 +169,7 @@ impl Case {
             }
             Self::Censored => {
                 climb.units[0].edge = hand::censored(-50);
-                climb.units[0].ceiling = Some(off(-45));
+                climb.units[0].ceiling = togi_tuner::night::EdgeU::Censored.ceiling();
                 climb.units[0].remaining = Some(35);
             }
             Self::Finished => {
@@ -274,7 +277,7 @@ fn permission_frames(visit: &mut impl FnMut(&str, &Buffer, Form)) {
 
 #[test_case::test_case(Case::Provisional; "provisional allowance")]
 #[test_case::test_case(Case::Exhausted; "exhausted allowance and post finish event")]
-#[test_case::test_case(Case::ZeroS; "s zero does not authorize or block")]
+#[test_case::test_case(Case::QualifiedProposal; "qualified proposal is not applied")]
 #[test_case::test_case(Case::Blocked; "qualification failure is held unfinished")]
 #[test_case::test_case(Case::Censored; "censored physical limit has minus45 ceiling")]
 #[test_case::test_case(Case::Finished; "finished remains experimental")]
@@ -304,7 +307,7 @@ fn d_state_snapshots(case: Case) {
             );
             assert!(text.contains("finished: allowance exhausted"));
         }
-        Case::ZeroS => assert!(text.contains("proposed, not applied: 0:-5")),
+        Case::QualifiedProposal => assert!(text.contains("proposed, not applied: 0:-5")),
         Case::Blocked => {
             assert!(text.contains("held/unfinished: exact candidate qualification blocked"));
         }

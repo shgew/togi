@@ -2,6 +2,8 @@
 
 This is the entry point to the tuning policy. [Ruleset 14](spec/tuner-ruleset14.md) owns the rules and numbers, [workloads](spec/workloads.md) owns what runs, and [ADR 0094](adr/0094-two-ends-bounded-exploration.md) records why two-ends D replaces statistical-cap permission.
 
+This guide describes shipped behavior. The [automatic edge-margin-wait model](model.md) is the design being built, not yet this policy.
+
 Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More negative is **deeper**. It deliberately encounters failures, including crashes; passing the workloads tested is evidence about those workloads, not a promise that the machine cannot fail later.
 
 ## Two-ends D: Ruleset 14
@@ -34,7 +36,7 @@ A profile is the complete ordered per-core vector and its unit mapping. Coarse t
 | **C**, hard night ceiling | Five counts shallower than the isolated edge, capped at stock |
 | **U**, night edge | Tagged unknown, observed failure or write-limit-censored edge |
 
-Unknown U grants no ordinary nonzero promotion. S may remain visible only as a labelled non-authorizing statistical diagnostic, with its assumptions and uncovered classes; it neither grants permission nor forces retreat.
+Unknown U grants no ordinary nonzero promotion. Statistical cap S computation and display are retired; historical `ccd.cap` journal records remain readable until the clean journal boundary.
 
 ## What a night does
 
@@ -71,7 +73,7 @@ An unexplained unclean end raises a question; independent CPU machine-check evid
 `togi watch` has a header (clock, tuning time, session age, failures, crashes), a stage line, a narration line, one table per CCD and lower panels. Press `?` for the on-screen help and `l` for the log.
 
 - **Stage line.** `NIGHT since 22:13 · 0h30m` with the task, for example `mapping CCD 1 at -20`, or `DAY`. It names no end time. After the night ended it shows `LAST NIGHT` times.
-- **Unit facts.** Applied D, hard ceiling C and tagged U, qualification and outstanding cells; any S/slope display is explicitly diagnostic, not permission or “remaining to S.”
+- **Unit facts.** Applied D, hard ceiling C and tagged U, qualification and outstanding cells.
 - **Night panel.** Current task, mapping/qualification progress and queue time shares.
 - **Day panel.** Exact-profile hold, phase, latest successful step, held/finished/stopped reason, blockers, firmware, freeze/pause, events and vetoes.
 - **Campaign.** Consumed/remaining allowance, provisional and subsequently reclassified counts, and post-finish events.

@@ -41,6 +41,9 @@ pub struct Options {
     pub suite: PathBuf,
     /// Compares only the sessions the head's suite lists under `smoke`.
     pub smoke: bool,
+    /// Retired base-side kinds when comparing semantic rather than raw journals.
+    /// Runs both sides freshly and reports every session; never uses raw digest equality.
+    pub semantic: Option<Vec<String>>,
     /// Reports every differing session instead of stopping at the first.
     pub keep_going: bool,
     /// Runs every session on both trees instead of using cached digests; the runs are still cached.
@@ -70,6 +73,8 @@ pub enum SameError {
     },
     #[error("suite has no smoke sessions")]
     NoSmoke,
+    #[error("semantic comparison requires identical machine, facts and replay inputs for {key}")]
+    SemanticInputs { key: String },
     #[error("build the {side} simulator in {}", tree.display())]
     Build {
         side: &'static str,
@@ -253,6 +258,9 @@ fn execute_with(
     let built = started.elapsed();
     let keys = [0, 1].map(|side| digests::key(simulators[side].digest(), options.max_boots.get()));
     let pairs = compare::pair(runs);
+    if options.semantic.is_some() {
+        check_semantic_inputs(&pairs).map_err(fail)?;
+    }
     let identical = same_inputs(&keys, &pairs);
     let keyed = started.elapsed();
     let mut timings = Timings {
@@ -296,13 +304,18 @@ fn execute_with(
         fleet,
         timeout: options.timeout,
         max_boots: options.max_boots,
+        semantic: options.semantic.as_deref(),
     };
     let config = Config {
         jobs: options.jobs.get(),
         keep: options.keep.is_some(),
-        keep_going: options.keep_going,
-        fresh: options.no_cache || options.keep.is_some(),
-        caches: [Some(&caches[0]), Some(&caches[1])],
+        keep_going: options.keep_going || options.semantic.is_some(),
+        fresh: options.no_cache || options.keep.is_some() || options.semantic.is_some(),
+        caches: if options.semantic.is_some() {
+            [None, None]
+        } else {
+            [Some(&caches[0]), Some(&caches[1])]
+        },
         costs: Some(&costs),
         scopes: [0, 1].map(|side| simulators[side].digest().to_owned()),
         fleet,
@@ -346,7 +359,7 @@ fn identical_report(
     identical: bool,
     timings: Timings,
 ) -> Option<Report> {
-    if !identical || options.no_cache || options.keep.is_some() {
+    if !identical || options.no_cache || options.keep.is_some() || options.semantic.is_some() {
         return None;
     }
     Some(Report {
@@ -359,12 +372,25 @@ fn identical_report(
             total_s: [0.0; 2],
             slow: Vec::new(),
             warnings: Vec::new(),
+            semantic: None,
         },
         identical: true,
         kept: None,
         timings,
         warnings: Vec::new(),
     })
+}
+
+fn check_semantic_inputs(pairs: &[compare::Pair]) -> Result<(), SameError> {
+    if let Some(pair) = pairs
+        .iter()
+        .find(|pair| pair.runs.iter().all(Option::is_some) && pair.inputs[0] != pair.inputs[1])
+    {
+        return Err(SameError::SemanticInputs {
+            key: pair.key.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn same_inputs(keys: &[String; 2], pairs: &[compare::Pair]) -> bool {
@@ -556,6 +582,7 @@ struct Real<'a> {
     fleet: &'a Fleet,
     timeout: Duration,
     max_boots: NonZeroU32,
+    semantic: Option<&'a [String]>,
 }
 
 impl Launcher for Real<'_> {
@@ -577,6 +604,18 @@ impl Launcher for Real<'_> {
                 exit: launched.exit,
                 wall: launched.wall,
             })
+    }
+
+    fn semantic_comparison(
+        &self,
+        base: &Path,
+        head: &Path,
+    ) -> Result<Option<journal::semantic::Comparison>, JournalError> {
+        if let Some(retired) = self.semantic {
+            journal::semantic::compare_dirs(base, head, retired).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -627,6 +666,7 @@ mod build_tests {
                 head: self.dir.path().join("head"),
                 suite: PathBuf::from("suite.json"),
                 smoke: false,
+                semantic: None,
                 keep_going: false,
                 no_cache: false,
                 keep: None,

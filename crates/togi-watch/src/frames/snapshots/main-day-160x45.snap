@@ -18,7 +18,7 @@ expression: body
 │
 │
 │  CCD 0 idle         0       -10       -20       -30       -40       -50          CCD 1 idle         0       -10       -20       -30       -40       -50
-│  D -10 · C -26 · U observed at -31 · 16 counts to C · S -26 diagnostic only      D -8 · C -45 · U censored at -50 · 37 counts to C · S -15 diagnostic only
+│  D -10 · C -26 · U observed at -31 · 16 counts to C                              D -8 · C -45 · U censored at -50 · 37 counts to C
 │  climbing · hold 3 / 50 h · no candidate                                         climbing · hold 3 / 50 h · no candidate
 │    00  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               08   -8           ▄▄▄▄▄▄▄▄·····································    ▄
 │    01  -10           ▄▄▄▄▄▄▄▄▄▄················    ▄                               09   -8           ▄▄▄▄▄▄▄▄·····································    ▄

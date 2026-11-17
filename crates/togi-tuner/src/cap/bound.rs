@@ -10,27 +10,6 @@ pub enum Bound {
     Unbounded,
 }
 
-impl Bound {
-    /// Whether the bound proves the rate is at most `limit`; an unbounded bound never does.
-    pub fn within(self, limit: Rate) -> bool {
-        match self {
-            Self::Finite(rate) => rate <= limit,
-            Self::Unbounded => false,
-        }
-    }
-
-    /// The bound times a nonnegative factor. A product too large for a rate is unbounded.
-    pub(super) fn scaled(self, factor: f64) -> Self {
-        match self {
-            Self::Finite(rate) => match Rate::per_hour(rate.get() * factor) {
-                Ok(scaled) => Self::Finite(scaled),
-                Err(_) => Self::Unbounded,
-            },
-            Self::Unbounded => Self::Unbounded,
-        }
-    }
-}
-
 /// A probability strictly between 0 and 1.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Confidence(f64);

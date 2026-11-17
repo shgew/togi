@@ -26,6 +26,8 @@ pub(crate) struct SameArgs {
     /// Compare only the sessions the suite lists under `smoke`.
     #[arg(long)]
     smoke: bool,
+    #[command(flatten)]
+    comparison: SemanticArgs,
     /// Report every differing session instead of stopping at the first.
     #[arg(long)]
     keep_going: bool,
@@ -56,6 +58,17 @@ pub(crate) struct SameArgs {
     head_sim: Option<PathBuf>,
 }
 
+#[derive(Debug, Args)]
+struct SemanticArgs {
+    /// Compare retained journal semantics, rebasing sequence references on both sides.
+    /// Runs every selected session freshly on both sides and reports all differing classes, including messages.
+    #[arg(long)]
+    semantic: bool,
+    /// Drop records of this kind on the base side only. Repeat to retire more than one kind.
+    #[arg(long, value_name = "KIND", requires = "semantic")]
+    retired: Vec<String>,
+}
+
 pub(crate) fn run(args: SameArgs) -> ExitCode {
     let fleet = Arc::new(Fleet::new());
     if let Err(error) = cancel_on_signals(&fleet) {
@@ -69,6 +82,7 @@ pub(crate) fn run(args: SameArgs) -> ExitCode {
         head: args.head,
         suite: args.suite,
         smoke: args.smoke,
+        semantic: args.comparison.semantic.then_some(args.comparison.retired),
         keep_going: args.keep_going,
         no_cache: args.no_cache,
         keep: args.keep,

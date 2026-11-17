@@ -215,58 +215,6 @@
           0,
           1
         ],
-        "diagnostic_s": {
-          "cap": {
-            "adequate": [
-              {
-                "cores": [
-                  0
-                ],
-                "duration_s": 90,
-                "placement": "isolated",
-                "regime": "R1",
-                "workloads": [
-                  {
-                    "content": {
-                      "backend": "mprime",
-                      "configuration": "0202020202020202020202020202020202020202020202020202020202020202",
-                      "executable": "0101010101010101010101010101010101010101010101010101010101010101"
-                    },
-                    "workload": "mprime-sse-4k-21k"
-                  }
-                ]
-              }
-            ],
-            "binding": {
-              "class": {
-                "cores": [
-                  0
-                ],
-                "duration_s": 90,
-                "placement": "isolated",
-                "regime": "R1",
-                "workloads": [
-                  {
-                    "content": {
-                      "backend": "mprime",
-                      "configuration": "0202020202020202020202020202020202020202020202020202020202020202",
-                      "executable": "0101010101010101010101010101010101010101010101010101010101010101"
-                    },
-                    "workload": "mprime-sse-4k-21k"
-                  }
-                ]
-              },
-              "kind": "rate"
-            },
-            "offset": -1,
-            "slope": {
-              "beta": -0.1,
-              "kind": "fallback"
-            },
-            "uncovered": [],
-            "witness": 17
-          }
-        },
         "edge": {
           "kind": "censored",
           "limit": -50,
@@ -423,58 +371,6 @@
           2,
           3
         ],
-        "diagnostic_s": {
-          "cap": {
-            "adequate": [
-              {
-                "cores": [
-                  2
-                ],
-                "duration_s": 90,
-                "placement": "isolated",
-                "regime": "R1",
-                "workloads": [
-                  {
-                    "content": {
-                      "backend": "mprime",
-                      "configuration": "0202020202020202020202020202020202020202020202020202020202020202",
-                      "executable": "0101010101010101010101010101010101010101010101010101010101010101"
-                    },
-                    "workload": "mprime-sse-4k-21k"
-                  }
-                ]
-              }
-            ],
-            "binding": {
-              "class": {
-                "cores": [
-                  2
-                ],
-                "duration_s": 90,
-                "placement": "isolated",
-                "regime": "R1",
-                "workloads": [
-                  {
-                    "content": {
-                      "backend": "mprime",
-                      "configuration": "0202020202020202020202020202020202020202020202020202020202020202",
-                      "executable": "0101010101010101010101010101010101010101010101010101010101010101"
-                    },
-                    "workload": "mprime-sse-4k-21k"
-                  }
-                ]
-              },
-              "kind": "rate"
-            },
-            "offset": -1,
-            "slope": {
-              "beta": -0.1,
-              "kind": "fallback"
-            },
-            "uncovered": [],
-            "witness": 23
-          }
-        },
         "edge": {
           "kind": "censored",
           "limit": -50,
@@ -620,8 +516,6 @@
   "stopped": false,
   "units": [
     {
-      "binding": "rate",
-      "cap": -1,
       "cores": [
         0,
         1
@@ -634,8 +528,6 @@
       }
     },
     {
-      "binding": "rate",
-      "cap": -1,
       "cores": [
         2,
         3

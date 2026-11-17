@@ -506,27 +506,6 @@ impl Journal {
         self.append(end.into(), &[intent])
     }
 
-    /// Journals a trial of `plan` the session was killed in after its intent and before its start: the
-    /// resumed run ends it inconclusive and interrupted, having run nothing.
-    pub(crate) fn run_unstarted(&mut self, plan: &TrialPlan) -> Seq {
-        let id = TrialId::from(format!("t{}", self.events.len() + 1));
-        let content = plan
-            .workloads()
-            .into_iter()
-            .map(|workload| WorkloadContent {
-                workload,
-                content: self.built.clone(),
-            })
-            .collect();
-        let intent = plan.intent(id.clone(), &self.machine, content).unwrap();
-        let intent = self.append(intent.into(), &plan.causes);
-        let end: TrialEnd = serde_json::from_value(serde_json::json!({
-            "trial": id.as_str(), "outcome": "inconclusive", "duration_s": 0, "interrupted": true
-        }))
-        .unwrap();
-        self.append(end.into(), &[intent])
-    }
-
     /// Drives the night until it asks for a trial, committing what it owes on the way.
     pub(crate) fn until_trial(&mut self, now: Timestamp) -> TrialPlan {
         match self.until_end(now, &BTreeMap::new()) {
@@ -618,8 +597,7 @@ fn r1_workload() -> WorkloadId {
     togi_machine::workloads(Regime::R1)[0].id()
 }
 
-/// `ccd`'s cap S at `offset` under its half of the machine budget and its committed `edge`, bound by the
-/// rate of its first core's isolated R1 class.
+/// Historical `ccd.cap` input retained to prove replay ignores retired diagnostics.
 fn cap(ccd_id: u8, offset: i64, edge: Edge) -> CcdCap {
     let class = r1_class(2 * ccd_id, Placement::Isolated);
     let offset = TargetOffset::new(offset).unwrap();
@@ -627,7 +605,7 @@ fn cap(ccd_id: u8, offset: i64, edge: Edge) -> CcdCap {
         ccd: ccd(ccd_id),
         old: TargetOffset::new(0).unwrap(),
         new: offset,
-        budget: Rate::new(Params::SPEC.machine_budget.get() / 2.0).unwrap(),
+        budget: Rate::new(1.0 / 6000.0).unwrap(),
         edge,
         adequate: vec![class.clone()],
         uncovered: Vec::new(),

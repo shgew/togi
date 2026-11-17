@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use jiff::Timestamp;
 use togi_journal::{
-    CcdCap, CcdEdge, DayApplied, DayEvent, DayEventId, DayFault, DayHold, DayInterval, DayRecord,
-    DayStep, DayUncleanEnd, DayVeto, ExposureObserved, Mce, NightId, NightPlan, NightQualification,
+    CcdEdge, DayApplied, DayEvent, DayEventId, DayFault, DayHold, DayInterval, DayRecord, DayStep,
+    DayUncleanEnd, DayVeto, ExposureObserved, Mce, NightId, NightPlan, NightQualification,
     NightReproduction, Provenance, Seq, SessionId, TaskId, TrialEnd, TrialId, TrialIntent,
     TrialStart,
 };
@@ -186,8 +186,6 @@ pub(super) struct Nights {
     pub(super) open: Option<NightId>,
     #[serde(with = "super::wire::pairs")]
     pub(super) edges: BTreeMap<CcdId, Committed<CcdEdge>>,
-    #[serde(with = "super::wire::pairs")]
-    pub(super) caps: BTreeMap<CcdId, Committed<CcdCap>>,
     #[serde(with = "super::wire::pairs")]
     pub(super) unit_edges: BTreeMap<crate::UnitId, Committed<togi_journal::UnitEdge>>,
     pub(super) qualifications: Vec<Committed<NightQualification>>,

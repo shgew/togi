@@ -320,7 +320,13 @@ Shut down or reboot. The next boot follows your restored normal selection; with 
 togi status
 ```
 
-`status` shows, for each CCD, its applied day offset `D`, its cap `S` with the slope (fallback or measured) and what binds it, its edge `U`, the counts still to go, and the trial classes covered and uncovered for the cap. Below the table it shows the Day policy (applied profile, hold, latest step and what blocks it, freeze, firmware, events and vetoes) and the Night (elapsed observed time and each queue's share used; [Commands](spec/runtime.md#commands)); [How togi tunes](how-togi-tunes.md) explains each. Another tuning run continues the session.
+`status` shows each CCD's applied day offset `D`, hard ceiling `C`, tagged edge `U` and counts still to go.
+The table shows exact-profile qualification and outstanding coverage.
+Below it, Day policy shows the applied profile, hold, latest step and what blocks it, freeze, firmware, events and vetoes.
+It also shows the tuning phase, any stop or finish reason and the remaining campaign allowance.
+The Night section shows elapsed observed time and each queue's share used.
+See [Commands](spec/runtime.md#commands) for display details and [How togi tunes](how-togi-tunes.md) for the rules.
+Another tuning run continues the session.
 
 For the evidence behind those labels:
 
@@ -329,7 +335,11 @@ togi status --evidence
 sudo togi doctor --day
 ```
 
-The evidence view puts the selected exact profile beside stock observations, exposes rate/slope witnesses, hours and coverage gaps, and names the governing [cap rule](spec/tuner.md#cap-s-margin-from-measured-slope). “No observations”, “non-mapping exposure only” and “mapping exposure inadequate” are different gaps: daily hours and qualification hours do not become isolated mapping exposure. CO 0 is an untuned fallback, not a claim that stock meets the hazard goal. No view gives a safety verdict, an ETA or a promise that more nights will produce a nonzero profile.
+The evidence view shows exact-profile qualification evidence, applied-step history and comparable same-class night measurements.
+The fixed-rate bound uses only compatible daily observations of the current exact applied profile.
+Historical observations across contexts are shown separately, alongside stock totals and unknown intervals.
+CO 0 is an untuned fallback, not a claim that stock meets the hazard goal.
+No view gives a safety verdict, an ETA or a promise that more nights will produce a nonzero profile.
 
 The first observed day boot after a night has a Morning report in `status`; `togi day notify` also
 sends it to the desktop. It summarizes recorded trial ends and observed task time, and explains that
@@ -352,11 +362,13 @@ An empty admissible nonzero queue stops with `no_nonzero_work`
 (exit 12), not a stock trial. Excluded backends and runtime safety stops
 retain their [named stopping conditions](spec/tuner.md#night-query-results).
 
-A night's mapping and qualification are evidence, not proof of stability. Qualification runs the [coverage matrix](spec/workloads.md#coverage-matrix) on the exact profile under test; classes that do not bound the cap are listed as uncovered, never as safe.
+A night's mapping and qualification are evidence, not proof of stability.
+Qualification runs the [coverage matrix](spec/workloads.md#coverage-matrix) on the exact profile under test.
+Missing qualification coverage is shown as outstanding, never as safe.
 
 That coverage does not include light work on many cores at once or both threads of many cores at once beyond the matrix's own classes. The idle trial is not proof of stability through real desktop idle, sleep and wake, or changing background activity. Trial offsets also do not exercise the early boot stages before togi applies a profile. A qualified profile can still crash in ordinary use.
 
-Keep BIOS Curve Optimizer at **0**; never copy a proposed day profile into firmware. [Ruleset 14](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) requires 50 clean exact-profile hours even at initial stock, exact next-profile qualification and an eligible cold boot for each bounded step toward C. Status/watch show D/C/U, hold and campaign allowance, not “remaining to S”; S is diagnostic only. Evidence reads `experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`. Keep backups: neither a completed hold nor a finished climb proves stability.
+Keep BIOS Curve Optimizer at **0**; never copy a proposed day profile into firmware. [Ruleset 14](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) requires 50 clean exact-profile hours even at initial stock, exact next-profile qualification and an eligible cold boot for each bounded step toward C. Status/watch show D/C/U, hold and campaign allowance; statistical S computation and display are retired. Evidence reads `experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`. Keep backups: neither a completed hold nor a finished climb proves stability.
 
 ### If the profile crashes in daily use
 

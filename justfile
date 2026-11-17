@@ -224,6 +224,11 @@ same base="origin/main" *args: _dev-shell
 smoke base="origin/main" *args: _dev-shell
     dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" --smoke "${@:2}"
 
+# Compare retained journal semantics with repeatable --retired KIND; on demand, never a CI gate
+[group('run')]
+same-semantic base *args: _dev-shell
+    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" --semantic "${@:2}"
+
 # Re-record the committed bench baseline over all seeds, without wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
 [group('run')]
 bench-baseline out="tools/bench/baseline.jsonl": _dev-shell

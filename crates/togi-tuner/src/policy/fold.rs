@@ -157,9 +157,7 @@ impl State {
             Payload::CcdEdge(p) => {
                 self.nights.edges.insert(p.ccd, committed(event, p.clone()));
             }
-            Payload::CcdCap(p) => {
-                self.nights.caps.insert(p.ccd, committed(event, p.clone()));
-            }
+            Payload::CcdCap(_) => {}
             Payload::UnitEdge(p) => {
                 self.nights
                     .unit_edges

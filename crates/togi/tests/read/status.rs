@@ -558,7 +558,7 @@ fn a_historical_statistical_cap_is_not_presented_as_daily_permission() {
         shown.contains("permission: experimental hold + exact night qualification"),
         "{shown}"
     );
-    assert!(shown.contains("S: diagnostic, non-authorizing"), "{shown}");
+    assert!(!shown.contains("diagnostic"), "{shown}");
     assert!(!shown.contains("D S SLOPE BINDING"), "{shown}");
     assert!(!shown.contains("remaining to S"), "{shown}");
 }
@@ -808,7 +808,10 @@ fn daily_safety_stays_visible_beside_experimental_permission() {
         flat.contains("permission: experimental hold + exact night qualification"),
         "{flat}"
     );
-    assert!(flat.contains("S: diagnostic, non-authorizing"), "{flat}");
+    assert!(
+        flat.contains("finishing is not a safety certificate"),
+        "{flat}"
+    );
     assert!(flat.contains("freeze: on"), "{flat}");
     assert!(
         flat.contains("event: boot day-a: CPU-suspect, unresolved, reproduction pending"),
@@ -1011,7 +1014,7 @@ fn baseline_stock_does_not_mask_a_completed_night_profile_without_the_day_servic
     );
 }
 
-#[test_case::test_case(Scenario::Nonzero; "no cap evidence")]
+#[test_case::test_case(Scenario::Nonzero; "no daily evidence")]
 #[test_case::test_case(Scenario::Mapping; "mapping witnesses")]
 #[test_case::test_case(Scenario::DayStep; "qualified profile without day application")]
 fn evidence_is_read_only_and_identical_under_no_color(scenario: Scenario) {
@@ -1021,9 +1024,9 @@ fn evidence_is_read_only_and_identical_under_no_color(scenario: Scenario) {
     assert!(shown.contains("Ruleset 14."));
     let shown_flat = flat(&shown);
     assert!(shown_flat.contains("Permission: experimental hold + exact night qualification"));
-    assert!(shown_flat.contains("S is a non-authorizing diagnostic"));
+    assert!(!shown_flat.contains("non-authorizing diagnostic"));
     assert!(shown_flat.contains("Current exact-profile daily evidence alone"));
-    assert!(shown.contains("cap calculation witnesses"));
+    assert!(!shown.contains("cap calculation witnesses"));
     assert!(shown.contains("Qualification exposure"));
     assert!(shown.contains("Applied-step history"));
     assert!(shown.contains("Comparable same-class night clocks and temperatures"));

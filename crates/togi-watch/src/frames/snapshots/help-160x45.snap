@@ -22,7 +22,7 @@ expression: body
 │  █ ?         no hardware offset read back for this core in this boot
 │  █ grey ▄▄▄  the same depth, grey when the core is not loaded
 │  █ ···       the hard night ceiling C for this tuning unit, not statistical permission
-│  │ red ▄     the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at Wide and Medium
+│  █ red ▄     the night edge U of its tuning unit: the shallowest offset that failed in isolation, one count wide at Wide and Medium
 │  │ amber ▄   a censored edge: nothing failed down to the mapping limit
 │  │ cyan      running now
 │  │ amber     a hold, a veto, a retreat, a crash, or outstanding qualification
@@ -42,7 +42,7 @@ expression: body
 │  │ WHAT TOGI DOES ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  │
 │  │ NIGHT       Until you end it, togi maps each unit's edge U, sweeps uncovered cells from U toward C, qualifies exact profiles, reproduces daily events and
-│  │             runs controls. Idle time repeats exact-current-D qualification cells, never S-directed probes.
+│  │             runs controls. Idle time repeats exact-current-D qualification cells.
 │  │
 │
 │   ?  help    l  log    esc  back    q  exit dashboard

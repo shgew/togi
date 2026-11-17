@@ -140,12 +140,8 @@ fn a_night_reads_in_order_from_plan_to_promotion() {
     assert_eq!(
         tags,
         [
-            "start", "night", "edge", "cap", "qualify", "qualify", "step"
+            "start", "night", "edge", "note", "qualify", "qualify", "step"
         ]
-    );
-    assert_eq!(
-        sentences[3],
-        "cap: CCD0 S 0 → -15 · diagnostic only, not permission · edge margin · fallback slope"
     );
     assert_eq!(
         sentences[4],

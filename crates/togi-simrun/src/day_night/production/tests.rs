@@ -99,27 +99,15 @@ fn certifies(event: &Event, proposal: &ClimbDecision, firmware: impl Fn(&str) ->
 }
 
 #[test]
-fn the_gate_policy_builds_from_its_slope_and_refuses_a_non_multiplier() {
-    let kind = PolicyKind::Ruleset13 {
-        fallback_slope: 2.0,
-    };
-    assert!(kind.build(&calendar(1)).is_ok());
-    for slope in [1.0, 0.5, f64::NAN, f64::INFINITY] {
-        assert!(matches!(
-            ProductionPolicy::new(slope),
-            Err(RunError::Slope(rejected)) if rejected.to_bits() == slope.to_bits()
-        ));
-    }
+fn the_production_policy_builds_without_statistical_parameters() {
+    assert!(PolicyKind::Ruleset13.build(&calendar(1)).is_ok());
 }
 
 #[test]
 fn the_journal_folds_identically_when_replayed() {
-    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::with_params(Params::SPEC).recording();
     run_with_policy(SCENARIO, 1, calendar(PROMOTION_DAYS), &mut policy).unwrap();
-    let mut replayed = State::new(Params {
-        fallback_slope: togi_tuner::cap::Beta::new(1.5_f64.ln()).unwrap(),
-        ..Params::SPEC
-    });
+    let mut replayed = State::new(Params::SPEC);
     for event in policy.events().unwrap() {
         replayed.fold(event).unwrap();
     }
@@ -139,9 +127,9 @@ fn the_journal_folds_identically_when_replayed() {
 
 #[test]
 fn an_adapter_not_recording_keeps_no_journal_and_decides_alike() {
-    let mut recording = ProductionPolicy::new(1.5).unwrap().recording();
+    let mut recording = ProductionPolicy::with_params(Params::SPEC).recording();
     run_with_policy(SCENARIO, 1, calendar(3), &mut recording).unwrap();
-    let mut bare = ProductionPolicy::new(1.5).unwrap();
+    let mut bare = ProductionPolicy::with_params(Params::SPEC);
     run_with_policy(SCENARIO, 1, calendar(3), &mut bare).unwrap();
     assert!(bare.events().is_none());
     assert!(!recording.events().unwrap().is_empty());
@@ -153,7 +141,7 @@ fn an_adapter_not_recording_keeps_no_journal_and_decides_alike() {
 
 #[test]
 fn a_first_promotion_follows_a_completed_night_qualification() {
-    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::with_params(Params::SPEC).recording();
     run_until(&mut policy, |policy| {
         if holds_promotion(policy) {
             DayStart::Stop
@@ -227,7 +215,7 @@ fn previous_profile(before: &[Event]) -> Option<CcdProfile> {
 
 #[test]
 fn a_firmware_change_resets_a_nonzero_profile_to_stock_until_requalified() {
-    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::with_params(Params::SPEC).recording();
     // The firmware changes once a promotion holds, and the run ends once the promoted profile is
     // qualified afresh under the new firmware and a nonzero profile is applied again.
     let mut changed = false;
@@ -366,7 +354,7 @@ fn retreat_and_stop(events: &[Event]) -> Option<(&ClimbDecision, &DayApplied, &U
 #[test]
 fn a_cpu_suspect_answer_leads_to_a_retreat() {
     let mut policy = FreezeAfterPromotion {
-        inner: ProductionPolicy::new(1.5).unwrap().recording(),
+        inner: ProductionPolicy::with_params(Params::SPEC).recording(),
         frozen: None,
     };
     // The run ends once the retreat the CPU-suspect answer caused is applied and its unit stopped.
@@ -444,7 +432,7 @@ struct UnansweredEnd {
 impl UnansweredEnd {
     fn new(after_promotion: bool, late: Option<DayAnswerKind>) -> Self {
         Self {
-            inner: ProductionPolicy::new(1.5).unwrap().recording(),
+            inner: ProductionPolicy::with_params(Params::SPEC).recording(),
             after_promotion,
             late,
             ended: None,
@@ -684,7 +672,7 @@ fn the_operator_ends_a_night_mid_trial_by_signal_before_the_next_day_boot() {
         night_hours: 0.01,
         ..CalendarConfig::default()
     };
-    let mut policy = ProductionPolicy::new(1.5).unwrap().recording();
+    let mut policy = ProductionPolicy::with_params(Params::SPEC).recording();
     run_with_policy(SCENARIO, 1, calendar, &mut policy).unwrap();
     let events = policy.events().unwrap();
     let (end, trial) = events

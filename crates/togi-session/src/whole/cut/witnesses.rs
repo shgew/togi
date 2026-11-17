@@ -162,13 +162,22 @@ fn a_between_trial_power_cut_preserves_commitments_with_matched_downtime() {
         .position(|event| matches!(&event.payload, Payload::TrialEnd(end) if &end.trial == trial))
         .expect("the mapping trial ends")
         + 1;
-    assert!(
-        phase.events[after..]
-            .iter()
-            .any(|event| matches!(event.payload, Payload::CcdCap(_))),
-        "the cut must precede a policy cap commitment"
-    );
+    let matches_observation = |event: &&Event| {
+        matches!(&event.payload, Payload::ExposureObserved(observed)
+            if observed.source.trial.as_ref() == Some(trial))
+    };
+    let expected = &phase.events[after..]
+        .iter()
+        .find(matches_observation)
+        .expect("the cut precedes the mapping trial's evidence commitment")
+        .payload;
     let events = resume(phase, &bench.sim.model(), after, Fate::PowerLoss);
+    let mut recovered = events[after..].iter().filter(matches_observation);
+    assert_eq!(recovered.next().map(|event| &event.payload), Some(expected));
+    assert!(
+        recovered.next().is_none(),
+        "the observation is committed only once"
+    );
     assert_unchanged_decisions(
         phase,
         &bench.sim.model(),

@@ -11,7 +11,7 @@ use togi_sim::day_night::{Scenario, TrialClass, TruthState};
 use super::machine::Runtime;
 use super::{
     CalendarConfig, DayClassification, DayObservation, EndAnswer, FixedMargin, Night, Policy,
-    PolicyKind, RunError, run, run_with_policy,
+    PolicyKind, PolicyRole, RunError, run, run_with_policy,
 };
 
 #[derive(Default)]
@@ -830,48 +830,28 @@ fn convergence_records_day_and_depth_and_ends_the_climb() {
     );
 }
 
-#[test_case("co-zero", PolicyKind::CoZero; "stock")]
-#[test_case("fixed-margin", PolicyKind::FixedMargin; "fixed margin")]
-fn a_label_resolves_to_the_policy_that_prints_it(label: &str, expected: PolicyKind) {
-    let kind = PolicyKind::by_label(label, None).unwrap();
+#[test_case("co-zero", PolicyKind::CoZero, PolicyRole::Diagnostic; "stock")]
+#[test_case("fixed-margin", PolicyKind::FixedMargin, PolicyRole::Diagnostic; "fixed margin")]
+#[test_case("ruleset13", PolicyKind::Ruleset13, PolicyRole::Gate; "production")]
+fn a_label_resolves_to_the_policy_that_prints_it(
+    label: &str,
+    expected: PolicyKind,
+    role: PolicyRole,
+) {
+    let kind = PolicyKind::by_label(label).unwrap();
     assert_eq!(kind, expected);
     assert_eq!(kind.label(), label);
+    assert_eq!(kind.role(), role);
 }
 
 #[test]
-fn the_gate_label_needs_a_slope() {
+fn an_unknown_label_lists_the_known_ones() {
     assert_eq!(
-        PolicyKind::by_label("ruleset13", None),
-        Err(super::PolicyError::SlopeRequired("ruleset13"))
-    );
-}
-
-#[test_case(1.5; "the first registered slope")]
-#[test_case(2.0; "the second registered slope")]
-fn the_gate_label_resolves_with_the_slope_it_is_given(slope: f64) {
-    let kind = PolicyKind::by_label("ruleset13", Some(slope)).unwrap();
-    assert_eq!(
-        kind,
-        PolicyKind::Ruleset13 {
-            fallback_slope: slope
-        }
-    );
-    assert_eq!(kind.label(), "ruleset13");
-    assert_eq!(kind.role(), super::PolicyRole::Gate);
-}
-
-#[test]
-fn an_unknown_label_lists_the_known_ones_and_a_slope_needs_a_policy_that_takes_one() {
-    assert_eq!(
-        PolicyKind::by_label("ruleset14", None),
+        PolicyKind::by_label("ruleset14"),
         Err(super::PolicyError::Unknown {
             name: "ruleset14".to_owned(),
             known: "co-zero, fixed-margin, ruleset13".to_owned(),
         })
-    );
-    assert_eq!(
-        PolicyKind::by_label("co-zero", Some(1.5)),
-        Err(super::PolicyError::SlopeUnused("co-zero"))
     );
 }
 

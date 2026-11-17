@@ -8,8 +8,8 @@ mod reproduction;
 mod schedule;
 
 pub use edge::{
-    BRACKET_STEP, COARSE_STEP, Cursor, EdgeU, IsolatedObservation, IsolatedResult, Location,
-    MappingBoard, MappingKind, MappingTarget, StepResult, UnitMapping, write_limit,
+    BRACKET_STEP, COARSE_STEP, Cursor, EDGE_MARGIN, EdgeU, IsolatedObservation, IsolatedResult,
+    Location, MappingBoard, MappingKind, MappingTarget, StepResult, UnitMapping, write_limit,
 };
 pub use exposure::{Conclusion, Credit, Launch, PlacementValidity, adequately_exposed};
 pub use matrix::{

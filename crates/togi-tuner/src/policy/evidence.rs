@@ -2,15 +2,14 @@
 //! context, epoch and workload contents; a query then asks only the groups that are current, so its cost
 //! follows the number of classes and not the length of the journal.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
-use togi_journal::{Activity, ExposureObserved, Outcome, Seq, Tested, WorkloadContent};
+use togi_journal::{ExposureObserved, Outcome, Seq, Tested, WorkloadContent};
 use togi_machine::{BiosContext, CcdId, CoreInfo, TargetOffset};
 
 use super::State;
-use super::ledger::{Sig, cap_purpose, eligible_seconds, failures_on, is_adequate, saturating_u32};
+use super::ledger::{Sig, failures_on, is_adequate};
 use crate::EVIDENCE_EPOCH;
-use crate::cap::{self, Hours};
 
 /// What makes exposures comparable evidence: one firmware context, one epoch, one set of contents.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -29,38 +28,10 @@ impl GroupKey {
     }
 }
 
-/// One cap cell of a class, merged over the exposures that share its offset, purpose and adequacy.
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(super) struct CapCell {
-    pub(super) offset: TargetOffset,
-    pub(super) purpose: cap::Purpose,
-    pub(super) exposure: cap::Exposure,
-    pub(super) failures: u32,
-    pub(super) hours: f64,
-}
-
-/// One class's cap input for one CCD.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(super) struct ClassCap {
-    pub(super) sig: Sig,
-    pub(super) class: togi_journal::ExposureClass,
-    /// The first exposure of the class that counted for the CCD: it orders the classes.
-    pub(super) first: Seq,
-    pub(super) cells: Vec<CapCell>,
-    /// Eligible seconds of the class's mapping exposure per offset.
-    pub(super) mapping_secs: BTreeMap<TargetOffset, u64>,
-    pub(super) latest_mapping: Option<Seq>,
-}
-
 /// Everything the exposures of one group say.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct Group {
     pub(super) key: GroupKey,
-    #[serde(with = "super::wire::pairs")]
-    pub(super) cap: BTreeMap<CcdId, Vec<ClassCap>>,
-    /// The classes with an adequate mapping exposure at an offset of a CCD.
-    #[serde(with = "super::wire::pairs_of_sets")]
-    pub(super) mapping_covered: HashMap<(CcdId, TargetOffset), HashSet<Sig>>,
     /// The first failure at the all-zero profile, as a ledger index.
     pub(super) zero_failure: Option<usize>,
     /// The adequate isolated passes of a class on a CCD, with their offsets.
@@ -69,13 +40,10 @@ pub(super) struct Group {
     /// The failures that count against a CCD, with the offset they count at.
     #[serde(with = "super::wire::pairs")]
     pub(super) scoped_failures: BTreeMap<CcdId, Vec<(Seq, TargetOffset)>>,
-    /// The latest exposure that counts for a CCD's cap.
-    #[serde(with = "super::wire::pairs")]
-    pub(super) latest_scoped: BTreeMap<CcdId, Seq>,
 }
 
-/// Whether a recorded exposure counts toward `ccd`'s cap, and at which offset.
-pub(super) fn cap_scope(
+/// The CCD-local offset of an isolated or single-CCD exact observation.
+pub(super) fn ccd_scope(
     cores: &[CoreInfo],
     observed: &ExposureObserved,
     ccd: CcdId,
@@ -86,7 +54,7 @@ pub(super) fn cap_scope(
             offset,
         } => (tested == ccd).then_some(offset),
         // An exact trial confined to one CCD is that CCD's evidence at the profile's offset there; a
-        // multi-CCD exact trial is profile-level and stays out of every CCD's cap.
+        // multi-CCD exact trial is profile-level and has no CCD-local offset.
         Tested::Exact {} => {
             let on = &observed.class.cores;
             let confined = !on.is_empty()
@@ -104,18 +72,13 @@ pub(super) fn cap_scope(
     }
 }
 
-const SECS_PER_HOUR: f64 = 3600.0;
-
 impl Group {
     fn new(key: GroupKey) -> Self {
         Self {
             key,
-            cap: BTreeMap::new(),
-            mapping_covered: HashMap::new(),
             zero_failure: None,
             isolated_passes: HashMap::new(),
             scoped_failures: BTreeMap::new(),
-            latest_scoped: BTreeMap::new(),
         }
     }
 
@@ -128,89 +91,31 @@ impl Group {
         cores: &[CoreInfo],
         ccds: &[CcdId],
     ) {
-        let sig = Sig::of_class(&observed.class);
-        let adequate = is_adequate(observed, cores);
-        let eligible_s =
-            eligible_seconds(observed.outcome, &observed.exclusions, observed.eligible_s);
-        let zero = observed.profile.ccd().is_zero();
-        if let Tested::Isolated { ccd, offset } = observed.tested {
-            if observed.activity == Activity::Mapping && adequate {
-                self.mapping_covered
-                    .entry((ccd, offset))
-                    .or_default()
-                    .insert(sig.clone());
-            }
-            if adequate {
-                self.isolated_passes
-                    .entry((ccd, sig.clone()))
-                    .or_default()
-                    .push((offset, seq));
-            }
+        if let Tested::Isolated { ccd, offset } = observed.tested
+            && is_adequate(observed, cores)
+        {
+            self.isolated_passes
+                .entry((ccd, Sig::of_class(&observed.class)))
+                .or_default()
+                .push((offset, seq));
         }
-        if zero {
-            if observed.outcome == Outcome::Failure
-                && !observed.failures.is_empty()
-                && self.zero_failure.is_none()
-            {
-                self.zero_failure = Some(index);
-            }
+        if observed.profile.ccd().is_zero()
+            && observed.outcome == Outcome::Failure
+            && !observed.failures.is_empty()
+            && self.zero_failure.is_none()
+        {
+            self.zero_failure = Some(index);
         }
         for &ccd in ccds {
-            let Some(offset) = cap_scope(cores, observed, ccd) else {
+            let Some(offset) = ccd_scope(cores, observed, ccd) else {
                 continue;
             };
-            self.latest_scoped.insert(ccd, seq);
             let failures = failures_on(observed, ccd, cores);
             if failures > 0 {
                 self.scoped_failures
                     .entry(ccd)
                     .or_default()
                     .push((seq, offset));
-            }
-            let Some(purpose) = cap_purpose(observed.activity) else {
-                continue;
-            };
-            let classes = self.cap.entry(ccd).or_default();
-            let at = if let Some(at) = classes.iter().position(|known| known.sig == sig) {
-                at
-            } else {
-                classes.push(ClassCap {
-                    sig: sig.clone(),
-                    class: observed.class.clone(),
-                    first: seq,
-                    cells: Vec::new(),
-                    mapping_secs: BTreeMap::new(),
-                    latest_mapping: None,
-                });
-                classes.len() - 1
-            };
-            let class = &mut classes[at];
-            let hours = Hours::new(f64::from(saturating_u32(eligible_s)) / SECS_PER_HOUR)
-                .unwrap_or(Hours::ZERO)
-                .get();
-            let exposure = if adequate {
-                cap::Exposure::Adequate
-            } else {
-                cap::Exposure::Partial
-            };
-            match class.cells.iter_mut().find(|cell| {
-                cell.offset == offset && cell.purpose == purpose && cell.exposure == exposure
-            }) {
-                Some(cell) => {
-                    cell.failures = cell.failures.saturating_add(failures);
-                    cell.hours = (cell.hours + hours).min(f64::MAX);
-                }
-                None => class.cells.push(CapCell {
-                    offset,
-                    purpose,
-                    exposure,
-                    failures,
-                    hours,
-                }),
-            }
-            if purpose == cap::Purpose::Mapping {
-                *class.mapping_secs.entry(offset).or_default() += eligible_s;
-                class.latest_mapping = Some(seq);
             }
         }
     }

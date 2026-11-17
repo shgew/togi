@@ -325,7 +325,7 @@ object_only! {
         pub profile: CcdVector,
         /// What the trial tested: an isolated CCD at an offset, or the exact whole profile.
         pub tested: Tested,
-        /// The purpose the trial ran for; only mapping exposure enters a cap's rate projection.
+        /// The purpose the trial ran for.
         pub activity: Activity,
         pub outcome: Outcome,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -439,7 +439,7 @@ object_only! {
 }
 
 object_only! {
-    /// A CCD's cap S changed or was recomputed.
+    /// Historical statistical S commitment, retained for decoding; no longer emitted or used by policy.
     #[derive(Clone, Debug, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct CcdCap {

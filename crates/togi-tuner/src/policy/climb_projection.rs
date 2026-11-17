@@ -12,7 +12,6 @@ use togi_journal::{
 };
 use togi_machine::{BiosContext, CoreSet, ObservedOffset, PerCore, TargetOffset};
 
-use super::CapProjection;
 use crate::{Phase, UnitId};
 
 /// The only permission model: a hold and an exact-vector night certificate, never S.
@@ -45,7 +44,7 @@ pub struct ClimbProfiles {
     pub paused_saved: Option<UnitVector>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ClimbUnitProjection {
     pub unit: UnitId,
     pub phase: Phase,
@@ -62,7 +61,6 @@ pub struct ClimbUnitProjection {
     pub next: Option<ClimbProposalProjection>,
     pub state: ClimbUnitState,
     pub latest_step: Option<ClimbStepProjection>,
-    pub diagnostic_s: Option<DiagnosticStatisticalProjection>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -123,12 +121,6 @@ pub struct ClimbStepProjection {
     pub before: UnitVector,
     pub after: UnitVector,
     pub witnesses: Vec<Seq>,
-}
-
-/// Statistical S is retained solely as a non-authorizing diagnostic.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct DiagnosticStatisticalProjection {
-    pub cap: CapProjection,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

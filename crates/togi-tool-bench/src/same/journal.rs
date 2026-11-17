@@ -1,6 +1,8 @@
 //! A session's journals as `--same` compares them: the live journal and the archived ones, line by line, after
 //! the build stamp is taken out of the two events that carry it.
 
+pub mod semantic;
+
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
@@ -117,6 +119,12 @@ pub enum JournalError {
     MissingOnASide { base: usize, head: usize },
     #[error("{side} journals contain no events")]
     EmptyOnASide { side: &'static str },
+    #[error("journal {}: line {line}: semantic normalization: {reason}", path.display())]
+    Semantic {
+        path: PathBuf,
+        line: usize,
+        reason: String,
+    },
 }
 
 /// The first place two sessions' journals differ.
@@ -415,7 +423,8 @@ fn compare_file(
             | JournalError::Missing
             | JournalError::Empty
             | JournalError::MissingOnASide { .. }
-            | JournalError::EmptyOnASide { .. }) => other,
+            | JournalError::EmptyOnASide { .. }
+            | JournalError::Semantic { .. }) => other,
         })?;
     let missing = [paths[0].is_none(), paths[1].is_none()];
     let (line, mut base, mut head) = match found {

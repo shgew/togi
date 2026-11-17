@@ -296,7 +296,13 @@ fn a_zero_statistical_cap_neither_blocks_nor_retreats_a_qualified_step() {
             cap.new = togi_machine::TargetOffset::ZERO;
         }
     }
+    let without_caps: Vec<_> = events
+        .iter()
+        .filter(|event| !matches!(event.payload, Payload::CcdCap(_)))
+        .cloned()
+        .collect();
     let mut state = replay(&events);
+    assert_eq!(state.project(), replay(&without_caps).project());
     assert_eq!(
         state.project().applied,
         Some(togi_tuner::UnitProfile::of_ccd(&target))

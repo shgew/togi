@@ -94,6 +94,18 @@ fn every_kind_round_trips_through_the_wire() {
     }
 }
 
+/// Captured from the frozen pre-retirement simulator, not reconstructed from current payloads.
+#[test]
+fn a_historical_ccd_cap_record_round_trips_unchanged() {
+    // Base 020772580ca4f5015193cdcbebf294ca0910163e, seed 1, one simulated night hour.
+    // This is simulated journal history, not a hardware observation.
+    let line = include_str!("snapshots/historical-ccd-cap.jsonl").trim_end();
+    let event = Event::decode(line).unwrap();
+    assert!(matches!(event.payload, Payload::CcdCap(_)));
+    assert_eq!(event.encode().unwrap(), line);
+    assert_eq!(Event::decode(&event.encode().unwrap()).unwrap(), event);
+}
+
 #[test_case::test_case(togi_machine::Regime::R8; "neighbours")]
 #[test_case::test_case(togi_machine::Regime::R9; "all threads")]
 fn trial_roles_round_trip_with_logical_cpu_workload_and_phase_identity(

@@ -1304,9 +1304,8 @@ fn charged_kill_control(
 }
 
 /// The policy commitments from `from` onward, without observations of interrupted trials, which only the resumed
-/// journal has. An observation may commit an unchanged cap before a retried trial rather than after it, so
-/// commitments are sorted by identity-hidden shape before naming citations. Anchors use the whole journal,
-/// including records before `from`, so a suffix's citations do not accidentally become outside-journal names.
+/// journal has. Sort by identity-hidden shape before naming citations so interleaved observations can be compared.
+/// Anchors include records before `from`, so a suffix's citations do not become outside-journal names.
 fn commitments(events: &[Event], from: usize, observations: bool) -> Vec<String> {
     let compared = &events[from..];
     let interrupted: Vec<_> = compared
@@ -1328,7 +1327,6 @@ fn commitments(events: &[Event], from: usize, observations: bool) -> Vec<String>
                 event.payload,
                 Payload::DeadEnd(_)
                     | Payload::CcdEdge(_)
-                    | Payload::CcdCap(_)
                     | Payload::NightPlan(_)
                     | Payload::NightQualification(_)
                     | Payload::NightReproduction(_)
@@ -1384,7 +1382,6 @@ const KINDS: &[&str] = &[
     "unit.mapping",
     "campaign.charge",
     "unit.stop",
-    "ccd.cap",
     "night.qualification",
     "night.reproduction",
     "climb.decision",

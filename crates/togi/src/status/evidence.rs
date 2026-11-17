@@ -1,10 +1,10 @@
-//! Recorded observations, not a stability verdict. Eligibility and cap calculations stay in the tuner.
+//! Recorded observations, not a stability verdict. Eligibility stays in the tuner.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use togi_journal::{ApplyCause, Event, Payload, RateBound, Slope};
+use togi_journal::{ApplyCause, Event, Payload};
 use togi_machine::{CcdProfile, ObservedOffset, PerCore, TargetOffset};
-use togi_tuner::policy::{CapReason, EvidenceProfile, Projection, State};
+use togi_tuner::policy::{EvidenceProfile, Projection, State};
 use togi_tuner::unit::{UnitId, UnitProfile};
 
 use super::policy::{evidence_class_word as class_word, hours};
@@ -48,40 +48,15 @@ fn offsets(profile: &UnitProfile, policy: &Projection) -> PerCore<ObservedOffset
     offsets
 }
 
-fn bound_word(bound: RateBound) -> String {
-    match bound {
-        RateBound::Finite { per_hour } => format!("{:.8}/h", per_hour.get()),
-        RateBound::Unbounded {} => "unbounded".to_owned(),
-    }
-}
-
-fn slope_word(slope: Slope) -> String {
-    match slope {
-        Slope::Fallback { beta } => format!("fallback beta={:.6}", beta.get()),
-        Slope::Measured {
-            lower,
-            historical_min,
-        } => {
-            let lower = match lower {
-                togi_journal::LowerEndpoint::Bounded { beta } => format!("{:.6}", beta.get()),
-                togi_journal::LowerEndpoint::Unbounded {} => "unbounded".to_owned(),
-            };
-            let history =
-                historical_min.map_or("none".to_owned(), |beta| format!("{:.6}", beta.get()));
-            format!("measured beta lower endpoint={lower}; earlier minimum={history}")
-        }
-    }
-}
-
 pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, state: &State) {
     out.push_str("\nEvidence\n");
     line(
         out,
-        "Ruleset 14. Permission: experimental hold + exact night qualification. S is a non-authorizing diagnostic: isolated mapping classes supply its rate coverage; qualification, reproduction and controls can inform slope only. Coverage gaps remain unknown.",
+        "Ruleset 14. Permission: experimental hold + exact night qualification. Coverage gaps remain unknown.",
     );
     line(
         out,
-        "The machine incremental hazard goal is 1 crash per 3,000 applied hours. Current exact-profile daily evidence alone supports its fixed-rate Poisson claim; qualification, stock and previous-profile hours do not. Log-linear S projections are modeling assumptions, not demonstrated rare-event guarantees. CO 0 is a fallback, not proof that stock meets the goal.",
+        "The machine incremental hazard goal is 1 crash per 3,000 applied hours. Current exact-profile daily evidence alone supports its fixed-rate Poisson claim; qualification, stock and previous-profile hours do not. CO 0 is a fallback, not proof that stock meets the goal.",
     );
     super::climb::daily_evidence(out, &policy.climb);
     let selected = policy.evidence_profile().map(|selected| match selected {
@@ -117,114 +92,6 @@ pub(super) fn write(out: &mut String, events: &[Event], policy: &Projection, sta
             togi_watch::day_totals::unknown_intervals(totals.unknown_intervals())
         ),
     );
-
-    out.push_str("\nDiagnostic cap calculation witnesses (S never authorizes or retreats D)\n");
-    for unit in &policy.units {
-        let Some(evidence) = &unit.evidence else {
-            line(
-                out,
-                &format!(
-                    "CCD {}: current evidence context unavailable; no inferred rate or eligible hours",
-                    unit.unit
-                ),
-            );
-            continue;
-        };
-        line(
-            out,
-            &format!(
-                "CCD {}: current read-only calculation S {}; {}; {}",
-                unit.unit,
-                evidence.offset.get(),
-                evidence.reason.label(),
-                slope_word(evidence.slope)
-            ),
-        );
-        line(
-            out,
-            &format!(
-                "CCD share of incremental hazard goal: {:.8}/h",
-                evidence.budget.get()
-            ),
-        );
-        match &evidence.reason {
-            CapReason::Edge { rate_limited } => line(
-                out,
-                &format!(
-                    "rate-limited offset {}; edge margin is five counts",
-                    rate_limited.get()
-                ),
-            ),
-            CapReason::Retained { recomputed } => line(
-                out,
-                &format!(
-                    "non-mapping slope-only update recomputed {}; the shallower committed cap is retained",
-                    recomputed.get()
-                ),
-            ),
-            CapReason::Rate { class } => {
-                line(out, &format!("binding class: {}", class_word(class)));
-            }
-            CapReason::NoAdequateClass | CapReason::UnknownEdge | CapReason::NoJustifiedDecay => {}
-        }
-        if let Some(cap) = &unit.cap {
-            line(
-                out,
-                &format!(
-                    "committed S {} [#{}]; {}",
-                    cap.offset.get(),
-                    cap.witness,
-                    slope_word(cap.slope)
-                ),
-            );
-        }
-        for (at, cell) in evidence.cells.iter().enumerate() {
-            let projected = evidence
-                .projected
-                .get(at)
-                .copied()
-                .map_or("no justified projection".to_owned(), bound_word);
-            line(
-                out,
-                &format!(
-                    "{} at CO {}: {} eligible s ({} h), {} failures; 95% upper {}; at calculated S: {projected}",
-                    class_word(&cell.class),
-                    cell.offset.get(),
-                    cell.eligible_s,
-                    hours(cell.eligible_s),
-                    cell.failures,
-                    bound_word(cell.bound)
-                ),
-            );
-        }
-        for input in &evidence.slope_inputs {
-            line(
-                out,
-                &format!(
-                    "slope input: {} at CO {}, {:?}, {:.6} eligible h, {} failures",
-                    class_word(&input.class),
-                    input.offset.get(),
-                    input.purpose,
-                    input.hours,
-                    input.failures
-                ),
-            );
-        }
-        for gap in &evidence.uncovered {
-            let reason = match gap.reason {
-                togi_journal::UncoveredReason::NoObservations => "no observations",
-                togi_journal::UncoveredReason::NonMappingOnly => "non-mapping exposure only",
-                togi_journal::UncoveredReason::MappingInadequate => "mapping exposure inadequate",
-            };
-            line(
-                out,
-                &format!(
-                    "uncovered for the cap ({reason}): {}",
-                    class_word(&gap.class)
-                ),
-            );
-        }
-    }
 
     out.push_str("\nQualification exposure\n");
     if policy.qualifications.is_empty() {
@@ -702,33 +569,6 @@ mod tests {
             records.split_whitespace().collect::<Vec<_>>().join(" "),
             "[#1] imported day.offsets_changed; original session 20231114T221320Z #25; profile_change; 2 missing facts [#2] manually recorded crash [#3] observed unclean end; answers determine crash totals"
         );
-    }
-
-    #[test]
-    fn an_unbounded_rate_is_not_rendered_as_zero() {
-        assert_eq!(bound_word(RateBound::Unbounded {}), "unbounded");
-    }
-
-    #[test_case::test_case(
-        Slope::Measured {
-            lower: togi_journal::LowerEndpoint::Bounded {
-                beta: togi_journal::Finite::new(0.25).unwrap()
-            },
-            historical_min: Some(togi_journal::Finite::new(0.125).unwrap()),
-        },
-        "measured beta lower endpoint=0.250000; earlier minimum=0.125000";
-        "bounded endpoint with history"
-    )]
-    #[test_case::test_case(
-        Slope::Measured {
-            lower: togi_journal::LowerEndpoint::Unbounded {},
-            historical_min: None,
-        },
-        "measured beta lower endpoint=unbounded; earlier minimum=none";
-        "unbounded endpoint without history"
-    )]
-    fn measured_slope_preserves_its_endpoint_and_history(slope: Slope, expected: &str) {
-        assert_eq!(slope_word(slope), expected);
     }
 
     #[test]

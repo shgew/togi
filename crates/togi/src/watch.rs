@@ -36,7 +36,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// holds still, clock included, until the journal changes, a key is pressed or the terminal is
 /// resized. togi says in plain words what it is doing and why, how far the current trial has
 /// come and what each outcome would lead to. Each CCD shows its cores' offsets beside its night
-/// edge U, cap S and applied day offset D; a context panel shows when the night started, its
+/// edge U, hard ceiling C and applied day offset D; a context panel shows when the night started, its
 /// elapsed observed time and each queue's share of it, qualification and reproductions, or the
 /// day's hold, step, freeze, firmware, events and vetoes, beside what happened recently. On a
 /// terminal, keys switch views: `?` explains the screen, `l` shows the newest 400 journal events,

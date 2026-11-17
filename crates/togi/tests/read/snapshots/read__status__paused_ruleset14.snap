@@ -13,7 +13,7 @@ CCD 1  8,9,10,11,12,13,14,15  0   unknown  -    0/50    held
 
 Day policy
 permission: experimental hold + exact night qualification
-S: diagnostic, non-authorizing; finishing is not a safety certificate
+finishing is not a safety certificate
 applied profile: core 0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0,
   core 6 0, core 7 0, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core
   13 0, core 14 0, core 15 0

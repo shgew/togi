@@ -26,37 +26,3 @@ pub(crate) mod pairs {
             .collect())
     }
 }
-
-/// A hashed map of hashed sets as [`togi_machine::serde_pairs`] writes it, each set in the stable order too, so a
-/// decoded copy re-encodes to the same JSON whatever its hash seed.
-pub(super) mod pairs_of_sets {
-    use std::collections::{HashMap, HashSet};
-    use std::hash::{BuildHasher, Hash};
-
-    use serde::{Serialize, Serializer};
-
-    pub(in crate::policy) use togi_machine::serde_pairs::deserialize;
-
-    pub(in crate::policy) fn serialize<K, T, H, I, S>(
-        map: &HashMap<K, HashSet<T, I>, H>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        K: Eq + Hash + Serialize,
-        T: Serialize,
-        H: BuildHasher,
-        S: Serializer,
-    {
-        let sets: HashMap<&K, StableSet<'_, T, I>> =
-            map.iter().map(|(key, set)| (key, StableSet(set))).collect();
-        togi_machine::serde_pairs::serialize(&sets, serializer)
-    }
-
-    struct StableSet<'a, T, I>(&'a HashSet<T, I>);
-
-    impl<T: Serialize, I> Serialize for StableSet<'_, T, I> {
-        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            togi_machine::serde_pairs::serialize_set(self.0, serializer)
-        }
-    }
-}

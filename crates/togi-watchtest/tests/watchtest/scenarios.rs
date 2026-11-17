@@ -93,10 +93,6 @@ fn nonzero_starts_the_first_attested_isolated_mapping_trial() {
     assert_eq!(task.queue, Queue::Mapping);
     assert_eq!(activity, Some(Activity::Mapping));
     assert!(night.mapping.iter().all(|mapping| mapping.cursor.is_some()));
-    assert!(
-        project(&events).units.iter().all(|unit| unit.cap.is_none()),
-        "no cap is committed before any exposure"
-    );
 }
 
 #[test]

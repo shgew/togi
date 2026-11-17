@@ -20,7 +20,7 @@ Works today, on a simulated 16-core machine:
 - Ruleset 14 two-ends D: isolated night edge U, hard ceiling C, exact-profile qualification and 50-hour holds (including stock) for bounded day steps; newest-step stops, whole-profile vetoes and safety retreats;
 - a Ruleset 13 successor archived unchanged and restarted at verified stock, importing raw daily and compatible night observations and reconstructing campaign events/stops/vetoes ([transition](docs/spec/tuner-ruleset14.md#10-journal-schema-and-architectural-record));
 - a durable two-event machine allowance, including provisional charges, never renewed by restart, reset, firmware change, new session or reboot; missing campaign history blocks nonzero exploration;
-- status/watch D/C/U, qualification, hold and finish reasons, allowance and experimental evidence (`experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`); S is diagnostic only, never permission;
+- status/watch D/C/U, qualification, hold and finish reasons, allowance and experimental evidence (`experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`); statistical S computation and display are retired;
 - console-compatible dashboard rendering and a [rich truecolour profile](docs/spec/runtime.md#dashboard) using the same colours with Unicode gauges and text;
 - normal-boot profile application and observation with `togi day`: durable intent/write/all-core readback, zero-before-clean-stop ordering, checkpointed hours, clean/unclean ends and questions you answer without root. Answers and evidence classify [daily events](docs/spec/tuner.md#daily-events).
 

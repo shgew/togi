@@ -12,11 +12,11 @@ use std::borrow::Cow;
 use std::time::Duration;
 
 use togi_journal::{
-    Attribution, Binding, CcdCap, CcdEdge, CcdVector, Certainty, Classification, DayApplied,
-    DayEvent, DayEventId, DayFreeze, DayHold, DayStep, DayVeto, Edge, EventKind, Failure,
-    FreezeChoice, HoldChange, Mce, NightPlan, NightQualification, NightReproduction,
-    ObservedProfile, Payload, QualificationPurpose, QualificationState, ReproductionState,
-    ReproductionTarget, Resolution, SessionImported, Slope, StepKind, TrialEnd, VetoState,
+    Attribution, CcdEdge, CcdVector, Certainty, Classification, DayApplied, DayEvent, DayEventId,
+    DayFreeze, DayHold, DayStep, DayVeto, Edge, EventKind, Failure, FreezeChoice, HoldChange, Mce,
+    NightPlan, NightQualification, NightReproduction, ObservedProfile, Payload,
+    QualificationPurpose, QualificationState, ReproductionState, ReproductionTarget, Resolution,
+    SessionImported, StepKind, TrialEnd, VetoState,
 };
 use togi_machine::{CoreId, CoreSet, Regime, Signal, WorkloadId};
 
@@ -52,8 +52,6 @@ pub enum Tag {
     Night,
     /// A CCD's edge changed.
     Edge,
-    /// A CCD's non-authorizing statistical diagnostic changed.
-    Cap,
     /// A night qualification moved.
     Qualify,
     /// A night reproduction moved.
@@ -91,7 +89,6 @@ impl Tag {
             Self::Hold => "hold",
             Self::Night => "night",
             Self::Edge => "edge",
-            Self::Cap => "cap",
             Self::Qualify => "qualify",
             Self::Repro => "repro",
             Self::Day => "day",
@@ -431,38 +428,6 @@ fn edge_line(d: &CcdEdge) -> Line {
             d.ccd,
             edge_words(&d.old),
             edge_words(&d.edge)
-        ),
-    )
-}
-
-/// How a cap's slope reads: "fallback slope" or "measured slope".
-pub const fn slope_words(slope: &Slope) -> &'static str {
-    match slope {
-        Slope::Fallback { .. } => "fallback slope",
-        Slope::Measured { .. } => "measured slope",
-    }
-}
-
-/// What fixed the historical statistical diagnostic, not permission for D.
-pub fn binding_words(binding: &Binding) -> String {
-    match binding {
-        Binding::Rate { class } => format!("rate of {} {}", class.regime, kind_words(class.regime)),
-        Binding::EdgeMargin {} => "edge margin".to_owned(),
-        Binding::Baseline {} => "baseline diagnostic".to_owned(),
-    }
-}
-
-fn cap_line(d: &CcdCap) -> Line {
-    line(
-        Tag::Cap,
-        Tone::Plain,
-        format!(
-            "CCD{} S {} → {} · diagnostic only, not permission · {} · {}",
-            d.ccd,
-            offset_text(d.old),
-            offset_text(d.new),
-            binding_words(&d.binding),
-            slope_words(&d.slope)
         ),
     )
 }
@@ -859,7 +824,8 @@ pub fn words(kind: EventKind) -> Words {
         | EventKind::HuntEnd
         | EventKind::HuntSkipped
         | EventKind::Combination
-        | EventKind::DeepeningRound => Words::HISTORICAL,
+        | EventKind::DeepeningRound
+        | EventKind::CcdCap => Words::HISTORICAL,
         EventKind::CommandReset => Words {
             history: History::Line(|payload| {
                 Some(line(Tag::Reset, Tone::Plain, payload.message()))
@@ -896,7 +862,6 @@ pub fn words(kind: EventKind) -> Words {
             ..Words::SILENT
         },
         EventKind::CcdEdge => Words::said(Tag::Edge, of!(CcdEdge, |d| Some(edge_line(d)))),
-        EventKind::CcdCap => Words::said(Tag::Cap, of!(CcdCap, |d| Some(cap_line(d)))),
         EventKind::NightPlan => Words::said(Tag::Night, of!(NightPlan, |d| Some(plan_line(d)))),
         EventKind::NightQualification => Words::said(
             Tag::Qualify,

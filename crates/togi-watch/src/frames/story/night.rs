@@ -202,7 +202,7 @@ pub(super) fn exact_profile<'s>(
     }
 }
 
-/// Filler repeats exact-current-D cells; it never probes statistical S.
+/// Filler repeats exact-current-D cells.
 fn filler_purpose(
     activity: Activity,
     task: Option<TaskId>,
@@ -323,7 +323,7 @@ fn purpose(
 fn detail(policy: &Projection, activity: Activity, task: Option<TaskId>) -> String {
     let mut text = filler_detail(activity, task).unwrap_or_else(|| match activity {
         Activity::Mapping => {
-            "Mapping brackets tagged U, then sweeps uncovered cells from U toward hard ceiling C; S is a non-authorizing diagnostic."
+            "Mapping brackets tagged U, then sweeps uncovered cells from U toward hard ceiling C."
                 .to_owned()
         }
         Activity::Qualification => policy

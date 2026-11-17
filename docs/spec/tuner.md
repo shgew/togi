@@ -1,6 +1,6 @@
 # Tuner: Ruleset 13 history and retained contracts
 
-**Historical policy, superseded by [Ruleset 14](tuner-ruleset14.md).** Ruleset 13's statistical-cap permission, S-directed promotion/retreat, first-step hold exemption and S−1 filler below are history, not selectable behavior. S remains a labelled non-authorizing diagnostic; low S or missing statistical coverage cannot block or undo D. Ruleset 14's [disposition table](tuner-ruleset14.md#7-reconcile-every-current-decision-path) identifies retained scheduling, classification and workload contracts and every replacement. [Workloads](workloads.md), [journal](journal.md) and [runtime](runtime.md#ruleset-13-policy-boundary) own execution, durability and application.
+**Historical policy, superseded by [Ruleset 14](tuner-ruleset14.md).** Ruleset 13's statistical-cap permission, S-directed promotion/retreat, first-step hold exemption and S−1 filler below are history, not selectable behavior. Statistical S computation and display are retired; its historical wire records remain readable until the clean journal boundary. Ruleset 14's [disposition table](tuner-ruleset14.md#7-reconcile-every-current-decision-path) identifies retained scheduling, classification and workload contracts and every replacement. [Workloads](workloads.md), [journal](journal.md) and [runtime](runtime.md#ruleset-13-policy-boundary) own execution, durability and application.
 
 ## Ruleset
 
@@ -28,7 +28,7 @@ Retained scheduling is subject to that no-all-zero-trial invariant.
 
 ## Per-CCD state
 
-For each CCD retain its exposure ledger, mapping cursor/bracket, night edge U, cap S (with calculation witnesses and fallback/measured label), applied day offset D and remaining distance. U has distinct unknown, observed-failure and write-limit-censored states; absence is not offset zero. The whole-profile state holds exact qualifications and their outstanding matrix cells, the ordered day-step history and applied-hour hold, firmware validity, freeze, daily events, profile vetoes, pending questions and reproduction progress/consumed time. Joint trials and daily failures remain whole-profile evidence until an isolated night observation supplies a CCD witness.
+For each CCD retain its exposure ledger, mapping cursor/bracket, night edge U, applied day offset D and remaining distance to C. U has distinct unknown, observed-failure and write-limit-censored states; absence is not offset zero. The whole-profile state holds exact qualifications and their outstanding matrix cells, the ordered day-step history and applied-hour hold, firmware validity, freeze, daily events, profile vetoes, pending questions and reproduction progress/consumed time. Joint trials and daily failures remain whole-profile evidence until an isolated night observation supplies a CCD witness. The statistical S calculations below describe the retired policy, not current state.
 
 A profile is the complete ordered vector of CCD offsets and its expansion to all physical cores. Sparse readbacks, nonuniform offsets within a CCD and missing identity data are observations, not eligible Ruleset 13 profiles.
 

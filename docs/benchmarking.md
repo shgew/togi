@@ -197,6 +197,44 @@ This is on-demand research, not a check: it needs two builds. `just bench` canno
 
 To control concurrency, caching or retention directly, run `togi-tool-bench same` with its own flags, described [below](#the-same-command).
 
+### Comparing the R04 cap retirement
+
+`just same-semantic BASE --retired KIND` is an on-demand semantic comparison, not a CI gate or a raw-journal equality claim. It uses the existing `same` harness and each tree's existing `togi-tool-sim`, built with the same locked release-build command; it does not replace the simulator or change its inputs to obtain equality. Paired sessions must have identical machine, facts and replay inputs, or the command refuses the comparison.
+
+```sh
+# Bounded selection: only the suite's existing smoke sessions.
+just same-semantic fe80c49dd --retired ccd.cap --smoke --jobs 1 --keep semantic-runs
+# Every existing dev and holdout session.
+just same-semantic fe80c49dd --retired ccd.cap --jobs 1 --keep semantic-runs
+```
+
+The recipe exports the base exactly as `same` does and passes `--semantic` to `togi-tool-bench same`. This mode runs both sides freshly, bypasses digest-cache reads and writes and the identical-binary shortcut, and always compares every selected session rather than stopping at the first difference. Build artifacts and scheduling costs still reuse the existing harness cache. Missing sessions/journals and changed simulator exit statuses remain differences; an unreadable journal is an error. `--keep` retains all runs; without it, only differing runs remain.
+
+Normalization is deliberately narrow:
+
+1. Drop only base-side records of explicitly named kinds, accounting for each kind separately. Repeat `--retired KIND` for multiple kinds; there is no implicit retirement. R04 names `ccd.cap`. No head-side event or unlisted kind is removed.
+2. On **both sides**, give remaining records consecutive sequence identities, starting at one separately in each journal. Rebase envelope causes and all numeric payload `Seq` references, including `NightId`, nested witnesses, qualification/certificate/ceiling references, and original-source identities whose session journal is present among the live or archived journals. Immutable provenance into external input sessions remains unchanged. Decision/application ordinals, trial IDs, offsets, durations and other numbers are not sequence references.
+3. Rebase an envelope **last-event cursor, not evidence**, only when it names immediately preceding retired output: `night.plan` (`night_next::{plan_owed,schedule}`), `night.qualification` in state `start` (`qualify::start_qualification`, the frozen fact-prefix cutoff), and `deadend` for `failure_at_zero` with no core/action (`night_next::dead_end`). This is the complete tuner-source producer table. Move that cursor to the preceding retained event, retain sorted/deduplicated causes, and report its count. Nonadjacent retired causes, causes outside that table, and all payload references to retired records remain errors; unresolved local references also refuse comparison.
+4. Retain `same`'s exact build normalization: remove `version`/`rev` and only the recognized build description from `session.start`/`config.loaded`. Schema, ruleset, fixes and evidence epoch remain compared.
+5. A random load seed in `trial.start` roles or `trial.signal` is another journal reference: verify it equals that trial's own intent sequence on each side before rebasing it. Later seeds and therefore the actual load phases of simulated and real trials shift when earlier records disappear. For paired signals from the same trial with a verified random schedule and a shifted seed, count changes to `stops`, `conts` and exactly the generated count message separately. Only those count fields and their generated text may vary; the trial, signal kinds, causes, timing, outcomes and failing cores must still match. `togi-sim` counts these toggles from the seed and elapsed trial time; the tuner does not consume the counts.
+6. Re-render a differing message only when both original strings exactly match the journal renderer for their own typed payload, and those full payloads already match after rebasing. That covers, for example, the `failure #N` witness in `unit.edge` and `in flight: seq N` in `crash.detected`. The report counts these rendered references per kind; no other wording is ignored.
+7. Compare every remaining record as a JSON value in journal order, ignoring JSON key order/spacing only. `day.imported.raw`, which carries a typed payload as JSON text, is parsed, canonically serialized and rebased in its original session's context. No other strings or fields are rewritten or discarded.
+
+For every record class the report shows base/head counts, identical and differing records, message differences and evidence differences. Counts pair the nth record of a class within its journal; full-record equality additionally checks the original cross-class order. Missing records count as differences. A message-only difference **fails equality**, even when that class's evidence is identical; no whole class is silently filtered.
+
+The target, schedule, permission, outcome and replay evidence summaries compare the indicated complete normalized records **excluding only `msg`**:
+
+| Evidence | Record classes |
+|---|---|
+| Target | `trial.intent`, `trial.start`, `smu.intent`, `day.applied`, `climb.decision` |
+| Schedule | `night.plan`, `task.start`, `trial.start` |
+| Permission | `ccd.edge`, `unit.edge`, `unit.stop`, `climb.decision`, `night.qualification`, `day.freeze`, `day.veto` |
+| Outcome | `trial.end`, `trial.progress`, `failure`, `exposure.observed` |
+| Replay | `exposure.observed`, `session.imported`, `successor.imported`, `day.imported`, `trial.carried`, `failure.carried`, `state.rebuilt` |
+
+Each summary reports `identical`, `different` or `absent` with record and differing counts. These are journal-evidence comparisons, not an independent replay execution, a `state.json` comparison, or proof about unexercised paths or physical hardware. Every other record class still participates in the equality verdict.
+
+
 <a id="the-suite-gate"></a>
 
 ## The session suite
@@ -345,7 +383,7 @@ The cache holds finished records under `$XDG_CACHE_HOME/togi/bench` (or `~/.cach
 
 ### The `same` command
 
-`just same [base]` and `just smoke [base]` export `base` (default `origin/main`) with `git archive`, as `just same` does, and run `togi-tool-bench same BASE`. The command is `togi-tool-bench same BASE [--head DIR] [--suite FILE] [--smoke] [--keep-going] [--no-cache] [--keep DIR] [--jobs N] [--max-boots N] [--timeout SECONDS] [--cache DIR] [--base-sim FILE] [--head-sim FILE]`: the head is the current directory unless `--head` names another. Each tree's own suite and machine files are read (a relative `--suite` resolves inside each tree), sessions pair by scenario, split and seed, and with `--smoke` only the sessions the head's suite lists under `smoke` are compared; a session the other tree lacks is a difference. The bench judges nothing else: no metrics, model checks or summary. `--split`, `--baseline` and `--out` do not exist for it, so they are usage errors (exit 2). It exits 0 when no session differs, 1 on a difference or any failure.
+`just same [base]` and `just smoke [base]` export `base` (default `origin/main`) with `git archive`, as `just same` does, and run `togi-tool-bench same BASE`. The command is `togi-tool-bench same BASE [--head DIR] [--suite FILE] [--smoke] [--semantic [--retired KIND]...] [--keep-going] [--no-cache] [--keep DIR] [--jobs N] [--max-boots N] [--timeout SECONDS] [--cache DIR] [--base-sim FILE] [--head-sim FILE]`: the head is the current directory unless `--head` names another. Each tree's own suite and machine files are read (a relative `--suite` resolves inside each tree), sessions pair by scenario, split and seed, and with `--smoke` only the sessions the head's suite lists under `smoke` are compared; a session the other tree lacks is a difference. It produces no metric or model-check verdict. `--split`, `--baseline` and `--out` do not exist for it, so they are usage errors (exit 2). It exits 0 when no session differs, 1 on a difference or any failure. `--semantic` selects the [semantic normalization and evidence report](#comparing-the-r04-cap-retirement); the raw comparison and digest-cache behavior below describe the default mode.
 
 Each tree's `togi-tool-sim` is built with `cargo build --release --locked`, unless `--base-sim` or `--head-sim` gives a binary. The head builds in its own `target` directory. The base builds in `same-target` under the cache directory, which every comparison reuses so that its dependencies stay built; because cargo takes a source file older than its last build for unchanged, and the base is an export whose files keep their commit's time, the bench marks every file of the base modified now before it builds, so only the base's own crates build again. A target directory is never shared between the two trees, nor between comparisons at once: a comparison holds a lock on `same-target.lock` in the cache directory from marking the base's files to copying its binary out of `same-target`, so comparisons that share a cache directory take turns, and one that waits says so on stderr and stops waiting at an interrupt. A relative `--cache` resolves against the bench's working directory, not the base tree cargo builds in. A session is reduced to the SHA-256 of its journals and its simulator's exit status. The journals are the live `events.jsonl` and every `archive/*.jsonl`, each digested with its name and size; `trials/` samples and the archive's markers are not journals. Every line is compared as the file holds it, except the two events that carry the build stamp, `session.start` and `config.loaded`: their `version` and `rev` are removed, the build's description is taken out of the message that names it, and the rest of the event is compared as the JSON value it holds, so a change of build alone is not a difference and a change of any decision, `schema`, `ruleset`, `fixes` or `evidence` is. A session with no journal, or only empty ones, is an error, never a match.
 

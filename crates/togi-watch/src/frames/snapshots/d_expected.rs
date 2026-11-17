@@ -74,41 +74,41 @@ pub(super) fn expected(name: &str) -> &'static str {
         "main-allowance-exhausted-120x33-rich" => {
             include_str!("main-allowance-exhausted-120x33-rich.snap")
         }
-        "main-s-zero-permission-240x67-none" => {
-            include_str!("main-s-zero-permission-240x67-none.snap")
+        "main-qualified-proposal-240x67-none" => {
+            include_str!("main-qualified-proposal-240x67-none.snap")
         }
-        "main-s-zero-permission-240x67-console" => {
-            include_str!("main-s-zero-permission-240x67-console.snap")
+        "main-qualified-proposal-240x67-console" => {
+            include_str!("main-qualified-proposal-240x67-console.snap")
         }
-        "main-s-zero-permission-240x67-full" => {
-            include_str!("main-s-zero-permission-240x67-full.snap")
+        "main-qualified-proposal-240x67-full" => {
+            include_str!("main-qualified-proposal-240x67-full.snap")
         }
-        "main-s-zero-permission-240x67-rich" => {
-            include_str!("main-s-zero-permission-240x67-rich.snap")
+        "main-qualified-proposal-240x67-rich" => {
+            include_str!("main-qualified-proposal-240x67-rich.snap")
         }
-        "main-s-zero-permission-160x45-none" => {
-            include_str!("main-s-zero-permission-160x45-none.snap")
+        "main-qualified-proposal-160x45-none" => {
+            include_str!("main-qualified-proposal-160x45-none.snap")
         }
-        "main-s-zero-permission-160x45-console" => {
-            include_str!("main-s-zero-permission-160x45-console.snap")
+        "main-qualified-proposal-160x45-console" => {
+            include_str!("main-qualified-proposal-160x45-console.snap")
         }
-        "main-s-zero-permission-160x45-full" => {
-            include_str!("main-s-zero-permission-160x45-full.snap")
+        "main-qualified-proposal-160x45-full" => {
+            include_str!("main-qualified-proposal-160x45-full.snap")
         }
-        "main-s-zero-permission-160x45-rich" => {
-            include_str!("main-s-zero-permission-160x45-rich.snap")
+        "main-qualified-proposal-160x45-rich" => {
+            include_str!("main-qualified-proposal-160x45-rich.snap")
         }
-        "main-s-zero-permission-120x33-none" => {
-            include_str!("main-s-zero-permission-120x33-none.snap")
+        "main-qualified-proposal-120x33-none" => {
+            include_str!("main-qualified-proposal-120x33-none.snap")
         }
-        "main-s-zero-permission-120x33-console" => {
-            include_str!("main-s-zero-permission-120x33-console.snap")
+        "main-qualified-proposal-120x33-console" => {
+            include_str!("main-qualified-proposal-120x33-console.snap")
         }
-        "main-s-zero-permission-120x33-full" => {
-            include_str!("main-s-zero-permission-120x33-full.snap")
+        "main-qualified-proposal-120x33-full" => {
+            include_str!("main-qualified-proposal-120x33-full.snap")
         }
-        "main-s-zero-permission-120x33-rich" => {
-            include_str!("main-s-zero-permission-120x33-rich.snap")
+        "main-qualified-proposal-120x33-rich" => {
+            include_str!("main-qualified-proposal-120x33-rich.snap")
         }
         "main-qualification-blocked-240x67-none" => {
             include_str!("main-qualification-blocked-240x67-none.snap")

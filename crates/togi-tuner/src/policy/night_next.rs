@@ -238,11 +238,8 @@ impl State {
         }
         let known = self.known_contents(Some(query.contents.map()));
         self.with_layout(|layout| {
-            let mapping = self.mapping_plan(layout, &known)?;
+            let mapping = self.mapping_plan(layout)?;
             if let Some(owed) = self.owed_edge(&mapping) {
-                return Ok(Action::Decide(owed));
-            }
-            if let Some(owed) = self.owed_cap(&mapping)? {
                 return Ok(Action::Decide(owed));
             }
             if let Some(owed) = self.closure_owed(layout, &known)? {
