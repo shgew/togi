@@ -322,8 +322,7 @@ fn the_projection_names_the_units_the_day_and_the_running_task() {
     let opened = json["night"]["night"].as_i64().unwrap();
     assert_eq!(json["night"]["started"], serde_json::json!(at(opened)));
     assert_eq!(json["night"]["closed_by"], serde_json::Value::Null);
-    let restored: togi_tuner::policy::Projection = serde_json::from_value(json).unwrap();
-    assert_eq!(restored, projection);
+    assert_eq!(crate::climb::replay(&journal.events).project(), projection);
 }
 
 #[test]

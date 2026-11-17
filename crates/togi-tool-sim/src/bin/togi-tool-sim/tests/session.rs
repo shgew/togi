@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
-use std::path::Path;
 
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;

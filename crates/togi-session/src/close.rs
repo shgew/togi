@@ -220,9 +220,9 @@ impl Session<'_> {
             stock_unverified,
             errors,
             emergency,
+            journal,
             capsule,
             panic,
-            journal,
         }
     }
 }

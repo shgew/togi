@@ -403,7 +403,7 @@ fn missing_time_has_no_zero_rate_or_goal_claim() {
 }
 
 #[test]
-fn full_profile_projection_data_round_trips_without_losing_any_unit() {
+fn full_profile_projection_encodes_every_unit_and_saved_offset() {
     let mut policy = fixture();
     let template = policy.units[0].clone();
     policy.units = (0..16)
@@ -418,8 +418,17 @@ fn full_profile_projection_data_round_trips_without_losing_any_unit() {
         0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15,
     ]));
     let json = serde_json::to_value(&policy).unwrap();
-    let restored: ClimbProjection = serde_json::from_value(json).unwrap();
-    assert_eq!(restored, policy);
+    let units = json["units"].as_array().unwrap();
+    assert_eq!(units.len(), policy.units.len());
+    for (json, unit) in units.iter().zip(&policy.units) {
+        assert_eq!(json["unit"], serde_json::json!(unit.unit));
+        assert_eq!(json["parent"], serde_json::json!(unit.parent));
+        assert_eq!(json["cores"], serde_json::json!(unit.cores));
+    }
+    assert_eq!(
+        json["profiles"]["paused_saved"],
+        serde_json::json!(policy.profiles.paused_saved)
+    );
 }
 
 #[test_case(togi_journal::FirmwareRestorationState::Saved {}, "saved; awaiting new-context qualification and stock hold"; "saved")]
