@@ -410,7 +410,7 @@ impl Launcher for Fake<'_> {
         head: &Path,
     ) -> Result<Option<journal::semantic::Comparison>, JournalError> {
         if self.semantic {
-            journal::semantic::compare_with(&*self.fs, base, head).map(Some)
+            journal::semantic::compare_with(&*self.fs, base, head, &["ccd.cap".into()]).map(Some)
         } else {
             Ok(None)
         }
@@ -1147,6 +1147,7 @@ fn options() -> super::Options {
         suite: PathBuf::from("suite.json"),
         smoke: false,
         semantic: false,
+        retired: Vec::new(),
         keep_going: false,
         no_cache: false,
         keep: None,
@@ -1538,7 +1539,7 @@ fn semantic_comparison_retains_reference_meaning_after_base_caps_disappear() {
     let outcome = compare::run(&same_sessions(&[1]), &config, &fake).unwrap();
     assert_eq!(outcome.different(), false);
     assert_eq!(outcome.scheduled, [1, 1]);
-    assert_eq!(outcome.semantic.unwrap().dropped_caps, 1);
+    assert_eq!(outcome.semantic.unwrap().retired["ccd.cap"], 1);
 }
 
 #[test]

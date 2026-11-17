@@ -1,4 +1,4 @@
-//! On-demand R04 comparison. Only base-side `ccd.cap` records are retired.
+//! On-demand comparison after retirement of explicitly named base record kinds.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, BufRead, BufReader};
@@ -35,7 +35,7 @@ pub struct ClassCounts {
 /// Full-record equality includes messages; evidence equality excludes only `msg`.
 #[derive(Clone, Debug, Default)]
 pub struct Summary {
-    pub dropped_caps: usize,
+    pub retired: BTreeMap<String, usize>,
     pub rebased_cursor_causes: usize,
     pub classes: BTreeMap<String, ClassCounts>,
     pub declared_fields: BTreeMap<&'static str, usize>,
@@ -49,7 +49,9 @@ impl Summary {
     }
 
     pub(crate) fn merge(&mut self, other: Self) {
-        self.dropped_caps += other.dropped_caps;
+        for (kind, count) in other.retired {
+            *self.retired.entry(kind).or_default() += count;
+        }
         self.rebased_cursor_causes += other.rebased_cursor_causes;
         for (field, count) in other.declared_fields {
             *self.declared_fields.entry(field).or_default() += count;
@@ -66,14 +68,15 @@ impl Summary {
     }
 
     pub fn write(&self, w: &mut impl io::Write) -> io::Result<()> {
+        for (kind, count) in &self.retired {
+            writeln!(
+                w,
+                "semantic: retired {kind}: base_dropped={count} head_dropped=0"
+            )?;
+        }
         writeln!(
             w,
-            "semantic: dropped {} base ccd.cap records; no head records dropped",
-            self.dropped_caps
-        )?;
-        writeln!(
-            w,
-            "semantic: rebased {} last-event cursor causes across retired caps",
+            "semantic: rebased {} last-event cursor causes across retired records",
             self.rebased_cursor_causes
         )?;
         for (field, count) in &self.declared_fields {
@@ -165,10 +168,14 @@ pub struct Comparison {
     pub first: Option<Difference>,
 }
 
-/// Compares every remaining JSON record, in order, after the declared R04 field rebasing.
+/// Compares every remaining JSON record, in order, after the declared field rebasing.
 /// Missing journals and changed journal order are differences, not filtered data.
-pub fn compare_dirs(base: &Path, head: &Path) -> Result<Comparison, JournalError> {
-    compare_with(&Disk, base, head)
+pub fn compare_dirs(
+    base: &Path,
+    head: &Path,
+    retired: &[String],
+) -> Result<Comparison, JournalError> {
+    compare_with(&Disk, base, head, retired)
 }
 
 fn invalid(path: &Path, line: usize, reason: impl Into<String>) -> JournalError {
@@ -243,13 +250,19 @@ fn load(source: &impl Source, dir: &Path) -> Result<Journals, JournalError> {
     Ok(journals)
 }
 
-fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usize), JournalError> {
+fn canonicalize(
+    journals: &mut Journals,
+    retired: &[String],
+    summary: &mut Summary,
+) -> Result<(), JournalError> {
     let mut identities = Identities::new();
-    let (mut dropped, mut rebased_cursor_causes) = (0, 0);
+    let mut retired_counts: BTreeMap<&str, usize> =
+        retired.iter().map(|kind| (kind.as_str(), 0)).collect();
+    let mut rebased_cursor_causes = 0;
     for journal in journals.values_mut() {
         let mut map = BTreeMap::new();
         let mut ordinal = 0_u64;
-        let (mut previous_cap, mut retained) = (None, None);
+        let (mut previous_retired, mut retained) = (None, None);
         for (line, event) in journal.records.iter_mut().enumerate() {
             let seq = event["seq"]
                 .as_u64()
@@ -257,18 +270,21 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usiz
             if seq == 0 {
                 return Err(invalid(&journal.path, line + 1, "zero sequence"));
             }
-            let canonical = if drop_caps && event["kind"] == "ccd.cap" {
-                dropped += 1;
-                previous_cap = Some(seq);
+            let kind = event["kind"]
+                .as_str()
+                .expect("load validated the event kind");
+            let canonical = if let Some(count) = retired_counts.get_mut(kind) {
+                *count += 1;
+                previous_retired = Some(seq);
                 None
             } else {
                 // Cause is the last-event cursor, not evidence. This is the
                 // complete producer set: night_next::{plan_owed,schedule,dead_end}
-                // and qualify::start_qualification. Other cap dependencies fail.
-                let cursor = match event["kind"].as_str() {
-                    Some("night.plan") => true,
-                    Some("night.qualification") => event["data"]["state"]["kind"] == "start",
-                    Some("deadend") => {
+                // and qualify::start_qualification. Other dependencies fail.
+                let cursor = match kind {
+                    "night.plan" => true,
+                    "night.qualification" => event["data"]["state"]["kind"] == "start",
+                    "deadend" => {
                         event["data"]["condition"] == "failure_at_zero"
                             && event["data"]["core"].is_null()
                             && event["data"]["action"].is_null()
@@ -276,12 +292,12 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usiz
                     _ => false,
                 };
                 if cursor
-                    && let (Some(cap), Some(last)) = (previous_cap, retained)
+                    && let (Some(removed), Some(last)) = (previous_retired, retained)
                     && let Some(causes) = event["cause"].as_array_mut()
                 {
                     let before = rebased_cursor_causes;
                     for cause in causes.iter_mut() {
-                        if cause.as_u64() == Some(cap) {
+                        if cause.as_u64() == Some(removed) {
                             *cause = Value::from(last);
                             rebased_cursor_causes += 1;
                         }
@@ -291,7 +307,7 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usiz
                         causes.dedup();
                     }
                 }
-                previous_cap = None;
+                previous_retired = None;
                 retained = Some(seq);
                 ordinal += 1;
                 Some(ordinal)
@@ -305,10 +321,16 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usiz
         }
     }
     for journal in journals.values_mut() {
-        journal
-            .records
-            .retain(|event| !(drop_caps && event["kind"] == "ccd.cap"));
-        journal.derived = derived::prepare(journal, &identities[&journal.session])?;
+        let map = &identities[&journal.session];
+        if !retired.is_empty() {
+            journal.records.retain(|event| {
+                map[&event["seq"]
+                    .as_u64()
+                    .expect("canonicalize validated the sequence")]
+                    .is_some()
+            });
+        }
+        journal.derived = derived::prepare(journal, map)?;
         for (line, event) in journal.records.iter_mut().enumerate() {
             rebase(
                 event,
@@ -321,7 +343,13 @@ fn canonicalize(journals: &mut Journals, drop_caps: bool) -> Result<(usize, usiz
         }
         derived::finish_messages(journal)?;
     }
-    Ok((dropped, rebased_cursor_causes))
+    summary.retired.extend(
+        retired_counts
+            .into_iter()
+            .map(|(kind, count)| (kind.to_owned(), count)),
+    );
+    summary.rebased_cursor_causes += rebased_cursor_causes;
+    Ok(())
 }
 
 // These are the journal's Seq fields (including transparent NightId), not durable
@@ -423,7 +451,7 @@ fn rebase(
                             path,
                             line,
                             format!(
-                                "{field} references removed ccd.cap {session}#{seq}; semantic dependency cannot be discarded"
+                                "{field} references retired record {session}#{seq}; semantic dependency cannot be discarded"
                             ),
                         ));
                     }
@@ -489,16 +517,13 @@ pub(in crate::same) fn compare_with(
     source: &impl Source,
     base: &Path,
     head: &Path,
+    retired: &[String],
 ) -> Result<Comparison, JournalError> {
     let mut base = load(source, base)?;
     let mut head = load(source, head)?;
-    let (dropped_caps, rebased_cursor_causes) = canonicalize(&mut base, true)?;
-    let mut summary = Summary {
-        dropped_caps,
-        rebased_cursor_causes,
-        ..Summary::default()
-    };
-    canonicalize(&mut head, false)?;
+    let mut summary = Summary::default();
+    canonicalize(&mut base, retired, &mut summary)?;
+    canonicalize(&mut head, &[], &mut summary)?;
     for (name, base) in &mut base {
         if let Some(head) = head.get_mut(name) {
             derived::compare_fields(base, head, &mut summary);

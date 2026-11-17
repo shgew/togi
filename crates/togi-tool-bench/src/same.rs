@@ -41,9 +41,11 @@ pub struct Options {
     pub suite: PathBuf,
     /// Compares only the sessions the head's suite lists under `smoke`.
     pub smoke: bool,
-    /// Compare R04 semantics: retire only base ccd.cap and rebase journal references.
+    /// Compare retained journal semantics after rebasing sequence references.
     /// Runs both sides freshly and reports every session; never uses raw digest equality.
     pub semantic: bool,
+    /// Record kinds to drop on the base side of a semantic comparison.
+    pub retired: Vec<String>,
     /// Reports every differing session instead of stopping at the first.
     pub keep_going: bool,
     /// Runs every session on both trees instead of using cached digests; the runs are still cached.
@@ -310,7 +312,7 @@ fn execute_with(
         fleet,
         timeout: options.timeout,
         max_boots: options.max_boots,
-        semantic: options.semantic,
+        semantic: options.semantic.then_some(options.retired.as_slice()),
     };
     let config = Config {
         jobs: options.jobs.get(),
@@ -576,7 +578,7 @@ struct Real<'a> {
     fleet: &'a Fleet,
     timeout: Duration,
     max_boots: NonZeroU32,
-    semantic: bool,
+    semantic: Option<&'a [String]>,
 }
 
 impl Launcher for Real<'_> {
@@ -605,8 +607,8 @@ impl Launcher for Real<'_> {
         base: &Path,
         head: &Path,
     ) -> Result<Option<journal::semantic::Comparison>, JournalError> {
-        if self.semantic {
-            journal::semantic::compare_dirs(base, head).map(Some)
+        if let Some(retired) = self.semantic {
+            journal::semantic::compare_dirs(base, head, retired).map(Some)
         } else {
             Ok(None)
         }
@@ -661,6 +663,7 @@ mod build_tests {
                 suite: PathBuf::from("suite.json"),
                 smoke: false,
                 semantic: false,
+                retired: Vec::new(),
                 keep_going: false,
                 no_cache: false,
                 keep: None,

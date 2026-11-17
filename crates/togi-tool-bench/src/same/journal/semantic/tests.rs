@@ -22,7 +22,12 @@ fn compare(base: &[Value], head: &[Value]) -> Result<Comparison, super::JournalE
     let fs = MemFs::new();
     put(&fs, "/base/events.jsonl", base);
     put(&fs, "/head/events.jsonl", head);
-    compare_with(&fs, Path::new("/base"), Path::new("/head"))
+    compare_with(
+        &fs,
+        Path::new("/base"),
+        Path::new("/head"),
+        &["ccd.cap".into()],
+    )
 }
 
 fn histories() -> [Vec<Value>; 2] {
@@ -53,10 +58,56 @@ fn only_base_caps_and_sequence_identity_are_removed() {
     let [base, head] = histories();
     let comparison = compare(&base, &head).unwrap();
     assert_eq!(comparison.first, None);
-    assert_eq!(comparison.summary.dropped_caps, 1);
+    assert_eq!(comparison.summary.retired["ccd.cap"], 1);
     assert_eq!(comparison.summary.classes["trial.start"].identical, 1);
     assert_eq!(comparison.summary.classes["unit.edge"].identical, 1);
     assert_eq!(comparison.summary.classes.contains_key("ccd.cap"), false);
+}
+
+#[test]
+fn explicitly_named_kinds_are_counted_separately_and_only_retired_on_base() {
+    let fs = MemFs::new();
+    let start = event(1, "session.start", json!({"session":"s"}));
+    let mut plan = event(4, "night.plan", json!({}));
+    plan["cause"] = json!([3]);
+    let mut head_plan = event(2, "night.plan", json!({}));
+    head_plan["cause"] = json!([1]);
+    let mut base = [
+        start.clone(),
+        event(2, "ccd.cap", json!({})),
+        event(3, "diagnostic.example", json!({})),
+        plan,
+    ];
+    let mut head = vec![start, head_plan];
+    let b = Path::new("/base");
+    let h = Path::new("/head");
+    put(&fs, "/base/events.jsonl", &base);
+    put(&fs, "/head/events.jsonl", &head);
+    assert!(compare_with(&fs, b, h, &[]).unwrap().first.is_some());
+    let retired = ["ccd.cap".into(), "diagnostic.example".into()];
+    assert!(
+        compare_with(&fs, b, h, &retired[..1])
+            .unwrap()
+            .first
+            .is_some()
+    );
+    let result = compare_with(&fs, b, h, &retired).unwrap();
+    assert_eq!(result.first, None);
+    assert_eq!(
+        result.summary.retired,
+        [("ccd.cap".into(), 1), ("diagnostic.example".into(), 1)].into()
+    );
+    assert_eq!(result.summary.rebased_cursor_causes, 1);
+    head.push(event(3, "diagnostic.example", json!({})));
+    put(&fs, "/head/events.jsonl", &head);
+    assert!(compare_with(&fs, b, h, &retired).unwrap().first.is_some());
+    base[3]["data"]["witnesses"] = json!([3]);
+    put(&fs, "/base/events.jsonl", &base);
+    let error = compare_with(&fs, b, h, &retired).err().unwrap().to_string();
+    assert!(
+        error.contains("witnesses references retired record s#3"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -236,7 +287,7 @@ fn a_dependency_on_a_removed_cap_is_an_error(field: &str) {
         base[3]["data"][field] = json!([2]);
     }
     let error = compare(&base, &head).err().unwrap().to_string();
-    assert!(error.contains("references removed ccd.cap"), "{error}");
+    assert!(error.contains("references retired record"), "{error}");
 }
 
 #[test_case::test_case("night.plan", json!({}), true; "plan cursor")]
@@ -266,7 +317,7 @@ fn last_event_cursor_producer_table_is_closed(kind: &str, data: Value, allowed: 
                 .err()
                 .unwrap()
                 .to_string()
-                .contains("references removed ccd.cap")
+                .contains("references retired record")
         );
     }
 }
@@ -295,7 +346,7 @@ fn a_night_plan_latest_event_cursor_crosses_only_its_immediately_preceding_cap()
             .err()
             .unwrap()
             .to_string()
-            .contains("references removed ccd.cap")
+            .contains("references retired record")
     );
     base[3]["data"].as_object_mut().unwrap().remove("witnesses");
     // A nonadjacent cap cause is not the State::last dependency either.
@@ -306,7 +357,7 @@ fn a_night_plan_latest_event_cursor_crosses_only_its_immediately_preceding_cap()
             .err()
             .unwrap()
             .to_string()
-            .contains("references removed ccd.cap")
+            .contains("references retired record")
     );
 }
 
@@ -316,7 +367,7 @@ fn head_caps_are_never_dropped() {
     head.push(event(4, "ccd.cap", json!({"new": -5})));
     let comparison = compare(&base, &head).unwrap();
     assert!(comparison.first.is_some());
-    assert_eq!(comparison.summary.dropped_caps, 1);
+    assert_eq!(comparison.summary.retired["ccd.cap"], 1);
     assert_eq!(comparison.summary.classes["ccd.cap"].head, 1);
     assert_eq!(comparison.summary.classes["ccd.cap"].differing, 1);
 }
@@ -418,9 +469,14 @@ fn archived_session_provenance_uses_its_own_identity_map() {
         ],
     );
     assert_eq!(
-        compare_with(&fs, Path::new("/base"), Path::new("/head"))
-            .unwrap()
-            .first,
+        compare_with(
+            &fs,
+            Path::new("/base"),
+            Path::new("/head"),
+            &["ccd.cap".into()]
+        )
+        .unwrap()
+        .first,
         None
     );
 }
@@ -475,7 +531,13 @@ fn missing_archives_are_differences_even_when_empty() {
     put(&fs, "/base/events.jsonl", &[start.clone()]);
     put(&fs, "/head/events.jsonl", &[start]);
     put(&fs, "/base/archive/empty.jsonl", &[]);
-    let compared = compare_with(&fs, Path::new("/base"), Path::new("/head")).unwrap();
+    let compared = compare_with(
+        &fs,
+        Path::new("/base"),
+        Path::new("/head"),
+        &["ccd.cap".into()],
+    )
+    .unwrap();
     assert_eq!(compared.first.unwrap().head, "<missing file>");
 }
 
@@ -572,9 +634,14 @@ fn imported_raw_payload_references_use_the_original_session() {
         ],
     );
     assert_eq!(
-        compare_with(&fs, Path::new("/base"), Path::new("/head"))
-            .unwrap()
-            .first,
+        compare_with(
+            &fs,
+            Path::new("/base"),
+            Path::new("/head"),
+            &["ccd.cap".into()]
+        )
+        .unwrap()
+        .first,
         None
     );
 }
@@ -607,5 +674,5 @@ fn imported_raw_evidence_cannot_hide_a_removed_cap_dependency() {
     base[3]["data"]["original_kind"] = json!("day.step");
     base[3]["data"]["raw"] = json!("{\"causes\":{\"caps\":[2]}}");
     let error = compare(&base, &head).err().unwrap().to_string();
-    assert!(error.contains("references removed ccd.cap"), "{error}");
+    assert!(error.contains("references retired record"), "{error}");
 }
