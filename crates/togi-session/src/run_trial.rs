@@ -112,7 +112,9 @@ impl Session<'_> {
                 .append(Payload::TaskStart(start), &plan.causes)?;
         }
         let task_start = self.appender.recovery().task_start(plan.night, plan.task);
-        self.ensure_profile(plan)?;
+        if let stop @ Control::Stop(_) = self.ensure_profile(plan)? {
+            return Ok(stop);
+        }
         let mut backends: Vec<Backend> = Vec::new();
         for workload in plan.workloads() {
             let backend = workload.backend();
@@ -125,7 +127,9 @@ impl Session<'_> {
                 return Ok(stop);
             }
         }
-        self.trial(plan, task_start)?;
+        if let Some(stop) = self.trial(plan, task_start)? {
+            return Ok(Control::Stop(stop));
+        }
         Ok(match self.check_dead_end()? {
             Some(stop) => Control::Stop(stop),
             None => Control::Continue,
@@ -134,7 +138,7 @@ impl Session<'_> {
 
     /// Puts the machine on the whole profile the plan runs at. Nothing is written when that profile is applied
     /// already.
-    pub(crate) fn ensure_profile(&mut self, plan: &TrialPlan) -> Step<()> {
+    pub(crate) fn ensure_profile(&mut self, plan: &TrialPlan) -> Step<Control> {
         let target: PerCore<TargetOffset> = plan
             .profile
             .expand_topology(&self.topology)
@@ -155,7 +159,14 @@ impl Session<'_> {
             )
             && self.hardware.profile().as_ref() == Some(&target)
         {
-            return Ok(());
+            return Ok(Control::Continue);
+        }
+        if target
+            .iter()
+            .any(|(_, offset)| offset != TargetOffset::ZERO)
+            && let stop @ Control::Stop(_) = self.check_watchdog()?
+        {
+            return Ok(stop);
         }
         let Lifecycle::Swept(Swept {
             stopped: Some(stopped),
@@ -177,7 +188,7 @@ impl Session<'_> {
                 record: ProfileRecord::Applied(Condition::Together),
             },
         )?);
-        Ok(())
+        Ok(Control::Continue)
     }
 
     /// Waits out the retry a backend is owed after its inconclusive trials in a row, once `backend.retry` records
@@ -214,7 +225,11 @@ impl Session<'_> {
         }
     }
 
-    fn trial(&mut self, plan: &TrialPlan, task_start: Option<jiff::Timestamp>) -> Step<()> {
+    fn trial(
+        &mut self,
+        plan: &TrialPlan,
+        task_start: Option<jiff::Timestamp>,
+    ) -> Step<Option<Stop>> {
         if self.lifecycle.stopped().is_none() {
             return Err(SessionError::Unproven.into());
         }
@@ -293,6 +308,30 @@ impl Session<'_> {
             roles: spec.roles.clone(),
             controller,
         };
+        match self.watchdog_refusal() {
+            Ok(None) => {}
+            Ok(Some((dead_end, check))) => {
+                self.end_unstarted_trial(
+                    &trial,
+                    format!(
+                        "not started: hardware watchdog unarmed ({})",
+                        dead_end.detail
+                    ),
+                    &[intent, check],
+                )?;
+                return Ok(Some(self.dead_end(dead_end, &[check])?));
+            }
+            Err(SessionError::Machine(Error::Cancelled)) => {
+                self.end_unstarted_trial(
+                    &trial,
+                    "not started: stopped by signal".into(),
+                    &[intent],
+                )?;
+                self.record_shutdown(&Stop::Signal);
+                return Ok(Some(Stop::Signal));
+            }
+            Err(error) => return Err(error.into()),
+        }
         let Lifecycle::Swept(Swept {
             stopped,
             confirmed: Some(confirmed),
@@ -326,7 +365,9 @@ impl Session<'_> {
                     error: Some(error),
                     joined,
                 };
-                return self.end_trial(&trial, &token, waited, "setup failed");
+                return self
+                    .end_trial(&trial, &token, waited, "setup failed")
+                    .map(|()| None);
             }
         };
         self.appender.watch_trial(Some(token.clone()));
@@ -357,6 +398,37 @@ impl Session<'_> {
                 .append(Payload::TrialSignal(signal), &[trial.start])?;
         }
         self.end_trial(&trial, &token, waited, "trial runner failed")
+            .map(|()| None)
+    }
+
+    /// Closes an intent whose final readiness check refused or was stopped before any workload started.
+    fn end_unstarted_trial(
+        &mut self,
+        trial: &Trial<'_>,
+        reason: String,
+        causes: &[Seq],
+    ) -> Step<()> {
+        let end = TrialEnd {
+            interrupted: true,
+            reason: Some(reason),
+            ..evidence::trial_end(trial.id.clone(), togi_journal::Outcome::Inconclusive, 0)
+        };
+        let topology = self.appender.recovery().topology();
+        let summary = evidence::summarize_samples(
+            self.trials.samples(trial.id.as_str()),
+            trial.cores,
+            trial.plan.cell.regime(),
+            |core| topology.get(core).flatten(),
+        );
+        append_trial_end(
+            &mut self.appender,
+            &mut *self.trials,
+            end,
+            summary,
+            false,
+            causes,
+        )?;
+        Ok(())
     }
 
     /// Everything between the workload's start and its join that can unwind or fail: the start record, the signal

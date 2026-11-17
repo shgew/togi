@@ -68,7 +68,7 @@ impl Session<'_> {
 
     /// A boot whose earlier run left offsets must reconcile them even when asked to stop, so waits ignore the
     /// cancellation until then.
-    pub(crate) fn waiting_token(&self) -> CancellationToken {
+    fn waiting_token(&self) -> CancellationToken {
         if self.unreconciled() {
             CancellationToken::new()
         } else {
@@ -91,11 +91,29 @@ impl Session<'_> {
     /// context comparison (a difference is recorded, never a failure: `begin` records the new context), and ends in a preflight dead end citing the failed ones.
     pub(crate) fn preflight(&mut self) -> Outcome {
         let cancel = self.waiting_token();
-        if self.appender.handoff().is_some() {
-            let control = self.await_watchdog(&cancel)?;
-            if control != Control::Continue {
-                return Ok(control);
+        let control = if self.appender.handoff().is_some() {
+            self.await_watchdog(&cancel)?
+        } else {
+            if cancel.is_cancelled() {
+                return Ok(self.shut_down(Stop::Signal));
             }
+            let check = match self.host.watchdog(&cancel) {
+                Ok(check) => check,
+                Err(Error::Cancelled) => return Ok(self.shut_down(Stop::Signal)),
+                Err(error) => return Err(error.into()),
+            };
+            if cancel.is_cancelled() {
+                return Ok(self.shut_down(Stop::Signal));
+            }
+            if check.ok {
+                self.record_check("watchdog", check.detail, true)?;
+                Control::Continue
+            } else {
+                Control::Stop(self.refuse_watchdog(check.detail)?)
+            }
+        };
+        if control != Control::Continue {
+            return Ok(control);
         }
         self.validated = match self.host.validate_smu() {
             Ok(validated) => Some(validated),
@@ -152,6 +170,49 @@ impl Session<'_> {
         self.dead_end(dead_end, &failed).map(Control::Stop)
     }
 
+    /// A fresh check at each workload and nonzero profile-write boundary. Zero-only cleanup must remain
+    /// available after protection is lost, and an in-flight trial is joined before the next boundary.
+    pub(crate) fn check_watchdog(&mut self) -> Outcome {
+        match self.watchdog_refusal() {
+            Ok(Some((dead_end, seq))) => self.dead_end(dead_end, &[seq]).map(Control::Stop),
+            Ok(None) => Ok(Control::Continue),
+            Err(SessionError::Machine(Error::Cancelled)) => Ok(self.shut_down(Stop::Signal)),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Records a failed boundary check without yet stopping, so an unstarted trial can be closed first.
+    /// Cancellation records no failed check; the caller closes any intent before stopping by signal.
+    pub(crate) fn watchdog_refusal(&mut self) -> Result<Option<(DeadEnd, Seq)>, SessionError> {
+        if self.cancel.is_cancelled() {
+            return Err(Error::Cancelled.into());
+        }
+        let check = self.host.watchdog(&self.cancel)?;
+        if self.cancel.is_cancelled() {
+            return Err(Error::Cancelled.into());
+        }
+        if check.ok {
+            return Ok(None);
+        }
+        self.record_watchdog_refusal(check.detail).map(Some)
+    }
+
+    fn refuse_watchdog(&mut self, detail: String) -> Result<Stop, SessionError> {
+        let (dead_end, seq) = self.record_watchdog_refusal(detail)?;
+        self.dead_end(dead_end, &[seq])
+    }
+
+    fn record_watchdog_refusal(&mut self, detail: String) -> Result<(DeadEnd, Seq), SessionError> {
+        let dead_end = DeadEnd {
+            condition: DeadEndCondition::Preflight,
+            core: None,
+            detail: format!("failed checks: watchdog ({detail})"),
+            action: None,
+        };
+        let seq = self.record_check("watchdog", detail, false)?;
+        Ok((dead_end, seq))
+    }
+
     fn await_watchdog(&mut self, cancel: &CancellationToken) -> Outcome {
         let started = self
             .appender
@@ -179,17 +240,11 @@ impl Session<'_> {
                     check.detail,
                     waited.as_secs()
                 );
-                let seq = self.record_check("watchdog", detail.clone(), check.ok)?;
                 if check.ok {
+                    self.record_check("watchdog", detail, true)?;
                     return Ok(Control::Continue);
                 }
-                let dead_end = DeadEnd {
-                    condition: DeadEndCondition::Preflight,
-                    core: None,
-                    detail: format!("failed checks: watchdog ({detail})"),
-                    action: None,
-                };
-                return self.dead_end(dead_end, &[seq]).map(Control::Stop);
+                return self.refuse_watchdog(detail).map(Control::Stop);
             }
             let step = WATCHDOG_STEP.min(WATCHDOG_WAIT.saturating_sub(waited));
             match self.appender.clock().sleep(cancel, step) {
