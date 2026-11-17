@@ -1,6 +1,6 @@
 //! Ordered tuning identities, topology membership and complete unit profiles.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 
 use serde::{Deserialize, Serialize};
 #[cfg(test)]
@@ -98,6 +98,8 @@ impl Units {
 pub enum UnitProfileError {
     #[error("a unit profile needs at least one unit")]
     Empty,
+    #[error("constructing a unit profile: {0} is listed twice")]
+    Duplicate(UnitId),
     #[error("unit {0:?} is missing from the profile")]
     Missing(UnitId),
     #[error("unit {0:?} is not part of the unit table")]
@@ -272,11 +274,14 @@ impl TryFrom<Vec<(UnitId, TargetOffset)>> for UnitProfile {
     type Error = UnitProfileError;
 
     fn try_from(entries: Vec<(UnitId, TargetOffset)>) -> Result<Self, Self::Error> {
-        if entries.is_empty() {
-            Err(UnitProfileError::Empty)
-        } else {
-            Ok(Self(entries.into_iter().collect()))
+        let mut offsets = BTreeMap::new();
+        for (unit, offset) in entries {
+            let Entry::Vacant(entry) = offsets.entry(unit) else {
+                return Err(UnitProfileError::Duplicate(unit));
+            };
+            entry.insert(offset);
         }
+        Self::try_from(offsets)
     }
 }
 
@@ -317,6 +322,54 @@ mod tests {
             ]
         );
         assert!(units.iter().all(|unit| unit.parent.is_none()));
+    }
+
+    #[test]
+    fn pair_construction_refuses_a_duplicate_identity() {
+        let unit = UnitId::Ccd(CcdId::new(0).unwrap());
+        let deep = TargetOffset::new(-17).unwrap();
+        assert_eq!(
+            UnitProfile::try_from(vec![(unit, TargetOffset::ZERO), (unit, deep)]),
+            Err(UnitProfileError::Duplicate(unit))
+        );
+    }
+
+    #[test]
+    fn pair_construction_keeps_unique_offsets_in_unit_order() {
+        let first = UnitId::Ccd(CcdId::new(0).unwrap());
+        let second = UnitId::Ccd(CcdId::new(1).unwrap());
+        let deep = TargetOffset::new(-17).unwrap();
+        let profile =
+            UnitProfile::try_from(vec![(second, deep), (first, TargetOffset::ZERO)]).unwrap();
+        assert_eq!(
+            profile.iter().collect::<Vec<_>>(),
+            vec![(first, TargetOffset::ZERO), (second, deep)]
+        );
+
+        let units = Units::coarse(&topology());
+        assert_eq!(
+            profile.expand(&units).unwrap(),
+            (0..16)
+                .map(|id| {
+                    let offset = if id < 8 { TargetOffset::ZERO } else { deep };
+                    (CoreId::new(id).unwrap(), offset)
+                })
+                .collect()
+        );
+        assert_eq!(
+            UnitProfile::try_from(vec![(first, deep)])
+                .unwrap()
+                .expand(&units),
+            Err(UnitProfileError::Missing(second))
+        );
+        let extra = UnitId::Core(CoreId::new(0).unwrap());
+        let profile = UnitProfile::try_from(vec![
+            (first, TargetOffset::ZERO),
+            (second, deep),
+            (extra, deep),
+        ])
+        .unwrap();
+        assert_eq!(profile.expand(&units), Err(UnitProfileError::Extra(extra)));
     }
 
     #[test]

@@ -137,6 +137,32 @@ fn a_kill_between_observation_and_derived_commitment_resumes_to_the_same_state()
 }
 
 #[test]
+fn a_recorded_profile_with_a_duplicate_mapping_identity_is_refused() {
+    let (journal, _) = Journal::promoted_compact();
+    let (index, mut event) = journal
+        .events
+        .iter()
+        .enumerate()
+        .find(|(_, event)| matches!(&event.payload, Payload::ClimbDecision(_)))
+        .map(|(index, event)| (index, event.clone()))
+        .unwrap();
+    let Payload::ClimbDecision(decision) = &mut event.payload else {
+        unreachable!()
+    };
+    let units = &mut decision.proposed.mapping.units;
+    units.push(units[0].clone());
+    let decoded = Event::decode(&event.encode().unwrap()).unwrap();
+
+    let mut state = replay(&journal.events[..index]);
+    assert_eq!(
+        state.fold(&decoded),
+        Err(togi_tuner::policy::FoldError::ClimbRecord(
+            "unit mapping differs from topology"
+        ))
+    );
+}
+
+#[test]
 fn an_application_failure_before_day_applied_consumes_no_step() {
     let (journal, target) = Journal::promoted_compact();
     let application = journal.events.iter().rposition(|event| matches!(&event.payload, Payload::DayApplied(applied) if applied.target.ccd() == &target)).unwrap();
