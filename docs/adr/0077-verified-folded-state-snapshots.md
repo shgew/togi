@@ -12,7 +12,7 @@ Retain only the last trial's pre-end trial, cycle and hunt presentation and tune
 
 The retained end is observable only between trials and is discarded at the next trial intent, shutdown, or detected crash. An OnFinish writer records an explicit deferred end instead of cloning a tuner checkpoint per trial. If that end still matters at publication or capsule creation, reconstruct its pre-end checkpoint once from the journal; otherwise discard it without reconstruction. Deferred ends cannot be serialized, so every published snapshot and resume capsule contains the same complete presentation as live publication.
 
-Keep production's publication after every append and its existing atomic replacement and warning behavior. Simulator and benchmark publication remains deferred until the run finishes. The normative format and rejection rules belong to [the journal specification](../spec/journal.md#state-file).
+Keep production's publication after every append and its existing atomic replacement and warning behavior. Simulator and benchmark publication remains deferred until the run finishes. The format and rejection rules belonged to the journal specification; [the current specification](../spec/journal.md#folded-state) describes replay without a persisted cache.
 
 ## Alternatives
 

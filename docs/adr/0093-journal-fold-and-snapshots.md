@@ -26,13 +26,13 @@ Decision functions take only the folded state, never an event list, and cannot m
 
 **Work is bounded by distinct evidence, not repeated events.** Grouping evidence by the dimensions a rule distinguishes avoids revisiting every repeated pass for a count or decision. Retained sequence histories may grow, but a query does not scan all trials; the [tuner specification](../spec/tuner.md#evidence) owns the current evidence keys and provenance. No obsolete per-core phases, hunts or combinations are implied by this architecture.
 
-Validation belongs in the fold because a partially applied event cannot be trusted to represent the journal. Replay preserves recorded decisions rather than judging history by today's proposed decision. The [journal specification](../spec/journal.md#state-file) owns invalid-journal handling, and [tuner invariants](../spec/tuner.md#invariants) own decision reproducibility.
+Validation belongs in the fold because a partially applied event cannot be trusted to represent the journal. Replay preserves recorded decisions rather than judging history by today's proposed decision. The [journal specification](../spec/journal.md#folded-state) owns invalid-journal handling, and [tuner invariants](../spec/tuner.md#invariants) own decision reproducibility.
 
 ### Verified read cache
 
-**`state.json` caches the complete folded state, never authority.** It is not merely a dashboard projection: reusing the fold avoids repeating its reduction for readers. Reuse requires verification against the journal and the producing build; otherwise readers replay. The [state-file specification](../spec/journal.md#state-file) owns the saved components, verification, read-only tail replay and non-mutating fallback.
+**`state.json` caches the complete folded state, never authority.** It is not merely a dashboard projection: reusing the fold avoids repeating its reduction for readers. Reuse requires verification against the journal and the producing build; otherwise readers replay. This describes the former cache; [the current specification](../spec/journal.md#folded-state) describes replay without it.
 
-**Hardware runs always replay independently rather than trust the cache.** A cache must not authorize hardware decisions without that independent evidence. A different build rebuilds from the journal rather than migrating the snapshot, avoiding another versioned format. The [journal rules](../spec/journal.md#rules) own boot replay and cache rewriting.
+**Hardware runs always replay independently rather than trust the cache.** A cache must not authorize hardware decisions without that independent evidence. A different build rebuilt from the journal rather than migrating the snapshot, avoiding another versioned format. The [journal rules](../spec/journal.md#rules) still own boot replay.
 
 ## Considered Options
 
