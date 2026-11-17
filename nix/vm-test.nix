@@ -291,6 +291,8 @@ let
             machine.send_key("n")
             machine.wait_until_succeeds("! grep -aq 'Reboot into the day cycle?' /dev/vcs1")
             assert machine.succeed("cat /proc/sys/kernel/random/boot_id") == boot_before
+            # The preflight dead end gave up the tuning entry; select it again so only ending the night returns to the day.
+            machine.succeed("grub-set-default 'NixOS - togi' && sync")
             machine.send_key("f10")
             machine.wait_until_succeeds("grep -aq 'Reboot into the day cycle?' /dev/vcs1")
             assert machine.qmp_client is not None
@@ -302,6 +304,7 @@ let
             machine.wait_for_unit("multi-user.target")
             assert machine.succeed("cat /proc/sys/kernel/random/boot_id") != boot_before
             assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
+            assert "saved_entry=NixOS - togi" not in machine.succeed("grub-editenv /boot/grub/grubenv list")
             machine.fail("systemctl is-active --quiet togi.service")
       '';
     };
