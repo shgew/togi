@@ -28,7 +28,7 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - Power, temperature and clock measurements at stock and the current profile show gain; offsets alone do not show the benefit.
 - The journal is authoritative and readers reconstruct state without a persisted cache; a second state representation adds invalidation without a measured benefit.
 - The new loop starts a fresh journal, neither reads nor imports older generations, and reset archives then starts over; a clean break avoids carrying old policy obligations.
-- Runtime support is NixOS with GRUB and one or two full eight-core CCDs; other layouts and bootloaders add unproved paths outside the target.
+- Runtime support is NixOS with GRUB and one or two full eight-core CCDs; tuning nights no longer support systemd-boot because the target uses GRUB and keeping a second restoration path adds safety work.
 - macOS supports development, reading and replay, not hardware operation or live watching; the runtime target is Linux.
 - Hardware tests run as root and NixOS provisions the host lock; alternate delegation and manual provisioning add unused paths.
 - The public commands are night, status, pause, resume, watch, reset and doctor; run is event-only and lifecycle helpers are internal to keep one interface.

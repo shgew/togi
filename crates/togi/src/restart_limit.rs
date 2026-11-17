@@ -33,7 +33,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
-    /// GRUB environment or /etc/togi/night.json for retry state and boot selection
+    /// GRUB environment file for retry state and boot selection
     #[arg(
         long,
         required = true,

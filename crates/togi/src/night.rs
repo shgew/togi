@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
 use togi_journal::{Payload, SessionStart, Stamp, StockAttested};
-use togi_tuningboot::night::{BootSelection, SETUP_PATH, Selection, Setup};
+use togi_tuningboot::night::{BootSelection, SETUP_PATH, Setup};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
@@ -30,7 +30,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// power button, or until the tuner stops on its own at a dead end or its restart limit. Each
 /// restores the selection the night replaced exactly. Crash reboots stay in the night.
 ///
-/// Needs root, and the NixOS module's tuning boot, which writes /etc/togi/night.json.
+/// Needs root and the NixOS module's GRUB tuning boot, which writes /etc/togi/night.json.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {}
@@ -131,7 +131,7 @@ pub fn begin(ctx: &mut Context<'_>, confirmation: Confirmation) -> Exit {
         Ok(lock) => lock,
         Err(exit) => return exit,
     };
-    let bootloader = match ctx.system.bootloader(setup.boot_path()) {
+    let bootloader = match ctx.system.bootloader(setup.grubenv()) {
         Ok(bootloader) => bootloader,
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
@@ -264,7 +264,7 @@ fn stamp(ctx: &mut Context<'_>) -> Result<Stamp, Exit> {
 
 /// Gives the tuning selection back after the night failed to start, so no later reboot enters a night the command
 /// reported as failed.
-fn restore_day(ctx: &mut Context<'_>, selection: &mut impl Selection, after: &str) {
+fn restore_day(ctx: &mut Context<'_>, selection: &mut BootSelection, after: &str) {
     if let Err(error) = selection.end() {
         let _ = writeln!(
             ctx.err,

@@ -28,7 +28,7 @@ Built for real hardware, a Granite Ridge desktop running NixOS, and tested piece
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
 - mprime and y-cruncher trials, each confined to its cores in a systemd scope;
 - machine-check detection from the kernel log;
-- the NixOS module and unattended tuning boot support GRUB and systemd-boot, with two service restart-limit retry boots before returning to the normal system and durable leave reasons; VM checks cover switching between day and night without tuning hardware.
+- the NixOS module's GRUB tuning boot allows two service restart-limit retry boots before returning to the normal system, with durable leave reasons; VM checks cover switching between day and night without tuning hardware.
 
 Not yet:
 - a full night-and-day cycle on real hardware.
@@ -42,7 +42,7 @@ togi --version                         # version and git revision of this build
 sudo togi doctor                       # check this machine is ready for a run, without starting a session or writing the journal
 sudo togi doctor --day                 # check day prerequisites and a current, verified stock readback recorded in this boot
 sudo togi run                          # tune tonight; needs the current stock attestation from `togi night` (exit 12 otherwise); Ctrl-C ends the night, the next run opens the next
-sudo togi night                        # GRUB or systemd-boot: confirm stock stability, remember the day's selection and reboot into tuning
+sudo togi night                        # GRUB: confirm stock stability, remember the day's selection and reboot into tuning
 sudo togi day                          # apply permitted D and observe; needs verified CO 0 and PID 1's counting watchdog
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
 sudo togi day record                   # record a missed crash through the live service; no stop needed
@@ -68,7 +68,7 @@ With the day service running and your user in `services.togi.day.users`, pause/r
 
 `status` adds a Day section after observations exist: observed boots, checkpointed hours per read-back offset profile, clean and unclean ends, and the latest unclean boot's reset reason. Each unclean end becomes a question that `status` and `watch` show, with what togi saw, until you answer it with `togi day answer <boot> <frozen|graphics|power-off|unsure>`; no root shell is needed. The answer counts: `frozen` makes the end CPU-suspect, which vetoes that profile and retreats the day step, and a later answer can reclassify it ([Daily events](docs/spec/tuner.md#daily-events)). `togi day notify` raises desktop notifications through the installed `notify-send`, with answer buttons on KDE Plasma, pause-expiry warnings and verified profile-reapplication notices. See [day observation](docs/howto.md#daily-observation) for service setup and [answering](docs/howto.md#answering-what-happened).
 
-The NixOS tuning specialisation supports exactly one of GRUB or systemd-boot. `sudo togi night` selects it persistently, so crash reboots stay in the night; F10 on its dashboard or the power button restores the previous boot selection. See [Night and day](docs/spec/runtime.md#night-and-day) for saved defaults and menu-started nights.
+The NixOS tuning specialisation requires GRUB. `sudo togi night` selects it persistently, so crash reboots stay in the night; F10 on its dashboard or the power button restores the previous boot selection. See [Night and day](docs/spec/runtime.md#night-and-day) for saved defaults and menu-started nights.
 
 [docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `togi --help` lists every command, and `togi <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
 

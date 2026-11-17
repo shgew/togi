@@ -158,8 +158,8 @@ pub trait System {
         lock: Option<&HostLock>,
     ) -> Result<Diagnosis, togi_hardware::Error>;
 
-    /// Opens a GRUB environment, or the module's setup file for another supported loader.
-    fn bootloader(&self, selection: &Path) -> io::Result<Box<dyn Bootloader>>;
+    /// Opens a GRUB environment.
+    fn bootloader(&self, grubenv: &Path) -> io::Result<Box<dyn Bootloader>>;
 
     /// Creates the retry marker; fails when it exists.
     fn create_retry_marker(&self) -> io::Result<()>;
@@ -321,30 +321,14 @@ impl System for Real {
         togi_hardware::diagnose_day(config, lock)
     }
 
-    fn bootloader(&self, selection: &Path) -> io::Result<Box<dyn Bootloader>> {
-        use togi_tuningboot::night::{SETUP_PATH, Setup};
-
-        if selection != Path::new(SETUP_PATH) {
-            return Ok(Box::new(Grub::new(selection)));
+    fn bootloader(&self, grubenv: &Path) -> io::Result<Box<dyn Bootloader>> {
+        if grubenv == Path::new(togi_tuningboot::night::SETUP_PATH) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "systemd-boot is not supported; --tuning-boot requires a GRUB environment file",
+            ));
         }
-        let setup: Setup = self
-            .read_config(selection)?
-            .parse()
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        match setup {
-            Setup::Grub { grubenv, .. } => Ok(Box::new(Grub::new(grubenv))),
-            Setup::SystemdBoot {
-                esp,
-                boot,
-                state,
-                specialisation,
-            } => Ok(Box::new(togi_hardware::systemd_boot::SystemdBoot::new(
-                esp,
-                boot,
-                state,
-                specialisation.as_str(),
-            ))),
-        }
+        Ok(Box::new(Grub::new(grubenv)))
     }
 
     fn create_retry_marker(&self) -> io::Result<()> {

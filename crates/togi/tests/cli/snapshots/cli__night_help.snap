@@ -8,7 +8,7 @@ Shows what the night will do, as `togi status` plans it, then asks to reboot and
 
 The night has no time limit: it runs until you end it with F10 on the tuning dashboard or the power button, or until the tuner stops on its own at a dead end or its restart limit. Each restores the selection the night replaced exactly. Crash reboots stay in the night.
 
-Needs root, and the NixOS module's tuning boot, which writes /etc/togi/night.json.
+Needs root and the NixOS module's GRUB tuning boot, which writes /etc/togi/night.json.
 
 Usage: togi night [OPTIONS]
 

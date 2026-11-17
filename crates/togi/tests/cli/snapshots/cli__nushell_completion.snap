@@ -14,7 +14,7 @@ module completions {
   # Start or resume the night's tuning session in the foreground
   export extern "togi run" [
     --config: path            # JSON configuration file [default: /etc/togi/config.json]
-    --tuning-boot: path       # Run as the tuning boot service: persist a leave reason before restoring the day's boot selection, using a GRUB environment or /etc/togi/night.json, and reboot after a boot loop
+    --tuning-boot: path       # Run as the tuning boot service: use the GRUB environment to persist a leave reason before restoring the day's boot selection, and reboot after a boot loop
     --no-tui                  # Print one line per event instead of the dashboard on a terminal
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
@@ -181,7 +181,7 @@ module completions {
 
   # Recover after the tuning service reaches its restart limit
   export extern "togi restart-limit" [
-    --tuning-boot: path       # GRUB environment or /etc/togi/night.json for retry state and boot selection
+    --tuning-boot: path       # GRUB environment file for retry state and boot selection
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
   ]

@@ -572,7 +572,6 @@
               vm-runtime = vm.runtime;
               vm-day-apply-profile = vm.day-apply-profile;
               vm-display = vm.display;
-              vm-efi = vm.efi;
             }
           );
 

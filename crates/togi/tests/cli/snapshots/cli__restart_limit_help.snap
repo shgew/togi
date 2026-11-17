@@ -17,7 +17,7 @@ Options:
           [default: /var/lib/togi]
 
       --tuning-boot <file>
-          GRUB environment or /etc/togi/night.json for retry state and boot selection
+          GRUB environment file for retry state and boot selection
 
   -h, --help
           Print help (see a summary with '-h')

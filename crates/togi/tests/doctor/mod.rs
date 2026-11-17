@@ -959,7 +959,8 @@ fn this_boots_verified_zero_restoration_is_a_baseline_receipt() {
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
 }
 
-#[test_case::test_case(r#"{"loader":"systemd-boot","esp":"/boot","boot":"/boot","state":"/var/lib/togi/loader","specialisation":"togi"}"#, true; "systemd boot supported")]
+#[test_case::test_case(r#"{"loader":"grub","grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#, true; "grub supported")]
+#[test_case::test_case(r#"{"loader":"systemd-boot","esp":"/boot","boot":"/boot","state":"/var/lib/togi/loader","specialisation":"togi"}"#, false; "systemd boot unsupported")]
 #[test_case::test_case(r#"{"loader":"unknown"}"#, false; "unsupported loader")]
 #[test_case::test_case("not json", false; "malformed setup")]
 fn day_diagnostics_read_the_supported_installed_loader_without_opening_it(
