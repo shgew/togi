@@ -824,7 +824,8 @@ pub fn words(kind: EventKind) -> Words {
         | EventKind::HuntEnd
         | EventKind::HuntSkipped
         | EventKind::Combination
-        | EventKind::DeepeningRound => Words::HISTORICAL,
+        | EventKind::DeepeningRound
+        | EventKind::CcdCap => Words::HISTORICAL,
         EventKind::CommandReset => Words {
             history: History::Line(|payload| {
                 Some(line(Tag::Reset, Tone::Plain, payload.message()))
@@ -861,7 +862,6 @@ pub fn words(kind: EventKind) -> Words {
             ..Words::SILENT
         },
         EventKind::CcdEdge => Words::said(Tag::Edge, of!(CcdEdge, |d| Some(edge_line(d)))),
-        EventKind::CcdCap => Words::UNLISTED,
         EventKind::NightPlan => Words::said(Tag::Night, of!(NightPlan, |d| Some(plan_line(d)))),
         EventKind::NightQualification => Words::said(
             Tag::Qualify,

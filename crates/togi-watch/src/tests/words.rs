@@ -65,7 +65,6 @@ const SILENT: &[EventKind] = &[
 /// The kinds the log leaves out: the SMU dance and the preflight checks.
 const UNLISTED: &[EventKind] = &[
     EventKind::PreflightCheck,
-    EventKind::CcdCap,
     EventKind::SmuIntent,
     EventKind::SmuWrite,
     EventKind::SmuReadback,
@@ -92,6 +91,7 @@ const HISTORICAL: &[EventKind] = &[
     EventKind::HuntSkipped,
     EventKind::Combination,
     EventKind::DeepeningRound,
+    EventKind::CcdCap,
 ];
 
 /// The Ruleset 13 kinds with a history line of their own, with the tag their events carry.
@@ -416,17 +416,17 @@ fn edges_read_as_the_dashboard_says_them() {
     "edge margin and measured"
 )]
 #[test_case(Binding::Baseline {}, Slope::Fallback { beta: Finite::new(0.2).unwrap() }; "baseline")]
-fn historical_statistical_caps_are_decodable_but_have_no_screen_words(
-    binding: Binding,
-    slope: Slope,
-) {
+fn historical_statistical_caps_decode_and_are_listed_as_history(binding: Binding, slope: Slope) {
     let event = Script::three().event(cap_event(binding, slope), &[]);
     let encoded = event.encode().unwrap();
     let decoded = togi_journal::Event::decode(&encoded).unwrap();
     assert_eq!(decoded.payload, event.payload);
     let table = words(decoded.kind());
-    assert!(matches!(table.history, History::Silent));
-    assert!(!table.listed);
+    assert!(matches!(
+        table.history,
+        History::Recorded(Tag::Note, Tone::Plain)
+    ));
+    assert!(table.listed);
 }
 
 #[test_case(None, "night opened · 2 tasks"; "the opening plan")]
@@ -743,7 +743,6 @@ fn the_ruleset13_kinds_all_have_a_line_or_are_named_silent() {
     let ruleset13 = [
         EventKind::ExposureObserved,
         EventKind::CcdEdge,
-        EventKind::CcdCap,
         EventKind::NightPlan,
         EventKind::NightQualification,
         EventKind::NightReproduction,
@@ -818,12 +817,12 @@ fn a_kind_of_an_earlier_ruleset_says_its_recorded_message_and_nothing_else() {
     }
 }
 
-#[test]
-fn a_kind_of_an_earlier_ruleset_says_the_message_its_event_recorded() {
+#[test_case(hunt_start(1, &[0, 2]).into(); "hunt start")]
+#[test_case(cap_event(Binding::Baseline {}, Slope::Fallback { beta: Finite::new(0.2).unwrap() }); "statistical cap")]
+fn a_kind_of_an_earlier_ruleset_says_the_message_its_event_recorded(payload: Payload) {
     let mut h = Hist::three();
-    let hunt: Payload = hunt_start(1, &[0, 2]).into();
     let recorded = "recorded wording\x1b[2J";
-    assert_ne!(recorded, hunt.message());
+    assert_ne!(recorded, payload.message());
     h.count += 1;
     let mut event = togi_journal::Event::new(
         seq(h.count),
@@ -833,11 +832,15 @@ fn a_kind_of_an_earlier_ruleset_says_the_message_its_event_recorded() {
         },
         BootId::from(h.boot.clone()),
         Vec::new(),
-        hunt,
+        payload,
     );
     event.msg = recorded.to_owned();
     h.journal.apply(&event).unwrap();
     h.facts.fold(&event, &h.journal);
+    let logged = h.facts.log.last().unwrap();
+    assert_eq!(logged.seq, event.seq);
+    assert_eq!(logged.tag, event.kind().as_str().replace('.', " "));
+    assert_eq!(logged.msg, recorded);
     let (entries, _) = h.facts.history.recent();
     let line = &entries[0];
     assert_eq!((line.tag, line.tone), (Tag::Note, Tone::Plain));

@@ -139,13 +139,15 @@ fn a_night_reads_in_order_from_plan_to_promotion() {
         .collect();
     assert_eq!(
         tags,
-        ["start", "night", "edge", "qualify", "qualify", "step"]
+        [
+            "start", "night", "edge", "note", "qualify", "qualify", "step"
+        ]
     );
     assert_eq!(
-        sentences[3],
+        sentences[4],
         "qualify: qualifying CCD0 -10, CCD1 -5 (next step) · 0 cells to witness"
     );
-    assert_eq!(sentences[5], "step: promote CCD0 to CCD0 -15, CCD1 -5");
+    assert_eq!(sentences[6], "step: promote CCD0 to CCD0 -15, CCD1 -5");
 }
 
 #[test]
