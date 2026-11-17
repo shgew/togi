@@ -17,11 +17,11 @@
 use std::collections::HashMap;
 
 use togi_journal::{
-    ApplyCause, CcdCap, CcdEdge, CellEvidence, CellWitness, DayApplied, DayEvent, DayEventId,
-    DayFreeze, DayHold, DayInterval, DayStep, DayVeto, Edge, ExposureObserved, FreezeSource,
-    HoldChange, HoldReason, NightId, NightPlan, NightQualification, NightReproduction,
-    OriginalSource, Payload, Provenance, QualificationState, Resolution, RetreatCause, Seq,
-    StepCauses, StepKind, TrialId, UnavailableBackend,
+    ApplyCause, CcdEdge, CellEvidence, CellWitness, DayApplied, DayEvent, DayEventId, DayFreeze,
+    DayHold, DayInterval, DayStep, DayVeto, Edge, ExposureObserved, FreezeSource, HoldChange,
+    HoldReason, NightId, NightPlan, NightQualification, NightReproduction, OriginalSource, Payload,
+    Provenance, QualificationState, Resolution, RetreatCause, Seq, StepCauses, StepKind, TrialId,
+    UnavailableBackend,
 };
 use togi_tuner::policy::{
     DayProjection, EventProjection, FirmwareValidity, HoldProjection, NightProjection, Projection,
@@ -366,28 +366,6 @@ impl<'events> Names<'events> {
         )
     }
 
-    fn ccd_cap(&mut self, cap: &CcdCap) -> String {
-        let CcdCap {
-            ccd,
-            old,
-            new,
-            budget,
-            edge,
-            adequate,
-            uncovered,
-            cells,
-            slope,
-            candidates,
-            binding,
-        } = cap;
-        format!(
-            "{ccd:?} old={old:?} new={new:?} budget={budget:?} edge={} adequate={adequate:?} \
-             uncovered={uncovered:?} cells={cells:?} slope={slope:?} candidates={candidates:?} \
-             binding={binding:?}",
-            self.edge(edge)
-        )
-    }
-
     fn night_plan(&mut self, plan: &NightPlan) -> String {
         let NightPlan {
             night,
@@ -641,7 +619,6 @@ impl<'events> Names<'events> {
                 self.exposure_observed(observed, hide_source_boot)
             }
             Payload::CcdEdge(edge) => self.ccd_edge(edge),
-            Payload::CcdCap(cap) => self.ccd_cap(cap),
             Payload::NightPlan(plan) => self.night_plan(plan),
             Payload::NightQualification(qualification) => self.night_qualification(qualification),
             Payload::NightReproduction(reproduction) => self.night_reproduction(reproduction),
@@ -844,6 +821,7 @@ impl<'events> Names<'events> {
             | Payload::DayAnswer(_)
             | Payload::DayRecord(_)
             | Payload::DayFault(_)
+            | Payload::CcdCap(_)
             | Payload::TaskStart(_)
             | Payload::DayImported(_)
             | Payload::StockAttested(_)
