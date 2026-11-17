@@ -14,6 +14,7 @@ use crate::testing::{
     begin_default, boot, default_session, kinds, live, note, reopen, simulated, stamp, start,
     try_simulated,
 };
+use crate::tests::fixtures::sample as sample_payload;
 use crate::{LockError, Recording};
 use togi_machine::{CoreSet, PerCore, Regime};
 
@@ -67,6 +68,8 @@ fn command() -> SmuCommand {
 #[derive(Clone, Copy)]
 enum IntentBootHistory {
     DayOnly,
+    DayPolicy,
+    DayCampaignStart,
     CrashedTuning,
     DayThenTuning,
     ShutdownTuning,
@@ -75,6 +78,8 @@ enum IntentBootHistory {
 
 #[test_case(false, true, IntentBootHistory::DayOnly; "generic day complete")]
 #[test_case(true, true, IntentBootHistory::DayOnly; "dedicated day complete")]
+#[test_case(true, true, IntentBootHistory::DayPolicy; "day policy before interrupted write")]
+#[test_case(true, true, IntentBootHistory::DayCampaignStart; "day campaign enrollment")]
 #[test_case(false, false, IntentBootHistory::DayOnly; "generic day partial")]
 #[test_case(true, false, IntentBootHistory::DayOnly; "dedicated day partial")]
 #[test_case(true, true, IntentBootHistory::CrashedTuning; "crashed tuning boot")]
@@ -99,12 +104,39 @@ fn day_start_cites_intents_no_crash_attribution_awaits(
             .collect(),
         watchdog: None,
     };
-    if matches!(history, IntentBootHistory::DayThenTuning) {
+    if matches!(
+        history,
+        IntentBootHistory::DayPolicy
+            | IntentBootHistory::DayCampaignStart
+            | IntentBootHistory::DayThenTuning
+    ) {
         journal
             .append_day_boot_start(stamp(1), initial_start, &[])
             .unwrap();
     }
-    if !matches!(history, IntentBootHistory::DayOnly) {
+    let day_policy: &[EventKind] = match history {
+        IntentBootHistory::DayPolicy => &[
+            EventKind::NightPlan,
+            EventKind::UnitMapping,
+            EventKind::ClimbDecision,
+        ],
+        IntentBootHistory::DayCampaignStart => &[EventKind::CampaignStart],
+        IntentBootHistory::DayOnly
+        | IntentBootHistory::CrashedTuning
+        | IntentBootHistory::DayThenTuning
+        | IntentBootHistory::ShutdownTuning
+        | IntentBootHistory::SameBoot => &[],
+    };
+    for &kind in day_policy {
+        journal.append(stamp(1), sample_payload(kind), &[]).unwrap();
+    }
+    if matches!(
+        history,
+        IntentBootHistory::CrashedTuning
+            | IntentBootHistory::DayThenTuning
+            | IntentBootHistory::ShutdownTuning
+            | IntentBootHistory::SameBoot
+    ) {
         journal
             .append(
                 stamp(1),

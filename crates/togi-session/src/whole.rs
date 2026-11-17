@@ -206,6 +206,86 @@ fn a_night_continues_across_a_crash_reboot() {
 }
 
 #[test]
+fn tuning_recovery_does_not_attribute_an_interrupted_day_write_as_a_tuning_crash() {
+    use togi_journal::{
+        DayBootStart, SmuCommand, Stamp, UnitId, UnitMapping, UnitMembership, UnitPhase,
+    };
+    use togi_machine::{ObservedOffset, TargetOffset};
+
+    let bench = bench();
+    let prior = crate::run(bench.input_ending_at(bench.short_night()));
+    ended_by_the_operator(&bench, &prior);
+    drop(prior.journal.close().unwrap());
+    bench.sim.reboot().unwrap();
+
+    let mut day = bench.input_unattested();
+    let firmware = day.machine.host.bios_context().unwrap();
+    let cores = day.machine.host.topology().unwrap();
+    let topology = togi_tuner::Topology::new(&cores).unwrap();
+    let mapping = UnitMapping {
+        phase: UnitPhase::Coarse,
+        units: topology
+            .ccds()
+            .iter()
+            .map(|&(ccd, cores)| UnitMembership {
+                unit: UnitId::Ccd(ccd),
+                cores,
+                parent: None,
+            })
+            .collect(),
+    };
+    let stamp = Stamp {
+        time: bench.sim.now(),
+        mono: None,
+    };
+    day.journal
+        .append_day_boot_start(
+            stamp,
+            DayBootStart {
+                build: day.build,
+                bios: firmware,
+                offsets: cores
+                    .iter()
+                    .map(|info| (info.core, ObservedOffset(0)))
+                    .collect(),
+                watchdog: None,
+            },
+            &[],
+        )
+        .unwrap();
+    day.journal.append(stamp, mapping.into(), &[]).unwrap();
+    let _intent = day
+        .journal
+        .append_smu_intent(
+            stamp,
+            SmuCommand::SetAll {
+                offset: TargetOffset::ZERO,
+            },
+            &[],
+        )
+        .unwrap();
+    drop(day.journal.close().unwrap());
+    bench.sim.power_loss();
+    bench.sim.reboot().unwrap();
+
+    let resumed = crate::run(bench.input_ending_at(bench.short_night()));
+    ended_by_the_operator(&bench, &resumed);
+    let crashes: Vec<_> = resumed
+        .journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::CrashDetected(crash) = &event.payload {
+                Some(&crash.previous_boot)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(crashes, Vec::<&togi_machine::BootId>::new());
+}
+
+#[test]
 fn a_restart_replays_a_mapping_nights_durable_events() {
     let bench = bench();
     let first = crate::run(bench.input_ending_at(a_night(&bench)));
