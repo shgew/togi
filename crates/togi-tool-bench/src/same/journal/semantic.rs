@@ -37,6 +37,7 @@ pub struct ClassCounts {
 pub struct Summary {
     pub retired: BTreeMap<String, usize>,
     pub rebased_cursor_causes: usize,
+    pub rebased_messages: BTreeMap<togi_journal::EventKind, usize>,
     pub classes: BTreeMap<String, ClassCounts>,
     pub declared_fields: BTreeMap<&'static str, usize>,
 }
@@ -53,6 +54,9 @@ impl Summary {
             *self.retired.entry(kind).or_default() += count;
         }
         self.rebased_cursor_causes += other.rebased_cursor_causes;
+        for (kind, count) in other.rebased_messages {
+            *self.rebased_messages.entry(kind).or_default() += count;
+        }
         for (field, count) in other.declared_fields {
             *self.declared_fields.entry(field).or_default() += count;
         }
@@ -79,6 +83,13 @@ impl Summary {
             "semantic: rebased {} last-event cursor causes across retired records",
             self.rebased_cursor_causes
         )?;
+        for (kind, count) in &self.rebased_messages {
+            writeln!(
+                w,
+                "semantic: rebased {}.msg from typed payload references: differing_records={count}",
+                kind.as_str()
+            )?;
+        }
         for (field, count) in &self.declared_fields {
             writeln!(w, "semantic: declared {field}: differing_records={count}")?;
         }
@@ -250,11 +261,11 @@ fn load(source: &impl Source, dir: &Path) -> Result<Journals, JournalError> {
     Ok(journals)
 }
 
-fn canonicalize(
+fn retain_and_index(
     journals: &mut Journals,
     retired: &[String],
     summary: &mut Summary,
-) -> Result<(), JournalError> {
+) -> Result<Identities, JournalError> {
     let mut identities = Identities::new();
     let mut retired_counts: BTreeMap<&str, usize> =
         retired.iter().map(|kind| (kind.as_str(), 0)).collect();
@@ -316,12 +327,6 @@ fn canonicalize(
                 return Err(invalid(&journal.path, line + 1, "duplicate sequence"));
             }
         }
-        if identities.insert(journal.session.clone(), map).is_some() {
-            return Err(invalid(&journal.path, 0, "duplicate session journal"));
-        }
-    }
-    for journal in journals.values_mut() {
-        let map = &identities[&journal.session];
         if !retired.is_empty() {
             journal.records.retain(|event| {
                 map[&event["seq"]
@@ -330,18 +335,9 @@ fn canonicalize(
                     .is_some()
             });
         }
-        journal.derived = derived::prepare(journal, map)?;
-        for (line, event) in journal.records.iter_mut().enumerate() {
-            rebase(
-                event,
-                "",
-                &journal.session,
-                &identities,
-                &journal.path,
-                line + 1,
-            )?;
+        if identities.insert(journal.session.clone(), map).is_some() {
+            return Err(invalid(&journal.path, 0, "duplicate session journal"));
         }
-        derived::finish_messages(journal)?;
     }
     summary.retired.extend(
         retired_counts
@@ -349,6 +345,22 @@ fn canonicalize(
             .map(|(kind, count)| (kind.to_owned(), count)),
     );
     summary.rebased_cursor_causes += rebased_cursor_causes;
+    Ok(identities)
+}
+
+fn rebase_journal(journal: &mut Journal, identities: &Identities) -> Result<(), JournalError> {
+    let map = &identities[&journal.session];
+    journal.derived = derived::prepare(journal, map)?;
+    for (line, event) in journal.records.iter_mut().enumerate() {
+        rebase(
+            event,
+            "",
+            &journal.session,
+            identities,
+            &journal.path,
+            line + 1,
+        )?;
+    }
     Ok(())
 }
 
@@ -522,11 +534,22 @@ pub(in crate::same) fn compare_with(
     let mut base = load(source, base)?;
     let mut head = load(source, head)?;
     let mut summary = Summary::default();
-    canonicalize(&mut base, retired, &mut summary)?;
-    canonicalize(&mut head, &[], &mut summary)?;
+    let base_identities = retain_and_index(&mut base, retired, &mut summary)?;
+    let head_identities = retain_and_index(&mut head, &[], &mut summary)?;
     for (name, base) in &mut base {
         if let Some(head) = head.get_mut(name) {
+            let verified = derived::verified_messages(base, head);
+            rebase_journal(base, &base_identities)?;
+            rebase_journal(head, &head_identities)?;
+            derived::rebase_messages(base, head, &verified, &mut summary);
             derived::compare_fields(base, head, &mut summary);
+        } else {
+            rebase_journal(base, &base_identities)?;
+        }
+    }
+    for (name, head) in &mut head {
+        if !base.contains_key(name) {
+            rebase_journal(head, &head_identities)?;
         }
     }
     let names: BTreeSet<&String> = base.keys().chain(head.keys()).collect();

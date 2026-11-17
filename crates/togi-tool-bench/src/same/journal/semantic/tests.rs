@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 use togi_journal::fs::MemFs;
 
 use super::{Comparison, compare_with};
+use togi_journal::EventKind;
 
 fn event(seq: u64, kind: &str, data: Value) -> Value {
     json!({"seq": seq, "kind": kind, "msg": kind, "data": data})
@@ -238,8 +239,15 @@ fn phase_counts_cannot_change_without_a_moved_random_seed() {
     assert!(comparison.summary.declared_fields.is_empty());
 }
 
+fn generated_event(seq: u64, kind: &str, data: Value) -> Value {
+    let mut event = event(seq, kind, data);
+    event["time"] = json!("2026-01-01T00:00:00Z");
+    event["boot"] = json!("69196777-9b5b-1c94-13d4-5f6c1c65126a");
+    event
+}
+
 fn observed_edge(seq: u64, witness: u64) -> Value {
-    let mut edge = event(
+    let mut edge = generated_event(
         seq,
         "unit.edge",
         json!({
@@ -268,12 +276,59 @@ fn edge_message_rebases_the_witness_but_not_arbitrary_wording() {
     let mut head = [start, event(2, "failure", json!({})), observed_edge(3, 2)];
     let comparison = compare(&base, &head).unwrap();
     assert_eq!(comparison.first, None);
-    assert_eq!(
-        comparison.summary.declared_fields["unit.edge.msg.failure_witness"],
-        1
-    );
+    assert_eq!(comparison.summary.rebased_messages[&EventKind::UnitEdge], 1);
     head[2]["msg"] = json!("CCD0 edge unknown -> observed -30 (failure #2); ceiling -24, margin 5");
     assert!(compare(&base, &head).unwrap().first.is_some());
+}
+
+fn detected_crash(seq: u64, in_flight: u64) -> Value {
+    let mut crash = generated_event(
+        seq,
+        "crash.detected",
+        json!({
+            "previous_boot":"b1a8cebe-21d1-14db-3741-5b5df946de05",
+            "in_flight":in_flight,
+            "condition":"together",
+            "reset_reason":"watchdog",
+        }),
+    );
+    crash["msg"] = json!(format!(
+        "crash: boot b1a8cebe ended without a clean shutdown; in flight: seq {in_flight}; the current profile was applied; reset reason: watchdog"
+    ));
+    crash
+}
+
+#[test]
+fn crash_message_rebases_only_the_payloads_own_in_flight_reference() {
+    let start = event(1, "session.start", json!({"session":"s"}));
+    let mut base = [
+        start.clone(),
+        event(2, "ccd.cap", json!({})),
+        event(3, "trial.intent", json!({})),
+        detected_crash(4, 3),
+    ];
+    let mut head = [
+        start,
+        event(2, "trial.intent", json!({})),
+        detected_crash(3, 2),
+    ];
+    let comparison = compare(&base, &head).unwrap();
+    assert_eq!(comparison.first, None);
+    assert_eq!(
+        comparison.summary.rebased_messages[&EventKind::CrashDetected],
+        1
+    );
+
+    head[2] = detected_crash(3, 1);
+    let comparison = compare(&base, &head).unwrap();
+    assert!(comparison.first.is_some());
+    assert!(comparison.summary.rebased_messages.is_empty());
+
+    head[2] = detected_crash(3, 2);
+    base[3]["msg"] = detected_crash(4, 1)["msg"].clone();
+    let comparison = compare(&base, &head).unwrap();
+    assert!(comparison.first.is_some());
+    assert!(comparison.summary.rebased_messages.is_empty());
 }
 
 #[test_case::test_case("cause"; "envelope cause")]

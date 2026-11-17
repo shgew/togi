@@ -1,10 +1,10 @@
-//! R04 sequence-derived references and random-phase telemetry, never tuner decisions.
+//! Sequence-derived references and random-phase telemetry, never tuner decisions.
 
 use std::collections::HashMap;
 
 use serde::Deserialize;
 use serde_json::Value;
-use togi_journal::{Payload, TrialSignal, UnitEdge};
+use togi_journal::{Event, EventKind, Payload, TrialSignal};
 
 use super::{Journal, JournalError, Summary, invalid};
 
@@ -13,7 +13,6 @@ pub(super) struct Record {
     role_seed: Option<u64>,
     signal_seed: Option<u64>,
     phase_seed: Option<u64>,
-    edge_message: Option<String>,
 }
 
 fn first_cause(event: &Value) -> Option<u64> {
@@ -109,17 +108,6 @@ pub(super) fn prepare(
                     record.phase_seed = start.and_then(|seq| phase_seeds.get(&seq).copied());
                 }
             }
-            Some("unit.edge") => {
-                let data = &event["data"];
-                if (data["old"]["kind"] == "observed" || data["new"]["kind"] == "observed")
-                    && let Ok(edge) = UnitEdge::deserialize(data)
-                {
-                    let message = Payload::UnitEdge(edge).message();
-                    if event["msg"].as_str() == Some(message.as_str()) {
-                        record.edge_message = Some(message);
-                    }
-                }
-            }
             _ => {}
         }
         derived.push(record);
@@ -127,17 +115,45 @@ pub(super) fn prepare(
     Ok(derived)
 }
 
-pub(super) fn finish_messages(journal: &mut Journal) -> Result<(), JournalError> {
-    for (index, (event, record)) in journal.records.iter_mut().zip(&journal.derived).enumerate() {
-        if record.edge_message.is_some() {
-            let edge = UnitEdge::deserialize(&event["data"])
-                .map_err(|error| invalid(&journal.path, index + 1, error.to_string()))?;
-            // The original text matched the renderer exactly. The only part
-            // that can change when it renders again is the witness reference.
-            event["msg"] = Value::from(Payload::UnitEdge(edge).message());
+/// Only consider mismatching messages proven identical to each side's own renderer.
+pub(super) fn verified_messages(base: &Journal, head: &Journal) -> Vec<(usize, EventKind)> {
+    base.records
+        .iter()
+        .zip(&head.records)
+        .enumerate()
+        .filter_map(|(index, (base, head))| {
+            if base["msg"] == head["msg"] || base["kind"] != head["kind"] {
+                return None;
+            }
+            let base = Event::decode(&base.to_string()).ok()?;
+            let head = Event::decode(&head.to_string()).ok()?;
+            (base.msg == base.payload.message() && head.msg == head.payload.message())
+                .then(|| (index, base.kind()))
+        })
+        .collect()
+}
+
+pub(super) fn rebase_messages(
+    base: &mut Journal,
+    head: &mut Journal,
+    verified: &[(usize, EventKind)],
+    summary: &mut Summary,
+) {
+    for &(index, kind) in verified {
+        let base = &mut base.records[index];
+        let head = &mut head.records[index];
+        // Full payload equality must already hold under sequence rebasing.
+        // Render it once: both original strings were independently verified,
+        // so only the canonical payload can account for the new wording.
+        if base["data"] == head["data"]
+            && let Ok(canonical) = Event::decode(&base.to_string())
+        {
+            let message = Value::from(canonical.payload.message());
+            base["msg"] = message.clone();
+            head["msg"] = message;
+            *summary.rebased_messages.entry(kind).or_default() += 1;
         }
     }
-    Ok(())
 }
 
 fn generated_counts(event: &Value) -> Option<TrialSignal> {
@@ -164,14 +180,6 @@ pub(super) fn compare_fields(base: &mut Journal, head: &mut Journal, summary: &m
                 b.signal_seed
                     .zip(h.signal_seed)
                     .is_some_and(|(b, h)| b != h),
-            ),
-            (
-                "unit.edge.msg.failure_witness",
-                b.edge_message
-                    .as_ref()
-                    .zip(h.edge_message.as_ref())
-                    .is_some_and(|(b, h)| b != h)
-                    && base["msg"] == head["msg"],
             ),
         ] {
             summary.declare(field, changed);
