@@ -56,4 +56,4 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - Mandatory reproduction nights are rejected; retained failures and the doubling wait suffice without another gate.
 - Old-journal decoding and import after the new loop's cutover are rejected; they preserve superseded policy and compatibility work.
 - A persisted state cache and build fingerprint are rejected; journal-only reading was faster in the measured comparison and has fewer dependencies.
-- Fancy graphics and a GPU terminal are rejected; the night needs a readable plain-console screen, not a separate display service.
+- Fancy graphics, a GPU terminal and tuning-display/font options are rejected; the night uses the kernel console's 16-colour profile and built-in font, not a separate display service.

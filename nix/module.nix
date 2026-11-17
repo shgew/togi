@@ -71,27 +71,8 @@ in
       default = true;
       description = "Restore the normal boot selection (`togi night-end`) on an orderly operator shutdown or reboot of the tuning boot, so the next boot is the normal system. This is how the power button ends a night. Restart-limit retry reboots preserve the tuning entry; crash reboots return to it either way.";
     };
-    tuning.display = lib.mkOption {
-      type = lib.types.enum [
-        "console"
-        "kmscon"
-      ];
-      default = "console";
-      description = "Dashboard display in the tuning boot. console keeps the Linux virtual console; kmscon uses a GPU-accelerated terminal on tty1 with truecolour advertised to the dashboard. Repeated kmscon failures fall back to the console for this boot, without affecting tuning.";
-    };
-    tuning.kmscon.fontSize = lib.mkOption {
-      type = lib.types.ints.positive;
-      default = 27;
-      description = "DejaVu Sans Mono font size in pixels for the kmscon tuning display. The default gives 16x32 pixel cells, at least 160x45 cells on a 2560x1440 output. With multiple outputs, kmscon clones the display and uses the smallest grid.";
-    };
     backends.mprime.enable = lib.mkEnableOption "the mprime backend (unfree)";
     backends.ycruncher.enable = lib.mkEnableOption "the y-cruncher backend (unfree)";
-    tuning.consoleFont = lib.mkOption {
-      type = lib.types.nullOr (lib.types.either lib.types.str lib.types.path);
-      default = null;
-      example = lib.literalExpression ''"''${pkgs.terminus_font}/share/consolefonts/ter-i32b.psf.gz"'';
-      description = "Console font of the tuning boot, as console.font takes it. The default, null, is the kernel's built-in font whatever the system sets: 8x16 below 2560x1080 and Terminus 16x32 bold from there. The 8x16 font gives 240x67 at 1920x1080; 16x32 gives 160x45 (Medium) at 2560x1440 and 240x67 (Wide) at 3840x2160. Both cover IBM437, whose block and box glyphs the dashboard draws with. A font set here must cover them too: Terminus' ter-i fonts do, while ter-v and Lat2-Terminus fonts lack the half block the digits use.";
-    };
     settings = lib.mkOption {
       type = json.type;
       default = { };
@@ -368,7 +349,8 @@ in
               ExecStart = "${pkgs.coreutils}/bin/true";
             };
           };
-          console.font = lib.mkForce cfg.tuning.consoleFont;
+          # The built-in font covers the IBM437 glyphs used by the plain dashboard.
+          console.font = lib.mkForce null;
           boot.kernelParams = lib.mkForce (
             lib.filter (p: builtins.match "console=tty[0-9]+(,.*)?" p == null) config.boot.kernelParams
             ++ [
@@ -397,7 +379,7 @@ in
               "togi-kernel-log.service"
             ];
             wants = [ "togi-kernel-log.service" ];
-            wantedBy = lib.optional (cfg.tuning.display == "console") "multi-user.target";
+            wantedBy = [ "multi-user.target" ];
             unitConfig.ConditionPathExists = "/dev/tty1";
             # F10 stops the run, restores the boot selection and reboots.
             path = bootTools;
@@ -416,109 +398,6 @@ in
               RestartSec = 1;
               Nice = -10;
             };
-          };
-          fonts.packages = lib.mkIf (cfg.tuning.display == "kmscon") [ pkgs.dejavu_fonts ];
-          fonts.fontconfig.enable = lib.mkIf (cfg.tuning.display == "kmscon") true;
-          hardware.graphics.enable = lib.mkIf (cfg.tuning.display == "kmscon") true;
-          systemd.services.togi-kmscon = lib.mkIf (cfg.tuning.display == "kmscon") {
-            description = "togi dashboard in kmscon on tty1";
-            wantedBy = [ "multi-user.target" ];
-            after = [
-              "systemd-user-sessions.service"
-              "togi-kernel-log.service"
-              "togi-watch.service"
-            ];
-            wants = [ "togi-kernel-log.service" ];
-            conflicts = [ "togi-watch.service" ];
-            onFailure = [ "togi-watch-fallback.service" ];
-            unitConfig.ConditionPathExists = "/dev/tty1";
-            startLimitIntervalSec = 180;
-            startLimitBurst = 3;
-            path = bootTools;
-            environment = {
-              COLORTERM = "truecolor";
-              TERM = "xterm-256color";
-            };
-            serviceConfig = {
-              ExecStart = lib.escapeShellArgs (
-                [
-                  "${pkgs.kmscon}/bin/kmscon"
-                  "--vt"
-                  "1"
-                  "--no-libseat"
-                  "--switchvt"
-                  "--no-reset-env"
-                  "--no-issue"
-                  "--no-blink"
-                  "--no-mouse"
-                  "--dpms-timeout"
-                  "0"
-                  "--oneshot"
-                  "--session-max"
-                  "1"
-                  "--no-session-control"
-                  "--sb-size"
-                  "0"
-                  "--font-engine"
-                  "pango"
-                  "--font-name"
-                  "DejaVu Sans Mono"
-                  "--font-size"
-                  (toString cfg.tuning.kmscon.fontSize)
-                  "--term"
-                  "xterm-256color"
-                  "--hwaccel"
-                ]
-                ++
-                  lib.concatMap
-                    (grab: [
-                      "--grab-${grab}"
-                      ""
-                    ])
-                    [
-                      "scroll-up"
-                      "scroll-down"
-                      "page-up"
-                      "page-down"
-                      "zoom-in"
-                      "zoom-out"
-                      "session-next"
-                      "session-prev"
-                      "session-close"
-                      "terminal-new"
-                      "rotate-cw"
-                      "rotate-ccw"
-                      "reboot"
-                    ]
-                ++ [
-                  "--login"
-                  "--"
-                  (lib.getExe cfg.package)
-                  "watch"
-                  "--tuning-boot"
-                ]
-              );
-              # Direct VT/DRM access needs root; the child keeps the console watcher's existing root identity.
-              StandardInput = "tty";
-              StandardOutput = "journal";
-              StandardError = "journal";
-              TTYPath = "/dev/tty1";
-              TTYReset = true;
-              TTYVHangup = true;
-              TTYVTDisallocate = true;
-              Restart = "always";
-              RestartSec = 1;
-              Nice = -10;
-            };
-          };
-          systemd.services.togi-watch-fallback = lib.mkIf (cfg.tuning.display == "kmscon") {
-            description = "Fall back to the console after kmscon exhausts its starts";
-            after = [ "togi-kmscon.service" ];
-            serviceConfig.Type = "oneshot";
-            script = ''
-              [ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0
-              exec ${config.systemd.package}/bin/systemctl --no-block start togi-watch.service
-            '';
           };
           systemd.services.togi-console = {
             description = "togi tuning boot log on tty3";
