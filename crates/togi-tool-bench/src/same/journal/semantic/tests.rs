@@ -1,13 +1,14 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
-use togi_journal::fs::MemFs;
+use togi_journal::{EventKind, fs::MemFs};
 
 use super::{Comparison, compare_with};
-use togi_journal::EventKind;
 
 fn event(seq: u64, kind: &str, data: Value) -> Value {
-    json!({"seq": seq, "kind": kind, "msg": kind, "data": data})
+    let mut event = json!({"seq": seq, "kind": kind, "msg": kind});
+    event["data"] = data;
+    event
 }
 
 fn put(fs: &MemFs, path: &str, events: &[Value]) {
@@ -62,7 +63,7 @@ fn only_base_caps_and_sequence_identity_are_removed() {
     assert_eq!(comparison.summary.retired["ccd.cap"], 1);
     assert_eq!(comparison.summary.classes["trial.start"].identical, 1);
     assert_eq!(comparison.summary.classes["unit.edge"].identical, 1);
-    assert_eq!(comparison.summary.classes.contains_key("ccd.cap"), false);
+    assert!(!comparison.summary.classes.contains_key("ccd.cap"));
 }
 
 #[test]
@@ -583,7 +584,7 @@ fn build_normalization_retains_ruleset_and_evidence_epoch() {
 fn missing_archives_are_differences_even_when_empty() {
     let fs = MemFs::new();
     let start = event(1, "session.start", json!({"session": "s"}));
-    put(&fs, "/base/events.jsonl", &[start.clone()]);
+    put(&fs, "/base/events.jsonl", std::slice::from_ref(&start));
     put(&fs, "/head/events.jsonl", &[start]);
     put(&fs, "/base/archive/empty.jsonl", &[]);
     let compared = compare_with(

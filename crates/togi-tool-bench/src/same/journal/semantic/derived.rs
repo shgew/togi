@@ -9,10 +9,10 @@ use togi_journal::{Event, EventKind, Payload, TrialSignal};
 use super::{Journal, JournalError, Summary, invalid};
 
 #[derive(Default)]
-pub(super) struct Record {
-    role_seed: Option<u64>,
-    signal_seed: Option<u64>,
-    phase_seed: Option<u64>,
+pub(super) struct Seeds {
+    role: Option<u64>,
+    signal: Option<u64>,
+    phase: Option<u64>,
 }
 
 fn first_cause(event: &Value) -> Option<u64> {
@@ -49,17 +49,17 @@ fn rebase_seed(
 pub(super) fn prepare(
     journal: &mut Journal,
     identities: &super::Sequences,
-) -> Result<Vec<Record>, JournalError> {
+) -> Result<Vec<Seeds>, JournalError> {
     let mut intents = HashMap::new();
     let mut starts = HashMap::new();
     let mut phase_seeds = HashMap::new();
     let mut derived = Vec::with_capacity(journal.records.len());
     for (index, event) in journal.records.iter_mut().enumerate() {
-        let mut record = Record::default();
+        let mut seeds = Seeds::default();
         let line = index + 1;
         let seq = event["seq"]
             .as_u64()
-            .expect("canonicalize validated the sequence");
+            .ok_or_else(|| invalid(&journal.path, line, "invalid sequence"))?;
         match event["kind"].as_str() {
             Some("trial.intent") => {
                 if let Some(trial) = event["data"]["trial"].as_str() {
@@ -73,7 +73,7 @@ pub(super) fn prepare(
                 if let Some(roles) = event["data"].get_mut("roles").and_then(Value::as_array_mut) {
                     for role in roles {
                         if role["schedule"]["load"]["kind"] == "random" {
-                            record.role_seed = Some(rebase_seed(
+                            seeds.role = Some(rebase_seed(
                                 &mut role["schedule"]["load"]["seed"],
                                 intent,
                                 identities,
@@ -102,15 +102,17 @@ pub(super) fn prepare(
                         &journal.path,
                         line,
                     )?;
-                    record.signal_seed = Some(seed);
-                    phase_seeds.insert(start.expect("validated signal start"), seed);
+                    seeds.signal = Some(seed);
+                    if let Some(start) = start {
+                        phase_seeds.insert(start, seed);
+                    }
                 } else if event["data"]["schedule"].is_null() {
-                    record.phase_seed = start.and_then(|seq| phase_seeds.get(&seq).copied());
+                    seeds.phase = start.and_then(|seq| phase_seeds.get(&seq).copied());
                 }
             }
             _ => {}
         }
-        derived.push(record);
+        derived.push(seeds);
     }
     Ok(derived)
 }
@@ -173,13 +175,11 @@ pub(super) fn compare_fields(base: &mut Journal, head: &mut Journal, summary: &m
         for (field, changed) in [
             (
                 "trial.start.data.roles[*].schedule.load.seed",
-                b.role_seed.zip(h.role_seed).is_some_and(|(b, h)| b != h),
+                b.role.zip(h.role).is_some_and(|(b, h)| b != h),
             ),
             (
                 "trial.signal.data.schedule.seed",
-                b.signal_seed
-                    .zip(h.signal_seed)
-                    .is_some_and(|(b, h)| b != h),
+                b.signal.zip(h.signal).is_some_and(|(b, h)| b != h),
             ),
         ] {
             summary.declare(field, changed);
@@ -187,9 +187,11 @@ pub(super) fn compare_fields(base: &mut Journal, head: &mut Journal, summary: &m
         // Only paired telemetry from a verified random phase with a moved
         // seed can vary. Signal kind, trial/cause, timestamps and outcome
         // records still go through the full-record comparison below.
-        if b.phase_seed.zip(h.phase_seed).is_some_and(|(b, h)| b != h)
+        if b.phase.zip(h.phase).is_some_and(|(b, h)| b != h)
             && let (Some(b), Some(h)) = (generated_counts(base), generated_counts(head))
             && b.trial == h.trial
+            && let (Some(base_data), Some(head_data)) =
+                (base["data"].as_object_mut(), head["data"].as_object_mut())
         {
             for (field, label, changed) in [
                 ("stops", "trial.signal.data.stops", b.stops != h.stops),
@@ -197,12 +199,8 @@ pub(super) fn compare_fields(base: &mut Journal, head: &mut Journal, summary: &m
             ] {
                 summary.declare(label, changed);
                 if changed {
-                    for event in [&mut *base, &mut *head] {
-                        event["data"]
-                            .as_object_mut()
-                            .expect("validated signal")
-                            .remove(field);
-                    }
+                    base_data.remove(field);
+                    head_data.remove(field);
                 }
             }
             let message_changed = base["msg"] != head["msg"];

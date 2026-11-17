@@ -18,7 +18,7 @@ struct Journal {
     path: PathBuf,
     session: String,
     records: Vec<Value>,
-    derived: Vec<derived::Record>,
+    derived: Vec<derived::Seeds>,
 }
 
 /// Counts compare the nth remaining record of each class, without hiding other classes.
@@ -283,7 +283,7 @@ fn retain_and_index(
             }
             let kind = event["kind"]
                 .as_str()
-                .expect("load validated the event kind");
+                .ok_or_else(|| invalid(&journal.path, line + 1, "invalid event kind"))?;
             let canonical = if let Some(count) = retired_counts.get_mut(kind) {
                 *count += 1;
                 previous_retired = Some(seq);
@@ -328,12 +328,9 @@ fn retain_and_index(
             }
         }
         if !retired.is_empty() {
-            journal.records.retain(|event| {
-                map[&event["seq"]
-                    .as_u64()
-                    .expect("canonicalize validated the sequence")]
-                    .is_some()
-            });
+            journal
+                .records
+                .retain(|event| event["seq"].as_u64().is_none_or(|seq| map[&seq].is_some()));
         }
         if identities.insert(journal.session.clone(), map).is_some() {
             return Err(invalid(&journal.path, 0, "duplicate session journal"));
@@ -506,20 +503,17 @@ fn counts(base: &[Value], head: &[Value], summary: &mut Summary) {
         total.base += base.len();
         total.head += head.len();
         for i in 0..base.len().max(head.len()) {
-            match (base.get(i), head.get(i)) {
-                (Some(base), Some(head)) => {
-                    if base == head {
-                        total.identical += 1;
-                    } else {
-                        total.differing += 1;
-                    }
-                    total.messages += usize::from(base.get("msg") != head.get("msg"));
-                    total.evidence_differing += usize::from(!evidence_equal(base, head));
-                }
-                _ => {
+            if let (Some(base), Some(head)) = (base.get(i), head.get(i)) {
+                if base == head {
+                    total.identical += 1;
+                } else {
                     total.differing += 1;
-                    total.evidence_differing += 1;
                 }
+                total.messages += usize::from(base.get("msg") != head.get("msg"));
+                total.evidence_differing += usize::from(!evidence_equal(base, head));
+            } else {
+                total.differing += 1;
+                total.evidence_differing += 1;
             }
         }
     }

@@ -1146,8 +1146,7 @@ fn options() -> super::Options {
         head: PathBuf::from("/head"),
         suite: PathBuf::from("suite.json"),
         smoke: false,
-        semantic: false,
-        retired: Vec::new(),
+        semantic: None,
         keep_going: false,
         no_cache: false,
         keep: None,
@@ -1201,7 +1200,7 @@ fn two_trees_that_build_the_same_simulator_from_the_same_inputs_run_nothing(case
     options.keep = keep.then(|| PathBuf::from("/kept"));
     assert!(super::identical_report(&options, 4, true, super::Timings::default()).is_none());
 
-    options.semantic = true;
+    options.semantic = Some(Vec::new());
     options.no_cache = false;
     options.keep = None;
     assert!(super::identical_report(&options, 4, true, super::Timings::default()).is_none());
@@ -1537,7 +1536,7 @@ fn semantic_comparison_retains_reference_meaning_after_base_caps_disappear() {
     config.fresh = true;
     config.keep_going = true;
     let outcome = compare::run(&same_sessions(&[1]), &config, &fake).unwrap();
-    assert_eq!(outcome.different(), false);
+    assert!(!outcome.different());
     assert_eq!(outcome.scheduled, [1, 1]);
     assert_eq!(outcome.semantic.unwrap().retired["ccd.cap"], 1);
 }
@@ -1554,7 +1553,7 @@ fn semantic_mode_never_uses_raw_digest_equality_to_hide_head_caps() {
     config.fresh = true;
     config.keep_going = true;
     let outcome = compare::run(&same_sessions(&[1]), &config, &fake).unwrap();
-    assert_eq!(outcome.different(), true);
+    assert!(outcome.different());
     assert_eq!(outcome.semantic.unwrap().classes["ccd.cap"].head, 1);
 }
 

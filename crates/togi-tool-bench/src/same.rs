@@ -41,11 +41,9 @@ pub struct Options {
     pub suite: PathBuf,
     /// Compares only the sessions the head's suite lists under `smoke`.
     pub smoke: bool,
-    /// Compare retained journal semantics after rebasing sequence references.
+    /// Retired base-side kinds when comparing semantic rather than raw journals.
     /// Runs both sides freshly and reports every session; never uses raw digest equality.
-    pub semantic: bool,
-    /// Record kinds to drop on the base side of a semantic comparison.
-    pub retired: Vec<String>,
+    pub semantic: Option<Vec<String>>,
     /// Reports every differing session instead of stopping at the first.
     pub keep_going: bool,
     /// Runs every session on both trees instead of using cached digests; the runs are still cached.
@@ -260,7 +258,7 @@ fn execute_with(
     let built = started.elapsed();
     let keys = [0, 1].map(|side| digests::key(simulators[side].digest(), options.max_boots.get()));
     let pairs = compare::pair(runs);
-    if options.semantic
+    if options.semantic.is_some()
         && let Some(pair) = pairs
             .iter()
             .find(|pair| pair.runs.iter().all(Option::is_some) && pair.inputs[0] != pair.inputs[1])
@@ -312,14 +310,14 @@ fn execute_with(
         fleet,
         timeout: options.timeout,
         max_boots: options.max_boots,
-        semantic: options.semantic.then_some(options.retired.as_slice()),
+        semantic: options.semantic.as_deref(),
     };
     let config = Config {
         jobs: options.jobs.get(),
         keep: options.keep.is_some(),
-        keep_going: options.keep_going || options.semantic,
-        fresh: options.no_cache || options.keep.is_some() || options.semantic,
-        caches: if options.semantic {
+        keep_going: options.keep_going || options.semantic.is_some(),
+        fresh: options.no_cache || options.keep.is_some() || options.semantic.is_some(),
+        caches: if options.semantic.is_some() {
             [None, None]
         } else {
             [Some(&caches[0]), Some(&caches[1])]
@@ -367,7 +365,7 @@ fn identical_report(
     identical: bool,
     timings: Timings,
 ) -> Option<Report> {
-    if !identical || options.no_cache || options.keep.is_some() || options.semantic {
+    if !identical || options.no_cache || options.keep.is_some() || options.semantic.is_some() {
         return None;
     }
     Some(Report {
@@ -662,8 +660,7 @@ mod build_tests {
                 head: self.dir.path().join("head"),
                 suite: PathBuf::from("suite.json"),
                 smoke: false,
-                semantic: false,
-                retired: Vec::new(),
+                semantic: None,
                 keep_going: false,
                 no_cache: false,
                 keep: None,
