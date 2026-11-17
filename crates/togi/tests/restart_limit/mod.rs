@@ -220,17 +220,10 @@ fn the_state_directory_flag_is_accepted_after_the_command() {
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
 }
 
-#[test_case::test_case(None, "entity not found"; "unreadable")]
-#[test_case::test_case(Some(&b"\xff\xfe"[..]), "invalid utf-8"; "not text")]
-#[test_case::test_case(Some(&b""[..]), "setup is malformed"; "empty")]
-#[test_case::test_case(Some(&b"{ not json"[..]), "setup is malformed"; "not json")]
-#[test_case::test_case(Some(&b"[\"grub\"]"[..]), "setup is malformed"; "not an object")]
-#[test_case::test_case(Some(&br#"{"loader":"lilo"}"#[..]), "setup is malformed"; "unknown loader")]
-#[test_case::test_case(Some(&br#"{"loader":"grub","grubenv":"/boot/grubenv"}"#[..]), "setup is malformed"; "missing entry")]
-fn a_night_setup_that_cannot_be_loaded_fails_before_any_retry_state_or_reboot(
-    setup: Option<&[u8]>,
-    cause: &str,
-) {
+#[test_case::test_case(None; "absent")]
+#[test_case::test_case(Some(&br#"{"loader":"systemd-boot","esp":"/boot","boot":"/boot","state":"/var/lib/togi-boot","specialisation":"togi"}"#[..]); "former systemd-boot setup")]
+#[test_case::test_case(Some(&br#"{"loader":"grub","grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#[..]); "grub setup")]
+fn the_retired_setup_argument_fails_before_any_retry_state_or_reboot(setup: Option<&[u8]>) {
     let host = Host::new();
     let state = support::MemoryDir::new();
     if let Some(bytes) = setup {
@@ -243,7 +236,11 @@ fn a_night_setup_that_cannot_be_loaded_fails_before_any_retry_state_or_reboot(
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
     assert_eq!(ran.out, "");
     assert!(ran.err.starts_with("togi restart-limit: "), "{}", ran.err);
-    assert!(ran.err.contains(cause), "{}", ran.err);
+    assert!(
+        ran.err.contains("requires a GRUB environment file"),
+        "{}",
+        ran.err
+    );
     assert_eq!(
         host.grubenvs.borrow().as_slice(),
         [std::path::PathBuf::from(SETUP_PATH)]

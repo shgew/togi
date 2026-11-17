@@ -1401,16 +1401,11 @@ fn a_dead_end_that_asks_for_no_reboot_does_not_reboot() {
     assert_eq!(fake.reboots.get(), 0, "{err}");
 }
 
-#[test_case::test_case(None, "entity not found"; "unreadable")]
-#[test_case::test_case(Some(&b"\xff\xfe"[..]), "invalid utf-8"; "not text")]
-#[test_case::test_case(Some(&b""[..]), "setup is malformed"; "empty")]
-#[test_case::test_case(Some(&b"{ not json"[..]), "setup is malformed"; "not json")]
-#[test_case::test_case(Some(&b"[\"grub\"]"[..]), "setup is malformed"; "not an object")]
-#[test_case::test_case(Some(&br#"{"loader":"lilo"}"#[..]), "setup is malformed"; "unknown loader")]
-#[test_case::test_case(Some(&br#"{"loader":"grub","grubenv":"/boot/grubenv"}"#[..]), "setup is malformed"; "missing entry")]
-fn a_tuning_boot_whose_night_setup_cannot_be_loaded_fails_before_any_journal_or_hardware_work(
+#[test_case::test_case(None; "absent")]
+#[test_case::test_case(Some(&br#"{"loader":"systemd-boot","esp":"/boot","boot":"/boot","state":"/var/lib/togi-boot","specialisation":"togi"}"#[..]); "former systemd-boot setup")]
+#[test_case::test_case(Some(&br#"{"loader":"grub","grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#[..]); "grub setup")]
+fn a_tuning_boot_given_the_retired_setup_argument_fails_before_any_journal_or_hardware_work(
     setup: Option<&[u8]>,
-    cause: &str,
 ) {
     use togi_tuningboot::night::SETUP_PATH;
 
@@ -1425,7 +1420,7 @@ fn a_tuning_boot_whose_night_setup_cannot_be_loaded_fails_before_any_journal_or_
     assert_eq!(exit, Exit::Error, "{err}");
     assert_eq!(out, "");
     assert!(err.starts_with("togi run: "), "{err}");
-    assert!(err.contains(cause), "{err}");
+    assert!(err.contains("requires a GRUB environment file"), "{err}");
     assert_eq!(*fake.calls.borrow(), ["check_platform"]);
     assert_eq!((fake.boots_read.get(), fake.opened.get()), (0, 0));
     assert_eq!(fake.reboots.get(), 0);

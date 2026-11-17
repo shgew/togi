@@ -293,7 +293,7 @@ The tuning entry boots to a console with no desktop. tty1 shows `togi watch --tu
 
 End the night with `F10` on the tuning dashboard and answer `y` to `Reboot into the day cycle?`, which stops the run cleanly first, or use the power button, `poweroff` or `reboot`. The tuner also ends it at a dead end or its restart limit. To keep tuning across your own reboots instead, set `services.togi.tuning.leaveOnShutdown = false;`. Automatic restart-limit retry reboots keep the tuning entry even with the option on ([retry policy](spec/runtime.md#restart-limit-retry-boots-and-leave-reasons)).
 
-Ending restores the previous GRUB selection exactly. If the day had no saved entry, GRUB uses its default; togi never chooses a normal generation.
+Ending restores the previous GRUB selection exactly. If the day had no saved entry, GRUB uses its default; togi never chooses a normal generation. If `togi restart-limit` or the shutdown hook's `togi night-end` itself fails, the module's fallback only unsets `saved_entry`, so the next boot is GRUB's default rather than an earlier saved day entry ([retry policy](spec/runtime.md#restart-limit-retry-boots-and-leave-reasons)).
 
 You can also pick the tuning specialisation in the GRUB menu, which remembers that choice automatically. A menu-picked tuning boot runs no stock confirmation of its own: without a current attestation from an earlier `togi night` in a normal boot, it ends before any trial with `stock_unattested` (exit 12); a reset, a ruleset transition or a firmware change needs a new answer first ([Night and day](spec/runtime.md#night-and-day)). The module installs the GRUB tools and writes `/etc/togi/night.json`.
 

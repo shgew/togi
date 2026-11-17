@@ -30,7 +30,7 @@ use togi_journal::fs::Fs;
 use togi_journal::{MemFs, Payload};
 use togi_machine::{BiosContext, BootId, Machine};
 use togi_render::OutputFacts;
-use togi_tuningboot::night::{SETUP_PATH, Setup};
+use togi_tuningboot::night::SETUP_PATH;
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 use togi_watchtest::{Scenario, install_with_fs};
 
@@ -548,14 +548,15 @@ impl System for Host {
         self.day_diagnosis.borrow_mut().take().unwrap()
     }
 
-    /// Like the real host's: the night setup file is read and decoded before a loader opens, so an unreadable or
-    /// malformed one fails here; any other selection is GRUB's environment.
+    /// Like the real host's: the retired night setup path is refused without being opened; any other
+    /// path is GRUB's environment.
     fn bootloader(&self, grubenv: &Path) -> io::Result<Box<dyn Bootloader>> {
         self.grubenvs.borrow_mut().push(grubenv.to_owned());
         if grubenv == Path::new(SETUP_PATH) {
-            self.read_config(grubenv)?
-                .parse::<Setup>()
-                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "systemd-boot is not supported; --tuning-boot requires a GRUB environment file",
+            ));
         }
         let values = self
             .count
