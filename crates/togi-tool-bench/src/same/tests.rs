@@ -1518,6 +1518,18 @@ fn a_simulator_that_leaves_no_journal_fails_the_comparison_and_keeps_the_runs() 
 }
 
 #[test]
+fn semantic_comparison_refuses_changed_inputs_for_a_paired_session() {
+    let mut pairs = same_sessions(&[1, 2]);
+    super::check_semantic_inputs(&pairs).unwrap();
+
+    pairs[1].inputs[1].push_str("changed");
+    let Err(SameError::SemanticInputs { key }) = super::check_semantic_inputs(&pairs) else {
+        panic!("expected a semantic input mismatch");
+    };
+    assert_eq!(key, "s/dev-2");
+}
+
+#[test]
 fn semantic_comparison_retains_reference_meaning_after_base_caps_disappear() {
     let root = MemoryDir::new();
     let fleet = Fleet::new();

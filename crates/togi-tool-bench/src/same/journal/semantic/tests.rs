@@ -66,6 +66,29 @@ fn only_base_caps_and_sequence_identity_are_removed() {
     assert!(!comparison.summary.classes.contains_key("ccd.cap"));
 }
 
+#[test_case::test_case("/cause", &json!([2]), json!([1]); "envelope cause")]
+#[test_case::test_case("/data/certificate", &json!(2), json!(1); "payload certificate")]
+fn changing_a_reference_to_another_retained_record_is_a_difference(
+    reference: &str,
+    rebased: &Value,
+    changed: Value,
+) {
+    let [base, mut head] = histories();
+    *head[2].pointer_mut(reference).unwrap() = changed.clone();
+    let comparison = compare(&base, &head).unwrap();
+    assert_eq!(comparison.summary.classes["trial.start"].differing, 1);
+
+    let difference = comparison.first.unwrap();
+    assert_eq!(difference.line, Some(3));
+    let head_record: Value = serde_json::from_str(&difference.head).unwrap();
+    assert_eq!(head_record, head[2]);
+    assert_eq!(head_record.pointer(reference), Some(&changed));
+    let mut base_record: Value = serde_json::from_str(&difference.base).unwrap();
+    assert_eq!(base_record.pointer(reference), Some(rebased));
+    *base_record.pointer_mut(reference).unwrap() = changed;
+    assert_eq!(base_record, head_record);
+}
+
 #[test]
 fn explicitly_named_kinds_are_counted_separately_and_only_retired_on_base() {
     let fs = MemFs::new();
@@ -280,6 +303,46 @@ fn edge_message_rebases_the_witness_but_not_arbitrary_wording() {
     assert_eq!(comparison.summary.rebased_messages[&EventKind::UnitEdge], 1);
     head[2]["msg"] = json!("CCD0 edge unknown -> observed -30 (failure #2); ceiling -24, margin 5");
     assert!(compare(&base, &head).unwrap().first.is_some());
+}
+
+#[test]
+fn the_semantic_report_discloses_retirement_and_every_normalized_difference() {
+    let mut base = random_history(true, 49, 48);
+    let mut head = random_history(false, 50, 48);
+    let mut base_plan = event(9, "night.plan", json!({}));
+    base_plan["cause"] = json!([8]);
+    let mut head_plan = event(7, "night.plan", json!({}));
+    head_plan["cause"] = json!([6]);
+    base.extend([
+        event(8, "ccd.cap", json!({})),
+        base_plan,
+        event(10, "failure", json!({})),
+        observed_edge(11, 10),
+    ]);
+    head.extend([
+        head_plan,
+        event(8, "failure", json!({})),
+        observed_edge(9, 8),
+    ]);
+    let comparison = compare(&base, &head).unwrap();
+    assert_eq!(comparison.first, None);
+
+    let mut report = Vec::new();
+    comparison.summary.write(&mut report).unwrap();
+    let report = String::from_utf8(report).unwrap();
+    let (disclosures, _) = report.split_once("semantic: failure:").unwrap();
+    assert_eq!(
+        disclosures,
+        concat!(
+            "semantic: retired ccd.cap: base_dropped=2 head_dropped=0\n",
+            "semantic: rebased 1 last-event cursor causes across retired records\n",
+            "semantic: rebased unit.edge.msg from typed payload references: differing_records=1\n",
+            "semantic: declared trial.signal.data.schedule.seed: differing_records=1\n",
+            "semantic: declared trial.signal.data.stops: differing_records=1\n",
+            "semantic: declared trial.signal.msg.phase_counts: differing_records=1\n",
+            "semantic: declared trial.start.data.roles[*].schedule.load.seed: differing_records=1\n",
+        )
+    );
 }
 
 fn detected_crash(seq: u64, in_flight: u64) -> Value {

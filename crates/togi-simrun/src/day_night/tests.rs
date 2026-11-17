@@ -11,7 +11,7 @@ use togi_sim::day_night::{Scenario, TrialClass, TruthState};
 use super::machine::Runtime;
 use super::{
     CalendarConfig, DayClassification, DayObservation, EndAnswer, FixedMargin, Night, Policy,
-    PolicyKind, RunError, run, run_with_policy,
+    PolicyKind, PolicyRole, RunError, run, run_with_policy,
 };
 
 #[derive(Default)]
@@ -830,13 +830,18 @@ fn convergence_records_day_and_depth_and_ends_the_climb() {
     );
 }
 
-#[test_case("co-zero", PolicyKind::CoZero; "stock")]
-#[test_case("fixed-margin", PolicyKind::FixedMargin; "fixed margin")]
-#[test_case("ruleset13", PolicyKind::Ruleset13; "production")]
-fn a_label_resolves_to_the_policy_that_prints_it(label: &str, expected: PolicyKind) {
+#[test_case("co-zero", PolicyKind::CoZero, PolicyRole::Diagnostic; "stock")]
+#[test_case("fixed-margin", PolicyKind::FixedMargin, PolicyRole::Diagnostic; "fixed margin")]
+#[test_case("ruleset13", PolicyKind::Ruleset13, PolicyRole::Gate; "production")]
+fn a_label_resolves_to_the_policy_that_prints_it(
+    label: &str,
+    expected: PolicyKind,
+    role: PolicyRole,
+) {
     let kind = PolicyKind::by_label(label).unwrap();
     assert_eq!(kind, expected);
     assert_eq!(kind.label(), label);
+    assert_eq!(kind.role(), role);
 }
 
 #[test]

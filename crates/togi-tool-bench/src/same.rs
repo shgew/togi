@@ -258,14 +258,8 @@ fn execute_with(
     let built = started.elapsed();
     let keys = [0, 1].map(|side| digests::key(simulators[side].digest(), options.max_boots.get()));
     let pairs = compare::pair(runs);
-    if options.semantic.is_some()
-        && let Some(pair) = pairs
-            .iter()
-            .find(|pair| pair.runs.iter().all(Option::is_some) && pair.inputs[0] != pair.inputs[1])
-    {
-        return Err(fail(SameError::SemanticInputs {
-            key: pair.key.to_string(),
-        }));
+    if options.semantic.is_some() {
+        check_semantic_inputs(&pairs).map_err(fail)?;
     }
     let identical = same_inputs(&keys, &pairs);
     let keyed = started.elapsed();
@@ -385,6 +379,18 @@ fn identical_report(
         timings,
         warnings: Vec::new(),
     })
+}
+
+fn check_semantic_inputs(pairs: &[compare::Pair]) -> Result<(), SameError> {
+    if let Some(pair) = pairs
+        .iter()
+        .find(|pair| pair.runs.iter().all(Option::is_some) && pair.inputs[0] != pair.inputs[1])
+    {
+        return Err(SameError::SemanticInputs {
+            key: pair.key.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn same_inputs(keys: &[String; 2], pairs: &[compare::Pair]) -> bool {
