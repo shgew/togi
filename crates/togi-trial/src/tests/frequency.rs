@@ -31,7 +31,7 @@ fn policies() -> Vec<FrequencyPolicy> {
 }
 
 fn rig(machine: &Fake) -> super::harness::Rig {
-    rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+    let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
         env.controller = Arc::new(Recording::default());
         env.frequency = Arc::new(Limits::new(
             Arc::new(machine.clone()),
@@ -39,7 +39,9 @@ fn rig(machine: &Fake) -> super::harness::Rig {
             env.preparer.fs.clone(),
             env.durability,
         ));
-    })
+    });
+    rig.fake.on_launch(printing("verified self-test\n"));
+    rig
 }
 
 fn managed() -> togi_machine::TrialSpec {
@@ -95,6 +97,24 @@ fn refused_cap_withholds_pass_without_hiding_computation_failure() {
             (failure.signal, failure.core),
             (Signal::ComputationError, core(2))
         );
+    }));
+}
+
+#[test_case::test_case("PIN FAILED\n", "core 02 mprime setup error: PIN FAILED"; "backend setup")]
+#[test_case::test_case("", "core 02 has no backend-verified result"; "missing checked result")]
+fn backend_outcome_reason_precedes_controller_cap_error(output: &'static str, reason: &str) {
+    crate::testing::runtime(true).block_on(local(async {
+        let machine = Fake::new(policies());
+        machine.refuse_write(true);
+        let rig = rig(&machine);
+        rig.fake.on_launch(printing(output));
+        let handle = rig.start(managed()).await.unwrap();
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(run.finished.result.inconclusive.as_deref(), Some(reason));
+        assert!(run.progress().iter().any(|line| {
+            line.starts_with("controller placement inconclusive: controller frequency limits:")
+        }));
     }));
 }
 
@@ -172,7 +192,10 @@ fn incomplete_managed_affinity_withholds_pass() {
                 env.durability,
             ));
         });
+        let (print, release) = super::harness::printing_when_released("verified self-test\n");
+        rig.fake.on_launch(print);
         let handle = rig.start(managed()).await.unwrap();
+        release.send_replace(());
         let run = finish(&handle).await;
         assert!(
             run.finished
@@ -199,6 +222,8 @@ fn single_ccd_excludes_only_host_and_keeps_other_workers_uncapped() {
                 env.durability,
             ));
         });
+        let (print, release) = super::harness::printing_when_released("verified self-test\n");
+        rig.fake.on_launch(print);
         let mut trial = spec(
             Regime::R7,
             &[0, 1, 2, 3, 4, 5, 6, 7],
@@ -209,6 +234,7 @@ fn single_ccd_excludes_only_host_and_keeps_other_workers_uncapped() {
             purpose: Purpose::Exact,
         };
         let handle = rig.start(trial).await.unwrap();
+        release.send_replace(());
         assert_eq!(
             machine.scaling_max_khz(FrequencyPolicyId::new(2)).unwrap(),
             400_000
@@ -293,7 +319,10 @@ fn an_uncapped_trial_recovers_a_failed_restore_first_or_is_refused() {
         );
 
         machine.refuse_write(false);
+        let (print, release) = super::harness::printing_when_released("verified self-test\n");
+        rig.fake.on_launch(print);
         let handle = rig.start(uncapped()).await.unwrap();
+        release.send_replace(());
         assert_eq!(
             machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
             5_700_000,

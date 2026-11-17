@@ -18,8 +18,10 @@ use togi_machine::{CpuId, Workload};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Line {
     Other,
-    /// What passed, as the trial reports it.
+    /// Liveness or status only; never proof of a correct computation.
     Progress(String),
+    /// The self-test this backend instance completed and checked, not a CPU-time observation.
+    Verified(String),
     ComputationError,
     SetupError,
     /// The program could not pin itself; `None` means the message supplied no recognizable CPU.

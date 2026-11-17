@@ -11,6 +11,7 @@ use togi_backend::FileName;
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, timeout_at};
 
+use crate::evidence::Verification;
 use crate::output::{CHUNK, Frame, Framer};
 
 /// The most one poll reads from one file.
@@ -34,6 +35,8 @@ pub(crate) enum Refusal {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum WatchError {
+    #[error("required backend result file is missing")]
+    Missing,
     #[error("unsupported watched output file")]
     Unsupported,
     #[error("refused watched output file: {0}")]
@@ -519,6 +522,9 @@ pub(crate) struct Watched {
     buffer: Vec<u8>,
     inflight: Option<JoinHandle<Fetched>>,
     final_read_pending: bool,
+    /// No checked result is eligible until a post-start poll has fenced the old backlog.
+    /// `Outside` then withholds the first line when that snapshot ended in a partial line.
+    verification: Option<Verification>,
     #[cfg(test)]
     read_at: Option<ReadAt>,
 }
@@ -548,6 +554,7 @@ impl Watched {
             buffer: Vec::new(),
             inflight: None,
             final_read_pending: false,
+            verification: None,
             #[cfg(test)]
             read_at: None,
         }
@@ -562,8 +569,8 @@ impl Watched {
         }
     }
 
-    /// Nothing more will be read now: fully read, never created, or rejected. A read still in
-    /// flight, or a final read that ended unfinished, is not drained, whatever the last poll saw.
+    /// No accepted bytes remain unread; absence is checked separately by `finish` and never
+    /// supplies a verified result. An in-flight or unfinished final read is not drained.
     pub(crate) const fn drained(&self) -> bool {
         if self.final_read_pending || self.inflight.is_some() {
             return false;
@@ -634,15 +641,24 @@ impl Watched {
         }
     }
 
-    /// Reads at most 64 KiB from the saved offset and frames it in 4 KiB chunks. `sink` breaks
-    /// to stop after a line; `stop` is asked before each chunk and after each line, and a
-    /// stop leaves the offset exactly after the last consumed byte, so the next poll resumes
-    /// without loss or duplication. The wait for the blocking read ends at `until`, leaving the
-    /// read in flight and the poll pending.
+    /// Reads plain lines without granting verification; the measured reader uses `poll_interval`.
     pub(crate) async fn poll(
         &mut self,
         until: Instant,
         sink: &mut impl FnMut(&str) -> ControlFlow<()>,
+        stop: &mut impl FnMut() -> bool,
+    ) -> Poll {
+        self.poll_interval(until, None, &mut |line, _verification| sink(line), stop)
+            .await
+    }
+
+    /// Fences the first post-start backlog, and each replacement or observed truncation, before
+    /// granting verification. Polls remain bounded to 64 KiB and leave any unread bytes in place.
+    pub(crate) async fn poll_interval(
+        &mut self,
+        until: Instant,
+        deadline: Option<Instant>,
+        sink: &mut impl FnMut(&str, Verification) -> ControlFlow<()>,
         stop: &mut impl FnMut() -> bool,
     ) -> Poll {
         if matches!(self.state, State::Stopped) {
@@ -665,6 +681,7 @@ impl Watched {
             Outcome::Missing if self.backlog() => self.reject(WatchError::Lost),
             Outcome::Missing => {
                 self.buffer = buffer;
+                self.verification = None;
                 Poll::Idle
             }
             Outcome::Other => self.reject(WatchError::Unsupported),
@@ -678,13 +695,46 @@ impl Watched {
                 got,
                 error,
             } => {
+                let restarted = matches!(
+                    self.state,
+                    State::Tailing { id: previous, size: accepted, .. }
+                        if previous != id || size < accepted
+                );
+                let mut next = if restarted { None } else { self.verification };
                 self.state = State::Tailing {
                     id,
                     offset: start,
                     size,
                     drained: false,
                 };
-                let poll = self.consume(&buffer[..got], start, size, error, sink, stop);
+                let poll = self.consume(
+                    &buffer[..got],
+                    start,
+                    size,
+                    error,
+                    &mut |line| {
+                        let verification = if next == Some(Verification::Measured)
+                            && deadline.is_some_and(|end| Instant::now() < end)
+                        {
+                            Verification::Measured
+                        } else {
+                            Verification::Outside
+                        };
+                        if next.is_some() {
+                            next = Some(Verification::Measured);
+                        }
+                        sink(line, verification)
+                    },
+                    stop,
+                );
+                if next.is_none() && matches!(poll, Poll::Drained) {
+                    next = Some(if self.framer.pending() {
+                        Verification::Outside
+                    } else {
+                        Verification::Measured
+                    });
+                }
+                self.verification = next;
                 self.buffer = buffer;
                 poll
             }
@@ -754,7 +804,7 @@ impl Watched {
 
     /// The final read, once the writers are confirmed stopped: polls to the end of the file,
     /// whatever an earlier poll saw, then classifies the unterminated last line exactly once.
-    /// Anything but `Drained` or `Idle` leaves the file undrained or failed.
+    /// A missing required output is an error, even when another stream reported success.
     pub(crate) async fn finish(
         &mut self,
         _writers: WritersStopped,
@@ -768,8 +818,9 @@ impl Watched {
         };
         let poll = loop {
             match self.poll(until, &mut every, &mut late).await {
+                Poll::Idle => break self.stop(WatchError::Missing),
                 Poll::Pending if Instant::now() < until => {}
-                other @ (Poll::Idle | Poll::Drained | Poll::Pending | Poll::Failed(_)) => {
+                other @ (Poll::Drained | Poll::Pending | Poll::Failed(_)) => {
                     break other;
                 }
             }
@@ -913,6 +964,24 @@ mod tests {
             (poll, lines)
         }
 
+        async fn poll_interval(&mut self) -> (Poll, Vec<(String, Verification)>) {
+            let mut lines = Vec::new();
+            let until = far();
+            let poll = self
+                .watched
+                .poll_interval(
+                    until,
+                    Some(until),
+                    &mut |line, verification| {
+                        lines.push((line.to_owned(), verification));
+                        ControlFlow::Continue(())
+                    },
+                    &mut || false,
+                )
+                .await;
+            (poll, lines)
+        }
+
         async fn finish(&mut self, until: Instant) -> (Poll, Vec<String>) {
             let mut lines = Vec::new();
             let poll = self
@@ -926,13 +995,98 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy)]
+    enum Change {
+        Replacement,
+        Truncation,
+    }
+
+    #[test_case::test_case(Change::Replacement; "replacement")]
+    #[test_case::test_case(Change::Truncation; "truncation")]
+    fn changed_file_content_must_be_fenced_again_before_it_can_verify(change: Change) {
+        crate::testing::runtime(true).block_on(async {
+            let mut f = fixture();
+            f.append(b"ordinary startup record longer than a checked result\n");
+            let replacement = f.directory().join("previous-results");
+            f.memory()
+                .write_file(&replacement, b"verified self-test\n", None)
+                .unwrap();
+            assert_eq!(
+                f.poll_interval().await.1,
+                [(
+                    "ordinary startup record longer than a checked result".to_owned(),
+                    Verification::Outside
+                )]
+            );
+            tokio::time::advance(Duration::from_secs(1)).await;
+            match change {
+                Change::Replacement => f.memory().rename(&replacement, f.path()).unwrap(),
+                Change::Truncation => f
+                    .memory()
+                    .write_file(f.path(), b"verified self-test\n", None)
+                    .unwrap(),
+            }
+            let (poll, lines) = f.poll_interval().await;
+            assert!(matches!(poll, Poll::Drained));
+            assert_eq!(
+                lines,
+                [("verified self-test".to_owned(), Verification::Outside)]
+            );
+            f.append(b"verified next-test\n");
+            assert_eq!(
+                f.poll_interval().await.1,
+                [("verified next-test".to_owned(), Verification::Measured)]
+            );
+        });
+    }
+
+    #[derive(Clone, Copy)]
+    enum Arrival {
+        Created,
+        Renamed,
+    }
+
+    #[test_case::test_case(Arrival::Created; "created after absence")]
+    #[test_case::test_case(Arrival::Renamed; "old results renamed after absence")]
+    fn a_file_first_accepted_after_absence_is_fenced_before_later_appends_verify(arrival: Arrival) {
+        crate::testing::runtime(true).block_on(async {
+            let mut f = fixture();
+            let replacement = f.directory().join("previous-results");
+            f.memory()
+                .write_file(&replacement, b"verified self-test\n", None)
+                .unwrap();
+            assert!(matches!(f.poll_interval().await.0, Poll::Idle));
+            tokio::time::advance(Duration::from_secs(1)).await;
+            match arrival {
+                Arrival::Created => f.append(b"verified self-test\n"),
+                Arrival::Renamed => f.memory().rename(&replacement, f.path()).unwrap(),
+            }
+            assert_eq!(
+                f.poll_interval().await.1,
+                [("verified self-test".to_owned(), Verification::Outside)]
+            );
+            f.append(b"verified next-test\n");
+            assert_eq!(
+                f.poll_interval().await.1,
+                [("verified next-test".to_owned(), Verification::Measured)]
+            );
+        });
+    }
+
     #[test]
-    fn a_missing_file_is_idle_and_harmless() {
+    fn a_missing_file_is_idle_until_the_required_final_read() {
         crate::testing::runtime(false).block_on(async {
             let mut f = fixture();
             let (poll, lines) = f.poll().await;
             assert!(matches!(poll, Poll::Idle) && lines.is_empty());
             assert!(f.watched.drained() && !f.watched.backlog());
+            let (poll, lines) = f.finish(far()).await;
+            assert!(matches!(poll, Poll::Failed(WatchError::Missing)));
+            assert!(lines.is_empty());
+            assert!(
+                f.watched.drained(),
+                "missing output is not unread accepted output"
+            );
         });
     }
 

@@ -217,6 +217,7 @@ fn run_mode(parts: &[&str]) {
             for step in 0..50 {
                 spin(Duration::from_millis(100));
                 println!("ok {step}");
+                println!("verified helper self-test");
                 let _ = std::io::stdout().flush();
             }
         }
@@ -441,6 +442,8 @@ impl Backend for Helper {
             Line::ComputationError
         } else if let Some(cpu) = line.strip_prefix("AFFINITY:") {
             Line::AffinityError(cpu.parse::<u16>().ok().map(CpuId::from))
+        } else if let Some(test) = line.strip_prefix("verified ") {
+            Line::Verified(test.to_owned())
         } else if line.starts_with("ok") {
             if let Some(cancelling) = &self.cancelling
                 && !cancelling.fired.swap(true, Ordering::SeqCst)

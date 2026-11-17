@@ -115,6 +115,8 @@ fn r6_waits_for_the_scope_before_the_initial_stop() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
+            rig.fake
+                .on_launch(super::harness::printing("verified self-test\n"));
             rig.fake.set_ready_default(false);
             let helper = {
                 let fake = rig.fake.clone();
@@ -133,7 +135,10 @@ fn r6_waits_for_the_scope_before_the_initial_stop() {
             assert_eq!(signal, GroupSignal::Stop);
             assert!(stopped_at.duration_since(begun) >= Duration::from_millis(100));
             let run = finish(&handle).await;
-            assert_eq!(run.finished.result.inconclusive, None);
+            assert_eq!(
+                run.finished.result.inconclusive.as_deref(),
+                Some("core 00 has no backend-verified result")
+            );
         })
         .await;
     });

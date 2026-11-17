@@ -301,7 +301,9 @@ impl Trials for Runner {
                 error: error.into(),
             });
         }
-        let instances = match crate::plan::checked_count(spec.cores.len()) {
+        // Planning only groups typed roles: every instance has at least one role, including
+        // both logical-CPU instances of each R9 core. This bounds readiness without replanning.
+        let instances = match crate::plan::checked_count(spec.roles.len()) {
             Ok(instances) => instances.max(1),
             Err(error) => {
                 return Err(Partial {

@@ -429,7 +429,7 @@ pub(crate) async fn start<O: Os>(
             .map(|instance| (instance.core, instance.cpus[0], instance.workload.backend))
             .collect::<Vec<_>>(),
     );
-    let judge = Judge::new(selector, backends.clone(), events_tx.clone());
+    let mut judge = Judge::new(selector, backends.clone(), events_tx.clone());
     let mut live = Live {
         instances: Vec::with_capacity(plan.instances.len()),
         scopes: Vec::new(),
@@ -455,8 +455,23 @@ pub(crate) async fn start<O: Os>(
     if let Err(cause) = outcome {
         return Err(roll_back(&env, live, judge, &mut inbound_rx, logs, cause).await);
     }
+    for instance in &live.instances {
+        if !instance.observed.ready {
+            judge.observe(Observation::NeverEntered {
+                instance: instance.index,
+                scope: instance.scope.to_string(),
+            });
+        }
+    }
 
     let started_at = Instant::now();
+    let deadline = started_at + plan.duration;
+    judge.begin_interval(deadline);
+    for instance in &live.instances {
+        for reader in &instance.readers {
+            reader.begin_interval(deadline);
+        }
+    }
     let sensors =
         match Sensors::with_inputs(&env.roots, &env.topology, started_at, env.inputs.clone()) {
             Ok(sensors) => sensors,
@@ -579,7 +594,7 @@ async fn launch_all<O: Os>(
     container: &Arc<Container>,
     confinement: Confinement,
     backends: &[Arc<dyn Backend>],
-    prepare_until: Instant,
+    mut prepare_until: Instant,
     logs: &LogWriter,
     live: &mut Live<O>,
     inbound: &Sender<Inbound>,
@@ -743,13 +758,16 @@ async fn launch_all<O: Os>(
                 .collect();
         }
         launched.files.extend(files.inputs);
+        let readiness_started = Instant::now();
+        let readiness = await_scope(env, &live.instances[index], commands).await;
+        // Scope entry has its own per-instance budget, separate from shared file preparation.
+        prepare_until += readiness_started.elapsed();
+        if matches!(readiness, Readiness::Ready) {
+            live.instances[index].observed.ready = true;
+        }
         if suspend_first(instance) {
-            let readiness = await_scope(env, &live.instances[index], commands).await;
             let now = Instant::now();
             let instance = &mut live.instances[index];
-            if matches!(readiness, Readiness::Ready) {
-                instance.observed.ready = true;
-            }
             match instance.signal(GroupSignal::Stop) {
                 Ok(()) | Err(SignalError::Gone) => {}
                 Err(SignalError::Failed(source)) => {
@@ -762,9 +780,9 @@ async fn launch_all<O: Os>(
             }
             instance.observed.suspend(now);
             launched.stops += 1;
-            if matches!(readiness, Readiness::Cancelled) {
-                return Err(Error::Cancelled);
-            }
+        }
+        if matches!(readiness, Readiness::Cancelled) {
+            return Err(Error::Cancelled);
         }
     }
     Ok(())
@@ -1291,6 +1309,8 @@ impl<O: Os> Supervisor<O> {
             mut placement,
             ..
         } = self;
+        // Teardown still classifies every line, but never creates new passing evidence.
+        judge.end_interval();
         for instance in &live.instances {
             if !instance.observed.ready && live.scoped {
                 judge.observe(Observation::NeverEntered {

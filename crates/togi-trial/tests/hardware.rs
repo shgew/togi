@@ -1188,7 +1188,7 @@ mod hardware {
         assert!(result.failure.is_none(), "{result:?}");
         assert_eq!(
             result.inconclusive.as_deref(),
-            Some("mprime setup error: PIN FAILED"),
+            Some("core 00 mprime setup error: PIN FAILED"),
             "the helper's refused pin is the reason"
         );
         let cgroup = staged.tree.read(WORK, "cgroup.txt", REPORT_LIMIT).unwrap();

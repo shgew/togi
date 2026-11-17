@@ -85,6 +85,12 @@ impl Manual {
         drop(self.waiting_state());
     }
 
+    /// The time left in the registered wait; permits deterministic assertions about caller bounds.
+    pub(crate) fn waiting_budget(&self) -> Duration {
+        let state = self.waiting_state();
+        state.deadline.unwrap().saturating_sub(state.elapsed)
+    }
+
     /// Waits until a wait is in progress, then moves the clock to its deadline, as when nothing
     /// answers it in time.
     pub(crate) fn expire_waiting(&self) {
