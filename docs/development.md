@@ -129,6 +129,8 @@ Nextest runs every selected test on every invocation, with no result cache or sh
 
 Filesystem and process tests use nextest's default concurrency, own their temporary paths and children, and retain longer process-test timeouts. Only shared-hardware tests are serialized: SMU tests modify the same CPU, while scope tests share systemd and the product host lock. VM hardware invocations and `just hardware` remain single-threaded. A test group is a semaphore, not a classification label; a new cap requires a concrete shared-resource constraint or measured resource-exhaustion evidence. Libtest doctests share a process within their binary, unlike nextest.
 
+Run hardware tests with `sudo just hardware` on the Linux target machine. `just hardware --no-run` only compiles the hardware binaries and does not need root. The cached wait and stray cleanup fixture tests run in the ordinary `togi-trial` suite; `vm-runtime` runs the installed scope fixture as root against the system manager.
+
 Rejected:
 
 - Miri or ThreadSanitizer: both require a second, nightly toolchain instead of the stable pin; Miri cannot exercise most process, signal and terminal behavior, and ThreadSanitizer checks data races rather than safe-code logic races.

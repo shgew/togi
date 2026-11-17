@@ -589,7 +589,6 @@ fn seam() {
         clock: crate::clock::Clock::System,
         durability: crate::samples::Durability::Unsynced,
         unscoped: true,
-        user_manager: false,
         controller: Arc::new(Threads::over(Proc)),
         frequency: super::harness::frequency(&topology),
     };

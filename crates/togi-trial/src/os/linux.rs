@@ -116,7 +116,6 @@ impl Child for Leader {
 
 pub(crate) struct Linux {
     proc: Proc,
-    user_manager: bool,
     systemctl: OsString,
     scans: Arc<Scans>,
     #[cfg(test)]
@@ -124,10 +123,9 @@ pub(crate) struct Linux {
 }
 
 impl Linux {
-    pub(crate) fn new(proc: Proc, user_manager: bool) -> Self {
+    pub(crate) fn new(proc: Proc) -> Self {
         Self {
             proc,
-            user_manager,
             systemctl: "systemctl".into(),
             scans: Arc::default(),
             #[cfg(test)]
@@ -153,9 +151,6 @@ impl Linux {
         let mut argv: Vec<OsString> = Vec::new();
         let mut systemctl = |arguments: &[String]| {
             argv.push(self.systemctl.clone());
-            if self.user_manager {
-                argv.push("--user".into());
-            }
             argv.extend(arguments.iter().map(OsString::from));
         };
         match operation {
@@ -182,7 +177,6 @@ impl Linux {
                 return scope_argv(
                     unit,
                     *identity,
-                    self.user_manager,
                     std::path::Path::new("/"),
                     &[CpuId::from(0)],
                     &["/bin/sh".into(), "-c".into(), "exit 0".into()],
@@ -425,19 +419,12 @@ mod tests {
     }
 
     fn linux() -> Linux {
-        Linux::new(
-            Proc::new("/proc".into(), crate::procfs::ticks_per_second()),
-            false,
-        )
+        Linux::new(Proc::new("/proc".into(), crate::procfs::ticks_per_second()))
     }
 
-    #[test_case::test_case(false; "system manager")]
-    #[test_case::test_case(true; "user manager")]
-    fn the_probe_uses_the_workload_scope_command(user_manager: bool) {
-        let os = Linux::new(
-            Proc::new("/proc".into(), crate::procfs::ticks_per_second()),
-            user_manager,
-        );
+    #[test]
+    fn the_probe_uses_the_workload_scope_command() {
+        let os = linux();
         let identity = crate::identity::BackendIdentity::new(997, 996).unwrap();
         let unit = "togi-preflight";
         assert_eq!(
@@ -448,7 +435,6 @@ mod tests {
             scope_argv(
                 unit,
                 identity,
-                user_manager,
                 std::path::Path::new("/"),
                 &[CpuId::from(0)],
                 &["/bin/sh".into(), "-c".into(), "exit 0".into()],
@@ -773,10 +759,11 @@ mod tests {
             .build()
             .unwrap();
         let memory = Arc::new(togi_journal::fs::MemFs::new());
-        let os = Linux::new(
-            Proc::with_inputs("/proc".into(), 100, crate::procfs::Inputs::memory(memory)),
-            false,
-        );
+        let os = Linux::new(Proc::with_inputs(
+            "/proc".into(),
+            100,
+            crate::procfs::Inputs::memory(memory),
+        ));
         let (release, blocked) = std::sync::mpsc::channel::<()>();
         let (started, running) = tokio::sync::oneshot::channel();
         runtime.block_on(async {
@@ -808,10 +795,11 @@ mod tests {
     #[test]
     fn real_process_an_observation_that_never_started_or_has_finished_withholds_nothing() {
         let memory = Arc::new(togi_journal::fs::MemFs::new());
-        let os = Linux::new(
-            Proc::with_inputs("/proc".into(), 100, crate::procfs::Inputs::memory(memory)),
-            false,
-        );
+        let os = Linux::new(Proc::with_inputs(
+            "/proc".into(),
+            100,
+            crate::procfs::Inputs::memory(memory),
+        ));
         current_thread().block_on(async {
             let expired = os.usage(10, Instant::now()).await;
             assert!(matches!(expired, Err(ProcError::Deadline)));

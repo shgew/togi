@@ -503,7 +503,6 @@ pub(super) fn runner_over<O: Os>(
         timing,
         roots: Roots::default(),
         unscoped: !scoped,
-        user_manager: false,
         controller: Arc::new(crate::controller::Recording::default()),
         frequency: super::harness::frequency(&topology()),
         durability: crate::samples::Durability::Unsynced,
@@ -516,7 +515,7 @@ pub(super) fn runner_over<O: Os>(
 }
 
 pub(super) fn linux() -> Linux {
-    Linux::new(Proc::new("/proc".into(), ticks_per_second()), false)
+    Linux::new(Proc::new("/proc".into(), ticks_per_second()))
 }
 
 fn runner(mode: &str, watched: bool, timing: Timing, dir: &Path) -> Runner {
@@ -1310,8 +1309,7 @@ fn real_process_systemctl_calls_are_bounded_and_a_timed_out_missing_scope_text_i
     )
     .unwrap();
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let os =
-        Linux::new(Proc::new("/proc".into(), ticks_per_second()), false).with_systemctl(&script);
+    let os = linux().with_systemctl(&script);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

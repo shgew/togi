@@ -11,10 +11,7 @@ use crate::identity::BackendIdentity;
 /// is never containment: nothing then proves a descendant stopped.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Confinement {
-    Scoped {
-        identity: BackendIdentity,
-        user_manager: bool,
-    },
+    Scoped(BackendIdentity),
     Unscoped,
 }
 
@@ -42,66 +39,41 @@ pub(crate) fn cpus_list(cpus: &[CpuId]) -> String {
 /// setpriv --reuid=<uid> --regid=<gid> --clear-groups -- <argv>`.
 ///
 /// Drop credentials inside the scope: systemd 262's `--uid` initializes the account's groups.
-/// `setpriv` execs the workload in place, preserving the scope's main PID. A user manager keeps
-/// `--user --uid <uid> --gid <gid>` and runs argv directly, without a privileged drop step.
+/// `setpriv` execs the workload in place, preserving the scope's main PID.
 /// `DefaultDependencies=no` keeps a system shutdown from stopping the scope on its own.
 pub(crate) fn scope_argv(
     unit: &str,
     identity: BackendIdentity,
-    user_manager: bool,
     cwd: &std::path::Path,
     cpus: &[CpuId],
     program: &[OsString],
 ) -> Vec<OsString> {
-    let mut argv: Vec<OsString> = vec!["systemd-run".into()];
-    if user_manager {
-        argv.push("--user".into());
-    }
-    argv.extend(
-        [
-            "--scope".to_owned(),
-            "--quiet".to_owned(),
-            "--collect".to_owned(),
-            "--unit".to_owned(),
-            unit.to_owned(),
-        ]
-        .map(OsString::from),
-    );
-    if user_manager {
-        argv.extend(
-            [
-                "--uid".to_owned(),
-                identity.uid().to_string(),
-                "--gid".to_owned(),
-                identity.gid().to_string(),
-            ]
-            .map(OsString::from),
-        );
-    }
-    argv.push("--working-directory".into());
+    let prefix = [
+        "systemd-run",
+        "--scope",
+        "--quiet",
+        "--collect",
+        "--unit",
+        unit,
+        "--working-directory",
+    ];
+    let properties_and_identity = [
+        "-p".to_owned(),
+        format!("AllowedCPUs={}", cpus_list(cpus)),
+        "-p".to_owned(),
+        "DefaultDependencies=no".to_owned(),
+        "--".to_owned(),
+        "setpriv".to_owned(),
+        format!("--reuid={}", identity.uid()),
+        format!("--regid={}", identity.gid()),
+        "--clear-groups".to_owned(),
+        "--".to_owned(),
+    ];
+    let mut argv =
+        Vec::with_capacity(prefix.len() + 1 + properties_and_identity.len() + program.len());
+    argv.extend(prefix.map(OsString::from));
     argv.push(cwd.as_os_str().to_owned());
-    argv.extend(
-        [
-            "-p".to_owned(),
-            format!("AllowedCPUs={}", cpus_list(cpus)),
-            "-p".to_owned(),
-            "DefaultDependencies=no".to_owned(),
-            "--".to_owned(),
-        ]
-        .map(OsString::from),
-    );
-    if !user_manager {
-        argv.extend(
-            [
-                "setpriv".to_owned(),
-                format!("--reuid={}", identity.uid()),
-                format!("--regid={}", identity.gid()),
-                "--clear-groups".to_owned(),
-                "--".to_owned(),
-            ]
-            .map(OsString::from),
-        );
-    }
+    argv.extend(properties_and_identity.map(OsString::from));
     argv.extend_from_slice(program);
     argv
 }
@@ -117,10 +89,7 @@ pub(crate) fn command_for(
     let mut program: Vec<OsString> = vec![plan.program.as_os_str().to_owned()];
     program.extend(plan.args.iter().cloned());
     let argv = match confinement {
-        Confinement::Scoped {
-            identity,
-            user_manager,
-        } => scope_argv(scope.as_str(), identity, user_manager, cwd, cpus, &program),
+        Confinement::Scoped(identity) => scope_argv(scope.as_str(), identity, cwd, cpus, &program),
         Confinement::Unscoped => program,
     };
     LaunchCommand {
@@ -209,7 +178,6 @@ mod tests {
         let argv = scope_argv(
             scope().as_str(),
             identity,
-            false,
             std::path::Path::new("/trials/t1/c00"),
             &[CpuId::from(2), CpuId::from(18)],
             &["/bin/mprime".into(), "-t".into()],
@@ -242,43 +210,6 @@ mod tests {
     }
 
     #[test]
-    fn a_user_manager_keeps_its_existing_credential_flags_without_a_drop_step() {
-        let identity = BackendIdentity::new(1001, 1002).unwrap();
-        let argv = scope_argv(
-            scope().as_str(),
-            identity,
-            true,
-            std::path::Path::new("/"),
-            &[CpuId::from(0)],
-            &["x".into()],
-        );
-        assert_eq!(
-            strings(&argv),
-            [
-                "systemd-run",
-                "--user",
-                "--scope",
-                "--quiet",
-                "--collect",
-                "--unit",
-                "togi-trial-t1-c00",
-                "--uid",
-                "1001",
-                "--gid",
-                "1002",
-                "--working-directory",
-                "/",
-                "-p",
-                "AllowedCPUs=0",
-                "-p",
-                "DefaultDependencies=no",
-                "--",
-                "x",
-            ]
-        );
-    }
-
-    #[test]
     fn unscoped_commands_run_the_program_directly() {
         let plan = Plan {
             program: "/bin/true".into(),
@@ -287,10 +218,7 @@ mod tests {
             watched: Vec::new(),
         };
         let scoped = command_for(
-            Confinement::Scoped {
-                identity: BackendIdentity::new(997, 996).unwrap(),
-                user_manager: false,
-            },
+            Confinement::Scoped(BackendIdentity::new(997, 996).unwrap()),
             &scope(),
             std::path::Path::new("/tmp"),
             &[CpuId::from(0)],

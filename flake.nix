@@ -108,13 +108,11 @@
             lib.assertMsg (unregistered == [ ] && misregistered == [ ])
               "nextest concerns must name every workspace member exactly once; unregistered: ${toString unregistered}; repeated or not a member: ${toString misregistered}";
           cliSource = cargoSources.source { code = cargoSources.closure [ "togi" ]; };
-          # The trial tests compile only the `hardware` and `cached_errors` targets of `togi-trial` against the
-          # library; every other test file of the crate is a stub.
+          # Compile only the trial `hardware` target and its fixture support for the VM.
           trialSource = cargoSources.source {
             code = cargoSources.closureWithDev [ "togi-trial" ];
             files = [
               ./crates/togi-trial/tests/hardware.rs
-              ./crates/togi-trial/tests/cached_errors.rs
               ./crates/togi-trial/tests/support/stray_cleanup.rs
             ];
           };
@@ -531,20 +529,15 @@
                     craneLib.removeReferencesToVendoredSourcesHook
                   ];
                   buildPhaseCargoCommand = ''
-                    cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
+                    cargoWithProfile test --locked -p togi-trial --features hardware --test hardware \
                       --no-run --message-format json-render-diagnostics > cargo-messages.json
                   '';
                   installPhaseCommand = ''
                     mkdir -p "$out/bin"
-                    install_test() {
-                      jq -r --arg target "$1" \
-                        'select(.reason == "compiler-artifact" and .target.name == $target and .executable != null) | .executable' \
-                        cargo-messages.json > executables
-                      test "$(wc -l < executables)" = 1
-                      cp "$(cat executables)" "$out/bin/$2"
-                    }
-                    install_test hardware togi-trial-tests
-                    install_test cached_errors togi-trial-cached-errors
+                    jq -r 'select(.reason == "compiler-artifact" and .target.name == "hardware" and .executable != null) | .executable' \
+                      cargo-messages.json > executables
+                    test "$(wc -l < executables)" = 1
+                    cp "$(cat executables)" "$out/bin/togi-trial-tests"
                   '';
                 }
               );

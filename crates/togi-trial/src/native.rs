@@ -30,7 +30,6 @@ pub(crate) struct Settings {
     pub(crate) timing: Timing,
     pub(crate) roots: Roots,
     pub(crate) unscoped: bool,
-    pub(crate) user_manager: bool,
     pub(crate) controller: Arc<dyn Controller>,
     pub(crate) frequency: Arc<dyn togi_machine::CpuFrequency>,
     pub(crate) durability: crate::samples::Durability,
@@ -144,12 +143,10 @@ impl Runner {
     ) -> Result<Self, Error> {
         #[cfg(target_os = "linux")]
         {
-            let user_manager = !rustix::process::geteuid().is_root();
             let settings = Settings {
                 timing: Timing::default(),
                 roots: Roots::default(),
                 unscoped: false,
-                user_manager,
                 controller: Arc::new(crate::controller::Threads::over(crate::controller::Proc)),
                 frequency: Arc::new(crate::frequency::Sysfs::default()),
                 durability,
@@ -161,14 +158,11 @@ impl Runner {
             let proc = settings.roots.proc.clone();
             let inputs = settings.inputs.clone();
             Self::build(options, settings, move || {
-                crate::os::linux::Linux::new(
-                    crate::procfs::Proc::with_inputs(
-                        proc,
-                        crate::procfs::ticks_per_second(),
-                        inputs,
-                    ),
-                    user_manager,
-                )
+                crate::os::linux::Linux::new(crate::procfs::Proc::with_inputs(
+                    proc,
+                    crate::procfs::ticks_per_second(),
+                    inputs,
+                ))
             })
         }
         #[cfg(not(target_os = "linux"))]
@@ -218,7 +212,6 @@ impl Runner {
             topology,
             identity,
             unscoped: settings.unscoped,
-            user_manager: settings.user_manager,
             pm_table,
             storage: None,
             log_sink: None,

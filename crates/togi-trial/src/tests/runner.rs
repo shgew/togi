@@ -103,7 +103,6 @@ fn runner_on_frequency(
         timing,
         roots,
         unscoped: false,
-        user_manager: false,
         controller: Arc::new(crate::controller::Recording::default()),
         frequency,
         fs: Some(fs.clone()),
@@ -1286,7 +1285,7 @@ fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
         ),
         "{joined}"
     );
-    let repeated = kept_wait_error(&again.error).expect("the repeated wait exposes its trial error");
+    let repeated = kept_wait_error(&again.error).expect("repeated wait exposes its error");
     assert!(std::ptr::eq(kept, repeated));
     assert_eq!(first.error.to_string(), again.error.to_string());
     assert!(
@@ -1504,7 +1503,6 @@ fn real_fs_runner_samples_are_read_only_from_regular_files_below_the_validated_r
         timing: fast(),
         roots: Roots::default(),
         unscoped: false,
-        user_manager: false,
         controller: Arc::new(crate::controller::Recording::default()),
         frequency: super::harness::frequency(&topology()),
         fs: None,

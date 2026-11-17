@@ -740,7 +740,6 @@ fn probe_env(rig: &Rig) -> (Rc<Env<Probe>>, Rc<Cell<u32>>) {
         topology: rig.env.topology.clone(),
         identity: rig.env.identity,
         unscoped: rig.env.unscoped,
-        user_manager: rig.env.user_manager,
         pm_table: rig.env.pm_table.clone(),
         storage: rig.env.storage.clone(),
         log_sink: rig.env.log_sink.clone(),

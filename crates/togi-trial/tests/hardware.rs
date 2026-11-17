@@ -29,7 +29,9 @@ mod hardware {
     };
     use togi_trial::{BackendIdentity, Backends, Options, Runner, TrialRole};
 
-    use super::stray_cleanup::{StrayWaiter, cleanup_stray, join_errors, kill_stray, stray_stop_error};
+    use super::stray_cleanup::{
+        StrayWaiter, cleanup_stray, join_errors, kill_stray, stray_stop_error,
+    };
 
     const HELPER: &str = "hardware::helper";
     const ROOT_ENV: &str = "TOGI_TRIAL_HARDWARE_ROOT";
@@ -279,6 +281,10 @@ mod hardware {
 
     impl Staged {
         fn new() -> Self {
+            assert!(
+                rustix::process::geteuid().is_root(),
+                "hardware tests need root"
+            );
             let serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
             let lock = HostLock::acquire(Path::new(DEFAULT_PATH), Policy::Host).unwrap();
             let parent = std::fs::canonicalize(std::env::temp_dir()).unwrap();
@@ -385,18 +391,8 @@ mod hardware {
         togi_config::Config::load(Path::new(togi_config::DEFAULT_PATH)).ok()
     }
 
-    fn root() -> bool {
-        rustix::process::geteuid().is_root()
-    }
-
-    /// As root, the configured backend account (or `TOGI_TRIAL_HARDWARE_USER`); otherwise the
-    /// caller, whose systemd user manager runs the scopes.
+    /// The configured unprivileged backend account (or `TOGI_TRIAL_HARDWARE_USER`).
     fn account() -> BackendIdentity {
-        if !root() {
-            let uid = rustix::process::geteuid().as_raw();
-            let gid = rustix::process::getegid().as_raw();
-            return BackendIdentity::new(uid, gid).unwrap();
-        }
         let name = std::env::var("TOGI_TRIAL_HARDWARE_USER")
             .ok()
             .or_else(|| config().and_then(|config| config.backend_user().map(str::to_owned)));
@@ -732,10 +728,7 @@ mod hardware {
         args: &[&str],
         limit: Duration,
     ) -> Result<togi_command::Output, togi_command::Error> {
-        let mut invocation = togi_command::Invocation::new("systemctl");
-        if !root() {
-            invocation = invocation.arg("--user");
-        }
+        let invocation = togi_command::Invocation::new("systemctl");
         #[expect(
             clippy::disallowed_methods,
             reason = "a hardware test inspects and stops systemd units directly, within a bound"
@@ -828,19 +821,21 @@ mod hardware {
     impl Stray {
         /// An unrelated scope that the sweep must leave alone.
         fn scope(name: &str) -> Self {
-            let mut argv: Vec<&str> = Vec::new();
-            if !root() {
-                argv.push("--user");
-            }
-            argv.extend(["--scope", "--quiet", "--collect", "--unit", name]);
-            argv.extend(["sleep", "300"]);
             let waiter = StrayWaiter::start().unwrap();
             #[expect(
                 clippy::disallowed_methods,
                 reason = "a hardware test creates an unrelated scope to prove the sweep leaves it alone"
             )]
             let child = Command::new("systemd-run")
-                .args(argv)
+                .args([
+                    "--scope",
+                    "--quiet",
+                    "--collect",
+                    "--unit",
+                    name,
+                    "sleep",
+                    "300",
+                ])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
