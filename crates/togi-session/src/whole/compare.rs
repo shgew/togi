@@ -287,7 +287,10 @@ impl<'events> Names<'events> {
 
     fn apply_cause(&mut self, cause: &ApplyCause) -> String {
         match cause {
-            ApplyCause::Step { decision } => format!("step {decision:?}"),
+            ApplyCause::Step { decision } => match Seq::new(decision.0) {
+                Some(seq) => format!("step {}", self.seq(seq)),
+                None => format!("step {decision:?}"),
+            },
             ApplyCause::Reapplication {} => "reapplication".to_owned(),
             ApplyCause::Reset { cause } => format!("reset {}", self.seq(*cause)),
         }

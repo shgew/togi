@@ -333,8 +333,8 @@ impl DayJournal {
 
 /// A day boot of the day runtime on the machine's current boot: the observer's boot start and the unclean end of
 /// the day boot before, the cold-boot invocation's owed commitments and its application, `hours` of use, and a
-/// clean stop unless `clean` is false. Every record is written only when the journal lacks it, so a day host killed
-/// after any of them and run again on the same boot finishes the day. False when an append failed.
+/// clean stop unless `clean` is false. Each invocation records fresh offsets, even on the same boot, so the
+/// journal can resolve eligible interrupted writes. The remaining records are written only when owed.
 // Power cuts use the filesystem's successful sync boundary, including appends inside the real writer.
 #[expect(
     clippy::disallowed_methods,
@@ -370,20 +370,17 @@ fn day(
     let mut day = DayJournal { journal, state };
     let mut machine_crashed = false;
     let run = || {
-        if !day
-            .in_boot(&boot)
-            .any(|event| matches!(event.payload, Payload::DayBootStart(_)))
-        {
-            let offsets = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
-            let bios = machine.host.bios_context().unwrap();
-            let start = DayBootStart {
-                build: build(),
-                bios,
-                offsets,
-                watchdog: None,
-            };
-            day.append(&mut machine, start.into(), &[])?;
-        }
+        // Every invocation observes again, including a same-boot restart, like the shipped service.
+        // Journal::append routes this record through the shared day-start recording helper.
+        let offsets = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
+        let bios = machine.host.bios_context().unwrap();
+        let start = DayBootStart {
+            build: build(),
+            bios,
+            offsets,
+            watchdog: None,
+        };
+        day.append(&mut machine, start.into(), &[])?;
         let crashed = day
             .events()
             .iter()
