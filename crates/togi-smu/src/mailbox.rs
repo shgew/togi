@@ -138,12 +138,18 @@ pub enum MailboxError {
 }
 
 /// The hardware side of the mailbox: one blocking transaction at a time.
+/// Implementations check the worker's shared poison before every blocking transfer step.
 pub(crate) trait Transport: Send {
-    fn command(&mut self, command: Command, args: [u32; 6]) -> Result<[u32; 6], MailboxError>;
-    fn read_smn(&mut self, address: u32) -> Result<u32, MailboxError>;
+    fn command(
+        &mut self,
+        command: Command,
+        args: [u32; 6],
+        poison: &Poison,
+    ) -> Result<[u32; 6], MailboxError>;
+    fn read_smn(&mut self, address: u32, poison: &Poison) -> Result<u32, MailboxError>;
 }
 
-type Job = Box<dyn FnOnce(&mut dyn Transport) + Send>;
+type Job = Box<dyn FnOnce(&mut dyn Transport, &Poison) + Send>;
 
 /// The sticky record of the first transaction that overran its deadline.
 ///
@@ -193,17 +199,19 @@ pub(crate) struct Worker {
 impl Worker {
     pub(crate) fn spawn(mut transport: Box<dyn Transport>, deadline: Duration) -> io::Result<Self> {
         let (jobs, queue) = mpsc::channel::<Job>();
+        let poison = Arc::new(Poison::default());
+        let gate = Arc::clone(&poison);
         thread::Builder::new()
             .name("togi-smu-mailbox".to_owned())
             .spawn(move || {
                 for job in queue {
-                    job(&mut *transport);
+                    job(&mut *transport, &gate);
                 }
             })?;
         Ok(Self {
             jobs,
             deadline,
-            poison: Arc::default(),
+            poison,
         })
     }
 
@@ -216,18 +224,20 @@ impl Worker {
     pub(crate) fn submit<T: Send + 'static>(
         &self,
         request: Request,
-        transaction: impl FnOnce(&mut dyn Transport) -> Result<T, MailboxError> + Send + 'static,
+        transaction: impl FnOnce(&mut dyn Transport, &Poison) -> Result<T, MailboxError>
+        + Send
+        + 'static,
     ) -> Result<Ticket<T>, MailboxError> {
         self.poison.check()?;
         let (reply, answer) = mpsc::channel();
         let state = Arc::new(AtomicU8::new(QUEUED));
         let claim = Arc::clone(&state);
-        let job: Job = Box::new(move |transport| {
+        let job: Job = Box::new(move |transport, poison| {
             let claimed = claim
                 .compare_exchange(QUEUED, STARTED, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok();
             if claimed {
-                let _ = reply.send(transaction(transport));
+                let _ = reply.send(poison.check().and_then(|()| transaction(transport, poison)));
             }
         });
         if self.jobs.send(job).is_err() {
@@ -270,7 +280,9 @@ impl Worker {
     fn run<T: Send + 'static>(
         &self,
         request: Request,
-        transaction: impl FnOnce(&mut dyn Transport) -> Result<T, MailboxError> + Send + 'static,
+        transaction: impl FnOnce(&mut dyn Transport, &Poison) -> Result<T, MailboxError>
+        + Send
+        + 'static,
     ) -> Result<T, MailboxError> {
         let ticket = self.submit(request, transaction)?;
         self.finish(ticket)
@@ -281,14 +293,14 @@ impl Worker {
         command: Command,
         args: [u32; 6],
     ) -> Result<[u32; 6], MailboxError> {
-        self.run(Request::Command(command), move |transport| {
-            transport.command(command, args)
+        self.run(Request::Command(command), move |transport, poison| {
+            transport.command(command, args, poison)
         })
     }
 
     pub(crate) fn read_smn(&mut self, address: u32) -> Result<u32, MailboxError> {
-        self.run(Request::ReadSmn(address), move |transport| {
-            transport.read_smn(address)
+        self.run(Request::ReadSmn(address), move |transport, poison| {
+            transport.read_smn(address, poison)
         })
     }
 
@@ -296,7 +308,7 @@ impl Worker {
     #[cfg(test)]
     pub(crate) fn flush(&self) {
         let (done, drained) = mpsc::channel();
-        let marker: Job = Box::new(move |_| {
+        let marker: Job = Box::new(move |_, _| {
             let _ = done.send(());
         });
         if self.jobs.send(marker).is_ok() {

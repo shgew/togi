@@ -4,10 +4,19 @@ use super::fixture::{
 };
 use crate::mailbox::{Command, MailboxError, Request, Worker};
 use crate::pm_table::{PmFile, TABLE_LEN};
+#[cfg(target_os = "linux")]
+use crate::sysfs::DRIVER_DIR;
+use crate::sysfs::read_gated;
 use crate::{Driver, Error, Operation, PmReader};
-use std::sync::{Arc, Mutex};
+#[cfg(target_os = "linux")]
+use std::fs::{self, File};
+use std::io::{self, Read};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, ThreadId};
 use std::time::Duration;
+use test_case::test_case;
 use togi_machine::{PmTableReader, TargetOffset};
 
 /// Short enough to keep the timeout tests quick, long enough that a worker that is already
@@ -177,9 +186,10 @@ fn a_job_that_expired_while_queued_never_reaches_the_transport() {
     });
     let worker = Worker::spawn(Box::new(fake.clone()), SHORT).unwrap();
     let first = worker
-        .submit(Request::Command(Command::ReadOffset), |transport| {
-            transport.command(Command::ReadOffset, [0; 6])
-        })
+        .submit(
+            Request::Command(Command::ReadOffset),
+            |transport, poison| transport.command(Command::ReadOffset, [0; 6], poison),
+        )
         .unwrap();
     assert!(
         entered.wait_timeout(GENEROUS),
@@ -187,9 +197,10 @@ fn a_job_that_expired_while_queued_never_reaches_the_transport() {
     );
     // The worker is stuck in the first job, so this one cannot start before its caller gives up.
     let second = worker
-        .submit(Request::Command(Command::SetAllOffsets), |transport| {
-            transport.command(Command::SetAllOffsets, [0; 6])
-        })
+        .submit(
+            Request::Command(Command::SetAllOffsets),
+            |transport, poison| transport.command(Command::SetAllOffsets, [0; 6], poison),
+        )
         .unwrap();
     let error = worker.finish(second).unwrap_err();
     assert!(matches!(
@@ -208,6 +219,48 @@ fn a_job_that_expired_while_queued_never_reaches_the_transport() {
         "an expired job started after its caller was told it failed"
     );
     drop(first);
+}
+
+#[test]
+fn a_hung_transport_poisons_both_command_and_smn_paths_permanently() {
+    let fake = Fake::new();
+    let entered = Gate::default();
+    let release = Gate::default();
+    let (opened, held) = (entered.clone(), release.clone());
+    fake.hook_command(move || {
+        opened.open();
+        held.wait();
+    });
+    let mut worker = Worker::spawn(Box::new(fake.clone()), SHORT).unwrap();
+    let ticket = worker
+        .submit(
+            Request::Command(Command::ReadOffset),
+            |transport, poison| transport.command(Command::ReadOffset, [0; 6], poison),
+        )
+        .unwrap();
+    assert!(entered.wait_timeout(GENEROUS));
+    let stuck = Request::Command(Command::ReadOffset);
+    assert!(matches!(
+        worker.finish(ticket).unwrap_err(),
+        MailboxError::TimedOut { request, deadline } if request == stuck && deadline == SHORT
+    ));
+    assert!(matches!(
+        worker.command(Command::SetAllOffsets, [0; 6]).unwrap_err(),
+        MailboxError::Poisoned { request } if request == stuck
+    ));
+    assert!(matches!(
+        worker.read_smn(0).unwrap_err(),
+        MailboxError::Poisoned { request } if request == stuck
+    ));
+
+    release.open();
+    worker.flush();
+    assert!(matches!(
+        worker.read_smn(0).unwrap_err(),
+        MailboxError::Poisoned { request } if request == stuck
+    ));
+    assert_eq!(fake.commands(), [(Command::ReadOffset, 0)]);
+    assert_eq!(fake.smn_reads(), Vec::<u32>::new());
 }
 
 #[test]
@@ -329,4 +382,224 @@ fn an_existing_pm_reader_starts_no_transfer_once_a_mailbox_transaction_overran()
         }
     ));
     blocked.release.open();
+}
+
+#[test_case("smu_args", false, &["write smu_args"]; "argument write")]
+#[test_case("rsmu_cmd", false, &["write smu_args", "write rsmu_cmd"]; "command write")]
+#[test_case("rsmu_cmd", true, &["write smu_args", "write rsmu_cmd", "read rsmu_cmd"]; "status read")]
+#[test_case("smu_args", true, &["write smu_args", "write rsmu_cmd", "read rsmu_cmd", "read smu_args"]; "response read")]
+fn a_timed_out_sysfs_call_starts_no_later_step_after_driver_drop(
+    blocked_file: &'static str,
+    block_read: bool,
+    expected: &[&str],
+) {
+    let tree = Tree::new(8, true);
+    tree.put_bytes("sys/kernel/ryzen_smu_drv/smn", &[0; 4]);
+    tree.put_bytes("sys/kernel/ryzen_smu_drv/smu_args", &[0; 24]);
+    tree.put_bytes("sys/kernel/ryzen_smu_drv/rsmu_cmd", &1_u32.to_le_bytes());
+    let crate::files::Files::Readers(readers) = tree.source() else {
+        panic!("the witness needs in-memory sysfs files");
+    };
+    let entered = Gate::default();
+    let release = Gate::default();
+    let (alive, stopped) = mpsc::channel::<()>();
+    let steps: Arc<Mutex<Vec<String>>> = Arc::default();
+    let recorded = Arc::clone(&steps);
+    let (opened, held) = (entered.clone(), release.clone());
+    let read_file = Arc::clone(&readers.read);
+    let write_file = Arc::clone(&readers.write);
+    let read_alive = alive.clone();
+    let read_steps = Arc::clone(&steps);
+    let (read_entered, read_release) = (entered.clone(), release.clone());
+    let mut driver = Driver::from_readers(
+        tree.root(),
+        readers.cpu_names.clone(),
+        true,
+        move |path| {
+            let _keep_alive = &read_alive;
+            let name = path.file_name().unwrap().to_str().unwrap();
+            if matches!(name, "smu_args" | "rsmu_cmd") {
+                lock(&read_steps).push(format!("read {name}"));
+                if block_read && name == blocked_file {
+                    read_entered.open();
+                    read_release.wait();
+                }
+            }
+            read_file(path)
+        },
+        move |path, bytes| {
+            let _keep_alive = &alive;
+            let name = path.file_name().unwrap().to_str().unwrap();
+            if matches!(name, "smu_args" | "rsmu_cmd") {
+                lock(&recorded).push(format!("write {name}"));
+                if !block_read && name == blocked_file {
+                    opened.open();
+                    held.wait();
+                }
+                Ok(bytes.len())
+            } else {
+                write_file(path, bytes)
+            }
+        },
+    )
+    .unwrap();
+    let _ = driver.validate().unwrap();
+    driver.set_deadline(OVERRUN);
+
+    let error = write_all(&mut driver, TargetOffset::clamped(-10)).unwrap_err();
+    assert!(matches!(
+        smu_error(&error),
+        Error::Mailbox {
+            source: MailboxError::TimedOut {
+                request: Request::Command(Command::SetAllOffsets),
+                ..
+            },
+            ..
+        }
+    ));
+    assert!(entered.wait_timeout(GENEROUS));
+    assert_eq!(*lock(&steps), expected);
+    poisoned_by(
+        &write_all(&mut driver, TargetOffset::ZERO).unwrap_err(),
+        Request::Command(Command::SetAllOffsets),
+    );
+
+    // The blocked call can complete, but the poisoned worker must not start its next step.
+    drop(driver);
+    release.open();
+    assert!(matches!(
+        stopped.recv_timeout(GENEROUS),
+        Err(mpsc::RecvTimeoutError::Disconnected)
+    ));
+    assert_eq!(*lock(&steps), expected);
+}
+
+/// Counts its calls and, on each, opens `entered`, waits for `release`, then yields one byte.
+struct StallingRead {
+    calls: Arc<AtomicUsize>,
+    entered: Gate,
+    release: Gate,
+}
+
+impl Read for StallingRead {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.entered.open();
+        self.release.wait();
+        Ok(buffer.first_mut().map_or(0, |slot| {
+            *slot = 1;
+            1
+        }))
+    }
+}
+
+#[test]
+fn a_read_that_returns_partial_data_after_the_timeout_starts_no_further_read() {
+    let worker = Worker::spawn(Box::new(Fake::new()), SHORT).unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let entered = Gate::default();
+    let release = Gate::default();
+    let reader = StallingRead {
+        calls: Arc::clone(&calls),
+        entered: entered.clone(),
+        release: release.clone(),
+    };
+    let path = PathBuf::from("stalled");
+    let (outcome, received) = mpsc::channel();
+    let read_path = path.clone();
+    let stuck = Request::Command(Command::ReadOffset);
+    let ticket = worker
+        .submit(stuck, move |_, poison| {
+            let _ = outcome.send(read_gated::<4>(read_path, Ok(reader), poison));
+            Ok(())
+        })
+        .unwrap();
+    assert!(
+        entered.wait_timeout(GENEROUS),
+        "the read never reached the reader"
+    );
+    assert!(matches!(
+        worker.finish(ticket).unwrap_err(),
+        MailboxError::TimedOut { request, deadline } if request == stuck && deadline == SHORT
+    ));
+
+    release.open();
+    let error = received
+        .recv_timeout(GENEROUS)
+        .expect("the read never finished")
+        .unwrap_err();
+    let MailboxError::Read {
+        path: failed,
+        source,
+    } = error
+    else {
+        panic!("expected a read failure, got {error:?}");
+    };
+    assert_eq!(failed, path);
+    let cause = source
+        .get_ref()
+        .and_then(|cause| cause.downcast_ref::<MailboxError>());
+    assert!(
+        matches!(cause, Some(MailboxError::Poisoned { request }) if *request == stuck),
+        "{cause:?}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "a read started after its caller was told it failed"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn real_fs_a_write_whose_open_returns_after_the_timeout_writes_nothing() {
+    let tree = Tree::real(8, true);
+    tree.hardware_files();
+    let mut driver = Driver::open(tree.root()).unwrap();
+    let _ = driver.validate().unwrap();
+    driver.set_deadline(OVERRUN);
+    let args = format!("{DRIVER_DIR}/smu_args");
+    tree.remove(&args);
+    let fifo = tree.path(&args);
+    rustix::fs::mknodat(
+        rustix::fs::CWD,
+        &fifo,
+        rustix::fs::FileType::Fifo,
+        rustix::fs::Mode::from_raw_mode(0o600),
+        0,
+    )
+    .unwrap();
+
+    // Opening a FIFO for writing blocks until a reader opens it, so the worker is stuck in the
+    // kernel inside its open when the timeout is reported.
+    let error = write_all(&mut driver, TargetOffset::clamped(-10)).unwrap_err();
+    assert!(matches!(
+        smu_error(&error),
+        Error::Mailbox {
+            source: MailboxError::TimedOut {
+                request: Request::Command(Command::SetAllOffsets),
+                ..
+            },
+            ..
+        }
+    ));
+
+    // Opening the read end only now lets the stuck open return after the timeout. A blocking
+    // open for reading returns only once the writer is in its open, which is the
+    // synchronization; the helper thread keeps a missing writer from hanging the test.
+    let (opened, reader) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = opened.send(File::open(&fifo));
+    });
+    let mut read_end = reader
+        .recv_timeout(GENEROUS)
+        .expect("the worker never reached the open")
+        .unwrap();
+    let mut arrived = Vec::new();
+    read_end.read_to_end(&mut arrived).unwrap();
+    assert_eq!(arrived, Vec::<u8>::new());
+    assert_eq!(
+        fs::read(tree.path(&format!("{DRIVER_DIR}/rsmu_cmd"))).unwrap(),
+        1_u32.to_le_bytes()
+    );
 }
