@@ -7,9 +7,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-
 use crate::fs::{DiskFs, FileKind, Fs, FsLock, MemFs};
 use crate::session_id::SessionId;
 
@@ -21,8 +18,6 @@ pub use archive::{
 pub(crate) const LOCK_FILE: &str = "lock";
 pub(crate) const EVENTS_FILE: &str = "events.jsonl";
 pub(crate) const EVENTS_TMP: &str = ".events.jsonl.tmp";
-pub(crate) const STATE_FILE: &str = "state.json";
-pub(crate) const STATE_TMP: &str = ".state.json.tmp";
 pub(crate) const ARCHIVE_DIR: &str = "archive";
 pub(crate) const TRIALS_DIR: &str = "trials";
 const STATE_DIR_MODE: u32 = 0o711;
@@ -72,16 +67,6 @@ pub enum DirError {
     PermanentMarker(Marker),
     #[error("{} does not name a session id", path.display())]
     BadMarker { path: PathBuf },
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum StateError {
-    #[error("encode state")]
-    Encode(#[source] serde_json::Error),
-    #[error("decode state")]
-    Decode(#[source] serde_json::Error),
-    #[error(transparent)]
-    Dir(#[from] DirError),
 }
 
 pub(crate) fn io_at(op: &'static str, path: &Path) -> impl FnOnce(io::Error) -> DirError {
@@ -177,49 +162,6 @@ impl StateDir {
     pub(crate) fn sync_dirs(&self) -> Result<(), DirError> {
         self.sync_dir(&self.archive_dir())?;
         self.sync_dir(&self.path)
-    }
-
-    /// Publishes the document as `state.json`: a reader sees the old document or the new one, never a mix.
-    ///
-    /// Publication takes `&mut self` because it shares one temporary file: two publications at once could truncate a
-    /// document the other has already renamed into place.
-    ///
-    /// ```compile_fail,E0596
-    /// fn publish(dir: &togi_journal::StateDir) {
-    ///     let _ = dir.write_state(&1);
-    /// }
-    /// ```
-    pub fn write_state<T: Serialize>(&mut self, state: &T) -> Result<(), StateError> {
-        let mut bytes = serde_json::to_vec(state).map_err(StateError::Encode)?;
-        bytes.push(b'\n');
-        let tmp = self.join(STATE_TMP);
-        let target = self.join(STATE_FILE);
-        let publish = || -> io::Result<()> {
-            match self.fs.remove_file(&tmp) {
-                Err(error) if !not_found(&error) => return Err(error),
-                _ => {}
-            }
-            let mut file = self.fs.create_new(&tmp)?;
-            file.write_all(&bytes)?;
-            file.sync()?;
-            drop(file);
-            self.fs.rename(&tmp, &target)
-        };
-        publish().map_err(io_at("publish state", &target))?;
-        Ok(self.sync_dir(&self.path)?)
-    }
-
-    /// The published document; `None` when none was written, an error when it does not decode.
-    pub fn read_state<T: DeserializeOwned>(&self) -> Result<Option<T>, StateError> {
-        let target = self.join(STATE_FILE);
-        let bytes = match self.fs.read(&target) {
-            Ok(bytes) => bytes,
-            Err(error) if not_found(&error) => return Ok(None),
-            Err(error) => return Err(io_at("read state", &target)(error).into()),
-        };
-        serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(StateError::Decode)
     }
 
     pub(crate) fn kind_of(&self, path: &Path) -> Result<Option<FileKind>, DirError> {

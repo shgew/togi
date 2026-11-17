@@ -153,7 +153,6 @@ fn split_matches_whole<S: Store>(
         );
     }
     assert_eq!(events, split.text("events.jsonl"));
-    assert_eq!(whole.text("state.json"), split.text("state.json"));
 
     let forgotten = new();
     capped(definition, seed, &forgotten, boots);
@@ -277,11 +276,11 @@ fn a_continuation_that_cannot_remove_the_superseded_machine_fails() {
 }
 
 #[test]
-fn a_continuation_that_fails_after_a_warm_crash_still_publishes_the_crashed_boots_state() {
+fn a_continuation_that_fails_after_a_warm_crash_still_closes_the_journal() {
     let definition = hunt_machine(2);
     let store = MemFs::new();
     capped(&definition, 1, &store, 3);
-    let before = store.bytes("state.json");
+    let before = store.bytes("events.jsonl");
     let reference = MemFs::new();
     capped(&definition, 1, &reference, 3);
     let mut one_boot = night_input(resumed(&definition, 1, &reference), reference.persistence());
@@ -298,6 +297,6 @@ fn a_continuation_that_fails_after_a_warm_crash_still_publishes_the_crashed_boot
         Err(SimError::Machine { .. })
     ));
 
-    assert_ne!(store.bytes("state.json"), before);
-    assert_eq!(store.bytes("state.json"), reference.bytes("state.json"));
+    assert_ne!(store.bytes("events.jsonl"), before);
+    assert_eq!(store.bytes("events.jsonl"), reference.bytes("events.jsonl"));
 }

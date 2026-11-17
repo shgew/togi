@@ -663,11 +663,6 @@ impl MemFs {
         tree.faults.len() < pending
     }
 
-    /// Fails the rename that would publish `state.json`.
-    pub fn fail_state_publication(&self) {
-        self.inject(Fault::before(Op::Rename, 1).named("state.json"));
-    }
-
     /// The number of mutating operations performed so far, failed ones included, recorded or not.
     pub fn mutations(&self) -> u64 {
         self.tree().mutations
@@ -1077,14 +1072,14 @@ mod tests {
         let fs = MemFs::new();
         dir(&fs, "/s");
         fs.put("/s/a", "x");
-        fs.put("/s/.state.json.tmp", "y");
-        fs.fail_state_publication();
+        fs.put("/s/second", "y");
+        fs.inject(Fault::before(Op::Rename, 1).named("second"));
         fs.rename(Path::new("/s/a"), Path::new("/s/b")).unwrap();
         assert!(
-            fs.rename(Path::new("/s/.state.json.tmp"), Path::new("/s/state.json"))
+            fs.rename(Path::new("/s/second"), Path::new("/s/c"))
                 .is_err()
         );
-        assert!(fs.contents("/s/state.json").is_none());
+        assert!(fs.contents("/s/c").is_none());
     }
 
     #[test]
@@ -1348,7 +1343,7 @@ mod tests {
             let mut file = fs.create_truncate(Path::new("/s/.tmp")).unwrap();
             file.write_all(b"document").unwrap();
             drop(file);
-            fs.rename(Path::new("/s/.tmp"), Path::new("/s/state.json"))
+            fs.rename(Path::new("/s/.tmp"), Path::new("/s/document"))
                 .unwrap();
             assert!(
                 fs.stored_files() <= 2,
@@ -1356,7 +1351,7 @@ mod tests {
                 fs.stored_files()
             );
         }
-        fs.remove_file(Path::new("/s/state.json")).unwrap();
+        fs.remove_file(Path::new("/s/document")).unwrap();
         assert_eq!(fs.stored_files(), 0);
     }
 

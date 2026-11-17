@@ -280,13 +280,12 @@ fn tuning_after_observed_days() -> (Model, Played) {
     step(&bench, &mut phases, Phase::Boot);
     step(&bench, &mut phases, Phase::Run { trials: 1 });
     let phase = phases.pop().unwrap();
-    assert!(matches!(phase.own()[0].payload, Payload::StateRebuilt(_)));
-    assert!(matches!(phase.own()[1].payload, Payload::ConfigLoaded(_)));
+    assert!(matches!(phase.own()[0].payload, Payload::ConfigLoaded(_)));
     (bench.sim.model(), phase)
 }
 
 #[test]
-fn a_power_cut_after_state_rebuilt_before_config_loaded_is_detected() {
+fn a_power_cut_after_the_first_tuning_boot_event_is_detected() {
     let (model, phase) = tuning_after_observed_days();
     resume(&phase, &model, phase.start + 1, Fate::PowerLoss);
 }

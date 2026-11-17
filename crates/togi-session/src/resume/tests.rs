@@ -5,7 +5,6 @@ use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
 
 use super::*;
-use crate::publication::StateDocument;
 use crate::testing::Bench;
 use crate::{Ended, Stop, run};
 
@@ -40,19 +39,9 @@ fn one_cycle(bench: &Bench, resume: Option<ResumeCapsule>) -> Ended {
     run(input)
 }
 
-fn capsule_of(events: &[Event], defects: &'static [Entry]) -> ResumeCapsule {
-    ResumeCapsule {
-        session: None,
-        last: last_seq(events),
-        defects,
-        folds: Folds::replay_with(defects, events).unwrap(),
-        prefix: togi_journal::snapshot::Prefix {
-            last_seq: last_seq(events),
-            bytes: 0,
-            sha256: "verification-only capsule".into(),
-        },
-        origin: Origin::Warm,
-    }
+fn capsule_of(journal: &Journal, defects: &'static [Entry]) -> ResumeCapsule {
+    let folds = Folds::replay_with(defects, journal.events()).unwrap();
+    ResumeCapsule::new(journal, defects, folds)
 }
 
 fn fold_of(events: &[Event]) -> Folds {
@@ -72,34 +61,9 @@ fn a_capsule_verifies_the_state_it_folded() {
     let capsule = ended.capsule.as_ref().unwrap();
     capsule.verify(ended.journal.events()).unwrap();
     let replayed = crate::ReadState::replay(ended.journal.events()).unwrap();
-    assert_eq!(
-        replayed
-            .verify_snapshot(ended.journal.dir(), ended.journal.events())
-            .unwrap(),
-        crate::SnapshotStatus::Matches
-    );
-    let document = ended.journal.read_state().unwrap().unwrap();
-    assert_eq!(
-        replayed
-            .verify_document(ended.journal.dir(), document, ended.journal.events())
-            .unwrap(),
-        crate::SnapshotStatus::Matches
-    );
-    let published = crate::ReadState::in_dir(ended.journal.dir(), ended.journal.events()).unwrap();
-    assert_eq!(replayed.facts(), published.facts());
-    assert_eq!(replayed.tuner(), published.tuner());
+    assert_eq!(replayed.facts(), &capsule.folds.facts);
+    assert_eq!(replayed.tuner(), &capsule.folds.tuner);
 }
-
-#[test]
-fn a_persistent_snapshot_restores_a_covering_simulation_capsule() {
-    let bench = bench();
-    let ended = one_cycle(&bench, None);
-    let capsule = ResumeCapsule::read_snapshot(&ended.journal, togi_defect::KNOWN_DEFECTS).unwrap();
-    assert!(capsule.covers(&ended.journal, togi_defect::KNOWN_DEFECTS));
-    capsule.verify(ended.journal.events()).unwrap();
-    assert!(!capsule.is_warm());
-}
-
 #[test]
 fn verify_names_the_part_that_differs() {
     let bench = bench();
@@ -107,47 +71,36 @@ fn verify_names_the_part_that_differs() {
     let (prefix, events) = halves(&ended);
     let behind = fold_of(prefix);
 
-    let mut facts = capsule_of(events, KNOWN_DEFECTS);
+    let mut facts = capsule_of(&ended.journal, KNOWN_DEFECTS);
     facts.folds.facts = behind.facts.clone();
     assert!(matches!(facts.verify(events), Err(Divergence::Facts)));
 
-    let mut tuner = capsule_of(events, KNOWN_DEFECTS);
+    let mut tuner = capsule_of(&ended.journal, KNOWN_DEFECTS);
     tuner.folds.tuner = behind.tuner.clone();
     assert!(matches!(tuner.verify(events), Err(Divergence::Tuner)));
 
-    let mut recovery = capsule_of(events, KNOWN_DEFECTS);
+    let mut recovery = capsule_of(&ended.journal, KNOWN_DEFECTS);
     recovery.folds.recovery = behind.recovery;
     assert!(matches!(recovery.verify(events), Err(Divergence::Recovery)));
 
-    let mut defects = capsule_of(events, &CAUTIOUS);
+    let mut defects = capsule_of(&ended.journal, &CAUTIOUS);
     defects.folds.defects = DefectState::new(&AGGRESSIVE);
     assert!(matches!(defects.verify(events), Err(Divergence::Defects)));
-}
 
-#[test]
-fn the_document_check_rejects_a_document_other_than_the_cold_folds() {
-    let bench = bench();
-    let ended = one_cycle(&bench, None);
-    let (prefix, events) = halves(&ended);
-    let document = StateDocument::of(&fold_of(events));
-    let behind = StateDocument::of(&fold_of(prefix));
-    assert_ne!(document, behind);
+    let mut presentation = capsule_of(&ended.journal, KNOWN_DEFECTS);
+    presentation.folds.presentation = behind.presentation;
     assert!(matches!(
-        check_document(&behind, &document),
-        Err(DocumentDivergence::Cold)
-    ));
-    assert!(matches!(
-        check_document(&document, &behind),
-        Err(DocumentDivergence::Cold)
+        presentation.verify(events),
+        Err(Divergence::Presentation)
     ));
 }
-
 #[test]
 fn verify_rejects_a_capsule_that_misses_events() {
     let bench = bench();
     let ended = one_cycle(&bench, None);
     let (prefix, events) = halves(&ended);
-    let capsule = capsule_of(prefix, KNOWN_DEFECTS);
+    let mut capsule = capsule_of(&ended.journal, KNOWN_DEFECTS);
+    capsule.last = last_seq(prefix);
     assert!(matches!(
         capsule.verify(events),
         Err(Divergence::Last { .. })
@@ -157,29 +110,46 @@ fn verify_rejects_a_capsule_that_misses_events() {
 #[test]
 fn a_capsule_is_adopted_only_when_it_covers_exactly_the_journal() {
     let bench = bench();
-    let ended = one_cycle(&bench, None);
-    let capsule = ended.capsule.clone().unwrap();
+    let Ended {
+        mut journal,
+        capsule,
+        ..
+    } = one_cycle(&bench, None);
+    let capsule = capsule.unwrap();
+    assert!(capsule.clone().adopt(&journal, bench.defects).is_some());
+
+    journal.reboot("rebooted".to_owned().into()).unwrap();
     assert!(
-        capsule
-            .clone()
-            .adopt(&ended.journal, bench.defects)
-            .is_some()
+        capsule.covers(&journal, bench.defects),
+        "same open journal across a reboot"
     );
 
-    let foreign = ResumeCapsule {
-        session: None,
-        ..capsule.clone()
+    let dir = journal.close().unwrap();
+    let mut journal = dir.open("reopened".to_owned().into()).unwrap();
+    assert!(
+        !capsule.covers(&journal, bench.defects),
+        "fresh open at an unchanged end"
+    );
+    let current = capsule_of(&journal, bench.defects);
+    let last = journal.events().last().unwrap();
+    let stamp = togi_journal::Stamp {
+        time: last.time,
+        mono: None,
     };
+    journal
+        .append(
+            stamp,
+            Payload::SessionWarning(togi_journal::SessionWarning {
+                operation: "test".into(),
+                trial: None,
+                error: "test".into(),
+            }),
+            &[],
+        )
+        .unwrap();
     assert!(
-        foreign.adopt(&ended.journal, bench.defects).is_none(),
-        "another session"
-    );
-
-    drop(ended);
-    let extended = one_cycle(&bench, None);
-    assert!(
-        capsule.adopt(&extended.journal, bench.defects).is_none(),
-        "a journal that grew"
+        !current.covers(&journal, bench.defects),
+        "same open journal with a longer tail"
     );
 }
 
@@ -201,27 +171,6 @@ fn journal_text(ended: &Ended) -> Vec<String> {
 }
 
 #[test]
-fn a_run_given_a_capsule_appends_what_a_cold_replay_would() {
-    let warm = bench();
-    let first = one_cycle(&warm, None);
-    let capsule = first.capsule.clone().unwrap();
-    drop(first);
-    let resumed = one_cycle(&warm, Some(capsule));
-
-    let cold = bench();
-    drop(one_cycle(&cold, None));
-    let replayed = one_cycle(&cold, None);
-
-    assert_eq!(resumed.stop, replayed.stop);
-    assert_eq!(journal_text(&resumed), journal_text(&replayed));
-    resumed
-        .capsule
-        .unwrap()
-        .verify(resumed.journal.events())
-        .unwrap();
-}
-
-#[test]
 fn a_run_given_the_capsule_of_another_journal_folds_its_own() {
     let donor = bench();
     let capsule = one_cycle(&donor, None).capsule.unwrap();
@@ -236,10 +185,6 @@ fn a_run_given_the_capsule_of_another_journal_folds_its_own() {
 }
 
 fn crashed(bench: &Bench) -> Ended {
-    crashed_publishing(bench, crate::PublicationPolicy::OnFinish)
-}
-
-fn crashed_publishing(bench: &Bench, publication: crate::PublicationPolicy) -> Ended {
     bench
         .sim
         .script_trial(
@@ -253,8 +198,7 @@ fn crashed_publishing(bench: &Bench, publication: crate::PublicationPolicy) -> E
             },
         )
         .unwrap();
-    let mut input = bench.input_ending_at(bench.short_night());
-    input.publication = publication;
+    let input = bench.input_ending_at(bench.short_night());
     let ended = run(input);
     assert!(
         ended.errors.iter().any(crate::SessionError::is_crash),
@@ -265,7 +209,7 @@ fn crashed_publishing(bench: &Bench, publication: crate::PublicationPolicy) -> E
 }
 
 #[test]
-fn a_crash_leaves_the_state_unwritten_and_the_capsule_holding_what_the_boot_folded() {
+fn a_crash_returns_the_folds_of_its_durable_events() {
     let bench = bench();
     let ended = crashed(&bench);
     ended
@@ -274,196 +218,67 @@ fn a_crash_leaves_the_state_unwritten_and_the_capsule_holding_what_the_boot_fold
         .unwrap()
         .verify(ended.journal.events())
         .unwrap();
-    // Consent was durably recorded before this run, so opening it published that prefix.
-    // The crash must leave that bootstrap snapshot untouched, not publish its pending trial.
-    let (prefix, saved): (_, StateDocument) = ended.journal.dir().read_snapshot().unwrap().unwrap();
-    let attested = ended
-        .journal
-        .events()
-        .iter()
-        .find(|event| matches!(event.payload, Payload::StockAttested(_)))
-        .unwrap();
-    assert_eq!(prefix.last_seq, Some(attested.seq));
-    assert_eq!(saved.facts.last_seq, Some(attested.seq));
-    assert_ne!(
-        saved.facts.last_seq,
-        ended.journal.events().last().map(|event| event.seq)
-    );
 }
 
 #[test]
 fn the_boot_after_a_crash_resumes_the_same_from_a_capsule_or_a_replay() {
     let warm = bench();
-    let capsule = crashed(&warm).capsule.unwrap();
-    warm.sim.reboot().unwrap();
-    let resumed = one_cycle(&warm, Some(capsule));
-
-    let cold = bench();
     let Ended {
         journal, capsule, ..
-    } = crashed(&cold);
-    let mut dir = journal.close().unwrap();
-    capsule.unwrap().publish(&mut dir).unwrap();
-    drop(dir);
+    } = crashed(&warm);
+    warm.sim.reboot().unwrap();
+    let resumed = run(warm.continuing_at(journal, capsule, warm.short_night()));
+
+    let cold = bench();
+    drop(crashed(&cold).journal.close().unwrap());
     cold.sim.reboot().unwrap();
     let replayed = one_cycle(&cold, None);
 
     assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
     assert_eq!(resumed.stop, replayed.stop);
     assert_eq!(journal_text(&resumed), journal_text(&replayed));
-    let (_, saved): (_, StateDocument) = resumed.journal.dir().read_snapshot().unwrap().unwrap();
-    let facts = togi_journal::State::replay(resumed.journal.events()).unwrap();
-    assert_eq!(saved.facts, facts);
+    resumed
+        .capsule
+        .unwrap()
+        .verify(resumed.journal.events())
+        .unwrap();
 }
 
 #[test]
-fn a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuilds_nothing() {
-    let deferred = bench();
-    let mut crashed = crashed(&deferred);
-    let capsule = crashed.capsule.take().unwrap();
-    let text = journal_text(&crashed);
-    let before_resume = crashed.journal.events().len();
-    let mut dir = crashed.journal.close().unwrap();
-    capsule.publish(&mut dir).unwrap();
-    let (_, published): (_, StateDocument) = dir.read_snapshot().unwrap().unwrap();
-    drop(dir);
+fn cold_resume_ignores_legacy_state_without_reading_or_rewriting_it() {
+    let cold = bench();
+    drop(crashed(&cold).journal.close().unwrap());
+    cold.sim.reboot().unwrap();
+    let leftover = br#"{"snapshot":{"build":"foreign"}"#;
+    cold.mem.put("/state/state.json", leftover);
+    cold.mem.put("/state/.state.json.tmp", b"partial");
+    cold.mem.record_history();
 
-    let live = bench();
-    let live_crashed = crashed_publishing(&live, crate::PublicationPolicy::Live);
-    let (_, had): (_, StateDocument) = live_crashed.journal.dir().read_snapshot().unwrap().unwrap();
-    assert_eq!(published, had);
-    assert_eq!(text, journal_text(&live_crashed));
-
-    deferred.sim.reboot().unwrap();
-    let resumed = one_cycle(&deferred, None);
+    let resumed = one_cycle(&cold, None);
+    assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+    resumed
+        .capsule
+        .as_ref()
+        .unwrap()
+        .verify(resumed.journal.events())
+        .unwrap();
     assert!(
         resumed
             .journal
             .events()
             .iter()
-            .skip(before_resume)
             .all(|event| !matches!(event.payload, Payload::StateRebuilt(_)))
     );
-}
-
-#[test]
-fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_capsule_is_adopted()
-{
-    let bench = bench();
-    let mut ended = crashed(&bench);
-    let capsule = ended.capsule.take().unwrap();
-    let before_resume = ended.journal.events().len();
-    let (prefix, saved): (_, StateDocument) = ended.journal.dir().read_snapshot().unwrap().unwrap();
-    assert_eq!(saved.facts.last_seq, prefix.last_seq);
-    assert_ne!(
-        saved.facts.last_seq,
-        ended.journal.events().last().map(|event| event.seq)
-    );
-    drop(ended);
-    bench.sim.reboot().unwrap();
-    let resumed = one_cycle(&bench, None);
-    assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
-    assert!(capsule.adopt(&resumed.journal, bench.defects).is_none());
-    let rebuilt: Vec<_> = resumed
-        .journal
-        .events()
-        .iter()
-        .skip(before_resume)
-        .filter_map(|event| {
-            if let Payload::StateRebuilt(rebuilt) = &event.payload {
-                Some(rebuilt.fields.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
+    let is_legacy =
+        |path: &std::path::Path| path.ends_with("state.json") || path.ends_with(".state.json.tmp");
+    assert!(!cold.mem.reads().iter().any(|path| is_legacy(path)));
+    assert!(!cold.mem.log().iter().any(|(_, path)| is_legacy(path)));
     assert_eq!(
-        rebuilt,
-        [vec![
-            "session".to_string(),
-            "cores".to_string(),
-            "last_seq".to_string(),
-            "open".to_string(),
-            "tuner".to_string(),
-        ]]
+        cold.mem.contents("/state/state.json").as_deref(),
+        Some(leftover.as_slice())
     );
-    let (_, saved): (_, StateDocument) = resumed.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(
-        saved.facts,
-        togi_journal::State::replay(resumed.journal.events()).unwrap()
-    );
-}
-
-fn state_reads(bench: &Bench) -> usize {
-    bench
-        .mem
-        .reads()
-        .iter()
-        .filter(|path| path.file_name().is_some_and(|name| name == "state.json"))
-        .count()
-}
-
-fn state_publications(bench: &Bench) -> usize {
-    bench
-        .mem
-        .log()
-        .iter()
-        .filter(|(op, path)| {
-            *op == togi_journal::fs::Op::Rename
-                && path
-                    .file_name()
-                    .is_some_and(|name| name == ".state.json.tmp")
-        })
-        .count()
-}
-
-#[test]
-fn a_run_that_adopts_a_capsule_neither_reads_nor_rebuilds_the_state_a_crash_left_pending() {
-    let bench = bench();
-    bench.mem.record_history();
-    let ended = crashed(&bench);
-    let before_resume = ended.journal.events().len();
-    let capsule = ended.capsule.unwrap();
-    drop(ended.journal.close().unwrap());
-    assert_eq!(
-        state_publications(&bench),
-        1,
-        "the consent bootstrap prefix"
-    );
-    let reads_before_resume = state_reads(&bench);
-    bench.sim.reboot().unwrap();
-    let resumed = one_cycle(&bench, Some(capsule));
-    assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
-    assert_eq!(state_reads(&bench), reads_before_resume);
-    assert_eq!(
-        state_publications(&bench),
-        2,
-        "bootstrap and the run's own end"
-    );
-    assert!(
-        resumed
-            .journal
-            .events()
-            .iter()
-            .skip(before_resume)
-            .all(|event| !matches!(event.payload, Payload::StateRebuilt(_)))
-    );
-}
-
-#[test]
-fn a_run_that_cannot_adopt_a_capsule_reads_the_state_and_rebuilds_what_a_crash_left_pending() {
-    let bench = bench();
-    bench.mem.record_history();
-    let capsule = crashed(&bench).capsule.unwrap();
-    let publications_before_resume = state_publications(&bench);
-    let reads_before_resume = state_reads(&bench);
-    bench.sim.reboot().unwrap();
-    let resumed = one_cycle(&bench, None);
-    assert!(capsule.adopt(&resumed.journal, bench.defects).is_none());
-    assert!(state_reads(&bench) > reads_before_resume);
-    assert_eq!(
-        state_publications(&bench),
-        publications_before_resume + 2,
-        "the rebuild and the end"
+        cold.mem.contents("/state/.state.json.tmp").as_deref(),
+        Some(b"partial".as_slice())
     );
 }

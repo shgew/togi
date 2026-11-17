@@ -14,8 +14,6 @@ pub enum Check {
     Exposure,
     WriteProtocol,
     Termination,
-    Replay,
-    Projection,
 }
 
 impl Check {
@@ -28,8 +26,6 @@ impl Check {
             Self::Exposure => "exposure",
             Self::WriteProtocol => "write_protocol",
             Self::Termination => "termination",
-            Self::Replay => "replay",
-            Self::Projection => "projection",
         }
     }
 }

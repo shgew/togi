@@ -9,10 +9,7 @@ use std::str::FromStr;
 use serde::Deserialize;
 use togi_machine::serde_object::{self, Object};
 
-use super::{
-    ARCHIVE_DIR, DirError, EVENTS_FILE, STATE_FILE, STATE_TMP, StateDir, TRIALS_DIR, io_at,
-    not_found,
-};
+use super::{ARCHIVE_DIR, DirError, EVENTS_FILE, StateDir, TRIALS_DIR, io_at, not_found};
 use crate::build::Build;
 use crate::fs::{DiskFs, FileKind, Fs};
 use crate::header;
@@ -366,15 +363,6 @@ impl StateDir {
     /// Moves the session out of the live paths, each step durable before the next and each safe to repeat.
     pub(crate) fn finish_archive(&self, session: &SessionId) -> Result<(), DirError> {
         self.ensure_archive_dir()?;
-        for name in [STATE_FILE, STATE_TMP] {
-            let path = self.join(name);
-            match self.fs().remove_file(&path) {
-                Ok(()) => {}
-                Err(error) if not_found(&error) => {}
-                Err(error) => return Err(io_at("remove state", &path)(error)),
-            }
-        }
-        self.sync_dir(&self.path)?;
         let trials = self.join(TRIALS_DIR);
         let archived_trials = self.archive_trials(session);
         match self.fs().rename_noreplace(&trials, &archived_trials) {

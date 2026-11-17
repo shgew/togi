@@ -10,7 +10,7 @@ use jiff::Timestamp;
 use togi_machine::BootId;
 
 /// Where the machine's first campaign enrollment was recorded.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Enrollment {
     pub(super) time: Timestamp,
     pub(super) boot: BootId,

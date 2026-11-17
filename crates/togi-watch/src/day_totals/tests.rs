@@ -362,8 +362,8 @@ fn live_and_imported_intervals_share_boot_state_but_keep_their_own_provenance() 
 }
 
 #[test]
-fn serialized_day_totals_keep_the_boot_shape_and_resume_pending_intervals() {
-    let totals = DayTotals::of(&[
+fn incremental_day_totals_keep_pending_intervals_across_appends() {
+    let mut totals = DayTotals::of(&[
         event(1, "day-a", start(0)),
         event(2, "day-a", checkpoint(3600)),
         event(
@@ -374,22 +374,10 @@ fn serialized_day_totals_keep_the_boot_shape_and_resume_pending_intervals() {
             },
         ),
     ]);
-    let encoded = serde_json::to_value(&totals).unwrap();
-    assert_eq!(
-        encoded["boots"],
-        serde_json::json!([{
-            "boot": "day-a",
-            "offsets": {"0": -20},
-            "seconds": 3600,
-            "changed": true,
-        }])
-    );
-    let mut restored: DayTotals = serde_json::from_value(encoded).unwrap();
-    assert_eq!(restored, totals);
-    restored.apply(&event(4, "day-a", checkpoint(7200)));
-    restored.apply(&event(5, "day-a", checkpoint(9000)));
-    assert_eq!(restored.all().secs, 5400);
-    assert_eq!(restored.stock().secs, 3600);
+    totals.apply(&event(4, "day-a", checkpoint(7200)));
+    totals.apply(&event(5, "day-a", checkpoint(9000)));
+    assert_eq!(totals.all().secs, 5400);
+    assert_eq!(totals.stock().secs, 3600);
 }
 
 #[test]

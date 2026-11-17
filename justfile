@@ -239,7 +239,7 @@ bench-baseline out="tools/bench/baseline.jsonl": _dev-shell
 facts state_dir: _dev-shell
     cargo run --release --locked -p togi-tool-facts -- "$1" tools/bench/facts/target.jsonl.gz
 
-# Copy a state directory's live journal, state.json and archived journals and markers for facts and replay, leaving out trials; as root it builds under root's home (`sudo nix develop --command just copy-state /var/lib/togi DIR`, then chown DIR; docs/benchmarking.md)
+# Copy a state directory's live journal and archived journals and markers for facts and replay, leaving out trials; as root it builds under root's home (`sudo nix develop --command just copy-state /var/lib/togi DIR`, then chown DIR; docs/benchmarking.md)
 [group('run')]
 copy-state src dst: _dev-shell
     [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/copy-state-target; cargo run --release --locked -p togi-tool-copy-state -- "$1" "$2"

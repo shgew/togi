@@ -22,7 +22,7 @@ use togi_hostlock::HostLock;
 use togi_journal::{Build, Operation, Verdict};
 use togi_machine::CancellationToken;
 use togi_render::{Renderer, Style, escape_text};
-use togi_session::{PrepareError, PublicationPolicy, RunInput, SessionError, prepare};
+use togi_session::{PrepareError, RunInput, SessionError, prepare};
 use togi_tuningboot::{Bootloader, LeaveReason, RestartCount};
 
 use crate::args::ConfigArgs;
@@ -223,7 +223,6 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         boot,
         journal,
         machine,
-        publication: PublicationPolicy::default(),
         bootloader,
         defects: KNOWN_DEFECTS,
         resume: None,

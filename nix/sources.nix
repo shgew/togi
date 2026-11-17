@@ -26,8 +26,7 @@ let
   dir = name: cratesDir + "/${name}";
   manifest = name: lib.importTOML (dir name + "/Cargo.toml");
   # Test-only sources: files compiled only under `cfg(test)`. By name, `tests.rs`, `*_tests.rs` and any `tests` or
-  # `*_tests` directory under a member's `src`; the rest are listed in `crates/test-only.txt`, which the journal's
-  # snapshot fingerprint (`crates/togi-journal/build/fingerprint.rs`) reads by the same rule.
+  # `*_tests` directory under a member's `src`; the rest are listed in `crates/test-only.txt`.
   testNamed =
     path:
     lib.concatLists (
@@ -57,9 +56,6 @@ let
 
   rustIn = path: fileset.intersection (fileset.fileFilter (file: file.hasExt "rs") cratesDir) path;
 
-  # A member's production `.rs` files under `src`.
-  productionSrc = crate: fileset.difference (rustIn (dir crate + "/src")) (testOnly crate);
-
   # A member's `.rs` files under `src` and `benches` without its test-only files.
   productionRs =
     crate:
@@ -72,33 +68,9 @@ let
       )
     )) (testOnly crate);
 
-  # Files outside its directory that a crate reads when it compiles. The journal's build script hashes the
-  # production source of the reducer crates, its test-only list and its fingerprint module.
+  # Files outside its directory that a crate reads when it compiles.
   compileInputs = {
     togi-version = [ ../version.txt ];
-    togi-journal = [
-      ../version.txt
-      ../crates/test-only.txt
-      ../crates/togi-journal/build.rs
-      ../crates/togi-journal/build
-    ]
-    ++
-      lib.concatMap
-        (name: [
-          (productionSrc name)
-          (dir name + "/Cargo.toml")
-        ])
-        [
-          "togi-machine"
-          "togi-journal"
-          "togi-config"
-          "togi-requests"
-          "togi-tuner"
-          "togi-defect"
-          "togi-render"
-          "togi-watch"
-          "togi-session"
-        ];
   };
 
   memberDeps =

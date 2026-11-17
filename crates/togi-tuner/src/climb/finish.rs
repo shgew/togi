@@ -48,10 +48,8 @@ pub enum UnitState {
     Finished(FinishWitness),
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct FinishBook(
-    #[serde(with = "crate::policy::wire::pairs")] BTreeMap<UnitId, FinishWitness>,
-);
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FinishBook(BTreeMap<UnitId, FinishWitness>);
 
 impl FinishBook {
     pub fn get(&self, unit: UnitId) -> Option<&FinishWitness> {

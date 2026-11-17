@@ -1,29 +1,20 @@
 //! The state a run hands the next run so that it need not fold the journal again.
 
 use togi_defect::Entry;
-use togi_journal::{Event, Journal, Seq, SessionId, StateDir, StateError};
+use togi_journal::{Event, Journal, OpenPosition, Seq};
 
 use crate::appender::Folds;
 use crate::error::FoldError;
-use crate::publication::{StateDocument, StateDocumentRef};
 
-/// Every fold of a journal's events, owned, bound to the journal it was folded from: its session and its last event.
+/// The live folds of one open journal at its last event.
 ///
-/// A run adopts it only when it covers exactly the journal it is given; any other journal is folded from its events.
+/// A run adopts them only when it is given the same journal at that position, or replays its events.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResumeCapsule {
-    session: Option<SessionId>,
     last: Option<Seq>,
     defects: &'static [Entry],
     folds: Folds,
-    prefix: togi_journal::snapshot::Prefix,
-    origin: Origin,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Origin {
-    Warm,
-    Snapshot,
+    position: OpenPosition,
 }
 
 /// The part of a capsule that is not what folding the journal's events gives.
@@ -44,75 +35,29 @@ pub enum Divergence {
     Recovery,
     #[error("the defect state differs")]
     Defects,
-    #[error("the published state document differs")]
-    Document(#[from] DocumentDivergence),
-}
-
-/// How the state document published from a capsule's folds fails to be the one a cold fold publishes.
-#[derive(Debug, thiserror::Error)]
-pub enum DocumentDivergence {
-    #[error("does not encode")]
-    Encode(#[source] serde_json::Error),
-    #[error("does not decode")]
-    Decode(#[source] serde_json::Error),
-    #[error("decodes to a different document")]
-    RoundTrip,
-    #[error("differs from the cold fold's")]
-    Cold,
+    #[error("the presentation state differs")]
+    Presentation,
 }
 
 impl ResumeCapsule {
     pub(crate) fn new(journal: &Journal, defects: &'static [Entry], folds: Folds) -> Self {
         Self {
-            session: journal.session(),
             last: last_seq(journal.events()),
             defects,
             folds,
-            prefix: journal.prefix(),
-            origin: Origin::Warm,
+            position: journal.position(),
         }
-    }
-
-    /// Restores a simulation from a verified persistent snapshot plus its journal tail.
-    /// Hardware callers do not use this: they must replay the entire log independently.
-    pub fn read_snapshot(journal: &Journal, defects: &'static [Entry]) -> Option<Self> {
-        if !std::ptr::eq(defects, togi_defect::KNOWN_DEFECTS) {
-            return None;
-        }
-        let saved = journal.dir().read_snapshot().ok().flatten()?;
-        let state = crate::snapshot::ReadState::restore(Some(saved), journal.events()).ok()?;
-        let mut capsule = Self::new(journal, defects, state.into_folds());
-        capsule.origin = Origin::Snapshot;
-        Some(capsule)
-    }
-
-    pub(crate) fn is_warm(&self) -> bool {
-        self.origin == Origin::Warm
     }
 
     /// Whether this capsule was made from exactly `journal` and judged by the same `defects`.
     #[must_use]
     pub fn covers(&self, journal: &Journal, defects: &'static [Entry]) -> bool {
-        self.session == journal.session()
-            && self.last == last_seq(journal.events())
-            && self.prefix == journal.prefix()
-            && std::ptr::eq(self.defects, defects)
+        self.position == journal.position() && std::ptr::eq(self.defects, defects)
     }
 
     /// The folds, when [`ResumeCapsule::covers`] the journal.
     pub(crate) fn adopt(self, journal: &Journal, defects: &'static [Entry]) -> Option<Folds> {
         self.covers(journal, defects).then_some(self.folds)
-    }
-
-    /// Writes the state document a live run publishes after its last append, for a run that ended without publishing.
-    ///
-    /// # Errors
-    ///
-    /// The state file write error.
-    pub fn publish(&self, dir: &mut StateDir) -> Result<(), StateError> {
-        let document =
-            togi_journal::snapshot::seal(self.prefix.clone(), &StateDocumentRef::of(&self.folds))?;
-        dir.write_state(&document)
     }
 
     /// Checks every part against the fold of `events` from nothing, naming the first part that differs.
@@ -142,21 +87,11 @@ impl ResumeCapsule {
         if kept.defects != cold.defects {
             return Err(Divergence::Defects);
         }
-        check_document(&StateDocument::of(kept), &StateDocument::of(&cold))?;
+        if kept.presentation != cold.presentation {
+            return Err(Divergence::Presentation);
+        }
         Ok(())
     }
-}
-
-fn check_document(kept: &StateDocument, cold: &StateDocument) -> Result<(), DocumentDivergence> {
-    let text = serde_json::to_string(kept).map_err(DocumentDivergence::Encode)?;
-    let decoded: StateDocument = serde_json::from_str(&text).map_err(DocumentDivergence::Decode)?;
-    if decoded != *kept {
-        return Err(DocumentDivergence::RoundTrip);
-    }
-    if kept != cold {
-        return Err(DocumentDivergence::Cold);
-    }
-    Ok(())
 }
 
 fn last_seq(events: &[Event]) -> Option<Seq> {

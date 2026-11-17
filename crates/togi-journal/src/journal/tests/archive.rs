@@ -25,7 +25,6 @@ const COMPAT: &str = "/state/archive/20231114T221320Z-compat-pending";
 fn seeded(fs: &MemFs) -> crate::Journal {
     let mut journal = begin_default(fs);
     journal.append(stamp(1), note("work"), &[]).unwrap();
-    fs.put("/state/state.json", "{}\n");
     fs.put("/state/trials/0001/sample.csv", "t,v\n");
     journal
 }
@@ -44,7 +43,6 @@ fn assert_archived_intact(fs: &MemFs, expected: &[u8], context: &str) {
         "{context}"
     );
     assert!(live(fs).is_empty(), "{context}");
-    assert!(fs.contents("/state/state.json").is_none(), "{context}");
     assert!(fs.kind_is_none("/state/trials"), "{context}");
     assert_eq!(fs.contents(COMPAT), None, "{context}");
 }
@@ -63,11 +61,21 @@ impl Probe for MemFs {
 #[test]
 fn reset_all_archives_the_session_behind_a_durable_boundary() {
     let fs = MemFs::new();
+    fs.put("/state/state.json", "legacy");
+    fs.put("/state/.state.json.tmp", "partial");
     let dir = seeded(&fs)
         .archive(stamp(5), ArchiveKind::ResetAll, &[])
         .unwrap();
     let archived = fs.contents(ARCHIVED).unwrap();
     assert_archived_intact(&fs, &archived, "reset");
+    assert_eq!(
+        fs.contents("/state/state.json").as_deref(),
+        Some(b"legacy".as_slice())
+    );
+    assert_eq!(
+        fs.contents("/state/.state.json.tmp").as_deref(),
+        Some(b"partial".as_slice())
+    );
     let recording = Recording::parse(&archived).unwrap();
     assert_eq!(
         kinds(recording.events()),
@@ -651,7 +659,7 @@ fn open_syncs_a_surviving_compat_marker_and_its_directories_before_resuming_the_
     assert!(journal.events().is_empty());
     assert_archived_intact(&fs, &original, "resumed");
     let log = fs.log();
-    let first_removal = position(&log, Op::Remove, "/state/state.json").unwrap();
+    let first_move = position(&log, Op::Rename, "/state/trials").unwrap();
     for (op, path) in [
         (Op::Sync, COMPAT),
         (Op::SyncDir, "/state/archive"),
@@ -659,7 +667,7 @@ fn open_syncs_a_surviving_compat_marker_and_its_directories_before_resuming_the_
     ] {
         let synced = position(&log, op, path).unwrap_or_else(|| panic!("{op:?} {path} never ran"));
         assert!(
-            synced < first_removal,
+            synced < first_move,
             "{op:?} {path} must precede the first destructive step"
         );
     }

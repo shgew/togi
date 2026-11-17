@@ -134,11 +134,6 @@ fn a_finished_session_ends_its_journal_with_the_operators_shutdown() {
     };
     assert_eq!(shutdown.reason, ShutdownReason::Signal);
     assert!(
-        host.states[Path::new("/state")]
-            .contents("/state/state.json")
-            .is_some()
-    );
-    assert!(
         ran.stderr.lines().last().unwrap().contains("shutdown"),
         "{}",
         ran.stderr

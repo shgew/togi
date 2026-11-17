@@ -436,20 +436,6 @@ fn decisions_and_baselines_for_unknown_cores_are_fold_errors() {
 }
 
 #[test]
-fn state_round_trips_through_json_and_compares_equal() {
-    let state = replay(&[
-        start(),
-        at(2, "boot-a", 1, &[], sample(EventKind::SessionContext)),
-        at(3, "boot-a", 2, &[], sample(EventKind::SessionBaseline)),
-        at(4, "boot-a", 3, &[], intent("0001", Some(0), &[])),
-    ])
-    .unwrap();
-    let json = serde_json::to_string(&state).unwrap();
-    let back: State = serde_json::from_str(&json).unwrap();
-    assert_eq!(back, state);
-}
-
-#[test]
 fn a_prefix_state_equals_the_state_built_event_by_event() {
     let events = [
         start(),

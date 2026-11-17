@@ -1,4 +1,4 @@
-//! D acceptance at the durable journal boundary, including interrupted and snapshot replay.
+//! D acceptance at the durable journal boundary, including interrupted runs and replay.
 
 use test_case::test_case;
 use togi_journal::{

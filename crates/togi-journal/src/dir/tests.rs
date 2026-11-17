@@ -3,7 +3,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use serde::{Deserialize, Serialize};
 use test_case::test_case;
 
 use super::*;
@@ -31,11 +30,6 @@ fn at(second: i64) -> Timestamp {
 
 fn id_at(second: i64) -> SessionId {
     SessionId::new(at(second), None).unwrap()
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct Doc {
-    n: u32,
 }
 
 #[test]
@@ -154,76 +148,6 @@ fn locking_refuses_a_state_path_that_is_a_file() {
         StateDir::lock_with_fs(Arc::new(fs), Path::new("/file/state")),
         Err(LockError::Dir(DirError::NotADirectory { .. }))
     ));
-}
-
-#[test]
-fn state_round_trips_and_a_missing_one_reads_as_none() {
-    let fs = MemFs::new();
-    let mut dir = dir(&fs);
-    assert_eq!(dir.read_state::<Doc>().unwrap(), None);
-    dir.write_state(&Doc { n: 7 }).unwrap();
-    assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 7 }));
-}
-
-#[test]
-fn a_damaged_state_is_an_error_not_an_absence() {
-    let fs = MemFs::new();
-    let dir = dir(&fs);
-    fs.put("/state/state.json", "{\"n\":");
-    assert!(matches!(
-        dir.read_state::<Doc>(),
-        Err(StateError::Decode(_))
-    ));
-}
-
-#[test]
-fn state_publication_leaves_the_old_or_the_new_document_under_every_fault() {
-    let faults = [Op::Open, Op::Write, Op::Sync, Op::Rename, Op::SyncDir]
-        .into_iter()
-        .flat_map(|op| [Fault::before(op, 1), Fault::after(op, 1)])
-        .chain([Fault::short_write(1)]);
-    for fault in faults {
-        let fs = MemFs::new();
-        let mut dir = dir(&fs);
-        dir.write_state(&Doc { n: 1 }).unwrap();
-        fs.inject(fault.clone());
-        let failed = dir.write_state(&Doc { n: 2 }).is_err();
-        assert!(failed, "{fault:?} should fail the publication");
-        let read = dir.read_state::<Doc>().unwrap().unwrap();
-        assert!(
-            read == Doc { n: 1 } || read == Doc { n: 2 },
-            "{fault:?} left {read:?}"
-        );
-        fs.clear_faults();
-        dir.write_state(&Doc { n: 3 }).unwrap();
-        assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 3 }));
-    }
-}
-
-#[test]
-fn a_failed_publication_never_replaces_the_state_with_a_partial_write() {
-    let fs = MemFs::new();
-    let mut dir = dir(&fs);
-    dir.write_state(&Doc { n: 1 }).unwrap();
-    fs.fail_state_publication();
-    assert!(dir.write_state(&Doc { n: 2 }).is_err());
-    assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 1 }));
-}
-
-#[test]
-fn the_directory_is_synced_after_the_state_rename() {
-    let fs = MemFs::new();
-    fs.record_history();
-    let mut dir = dir(&fs);
-    dir.write_state(&Doc { n: 1 }).unwrap();
-    let log = fs.log();
-    let rename = log.iter().rposition(|(op, _)| *op == Op::Rename).unwrap();
-    assert_eq!(log[rename + 1].0, Op::SyncDir);
-    let sync = log[..rename]
-        .iter()
-        .rposition(|(op, _)| *op == Op::Sync)
-        .unwrap();
-    assert!(sync < rename);
 }
 
 #[test]
@@ -772,45 +696,6 @@ fn real_fs_a_symlinked_archive_directory_is_refused() {
     std::os::unix::fs::symlink(&outside, path.join("archive")).unwrap();
     assert!(matches!(held.archives(), Err(DirError::Io { .. })));
     assert!(matches!(held.markers(), Err(DirError::Io { .. })));
-}
-
-#[test]
-fn a_stale_state_temporary_is_replaced_by_a_fresh_file() {
-    let fs = MemFs::new();
-    let mut dir = dir(&fs);
-    fs.put("/state/.state.json.tmp", "stale stale stale stale stale");
-    let stale = fs.open_append(Path::new("/state/.state.json.tmp")).unwrap();
-    dir.write_state(&Doc { n: 1 }).unwrap();
-    drop(stale);
-    assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 1 }));
-    assert_eq!(fs.contents("/state/.state.json.tmp"), None);
-}
-
-#[test]
-fn publication_never_writes_through_a_pre_existing_temporary_inode() {
-    let fs = MemFs::new();
-    let mut dir = dir(&fs);
-    dir.write_state(&Doc { n: 1 }).unwrap();
-    fs.put("/state/.state.json.tmp", "stale");
-    let mut stale = fs.open_append(Path::new("/state/.state.json.tmp")).unwrap();
-    fs.fail_state_publication();
-    assert!(dir.write_state(&Doc { n: 2 }).is_err());
-    stale.write_all(b"tamper").unwrap();
-    assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 1 }));
-}
-
-#[test]
-fn real_fs_publication_leaves_a_hard_link_to_the_published_state_untouched() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("state");
-    let mut dir = disk_dir(&path).unwrap();
-    dir.write_state(&Doc { n: 1 }).unwrap();
-    let keep = root.path().join("keep");
-    std::fs::hard_link(path.join("state.json"), &keep).unwrap();
-    std::fs::hard_link(path.join("state.json"), path.join(".state.json.tmp")).unwrap();
-    dir.write_state(&Doc { n: 2 }).unwrap();
-    assert_eq!(std::fs::read(&keep).unwrap(), b"{\"n\":1}\n");
-    assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 2 }));
 }
 
 #[test]

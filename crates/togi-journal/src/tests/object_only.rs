@@ -1,11 +1,10 @@
-//! Everything decoded from journal or state JSON is an object: serde's positional array form of a
+//! Everything decoded from journal JSON is an object: serde's positional array form of a
 //! struct, which `deny_unknown_fields` does not constrain, is refused even when correctly sized.
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::fixtures::{at, sample, samples};
-use crate::fs::MemFs;
 use crate::*;
 
 fn line_of(payload: Payload) -> Value {
@@ -249,62 +248,4 @@ fn nested_journal_structs_refuse_a_correctly_sized_array() {
     line["data"] = json!(["set_all", -5]);
     let error = Event::decode(&line.to_string()).unwrap_err();
     assert_expected_an_object(&error);
-}
-
-fn state_value() -> Value {
-    let state = State::replay(&[at(1, "boot-a", 0, &[], sample(EventKind::SessionStart))]).unwrap();
-    serde_json::to_value(state).unwrap()
-}
-
-fn read_state(document: &Value) -> Result<Option<State>, StateError> {
-    let fs = MemFs::new();
-    let dir = crate::testing::simulated(&fs);
-    fs.put("/state/state.json", document.to_string());
-    dir.read_state::<State>()
-}
-
-#[test]
-fn state_decodes_only_from_an_object() {
-    let object = state_value();
-    assert!(read_state(&object).unwrap().is_some());
-
-    let fields = [
-        "schema", "session", "cores", "last_seq", "open", "dead_end", "backends",
-    ];
-    let array = positional(&object, &fields);
-    assert!(State::deserialize(array.clone()).is_err());
-    assert_expected_an_object(&read_state(&array).unwrap_err());
-}
-
-#[test]
-fn backend_paths_decode_only_from_an_object() {
-    let mut object = state_value();
-    object["backends"] = json!({"mprime": "/opt/mprime", "ycruncher": null});
-    assert_eq!(
-        read_state(&object).unwrap().unwrap().backends,
-        BackendPaths {
-            mprime: Some("/opt/mprime".into()),
-            ycruncher: None,
-        }
-    );
-
-    assert!(BackendPaths::deserialize(json!(["/opt/mprime", null])).is_err());
-    object["backends"] = json!(["/opt/mprime", null]);
-    assert_expected_an_object(&read_state(&object).unwrap_err());
-    assert!(serde_json::from_str::<BackendPaths>(r#"["/opt/mprime",null]"#).is_err());
-}
-
-#[test]
-fn every_struct_nested_in_state_refuses_a_positional_array() {
-    let object = state_value();
-    let mut found = Vec::new();
-    nested_objects(&object, "", &mut found);
-    assert!(found.len() >= 4, "{found:?}");
-    for pointer in found {
-        let mut broken = object.clone();
-        let nested = broken.pointer_mut(&pointer).unwrap();
-        *nested = as_array(nested);
-        let error = read_state(&broken).unwrap_err();
-        assert!(matches!(error, StateError::Decode(_)), "{pointer}: {error}");
-    }
 }

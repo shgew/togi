@@ -1,4 +1,4 @@
-//! What status and watch show of the policy, and the `tuner` key of `state.json`: the committed edges and
+//! What status and watch show of the policy: the committed edges and
 //! the applied profile and its hold, the events and vetoes, the qualifications and the latest night.
 
 use crate::{UnitId, UnitProfile};
@@ -162,7 +162,7 @@ pub struct NightProjection {
     pub filler: u32,
 }
 
-/// The `tuner` key of `state.json` and what `status` and `watch` read.
+/// What `status` and `watch` show of the tuner.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Projection {
     #[serde(default)]

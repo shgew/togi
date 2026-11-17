@@ -583,28 +583,6 @@ fn a_failed_close_still_releases_the_lock() {
 }
 
 #[test]
-fn state_is_published_through_the_journal_and_survives_a_reopen() {
-    let fs = MemFs::new();
-    let mut journal = begin_default(&fs);
-    journal.write_state(&vec![1, 2, 3]).unwrap();
-    drop(journal);
-    let journal = reopen(&fs, 2);
-    assert_eq!(
-        journal.read_state::<Vec<i32>>().unwrap(),
-        Some(vec![1, 2, 3])
-    );
-}
-
-#[test]
-fn a_state_failure_is_not_a_journal_failure() {
-    let fs = MemFs::new();
-    let mut journal = begin_default(&fs);
-    fs.fail_state_publication();
-    assert!(journal.write_state(&1).is_err());
-    assert!(journal.append(stamp(1), note("still fine"), &[]).is_ok());
-}
-
-#[test]
 fn boot_reasons_are_found_live_and_in_archives_by_complete_lines_only() {
     let fs = MemFs::new();
     let mut journal = begin_default(&fs);

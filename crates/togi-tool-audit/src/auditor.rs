@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use togi_journal::{Build, Event, Payload, Seq, ShutdownReason, Skipped};
+use togi_journal::{Event, Payload, Seq, ShutdownReason, Skipped};
 use togi_machine::{BootId, CoreId};
 
 use crate::rules::Rules;
@@ -15,30 +15,6 @@ struct Conclusion {
     dead_end_pending: bool,
 }
 
-/// How much of the journal is still only the operator's night confirmations: `session.start`, then one
-/// `stock.attested` per firmware context confirmed (`togi night` repeats it when the firmware changes before any run).
-/// Those confirmations publish no `state.json` and the import a first run commits is written by the run itself, after
-/// its `state.rebuilt`; so the first run's `state.rebuilt` naming only `state.json` records the snapshot's first
-/// publication, not a disagreement with a current one. Any other event ends the bootstrap.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum Bootstrap {
-    #[default]
-    Fresh,
-    Started,
-    Attested,
-    Over,
-}
-
-impl Bootstrap {
-    fn after(self, payload: &Payload) -> Self {
-        match (self, payload) {
-            (Self::Fresh, Payload::SessionStart(_)) => Self::Started,
-            (Self::Started | Self::Attested, Payload::StockAttested(_)) => Self::Attested,
-            _ => Self::Over,
-        }
-    }
-}
-
 /// `skipped` names the events a lenient read passed over: a gap they fill is no sequence violation, and a cause
 /// naming one of them is an existing earlier sequence.
 pub(crate) fn audit(events: &[Event], skipped: &Skipped, completion: Completion) -> Vec<Violation> {
@@ -51,7 +27,6 @@ pub(crate) fn audit(events: &[Event], skipped: &Skipped, completion: Completion)
     }
     if completion == Completion::Finished {
         auditor.writes.finish(&mut auditor.findings);
-        auditor.flush_rebuild();
         if let Some(last) = events.last() {
             if !auditor.conclusion.stopped {
                 auditor.findings.add(
@@ -76,20 +51,15 @@ struct Auditor<'a> {
     rules: Rules,
     writes: Writes,
     conclusion: Conclusion,
-    build: Option<&'a Build>,
-    rebuilt: Option<Seq>,
-    bootstrap: Bootstrap,
 }
 
 impl<'a> Auditor<'a> {
     fn fold(&mut self, event: &'a Event) {
         if let Payload::SessionStart(start) = &event.payload {
-            self.build = Some(&start.build);
             self.cores = start.cores.iter().map(|info| info.core).collect();
             self.cores.sort_unstable();
         }
         if self.boot != Some(&event.boot) {
-            self.flush_rebuild();
             self.boot = Some(&event.boot);
             self.writes.new_boot(&self.cores);
         }
@@ -98,7 +68,6 @@ impl<'a> Auditor<'a> {
         self.rules.fold(event, &self.seen, &mut self.findings);
         self.writes
             .fold(event, &self.seen, &self.cores, &mut self.findings);
-        self.fold_build(event);
         self.fold_conclusion(event);
         self.seen.insert(event.seq, event);
         self.previous = Some(event.seq);
@@ -283,123 +252,6 @@ impl<'a> Auditor<'a> {
             | Payload::DefectAnswered(_)
             | Payload::JournalTorn(_)
             | Payload::StateRebuilt(_) => {}
-        }
-    }
-
-    fn fold_build(&mut self, event: &'a Event) {
-        let attested_only = self.bootstrap == Bootstrap::Attested;
-        self.bootstrap = self.bootstrap.after(&event.payload);
-        match &event.payload {
-            Payload::ConfigLoaded(loaded) => {
-                if self.rebuilt.is_some() && self.build == Some(&loaded.build) {
-                    self.flush_rebuild();
-                }
-                self.rebuilt = None;
-                self.build = Some(&loaded.build);
-            }
-            Payload::StateRebuilt(rebuilt) => {
-                let first_publication = attested_only && rebuilt.fields == ["state.json"];
-                if !first_publication && !rebuilt.fields.iter().any(|field| field == "last_seq") {
-                    self.flush_rebuild();
-                    self.rebuilt = Some(event.seq);
-                }
-            }
-            Payload::Shutdown(_) | Payload::DeadEnd(_) | Payload::SessionArchived(_) => {
-                self.flush_rebuild();
-            }
-            Payload::SessionStart(_)
-            | Payload::SessionContext(_)
-            | Payload::SessionBaseline(_)
-            | Payload::SessionNotice(_)
-            | Payload::SessionWarning(_)
-            | Payload::SessionCarried(_)
-            | Payload::PreflightCheck(_)
-            | Payload::FrequencyIntent(_)
-            | Payload::FrequencyReadback(_)
-            | Payload::FrequencyDiscarded(_)
-            | Payload::SmuIntent(_)
-            | Payload::SmuWrite(_)
-            | Payload::SmuReadback(_)
-            | Payload::SmuError(_)
-            | Payload::ProfileApplied(_)
-            | Payload::ProfileChange(_)
-            | Payload::ProfileRestored(_)
-            | Payload::TrialIntent(_)
-            | Payload::TrialStart(_)
-            | Payload::TrialProgress(_)
-            | Payload::TrialSignal(_)
-            | Payload::TrialSample(_)
-            | Payload::TrialEnd(_)
-            | Payload::TrialCarried(_)
-            | Payload::Failure(_)
-            | Payload::FailureCarried(_)
-            | Payload::Mce(_)
-            | Payload::CrashDetected(_)
-            | Payload::TunerDecision(_)
-            | Payload::CorePhase(_)
-            | Payload::CheckingCycle(_)
-            | Payload::CheckingStep(_)
-            | Payload::CheckingChain(_)
-            | Payload::HostRanking(_)
-            | Payload::HuntStart(_)
-            | Payload::HuntGroup(_)
-            | Payload::HuntEnd(_)
-            | Payload::HuntSkipped(_)
-            | Payload::Combination(_)
-            | Payload::DeepeningRound(_)
-            | Payload::TunerWarning(_)
-            | Payload::BackendRetry(_)
-            | Payload::TaskStart(_)
-            | Payload::CommandReset(_)
-            | Payload::DefectFound(_)
-            | Payload::DefectAnswered(_)
-            | Payload::BootSavedEntry(_)
-            | Payload::BootLeaveReason(_)
-            | Payload::JournalTorn(_)
-            | Payload::DayBootStart(_)
-            | Payload::DayCheckpoint(_)
-            | Payload::DayOffsetsChanged(_)
-            | Payload::DayCleanStop(_)
-            | Payload::DayAnswer(_)
-            | Payload::DayRecord(_)
-            | Payload::DayFault(_)
-            | Payload::SessionImported(_)
-            | Payload::ExposureObserved(_)
-            | Payload::CcdEdge(_)
-            | Payload::CcdCap(_)
-            | Payload::NightPlan(_)
-            | Payload::NightQualification(_)
-            | Payload::NightReproduction(_)
-            | Payload::DayStep(_)
-            | Payload::DayApplied(_)
-            | Payload::DayEvent(_)
-            | Payload::DayVeto(_)
-            | Payload::DayHold(_)
-            | Payload::DayFreeze(_)
-            | Payload::DayInterval(_)
-            | Payload::DayPause(_)
-            | Payload::StockAttested(_)
-            | Payload::DayImported(_)
-            | Payload::UnitMapping(_)
-            | Payload::UnitEdge(_)
-            | Payload::ClimbDecision(_)
-            | Payload::UnitStop(_)
-            | Payload::CampaignStart(_)
-            | Payload::CampaignCharge(_)
-            | Payload::CampaignReclassified(_)
-            | Payload::FirmwareRestoration(_)
-            | Payload::SuccessorImported(_)
-            | Payload::DayUncleanEnd(_) => {}
-        }
-    }
-
-    fn flush_rebuild(&mut self) {
-        if let Some(seq) = self.rebuilt.take() {
-            self.findings.add(
-                seq,
-                Check::Replay,
-                "state.rebuilt records disagreement with a current state.json snapshot",
-            );
         }
     }
 }

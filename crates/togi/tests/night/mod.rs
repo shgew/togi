@@ -994,7 +994,6 @@ fn a_fresh_night_confirmation_is_used_by_the_later_run_after_verified_stock_star
         boot,
         journal,
         machine,
-        publication: togi_session::PublicationPolicy::OnFinish,
         bootloader: None,
         defects: &[],
         resume: None,

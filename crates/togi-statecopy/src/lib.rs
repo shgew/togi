@@ -1,6 +1,6 @@
-//! Copies of a state directory for facts and replay: the files a resumed session reads and nothing else,
-//! the live journal, `state.json` when present and every archive entry that belongs to a session (archived
-//! journals and the carry, compatibility and `reset --all` markers). Trial directories are left out.
+//! Copies of a state directory for facts and replay: the live journal and every archive entry that
+//! belongs to a session (archived journals and the carry, compatibility and `reset --all` markers).
+//! Trial directories are left out.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,6 @@ use togi_journal::DirError;
 use togi_journal::fs::{FileKind, Fs};
 
 const LIVE: &str = "events.jsonl";
-const STATE: &str = "state.json";
 const ARCHIVE: &str = "archive";
 
 #[derive(Debug, thiserror::Error)]
@@ -49,10 +48,6 @@ pub fn copy_in(fs: &dyn Fs, src: &Path, dst: &Path) -> Result<(), CopyError> {
         source,
     })?;
     let mut files = vec![PathBuf::from(LIVE)];
-    let state = src.join(STATE);
-    if fs.kind(&state).map_err(io_at("read", &state))?.is_some() {
-        files.push(PathBuf::from(STATE));
-    }
     files.extend(archived.iter().map(|name| Path::new(ARCHIVE).join(name)));
     create_dirs(fs, dst)?;
     if !archived.is_empty() {

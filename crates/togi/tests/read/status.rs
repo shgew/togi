@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use jiff::SignedDuration;
-use togi_journal::fs::Fs as _;
 use togi_journal::{
     ApplicationId, ApplyCause, Binding, Budget, CcdCap, CcdEdge, CcdVector, Classification,
     DayApplied, DayBootStart, DayEvent, DayEventId, DayFreeze, DayHold, DayStep, DayVeto,
@@ -28,14 +27,14 @@ use super::support::{Session, append_between_trial_mce, append_event, text, togi
 
 const _: () = assert!(Base::ALL.len() == 5, "every base needs a status sweep case");
 
-/// Every scenario's golden and snapshot restore boundaries share its base simulation.
+/// Every scenario's golden shares its base simulation.
 /// Separate exhaustive sweeps keep the five bases parallel without rebuilding any base.
 #[test_case::test_case(Base::Night; "night")]
 #[test_case::test_case(Base::Mapped; "mapped")]
 #[test_case::test_case(Base::Filler; "filler")]
 #[test_case::test_case(Base::Calendar; "calendar")]
 #[test_case::test_case(Base::DeadEnd; "dead end")]
-fn snapshot_plus_tail_renders_the_same_status_without_writes(base: Base) {
+fn status_replays_the_journal_without_reading_or_writing_legacy_state(base: Base) {
     for scenario in Scenario::ALL
         .into_iter()
         .filter(|scenario| scenario.base() == base)
@@ -44,9 +43,17 @@ fn snapshot_plus_tail_renders_the_same_status_without_writes(base: Base) {
             .events()
             .unwrap_or_else(|error| panic!("{}: {error}", scenario.name()));
         let dir = super::support::installed(&events);
+        let legacy = dir.path().join("state.json");
+        dir.fs.put(&legacy, br#"{"snapshot":{"build":"foreign"}"#);
+        dir.fs.record_history();
         let mutations = dir.fs.mutations();
         let ran = togi(&dir, &["status"]);
         assert_eq!(dir.fs.mutations(), mutations, "{}", scenario.name());
+        assert!(
+            dir.fs.reads().iter().all(|path| path != &legacy),
+            "{}",
+            scenario.name()
+        );
         assert_eq!(ran.status.code(), Some(0), "{}", scenario.name());
         assert_eq!(text(&ran.stderr), "", "{}", scenario.name());
         let shown = text(&ran.stdout);
@@ -77,40 +84,6 @@ fn snapshot_plus_tail_renders_the_same_status_without_writes(base: Base) {
             assert!(
                 !shown.contains(removed),
                 "{}: {removed} in\n{shown}",
-                scenario.name()
-            );
-        }
-        // Installation encoded the journal once. Walk its line boundaries once too,
-        // rather than encoding the overlapping snapshot prefixes again.
-        let bytes = dir.fs.read(&super::support::journal(&dir)).unwrap();
-        let mut lines = bytes.split_inclusive(|byte| *byte == b'\n');
-        let mut previous_cut = 0;
-        let mut byte_end = 0;
-        for cut in [1, events.len() / 2, events.len()] {
-            let state = togi_session::ReadState::replay(&events[..cut])
-                .unwrap_or_else(|error| panic!("{} at {cut}: {error}", scenario.name()));
-            byte_end += lines
-                .by_ref()
-                .take(cut - previous_cut)
-                .map(<[u8]>::len)
-                .sum::<usize>();
-            previous_cut = cut;
-            let prefix =
-                togi_journal::snapshot::Prefix::of(&bytes[..byte_end], Some(events[cut - 1].seq));
-            let saved = togi_journal::snapshot::seal(prefix, &state.document()).unwrap();
-            dir.fs.put(
-                dir.path().join("state.json"),
-                serde_json::to_vec(&saved).unwrap(),
-            );
-            let mutations = dir.fs.mutations();
-            let actual = togi(&dir, &["status"]);
-            assert_eq!(actual.status, ran.status, "{} at {cut}", scenario.name());
-            assert_eq!(actual.stdout, ran.stdout, "{} at {cut}", scenario.name());
-            assert_eq!(actual.stderr, ran.stderr, "{} at {cut}", scenario.name());
-            assert_eq!(
-                dir.fs.mutations(),
-                mutations,
-                "{} at {cut}",
                 scenario.name()
             );
         }

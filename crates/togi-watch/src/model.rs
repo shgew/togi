@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Activity, DeadEndCondition, Event, Payload, ShutdownReason, State as JournalState, TrialId,
+    Activity, DeadEndCondition, Event, Payload, Seq, ShutdownReason, State as JournalState, TrialId,
 };
 use togi_machine::{
     CcdId, Condition, CoreId, CoreSet, ObservedOffset, PerCore, Regime, ResetKind, Signal,
@@ -34,9 +34,6 @@ pub enum FoldError {
     /// The policy state refused an event.
     #[error(transparent)]
     Tuner(#[from] togi_tuner::policy::FoldError),
-    /// A writer handed a deferred presentation to a reader before materializing it.
-    #[error("trial-end presentation has not been materialized")]
-    DeferredPresentation,
 }
 
 /// The first event a batch could not fold.
@@ -51,7 +48,7 @@ pub struct BatchFoldError {
 }
 
 /// One core as a frame shows it.
-#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CoreView {
     /// The core.
     pub id: CoreId,
@@ -67,7 +64,7 @@ pub struct CoreView {
 }
 
 /// A trial as the journal recorded its intent.
-#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TrialView {
     /// Its id.
     pub id: TrialId,
@@ -121,7 +118,7 @@ impl TrialView {
 }
 
 /// How a trial ended.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TrialEndView {
     /// The trial.
     pub id: TrialId,
@@ -152,7 +149,7 @@ pub struct TrialEndView {
 }
 
 /// A crash detected on this boot, with no trial started since.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RecoveryView {
     /// When the crash was detected.
     pub crash_at: Timestamp,
@@ -165,7 +162,7 @@ pub struct RecoveryView {
 }
 
 /// The session stopped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StopView {
     /// When.
     pub at: Timestamp,
@@ -176,7 +173,7 @@ pub struct StopView {
 }
 
 /// The session ended at a dead end.
-#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DeadEndView {
     /// When.
     pub at: Timestamp,
@@ -187,7 +184,7 @@ pub struct DeadEndView {
 }
 
 /// The session the journal records.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionView {
     /// When it started.
     pub start: Timestamp,
@@ -332,38 +329,20 @@ impl<'a> Snapshot<'a> {
     }
 }
 
-/// Presentation reducers that readers restore alongside journal facts and incremental tuner state.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Presentation facts and the last trial end a reader can still show.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Presentation {
     facts: Facts,
     ended: Option<EndState>,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 enum EndState {
-    Ready(Box<RetainedEnd>),
-    #[serde(skip)]
-    Deferred(togi_journal::Seq),
+    Ready(Box<crate::derive::EndView>),
+    Deferred(Seq),
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-struct RetainedEnd {
-    view: crate::derive::EndView,
-}
-
-impl RetainedEnd {
-    fn into_derived(self) -> EndDerived {
-        EndDerived { view: self.view }
-    }
-}
-
-#[derive(Debug)]
-struct EndDerived {
-    view: crate::derive::EndView,
-}
-
-/// Whether an event makes the previous trial's between-trial outcome unobservable.
-pub fn clears_retained_end(event: &Event) -> bool {
+fn clears_retained_end(event: &Event) -> bool {
     matches!(
         event.payload,
         Payload::SessionStart(_)
@@ -373,69 +352,64 @@ pub fn clears_retained_end(event: &Event) -> bool {
     )
 }
 
-fn capture_end(
-    event: &Event,
-    journal: &JournalState,
-    policy: &PolicyState,
-    facts: &Facts,
-    ended: &mut Option<EndDerived>,
-    keep: bool,
-) {
-    if clears_retained_end(event) {
-        *ended = None;
-    } else if matches!(event.payload, Payload::TrialEnd(_)) {
-        *ended = (keep && journal.session.is_some()).then(|| EndDerived {
-            view: crate::derive::EndView::new(journal, policy, facts),
-        });
-    }
-}
-
 impl Presentation {
-    /// Retains the last trial's pre-end view before the shared reducers consume its result.
-    pub fn before_event(&mut self, event: &Event, journal: &JournalState, policy: &PolicyState) {
+    /// The only end in a batch whose pre-end view can still be shown afterwards.
+    pub fn batch_end(events: &[Event]) -> Option<Seq> {
+        events
+            .iter()
+            .rev()
+            .take_while(|event| !clears_retained_end(event))
+            .find(|event| matches!(event.payload, Payload::TrialEnd(_)))
+            .map(|event| event.seq)
+    }
+
+    fn retain_end(&mut self, event: &Event, end: impl FnOnce(&Facts) -> Option<EndState>) {
         if clears_retained_end(event) {
             self.ended = None;
-        } else if matches!(event.payload, Payload::TrialEnd(_)) && journal.session.is_some() {
-            self.ended = Some(EndState::Ready(Box::new(RetainedEnd {
-                view: crate::derive::EndView::new(journal, policy, &self.facts),
-            })));
+        } else if matches!(event.payload, Payload::TrialEnd(_)) {
+            self.ended = end(&self.facts);
         }
     }
 
-    /// Defers trial-end work until an `OnFinish` writer actually needs a snapshot.
+    /// Captures the pre-end view when this end remains observable after the batch.
+    pub fn before_event(
+        &mut self,
+        event: &Event,
+        journal: &JournalState,
+        policy: &PolicyState,
+        keep: bool,
+    ) {
+        self.retain_end(event, |facts| {
+            (keep && journal.session.is_some()).then(|| {
+                EndState::Ready(Box::new(crate::derive::EndView::new(
+                    journal, policy, facts,
+                )))
+            })
+        });
+    }
+
+    /// The live session has no frame to show yet; remember the end to reconstruct if it returns live folds.
     pub fn defer_before_event(&mut self, event: &Event) {
-        if matches!(event.payload, Payload::TrialEnd(_)) {
-            self.ended = Some(EndState::Deferred(event.seq));
-        } else if clears_retained_end(event) {
-            self.ended = None;
-        }
+        self.retain_end(event, |_| Some(EndState::Deferred(event.seq)));
     }
 
-    /// The pre-end checkpoint a deferred writer still needs to reconstruct.
-    pub fn deferred_end(&self) -> Option<togi_journal::Seq> {
+    /// The pre-end checkpoint the session still needs to reconstruct.
+    pub fn deferred_end(&self) -> Option<Seq> {
         match self.ended {
             Some(EndState::Deferred(seq)) => Some(seq),
             Some(EndState::Ready(_)) | None => None,
         }
     }
 
-    /// Replaces only the retained end, preserving the writer's current presentation facts.
+    /// Replaces only the retained end, preserving the current presentation facts.
     pub fn materialize_end(&mut self, ready: Self) {
         self.ended = ready.ended;
     }
 
-    /// Updates presentation facts after the shared reducers have consumed the event.
-    pub fn after_event(&mut self, event: &Event, journal: &JournalState, _policy: &PolicyState) {
+    /// Updates presentation facts after the shared reducers consume the event.
+    pub fn after_event(&mut self, event: &Event, journal: &JournalState) {
         self.facts.fold(event, journal);
     }
-}
-
-/// The reader-owned part of the published full-state document.
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct PublishedView {
-    facts: JournalState,
-    incremental: PolicyState,
-    presentation: Presentation,
 }
 
 /// The journal folded into facts.
@@ -443,11 +417,10 @@ pub struct PublishedView {
 pub struct Model {
     journal: JournalState,
     policy: PolicyState,
-    facts: Facts,
+    presentation: Presentation,
     problem: Option<FoldError>,
     skipped: Option<String>,
     derived: OnceCell<Derived>,
-    ended: Option<EndDerived>,
 }
 
 impl Default for Model {
@@ -455,77 +428,15 @@ impl Default for Model {
         Self {
             journal: JournalState::default(),
             policy: PolicyState::new(Params::SPEC),
-            facts: Facts::default(),
+            presentation: Presentation::default(),
             problem: None,
             skipped: None,
             derived: OnceCell::new(),
-            ended: None,
         }
     }
 }
 
 impl Model {
-    /// Restores a verified prefix, leaving the tail for the caller's batch fold.
-    pub fn from_snapshot(
-        events: &[Event],
-        saved: Option<(togi_journal::snapshot::Prefix, PublishedView)>,
-    ) -> (Self, usize) {
-        if let Some((prefix, saved)) = saved {
-            let same_session = saved.facts.session.as_ref().map(|session| session.id)
-                == events.first().and_then(|event| {
-                    if let Payload::SessionStart(start) = &event.payload {
-                        Some(start.session)
-                    } else {
-                        None
-                    }
-                });
-            if same_session
-                && saved.facts.last_seq == prefix.last_seq
-                && prefix.last_seq <= events.last().map(|event| event.seq)
-            {
-                let folded = events.partition_point(|event| Some(event.seq) <= prefix.last_seq);
-                return (
-                    Self::restored(saved.facts, saved.incremental, saved.presentation),
-                    folded,
-                );
-            }
-        }
-        (Self::new(), 0)
-    }
-
-    /// Loads the optional disk cache and folds only its tail.
-    pub fn read(directory: &std::path::Path, events: &[Event]) -> Self {
-        Self::read_saved(
-            events,
-            togi_journal::snapshot::read(directory).ok().flatten(),
-        )
-    }
-
-    /// Loads through an explicit read-only filesystem.
-    pub fn read_in(
-        fs: &dyn togi_journal::fs::Fs,
-        directory: &std::path::Path,
-        events: &[Event],
-    ) -> Self {
-        Self::read_saved(
-            events,
-            togi_journal::snapshot::read_in(fs, directory)
-                .ok()
-                .flatten(),
-        )
-    }
-
-    fn read_saved(
-        events: &[Event],
-        saved: Option<(togi_journal::snapshot::Prefix, PublishedView)>,
-    ) -> Self {
-        let (mut model, folded) = Self::from_snapshot(events, saved);
-        if model.fold_batch(&events[folded..]).is_err() && folded != 0 {
-            return project(events);
-        }
-        model
-    }
-
     /// The shared journal fold used by this model.
     pub const fn journal_state(&self) -> &JournalState {
         &self.journal
@@ -534,28 +445,6 @@ impl Model {
     /// The incremental policy fold used by this model.
     pub const fn tuner_state(&self) -> &PolicyState {
         &self.policy
-    }
-
-    /// Restores an independently verified snapshot without folding its prefix again.
-    pub fn restored(
-        journal: JournalState,
-        policy: PolicyState,
-        presentation: Presentation,
-    ) -> Self {
-        let (ended, problem) = match presentation.ended {
-            Some(EndState::Ready(ended)) => (Some(ended.into_derived()), None),
-            Some(EndState::Deferred(_)) => (None, Some(FoldError::DeferredPresentation)),
-            None => (None, None),
-        };
-        Self {
-            journal,
-            policy,
-            facts: presentation.facts,
-            ended,
-            problem,
-            skipped: None,
-            derived: OnceCell::new(),
-        }
     }
 
     /// A model of a journal with no events.
@@ -579,11 +468,9 @@ impl Model {
     /// pre-end outcomes for the next frame; a batch without a trial end leaves the previous outcomes in place.
     /// An empty batch leaves the model unchanged.
     pub fn fold_batch(&mut self, events: &[Event]) -> Result<(), BatchFoldError> {
-        let last_end = events
-            .iter()
-            .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
+        let retained = Presentation::batch_end(events);
         for (at, event) in events.iter().enumerate() {
-            self.fold_ending(event, last_end == Some(at))
+            self.fold_ending(event, retained == Some(event.seq))
                 .map_err(|source| BatchFoldError { index: at, source })?;
         }
         Ok(())
@@ -594,14 +481,8 @@ impl Model {
             return Err(problem.clone());
         }
         self.derived = OnceCell::new();
-        capture_end(
-            event,
-            &self.journal,
-            &self.policy,
-            &self.facts,
-            &mut self.ended,
-            keep_outcomes,
-        );
+        self.presentation
+            .before_event(event, &self.journal, &self.policy, keep_outcomes);
         let folded = self
             .journal
             .apply(event)
@@ -609,11 +490,11 @@ impl Model {
             .and_then(|()| self.policy.fold(event).map_err(FoldError::from));
         match folded {
             Ok(()) => {
-                self.facts.fold(event, &self.journal);
+                self.presentation.after_event(event, &self.journal);
                 Ok(())
             }
             Err(error) => {
-                self.facts = Facts::default();
+                self.presentation = Presentation::default();
                 self.problem = Some(error.clone());
                 Err(error)
             }
@@ -632,11 +513,11 @@ impl Model {
             if self.problem.is_some() || self.journal.session.is_none() {
                 Derived::empty()
             } else {
-                Derived::new(&self.journal, &self.policy, &self.facts)
+                Derived::new(&self.journal, &self.policy, &self.presentation.facts)
             }
         });
         let live = self.problem.is_none() && self.journal.session.is_some();
-        let facts = &self.facts;
+        let facts = &self.presentation.facts;
         let log = &facts.log[facts.log.len().saturating_sub(LOG_LIMIT)..];
         let mut snapshot = Snapshot {
             session: facts.session.as_ref().filter(|_| live),
@@ -664,14 +545,16 @@ impl Model {
             skipped: self.skipped.as_deref(),
             ended: None,
         };
-        snapshot.ended = self.ended.as_ref().and_then(|ended| {
-            let trial = ended.view.trial.as_ref()?;
-            (snapshot.between_trials() && snapshot.last.is_some_and(|last| last.id == trial.id))
-                .then_some(EndedTrial {
-                    trial,
-                    policy: &ended.view.policy,
-                })
-        });
+        if let Some(EndState::Ready(ended)) = &self.presentation.ended
+            && let Some(trial) = ended.trial.as_ref()
+        {
+            snapshot.ended = (snapshot.between_trials()
+                && snapshot.last.is_some_and(|last| last.id == trial.id))
+            .then_some(EndedTrial {
+                trial,
+                policy: &ended.policy,
+            });
+        }
         snapshot
     }
 }

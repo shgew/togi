@@ -20,20 +20,20 @@ use crate::error::FoldError;
 use crate::evidence::{self, RetryDue};
 
 /// An observation that stands as dead-end evidence until a dead end of its condition is recorded.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Cited {
     pub seq: Seq,
     pub detail: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum IntentKind {
     Smu,
     Trial(TrialId),
 }
 
 /// An intent that no write, error or end has answered yet.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OpenIntent {
     pub seq: Seq,
     pub boot: BootId,
@@ -57,7 +57,7 @@ fn trial_backends(intent: &TrialIntent) -> impl Iterator<Item = Backend> + '_ {
 }
 
 /// A trial's start and the last time anything of it was recorded.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Started {
     pub seq: Seq,
     pub cpus: Vec<CpuId>,
@@ -65,14 +65,12 @@ pub(crate) struct Started {
     pub mono: Option<Duration>,
     pub last_time: Timestamp,
     pub last_mono: Option<Duration>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<togi_journal::ControllerEvidence>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub roles: Vec<togi_machine::TrialRole>,
 }
 
 /// The trial that has an intent and no end.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct OpenTrial {
     pub seq: Seq,
     pub intent: TrialIntent,
@@ -81,7 +79,6 @@ pub(crate) struct OpenTrial {
     pub failure: Option<evidence::FailureSignal>,
     pub mces: Vec<Seq>,
     pub corrected: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub faults: Vec<evidence::RecordedProcessFault>,
     /// The monotonic time from which machine checks count as the trial's: its intent until
     /// `trial.start` records the post-profile-readback window.
@@ -142,7 +139,7 @@ impl OpenTrial {
 }
 
 /// A machine check recorded from another boot, for a crash to claim.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RecoveredMce {
     pub seq: Seq,
     pub from_boot: BootId,
@@ -153,7 +150,7 @@ pub(crate) struct RecoveredMce {
 }
 
 /// A machine check is the same one when its boot, monotonic time, CPU and bank are.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct MceKey {
     boot: BootId,
     mono_ns: Option<Duration>,
@@ -172,7 +169,7 @@ impl MceKey {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct BootRecord {
     last_kind: EventKind,
     applied: Option<(Seq, Condition)>,
@@ -187,7 +184,7 @@ impl BootRecord {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct BackendState {
     retry: Option<(u8, u32)>,
     followed: bool,
@@ -195,12 +192,11 @@ struct BackendState {
     streak: Vec<Seq>,
     /// The event that found the backend missing this night: its failed `backends.<backend>` preflight check, or
     /// a trial that found its program missing. It excludes the backend at once, without retries.
-    #[serde(default)]
     missing: Option<Seq>,
 }
 
 /// The latest dead end and what has followed it.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PendingDeadEnd {
     pub seq: Seq,
     pub dead_end: DeadEnd,
@@ -223,7 +219,7 @@ impl PendingDeadEnd {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct RecoveryState {
     started: bool,
     build: Option<Build>,
@@ -233,7 +229,6 @@ pub(crate) struct RecoveryState {
     /// Boots admitted by a tuning-run witness, oldest first: the ones crash detection and same-boot visits judge.
     boots: Vec<BootId>,
     /// Every boot with any event in the journal, day-only boots included, oldest first: the order of succession.
-    #[serde(default)]
     journal_boots: Vec<BootId>,
     records: BTreeMap<BootId, BootRecord>,
     crashes: BTreeMap<BootId, (Seq, CrashDetected)>,
@@ -242,7 +237,6 @@ pub(crate) struct RecoveryState {
     kernel_cursors: BTreeMap<BootId, KernelCursor>,
     unmatched: Vec<OpenIntent>,
     open: Option<OpenTrial>,
-    #[serde(serialize_with = "togi_machine::serde_pairs::serialize_set")]
     mce_keys: HashSet<MceKey>,
     recovered: Vec<RecoveredMce>,
     smu: Option<Cited>,
@@ -252,11 +246,9 @@ pub(crate) struct RecoveryState {
     trials: u32,
     dead_end: Option<PendingDeadEnd>,
     /// The boot the open night's first plan was made in: a day boot in another boot closes that night.
-    #[serde(default)]
     night_boot: Option<BootId>,
     /// The night task whose start is recorded but whose trial is not, with that start: a restart that resumes the
     /// task keeps it.
-    #[serde(default)]
     task: Option<(TaskStart, Timestamp)>,
 }
 

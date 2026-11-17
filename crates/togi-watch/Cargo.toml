@@ -10,7 +10,6 @@ description = "The togi watch dashboard: the incremental journal model, history,
 jiff.workspace = true
 ratatui = { workspace = true, features = ["crossterm"] }
 rustix = { workspace = true, features = ["event", "fs", "pipe", "termios"] }
-serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 togi-journal.workspace = true
@@ -21,6 +20,7 @@ tokio = { workspace = true, features = ["macros", "net", "rt", "signal", "sync",
 unicode-width.workspace = true
 
 [dev-dependencies]
+serde.workspace = true
 criterion.workspace = true
 rustix = { workspace = true, features = ["event", "fs", "process", "pty", "termios"] }
 tempfile.workspace = true

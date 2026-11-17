@@ -1,13 +1,11 @@
-use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::io::ErrorKind;
-use std::rc::Rc;
 
 use togi_journal::{EventKind, LockError, Payload, StateDir};
 use togi_machine::CoreId;
-use togi_simrun::{Observe, Persistence, SimError, SimOutcome, simulate};
+use togi_simrun::{Persistence, SimError, SimOutcome, simulate};
 
-use crate::common::{Bench, crash_first, hunt_machine, nz, simulator, state_json};
+use crate::common::{Bench, crash_first, hunt_machine, nz, simulator};
 
 #[test]
 fn boot_cap_leaves_a_partial_session_in_the_journal() {
@@ -27,55 +25,6 @@ fn boot_cap_leaves_a_partial_session_in_the_journal() {
         .filter(|event| matches!(event.payload, Payload::CrashDetected(_)))
         .count();
     assert_eq!((boot_ids.len(), crashes), (3, 2));
-
-    let state: serde_json::Value =
-        serde_json::from_slice(&crate::common::state_json(&bench.fs).unwrap()).unwrap();
-    let last = events.last().unwrap().seq.get();
-    assert_eq!(state["facts"]["last_seq"], serde_json::json!(last));
-}
-
-#[test]
-fn a_cap_whose_last_state_cannot_be_published_is_an_error_not_a_cap() {
-    let bench = Bench::new(&hunt_machine(2), 1);
-    let mut input = bench.input();
-    input.max_boots = nz(3);
-    let fs = bench.fs.clone();
-    let sim = bench.sim.clone();
-    let initial = Rc::new(RefCell::new(None));
-    let snapshot = Rc::clone(&initial);
-    let mut crashes = 0;
-    input.observer = Some(Box::new(move |event| {
-        if event.kind() == EventKind::SessionStart {
-            *snapshot.borrow_mut() = Some(
-                state_json(&fs).expect("the operator attestation has an initial state projection"),
-            );
-        }
-        if event.kind() == EventKind::TrialEnd {
-            sim.crash();
-        }
-        if event.kind() == EventKind::CrashDetected {
-            crashes += 1;
-            if crashes == 2 {
-                fs.fail_state_publication();
-            }
-        }
-        Observe::Continue
-    }));
-    let error = simulate(input).err().unwrap();
-    assert!(
-        matches!(error, SimError::Publish { boot: 3, .. }),
-        "{error}"
-    );
-    assert_eq!(
-        state_json(&bench.fs),
-        Some(
-            initial
-                .borrow_mut()
-                .take()
-                .expect("no initial snapshot was observed")
-        ),
-        "warm crashes and a failed final publication leave the initial attestation snapshot unchanged"
-    );
 }
 
 #[test]

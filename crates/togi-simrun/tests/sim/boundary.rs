@@ -185,10 +185,6 @@ fn real_fs_a_dump_writes_the_capped_memory_directory_to_disk() {
         bench.fs.contents(format!("{STATE}/machine.json")).unwrap()
     );
     assert_eq!(
-        std::fs::read(target.join("state/state.json")).unwrap(),
-        bench.fs.contents(format!("{STATE}/state.json")).unwrap()
-    );
-    assert_eq!(
         std::fs::read(target.join("state/events.jsonl")).unwrap(),
         bench.fs.contents(format!("{STATE}/events.jsonl")).unwrap()
     );

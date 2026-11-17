@@ -34,7 +34,6 @@ pub fn run(input: RunInput<'_>) -> Ended {
 
 impl Session<'_> {
     fn startup(&mut self) -> Outcome {
-        self.rebuild_state()?;
         for step in [Self::start, Self::recover_prior] {
             let control = step(self)?;
             if control != Control::Continue {

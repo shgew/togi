@@ -8,6 +8,7 @@ use togi_defect::{DefectState, Entry, KNOWN_DEFECTS};
 use togi_journal::{Event, Journal, Payload, Seq, SmuCommand, SmuIntentReceipt, SmuWritten, Stamp};
 use togi_machine::{CancellationToken, Clock};
 use togi_render::Renderer;
+use togi_watch::model::Presentation;
 
 use crate::boot::BootHandoff;
 use crate::error::{AppendFailure, FoldError, JournalFailure};
@@ -26,13 +27,13 @@ pub(crate) struct Unresumed {
 
 /// Every reducer the run keeps over its journal, each fed every event once and in order: the recovery fold first,
 /// then the tuner state, then the defect state.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Folds {
     pub recovery: RecoveryState,
     pub tuner: togi_tuner::policy::State,
     pub defects: DefectState,
     pub facts: togi_journal::State,
-    pub presentation: togi_watch::model::Presentation,
+    pub presentation: Presentation,
 }
 
 impl Default for Folds {
@@ -42,7 +43,7 @@ impl Default for Folds {
             tuner: togi_tuner::policy::State::new(togi_tuner::policy::Params::SPEC),
             defects: DefectState::default(),
             facts: togi_journal::State::default(),
-            presentation: togi_watch::model::Presentation::default(),
+            presentation: Presentation::default(),
         }
     }
 }
@@ -66,43 +67,40 @@ impl Folds {
     }
 
     pub(crate) fn apply_batch(&mut self, events: &[Event]) -> Result<(), FoldError> {
-        let retained = events
-            .iter()
-            .rev()
-            .take_while(|event| !togi_watch::model::clears_retained_end(event))
-            .find(|event| matches!(event.payload, Payload::TrialEnd(_)))
-            .map(|event| event.seq);
+        let retained = Presentation::batch_end(events);
         for event in events {
-            if Some(event.seq) == retained {
-                self.apply(event)?;
-            } else {
-                self.apply_deferred(event)?;
-            }
+            self.apply(event, retained == Some(event.seq))?;
         }
         Ok(())
     }
 
     /// Folds one event. A tuner state that cannot take it in stays poisoned: the journal is corrupt.
-    pub(crate) fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
+    fn apply(&mut self, event: &Event, keep_end: bool) -> Result<(), FoldError> {
         self.presentation
-            .before_event(event, &self.facts, &self.tuner);
+            .before_event(event, &self.facts, &self.tuner, keep_end);
         self.apply_after_presentation(event)
     }
 
-    pub(crate) fn apply_deferred(&mut self, event: &Event) -> Result<(), FoldError> {
+    fn apply_deferred(&mut self, event: &Event) -> Result<(), FoldError> {
         self.presentation.defer_before_event(event);
         self.apply_after_presentation(event)
     }
 
-    pub(crate) fn materialize(&mut self, events: &[Event]) -> Result<(), FoldError> {
+    fn materialize(
+        &mut self,
+        events: &[Event],
+        defects: &'static [Entry],
+    ) -> Result<(), FoldError> {
         if let Some(seq) = self.presentation.deferred_end() {
-            let mut prefix = Self::default();
+            let mut prefix = Self {
+                defects: DefectState::new(defects),
+                ..Self::default()
+            };
             for event in events {
+                prefix.apply(event, event.seq == seq)?;
                 if event.seq == seq {
-                    prefix.apply(event)?;
                     break;
                 }
-                prefix.apply_deferred(event)?;
             }
             self.presentation.materialize_end(prefix.presentation);
         }
@@ -130,8 +128,7 @@ impl Folds {
         })?;
         self.defects.fold_with_mapping_rewind(event, rewind);
         self.facts.apply(event)?;
-        self.presentation
-            .after_event(event, &self.facts, &self.tuner);
+        self.presentation.after_event(event, &self.facts);
         Ok(())
     }
 }
@@ -154,11 +151,6 @@ pub(crate) struct Appender<'machine> {
     trial: Option<CancellationToken>,
     handoff: Option<BootHandoff>,
     defects: &'static [Entry],
-    pub(crate) publication: Option<crate::publication::PublicationPolicy>,
-    pub(crate) publishing: bool,
-    /// The folds came from a capsule that covers the journal: the run before it left `state.json` pending on purpose,
-    /// so there is nothing to rebuild.
-    pub(crate) adopted: bool,
 }
 
 impl<'machine> Appender<'machine> {
@@ -184,9 +176,7 @@ impl<'machine> Appender<'machine> {
         defects: &'static [Entry],
         capsule: Option<ResumeCapsule>,
     ) -> Result<Self, Box<Unresumed>> {
-        let warm = capsule.as_ref().is_some_and(ResumeCapsule::is_warm);
         let adopted = capsule.and_then(|capsule| capsule.adopt(&journal, defects));
-        let was_adopted = warm && adopted.is_some();
         let folds = match adopted {
             Some(folds) => folds,
             None => match Folds::replay_with(defects, journal.events()) {
@@ -207,16 +197,25 @@ impl<'machine> Appender<'machine> {
             trial: None,
             handoff: None,
             defects,
-            publication: None,
-            publishing: false,
-            adopted: was_adopted,
         })
     }
 
     /// The capsule that lets the next run skip folding this appender's journal.
+    pub(crate) fn into_parts(mut self) -> (Journal, Result<Option<ResumeCapsule>, FoldError>) {
+        let capsule = if self.failure().is_none() {
+            self.folds
+                .materialize(self.journal.events(), self.defects)
+                .map(|()| Some(ResumeCapsule::new(&self.journal, self.defects, self.folds)))
+        } else {
+            Ok(None)
+        };
+        (self.journal, capsule)
+    }
+
+    #[cfg(test)]
     pub(crate) fn capsule(&self) -> Result<ResumeCapsule, FoldError> {
         let mut folds = self.folds.clone();
-        folds.materialize(self.journal.events())?;
+        folds.materialize(self.journal.events(), self.defects)?;
         Ok(ResumeCapsule::new(&self.journal, self.defects, folds))
     }
 
@@ -277,6 +276,7 @@ impl<'machine> Appender<'machine> {
         self.trial = token;
     }
 
+    #[cfg(test)]
     pub(crate) fn into_journal(self) -> Journal {
         self.journal
     }
@@ -377,11 +377,7 @@ impl<'machine> Appender<'machine> {
                 if let Some(hook) = self.on_append.as_mut() {
                     hook(event);
                 }
-                if self.publication == Some(crate::PublicationPolicy::OnFinish) {
-                    self.folds.apply_deferred(event)
-                } else {
-                    self.folds.apply(event)
-                }
+                self.folds.apply_deferred(event)
             }));
             match taken {
                 Ok(Ok(())) => {}
@@ -401,10 +397,6 @@ impl<'machine> Appender<'machine> {
             let result = handoff.after_durable_append(self);
             self.handoff = Some(handoff);
             result?;
-        }
-        if self.publication == Some(crate::publication::PublicationPolicy::Live) && !self.publishing
-        {
-            self.publish_state()?;
         }
         Ok(())
     }

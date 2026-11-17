@@ -11,7 +11,7 @@ use togi_session::{ConfigSource, Divergence};
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 
-use super::{due, events, lock, simulate, simulate_checked, verify};
+use super::{due, events, simulate, simulate_checked, verify};
 use crate::{Observe, Persistence, Replay, SimError, SimInput, SimOutcome};
 
 fn nz(n: u32) -> NonZeroU32 {
@@ -214,9 +214,9 @@ fn a_resume_state_that_differs_from_the_journal_fails_the_simulation() {
 }
 
 #[test]
-fn a_failed_check_after_a_warm_crash_still_publishes_the_crashed_boots_state() {
+fn a_failed_check_after_a_warm_crash_still_closes_the_journal() {
     let fs = MemFs::new();
-    let projected = MemFs::new();
+    let mut observed = Vec::new();
     let outcome = simulate_checked(
         crashing_input(Persistence::Memory(fs.clone()), Replay::Warm, Some(nz(1))),
         &mut |capsule, events, latched, boot| {
@@ -224,19 +224,22 @@ fn a_failed_check_after_a_warm_crash_still_publishes_the_crashed_boots_state() {
             if boot < 2 {
                 return Ok(());
             }
-            let mut dir = lock(&Persistence::Memory(projected.clone())).unwrap();
-            capsule.unwrap().publish(&mut dir).unwrap();
+            observed.extend(events.iter().map(|event| event.seq));
             Err(SimError::NoCapsule { boot })
         },
     );
     assert!(matches!(outcome, Err(SimError::NoCapsule { boot: 2 })));
-    let published = fs.contents("/state/state.json");
-    assert!(published.is_some());
-    assert_eq!(published, projected.contents("/state/state.json"));
+    let recorded: Vec<_> = events(&Persistence::Memory(fs))
+        .unwrap()
+        .iter()
+        .map(|event| event.seq)
+        .collect();
+    assert!(!observed.is_empty());
+    assert_eq!(recorded, observed);
 }
 
 #[test]
-fn a_dump_receives_the_stopped_memory_directory_after_publication() {
+fn a_dump_receives_the_stopped_memory_directory_after_close() {
     let fs = MemFs::new();
     let mut input = sim_input(
         machine(),
@@ -259,7 +262,6 @@ fn a_dump_receives_the_stopped_memory_directory_after_publication() {
             memory.contents("/state/events.jsonl"),
             fs.contents("/state/events.jsonl")
         );
-        assert!(memory.contents("/state/state.json").is_some());
         assert!(memory.contents("/state/machine.json").is_none());
         dumped = true;
         Ok(())
@@ -277,7 +279,6 @@ fn a_dump_of_a_capped_simulation_includes_the_machine_it_left() {
     let outcome = super::simulate_with_dump(input, &mut verify, &mut |memory, _| {
         assert!(!memory.contents("/state/machine.json").unwrap().is_empty());
         assert!(!memory.contents("/state/events.jsonl").unwrap().is_empty());
-        assert!(memory.contents("/state/state.json").is_some());
         dumped = true;
         Ok(())
     })

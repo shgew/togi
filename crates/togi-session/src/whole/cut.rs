@@ -15,7 +15,7 @@
 //!
 //! A killed trial is compared against a control given the same interruption, even with zero wall time:
 //! it ends inconclusive, supplies no passing exposure and still consumes any observed queue wall time.
-//! Every kill cut also checks its live folds and persisted snapshot against full replay;
+//! Every kill cut also checks its live folds against full replay;
 //! no cut or field is omitted.
 //!
 //! Machine crashes also cover every durable event. Power is cut before and after every actual SMU access.
@@ -398,11 +398,7 @@ fn day(
         let events = day.events().to_vec();
         if matches!(fate, Fate::Killed) {
             let replay = folded(&events);
-            assert_eq!(
-                serde_json::to_value(&day.state).unwrap(),
-                serde_json::to_value(&replay).unwrap(),
-                "live day state versus replay",
-            );
+            assert_eq!(day.state, replay, "live day state versus replay");
             assert_lines_equal(
                 &compared_projection(&events, &day.state.project()),
                 &compared_projection(&events, &replay.project()),
@@ -493,10 +489,6 @@ fn segment(
             .capsule
             .as_ref()
             .expect("a completed phase returns its live folds")
-            .verify(ended.journal.events())
-            .unwrap();
-        crate::ResumeCapsule::read_snapshot(&ended.journal, bench.defects)
-            .unwrap()
             .verify(ended.journal.events())
             .unwrap();
     }

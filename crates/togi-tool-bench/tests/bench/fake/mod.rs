@@ -32,23 +32,16 @@ impl ProcessBench {
         self.dir.path().join(name)
     }
 
-    /// Sets the journal every simulator leaves, with the `state.json` a run publishes at its last event.
+    /// Sets the journal every simulator leaves.
     pub(crate) fn journal(&self, events: &[Event]) {
         let lines: String = events
             .iter()
             .map(|event| serde_json::to_string(event).unwrap() + "\n")
             .collect();
-        let folded = togi_session::ReadState::replay(events).unwrap();
-        let prefix = togi_journal::snapshot::Prefix::of(
-            lines.as_bytes(),
-            events.last().map(|event| event.seq),
-        );
-        let state = togi_journal::snapshot::seal(prefix, &folded.document()).unwrap();
         fs::write(self.path("journal.jsonl"), lines).unwrap();
-        fs::write(self.path("state.json"), state.to_string()).unwrap();
     }
 
-    /// A simulator that records its arguments, copies the journal and its `state.json` into its state directory,
+    /// A simulator that records its arguments, copies the journal into its state directory,
     /// prints `log` and exits with `exit`; `before` runs first.
     pub(crate) fn simulator(&self, name: &str, exit: i32, log: &str, before: &str) -> PathBuf {
         let path = self.path(name);
@@ -62,13 +55,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 cp '{journal}' "$dir/events.jsonl"
-cp '{state}' "$dir/state.json"
 echo '{log}'
 exit {exit}
 "#,
             args = self.path("args.txt").display(),
             journal = self.path("journal.jsonl").display(),
-            state = self.path("state.json").display(),
         );
         fs::write(&path, script).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();

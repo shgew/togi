@@ -76,7 +76,7 @@ impl Monotonicity {
 
 /// What makes two trials the same class: the matrix cell and the journal's exposure class both reduce
 /// to it, so a cell is matched to its observations without storing cells in the journal.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(super) struct Sig {
     regime: Regime,
     workloads: Vec<WorkloadId>,

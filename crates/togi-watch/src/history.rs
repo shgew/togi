@@ -15,7 +15,7 @@ pub const HISTORY_LIMIT: usize = 200;
 pub const LOG_LIMIT: usize = 400;
 
 /// Passed trials of one subject, merged while they follow one another.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Passes {
     /// What the trials tested and loaded, raw untrusted text in it; passes merge only with passes of the same
     /// subject.
@@ -41,7 +41,7 @@ impl Passes {
 }
 
 /// Whom a failed trial's evidence names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Named {
     /// The trial names this core.
     Core(CoreId),
@@ -58,7 +58,7 @@ impl Named {
 
 /// How a trial ended, kept in parts so the history panel can reserve what attributes the failure before it fits
 /// the context. The journal's own message and the log view never pass through here.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verdict {
     /// The signal the trial ended with, when the journal names one.
     pub signal: Option<Signal>,
@@ -94,7 +94,7 @@ impl Verdict {
 }
 
 /// A failed trial.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Failed {
     /// What the trial loaded, raw untrusted text in it.
     pub subject: String,
@@ -105,7 +105,7 @@ pub struct Failed {
 }
 
 /// What an entry says, with the fields its sentence is built from.
-#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum What {
     /// A sentence kept as it was written, raw untrusted text in it.
     Said(String),
@@ -128,7 +128,7 @@ pub enum What {
 }
 
 /// One line of what happened, in plain words or merged from several events.
-#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Entry {
     /// When it happened; a merged entry shows its last event.
     pub at: Timestamp,
@@ -141,7 +141,7 @@ pub struct Entry {
 }
 
 /// One raw line of the journal, as the log view lists it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogEntry {
     /// The event's sequence number.
     pub seq: Seq,
@@ -247,7 +247,7 @@ pub(crate) fn fold_entry(history: &mut Vec<Entry>, line: Entry) {
 }
 
 /// The kept history: entries in the order they happened, and how many older ones were let go.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct History {
     pub(crate) entries: Vec<Entry>,
     pub(crate) dropped: usize,

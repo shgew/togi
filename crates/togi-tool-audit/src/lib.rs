@@ -2,8 +2,7 @@
 //! `docs/spec/journal.md` that a journal states about itself, judged from its events alone without running the
 //! tuner's scheduler: sequence and cause integrity, the SMU intent/write/readback protocol, the conclusion of a
 //! finished run and, for Ruleset 13, that an applied nonzero day profile was night-qualified, a promotion respects
-//! every active veto and a live exposure cites its trial. Checking a published `state.json` folds the journal
-//! through the session's readers, since that document is the tuner's projection.
+//! every active veto and a live exposure cites its trial.
 //!
 //! Offsets the tuner chooses are [`togi_machine::TargetOffset`]s, which cannot leave [-50, 0] and are refused by the
 //! journal's decoder, so a journal holding one is unreadable ([`AuditError`]) rather than a violation. Readbacks and
@@ -15,11 +14,10 @@
 mod auditor;
 mod report;
 mod rules;
-mod snapshot;
 mod violation;
 mod writes;
 
-use togi_journal::{DirError, Event, LookupError, Skipped, StateDir, StateError};
+use togi_journal::{DirError, Event, LookupError, Skipped, StateDir};
 
 pub use report::{
     DirectoryAudit, Finding, JournalSkip, Kind, OpenError, Report, audit as audit_directories,
@@ -33,8 +31,6 @@ pub enum AuditError {
     Archives(#[from] DirError),
     #[error(transparent)]
     Journal(#[from] LookupError),
-    #[error(transparent)]
-    State(StateError),
 }
 
 /// Every violation of one journal's events, in event order.
@@ -52,8 +48,7 @@ pub fn audit_skipping(
     auditor::audit(events, skipped, completion)
 }
 
-/// Audits every journal of a state directory, the archived sessions oldest first and then the live one, whose
-/// published `state.json` must also equal a fresh fold of it, and for a finished run be published at its last event.
+/// Audits every journal of a state directory, the archived sessions oldest first and then the live one.
 /// Archives may end anywhere; `live` says whether the live journal's run is finished. Journals are read leniently:
 /// events of kinds this build does not know are left out and reported in each [`JournalAudit::skipped`].
 pub fn audit_recordings(dir: &StateDir, live: Completion) -> Result<Vec<JournalAudit>, AuditError> {
@@ -72,11 +67,9 @@ pub fn audit_recordings(dir: &StateDir, live: Completion) -> Result<Vec<JournalA
         });
     }
     if let Some(recording) = recordings.next() {
-        let mut violations = audit_skipping(recording.events(), recording.skipped(), live);
-        violations.extend(snapshot::audit(dir, recording.events(), live)?);
         audits.push(JournalAudit {
             source: Source::Live,
-            violations,
+            violations: audit_skipping(recording.events(), recording.skipped(), live),
             skipped: recording.skipped().clone(),
         });
     }

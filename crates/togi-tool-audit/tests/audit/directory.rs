@@ -23,15 +23,6 @@ fn journal(body: Vec<Event>) -> Vec<u8> {
     bytes(&events)
 }
 
-/// Puts the live journal of `body` in `fs`, with the `state.json` a finished run publishes for it.
-fn live(fs: &MemFs, body: Vec<Event>) {
-    let mut events = vec![header()];
-    events.extend(body);
-    fs.put("/state/events.jsonl", bytes(&events));
-    let document = state_document(&events);
-    fs.put("/state/state.json", serde_json::to_vec(&document).unwrap());
-}
-
 #[expect(
     clippy::disallowed_methods,
     reason = "audit content fixtures open only the injected in-memory journal"
@@ -51,7 +42,19 @@ fn archives_may_end_anywhere_and_only_the_live_run_must_conclude() {
         "/state/archive/20251231T000000Z.jsonl",
         journal(vec![intent(2, set(0, -5)), write(3, set(0, -5), 2)]),
     );
-    live(&fs, vec![stop(2)]);
+    fs.put(
+        "/state/events.jsonl",
+        journal(vec![
+            event(
+                2,
+                "state.rebuilt",
+                serde_json::json!({"fields": ["last_seq"]}),
+            ),
+            stop(3),
+        ]),
+    );
+    fs.put("/state/state.json", "{torn");
+    fs.record_history();
     let audits = audit_recordings(&open(&fs), Finished).unwrap();
     assert_eq!(audits.len(), 2);
     assert_eq!(
@@ -59,6 +62,7 @@ fn archives_may_end_anywhere_and_only_the_live_run_must_conclude() {
         Source::Archived(session("20251231T000000Z"))
     );
     assert!(audits.iter().all(|audit| audit.violations.is_empty()));
+    assert!(fs.reads().iter().all(|path| !path.ends_with("state.json")));
 }
 
 #[test]
@@ -110,7 +114,7 @@ fn a_directory_with_archives_only_audits_them_and_an_unfinished_live_journal_is_
         Source::Archived(session("20251231T000000Z"))
     );
 
-    live(&fs, vec![phase(2, 0)]);
+    fs.put("/state/events.jsonl", journal(vec![phase(2, 0)]));
     let audits = audit_recordings(&open(&fs), Finished).unwrap();
     assert_eq!(
         audits[1]

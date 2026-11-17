@@ -6,10 +6,7 @@ use std::fmt;
 use std::io;
 use std::sync::Arc;
 
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-
-use crate::dir::{ArchiveKind, DirError, StateDir, StateError};
+use crate::dir::{ArchiveKind, DirError, StateDir};
 use crate::event::{Event, Seq, Stamp};
 use crate::fs::FsFile;
 use crate::payload::{
@@ -154,6 +151,13 @@ impl Writer {
     }
 }
 
+/// A position in one open journal, unchanged by a simulated reboot without an append.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OpenPosition {
+    opened: JournalId,
+    last: Option<Seq>,
+}
+
 /// The one writer of a state directory's live journal. A write or fsync failure poisons it: it refuses every later
 /// append without touching the disk, and reopening the directory replays whatever survived.
 #[derive(Debug)]
@@ -162,11 +166,11 @@ pub struct Journal {
     events: Vec<Event>,
     boot: togi_machine::BootId,
     id: JournalId,
+    opened: JournalId,
     repaired: Option<Seq>,
     session: Option<SessionId>,
     poison: Option<Arc<WriteFailure>>,
     dir: StateDir,
-    prefix: crate::snapshot::PrefixHash,
 }
 
 pub(crate) fn encode(event: &Event) -> Result<Vec<u8>, serde_json::Error> {
@@ -188,10 +192,12 @@ impl Journal {
         &self.events
     }
 
-    /// The exact raw-byte prefix accepted by this writer, including its buffered events.
-    pub fn prefix(&self) -> crate::snapshot::Prefix {
-        self.prefix
-            .prefix(self.events.last().map(|event| event.seq))
+    /// Identifies these events without reading, hashing or copying them. A fresh open has a new identity.
+    pub fn position(&self) -> OpenPosition {
+        OpenPosition {
+            opened: self.opened,
+            last: self.events.last().map(|event| event.seq),
+        }
     }
 
     pub fn event(&self, seq: Seq) -> Option<&Event> {
@@ -213,14 +219,6 @@ impl Journal {
 
     pub const fn state_dir(&self) -> &StateDir {
         &self.dir
-    }
-
-    pub fn write_state<T: Serialize>(&mut self, state: &T) -> Result<(), StateError> {
-        self.dir.write_state(state)
-    }
-
-    pub fn read_state<T: DeserializeOwned>(&self) -> Result<Option<T>, StateError> {
-        self.dir.read_state()
     }
 
     /// Whether this journal or an archived one acknowledged the boot leave reason.
@@ -366,7 +364,6 @@ impl Journal {
             self.poison = Some(Arc::clone(&failure));
             return Err(AppendError::Failed(failure));
         }
-        self.prefix.append(&line);
         self.session = self.session.or(session);
         self.events.push(decoded);
         Ok(&self.events[self.events.len() - 1])
@@ -418,9 +415,9 @@ impl Journal {
         Ok(self.dir)
     }
 
-    /// Ends the session: the marker the kind needs, then a durable `session.archived`, then the state file, the trial
-    /// directory and the journal move into `archive/`. The writer is spent; a failure after the event is recorded is
-    /// finished by the next open of the directory.
+    /// Ends the session: the marker the kind needs, then a durable `session.archived`, then the trial directory
+    /// and journal move into `archive/`. The writer is spent; a failure after the event is recorded is finished
+    /// by the next open of the directory.
     pub fn archive(
         mut self,
         stamp: Stamp,

@@ -350,7 +350,7 @@ fn a_boot_without_a_shutdown_crashed_unless_it_is_current_or_a_crash_was_recorde
 
 #[test_case(false; "new boot")]
 #[test_case(true; "same boot after shutdown")]
-fn rebuilding_state_admits_tuning_before_configuration_is_recorded(same_boot: bool) {
+fn a_historical_rebuild_admits_tuning_before_configuration_is_recorded(same_boot: bool) {
     let mut log = Log::new();
     log.add(shutdown(ShutdownReason::Signal), &[]);
     let name = if same_boot { "b0" } else { "b1" };
@@ -368,8 +368,8 @@ fn rebuilding_state_admits_tuning_before_configuration_is_recorded(same_boot: bo
     );
 }
 
-/// A resumed run whose snapshot matched writes no `state.rebuilt`; its startup kernel boundary can record a machine
-/// check before `config.loaded`, and a crash right after it is still a crashed tuning boot.
+/// The startup kernel boundary can record a machine check before `config.loaded`, and a crash
+/// right after it is still a crashed tuning boot.
 #[test_case(false; "new boot")]
 #[test_case(true; "same boot after shutdown")]
 fn a_startup_machine_check_admits_tuning_before_configuration_is_recorded(same_boot: bool) {

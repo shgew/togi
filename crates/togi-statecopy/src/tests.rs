@@ -39,15 +39,12 @@ fn files_under(fs: &MemFs, root: &str) -> Vec<(String, Vec<u8>)> {
 }
 
 #[test]
-fn the_live_journal_state_and_session_bearing_archive_entries_are_copied_and_nothing_else() {
+fn the_live_journal_and_session_bearing_archive_entries_are_copied_and_nothing_else() {
     let fs = MemFs::new();
     state(&fs);
     let before = files_under(&fs, "/state");
     copy_in(&fs, Path::new("/state"), Path::new("/copy/nested")).unwrap();
-    let mut expected = vec![
-        ("events.jsonl".to_owned(), b"live\n".to_vec()),
-        ("state.json".to_owned(), b"{}".to_vec()),
-    ];
+    let mut expected = vec![("events.jsonl".to_owned(), b"live\n".to_vec())];
     expected
         .extend(SESSION_BEARING.map(|name| (format!("archive/{name}"), name.as_bytes().to_vec())));
     expected.sort();
@@ -56,7 +53,7 @@ fn the_live_journal_state_and_session_bearing_archive_entries_are_copied_and_not
 }
 
 #[test]
-fn a_directory_without_state_or_archive_copies_the_live_journal_alone() {
+fn a_directory_without_archives_copies_the_live_journal_alone() {
     let fs = MemFs::new();
     fs.put("/state/events.jsonl", "live\n");
     copy_in(&fs, Path::new("/state"), Path::new("/copy")).unwrap();
@@ -92,7 +89,6 @@ fn a_session_bearing_entry_that_is_a_directory_fails_naming_it_before_anything_i
 }
 
 #[test_case("/state/events.jsonl", "/elsewhere/events.jsonl", "read /state/events.jsonl: "; "live journal")]
-#[test_case("/state/state.json", "/elsewhere/state.json", "read /state/state.json: "; "state file")]
 #[test_case("/state/archive", "/elsewhere/archive", "list the archive of /state: list archive /state/archive: "; "archive")]
 #[test_case(
     "/state/archive/20260101T000000Z.jsonl",
@@ -105,7 +101,6 @@ fn a_link_in_the_state_directory_is_refused_naming_it(link: &str, target: &str, 
     fs.put("/state/events.jsonl", "live\n");
     fs.create_dir(Path::new("/state/archive")).unwrap();
     fs.put("/elsewhere/events.jsonl", "elsewhere\n");
-    fs.put("/elsewhere/state.json", "{}");
     fs.put("/elsewhere/archive/20260101T000000Z.jsonl", "elsewhere\n");
     fs.symlink(target, link);
     let error = copy_in(&fs, Path::new("/state"), Path::new("/copy")).unwrap_err();

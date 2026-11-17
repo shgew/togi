@@ -18,7 +18,7 @@ use crate::Topology;
 use crate::day::{DayHistory, Freeze};
 
 /// A journal payload with the position and time that committed it.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Committed<T> {
     pub(super) seq: Seq,
     pub(super) time: Timestamp,
@@ -28,7 +28,7 @@ pub(super) struct Committed<T> {
 }
 
 /// What `session.start`, `session.context` and the day observer say about the machine.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Machine {
     pub(super) session: Option<SessionId>,
     pub(super) cores: Vec<CoreInfo>,
@@ -46,7 +46,6 @@ pub(super) struct Machine {
     /// one.
     pub(super) context_since: Option<Seq>,
     /// The frozen content identity of each workload, from the latest intent or qualification naming it.
-    #[serde(with = "super::wire::pairs")]
     pub(super) contents: BTreeMap<WorkloadId, ContentId>,
 }
 
@@ -78,7 +77,7 @@ impl Machine {
 }
 
 /// One Ruleset 13 trial: its intent and, as the journal delivers them, its start, end and failure.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Trial {
     pub(super) intent_seq: Seq,
     pub(super) intent_time: Timestamp,
@@ -94,7 +93,7 @@ pub(super) struct Trial {
     pub(super) warned: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Ended {
     pub(super) seq: Seq,
     pub(super) time: Timestamp,
@@ -111,16 +110,13 @@ impl Trial {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Trials {
     pub(super) all: Vec<Trial>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) index: BTreeMap<TrialId, usize>,
     /// The trial indexes of each night.
-    #[serde(with = "super::wire::pairs")]
     pub(super) by_night: BTreeMap<NightId, Vec<usize>>,
     /// The trial indexes of each task.
-    #[serde(with = "togi_machine::serde_pairs")]
     pub(super) by_task: HashMap<TaskId, Vec<usize>>,
     /// The filler trial indexes across every night, in intent order: a filler trial's place here is the
     /// durable cursor that rotated its cell.
@@ -154,7 +150,7 @@ impl Trials {
 }
 
 /// A folded `exposure.observed` with the trial context its source names.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Exposure {
     pub(super) seq: Seq,
     pub(super) observed: ExposureObserved,
@@ -162,37 +158,32 @@ pub(super) struct Exposure {
     pub(super) night: Option<NightId>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Ledger {
     pub(super) records: Vec<Exposure>,
     /// The aggregates of the records, one group per evidence context.
     pub(super) groups: Vec<super::evidence::Group>,
     /// The ledger indexes of each task's records.
-    #[serde(with = "togi_machine::serde_pairs")]
     pub(super) by_task: HashMap<TaskId, Vec<usize>>,
     /// The original identities already folded: each counts once.
-    #[serde(serialize_with = "togi_machine::serde_pairs::serialize_set")]
     pub(super) seen: HashSet<(SessionId, Seq)>,
 }
 
 /// The night side's own commitments.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Nights {
     /// Each night's first plan commitment and its latest.
-    #[serde(with = "super::wire::pairs")]
     pub(super) plans: BTreeMap<NightId, PlanBook>,
     /// The open night: opened by its first plan, closed by a later boot's `day.boot_start`, the operator's stop
     /// (`shutdown` by signal) or a session reset.
     pub(super) open: Option<NightId>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) edges: BTreeMap<CcdId, Committed<CcdEdge>>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) unit_edges: BTreeMap<crate::UnitId, Committed<togi_journal::UnitEdge>>,
     pub(super) qualifications: Vec<Committed<NightQualification>>,
     pub(super) reproductions: Vec<Committed<NightReproduction>>,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct PlanBook {
     pub(super) first: Committed<NightPlan>,
     pub(super) latest: Committed<NightPlan>,
@@ -207,23 +198,15 @@ pub(super) struct PlanBook {
 }
 
 /// What a boot's observer records say, in journal order.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) enum Observed {
-    Start {
-        offsets: PerCore<ObservedOffset>,
-    },
-    Checkpoint {
-        applied_secs: u64,
-        #[serde(default)]
-        paused: bool,
-    },
-    Change {
-        offsets: PerCore<ObservedOffset>,
-    },
+    Start { offsets: PerCore<ObservedOffset> },
+    Checkpoint { applied_secs: u64, paused: bool },
+    Change { offsets: PerCore<ObservedOffset> },
     CleanStop,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Record {
     pub(super) seq: Seq,
     pub(super) time: Timestamp,
@@ -231,27 +214,27 @@ pub(super) struct Record {
     pub(super) what: Observed,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct BootRecords {
     pub(super) records: Vec<Record>,
 }
 
 /// A daily event's own commitments.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct EventBook {
     pub(super) first: Seq,
     pub(super) latest: Committed<DayEvent>,
 }
 
 /// A raw record that is evidence of a daily event.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Unclean {
     pub(super) seq: Seq,
     pub(super) time: Timestamp,
     pub(super) end: DayUncleanEnd,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct DayMce {
     pub(super) seq: Seq,
     pub(super) time: Timestamp,
@@ -260,7 +243,7 @@ pub(super) struct DayMce {
 }
 
 /// A machine check the day observer journaled live, in the boot it happened in.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct LiveMce {
     pub(super) seq: Seq,
     pub(super) time: Timestamp,
@@ -269,7 +252,7 @@ pub(super) struct LiveMce {
 }
 
 /// A crash the user recorded with `togi day record`.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct ManualRecord {
     pub(super) seq: Seq,
     pub(super) time: Timestamp,
@@ -279,7 +262,7 @@ pub(super) struct ManualRecord {
     pub(super) record: DayRecord,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Answered {
     /// The journal position of the answer, or of the import that carried it.
     pub(super) seq: Seq,
@@ -288,25 +271,19 @@ pub(super) struct Answered {
 }
 
 /// The day side: raw observer records, the policy's commitments and the applier's applications.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Days {
     pub(super) history: Option<DayHistory>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) steps: BTreeMap<u64, Committed<DayStep>>,
     pub(super) applications: Vec<Committed<DayApplied>>,
-    #[serde(with = "togi_machine::serde_pairs")]
     pub(super) events: HashMap<DayEventId, EventBook>,
     /// Every `day.event` commitment by seq, for what a step cited.
-    #[serde(with = "super::wire::pairs")]
     pub(super) event_commits: BTreeMap<Seq, DayEvent>,
-    #[serde(with = "togi_machine::serde_pairs")]
     pub(super) vetoes: HashMap<DayEventId, Committed<DayVeto>>,
     pub(super) intervals: Vec<Committed<DayInterval>>,
     pub(super) holds: Vec<Committed<DayHold>>,
     pub(super) freeze: Freeze,
-    #[serde(default)]
     pub(super) raw_intervals: togi_journal::DayIntervals,
-    #[serde(with = "super::wire::pairs")]
     pub(super) boots: BTreeMap<BootId, BootRecords>,
     pub(super) unclean: Vec<Unclean>,
     pub(super) answers: Vec<Answered>,
@@ -316,7 +293,6 @@ pub(super) struct Days {
     /// Manual crash records, the first per crash identity.
     pub(super) manual: Vec<ManualRecord>,
     /// Original identities of imported day records already folded.
-    #[serde(serialize_with = "togi_machine::serde_pairs::serialize_set")]
     pub(super) imported: HashSet<(SessionId, Seq)>,
     /// The seq of the latest `day.event` that changed an event's classification.
     pub(super) reclassified: Option<Seq>,
@@ -348,7 +324,7 @@ impl Default for Days {
 }
 
 /// The D campaign is independent of session-local hold and certificate books.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Climb {
     pub(super) history: Option<crate::climb::ClimbHistory>,
     pub(super) campaign: crate::climb::Campaign,
@@ -357,35 +333,25 @@ pub(super) struct Climb {
     pub(super) start: Option<Committed<togi_journal::CampaignStart>>,
     /// Where this journal recorded its first `campaign.start`; an earlier imported original start
     /// moves the machine's enrollment back (see `State::first_enrollment`).
-    #[serde(default)]
     pub(super) enrollment: Option<super::enrollment::Enrollment>,
     /// The earliest original `campaign.start` an import carried, kept as imports fold.
-    #[serde(default)]
     pub(super) original_enrollment: Option<super::enrollment::Enrollment>,
     pub(super) mapping: Option<Committed<togi_journal::UnitMapping>>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) decisions: BTreeMap<Seq, Committed<togi_journal::ClimbDecision>>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) plans: BTreeMap<Seq, crate::climb::ClimbDecision>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) stops: BTreeMap<crate::UnitId, Committed<togi_journal::UnitStop>>,
     pub(super) charges: Vec<Committed<togi_journal::CampaignCharge>>,
     pub(super) reclassifications: Vec<Committed<togi_journal::CampaignReclassified>>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) imported_observations:
         BTreeMap<crate::day::EventId, Committed<togi_journal::UnitVector>>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) imported_stop_witnesses: BTreeMap<crate::UnitId, Seq>,
     /// Exact predecessor reasons retain their original application/event namespace.
-    #[serde(with = "super::wire::pairs")]
     pub(super) imported_stop_reasons:
         BTreeMap<crate::UnitId, (crate::climb::FinishReason, togi_journal::UnitStopReason)>,
     /// Predecessor vetoes that survive the transition under their original event identity.
-    #[serde(with = "super::wire::pairs")]
     pub(super) imported_vetoes: BTreeMap<crate::day::EventId, togi_journal::ObservedProfile>,
     pub(super) restoration: Option<Committed<togi_journal::FirmwareRestoration>>,
     pub(super) imports: Vec<togi_journal::DayImported>,
-    #[serde(with = "super::wire::pairs")]
     pub(super) import_sequences: BTreeMap<Provenance, Seq>,
     pub(super) import_summary: Option<togi_journal::SessionImported>,
     pub(super) successor: Option<Committed<togi_journal::SuccessorImported>>,

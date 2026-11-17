@@ -206,7 +206,7 @@ fn a_night_continues_across_a_crash_reboot() {
 }
 
 #[test]
-fn a_restart_reads_back_the_state_a_mapping_night_published_without_rebuilding_it() {
+fn a_restart_replays_a_mapping_nights_durable_events() {
     let bench = bench();
     let first = crate::run(bench.input_ending_at(a_night(&bench)));
     ended_by_the_operator(&bench, &first);
@@ -217,29 +217,28 @@ fn a_restart_reads_back_the_state_a_mapping_night_published_without_rebuilding_i
             .count()
             > 2
     );
-    assert_eq!(
-        crate::verify_snapshot(first.journal.dir(), first.journal.events()).unwrap(),
-        crate::SnapshotStatus::Matches
-    );
+    first
+        .capsule
+        .as_ref()
+        .unwrap()
+        .verify(first.journal.events())
+        .unwrap();
     let before_resume = first.journal.events().len();
     drop(first.journal.close().unwrap());
 
     let resumed = crate::run(bench.input_ending_at(bench.short_night()));
 
-    let rebuilt: Vec<_> = resumed
-        .journal
-        .events()
-        .iter()
-        .skip(before_resume)
-        .filter_map(|event| {
-            if let Payload::StateRebuilt(rebuilt) = &event.payload {
-                Some(rebuilt.fields.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert!(rebuilt.is_empty(), "{rebuilt:?}");
+    ended_by_the_operator(&bench, &resumed);
+    let events = resumed.journal.events();
+    assert!(events.len() > before_resume);
+    let path = std::path::Path::new("/state/events.jsonl");
+    let recording = togi_journal::Recording::read_in(&bench.mem, path).unwrap();
+    resumed
+        .capsule
+        .as_ref()
+        .unwrap()
+        .verify(recording.events())
+        .unwrap();
 }
 
 #[test]
