@@ -1261,11 +1261,11 @@ fn resume_at_smu(played: &Played, model: &Model, at: usize) -> Vec<Event> {
     bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
     let after = cut.get().expect("the selected SMU access never ran");
     let events = drain_failure(&bench, played.phase, events);
+    let facts = togi_journal::State::replay(&events).unwrap();
     assert!(
-        togi_journal::State::replay(&events)
-            .unwrap()
-            .open
-            .is_empty()
+        facts.open.is_empty(),
+        "left open after {expected:?} at access {at} (journal cut after event {after}): {:?}",
+        facts.open
     );
     assert_settled(&bench, played.phase, &events);
     assert_crash_accounted(&events, after, &boot);
