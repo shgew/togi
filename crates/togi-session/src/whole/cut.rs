@@ -460,18 +460,30 @@ fn day(
                     let profile = togi_machine::CcdProfile::try_from(ccds).unwrap();
                     let target =
                         CcdVector::expand(profile, &machine.host.topology().unwrap()).unwrap();
-                    Some((togi_journal::DecisionId(event.seq.get()), target))
+                    Some((event.seq, target))
                 } else {
                     None
                 }
             });
-            let (cause, target) = if let Some((decision, proposed)) = step {
-                (ApplyCause::Step { decision }, proposed)
+            let (cause, target, causes) = if let Some((seq, proposed)) = step {
+                (
+                    ApplyCause::Step {
+                        decision: togi_journal::DecisionId(seq.get()),
+                    },
+                    proposed,
+                    vec![seq],
+                )
             } else {
                 let applied = day.state.project().applied.unwrap().to_ccd().unwrap();
                 let cores = machine.host.topology().unwrap();
                 let target = CcdVector::expand(applied, &cores).unwrap();
-                (ApplyCause::Reapplication {}, target)
+                let causes = day
+                    .events()
+                    .iter()
+                    .rev()
+                    .find(|event| matches!(event.payload, Payload::DayApplied(_)))
+                    .map_or_else(Vec::new, |event| vec![event.seq]);
+                (ApplyCause::Reapplication {}, target, causes)
             };
             let topology = machine.host.topology().unwrap();
             let validated = machine.host.validate_smu().unwrap();
@@ -485,7 +497,7 @@ fn day(
                 &swept.stopped,
                 &topology,
                 &target,
-                &[],
+                &causes,
             );
             for event in &day.journal.events()[start..] {
                 day.state.fold(event).unwrap();
@@ -506,6 +518,7 @@ fn day(
                 .iter()
                 .filter(|event| matches!(event.payload, Payload::DayApplied(_)))
                 .count();
+            let transaction_causes = written.transactions.clone();
             let applied = DayApplied {
                 application: ApplicationId(u64::try_from(applications).unwrap() + 1),
                 cause,
@@ -515,7 +528,7 @@ fn day(
                 boot: boot.clone(),
                 mono_ns: u64::try_from(machine.clock.monotonic().unwrap().as_nanos()).unwrap(),
             };
-            day.append(&mut machine, applied.into(), &[])?;
+            day.append(&mut machine, applied.into(), &transaction_causes)?;
             assert_day_transactions(day.events());
         }
         let readbacks = access(read_offsets(&mut machine, &day.state), &mut machine_crashed)?;
