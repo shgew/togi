@@ -7,8 +7,8 @@ use jiff::{SignedDuration, Timestamp};
 use togi_config::Config;
 use togi_defect::Entry;
 use togi_journal::{
-    Build, Event, FixStamp, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart, StateDir,
-    fs::Fault, fs::Op,
+    Build, Event, FixStamp, Journal, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart,
+    StateDir, fs::Fault, fs::Op,
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, CoreId, CoreSet, FrequencyEvent, FrequencyJournal,
@@ -265,7 +265,7 @@ impl Bench {
     }
 
     /// Records fresh operator consent at a tuning boundary, after its build and import are selected.
-    /// Like `togi night`, this writes no preparation snapshot.
+    /// Like `togi night`, this records only journal evidence.
     pub(crate) fn attest_stock(&self, input: &mut RunInput<'_>) {
         let firmware = input.machine.host.bios_context().unwrap();
         if input.journal.events().is_empty() {
@@ -321,6 +321,15 @@ impl Bench {
         let journal = simulated(&self.mem)
             .open_at(boot.clone(), self.sim.now())
             .unwrap();
+        self.run_input(machine, boot, journal)
+    }
+
+    fn run_input(
+        &self,
+        machine: Machine<'static>,
+        boot: BootId,
+        journal: Journal,
+    ) -> RunInput<'static> {
         RunInput {
             config: self.config.clone(),
             source: ConfigSource::default(),
@@ -328,7 +337,6 @@ impl Bench {
             boot,
             journal,
             machine,
-            publication: crate::publication::PublicationPolicy::OnFinish,
             bootloader: None,
             defects: self.defects,
             resume: None,
@@ -340,6 +348,20 @@ impl Bench {
             cancel: CancellationToken::new(),
             report: Box::new(io::sink()),
         }
+    }
+
+    pub(crate) fn continuing_at(
+        &self,
+        mut journal: Journal,
+        resume: Option<crate::ResumeCapsule>,
+        at: Timestamp,
+    ) -> RunInput<'static> {
+        let mut machine = self.sim.seams();
+        let boot = machine.host.boot_id().unwrap();
+        journal.reboot(boot.clone()).unwrap();
+        let mut input = self.run_input(machine, boot, journal);
+        input.resume = resume;
+        Self::end_at(input, at)
     }
 
     /// When the operator ends a short night: room for one mapping trial and not for a second.
@@ -357,7 +379,10 @@ impl Bench {
 
     /// A bounded run before its operator's consent, so callers can select a new build or import first.
     pub(crate) fn input_unattested_ending_at(&self, at: Timestamp) -> RunInput<'static> {
-        let mut input = self.input_unattested();
+        Self::end_at(self.input_unattested(), at)
+    }
+
+    fn end_at(mut input: RunInput<'static>, at: Timestamp) -> RunInput<'static> {
         let cancel = input.cancel.clone();
         input.on_append = Some(Box::new(move |event| {
             if event.time >= at {

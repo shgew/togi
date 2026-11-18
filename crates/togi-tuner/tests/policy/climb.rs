@@ -1,4 +1,4 @@
-//! D acceptance at the durable journal boundary, including interrupted and snapshot replay.
+//! D acceptance at the durable journal boundary, including interrupted runs and replay.
 
 use test_case::test_case;
 use togi_journal::{
@@ -20,10 +20,6 @@ pub(crate) fn replay(events: &[Event]) -> State {
         state.fold(&decoded).unwrap();
     }
     state
-}
-
-pub(crate) fn snapshot(state: &State) -> State {
-    serde_json::from_slice(&serde_json::to_vec(state).unwrap()).unwrap()
 }
 
 pub(crate) fn drain(state: &mut State, query: &DayQuery, mut sequence: u64) -> Vec<Payload> {
@@ -93,18 +89,18 @@ pub(crate) fn retreated() -> Journal {
 #[test]
 fn a_full_fold_equals_every_interrupted_and_replayed_fold() {
     let journal = retreated();
-    let expected = serde_json::to_value(replay(&journal.events)).unwrap();
+    let expected = replay(&journal.events);
     for cut in 0..=journal.events.len() {
         let mut state = replay(&journal.events[..cut]);
         for event in &journal.events {
             state.fold(event).unwrap();
         }
-        assert_eq!(serde_json::to_value(state).unwrap(), expected, "cut {cut}");
+        assert_eq!(state, expected, "cut {cut}");
     }
 }
 
 #[test]
-fn a_snapshot_rebuild_reconstructs_permission_allowance_and_stops() {
+fn replay_preserves_permission_allowance_and_stops_at_every_cut() {
     let journal = retreated();
     let expected = journal.state.project();
     assert_eq!(expected.climb.campaign.as_ref().unwrap().consumed, 1);
@@ -113,11 +109,11 @@ fn a_snapshot_rebuild_reconstructs_permission_allowance_and_stops() {
         togi_tuner::policy::ClimbUnitState::Finished { .. }
     )));
     for cut in 0..=journal.events.len() {
-        let mut rebuilt = snapshot(&replay(&journal.events[..cut]));
+        let mut rebuilt = replay(&journal.events[..cut]);
         for event in &journal.events[cut..] {
             rebuilt.fold(event).unwrap();
         }
-        assert_eq!(rebuilt.project(), expected, "snapshot cut {cut}");
+        assert_eq!(rebuilt.project(), expected, "journal cut {cut}");
     }
 }
 
@@ -126,8 +122,8 @@ fn a_kill_between_observation_and_derived_commitment_resumes_to_the_same_state()
     let journal = adverse();
     let mut query = cold_boot("day2", 60_000);
     query.now = journal.now();
-    let mut uninterrupted = replay(&journal.events);
-    let mut restarted = snapshot(&uninterrupted);
+    let mut uninterrupted = journal.state;
+    let mut restarted = replay(&journal.events);
     let seq = journal.events.last().unwrap().seq.get() + 1;
     assert_eq!(
         drain(&mut uninterrupted, &query, seq),
@@ -206,10 +202,10 @@ fn a_lost_qualification_or_retreat_commitment_is_recomputed() {
 #[test]
 fn event_identity_is_unique_across_provisional_manual_and_imported_witnesses() {
     let mut journal = adverse();
-    // Replaying the raw provisional event, including after a snapshot, is not a new event.
+    // Replaying the raw provisional event, including after a restart, is not a new event.
     let raw = journal.events.last().unwrap().clone();
     journal.state.fold(&raw).unwrap();
-    journal.state = snapshot(&journal.state);
+    journal.state = replay(&journal.events);
     journal.state.fold(&raw).unwrap();
     let projection = journal.state.project();
     assert_eq!(projection.climb.campaign.as_ref().unwrap().consumed, 1);
@@ -258,7 +254,7 @@ fn event_identity_is_unique_across_provisional_manual_and_imported_witnesses() {
     );
     let manual = journal.events.last().unwrap().clone();
     journal.append(imported(&manual).into(), &[]);
-    journal.state = snapshot(&journal.state);
+    journal.state = replay(&journal.events);
     journal.append(imported(&manual).into(), &[]);
     assert_eq!(journal.state.project().climb.campaign.unwrap().consumed, 1);
 }
@@ -548,11 +544,11 @@ fn a_predecessor_stop_without_a_unit_stop_record_is_rederived_and_never_repromot
     assert_eq!(stopped[0].1, togi_machine::TargetOffset::ZERO);
     assert_eq!(replay(&successor.events).project(), projection);
     for cut in 0..=successor.events.len() {
-        let mut rebuilt = snapshot(&replay(&successor.events[..cut]));
+        let mut rebuilt = replay(&successor.events[..cut]);
         for event in &successor.events[cut..] {
             rebuilt.fold(event).unwrap();
         }
-        assert_eq!(rebuilt.project(), projection, "snapshot cut {cut}");
+        assert_eq!(rebuilt.project(), projection, "journal cut {cut}");
     }
 }
 
@@ -693,7 +689,6 @@ fn bridged_charge_aliases_consume_one_event_and_keep_their_metadata_across_repla
         );
     }
     assert_eq!(replay(&successor.events).project(), projection);
-    assert_eq!(snapshot(&successor.state).project(), projection);
 }
 
 /// A successor whose predecessor left only a veto of CCD 0 at `depth`, with no raw daily
@@ -762,7 +757,6 @@ fn an_imported_veto_without_a_raw_witness_forbids_its_profile_and_deeper(
         promotes
     );
     assert_eq!(replay(&journal.events).project(), journal.state.project());
-    assert_eq!(snapshot(&journal.state).project(), journal.state.project());
 }
 
 /// A successor of `source`: its records imported under their original identities, then the
@@ -985,7 +979,6 @@ fn a_crash_before_the_campaign_enrolled_vetoes_its_profile_without_a_charge(
     let projection = journal.state.project();
     assert_eq!(projection.climb.campaign.as_ref().unwrap().consumed, 0);
     assert_eq!(replay(&journal.events).project(), projection);
-    assert_eq!(snapshot(&journal.state).project(), projection);
 }
 
 /// Three crashes before enrollment would exhaust a two-event allowance if they were charged; they are
@@ -1009,7 +1002,6 @@ fn crashes_before_the_first_enrollment_keep_the_whole_allowance_across_a_success
     assert_eq!(campaign.consumed, 0);
     assert!(!projection.vetoes.is_empty());
     assert_eq!(replay(&successor.events).project(), projection);
-    assert_eq!(snapshot(&successor.state).project(), projection);
 }
 
 /// The boundary is the enrollment: a crash after it is still the campaign's learning event.
@@ -1101,7 +1093,6 @@ fn the_crash_identity_pins_the_strict_enrollment_boundary(
     );
     assert_eq!(projection.vetoes.len(), 1);
     assert_eq!(replay(&journal.events).project(), projection);
-    assert_eq!(snapshot(&journal.state).project(), projection);
 }
 
 fn historical_retreat(named: bool) -> Journal {
@@ -1173,11 +1164,11 @@ fn a_late_historical_veto_retreats_an_applied_promotion_without_stopping_units(n
         assert_eq!(projection.vetoes.len(), 1);
         assert_eq!(replay(&journal.events).project(), projection);
         for cut in 0..=journal.events.len() {
-            let mut rebuilt = snapshot(&replay(&journal.events[..cut]));
+            let mut rebuilt = replay(&journal.events[..cut]);
             for event in &journal.events[cut..] {
                 rebuilt.fold(event).unwrap();
             }
-            assert_eq!(rebuilt.project(), projection, "snapshot cut {cut}");
+            assert_eq!(rebuilt.project(), projection, "journal cut {cut}");
         }
     }
 }
@@ -1288,7 +1279,6 @@ fn a_record_of_a_crash_older_than_the_enrollment_is_a_veto_without_charge_or_sto
     let campaign = projection.climb.campaign.as_ref().unwrap();
     assert_eq!((campaign.consumed, campaign.remaining), (0, 2));
     assert_eq!(replay(&journal.events).project(), projection);
-    assert_eq!(snapshot(&journal.state).project(), projection);
 }
 
 /// Three distinct old crashes recorded after enrollment would exhaust a two-event allowance if they
@@ -1351,7 +1341,6 @@ fn three_old_crashes_recorded_after_the_enrollment_are_three_vetoes_and_no_charg
     assert_eq!((campaign.consumed, campaign.remaining), (0, 2));
     assert_eq!(live.vetoes.len(), 3);
     assert_eq!(replay(&source.events).project(), live);
-    assert_eq!(snapshot(&source.state).project(), live);
 
     let successor = successor_of(&source.events);
     let projection = successor.state.project();
@@ -1364,15 +1353,14 @@ fn three_old_crashes_recorded_after_the_enrollment_are_three_vetoes_and_no_charg
     assert_eq!((campaign.consumed, campaign.remaining), (0, 2));
     assert_eq!(projection.vetoes.len(), 3);
     assert_eq!(replay(&successor.events).project(), projection);
-    assert_eq!(snapshot(&successor.state).project(), projection);
     for events in [&source.events, &successor.events] {
         let expected = replay(events).project();
         for cut in 0..=events.len() {
-            let mut rebuilt = snapshot(&replay(&events[..cut]));
+            let mut rebuilt = replay(&events[..cut]);
             for event in &events[cut..] {
                 rebuilt.fold(event).unwrap();
             }
-            assert_eq!(rebuilt.project(), expected, "snapshot cut {cut}");
+            assert_eq!(rebuilt.project(), expected, "journal cut {cut}");
         }
     }
 }
@@ -1395,7 +1383,6 @@ fn a_repeated_import_of_a_crash_older_than_the_enrollment_keeps_one_veto_and_the
     assert_eq!(projection.vetoes.len(), once.vetoes.len());
     assert!(!projection.vetoes.is_empty());
     assert_eq!(replay(&twice.events).project(), projection);
-    assert_eq!(snapshot(&twice.state).project(), projection);
 }
 
 /// The boundary is the enrollment: a nonzero crash after it with no applied step behind it cannot be
@@ -1479,7 +1466,7 @@ fn the_successor_import_deduplicates_after_a_crash() {
     for event in &source.events {
         successor.append(imported(event).into(), &[]);
     }
-    successor.state = snapshot(&successor.state);
+    successor.state = replay(&successor.events);
     for event in &source.events {
         successor.append(imported(event).into(), &[]);
     }
@@ -1588,7 +1575,7 @@ fn paused_hours_and_the_resume_boundary_never_earn_a_climb_hold() {
 }
 
 #[test]
-fn a_paused_cold_boot_cannot_promote_even_after_resume_or_snapshot_replay() {
+fn a_paused_cold_boot_cannot_promote_even_after_resume_and_journal_replay() {
     let (mut journal, _) = Journal::qualified_compact_after(|_| {});
     pause(
         &mut journal,
@@ -1615,7 +1602,7 @@ fn a_paused_cold_boot_cannot_promote_even_after_resume_or_snapshot_replay() {
         togi_tuner::ClimbUnitState::Held { reason } if reason.contains(&ClimbBlocker::Paused {})
     )));
     pause(&mut journal, togi_journal::PauseState::Running {});
-    journal.state = snapshot(&replay(&journal.events));
+    journal.state = replay(&journal.events);
     query.now = journal.now();
     let resumed = journal.settle_day(&query);
     assert!(!steps(&resumed).iter().any(|step| matches!(

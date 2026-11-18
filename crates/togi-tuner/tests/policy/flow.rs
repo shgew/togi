@@ -324,7 +324,6 @@ fn a_successful_firmware_restoration_settles_as_restored_with_its_application() 
         Some(settled)
     );
     assert_eq!(crate::climb::replay(&journal.events).project(), projection);
-    assert_eq!(crate::climb::snapshot(&journal.state).project(), projection);
     // Settled once: the next cold boot owes nothing more.
     journal.boot_start_at("quiet", "2", &d);
     let quiet = journal.settle_day(&cold_boot_at("quiet", journal.now()));
@@ -367,7 +366,6 @@ fn a_cpu_suspect_end_after_a_firmware_restoration_settles_it_as_stepped_back_wit
         Some(&settled)
     );
     assert_eq!(crate::climb::replay(&journal.events).project(), projection);
-    assert_eq!(crate::climb::snapshot(&journal.state).project(), projection);
 }
 
 /// Ends the boot `day1` uncleanly at D, with nothing explaining the end, and starts the cold boot `day2`.
@@ -1116,9 +1114,9 @@ fn read_only_projection_does_not_change_state() {
     let mut journal = Journal::ready();
     let plan = journal.until_trial(journal.now());
     journal.run(&plan, Ending::Pass);
-    let before = serde_json::to_value(&journal.state).unwrap();
+    let before = journal.state.clone();
     let _ = journal.state.project();
-    assert_eq!(serde_json::to_value(&journal.state).unwrap(), before);
+    assert_eq!(journal.state, before);
 }
 
 fn observed_mapping_trial(ending: Ending) -> (Journal, togi_journal::ExposureObserved) {

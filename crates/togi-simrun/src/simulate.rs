@@ -10,8 +10,7 @@ use togi_journal::{
 };
 use togi_machine::Machine;
 use togi_session::{
-    AppendHook, Ended, PendingImport, PublicationPolicy, ResumeCapsule, RunInput, SessionError,
-    prepare, prepare_kept,
+    AppendHook, Ended, PendingImport, ResumeCapsule, RunInput, SessionError, prepare, prepare_kept,
 };
 
 use crate::input::{Finished, Persistence, Replay, SimInput, SimOutcome};
@@ -104,7 +103,6 @@ fn simulate_with_dump(
             Err(source) => {
                 return Err(abandon(
                     kept.take(),
-                    resume.as_ref(),
                     SimError::Host {
                         boot: number,
                         source,
@@ -113,33 +111,22 @@ fn simulate_with_dump(
             }
         };
         let now = simulator.now();
-        let reopened = kept.is_some();
         let prepared = match kept.take() {
             Some(mut journal) => {
                 if journal.reboot(boot.clone()).is_ok() {
                     prepare_kept(journal, &build, boot.clone(), now)
                 } else {
-                    // The flush a reboot starts with failed and poisoned the journal: reopen the directory from what
-                    // the file holds, after publishing the state the crashed boot left pending, for the reopened
-                    // boot to compare with.
-                    let mut dir = close(journal, number)?;
-                    if let Some(capsule) = &resume {
-                        publish(capsule, &mut dir, number)?;
-                    }
+                    // A failed reboot flush poisoned this writer. Reopen and replay what reached the file.
+                    resume = None;
+                    let dir = close(journal, number)?;
                     prepare(dir, &build, boot.clone(), now)
                 }
             }
             None => prepare(lock(&persistence)?, &build, boot.clone(), now),
         }
-        .map_err(|source| {
-            let error = SimError::Prepare {
-                boot: number,
-                source,
-            };
-            match &resume {
-                Some(capsule) if reopened => republish(&persistence, capsule, error),
-                _ => error,
-            }
+        .map_err(|source| SimError::Prepare {
+            boot: number,
+            source,
         })?;
         let mut journal = prepared.journal;
         let opened = journal.events().len();
@@ -151,9 +138,6 @@ fn simulate_with_dump(
         }
         let run_cancel = cancel.child_token();
         let mut observed = hook(Rc::clone(&slot), run_cancel.clone(), stop_at);
-        if resume.is_none() && replay == Replay::Warm {
-            resume = ResumeCapsule::read_snapshot(&journal, defects);
-        }
         if let Err(error) = confirm(
             &mut journal,
             &mut machine,
@@ -161,7 +145,7 @@ fn simulate_with_dump(
             prepared.import.as_ref(),
             number,
         ) {
-            return Err(abandon(Some(journal), None, error));
+            return Err(abandon(Some(journal), error));
         }
         // The observer and the run's cancellation see the operator's records when the run first appends, as a run
         // that records its own start would show them: an observer that crashes or stops the machine on
@@ -183,7 +167,6 @@ fn simulate_with_dump(
             boot,
             journal,
             machine,
-            publication: PublicationPolicy::OnFinish,
             bootloader: None,
             defects,
             resume: resume.take(),
@@ -211,8 +194,7 @@ fn simulate_with_dump(
                 number,
             );
             if let Err(error) = checked {
-                let pending = ended.capsule.as_ref().filter(|_| crash);
-                return Err(abandon(Some(ended.journal), pending, error));
+                return Err(abandon(Some(ended.journal), error));
             }
         }
         let Ended {
@@ -226,9 +208,7 @@ fn simulate_with_dump(
         } = ended;
         errors.extend(user.borrow_mut().take_failure().map(SessionError::Log));
         let failed = crash && errors.iter().any(|error| !error.is_crash());
-        // A warm reboot carries the open journal and the folds into the next boot, which adopts them, so the crashed
-        // boot leaves `state.json` pending until a boot ends the simulation; the last boot's capsule is published
-        // below, as is every cold boot's, which nothing adopts.
+        // Warm reboots carry the open journal and its folds; a fresh open always replays.
         let keeps = crash
             && !failed
             && replay == Replay::Warm
@@ -239,7 +219,7 @@ fn simulate_with_dump(
         if keeps {
             if appended && !superseded {
                 if let Err(error) = machine::forget(&persistence, journal.dir()) {
-                    return Err(abandon(Some(journal), capsule.as_ref(), error));
+                    return Err(abandon(Some(journal), error));
                 }
                 superseded = true;
             }
@@ -248,7 +228,6 @@ fn simulate_with_dump(
             if let Err(source) = simulator.reboot() {
                 return Err(abandon(
                     kept.take(),
-                    resume.as_ref(),
                     SimError::Reboot {
                         boot: number,
                         source,
@@ -257,10 +236,7 @@ fn simulate_with_dump(
             }
             continue;
         }
-        let mut dir = close(journal, number)?;
-        if crash && let Some(capsule) = &capsule {
-            publish(capsule, &mut dir, number)?;
-        }
+        let dir = close(journal, number)?;
         if appended && !superseded {
             machine::forget(&persistence, &dir)?;
             superseded = true;
@@ -283,7 +259,6 @@ fn simulate_with_dump(
                     .collect(),
             });
         }
-        resume = capsule.filter(|_| replay == Replay::Warm);
         simulator.reboot().map_err(|source| SimError::Reboot {
             boot: number,
             source,
@@ -385,33 +360,12 @@ fn confirm(
     Ok(())
 }
 
-/// Ends a simulation on an error: closes the open journal, if any, after publishing the state its crashed boot left
-/// pending, as a normal exit does. `error` stays the one returned; a failure here is not reported over it.
-fn abandon(journal: Option<Journal>, pending: Option<&ResumeCapsule>, error: SimError) -> SimError {
-    if let Some(journal) = journal
-        && let Ok(mut dir) = journal.close()
-        && let Some(capsule) = pending
-    {
-        drop(capsule.publish(&mut dir));
+/// Closes the open journal, if any, without reporting a close failure over the original error.
+fn abandon(journal: Option<Journal>, error: SimError) -> SimError {
+    if let Some(journal) = journal {
+        drop(journal.close());
     }
     error
-}
-
-/// [`abandon`] for a journal that [`prepare_kept`] consumed: publishes the pending state into the directory unless
-/// it no longer holds the journal, as when the failed preparation archived it, which took the state file along.
-fn republish(persistence: &Persistence, pending: &ResumeCapsule, error: SimError) -> SimError {
-    if let Ok(mut dir) = lock(persistence)
-        && matches!(dir.live_session(), Ok(Some(_)))
-    {
-        drop(pending.publish(&mut dir));
-    }
-    error
-}
-
-fn publish(capsule: &ResumeCapsule, dir: &mut StateDir, boot: u32) -> Result<(), SimError> {
-    capsule
-        .publish(dir)
-        .map_err(|source| SimError::Publish { boot, source })
 }
 
 fn dump_with(

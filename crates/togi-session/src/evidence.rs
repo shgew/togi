@@ -122,7 +122,7 @@ pub(crate) struct RecordedMce {
     pub corrected: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct FailureSignal {
     pub signal: Signal,
     pub core: Option<CoreId>,
@@ -139,7 +139,7 @@ impl From<togi_machine::TrialFailure> for FailureSignal {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct RecordedProcessFault {
     pub seq: Seq,
     pub pid: u32,

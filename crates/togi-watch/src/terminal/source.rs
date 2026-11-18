@@ -131,10 +131,7 @@ impl Source {
     ) -> Self {
         let mut source = Self::new(directory, since);
         let recording = Recording::read_in_lenient(fs, &source.path);
-        let saved = togi_journal::snapshot::read_in(fs, directory)
-            .ok()
-            .flatten();
-        source.fold_recording(recording, false, saved);
+        source.fold_recording(recording, false);
         source
     }
 
@@ -213,35 +210,10 @@ impl Source {
 
     fn load(&mut self, appended: bool) {
         let recording = self.recording();
-        let saved = if appended
-            && matches!(&self.content, Content::Ready(model, ..) if model.problem().is_none())
-        {
-            None
-        } else {
-            self.saved_snapshot()
-        };
-        self.fold_recording(recording, appended, saved);
+        self.fold_recording(recording, appended);
     }
 
-    fn saved_snapshot(
-        &self,
-    ) -> Option<(togi_journal::snapshot::Prefix, crate::model::PublishedView)> {
-        let directory = self.path.parent()?;
-        #[cfg(test)]
-        if let Some(memory) = &self.memory {
-            return togi_journal::snapshot::read_in(&memory.0.borrow().fs, directory)
-                .ok()
-                .flatten();
-        }
-        togi_journal::snapshot::read(directory).ok().flatten()
-    }
-
-    fn fold_recording(
-        &mut self,
-        recording: Result<Recording, FileError>,
-        appended: bool,
-        saved: Option<(togi_journal::snapshot::Prefix, crate::model::PublishedView)>,
-    ) {
+    fn fold_recording(&mut self, recording: Result<Recording, FileError>, appended: bool) {
         let recording = match recording {
             Ok(recording) => recording,
             Err(error) if is_not_found(&error) => {
@@ -298,12 +270,10 @@ impl Source {
             }
             Content::Ready(..) if appended => {
                 self.held = None;
-                let (model, folded) = Model::from_snapshot(events, saved);
-                (Box::new(model), folded)
+                (Box::new(Model::new()), 0)
             }
             Content::Missing | Content::Starting | Content::Problem(_) | Content::Ready(..) => {
-                let (model, folded) = Model::from_snapshot(events, saved);
-                (Box::new(model), folded)
+                (Box::new(Model::new()), 0)
             }
         };
         let batch = &events[folded..];
@@ -316,13 +286,12 @@ impl Source {
             Ok(()) => batch,
         };
         for event in checked {
-            if let Payload::SessionStart(start) = &event.payload {
-                if let Verdict::Refuse(refusal) =
+            if let Payload::SessionStart(start) = &event.payload
+                && let Verdict::Refuse(refusal) =
                     shown_build().verdict(&start.build, Operation::Inspect)
-                {
-                    self.content = Content::Problem(refusal.into());
-                    return;
-                }
+            {
+                self.content = Content::Problem(refusal.into());
+                return;
             }
         }
         let skipped = recording.skipped();
@@ -759,6 +728,31 @@ mod tests {
         assert!(rows.iter().any(|row| row == "rewritten 41"), "{rows:?}");
         assert!(!rows.iter().any(|row| row == "w41"), "{rows:?}");
         assert_eq!((total, arrived), (rows.len(), 0));
+    }
+
+    #[test]
+    fn a_watch_start_ignores_a_legacy_state_file() {
+        use std::path::Path;
+
+        let fs = togi_journal::MemFs::new();
+        let directory = Path::new("/state");
+        fs.put(
+            directory.join("events.jsonl"),
+            lines(&journal_of("from the journal")),
+        );
+        let mut plain = Source::read_in(&fs, directory, None);
+        assert!(contains(&mut plain, "from the journal"));
+
+        fs.put(directory.join("state.json"), "{torn");
+        fs.record_history();
+        let before = fs.mutations();
+        let mut with_legacy = Source::read_in(&fs, directory, None);
+        assert_eq!(
+            show(&mut plain, &main_screen()),
+            show(&mut with_legacy, &main_screen())
+        );
+        assert_eq!(before, fs.mutations());
+        assert!(fs.reads().iter().all(|path| !path.ends_with("state.json")));
     }
 
     #[test]

@@ -390,25 +390,7 @@ pub(crate) fn disk_inspect(
     })
 }
 
-pub(crate) fn state_document(events: &[Event]) -> Value {
-    let state = togi_session::ReadState::replay(events).unwrap();
-    let bytes: Vec<u8> = events
-        .iter()
-        .flat_map(|event| {
-            let mut line = event.encode().unwrap().into_bytes();
-            line.push(b'\n');
-            line
-        })
-        .collect();
-    togi_journal::snapshot::seal(
-        togi_journal::snapshot::Prefix::of(&bytes, events.last().map(|event| event.seq)),
-        &state.document(),
-    )
-    .unwrap()
-}
-
-/// Writes `events` as the live journal of a state directory on disk, with the `state.json` a run publishes at its
-/// last event.
+/// Writes `events` as the live journal of a state directory on disk.
 pub(crate) fn write_state_dir(dir: &std::path::Path, events: &[Event]) {
     std::fs::create_dir_all(dir).unwrap();
     let journal: String = events
@@ -416,10 +398,4 @@ pub(crate) fn write_state_dir(dir: &std::path::Path, events: &[Event]) {
         .map(|event| event.encode().unwrap() + "\n")
         .collect();
     std::fs::write(dir.join("events.jsonl"), journal).unwrap();
-    let document = state_document(events);
-    std::fs::write(
-        dir.join("state.json"),
-        serde_json::to_vec(&document).unwrap(),
-    )
-    .unwrap();
 }

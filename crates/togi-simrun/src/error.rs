@@ -1,6 +1,6 @@
 use std::io;
 
-use togi_journal::{AppendError, CloseError, DirError, LockError, LookupError, StateError};
+use togi_journal::{AppendError, CloseError, DirError, LockError, LookupError};
 use togi_session::{Divergence, PrepareError, SessionError};
 
 #[derive(Debug, thiserror::Error)]
@@ -45,12 +45,6 @@ pub enum SimError {
     },
     #[error("boot {boot} left no resume state to verify: the run latched a journal failure")]
     NoCapsule { boot: u32 },
-    #[error("publish the state document boot {boot} left unwritten")]
-    Publish {
-        boot: u32,
-        #[source]
-        source: StateError,
-    },
     #[error("close the journal of boot {boot}")]
     Close {
         boot: u32,

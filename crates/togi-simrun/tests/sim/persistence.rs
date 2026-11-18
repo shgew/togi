@@ -1,12 +1,11 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use togi_journal::{EventKind, MemFs, Payload, State};
-use togi_machine::BootId;
+use togi_journal::{EventKind, MemFs};
 use togi_session::Stop;
 use togi_sim::MachineDefinition;
-use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome, events, simulate};
+use togi_simrun::{Observe, Persistence, Replay, SimOutcome, simulate};
 
 use test_case::test_case;
 
@@ -18,7 +17,6 @@ struct Left {
     stop: Option<Stop>,
     capped: bool,
     events: String,
-    state: String,
 }
 
 fn text(bytes: Vec<u8>, root: &Path) -> String {
@@ -53,7 +51,6 @@ fn in_memory(definition: &MachineDefinition, seed: u64, replay: Replay) -> Left 
         stop,
         capped,
         events: text(fs.contents(root.join("events.jsonl")).unwrap(), root),
-        state: text(fs.contents(root.join("state.json")).unwrap(), root),
     }
 }
 
@@ -89,12 +86,11 @@ fn warm_and_cold_replays_leave_the_same_files(definition: &MachineDefinition, se
         cold.events.lines().count() > 100,
         "a short session proves little"
     );
-    assert_eq!(cold.state, warm.state, "state.json (left cold, right warm)");
 }
 
 #[test_case(1; "seed 1")]
 #[test_case(621; "seed 621")]
-fn copied_snapshot_resume_matches_full_replay(seed: u64) {
+fn copied_journal_resumes_the_same_in_both_replay_modes(seed: u64) {
     let definition = MachineDefinition::default();
     let source = MemFs::new();
     let mut first = input(
@@ -112,207 +108,17 @@ fn copied_snapshot_resume_matches_full_replay(seed: u64) {
     let mut results = Vec::new();
     for replay in [Replay::Warm, Replay::Cold] {
         let copied = MemFs::new();
-        for name in ["events.jsonl", "state.json"] {
-            let path = format!("{STATE}/{name}");
-            copied.put(&path, source.contents(&path).unwrap());
-        }
+        let path = format!("{STATE}/events.jsonl");
+        copied.put(&path, source.contents(&path).unwrap());
         run(
             &definition,
             seed,
             Persistence::Memory(copied.clone()),
             replay,
         );
-        results.push((
-            copied.contents(format!("{STATE}/events.jsonl")).unwrap(),
-            copied.contents(format!("{STATE}/state.json")).unwrap(),
-        ));
+        results.push(copied.contents(&path).unwrap());
     }
     assert_eq!(results[0], results[1]);
-}
-
-fn assert_published_facts(fs: &MemFs) {
-    let recorded = events(&Persistence::Memory(fs.clone())).unwrap();
-    let saved: serde_json::Value =
-        serde_json::from_slice(&fs.contents(format!("{STATE}/state.json")).unwrap()).unwrap();
-    assert_eq!(
-        saved["facts"],
-        serde_json::to_value(State::replay(&recorded).unwrap()).unwrap(),
-        "the final publication covers every event of the stopped or capped run"
-    );
-}
-
-struct Publications {
-    boot: BootId,
-    state: Option<Vec<u8>>,
-    boots: usize,
-    published: usize,
-}
-
-type Seen = Rc<RefCell<Option<Publications>>>;
-
-/// Checks every event's exact `state.json` bytes online, retaining only the current boot's snapshot.
-/// The operator's attestation snapshot is the first observed version; the final publication happens after the
-/// observer's last event and is checked separately against the journal.
-fn watch_state_json(
-    input: &mut SimInput,
-    fs: &MemFs,
-    stop: impl Fn(EventKind) -> bool + 'static,
-) -> Seen {
-    let seen: Seen = Rc::new(RefCell::new(None));
-    let sink = Rc::clone(&seen);
-    let fs = fs.clone();
-    input.observer = Some(Box::new(move |event| {
-        let state = fs.contents(format!("{STATE}/state.json"));
-        let mut seen = sink.borrow_mut();
-        match seen.as_mut() {
-            None => {
-                assert_eq!(event.kind(), EventKind::SessionStart);
-                assert!(
-                    state.is_some(),
-                    "the initial attestation snapshot was not published"
-                );
-                *seen = Some(Publications {
-                    boot: event.boot.clone(),
-                    state,
-                    boots: 1,
-                    published: 1,
-                });
-            }
-            Some(seen) => {
-                if seen.boot == event.boot {
-                    assert_eq!(
-                        state, seen.state,
-                        "state.json changed during the run of boot {:?}",
-                        seen.boot
-                    );
-                } else {
-                    seen.boots += 1;
-                    seen.published += usize::from(state != seen.state);
-                    seen.boot = event.boot.clone();
-                    seen.state = state;
-                }
-            }
-        }
-        if event.kind() == EventKind::StockAttested {
-            let snapshot: serde_json::Value =
-                serde_json::from_slice(seen.as_ref().unwrap().state.as_ref().unwrap()).unwrap();
-            assert_eq!(
-                snapshot["facts"]["last_seq"],
-                serde_json::json!(event.seq.get()),
-                "the initial snapshot covers exactly the operator's attestation"
-            );
-        }
-        if stop(event.kind()) {
-            Observe::Stop
-        } else {
-            Observe::Continue
-        }
-    }));
-    seen
-}
-
-/// Within-boot equality was checked online; return consecutive publications and boot count.
-fn observed_publications(seen: &Seen) -> (usize, usize) {
-    let seen = seen.borrow();
-    let Some(seen) = seen.as_ref() else {
-        panic!("the run appended no events");
-    };
-    (seen.published, seen.boots)
-}
-
-/// Runs through a natural crash and ends after recovery closes its trial, returning the observed state versions
-/// and boot count.
-fn published_in_a_crashing_simulation(replay: Replay) -> (usize, usize) {
-    let fs = MemFs::new();
-    let mut input = input(
-        simulator(&hunt_machine(2), 1),
-        Persistence::Memory(fs.clone()),
-    );
-    input.replay = replay;
-    let crashed = Cell::new(false);
-    let seen = watch_state_json(&mut input, &fs, move |kind| {
-        if kind == EventKind::CrashDetected {
-            crashed.set(true);
-        }
-        kind == EventKind::TrialEnd && crashed.get()
-    });
-    let SimOutcome::Stopped(finished) = simulate(input).unwrap() else {
-        panic!("capped");
-    };
-    assert_eq!(finished.stop, Some(Stop::Signal));
-    assert!(finished.errors.is_empty(), "{:?}", finished.errors);
-    let (published, boots) = observed_publications(&seen);
-    assert!(
-        boots > 1,
-        "the run never crashed, so no capsule was published"
-    );
-    let recorded = events(&Persistence::Memory(fs.clone())).unwrap();
-    let rebuilt: Vec<_> = recorded
-        .iter()
-        .filter_map(|event| {
-            if let Payload::StateRebuilt(rebuilt) = &event.payload {
-                Some((event, rebuilt))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let [(event, rebuilt)] = rebuilt.as_slice() else {
-        panic!("only the initial attestation snapshot should need rebuilding: {rebuilt:?}");
-    };
-    assert_eq!(event.boot, recorded[0].boot);
-    assert_eq!(rebuilt.fields, ["state.json"]);
-    assert_published_facts(&fs);
-    (published, boots)
-}
-
-#[test]
-fn a_warm_simulation_keeps_the_attestation_snapshot_until_it_stops() {
-    let (published, _) = published_in_a_crashing_simulation(Replay::Warm);
-    assert_eq!(
-        published, 1,
-        "warm crashes leave the initial attestation snapshot unchanged"
-    );
-}
-
-#[test]
-fn a_cold_simulation_gets_state_json_at_every_crashed_boot() {
-    let (published, boots) = published_in_a_crashing_simulation(Replay::Cold);
-    assert_eq!(published, boots, "one publication per crashed boot");
-}
-
-#[test]
-fn a_capped_simulation_leaves_the_crashed_runs_state_json() {
-    let fs = MemFs::new();
-    let mut input = input(
-        simulator(&hunt_machine(2), 1),
-        Persistence::Memory(fs.clone()),
-    );
-    input.max_boots = nz(1);
-    let seen = watch_state_json(&mut input, &fs, |_| false);
-    assert!(matches!(
-        simulate(input).unwrap(),
-        SimOutcome::Capped { .. }
-    ));
-    assert_eq!(observed_publications(&seen).1, 1);
-    assert_published_facts(&fs);
-}
-
-#[test]
-fn a_signalled_run_publishes_state_json_when_it_stops() {
-    let fs = MemFs::new();
-    let mut input = input(
-        simulator(&hunt_machine(2), 1),
-        Persistence::Memory(fs.clone()),
-    );
-    let seen = watch_state_json(&mut input, &fs, |kind| kind == EventKind::TrialEnd);
-    let SimOutcome::Stopped(finished) = simulate(input).unwrap() else {
-        panic!("capped");
-    };
-    assert_eq!(finished.stop, Some(Stop::Signal));
-    assert!(finished.errors.is_empty(), "{:?}", finished.errors);
-    observed_publications(&seen);
-    assert_published_facts(&fs);
 }
 
 /// A boot's panic reaches the caller only after its journal is closed, so the buffered events

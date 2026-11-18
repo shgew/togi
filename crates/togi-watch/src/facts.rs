@@ -16,14 +16,14 @@ use crate::model::{DeadEndView, SessionView, StopView, TrialEndView};
 use crate::tuning::TuningClock;
 use crate::words::{tag_word, words};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Current {
     pub(crate) intent: TrialIntent,
     pub(crate) boot: BootId,
     pub(crate) boot_ended: bool,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RecoverFacts {
     pub(crate) crash_at: Timestamp,
     pub(crate) reset: Option<togi_machine::ResetKind>,
@@ -31,7 +31,7 @@ pub(crate) struct RecoverFacts {
     pub(crate) end: Option<TrialEndView>,
 }
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 enum RuntimeLifecycle {
     #[default]
     Running,
@@ -40,7 +40,7 @@ enum RuntimeLifecycle {
     },
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub(crate) struct Facts {
     pub(crate) session: Option<SessionView>,
     pub(crate) intents: HashMap<TrialId, TrialIntent>,
@@ -62,12 +62,9 @@ pub(crate) struct Facts {
     pub(crate) tuning: TuningClock,
     pub(crate) log: Vec<LogEntry>,
     pub(crate) log_total: usize,
-    #[serde(default)]
     pub(crate) day: togi_journal::DayQuestions,
-    #[serde(default)]
     pub(crate) day_totals: crate::day_totals::DayTotals,
     /// The day steps a `day.applied` carried out: a proposal not listed here was never committed.
-    #[serde(default)]
     pub(crate) applied_steps: BTreeSet<DecisionId>,
 }
 

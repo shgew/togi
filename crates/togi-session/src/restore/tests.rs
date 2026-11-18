@@ -2,7 +2,7 @@ use togi_journal::Payload;
 use togi_machine::{PerCore, TargetOffset};
 
 use super::*;
-use crate::session::Fault;
+use crate::session::{Control, Fault};
 use crate::testing::{Bench, core, kinds_of, offsets, put, recorded_baseline, swept};
 
 #[test]
@@ -48,6 +48,101 @@ fn the_machine_goes_back_to_the_baseline_and_the_restoration_cites_it() {
     assert!(intents.iter().all(|event| event.cause == [baseline]));
     assert_eq!(session.hardware.profile(), Some(offsets(&[0, 0])));
     crate::testing::assert_fold_consistent(session.appender());
+}
+
+#[test]
+fn startup_readback_resolution_survives_replaying_the_journal() {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    session.begin().unwrap();
+    let receipt = session
+        .appender
+        .smu_intent(
+            togi_journal::SmuCommand::Set {
+                core: crate::testing::core(1),
+                offset: togi_machine::TargetOffset::ZERO,
+            },
+            &[],
+        )
+        .unwrap();
+    let intent = receipt.intent();
+    drop(session);
+
+    let mut resumed = bench.open();
+    assert_eq!(resumed.start().unwrap(), Control::Continue);
+    assert_eq!(resumed.preflight().unwrap(), Control::Continue);
+    assert_eq!(resumed.sweep().unwrap(), Control::Continue);
+    assert_eq!(resumed.reconcile().unwrap(), Control::Continue);
+    assert!(resumed.appender.folds.facts.open.is_empty());
+    assert_eq!(
+        resumed
+            .appender
+            .recovery()
+            .latest_unmatched_intent(resumed.appender.journal().boot()),
+        None
+    );
+    assert!(resumed.appender.journal().events().iter().any(|event| {
+        matches!(event.payload, Payload::SmuReadback(_)) && event.cause == [intent]
+    }));
+    crate::testing::assert_fold_consistent(&resumed.appender);
+    drop(resumed);
+
+    let reopened = bench.open();
+    assert!(reopened.appender.folds.facts.open.is_empty());
+    crate::testing::assert_fold_consistent(&reopened.appender);
+}
+
+#[test_case::test_case(false; "before sweep")]
+#[test_case::test_case(true; "after sweep")]
+fn an_append_failure_uses_the_existing_emergency_gate(after_sweep: bool) {
+    use crate::emergency::{Response, Withheld};
+    use togi_journal::fs::{Fault, Op};
+
+    let bench = Bench::new(2);
+    let mut session = if after_sweep {
+        let mut session = swept(&bench);
+        session.validated = Some(session.host.validate_smu().unwrap());
+        session
+    } else {
+        let mut session = bench.open();
+        session.start().unwrap();
+        session
+    };
+    bench
+        .mem
+        .inject(Fault::before(Op::Write, 1).named("events.jsonl"));
+    let error = session
+        .appender
+        .append(
+            Payload::SessionWarning(togi_journal::SessionWarning {
+                operation: "test append".into(),
+                trial: None,
+                error: "test".into(),
+            }),
+            &[],
+        )
+        .unwrap_err();
+    let ended = session.close(Err(error.into()));
+    assert!(matches!(
+        ended.errors.first(),
+        Some(crate::SessionError::Journal(_))
+    ));
+    let emergency = ended.emergency.unwrap();
+    if after_sweep {
+        assert!(matches!(emergency.response, Response::Zeroed(_)));
+    } else {
+        assert!(matches!(
+            emergency.response,
+            Response::Withheld(Withheld::NoSweep)
+        ));
+    }
+    assert!(
+        ended
+            .journal
+            .events()
+            .iter()
+            .all(|event| !matches!(event.payload, Payload::Shutdown(_)))
+    );
 }
 
 #[test]

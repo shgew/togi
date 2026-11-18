@@ -154,7 +154,7 @@ fn status_lists_the_predecessor_veto_the_tuner_enforces_under_its_original_ident
 }
 
 #[test]
-fn daily_evidence_witnesses_stay_in_journal_order_across_snapshot_and_cold_replay() {
+fn daily_evidence_witnesses_stay_in_journal_order_across_cold_replay() {
     let mut journal = Journal::ready();
     journal.hold_stock();
     let mut expected = Vec::new();
@@ -190,7 +190,6 @@ fn daily_evidence_witnesses_stay_in_journal_order_across_snapshot_and_cold_repla
     }
     let projection = journal.state.project();
     assert_eq!(projection.climb.daily.as_ref().unwrap().witnesses, expected);
-    assert_eq!(crate::climb::snapshot(&journal.state).project(), projection);
     assert_eq!(crate::climb::replay(&journal.events).project(), projection);
 }
 

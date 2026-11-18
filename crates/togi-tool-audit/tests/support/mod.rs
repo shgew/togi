@@ -56,10 +56,6 @@ impl Memory {
             .map(|event| event.encode().unwrap() + "\n")
             .collect();
         fs.put("/state/events.jsonl", journal.into_bytes());
-        fs.put(
-            "/state/state.json",
-            serde_json::to_vec(&crate::fixtures::state_document(events)).unwrap(),
-        );
     }
 
     pub(crate) fn journal(&mut self, path: &Path, lines: &[Value]) {

@@ -51,7 +51,6 @@ pub struct RunInput<'machine> {
     pub boot: BootId,
     pub journal: Journal,
     pub machine: Machine<'machine>,
-    pub publication: crate::publication::PublicationPolicy,
     /// Set only in the tuning boot, where a dead end hands the next boot back to the normal system.
     pub bootloader: Option<Box<dyn Bootloader>>,
     /// The defects this build knows; [`togi_defect::KNOWN_DEFECTS`] outside tests.
@@ -311,7 +310,6 @@ impl<'machine> Session<'machine> {
             boot,
             journal,
             machine,
-            publication,
             mut bootloader,
             defects,
             resume,
@@ -385,7 +383,6 @@ impl<'machine> Session<'machine> {
         if let Some(handoff) = handoff {
             appender = appender.with_handoff(handoff);
         }
-        appender.publication = Some(publication);
         let visit = if appender.recovery().boots().contains(&boot) {
             Visit::Same {
                 reconciled: appender.recovery().baseline().is_none(),

@@ -7,13 +7,13 @@ use togi_machine::{CcdId, CoreSet};
 
 use crate::registry::{Clause, Entry, KNOWN_DEFECTS, is_ordered};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Matches {
     cores: CoreSet,
     decisions: Vec<Seq>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct Finding {
     seq: Seq,
     title: String,
@@ -58,9 +58,8 @@ impl PartialEq for Visits {
 #[cfg(test)]
 impl Eq for Visits {}
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DefectState {
-    #[serde(skip, default = "known_defects")]
     registry: &'static [Entry],
     watched: Vec<EventKind>,
     kinds: BTreeMap<Seq, EventKind>,
@@ -71,12 +70,7 @@ pub struct DefectState {
     excluded: BTreeSet<Seq>,
     ccds: Vec<(CcdId, CoreSet)>,
     #[cfg(test)]
-    #[serde(skip)]
     visits: Visits,
-}
-
-fn known_defects() -> &'static [Entry] {
-    KNOWN_DEFECTS
 }
 
 impl Default for DefectState {

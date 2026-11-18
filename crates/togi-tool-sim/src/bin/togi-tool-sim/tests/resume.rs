@@ -36,12 +36,10 @@ fn a_session_resumed_from_recorded_memory_ends_where_an_uninterrupted_one_does()
             .iter()
             .any(|(path, _)| path.starts_with("/state/archive"))
     );
-    for name in ["events.jsonl", "state.json"] {
-        let path = Path::new("/state").join(name);
-        let whole = String::from_utf8(whole.contents(&path).unwrap()).unwrap();
-        let split = String::from_utf8(split.contents(&path).unwrap()).unwrap();
-        same_text(name, &whole, &split);
-    }
+    let path = Path::new("/state/events.jsonl");
+    let whole = String::from_utf8(whole.contents(path).unwrap()).unwrap();
+    let split = String::from_utf8(split.contents(path).unwrap()).unwrap();
+    same_text("events.jsonl", &whole, &split);
 }
 
 fn same_text(name: &str, whole: &str, split: &str) {

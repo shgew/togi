@@ -96,7 +96,7 @@ order by core, "offset" desc;
 
 A copy of the target machine's journals shows what the next real run would archive and import. `togi-tool-sim --state-dir` resumes the copy on the simulator under the current build, so a journal recorded under an older ruleset or schema goes through the transition the next `togi run` would make (`docs/simulating.md`): it archives the source journal unchanged and imports only its raw day records ([Transitions](spec/journal.md#transitions)). `togi events --kind session.imported,day.imported` lists what it imported, each record with the session and sequence it came from. Run it only on a copy: preparation archives the live journal.
 
-From a checkout on the target machine, copy the journals, `state.json` and the archive markers with [`just copy-state`](benchmarking.md#copying-a-real-state-directory) (the sources are read-only), while togi is not running a trial:
+From a checkout on the target machine, copy the journals and the archive markers with [`just copy-state`](benchmarking.md#copying-a-real-state-directory) (the sources are read-only), while togi is not running a trial:
 
 ```sh
 copy=$(mktemp -d)

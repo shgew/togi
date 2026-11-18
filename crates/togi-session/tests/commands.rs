@@ -14,7 +14,7 @@ use togi_journal::{
 };
 use togi_machine::{CancellationToken, CoreId};
 use togi_render::Renderer;
-use togi_session::{CommandError, ConfigSource, PublicationPolicy, RunInput, reset_all, run};
+use togi_session::{CommandError, ConfigSource, RunInput, reset_all, run};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 
 fn build() -> Build {
@@ -99,7 +99,6 @@ fn input(sim: &Simulator, mem: &MemFs) -> RunInput<'static> {
         boot,
         journal,
         machine,
-        publication: PublicationPolicy::OnFinish,
         bootloader: None,
         defects: togi_defect::KNOWN_DEFECTS,
         resume: None,

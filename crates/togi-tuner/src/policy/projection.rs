@@ -1,8 +1,8 @@
-//! What status and watch show of the policy, and the `tuner` key of `state.json`: the committed edges and
+//! What status and watch show of the policy: the committed edges and
 //! the applied profile and its hold, the events and vetoes, the qualifications and the latest night.
 
 use crate::{UnitId, UnitProfile};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use togi_journal::{
     Activity, Budget, Classification, DayEventId, DayStep, Edge, ExposureClass, NightId,
@@ -18,7 +18,7 @@ use crate::day::{Freeze, QuestionState};
 use crate::night::Cursor;
 
 /// One tuning group's committed edge U, applied day offset D and ceiling distance.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnitProjection {
     pub unit: UnitId,
     pub cores: CoreSet,
@@ -30,7 +30,7 @@ pub struct UnitProjection {
     pub remaining: Option<u32>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct EventProjection {
     pub event: DayEventId,
     pub classification: Classification,
@@ -40,14 +40,14 @@ pub struct EventProjection {
 
 /// Whose veto it is: this session's day events, or one the predecessor's journal carried over and the tuner
 /// still enforces under its original identity.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VetoSource {
     Day,
     Predecessor,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct VetoProjection {
     pub event: DayEventId,
     pub state: VetoState,
@@ -55,7 +55,7 @@ pub struct VetoProjection {
 }
 
 /// Where a qualification record stands.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QualificationStage {
     Start,
@@ -65,7 +65,7 @@ pub enum QualificationStage {
 }
 
 /// A qualification record and where it stands.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct QualificationProjection {
     pub profile: UnitProfile,
     pub purpose: QualificationPurpose,
@@ -73,12 +73,11 @@ pub struct QualificationProjection {
     /// Whether it was made under the current firmware, epoch and content.
     pub current: bool,
     /// Measured task exposure plus cited reuse, deduplicated; includes partials and failures, not cells.
-    #[serde(default)]
     pub eligible_s: u64,
 }
 
 /// The applied-hour hold at the current D.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct HoldProjection {
     pub profile: UnitProfile,
     pub eligible_s: u64,
@@ -88,7 +87,7 @@ pub struct HoldProjection {
 }
 
 /// Whether the committed firmware context still matches the one D was applied under.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FirmwareValidity {
     Valid,
@@ -100,7 +99,7 @@ pub enum FirmwareValidity {
     Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DayProjection {
     pub hold: Option<HoldProjection>,
     pub last_step: Option<(Seq, DayStep)>,
@@ -111,7 +110,7 @@ pub struct DayProjection {
 }
 
 /// Where one CCD's mapping descent stands.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct MappingProjection {
     pub unit: UnitId,
     /// The offset in progress.
@@ -121,16 +120,15 @@ pub struct MappingProjection {
 }
 
 /// The open qualification's progress.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct QualificationProgress {
     pub profile: UnitProfile,
     pub outstanding: Vec<ExposureClass>,
     pub witnessed: usize,
-    #[serde(default)]
     pub eligible_s: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReproductionProjection {
     pub source: DayEventId,
     pub state: ReproductionState,
@@ -139,7 +137,7 @@ pub struct ReproductionProjection {
 }
 
 /// The latest plan of the latest night.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NightProjection {
     pub night: NightId,
     /// When the plan that opened the night was committed.
@@ -162,10 +160,9 @@ pub struct NightProjection {
     pub filler: u32,
 }
 
-/// The `tuner` key of `state.json` and what `status` and `watch` read.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+/// What `status` and `watch` show of the tuner.
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Projection {
-    #[serde(default)]
     pub climb: super::ClimbProjection,
     pub applied: Option<UnitProfile>,
     pub units: Vec<UnitProjection>,

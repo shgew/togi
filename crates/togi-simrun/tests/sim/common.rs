@@ -114,10 +114,6 @@ pub(crate) fn input(simulator: Simulator, persistence: Persistence) -> SimInput 
     }
 }
 
-pub(crate) fn state_json(fs: &MemFs) -> Option<Vec<u8>> {
-    fs.contents(format!("{STATE}/state.json"))
-}
-
 /// A simulated machine and the in-memory state directory its simulation keeps across runs.
 pub(crate) struct Bench {
     pub sim: Simulator,

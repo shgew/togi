@@ -88,10 +88,9 @@ pub enum ClimbAction {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClimbDecision {
     pub before: UnitProfile,
-    #[serde(with = "crate::policy::wire::pairs")]
     pub ceilings: Ceilings,
     pub action: ClimbAction,
 }

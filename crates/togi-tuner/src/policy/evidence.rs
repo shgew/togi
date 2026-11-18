@@ -12,7 +12,7 @@ use super::ledger::{Sig, failures_on, is_adequate};
 use crate::EVIDENCE_EPOCH;
 
 /// What makes exposures comparable evidence: one firmware context, one epoch, one set of contents.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct GroupKey {
     pub(super) firmware: BiosContext,
     pub(super) epoch: u32,
@@ -29,16 +29,14 @@ impl GroupKey {
 }
 
 /// Everything the exposures of one group say.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Group {
     pub(super) key: GroupKey,
     /// The first failure at the all-zero profile, as a ledger index.
     pub(super) zero_failure: Option<usize>,
     /// The adequate isolated passes of a class on a CCD, with their offsets.
-    #[serde(with = "togi_machine::serde_pairs")]
     pub(super) isolated_passes: HashMap<(CcdId, Sig), Vec<(TargetOffset, Seq)>>,
     /// The failures that count against a CCD, with the offset they count at.
-    #[serde(with = "super::wire::pairs")]
     pub(super) scoped_failures: BTreeMap<CcdId, Vec<(Seq, TargetOffset)>>,
 }
 

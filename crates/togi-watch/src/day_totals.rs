@@ -9,27 +9,25 @@
 use std::fmt::Write as _;
 
 use jiff::Timestamp;
-use serde::{Deserialize, Serialize};
 use togi_journal::{
     CrashedBoot, DayAnswerKind, DayIntervalCredit, DayIntervals, DayQuestions, Event, EventKind,
     IntervalState, Payload, Provenance,
 };
 use togi_machine::{BootId, ObservedOffset, PerCore};
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 enum CrashId {
     Boot(BootId),
     At(Timestamp),
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 struct Crash {
     id: CrashId,
     stock: bool,
     imported: bool,
     /// A manual record names it, so no answer can say it was not a crash.
     recorded: bool,
-    #[serde(default)]
     offsets: PerCore<ObservedOffset>,
 }
 
@@ -78,7 +76,7 @@ pub fn unknown_intervals(count: u32) -> String {
 }
 
 /// The day records folded to totals: applied hours per profile class and the crashes.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct DayTotals {
     questions: DayQuestions,
     boots: DayIntervals,
@@ -87,7 +85,6 @@ pub struct DayTotals {
     stock: [u64; 2],
     unknown: u32,
     imported: Vec<Provenance>,
-    #[serde(default)]
     profiles: Vec<(PerCore<ObservedOffset>, [u64; 2])>,
 }
 

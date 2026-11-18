@@ -134,7 +134,6 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_sample
     })
     .unwrap();
     assert!(matches!(outcome, SimOutcome::Stopped(_)));
-    assert!(dir.path().join("state.json").is_file());
     let events = togi_simrun::events(&persistence).unwrap();
     let trial = events
         .iter()

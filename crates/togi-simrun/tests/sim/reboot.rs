@@ -1,9 +1,7 @@
-//! A warm simulated reboot keeps the crashed boot's journal and folds instead of reading them back, and leaves
-//! the initial attestation snapshot unchanged until the simulation ends. Cold boots publish at every crash.
+//! A warm simulated reboot keeps the crashed boot's journal and folds instead of reading them back.
 
 use std::path::Path;
 
-use togi_journal::fs::Op;
 use togi_journal::{EventKind, MemFs, Payload};
 use togi_sim::MachineDefinition;
 use togi_simrun::{Persistence, Replay, SimOutcome, events, simulate};
@@ -16,7 +14,6 @@ const EVERY: usize = usize::MAX;
 struct Simulated {
     boots: usize,
     journal_reads: usize,
-    state_publications: usize,
     capped: bool,
 }
 
@@ -46,11 +43,6 @@ fn simulated(
         .iter()
         .filter(|path| named(path, "events.jsonl"))
         .count();
-    let state_publications = fs
-        .log()
-        .iter()
-        .filter(|(op, path)| *op == Op::Rename && named(path, ".state.json.tmp"))
-        .count();
     let boots = events(&persistence)
         .unwrap()
         .iter()
@@ -59,7 +51,6 @@ fn simulated(
     Simulated {
         boots,
         journal_reads,
-        state_publications,
         capped,
     }
 }
@@ -92,28 +83,6 @@ fn a_cold_simulation_reads_the_journal_at_every_boot() {
 }
 
 #[test]
-fn a_warm_simulation_publishes_attestation_then_once_at_its_stop_or_cap() {
-    let stopped = simulated(&hunt_machine(2), 1, Replay::Warm, 1000, 3);
-    assert!(stopped.boots > 1 && !stopped.capped);
-    assert_eq!(stopped.state_publications, 2, "attestation and final state");
-
-    let capped = simulated(&machine_file("flat-hazard"), 102, Replay::Warm, 24, EVERY);
-    assert!(capped.capped);
-    assert_eq!(capped.state_publications, 2, "attestation and capped state");
-}
-
-#[test]
-fn a_cold_simulation_publishes_attestation_every_crash_and_its_final_state() {
-    let stopped = simulated(&hunt_machine(2), 1, Replay::Cold, 1000, 3);
-    assert!(stopped.boots > 1 && !stopped.capped);
-    assert_eq!(stopped.state_publications, stopped.boots + 1);
-
-    let capped = simulated(&machine_file("flat-hazard"), 102, Replay::Cold, 24, EVERY);
-    assert!(capped.capped);
-    assert_eq!(capped.state_publications, capped.boots + 1);
-}
-
-#[test]
 fn an_ordinary_simulation_counts_operations_but_keeps_no_history() {
     let fs = MemFs::new();
     let mut sim = input(
@@ -132,9 +101,8 @@ fn an_ordinary_simulation_counts_operations_but_keeps_no_history() {
 #[test_case::test_case(Replay::Warm, 2; "warm reboot")]
 #[test_case::test_case(Replay::Cold, 2; "cold reboot")]
 #[test_case::test_case(Replay::Warm, 1; "boot cap")]
-fn boot_exhaustion_reaches_the_runner_and_publishes_pending_state(replay: Replay, max_boots: u32) {
-    let fs = MemFs::new();
-    let persistence = Persistence::Memory(fs.clone());
+fn boot_exhaustion_reaches_the_runner_and_keeps_the_journal(replay: Replay, max_boots: u32) {
+    let persistence = Persistence::Memory(MemFs::new());
     let definition = MachineDefinition::default();
     let sim = togi_sim::Simulator::new(
         togi_sim::Model::new(&definition, 1).unwrap(),
@@ -160,10 +128,6 @@ fn boot_exhaustion_reaches_the_runner_and_publishes_pending_state(replay: Replay
             source: togi_sim::ArithmeticError::BootNumber
         })
     ));
-    assert!(
-        crate::common::state_json(&fs).is_some(),
-        "the crashed boot's pending state is published"
-    );
     let recorded = events(&persistence).unwrap();
     assert!(!recorded.is_empty());
     assert!(recorded.iter().all(|event| event.boot == boot));

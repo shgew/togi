@@ -14,7 +14,7 @@ mod error;
 mod evidence;
 mod execute;
 mod prepare;
-mod publication;
+mod read;
 mod recover;
 mod recovery;
 mod restore;
@@ -22,7 +22,6 @@ mod resume;
 mod run;
 mod run_trial;
 mod session;
-mod snapshot;
 mod startup;
 mod trial;
 mod write;
@@ -45,11 +44,10 @@ pub use emergency::{
 pub use error::{AppendFailure, FoldError, JournalCause, JournalFailure, SessionError};
 pub use evidence::adjudicate_trial_end;
 pub use prepare::{Manifest, PendingImport, PrepareError, Prepared, prepare, prepare_kept};
-pub use publication::PublicationPolicy;
-pub use resume::{Divergence, DocumentDivergence, ResumeCapsule};
+pub use read::ReadState;
+pub use resume::{Divergence, ResumeCapsule};
 pub use run::run;
 pub use session::{ConfigSource, Ended, Panic, RunInput, Stop};
-pub use snapshot::{ReadState, SnapshotError, SnapshotStatus, verify_snapshot};
 pub use write::{
     DayAppliedProfile, DayFailure, DayRecovery, DayWriteError, ProfileFailure, Refused,
     WriteFailure, apply_day_profile,

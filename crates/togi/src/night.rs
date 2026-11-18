@@ -81,10 +81,7 @@ fn plan(ctx: &mut Context<'_>) -> Result<Vec<String>, Exit> {
         Ok(Some(_)) => {
             let recording = read::open(ctx, COMMAND)?;
             let events = recording.events();
-            let model = match ctx.system.journal_fs() {
-                Some(fs) => togi_watch::model::Model::read_in(&*fs, ctx.state_dir, events),
-                None => togi_watch::model::Model::read(ctx.state_dir, events),
-            };
+            let model = togi_watch::model::project(events);
             status::plan(events, &model, &ctx.system.zone())
                 .map_err(|error| fail(ctx, COMMAND, togi_render::error_chain(&error)))?
         }

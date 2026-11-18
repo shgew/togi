@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
-use std::path::Path;
 
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
@@ -133,11 +132,6 @@ fn a_finished_session_ends_its_journal_with_the_operators_shutdown() {
         panic!("the journal does not end in a shutdown");
     };
     assert_eq!(shutdown.reason, ShutdownReason::Signal);
-    assert!(
-        host.states[Path::new("/state")]
-            .contents("/state/state.json")
-            .is_some()
-    );
     assert!(
         ran.stderr.lines().last().unwrap().contains("shutdown"),
         "{}",

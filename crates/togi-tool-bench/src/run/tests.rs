@@ -178,15 +178,7 @@ impl SessionRunner for MemoryRunner {
                 line
             })
             .collect();
-        let folded = togi_session::ReadState::replay(&events).unwrap();
-        let prefix =
-            togi_journal::snapshot::Prefix::of(&bytes, events.last().map(|event| event.seq));
-        let saved = togi_journal::snapshot::seal(prefix, &folded.document()).unwrap();
         self.tree.fs.put(directory.join("events.jsonl"), bytes);
-        self.tree.fs.put(
-            directory.join("state.json"),
-            serde_json::to_vec(&saved).unwrap(),
-        );
         Ok(Session {
             dir: root.join(spec.name()),
             events,
@@ -220,7 +212,7 @@ impl SessionRunner for MemoryRunner {
         &self,
         session: &Session,
     ) -> Result<togi_session::ReadState, togi_session::FoldError> {
-        togi_session::ReadState::read_in(self.tree.fs.as_ref(), &session.dir, &session.events)
+        togi_session::ReadState::replay(&session.events)
     }
     fn remove(&self, _: &Path) {}
 }

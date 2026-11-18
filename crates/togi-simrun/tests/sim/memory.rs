@@ -5,44 +5,10 @@ use togi_journal::{Event, EventKind, Payload, ShutdownReason};
 use togi_session::{SessionError, Stop};
 use togi_simrun::Observe;
 
-use crate::common::{Bench, finish, hunt_machine, state_json, until_kind};
+use crate::common::{Bench, finish, hunt_machine, until_kind};
 
 fn count(events: &[Event], kind: EventKind) -> usize {
     events.iter().filter(|event| event.kind() == kind).count()
-}
-
-#[test]
-fn a_failed_projection_warns_after_the_stop_and_does_not_fail_the_session() {
-    let bench = Bench::new(&hunt_machine(2), 1);
-    let mut input = bench.input();
-    let fs = bench.fs.clone();
-    let cancel = input.cancel.clone();
-    input.observer = Some(Box::new(move |event| {
-        if event.kind() == EventKind::TrialEnd {
-            cancel.cancel();
-        }
-        if event.kind() == EventKind::Shutdown {
-            fs.fail_state_publication();
-        }
-        Observe::Continue
-    }));
-    let finished = finish(input);
-    assert_eq!(finished.stop, Some(Stop::Signal));
-    assert!(finished.errors.is_empty(), "{:?}", finished.errors);
-
-    let events = bench.events();
-    let [.., shutdown, warning] = events.as_slice() else {
-        panic!("too few events");
-    };
-    assert!(
-        matches!(&shutdown.payload, Payload::Shutdown(s) if s.reason == ShutdownReason::Signal)
-    );
-    let Payload::SessionWarning(warning) = &warning.payload else {
-        panic!("last event is {}", events.last().unwrap().kind().as_str());
-    };
-    assert_eq!(warning.operation, "write state projection");
-    assert!(!warning.error.is_empty());
-    assert_eq!(finished.errors.len(), 0);
 }
 
 #[test]
@@ -90,16 +56,11 @@ fn a_crash_right_after_session_start_is_replayed_once() {
     assert!(matches!(&last.payload, Payload::Shutdown(s) if s.reason == ShutdownReason::Signal));
     assert_eq!(bench.sim.violations(), Vec::<String>::new());
 
-    let state: serde_json::Value = serde_json::from_slice(&state_json(&bench.fs).unwrap()).unwrap();
-    assert_eq!(
-        state["facts"]["last_seq"],
-        serde_json::json!(last.seq.get())
-    );
-    assert_eq!(state["facts"]["cores"].as_array().unwrap().len(), 4);
+    finished.capsule.unwrap().verify(&events).unwrap();
 }
 
 #[test]
-fn a_resume_reads_the_projection_the_earlier_run_published() {
+fn a_resume_replays_what_the_earlier_run_recorded() {
     let definition = hunt_machine(2);
     let first = Bench::new(&definition, 1);
     let mut input = first.input();
@@ -113,7 +74,6 @@ fn a_resume_reads_the_projection_the_earlier_run_published() {
     assert_eq!(finish(input).stop, Some(Stop::Signal));
 
     let events = second.events();
-    assert_eq!(count(&events[before..], EventKind::StateRebuilt), 0);
     assert_eq!(count(&events[before..], EventKind::TrialEnd), 1);
 }
 

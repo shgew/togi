@@ -9,7 +9,7 @@ use crate::facts::{Facts, secs, trial_cores};
 use crate::history::Entry;
 use crate::model::{CoreView, RecoveryView, TrialView};
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) struct Derived {
     pub(crate) view: View,
 }
@@ -22,7 +22,7 @@ impl std::ops::Deref for Derived {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) struct View {
     pub(crate) policy: PolicyProjection,
     pub(crate) cores: Vec<CoreView>,
@@ -47,7 +47,7 @@ impl Derived {
 }
 
 /// The ended trial and the policy as it stood before its end.
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) struct EndView {
     pub(crate) trial: Option<TrialView>,
     pub(crate) policy: PolicyProjection,

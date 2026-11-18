@@ -97,13 +97,12 @@ pub enum ClimbError {
 }
 
 /// Successful applications alone advance ancestry, cursors and permanent stops.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClimbHistory {
     units: Units,
     current: UnitProfile,
     latest: Option<ApplicationId>,
     steps: Vec<LearningStep>,
-    #[serde(with = "crate::policy::wire::pairs")]
     links: BTreeMap<UnitId, Vec<AncestryLink>>,
     consumed: BTreeSet<Cursor>,
     retreats: Vec<RetreatRecord>,

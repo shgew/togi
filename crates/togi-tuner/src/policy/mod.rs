@@ -38,7 +38,6 @@ mod qualify;
 mod reproduce;
 mod stock;
 pub mod successor;
-pub(crate) mod wire;
 
 use togi_machine::CcdId;
 
@@ -66,7 +65,7 @@ use books::{Days, Ledger, Machine, Nights, Trials};
 use togi_journal::Seq;
 
 /// The thresholds the policy decides by, explicit so a simulator can vary them.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Params {
     /// The day hold.
     pub hold: DayParams,
@@ -88,17 +87,16 @@ impl Params {
 }
 
 /// A conclusive failure at all-zero ended the run; it stands until an explicit reset.
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Stop {}
 
 /// The folded Ruleset 14 policy state.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct State {
     params: Params,
     /// The last folded position; earlier events replay as no-ops.
     last: Option<Seq>,
     /// The latest time any folded event carried: the clock a projection reads, which has no wall clock.
-    #[serde(default)]
     last_time: Option<jiff::Timestamp>,
     machine: Machine,
     trials: Trials,
@@ -107,7 +105,6 @@ pub struct State {
     days: Days,
     climb: books::Climb,
     stop: Option<Stop>,
-    #[serde(skip)]
     caches: Caches,
 }
 

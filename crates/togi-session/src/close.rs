@@ -11,7 +11,7 @@ use togi_journal::{DeadEndCondition, Payload, SessionWarning};
 
 use crate::emergency::{self, Access};
 use crate::error::{Flow, JournalFailure, SessionError};
-use crate::session::{Ended, Fault, Panic, Session, Stop, message_of};
+use crate::session::{Ended, Panic, Session, Stop, message_of};
 
 /// How far the restoration at the end of a run that may still touch the machine got.
 enum Reached {
@@ -129,7 +129,7 @@ impl Session<'_> {
     }
 
     /// Keeps an error of the run; one that says the machine went down latches the crash, so nothing after it
-    /// touches the machine, publishes or answers with the emergency as though it had not.
+    /// touches the machine or answers with the emergency as though it had not.
     fn keep(&mut self, error: SessionError) -> SessionError {
         if error.is_crash() {
             self.lifecycle.crash();
@@ -197,48 +197,32 @@ impl Session<'_> {
         )
     }
 
-    /// The last step of every exit: what the run publishes beyond the journal belongs here, after the final event
-    /// and before the journal leaves the session.
+    /// Hands back the journal and, if the live folds still cover it, the in-memory capsule.
     fn finish(
         mut self,
         stop: Option<Stop>,
         stock_unverified: bool,
         mut errors: Vec<SessionError>,
-        mut emergency: Option<emergency::Outcome>,
+        emergency: Option<emergency::Outcome>,
         panic: Option<Panic>,
     ) -> Ended {
-        if self.appender.failure().is_none()
-            && self.lifecycle.fault() != Some(Fault::Crashed)
-            && !self.appender.journal().events().is_empty()
-            && let Err(error) = self.appender.publish_state()
-        {
-            errors.push(error.into());
-            emergency = self
-                .appender
-                .failure()
-                .cloned()
-                .map(|failure| self.answer(&failure));
-        }
         errors.extend(self.appender.take_log_failure().map(SessionError::Log));
-        let capsule = if self.appender.failure().is_none() {
-            match self.appender.capsule() {
-                Ok(capsule) => Some(capsule),
-                Err(error) => {
-                    errors.push(error.into());
-                    None
-                }
+        let (journal, capsule) = self.appender.into_parts();
+        let capsule = match capsule {
+            Ok(capsule) => capsule,
+            Err(error) => {
+                errors.push(error.into());
+                None
             }
-        } else {
-            None
         };
         Ended {
             stop,
             stock_unverified,
             errors,
             emergency,
+            journal,
             capsule,
             panic,
-            journal: self.appender.into_journal(),
         }
     }
 }

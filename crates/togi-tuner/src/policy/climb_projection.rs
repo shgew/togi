@@ -4,7 +4,7 @@
 //! qualification and exact-profile rate bounds; displays must not derive authority from S.
 
 use jiff::Timestamp;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use togi_journal::{
     ApplicationId, CampaignEventPhase, CampaignHistory, CampaignId, Classification, ClimbAction,
     ClimbBlocker, DayEventId, Edge, ExposureClass, FirmwareRestoration, Seq, UnitStopReason,
@@ -15,7 +15,7 @@ use togi_machine::{BiosContext, CoreSet, ObservedOffset, PerCore, TargetOffset};
 use crate::{Phase, UnitId};
 
 /// The only permission model: a hold and an exact-vector night certificate, never S.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClimbPermissionMode {
     #[default]
@@ -23,7 +23,7 @@ pub enum ClimbPermissionMode {
 }
 
 /// An empty projection means that no campaign/profile has been reconstructed yet.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct ClimbProjection {
     pub permission: ClimbPermissionMode,
     pub profiles: ClimbProfiles,
@@ -36,7 +36,7 @@ pub struct ClimbProjection {
 }
 
 /// Applied/read-back, proposed and paused-saved values are deliberately independent.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct ClimbProfiles {
     pub applied: Option<UnitVector>,
     pub read_back: Option<PerCore<ObservedOffset>>,
@@ -44,7 +44,7 @@ pub struct ClimbProfiles {
     pub paused_saved: Option<UnitVector>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ClimbUnitProjection {
     pub unit: UnitId,
     pub phase: Phase,
@@ -63,27 +63,27 @@ pub struct ClimbUnitProjection {
     pub latest_step: Option<ClimbStepProjection>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ClimbHoldProjection {
     pub credited_s: u64,
     pub required_s: u64,
     pub witnesses: Vec<Seq>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ClimbProposalProjection {
     pub profile: UnitVector,
     pub qualification: ClimbQualificationProjection,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ClimbQualificationProjection {
     pub state: ClimbQualificationState,
     pub outstanding: Vec<ExposureClass>,
     pub witnesses: Vec<Seq>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ClimbQualificationState {
     Missing,
@@ -92,7 +92,7 @@ pub enum ClimbQualificationState {
     Failed { witnesses: Vec<Seq> },
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[expect(
     clippy::large_enum_variant,
@@ -113,7 +113,7 @@ pub enum ClimbUnitState {
 }
 
 /// The latest successfully applied change, with its exact before/after vectors.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ClimbStepProjection {
     pub application: ApplicationId,
     pub at: Timestamp,
@@ -123,7 +123,7 @@ pub struct ClimbStepProjection {
     pub witnesses: Vec<Seq>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ClimbCampaignProjection {
     pub campaign: CampaignId,
     pub history: CampaignHistory,
@@ -138,7 +138,7 @@ pub struct ClimbCampaignProjection {
     pub events: Vec<ClimbEventProjection>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ClimbEventProjection {
     pub event: DayEventId,
     pub aliases: Vec<DayEventId>,
@@ -153,7 +153,7 @@ pub struct ClimbEventProjection {
 
 /// Pointwise, one-sided 95% exact Poisson bound under a fixed-rate model.
 /// No qualification, stock-baseline or previous-profile hours belong in this record.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ClimbDailyEvidence {
     pub profile: UnitVector,
     pub firmware: BiosContext,
@@ -168,7 +168,7 @@ pub struct ClimbDailyEvidence {
     pub witnesses: Vec<Seq>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClimbGoalSupport {
     InsufficientEvidence,

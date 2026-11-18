@@ -263,9 +263,8 @@ where
 
 /// Runs one session of the suite and judges it: clean only when its simulated night ended the way its run expects (the
 /// operator's end at the run's night length, or a dead end its machine produces), the last boot's resume state matched
-/// a fresh fold of the journal (the simulation checks that after every crash too), the Ruleset 13 fold accepts the journal, and
-/// the audit finds no violation in any of the directory's journals and a published `state.json` at the journal's last
-/// event. `fs` is the session's fresh in-memory state directory.
+/// a fresh fold of the journal (the simulation checks that after every crash too), the tuner accepts the journal, and
+/// the audit finds no violation in any of the directory's journals. `fs` is the session's fresh in-memory state directory.
 #[cfg(test)]
 fn execute(
     run: &Run,
@@ -470,12 +469,9 @@ fn open(fs: MemFs) -> Result<StateDir, togi_journal::LockError> {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
-    use std::path::Path;
 
     use togi_journal::MemFs;
-    use togi_journal::fs::Fs as _;
     use togi_machine::CancellationToken;
-    use togi_tool_audit::Check;
     use togi_tool_sim::{Outcome, Run, Split};
     use togi_tool_trialfacts::Extracts;
 
@@ -519,19 +515,10 @@ mod tests {
     }
 
     #[test]
-    fn a_finished_session_without_its_final_state_document_is_not_clean() {
+    fn a_legacy_state_document_is_not_evidence_for_or_against_a_clean_session() {
         let fs = MemFs::new();
         assert_eq!(outcome(fs.clone()), Outcome::Clean);
-        fs.remove_file(Path::new("/state/state.json")).unwrap();
-        let judged = judge(&Persistence::Memory(fs.clone()), fs);
-        let Outcome::AuditViolations { violations } = judged else {
-            panic!("a finished session without a state.json must not be judged clean: {judged}");
-        };
-        assert!(
-            violations
-                .iter()
-                .any(|violation| violation.check == Check::Projection),
-            "{violations:?}"
-        );
+        fs.put("/state/state.json", "{torn");
+        assert_eq!(judge(&Persistence::Memory(fs.clone()), fs), Outcome::Clean);
     }
 }

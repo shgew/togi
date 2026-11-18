@@ -81,10 +81,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(exit) => return exit,
     };
     let events = recording.events();
-    let model = match ctx.system.journal_fs() {
-        Some(fs) => togi_watch::model::Model::read_in(&*fs, ctx.state_dir, events),
-        None => togi_watch::model::Model::read(ctx.state_dir, events),
-    };
+    let model = togi_watch::model::project(events);
     let mut text = match render_model(events, &model, &ctx.system.zone()) {
         Ok(text) => text,
         Err(Problem::NoSession) => {

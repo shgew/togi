@@ -10,7 +10,7 @@ explicitly below. §9 records the nonzero activation decision and first-live-ste
 
 Rules below apply to a **tuning unit**: a CCD in the coarse phase; a physical core in later refinement. The whole profile is always the complete ordered per-core vector plus its topology and phase/unit mapping. A CCD offset expands uniformly to its member cores; a core offset expands to that physical core's SMT siblings. No daily crash identifies a guilty unit.
 
-The Ruleset 14 design number is distinct from the Rust `RULESET` compatibility constant. This policy requires a ruleset transition; the final compatibility number is assigned with the implementation switch. `SCHEMA` remains 1: the new journal kinds are additive and retain released wire meanings. Production reducer changes invalidate snapshots through the source-build fingerprint and rebuild them from the journal.
+The Ruleset 14 design number is distinct from the Rust `RULESET` compatibility constant. This policy requires a ruleset transition; the final compatibility number is assigned with the implementation switch. `SCHEMA` remains 1: the new journal kinds are additive and retain released wire meanings.
 
 This policy specifies the two-ended climb, initial and subsequent 50-hour holds, bounded rounded-up steps, exact-profile qualification, newest-step stop, whole-profile veto/escalation, firmware-zero/one-step restoration, two-event campaign allowance and honest evidence wording.
 
@@ -143,7 +143,7 @@ Use **`experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate mod
 
 A unit not yet stepped into a profile cannot consume a fictitious “previous step.” If a safety retreat target has no valid qualification, stock is the fallback, not a claim that the shallower target passed. A required safety backstep has priority over restoration, promotion, freeze or allowance availability.
 
-The journal's typed [`day.pause` fold](journal.md#day-pause) supplies pause accounting and boot eligibility. A boot that first observes an unexpired timed pause remains promotion-ineligible after `running`, including after a service restart or snapshot replay. While a durable pause is in force, status/watch distinguish the saved D from the actual observed/read-back profile; neither recording the pause before zeroing nor a saved nonzero D is evidence that nonzero offsets are currently applied.
+The journal's typed [`day.pause` fold](journal.md#day-pause) supplies pause accounting and boot eligibility. A boot that first observes an unexpired timed pause remains promotion-ineligible after `running`, including after a service restart and journal replay. While a durable pause is in force, status/watch distinguish the saved D from the actual observed/read-back profile; neither recording the pause before zeroing nor a saved nonzero D is evidence that nonzero offsets are currently applied.
 
 **Firmware restoration history:** save the exact pre-change profile and its unit mapping, reset to stock, and record the subsequently successful restoration as one whole-profile **learning step** from stock. The stock hold and the exact new-context night certificate are both mandatory; do not substitute a componentwise-deeper pass or old firmware hours. Keep ordinary pending-event, veto, remaining-allowance, freeze/pause, watchdog and safe-apply checks. A genuinely adverse current-context ceiling finding takes precedence; an old U is not current positive evidence, and absence of a newly mapped U alone does not turn this explicit restoration path into a mandatory re-climb.
 
@@ -219,7 +219,7 @@ The durable journal and reporting contract requires:
 - a campaign-level machine allowance, unique event identities, provisional/reclassification history, consumption and exhaustion, with no silent renewal;
 - permission mode, applied vs saved/proposed profile, current-profile daily hours/crashes and separated learning/post-finish events.
 
-The journal uses additive typed kinds without changing released fields or meanings, so `SCHEMA` stays 1. The [journal catalog](journal.md) owns their payloads. Snapshots are caches: the production source-build fingerprint rejects stale reducers and replay rebuilds them. A future core-phase applier must validate the complete core vector against topology, not pretend a nonuniform profile expands from a CCD offset. Evidence epoch changes only when workload/credit contracts change.
+The journal uses additive typed kinds without changing released fields or meanings, so `SCHEMA` stays 1. The [journal catalog](journal.md) owns their payloads. A future core-phase applier must validate the complete core vector against topology, not pretend a nonuniform profile expands from a CCD offset. Evidence epoch changes only when workload/credit contracts change.
 
 **Successor transition:** archive the Ruleset 13 session unchanged and start the durably identified successor at verified stock. Import original-identity raw daily observations, compatible `exposure.observed` observations, and CPU-suspect events, stops and veto records needed to reconstruct the campaign. Never import S, an old qualification conclusion or nonzero D as permission.
 

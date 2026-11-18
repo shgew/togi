@@ -104,7 +104,7 @@ impl SessionRunner for Simulator {
         &self,
         session: &Session,
     ) -> Result<togi_session::ReadState, togi_session::FoldError> {
-        togi_session::ReadState::read(&session.dir, &session.events)
+        togi_session::ReadState::replay(&session.events)
     }
     fn remove(&self, path: &Path) {
         let _ = std::fs::remove_dir_all(path);

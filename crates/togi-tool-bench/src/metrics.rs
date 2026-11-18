@@ -297,5 +297,5 @@ fn real_answers(events: &[Event], model: &Model, replay: Option<&Replay>) -> Res
 }
 
 #[cfg(test)]
-#[path = "snapshot_tests.rs"]
-mod snapshot_tests;
+#[path = "replay_tests.rs"]
+mod replay_tests;

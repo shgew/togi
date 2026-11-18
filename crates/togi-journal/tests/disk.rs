@@ -86,7 +86,7 @@ fn unsynced(path: &Path) -> StateDir {
 }
 
 #[test]
-fn a_journal_survives_close_reopen_state_and_archive() {
+fn a_journal_survives_close_reopen_and_archive() {
     let fs = MemFs::new();
     let state = Path::new("/nested/state");
     #[expect(
@@ -96,17 +96,12 @@ fn a_journal_survives_close_reopen_state_and_archive() {
     let lock = || StateDir::lock_with_fs(Arc::new(fs.clone()), state);
     let mut journal = begin(lock().unwrap());
     journal.append(stamp(1), note("one"), &[]).unwrap();
-    journal.write_state(&[1, 2, 3]).unwrap();
     assert!(matches!(lock(), Err(LockError::Held { .. })));
     let dir = journal.close().unwrap();
     drop(dir);
 
     let journal = lock().unwrap().open(boot(2)).unwrap();
     assert_eq!(journal.events().len(), 2);
-    assert_eq!(
-        journal.read_state::<Vec<i32>>().unwrap(),
-        Some(vec![1, 2, 3])
-    );
     assert_eq!(
         togi_journal::Recording::read_in(&fs, &state.join("events.jsonl"))
             .unwrap()
@@ -121,7 +116,6 @@ fn a_journal_survives_close_reopen_state_and_archive() {
         .archive(stamp(2), ArchiveKind::ResetAll, &[])
         .unwrap();
     assert_eq!(fs.kind(&state.join("events.jsonl")).unwrap(), None);
-    assert_eq!(fs.kind(&state.join("state.json")).unwrap(), None);
     assert_eq!(
         fs.kind(&state.join("archive/20231114T221320Z.jsonl"))
             .unwrap(),
