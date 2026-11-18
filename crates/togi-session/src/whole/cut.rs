@@ -1827,6 +1827,55 @@ fn a_changed_hold_or_event_count_changes_the_commitments(events_added: u32, elig
     );
 }
 
+#[test]
+fn a_day_application_citing_a_different_decision_changes_the_commitments() {
+    let events = scenario_events();
+    let (at, decision) = events
+        .iter()
+        .enumerate()
+        .find_map(|(at, event)| {
+            if let Payload::DayApplied(DayApplied {
+                cause: ApplyCause::Step { decision },
+                ..
+            }) = &event.payload
+            {
+                Some((at, Seq::new(decision.0).unwrap()))
+            } else {
+                None
+            }
+        })
+        .expect("the scenario applies a climb decision");
+    let original = events.iter().find(|event| event.seq == decision).unwrap();
+    let original_shape = Names::hidden().payload(&original.payload);
+    let replacement = events
+        .iter()
+        .find(|event| {
+            matches!(event.payload, Payload::ClimbDecision(_))
+                && event.seq != decision
+                && Names::hidden().payload(&event.payload) != original_shape
+        })
+        .or_else(|| {
+            events
+                .iter()
+                .find(|event| matches!(event.payload, Payload::DayCheckpoint(_)))
+        })
+        .expect("the scenario has a different decision or a day checkpoint");
+    let mut changed = events.clone();
+    let Payload::DayApplied(applied) = &mut changed[at].payload else {
+        unreachable!();
+    };
+    applied.cause = ApplyCause::Step {
+        decision: togi_journal::DecisionId(replacement.seq.get()),
+    };
+    assert_ne!(
+        commitments(&changed, at, true),
+        commitments(&events, at, true),
+        "changing the application decision from {} to {} must change the commitments",
+        original.seq,
+        replacement.seq
+    );
+}
+
 #[test_case("unit.edge"; "hard ceiling margin")]
 #[test_case("campaign.charge"; "remaining allowance")]
 #[test_case("unit.stop"; "stop witnesses")]
