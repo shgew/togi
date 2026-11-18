@@ -528,15 +528,15 @@ pub(crate) fn assert_day_chain(
     target: &togi_journal::CcdVector,
     readbacks: &PerCore<ObservedOffset>,
 ) {
-    assert!(
-        !transactions.is_empty(),
-        "day application has no transactions"
-    );
     enum Write {
         Pending(Seq),
         Verified(Seq),
     }
 
+    assert!(
+        !transactions.is_empty(),
+        "day application has no transactions"
+    );
     let mut intent = None;
     let mut write = None;
     let mut observed = PerCore::default();
