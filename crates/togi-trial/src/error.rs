@@ -178,6 +178,12 @@ pub enum CleanupFailure {
         #[source]
         source: SystemdError,
     },
+    #[error("join {operation}")]
+    Join {
+        operation: String,
+        #[source]
+        source: tokio::task::JoinError,
+    },
     #[error("reap instance {instance}")]
     Reap {
         instance: String,

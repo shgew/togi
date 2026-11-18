@@ -211,14 +211,15 @@ impl<'a, O: Os> Teardown<'a, O, Running> {
         }
         let mut confirmed = Vec::new();
         while let Some(joined) = calls.join_next().await {
-            let Ok((scope, outcome)) = joined else {
-                continue;
-            };
-            match outcome {
-                Ok(()) => confirmed.push(scope),
-                Err(source) => self.failures.record(CleanupFailure::KillScope {
+            match joined {
+                Ok((scope, Ok(()))) => confirmed.push(scope),
+                Ok((scope, Err(source))) => self.failures.record(CleanupFailure::KillScope {
                     scope: scope.to_string(),
                     signal: KillSignal::Kill.name(),
+                    source,
+                }),
+                Err(source) => self.failures.record(CleanupFailure::Join {
+                    operation: "teardown scope kill".into(),
                     source,
                 }),
             }

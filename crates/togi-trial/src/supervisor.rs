@@ -98,8 +98,8 @@ pub(crate) struct Supervised {
     pub(crate) task: tokio::task::JoinHandle<()>,
 }
 
-/// The supervisors still running, and whether shutdown has begun, so a supervisor a pending
-/// start registers during shutdown is abandoned the moment it exists.
+/// While open, the registry prunes finished supervisors. Once shutdown starts, it hands every
+/// handle to the shutdown joiner, even if already finished.
 #[derive(Default)]
 pub(crate) struct Registry {
     supervised: Vec<Supervised>,
@@ -108,29 +108,26 @@ pub(crate) struct Registry {
 
 impl Registry {
     fn register(&mut self, supervised: Supervised) {
-        self.supervised
-            .retain(|supervised| !supervised.task.is_finished());
         if self.closed {
             let _ = supervised.commands.send(TrialCommand::Abandon);
+        } else {
+            self.supervised
+                .retain(|supervised| !supervised.task.is_finished());
         }
         self.supervised.push(supervised);
     }
 
-    /// Abandons every supervisor still running and takes them all, including those registered
-    /// since an earlier close, which `register` already abandoned.
     pub(crate) fn close(&mut self) -> Vec<Supervised> {
         let already = std::mem::replace(&mut self.closed, true);
-        let live: Vec<Supervised> = self
-            .supervised
-            .drain(..)
-            .filter(|supervised| !supervised.task.is_finished())
-            .collect();
+        let supervisors = std::mem::take(&mut self.supervised);
         if !already {
-            for supervised in &live {
-                let _ = supervised.commands.send(TrialCommand::Abandon);
+            for supervised in &supervisors {
+                if !supervised.task.is_finished() {
+                    let _ = supervised.commands.send(TrialCommand::Abandon);
+                }
             }
         }
-        live
+        supervisors
     }
 }
 

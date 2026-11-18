@@ -419,6 +419,7 @@ fn labels(error: &Error) -> Vec<String> {
             CleanupFailure::Leftover => "leftover".to_owned(),
             other @ (CleanupFailure::Start(_)
             | CleanupFailure::SignalGroup { .. }
+            | CleanupFailure::Join { .. }
             | CleanupFailure::Reap { .. }
             | CleanupFailure::ReadPipe { .. }
             | CleanupFailure::WatchedLost { .. }

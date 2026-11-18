@@ -2432,3 +2432,143 @@ fn real_fs_content_hashes_the_executable_file() {
     std::fs::write(&program, "changed on disk").unwrap();
     assert_eq!(runner.content(mprime_workload()).unwrap(), content);
 }
+
+crate::testing::test! {
+async fn runtime_shutdown_distinguishes_failed_joins_from_its_deadline() {
+    local(async {
+        let rig = rig();
+        let env = Rc::clone(&rig.env);
+        let failed = tokio::task::spawn_local(async move {
+            let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
+            let task = tokio::task::spawn_local(async { panic!("late teardown panic") });
+            let finished = task.abort_handle();
+            crate::supervisor::register(&env, crate::supervisor::Supervised {
+                trial: "late".into(),
+                commands,
+                task,
+            });
+            while !finished.is_finished() {
+                tokio::task::yield_now().await;
+            }
+            let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
+            let task = tokio::task::spawn_local(std::future::pending());
+            task.abort();
+            crate::supervisor::register(&env, crate::supervisor::Supervised {
+                trial: "cancelled".into(),
+                commands,
+                task,
+            });
+            panic!("start rollback panic");
+        });
+        let blocked = tokio::task::spawn_local(std::future::pending());
+        crate::runtime::RUNTIME_REPORTS.with_borrow_mut(Vec::clear);
+        let begun = tokio::time::Instant::now();
+        crate::runtime::contain_pending(&rig.env, vec![failed, blocked]).await;
+        let reports = runtime_reports();
+        let [failed, timeout, late, cancelled] = reports.as_slice() else {
+            panic!("expected a timeout and three failed joins: {reports:?}");
+        };
+        assert!(
+            failed.contains("runtime shutdown: join start")
+                && failed.contains("start rollback panic"),
+            "{failed}"
+        );
+        assert_eq!(timeout, "togi: a start was still running when its runner shut down");
+        assert!(
+            late.contains("runtime shutdown: join teardown of trial late")
+                && late.contains("late teardown panic"),
+            "{late}"
+        );
+        assert!(
+            cancelled.contains("runtime shutdown: join teardown of trial cancelled")
+                && cancelled.contains("was cancelled"),
+            "{cancelled}"
+        );
+        assert_eq!(begun.elapsed(), rig.env.timing.stop_bound());
+    })
+    .await;
+}
+}
+
+#[test_case::test_case(false; "failure alone withholds stop proof")]
+#[test_case::test_case(true; "collects another scope timeout")]
+fn teardown_reports_a_failed_scope_kill_join(sibling_stalls: bool) {
+    let (mut runner, _) = runner(
+        move |fake| {
+            fake.on_systemd(move |call| match call {
+                Systemd::Kill {
+                    scope,
+                    signal: KillSignal::Kill,
+                } if scope.as_str() == "togi-trial-t1-c00" => {
+                    panic!("teardown kill panic");
+                }
+                Systemd::Kill {
+                    signal: KillSignal::Kill,
+                    ..
+                } if sibling_stalls => Some(Reply::Stall),
+                Systemd::Kill { .. }
+                | Systemd::Stop { .. }
+                | Systemd::ListScopes
+                | Systemd::Probe { .. } => None,
+            });
+        },
+        fast(),
+    );
+    let running = start(&mut runner, Regime::R7, &[0, 1], secs(600));
+    let error = running
+        .stop(&mut crate::testing::Frequencies::default())
+        .unwrap_err();
+    assert!(matches!(error, togi_machine::Error::Containment(_)));
+    let text = togi_machine::error_chain(&error);
+    assert_eq!(
+        text.matches("join teardown scope kill").count(),
+        1,
+        "{text}"
+    );
+    assert_eq!(text.matches("teardown kill panic").count(), 1, "{text}");
+    assert_eq!(
+        text.contains("signal scope togi-trial-t1-c01 with SIGKILL: deadline has elapsed"),
+        sibling_stalls,
+        "{text}"
+    );
+}
+
+#[test_case::test_case(false; "failure alone withholds stop proof")]
+#[test_case::test_case(true; "collects another scope timeout")]
+fn sweep_reports_a_failed_scope_cleanup_join(sibling_stalls: bool) {
+    let (mut runner, _) = runner(
+        move |fake| {
+            let listed = Cell::new(false);
+            fake.on_systemd(move |call| match call {
+                Systemd::ListScopes => Some(Reply::Output {
+                    success: true,
+                    text: if listed.replace(true) {
+                        String::new()
+                    } else {
+                        "togi-trial-a.scope\ntogi-trial-b.scope".into()
+                    },
+                }),
+                Systemd::Stop { scope } if scope.as_str() == "togi-trial-a" => {
+                    panic!("sweep stop panic");
+                }
+                Systemd::Stop { .. } if sibling_stalls => Some(Reply::Stall),
+                Systemd::Kill { .. } | Systemd::Stop { .. } | Systemd::Probe { .. } => None,
+            });
+        },
+        fast(),
+    );
+    let error = runner.sweep(&CancellationToken::new()).unwrap_err();
+    assert!(matches!(error, togi_machine::Error::Containment(_)));
+    let text = togi_machine::error_chain(&error);
+    assert_eq!(
+        text.matches("join sweep SIGKILL and stop").count(),
+        1,
+        "{text}"
+    );
+    assert_eq!(text.matches("sweep stop panic").count(), 1, "{text}");
+    assert_eq!(
+        text.contains("stop scope togi-trial-b: deadline has elapsed"),
+        sibling_stalls,
+        "{text}"
+    );
+}
