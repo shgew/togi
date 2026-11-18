@@ -518,6 +518,17 @@ fn a_lost_watchdog_zeroes_the_nonzero_profile_and_stops_without_reapplying(ticks
         panic!("stock readback missing");
     }
     assert!(
+        matches!(&tail[4].payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(0))
+    );
+    assert!(
+        crate::day::current_baseline(
+            journal.events(),
+            journal.boot(),
+            session_cores(journal.events()).unwrap(),
+        )
+        .is_some()
+    );
+    assert!(
         !journal
             .events()
             .iter()
@@ -596,6 +607,14 @@ fn offset_drift_is_recorded_before_restoring_stock(fail_readback: bool, drift_at
         matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(-5))
     }));
     assert_eq!(journal.events()[drift + 1].kind(), EventKind::DayCheckpoint);
+    assert_eq!(
+        crate::day::current_baseline(
+            &journal.events()[..=drift],
+            journal.boot(),
+            session_cores(journal.events()).unwrap(),
+        ),
+        None
+    );
     assert_eq!(journal.events()[drift + 2].kind(), EventKind::SmuIntent);
     assert!(
         !journal
@@ -757,6 +776,23 @@ fn nonzero_baseline_is_refused_without_a_write_or_application() {
     assert_eq!(hardware.writes, []);
     assert_eq!(hardware.emergency, 0);
     assert_eq!(applications(&journal).len(), 0);
+}
+
+#[test]
+fn a_verified_day_zero_transaction_records_a_current_stock_baseline() {
+    let mut journal = seed();
+    let mut hardware = Hardware::stock();
+    let mut live = crate::day::apply::Live::preflight(&journal, &mut hardware).unwrap();
+    live.zero(&mut journal, &mut hardware, &ActiveClock::one())
+        .unwrap();
+    assert!(
+        crate::day::current_baseline(
+            journal.events(),
+            journal.boot(),
+            session_cores(journal.events()).unwrap(),
+        )
+        .is_some()
+    );
 }
 
 #[test_case("unarmed"; "unarmed watchdog")]

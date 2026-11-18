@@ -40,7 +40,7 @@ Not yet:
 ```sh
 togi --version                         # version and git revision of this build
 sudo togi doctor                       # check this machine is ready for a run, without starting a session or writing the journal
-sudo togi doctor --day                 # check day prerequisites and this boot's recorded stock-baseline proof
+sudo togi doctor --day                 # check day prerequisites and a current, verified stock readback recorded in this boot
 sudo togi run                          # tune tonight; needs the current stock attestation from `togi night` (exit 12 otherwise); Ctrl-C ends the night, the next run opens the next
 sudo togi night                        # GRUB or systemd-boot: confirm stock stability, remember the day's selection and reboot into tuning
 sudo togi day                          # apply permitted D and observe; needs verified CO 0 and PID 1's counting watchdog

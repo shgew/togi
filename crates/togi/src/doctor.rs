@@ -48,9 +48,10 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// watchdog, this boot's entries in the persistent system journal, and the installed GRUB or
 /// systemd-boot setup. Counting must be observed: a missing, unreadable or static counter fails;
 /// a PID 1 refresh needs a later decrease. This does not test physical expiry. Also require a
-/// recorded, complete CO-0 baseline or restoration receipt citing this boot's zero readbacks.
-/// Applied D, a day boot's observations, and a current zero readback are not historical baseline
-/// proof. These read-only diagnostics neither apply a profile nor give a stability verdict.
+/// recorded, current all-core CO-0 baseline verified in this boot by the day service's start, a
+/// cited baseline/restoration readback chain, or a complete verified zero-write transaction.
+/// Missing, failed, partial or superseded readback refuses. Applied D or an old receipt alone is
+/// not proof. These read-only diagnostics neither apply a profile nor give a stability verdict.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -244,56 +245,16 @@ fn bootloader_check(system: &dyn crate::system::System) -> Check {
     }
 }
 
-/// A historical receipt needs its complete, same-boot readback chain, not today's sampled offsets.
+/// Query the applying service's current durable stock proof, separately from live diagnostics.
 fn baseline_check(events: &[Event], boot: &BootId, topology: &[CoreInfo]) -> Check {
-    let receipt = events.iter().rev().find(|event| {
-        if &event.boot != boot || topology.is_empty() {
-            return false;
-        }
-        let complete_zero = if let Payload::SessionBaseline(baseline) = &event.payload {
-            baseline.offsets.len() == topology.len()
-                && topology.iter().all(|info| {
-                    baseline
-                        .offsets
-                        .get(info.core)
-                        .is_some_and(|offset| offset.0 == 0)
-                })
-        } else if let Payload::ProfileRestored(restored) = &event.payload {
-            restored.offsets.len() == topology.len()
-                && topology.iter().all(|info| {
-                    restored
-                        .offsets
-                        .get(info.core)
-                        .is_some_and(|offset| offset.get() == 0)
-                })
-        } else {
-            return false;
-        };
-        complete_zero
-            && topology.iter().all(|info| {
-                event.cause.iter().any(|seq| {
-                    let Ok(index) = events.binary_search_by_key(seq, |reading| reading.seq) else {
-                        return false;
-                    };
-                    let readback = &events[index];
-                    readback.seq < event.seq
-                        && readback.boot == *boot
-                        && matches!(&readback.payload, Payload::SmuReadback(reading)
-                        if reading.core == info.core && reading.offset.0 == 0)
-                })
-            })
-    });
-    let (ok, detail) = match receipt {
-        Some(receipt) => (
+    let (ok, detail) = match crate::day::current_baseline(events, boot, topology) {
+        Some(seq) => (
             true,
-            format!(
-                "this boot's verified CO-0 receipt at seq {}; complete cited zero readbacks, distinct from applied D and current readback",
-                receipt.seq
-            ),
+            format!("this boot's current verified CO-0 readback at seq {seq}; distinct from applied D and live readback"),
         ),
         None => (
             false,
-            "no complete, cited CO-0 baseline/restoration receipt for this boot; applied D and current zero readback are not proof".into(),
+            "no current verified all-core CO-0 baseline for this boot; the day service's start records one; old receipts, applied D and current zero readback are not proof".into(),
         ),
     };
     Check {
