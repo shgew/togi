@@ -17,6 +17,7 @@ fn parse(args: &[&str]) -> Result<Args, clap::Error> {
 #[test_case("--until" ; "until")]
 #[test_case("--cycles" ; "cycles")]
 #[test_case("--first-result" ; "first result")]
+#[test_case("--no-tui" ; "no tui")]
 fn a_retired_flag_is_unknown(flag: &str) {
     let error = parse(&[flag]).unwrap_err().to_string();
     assert!(

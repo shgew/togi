@@ -23,7 +23,6 @@ use support::{Host, Ran};
 use test_case::test_case;
 use togi_cli::Exit;
 use togi_cli::cli::Context;
-use togi_cli::dashboard::Surface;
 use togi_cli::system::System;
 use togi_config::Config;
 use togi_hardware::{Diagnosis, RebootError, StopError};
@@ -367,10 +366,6 @@ impl System for Night {
 
     fn stderr(&self) -> Box<dyn Write> {
         self.host.stderr()
-    }
-
-    fn surface(&self) -> Arc<dyn Surface> {
-        self.host.surface()
     }
 }
 

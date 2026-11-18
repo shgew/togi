@@ -8,7 +8,7 @@
 
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead as _, BufReader, Write as _};
+use std::io::Write as _;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -20,10 +20,9 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use togi_journal::EventKind;
 use togi_machine::{
-    BootId, CancellationToken, CoreId, Error as MachineError, FrequencyJournal, Kernel,
-    KernelCursor, KernelRead, Machine, Mce, ObservedOffset, Partial, PstoreRecord, Reporter,
-    ResetReason, Running, Smu, SmuValidated, Started, Stopped, Swept, TargetOffset, TrialResult,
-    TrialSpec, Trials,
+    CancellationToken, CoreId, Error as MachineError, FrequencyJournal, Machine, ObservedOffset,
+    Partial, Reporter, Running, Smu, SmuValidated, Started, Stopped, Swept, TargetOffset,
+    TrialResult, TrialSpec, Trials,
 };
 
 use crate::support::{Fake, simulator, written};
@@ -31,12 +30,6 @@ use crate::support::{Fake, simulator, written};
 const SCENARIO: &str = "TOGI_RUN_TEST_SCENARIO";
 const DIR: &str = "TOGI_RUN_TEST_DIR";
 const ORDER: &str = "order.log";
-const RELEASE: &str = "release";
-const FALLBACK: &str = "printing events instead";
-/// What the hook prints for the probe panic the cases raise while the dashboard still owns the screen: it holds
-/// the line back until the dashboard has let go, so it comes after the fallback line and only once event lines
-/// flow again.
-const PROBE: &str = "togi: panic on thread probe: the dashboard has let go";
 
 /// What the cases write down in the order it happened, for the parent to read.
 #[derive(Clone)]
@@ -324,145 +317,6 @@ fn watch_the_locks(dir: &Path, order: &Order) {
     });
 }
 
-/// A dashboard whose drawing panics at once.
-struct PanicsAtOnce;
-
-impl togi_cli::dashboard::Surface for PanicsAtOnce {
-    fn draw(
-        &self,
-        _: &Path,
-        _: u64,
-        _: &togi_cli::dashboard::Stop,
-    ) -> Result<(), togi_watch::terminal::Error> {
-        panic!("injected panic in the dashboard\x1b[31m");
-    }
-}
-
-/// Waits until the parent says the dashboard's fallback was seen on stderr.
-fn wait_for_release(dir: &Path) {
-    let release = dir.join(RELEASE);
-    let end = Instant::now() + Duration::from_secs(30);
-    while !release.exists() {
-        assert!(
-            Instant::now() < end,
-            "the fallback to event lines never reached stderr"
-        );
-        thread::sleep(Duration::from_millis(1));
-    }
-}
-
-/// A dashboard that says on stderr when it is told to stop.
-struct SaysWhenItStops;
-
-impl togi_cli::dashboard::Surface for SaysWhenItStops {
-    fn draw(
-        &self,
-        _: &Path,
-        _: u64,
-        stop: &togi_cli::dashboard::Stop,
-    ) -> Result<(), togi_watch::terminal::Error> {
-        stop.wait();
-        let _ = writeln!(std::io::stderr(), "dashboard stopped drawing");
-        Ok(())
-    }
-}
-
-/// A dashboard that draws until `cue`, then fails as a drawing that returns an error does.
-struct FailsOnCue(Arc<AtomicBool>);
-
-impl togi_cli::dashboard::Surface for FailsOnCue {
-    fn draw(
-        &self,
-        _: &Path,
-        _: u64,
-        stop: &togi_cli::dashboard::Stop,
-    ) -> Result<(), togi_watch::terminal::Error> {
-        while !self.0.load(Ordering::SeqCst) {
-            if stop.is_stopped() {
-                return Ok(());
-            }
-            thread::sleep(Duration::from_millis(1));
-        }
-        Err(togi_watch::terminal::Error::Output(std::io::Error::other(
-            "the dashboard fell over",
-        )))
-    }
-}
-
-/// Fails the dashboard and returns once the parent has seen the probe line, which the hook prints only after
-/// the dashboard has let go of the screen: event lines flow again from then on, and the fallback line is out.
-fn fail_the_dashboard(cue: &AtomicBool, dir: &Path) {
-    let probe = thread::Builder::new()
-        .name("probe".to_owned())
-        .spawn(|| panic!("the dashboard has let go"))
-        .unwrap();
-    assert!(probe.join().is_err());
-    cue.store(true, Ordering::SeqCst);
-    wait_for_release(dir);
-}
-
-/// The kernel log of a run whose dashboard fails once the journal holds `kind`: on the first read after that,
-/// or, with `at_drop`, when the session lets go of the machine, which is after its last event.
-struct FailsTheDashboard {
-    inner: Box<dyn Kernel>,
-    journal: PathBuf,
-    kind: &'static str,
-    at_drop: bool,
-    cue: Arc<AtomicBool>,
-    dir: PathBuf,
-    failed: bool,
-}
-
-impl FailsTheDashboard {
-    fn fail_if_the_journal_holds_the_kind(&mut self) {
-        if self.failed {
-            return;
-        }
-        let text = fs::read_to_string(&self.journal).unwrap_or_default();
-        if text.contains(self.kind) {
-            self.failed = true;
-            fail_the_dashboard(&self.cue, &self.dir);
-        }
-    }
-}
-
-impl Drop for FailsTheDashboard {
-    fn drop(&mut self) {
-        if self.at_drop {
-            self.fail_if_the_journal_holds_the_kind();
-        }
-    }
-}
-
-impl Kernel for FailsTheDashboard {
-    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
-        self.inner.mces(boot, since)
-    }
-
-    fn read_mces(
-        &mut self,
-        boot: &BootId,
-        after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<KernelRead>> {
-        if !self.at_drop {
-            self.fail_if_the_journal_holds_the_kind();
-        }
-        self.inner.read_mces(boot, after)
-    }
-
-    fn reset_reason(&mut self, boot: &BootId) -> Result<ResetReason, MachineError> {
-        self.inner.reset_reason(boot)
-    }
-
-    fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, MachineError> {
-        self.inner.reset_reason_after(boot)
-    }
-
-    fn saved_pstore(&mut self, boot: &BootId) -> Result<Option<PstoreRecord>, MachineError> {
-        self.inner.saved_pstore(boot)
-    }
-}
-
 /// The soft limit on file sizes the process had before [`refuse_journal_growth`] lowered it.
 static FSIZE: OnceLock<rustix::process::Rlimit> = OnceLock::new();
 
@@ -556,7 +410,7 @@ fn real_process_helper() {
                         .name("test-worker".to_owned())
                         .spawn(|| {
                             panic::catch_unwind(AssertUnwindSafe(|| {
-                                panic!("injected panic a worker thread contains")
+                                panic!("injected panic a worker thread contains \x1b[31m")
                             }))
                         })
                         .unwrap();
@@ -592,53 +446,12 @@ fn real_process_helper() {
                 ..machine
             });
         }
-        "dashboard" => {
-            fake.interactive = true;
-            fake.surface = Arc::new(PanicsAtOnce);
-            let dir = dir.clone();
-            fake.wrap = Box::new(move |machine, _| {
-                let dir = dir.clone();
-                let action: Box<dyn FnMut()> = Box::new(move || {
-                    wait_for_release(&dir);
-                    interrupt();
-                });
-                logging(machine, &order, Some(action))
-            });
-        }
         "journal_failure" => {
-            fake.interactive = true;
-            fake.surface = Arc::new(SaysWhenItStops);
             let journal = dir.join("state/events.jsonl");
             fake.wrap = Box::new(move |machine, _| {
                 let journal = journal.clone();
                 let action: Box<dyn FnMut()> = Box::new(move || refuse_journal_growth(&journal));
                 logging(machine, &order, Some(action))
-            });
-        }
-        "fallback_between_the_closing_events" | "fallback_after_the_closing_events" => {
-            let after = scenario == "fallback_after_the_closing_events";
-            let cue = Arc::new(AtomicBool::new(false));
-            fake.interactive = true;
-            fake.surface = Arc::new(FailsOnCue(Arc::clone(&cue)));
-            let dir = dir.clone();
-            fake.wrap = Box::new(move |machine, _| {
-                let machine = logging(machine, &order, Some(Box::new(interrupt)));
-                Machine {
-                    kernel: Box::new(FailsTheDashboard {
-                        inner: machine.kernel,
-                        journal: dir.join("state/events.jsonl"),
-                        kind: if after {
-                            "\"kind\":\"shutdown\""
-                        } else {
-                            "\"kind\":\"profile.restored\""
-                        },
-                        at_drop: after,
-                        cue: Arc::clone(&cue),
-                        dir: dir.clone(),
-                        failed: false,
-                    }),
-                    ..machine
-                }
             });
         }
         other => panic!("unknown scenario {other}"),
@@ -703,14 +516,6 @@ impl Child {
             .unwrap_or_else(|| panic!("no line with {needle:?}: {}", self.stderr))
     }
 
-    /// The index of the last stderr line containing `needle`.
-    fn last_at(&self, needle: &str) -> usize {
-        self.lines()
-            .iter()
-            .rposition(|line| line.contains(needle))
-            .unwrap_or_else(|| panic!("no line with {needle:?}: {}", self.stderr))
-    }
-
     fn count(&self, needle: &str) -> usize {
         self.lines()
             .iter()
@@ -744,37 +549,6 @@ fn run(scenario: &str) -> Child {
     Child {
         status: output.status.code(),
         stderr: String::from_utf8(output.stderr).unwrap(),
-        dir,
-    }
-}
-
-/// Runs a scenario that waits for the parent to see `line` on stderr before it goes on, so everything the child
-/// prints after that line was printed while the session was still running.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "real_process tests coordinate the panic scenario child"
-)]
-fn run_released_by(scenario: &str, line: &str) -> Child {
-    let dir = TempDir::new().unwrap();
-    let mut child = command(scenario, dir.path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut stderr = String::new();
-    let mut released = false;
-    for text in BufReader::new(child.stderr.take().unwrap()).lines() {
-        let text = text.unwrap();
-        if !released && text.contains(line) {
-            released = true;
-            fs::write(dir.path().join(RELEASE), "").unwrap();
-        }
-        stderr.push_str(&text);
-        stderr.push('\n');
-    }
-    Child {
-        status: child.wait().unwrap().code(),
-        stderr,
         dir,
     }
 }
@@ -857,11 +631,12 @@ fn real_process_a_panic_whose_teardown_cannot_be_confirmed_reports_it_and_the_de
 fn real_process_a_panic_a_worker_thread_contains_does_not_end_the_run() {
     let child = run("contained_worker");
     assert_eq!(child.status, Some(0), "{}", child.stderr);
-    assert!(
-        child
-            .stderr
-            .contains("togi: panic on thread test-worker: injected panic a worker thread contains"),
-        "the panic is reported even when its thread catches it: {}",
+    assert_eq!(
+        child.count(
+            "togi: panic on thread test-worker: injected panic a worker thread contains \\x1b[31m"
+        ),
+        1,
+        "the escaped panic is reported once even when its thread catches it: {}",
         child.stderr
     );
     assert!(
@@ -916,84 +691,6 @@ fn real_process_a_worker_that_dies_of_a_panic_ends_the_run_through_the_owner_not
 }
 
 #[test]
-fn real_process_a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run_goes_on() {
-    let child = run_released_by("dashboard", FALLBACK);
-    assert_eq!(child.status, Some(0), "{}", child.stderr);
-    assert!(
-        child.stderr.contains(
-            "togi run: dashboard: injected panic in the dashboard\\x1b[31m; printing events instead"
-        ),
-        "{}",
-        child.stderr
-    );
-    // The first nonzero mapping preparation waits for the fallback line, then stops. Its completed application
-    // and everything after it came after the fallback. A profile.applied line is not part of the clean-stop
-    // summary, so only the event gate can have printed it.
-    let fallback = child.at(FALLBACK);
-    let ended = child
-        .events()
-        .iter()
-        .filter(|kind| **kind == EventKind::ProfileApplied)
-        .count();
-    assert!(ended > 0, "{}", child.stderr);
-    assert_eq!(child.count(" profile.applied "), ended, "{}", child.stderr);
-    assert!(
-        fallback < child.last_at(" profile.applied "),
-        "{}",
-        child.stderr
-    );
-    assert_eq!(child.count(" profile.restored "), 1, "{}", child.stderr);
-    assert!(
-        fallback < child.at(" profile.restored "),
-        "{}",
-        child.stderr
-    );
-    assert_eq!(child.count(" shutdown "), 1, "{}", child.stderr);
-    assert!(fallback < child.at(" shutdown "), "{}", child.stderr);
-    assert!(child.events().contains(&EventKind::Shutdown));
-}
-
-#[test]
-fn real_process_a_dashboard_that_gives_way_between_the_restoration_and_the_shutdown_shows_each_closing_line_once()
- {
-    let child = run_released_by("fallback_between_the_closing_events", PROBE);
-    assert_eq!(child.status, Some(0), "{}", child.stderr);
-    // The restoration was recorded while the dashboard still showed, so the gate dropped its line and the run
-    // prints it when it ends; the shutdown came after the fallback, so the gate printed it.
-    assert_eq!(child.count(" profile.restored "), 1, "{}", child.stderr);
-    assert_eq!(child.count(" shutdown "), 1, "{}", child.stderr);
-    let fallback = child.at(FALLBACK);
-    assert!(
-        fallback < child.at(" profile.restored "),
-        "{}",
-        child.stderr
-    );
-    assert!(fallback < child.at(" shutdown "), "{}", child.stderr);
-    let events = child.events();
-    assert!(events.contains(&EventKind::ProfileRestored), "{events:?}");
-    assert!(events.contains(&EventKind::Shutdown), "{events:?}");
-}
-
-#[test]
-fn real_process_a_dashboard_that_gives_way_after_the_last_event_shows_both_closing_lines_once_in_order()
- {
-    let child = run_released_by("fallback_after_the_closing_events", PROBE);
-    assert_eq!(child.status, Some(0), "{}", child.stderr);
-    assert_eq!(child.count(" profile.restored "), 1, "{}", child.stderr);
-    assert_eq!(child.count(" shutdown "), 1, "{}", child.stderr);
-    assert!(
-        child.at(FALLBACK) < child.at(" profile.restored "),
-        "{}",
-        child.stderr
-    );
-    assert!(
-        child.at(" profile.restored ") < child.at(" shutdown "),
-        "{}",
-        child.stderr
-    );
-}
-
-#[test]
 fn real_process_a_panic_closes_the_journal_before_the_host_lock_is_released() {
     let child = run("lock_order");
     assert_eq!(child.status, Some(2), "{}", child.stderr);
@@ -1020,14 +717,13 @@ fn real_process_a_panic_closes_the_journal_before_the_host_lock_is_released() {
 }
 
 #[test]
-fn real_process_the_emergency_report_of_a_journal_failure_is_printed_after_the_dashboard_stopped_drawing()
- {
+fn real_process_a_journal_failure_reports_verified_emergency_zeroing() {
     let child = run("journal_failure");
     assert_eq!(child.status, Some(1), "{}", child.stderr);
     let report = child.at("every core set to CO 0 without an intent (readback all 0)");
     assert!(
-        child.at("dashboard stopped drawing") < report,
-        "the report reached the screen the dashboard still owned: {}",
+        report < child.at("togi run: journal write: journal write failed"),
+        "{}",
         child.stderr
     );
     assert_eq!(child.count("journal write failed"), 2, "{}", child.stderr);

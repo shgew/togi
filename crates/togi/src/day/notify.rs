@@ -401,14 +401,12 @@ mod tests {
     use std::os::unix::process::ExitStatusExt as _;
     use std::path::Path;
     use std::process::ExitStatus;
-    use std::sync::Arc;
 
     use togi_command::Output;
     use togi_hostlock::{HostLock, Policy};
     use togi_machine::BootId;
     use togi_render::OutputFacts;
 
-    use crate::dashboard::Surface;
     use crate::system::System;
 
     #[derive(Debug, PartialEq)]
@@ -642,10 +640,6 @@ mod tests {
 
         fn stderr(&self) -> Box<dyn std::io::Write> {
             Box::new(std::io::sink())
-        }
-
-        fn surface(&self) -> Arc<dyn Surface> {
-            panic!("notify draws no dashboard")
         }
     }
 

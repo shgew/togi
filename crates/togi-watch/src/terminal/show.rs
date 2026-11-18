@@ -1210,7 +1210,7 @@ mod tests {
 
             local(async {
                 let journal = MemoryJournal::new();
-                let source = Rc::new(RefCell::new(Source::memory(&journal, None)));
+                let source = Rc::new(RefCell::new(Source::memory(&journal)));
                 source.borrow_mut().reload();
                 let recorder = Recorder::new(160, 40);
                 let (events, mut queue) = mpsc::unbounded_channel();
@@ -1240,7 +1240,6 @@ mod tests {
                             let mut source = frame_source.borrow_mut();
                             let text = match source.journal(screen) {
                                 crate::screen::Journal::Missing => "no session yet".to_owned(),
-                                crate::screen::Journal::Starting => "starting".to_owned(),
                                 crate::screen::Journal::Problem(error) => {
                                     togi_render::error_chain(error)
                                 }

@@ -4,7 +4,7 @@ use std::process::Command;
 use jiff::Timestamp;
 use togi_render::open_pty;
 
-use super::{Real, System, both_terminals};
+use super::{Real, System, both_terminals, discard_typed_ahead};
 
 const HELPER: &str = "system::tests::real_process_zone_helper";
 const MARK: &str = "TOGI_ZONE_TEST_MARK";
@@ -22,6 +22,27 @@ fn real_fs_a_character_device_that_is_not_a_terminal_is_not_a_terminal() {
 fn real_fs_two_terminals_are_interactive() {
     let (_master, slave) = open_pty().unwrap();
     assert!(both_terminals(&slave, &slave));
+}
+
+#[test]
+fn real_fs_typed_ahead_input_is_dropped() {
+    use std::os::fd::AsFd as _;
+
+    use rustix::event::{PollFd, PollFlags, Timespec, poll};
+
+    let (master, slave) = open_pty().unwrap();
+    rustix::io::write(&master, b"typed\n").unwrap();
+    let readable = || {
+        let mut fds = [PollFd::new(&slave, PollFlags::IN)];
+        let none = Timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        poll(&mut fds, Some(&none)).unwrap() > 0
+    };
+    assert!(readable(), "the typed bytes reach the terminal input");
+    discard_typed_ahead(slave.as_fd());
+    assert!(!readable(), "nothing typed before the question remains");
 }
 
 /// The helper: prints the offset `Real.zone()` has at the epoch, between marks, when a test started

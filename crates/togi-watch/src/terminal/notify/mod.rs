@@ -1,8 +1,7 @@
 //! Telling the loop that the journal changed.
 //!
-//! On Linux the journal is watched with inotify; elsewhere it is polled once a second. Either way, a change is
-//! delivered as [`Event::Changed`], and the next one only after the loop has acknowledged the reload for it, so
-//! changes and reloads alternate one to one.
+//! On Linux the journal is watched with inotify. A change is delivered as [`Event::Changed`], and the next
+//! one only after the loop has acknowledged the reload for it, so changes and reloads alternate one to one.
 
 use std::time::Duration;
 
@@ -12,7 +11,7 @@ use super::{Event, WatchError};
 
 #[cfg(target_os = "linux")]
 pub(super) mod linux;
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(not(target_os = "linux"), test))]
 pub(super) mod other;
 
 #[cfg(target_os = "linux")]

@@ -213,7 +213,6 @@ fn a_one_frame_print_with_no_colour_styles_no_cell(staged: Staged) {
 }
 
 #[test_case::test_case(&Journal::Missing; "missing")]
-#[test_case::test_case(&Journal::Starting; "starting")]
 #[test_case::test_case(&Journal::Problem(&std::io::Error::other("read journal: permission denied")); "problem")]
 fn an_unavailable_journal_print_with_no_colour_styles_no_cell(journal: &Journal<'_>) {
     let at = Staged::Mapping.hand().now;

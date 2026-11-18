@@ -98,7 +98,7 @@ fn destination_opens_the_existing_journal_without_starting_another_session() {
     journal.close().unwrap();
 }
 
-#[test_case::test_case(&["run", "--no-tui"] ; "run")]
+#[test_case::test_case(&["run"] ; "run")]
 #[test_case::test_case(&["reset", "--all"] ; "reset")]
 fn tuning_writers_cannot_start_while_day_owns_both_locks(args: &[&str]) {
     let host = support::Host::new();

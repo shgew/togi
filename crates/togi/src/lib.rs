@@ -33,7 +33,6 @@
 pub mod args;
 pub mod cli;
 pub mod completion;
-pub mod dashboard;
 pub mod day;
 pub mod day_destination;
 pub mod doctor;
