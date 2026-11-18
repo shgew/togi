@@ -532,6 +532,11 @@ pub(crate) fn assert_day_chain(
         !transactions.is_empty(),
         "day application has no transactions"
     );
+    enum Write {
+        Pending(Seq),
+        Verified(Seq),
+    }
+
     let mut intent = None;
     let mut write = None;
     let mut observed = PerCore::default();
@@ -545,14 +550,20 @@ pub(crate) fn assert_day_chain(
         }
         if let Payload::SmuIntent(record) = &event.payload {
             assert!(intent.is_none());
+            assert!(
+                !matches!(write, Some(Write::Pending(_))),
+                "day write has no readback before the next intent"
+            );
             intent = Some((event.seq, record.command()));
         } else if let Payload::SmuWrite(record) = &event.payload {
             let (seq, command) = intent.take().unwrap();
             assert_eq!(event.cause, [seq]);
             assert_eq!(record.command(), command);
-            write = Some(event.seq);
+            write = Some(Write::Pending(event.seq));
         } else if let Payload::SmuReadback(record) = &event.payload {
-            assert_eq!(event.cause, [write.unwrap()]);
+            let (Write::Pending(seq) | Write::Verified(seq)) = write.unwrap();
+            assert_eq!(event.cause, [seq]);
+            write = Some(Write::Verified(seq));
             assert_eq!(
                 Some(record.offset),
                 record.expected.map(TargetOffset::observed)
@@ -563,7 +574,10 @@ pub(crate) fn assert_day_chain(
         }
     }
     assert!(intent.is_none());
-    assert!(write.is_some());
+    assert!(
+        matches!(write, Some(Write::Verified(_))),
+        "day chain must end with a write that was read back"
+    );
     assert_eq!(&observed, readbacks);
     assert_eq!(
         observed,
