@@ -41,7 +41,7 @@ pub(super) struct DayView {
     pub(super) meta: HashMap<EventId, EventMeta>,
 }
 
-/// The CPU evidence of a live machine check (`docs/spec/tuner.md`, Live faults and load mix): an
+/// The CPU evidence of a live machine check (`docs/spec/tuner.md`, Live faults): an
 /// uncorrected one is CPU-suspect whatever its bank, a corrected one only when its decoded bank is
 /// core-local (`docs/spec/workloads.md`, MCE bank classification). A shared or unknown bank (L3,
 /// memory controller, data fabric) is not core-local even when a reporting core is known, and a

@@ -21,9 +21,9 @@ use tempfile::TempDir;
 use togi_journal::EventKind;
 use togi_machine::{
     BootId, CancellationToken, CoreId, Error as MachineError, FrequencyJournal, Kernel,
-    KernelCursor, KernelRead, Machine, Mce, ObservedOffset, Partial, PstoreRecord, Reporter,
-    ResetReason, Running, Smu, SmuValidated, Started, Stopped, Swept, TargetOffset, TrialResult,
-    TrialSpec, Trials,
+    KernelCursor, KernelRead, Machine, Mce, ObservedOffset, Partial, Reporter, ResetReason,
+    Running, Smu, SmuValidated, Started, Stopped, Swept, TargetOffset, TrialResult, TrialSpec,
+    Trials,
 };
 
 use crate::support::{Fake, simulator, written};
@@ -456,10 +456,6 @@ impl Kernel for FailsTheDashboard {
 
     fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, MachineError> {
         self.inner.reset_reason_after(boot)
-    }
-
-    fn saved_pstore(&mut self, boot: &BootId) -> Result<Option<PstoreRecord>, MachineError> {
-        self.inner.saved_pstore(boot)
     }
 }
 

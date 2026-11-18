@@ -1104,13 +1104,6 @@ impl togi_machine::Kernel for MonotonicKernel {
     ) -> Result<togi_machine::ResetReason, togi_machine::Error> {
         self.inner.reset_reason_after(boot)
     }
-
-    fn saved_pstore(
-        &mut self,
-        boot: &togi_machine::BootId,
-    ) -> Result<Option<togi_machine::PstoreRecord>, togi_machine::Error> {
-        self.inner.saved_pstore(boot)
-    }
 }
 
 #[test_case::test_case(-1, false; "below")]
@@ -1884,12 +1877,5 @@ impl togi_machine::Kernel for TeardownKernel {
         boot: &togi_machine::BootId,
     ) -> Result<togi_machine::ResetReason, togi_machine::Error> {
         self.inner.reset_reason_after(boot)
-    }
-
-    fn saved_pstore(
-        &mut self,
-        boot: &togi_machine::BootId,
-    ) -> Result<Option<togi_machine::PstoreRecord>, togi_machine::Error> {
-        self.inner.saved_pstore(boot)
     }
 }

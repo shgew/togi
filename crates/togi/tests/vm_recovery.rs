@@ -49,9 +49,9 @@ mod vm_recovery {
     use togi_machine::{
         BiosContext, BootId, CancellationToken, CcdId, Check, Clock, Condition, CoreId, CoreInfo,
         CoreRank, CpuId, Error, Host, Kernel, KernelCursor, KernelRead, Machine, Mce,
-        ObservedOffset, Partial, PerCore, PstoreRecord, Regime, Reporter, ResetReason, Running,
-        Signal, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialRole,
-        TrialSpec, Trials, Workload, pick_workload,
+        ObservedOffset, Partial, PerCore, Regime, Reporter, ResetReason, Running, Signal, Smu,
+        SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialRole, TrialSpec, Trials,
+        Workload, pick_workload,
     };
     use togi_render::OutputFacts;
     use togi_trial::{BackendIdentity, Backends, Options, Runner};
@@ -332,10 +332,6 @@ mod vm_recovery {
         fn reset_reason_after(&mut self, _: &BootId) -> Result<ResetReason, Error> {
             Err(other("the VM has no kernel log reader"))
         }
-
-        fn saved_pstore(&mut self, _: &BootId) -> Result<Option<PstoreRecord>, Error> {
-            Err(other("the VM has no kernel log reader"))
-        }
     }
 
     /// Day observation over the fake SMU, with the production kernel-log reader for successor evidence. A VM whose
@@ -470,13 +466,6 @@ mod vm_recovery {
                     value: KernelRead::default(),
                     error: other("the VM has no kernel log reader"),
                 }),
-            }
-        }
-
-        fn cpu_times(&mut self) -> Result<Vec<togi_machine::CpuTime>, Error> {
-            match &self.kernel {
-                Some(kernel) => Ok(kernel.read_cpu_times()?),
-                None => Err(other("the VM has no kernel log reader")),
             }
         }
     }

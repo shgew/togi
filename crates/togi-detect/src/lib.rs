@@ -1,14 +1,11 @@
 //! Kernel evidence: [`Kernel`] reads boot history, machine-check errors and reset reasons through
-//! journalctl and pstore, and per-CPU scheduler times from `/proc/stat`; [`parse`] decodes kernel messages and
-//! [`boot_id`] reads the current boot id.
+//! journalctl; [`parse`] decodes kernel messages and [`boot_id`] reads the current boot id.
 
 mod boot;
-mod cpu_times;
 mod error;
 mod fault;
 mod journal;
 mod parse;
-mod pstore;
 mod reset;
 mod runner;
 mod tail;
@@ -19,17 +16,15 @@ mod tests;
 use std::time::Duration;
 
 use togi_machine::{
-    BootId, CoreInfo, CpuTime, EndEvidence, KernelCursor, KernelRead, KernelTail, Mce, MceCount,
-    Partial, PstoreRecord, ResetReason, SleepMode,
+    BootId, CoreInfo, EndEvidence, KernelCursor, KernelRead, KernelTail, Mce, MceCount, Partial,
+    ResetReason, SleepMode,
 };
 
 pub use boot::boot_id;
-pub use cpu_times::{CpuTimesError, cpu_times};
 pub use error::{BootIdError, Error, Operation};
 pub use fault::{FaultNumberError, FaultParseFailure, kernel_errors, process_faults};
 pub use journal::DecodeError;
 pub use parse::{CpuCoreMap, DuplicateCpu, Message, ParseFailure, StatusError, parse};
-pub use pstore::{Access, PstoreError, Unsafe};
 pub use reset::VersionError;
 
 use boot::JournalBoot;
@@ -37,48 +32,30 @@ use journal::{
     Edge, ExitRules, IntervalError, boot_entries, boots_args, boundary_args, interval_args,
     mce_messages, mces_args, position, read_interval, reset_args, reset_texts, tail_args,
 };
-use pstore::{Archive, BootSpan, Directory, PSTORE_DIR};
 use reset::ResetScan;
 use runner::{JOURNALCTL_BUDGET, Journal, Journalctl, Process};
 
-#[cfg(test)]
-type PstoreReader = dyn Fn(&Kernel, &JournalBoot) -> Result<Option<PstoreRecord>, Error> + Send;
-
-enum PstoreSource {
-    System,
-    #[cfg(test)]
-    Injected(Box<PstoreReader>),
-}
-
-/// Kernel-log evidence of a machine's boots, read through `journalctl` and the pstore archive.
+/// Kernel-log evidence of a machine's boots, read through `journalctl`.
 pub struct Kernel {
     cores: CpuCoreMap,
     journalctl: Box<dyn Journalctl>,
     budget: Duration,
-    pstore: PstoreSource,
 }
 
 impl Kernel {
     pub fn new(topology: &[CoreInfo]) -> Result<Self, DuplicateCpu> {
-        Self::with_parts(
-            topology,
-            Box::new(Process::system()),
-            JOURNALCTL_BUDGET,
-            PstoreSource::System,
-        )
+        Self::with_parts(topology, Box::new(Process::system()), JOURNALCTL_BUDGET)
     }
 
     fn with_parts(
         topology: &[CoreInfo],
         journalctl: Box<dyn Journalctl>,
         budget: Duration,
-        pstore: PstoreSource,
     ) -> Result<Self, DuplicateCpu> {
         Ok(Self {
             cores: CpuCoreMap::new(topology)?,
             journalctl,
             budget,
-            pstore,
         })
     }
 
@@ -102,15 +79,6 @@ impl Kernel {
             tail,
             asleep,
         }
-    }
-
-    /// Every logical CPU's cumulative scheduler time, read from `/proc/stat`.
-    ///
-    /// # Errors
-    /// Returns an error when the file cannot be read or a CPU line cannot be decoded.
-    pub fn read_cpu_times(&self) -> Result<Vec<CpuTime>, Error> {
-        let stat = std::fs::read_to_string("/proc/stat").map_err(Error::CpuTimes)?;
-        cpu_times(&stat).map_err(Error::CpuTimesFormat)
     }
 
     fn journal(&self) -> Journal<'_> {
@@ -330,43 +298,6 @@ impl Kernel {
             .map_err(|source| Self::decode_failure(&operation, source))?
             .ok_or(Error::BootMissing)
     }
-
-    fn read_saved_pstore(&self, boot: &JournalBoot) -> Result<Option<PstoreRecord>, Error> {
-        match &self.pstore {
-            PstoreSource::System => Self::saved_from_archive(
-                Archive::open(std::path::Path::new(PSTORE_DIR))?,
-                self,
-                boot,
-            ),
-            #[cfg(test)]
-            PstoreSource::Injected(read) => read(self, boot),
-        }
-    }
-
-    fn saved_from_archive<D: Directory>(
-        archive: Option<Archive<D>>,
-        kernel: &Self,
-        boot: &JournalBoot,
-    ) -> Result<Option<PstoreRecord>, Error> {
-        let Some(archive) = archive else {
-            return Ok(None);
-        };
-        let journal = kernel.journal();
-        let operation = Operation::ListBoots;
-        let out = journal.query(&operation, &boots_args(), ExitRules::PLAIN)?;
-        let boots =
-            boot_entries(&out).map_err(|source| Self::decode_failure(&operation, source.into()))?;
-        let Some(span) = BootSpan::of(&boots, boot) else {
-            return Ok(None);
-        };
-        let Some(dump) = archive.newest_dump(span)? else {
-            return Ok(None);
-        };
-        Ok(Some(PstoreRecord {
-            path: dump.path().to_string_lossy().into_owned(),
-            lines: dump.tail()?,
-        }))
-    }
 }
 
 impl togi_machine::Kernel for Kernel {
@@ -435,11 +366,6 @@ impl togi_machine::Kernel for Kernel {
     fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, togi_machine::Error> {
         let boot = JournalBoot::parse(boot.as_str())?;
         Ok(self.read_reset_reason_after(&boot)?)
-    }
-
-    fn saved_pstore(&mut self, boot: &BootId) -> Result<Option<PstoreRecord>, togi_machine::Error> {
-        let boot = JournalBoot::parse(boot.as_str())?;
-        Ok(self.read_saved_pstore(&boot)?)
     }
 }
 

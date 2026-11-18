@@ -3,7 +3,6 @@ mod deadline;
 mod decode;
 mod kernel;
 mod parse;
-mod pstore;
 mod reset;
 mod support;
 mod tail;

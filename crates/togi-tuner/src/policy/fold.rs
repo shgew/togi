@@ -484,9 +484,8 @@ impl State {
         });
     }
 
-    /// A live fault: only a machine check can be CPU evidence (`docs/spec/tuner.md`, Live faults and
-    /// load mix); kernel errors and traps stay raw journal evidence. One per boot and fault identity,
-    /// whether observed or imported.
+    /// A live fault: only a machine check can be CPU evidence. Kernel errors and traps stay raw journal
+    /// evidence. One per boot and fault identity, whether observed or imported.
     fn live_fault(
         &mut self,
         seq: Seq,

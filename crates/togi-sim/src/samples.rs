@@ -58,19 +58,14 @@ impl LastTrial {
     pub(crate) fn conditions(&self) -> Conditions {
         let mut core_mhz = PerCore::default();
         let pm_table = self.voltage.as_ref().map(|state| {
-            let mut pm = PmTable {
-                voltage_request_v: state.requests,
-                ..PmTable::default()
-            };
             for core in self.cores {
                 let mhz = state.clocks[core.index() / CCD_SIZE];
                 core_mhz.set(core, i64::from(mhz));
-                pm.c0_pct[core.index()] = 100.0;
             }
-            for (cc6, c0) in pm.cc6_pct.iter_mut().zip(pm.c0_pct) {
-                *cc6 = 100.0 - c0;
+            PmTable {
+                voltage_request_v: state.requests,
+                ..PmTable::default()
             }
-            pm
         });
         Conditions {
             trial: self.clone(),

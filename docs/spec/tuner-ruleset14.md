@@ -118,7 +118,7 @@ Status and the evidence view must distinguish:
 - hold hours, phase, finish/hold reason, latest step and its history witnesses;
 - `permission: experimental hold + exact night qualification`, not `S certifies this step`;
 - machine learning allowance consumed/remaining, provisional count, subsequently reclassified count, and every post-finish event;
-- observed total daily crashes/hours beside CO-0 totals and load mix, with unknown intervals, provenance and firmware context.
+- observed total daily crashes/hours beside CO-0 totals, with unknown intervals, provenance and firmware context.
 
 Use **`experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`**, for example `experimental: 50 clean hours; at most 1 crash per 17 h (95%, fixed-rate model)`, not “stable” or “meets your goal.” At zero failures, the pointwise one-sided 95% Poisson upper rate is `−ln(0.05)/T`; the displayed reciprocal X is `T/2.9957`, with T in compatible current-profile observed hours. Approximately **8,988 crash-free hours**, conventionally rounded to **9,000**, are needed to support 1/3,000 h under that model: about **3.1 years at eight observed hours/day**. **[INFERENCE: model arithmetic; neither a hardware prediction nor a simultaneous lifelong/adaptive confidence guarantee.]** Fifty hours are a permission hold, about a 1/17 h upper bound, not rare-event proof.
 

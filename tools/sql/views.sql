@@ -134,7 +134,7 @@ from read_json(
         core_mhz: 'MAP(INTEGER, BIGINT)',
         worker_cpu_ms: 'MAP(INTEGER, BIGINT)',
         package_power_w: 'DOUBLE',
-        pm_table: 'STRUCT(power_w DOUBLE[], voltage_request_v DOUBLE[], temperature_c DOUBLE[], c0_pct DOUBLE[], cc1_pct DOUBLE[], cc6_pct DOUBLE[])'
+        pm_table: 'STRUCT(power_w DOUBLE[], voltage_request_v DOUBLE[], temperature_c DOUBLE[])'
     },
     filename = true,
     ignore_errors = true
@@ -158,9 +158,6 @@ select
     s.pm_table.voltage_request_v[core + 1] as voltage_request_v,
     s.pm_table.power_w[core + 1] as power_w,
     s.pm_table.temperature_c[core + 1] as temperature_c,
-    s.pm_table.c0_pct[core + 1] as c0_pct,
-    s.pm_table.cc1_pct[core + 1] as cc1_pct,
-    s.pm_table.cc6_pct[core + 1] as cc6_pct,
     s.tctl_c,
     s.package_power_w
 from samples s

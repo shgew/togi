@@ -260,7 +260,6 @@ in
             wantedBy = [ "multi-user.target" ];
             after = [
               "systemd-modules-load.service"
-              "systemd-pstore.service"
               "local-fs.target"
             ];
             path = bootTools ++ [ pkgs.util-linux ];
@@ -304,10 +303,7 @@ in
           console.font = lib.mkForce null;
           boot.kernelParams = lib.mkForce (
             lib.filter (p: builtins.match "console=tty[0-9]+(,.*)?" p == null) config.boot.kernelParams
-            ++ [
-              "console=tty3"
-              "printk.always_kmsg_dump=1"
-            ]
+            ++ [ "console=tty3" ]
           );
           systemd.services."getty@tty1".enable = false;
           systemd.services."autovt@tty1".enable = false;

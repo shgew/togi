@@ -210,11 +210,6 @@ impl Crashes<'_, '_> {
             confirmed,
         });
         let stray = kind == CrashKind::Stray;
-        let pstore = self.recovery.kernel.saved_pstore(crashed);
-        if let Err(Error::Crashed) = pstore {
-            return Err(machine(Error::Crashed));
-        }
-        let state = self.state();
         let detected = CrashDetected {
             previous_boot: crashed.clone(),
             in_flight: state.latest_unmatched_intent(crashed),
@@ -223,23 +218,12 @@ impl Crashes<'_, '_> {
             reset_reason: reason.kind,
             reset_reason_raw: reason.raw,
             inconclusive: matches!(kind, CrashKind::Inconclusive | CrashKind::Thermal),
-            pstore: pstore.as_ref().ok().cloned().flatten(),
+            pstore: None,
         };
-        let seq = self
-            .recovery
+        self.recovery
             .appender
             .append(Payload::CrashDetected(detected), &causes)?;
         self.waited = false;
-        if let Err(error) = pstore {
-            self.recovery.appender.append(
-                Payload::SessionWarning(SessionWarning {
-                    operation: "read saved pstore".into(),
-                    trial: None,
-                    error: togi_render::error_chain(&error),
-                }),
-                &[seq],
-            )?;
-        }
         Ok(confirmed)
     }
 

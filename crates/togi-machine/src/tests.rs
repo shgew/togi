@@ -673,14 +673,22 @@ fn trial_conditions_round_trip_and_omit_empty_sensors() {
             power_w: [1.5; 16],
             voltage_request_v: [1.25; 16],
             temperature_c: [60.0; 16],
-            c0_pct: [100.0; 16],
-            cc1_pct: [0.0; 16],
-            cc6_pct: [0.0; 16],
         }),
     };
     let json = serde_json::to_string(&full).unwrap();
     assert_eq!(
         serde_json::from_str::<TrialConditions>(&json).unwrap(),
+        full
+    );
+    let mut legacy = serde_json::to_value(&full).unwrap();
+    assert!(legacy["pm_table"].get("c0_pct").is_none());
+    assert!(legacy["pm_table"].get("cc1_pct").is_none());
+    assert!(legacy["pm_table"].get("cc6_pct").is_none());
+    legacy["pm_table"]["c0_pct"] = serde_json::to_value([100.0; 16]).unwrap();
+    legacy["pm_table"]["cc1_pct"] = serde_json::to_value([0.0; 16]).unwrap();
+    legacy["pm_table"]["cc6_pct"] = serde_json::to_value([0.0; 16]).unwrap();
+    assert_eq!(
+        serde_json::from_value::<TrialConditions>(legacy).unwrap(),
         full
     );
     assert!(

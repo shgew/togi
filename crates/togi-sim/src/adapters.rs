@@ -5,7 +5,7 @@ use std::time::Duration;
 use togi_machine::{
     Backend, BackendCheck, BiosContext, BootId, CancellationToken, CcdId, Check, Clock, CoreId,
     CoreInfo, CoreRank, CpuId, Error, Host, Kernel, KernelCursor, KernelRead, MIN_OFFSET, Mce,
-    ObservedOffset, Partial, PstoreRecord, ResetReason, Smu, SmuValidated, Stopped, TargetOffset,
+    ObservedOffset, Partial, ResetReason, Smu, SmuValidated, Stopped, TargetOffset,
 };
 
 use crate::cores::ids;
@@ -415,10 +415,5 @@ impl Kernel for SimKernel {
         let runtime = self.0.borrow();
         let next = runtime.boot_after(boot).ok_or(Error::BootMissing)?;
         runtime.reason(next).cloned().ok_or(Error::BootMissing)
-    }
-
-    fn saved_pstore(&mut self, _boot: &BootId) -> Result<Option<PstoreRecord>, Error> {
-        self.0.borrow().alive()?;
-        Ok(None)
     }
 }

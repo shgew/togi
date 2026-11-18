@@ -136,10 +136,6 @@ impl ExitRules {
         empty_failure: EmptyFailure::BootMissing,
         cursor_seek: false,
     };
-    pub(crate) const PLAIN: Self = Self {
-        empty_failure: EmptyFailure::Failure,
-        cursor_seek: false,
-    };
 }
 
 /// The one place journalctl's exit status and stderr become a meaning. A query that matched nothing
@@ -441,8 +437,6 @@ impl Interval {
 #[derive(Deserialize)]
 pub(crate) struct BootEntry {
     pub(crate) boot_id: String,
-    #[serde(default)]
-    pub(crate) first_entry: Option<i64>,
 }
 
 pub(crate) fn boot_entries(out: &[u8]) -> Result<Vec<BootEntry>, serde_json::Error> {

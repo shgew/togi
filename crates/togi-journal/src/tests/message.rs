@@ -590,15 +590,11 @@ fn live_fault_messages_name_the_fault_the_time_and_the_profile(
 }
 
 #[test]
-fn a_checkpoint_with_a_load_mix_names_each_share_in_seconds() {
-    let Payload::DayCheckpoint(mut checkpoint) = sample(EventKind::DayCheckpoint) else {
-        unreachable!()
-    };
-    checkpoint.load_mix = crate::LoadMix {
-        single_thread_ms: 1500,
-        all_threads_ms: 62_000,
-        ..crate::LoadMix::default()
-    };
+fn a_historical_load_mix_still_decodes_and_names_each_share_in_seconds() {
+    let checkpoint: crate::DayCheckpoint = serde_json::from_str(
+        r#"{"applied_secs":3600,"load_mix":{"single_thread_ms":1500,"all_threads_ms":62000}}"#,
+    )
+    .unwrap();
     assert_eq!(
         Payload::from(checkpoint).message(),
         "day observer has been active 3600 s in total this boot; sampled load: 1 s single-thread, 0 s light beside busy cores, 62 s all threads, 0 s idle transitions, 0 s quiet, 0 s other"
@@ -624,6 +620,7 @@ fn checkpoints_record_and_describe_the_latest_watchdog_check(counting: bool) {
         watchdog: Some(watchdog.clone()),
     };
     let encoded = serde_json::to_value(&checkpoint).unwrap();
+    assert!(encoded.get("load_mix").is_none());
     assert_eq!(
         encoded["watchdog"],
         serde_json::to_value(&watchdog).unwrap()
@@ -648,10 +645,7 @@ fn an_older_checkpoint_has_no_watchdog_check() {
     assert_eq!(checkpoint.watchdog, None);
     assert_eq!(
         serde_json::to_value(checkpoint).unwrap(),
-        serde_json::json!({"applied_secs":600,"load_mix":{
-            "single_thread_ms":0,"light_beside_busy_ms":0,"all_threads_ms":0,
-            "idle_transition_ms":0,"quiet_ms":0,"other_ms":0
-        }})
+        serde_json::json!({"applied_secs":600})
     );
 }
 

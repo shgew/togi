@@ -13,13 +13,10 @@ use test_case::test_case;
 use togi_machine::{CcdId, CoreInfo, PmTable, PmTableReader};
 
 const VERSION_BYTES: [u8; 4] = [0x05, 0x02, 0x62, 0x00];
-const BLOCKS: [(usize, Lane); 6] = [
+const BLOCKS: [(usize, Lane); 3] = [
     (301, Lane::Power),
     (317, Lane::VoltageRequest),
     (333, Lane::Temperature),
-    (381, Lane::C0),
-    (397, Lane::Cc1),
-    (413, Lane::Cc6),
 ];
 const BUDGET: Duration = Duration::from_millis(100);
 
@@ -31,9 +28,6 @@ fn synthetic() -> (Vec<u8>, PmTable) {
             Lane::Power => &mut table.power_w,
             Lane::VoltageRequest => &mut table.voltage_request_v,
             Lane::Temperature => &mut table.temperature_c,
-            Lane::C0 => &mut table.c0_pct,
-            Lane::Cc1 => &mut table.cc1_pct,
-            Lane::Cc6 => &mut table.cc6_pct,
         };
         for (core, slot) in lanes.iter_mut().enumerate() {
             let value = f32::from(u16::try_from(index + core).unwrap()) / 4.0;
@@ -42,7 +36,7 @@ fn synthetic() -> (Vec<u8>, PmTable) {
             raw[at..at + 4].copy_from_slice(&value.to_le_bytes());
         }
     }
-    for index in 349..=380 {
+    for index in 349..=428 {
         raw[index * 4..index * 4 + 4].copy_from_slice(&f32::NAN.to_le_bytes());
     }
     (raw, table)
@@ -53,11 +47,11 @@ fn put_lane(raw: &mut [u8], index: usize, value: f32) {
 }
 
 #[test]
-fn decode_reads_six_lane_blocks_and_ignores_unknown_fields() {
+fn decode_reads_power_voltage_and_temperature_and_ignores_other_lanes() {
     let (raw, want) = synthetic();
     assert_eq!(decode(&raw).unwrap(), want);
     assert_eq!(want.power_w[0], 301.0 / 4.0);
-    assert_eq!(want.cc6_pct[15], 428.0 / 4.0);
+    assert_eq!(want.temperature_c[15], 348.0 / 4.0);
 }
 
 #[test_case(0; "empty")]

@@ -305,7 +305,6 @@ fn a_crashed_machine_rejects_its_operations_and_does_not_move_its_clock() {
             "reset after",
             machine.kernel.reset_reason_after(&boot).map(drop),
         ),
-        ("pstore", machine.kernel.saved_pstore(&boot).map(drop)),
         (
             "start",
             machine
@@ -601,17 +600,4 @@ fn a_boot_without_a_reset_reports_no_kind_and_a_hold_of_the_power_button_is_its_
     let boot = rig.boot();
     let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
     assert_eq!(reason.kind, Some(ResetKind::PowerButton));
-}
-
-#[test]
-fn saved_pstore_is_always_absent() {
-    let mut rig = Rig::new(&two_cores(), 1);
-    let boot = rig.boot();
-    assert!(
-        rig.machine
-            .kernel
-            .saved_pstore(&boot)
-            .expect("a pstore")
-            .is_none()
-    );
 }

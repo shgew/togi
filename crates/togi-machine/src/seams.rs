@@ -360,18 +360,8 @@ pub struct KernelRead {
     pub cursor: KernelCursor,
 }
 
-/// One logical CPU's cumulative scheduler time, in the kernel's clock ticks since boot. Suspended time adds to
-/// neither count.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CpuTime {
-    pub cpu: CpuId,
-    /// Ticks spent running anything but the idle task (and not waiting for I/O).
-    pub busy: u64,
-    /// Ticks in every state.
-    pub total: u64,
-}
-
 object_only! {
+    /// Saved kernel messages attached by older crash-recovery writers.
     #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct PstoreRecord {
@@ -398,7 +388,6 @@ pub trait Kernel {
     ) -> Result<KernelRead, Partial<KernelRead>>;
     fn reset_reason(&mut self, boot: &BootId) -> Result<ResetReason, Error>;
     fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, Error>;
-    fn saved_pstore(&mut self, boot: &BootId) -> Result<Option<PstoreRecord>, Error>;
 }
 
 /// Machine access bounded by the lifetime of the adapter's authority.
