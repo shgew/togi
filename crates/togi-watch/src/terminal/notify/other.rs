@@ -1,32 +1,46 @@
-//! Journal notifications where inotify is not available: the journal is polled once a second, and the loop's
-//! reload decides whether anything changed.
+//! Live journal watching is unsupported without Linux inotify.
 
 use std::path::Path;
 
-use super::{POLL, Watch};
+use super::Watch;
 use crate::terminal::WatchError;
 
-pub(in crate::terminal) struct Poller;
+#[derive(Debug)]
+pub(in crate::terminal) enum Unsupported {}
 
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "the same signature as the Linux adapter, which can fail"
-)]
-pub(in crate::terminal) fn open(_directory: &Path) -> Result<Poller, WatchError> {
-    Ok(Poller)
+pub(in crate::terminal) fn open(_directory: &Path) -> Result<Unsupported, WatchError> {
+    Err(WatchError {
+        operation: "live watching needs Linux",
+        source: std::io::ErrorKind::Unsupported.into(),
+    })
 }
 
-impl Watch for Poller {
+impl Watch for Unsupported {
     fn polling(&self) -> bool {
-        false
+        match *self {}
     }
 
     fn arm(&mut self) -> Result<(), WatchError> {
-        Ok(())
+        match *self {}
     }
 
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "an unsupported watcher cannot exist"
+    )]
     async fn changed(&mut self) -> Result<(), WatchError> {
-        tokio::time::sleep(POLL).await;
-        Ok(())
+        match *self {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Path, open};
+
+    #[test]
+    fn live_journal_notifications_require_linux() {
+        let error = open(Path::new("state")).unwrap_err();
+        assert_eq!(error.to_string(), "live watching needs Linux");
+        assert_eq!(error.source.kind(), std::io::ErrorKind::Unsupported);
     }
 }

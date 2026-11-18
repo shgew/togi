@@ -39,7 +39,6 @@ mod vm_recovery {
     use jiff::tz::TimeZone;
     use rustix::time::{ClockId, clock_gettime};
     use togi_backend::{Backend, Line, Plan, Ready};
-    use togi_cli::dashboard::Surface;
     use togi_cli::system::{Real, System};
     use togi_config::Config;
     use togi_hardware::day::Observer;
@@ -917,10 +916,6 @@ mod vm_recovery {
 
         fn stderr(&self) -> Box<dyn Write> {
             self.0.stderr()
-        }
-
-        fn surface(&self) -> Arc<dyn Surface> {
-            self.0.surface()
         }
     }
 

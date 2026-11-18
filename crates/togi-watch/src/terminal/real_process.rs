@@ -13,8 +13,6 @@ use std::os::fd::{AsFd as _, OwnedFd};
 use std::os::unix::ffi::OsStringExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
@@ -31,7 +29,7 @@ use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
 use togi_watchtest::{Scenario, install};
 use tokio::signal::unix::{SignalKind, signal};
 
-use super::{Error, Stop, run, run_after, run_after_rendered, run_rendered};
+use super::{run, run_rendered};
 use crate::screen::{Drawn, Hold, Journal, Quit, Screen, View};
 
 /// The full name of the helper test, which is how the test binary is told to run only it.
@@ -57,17 +55,11 @@ fn say(marker: &[u8]) {
     out.flush().unwrap();
 }
 
-/// The helper's frame: each state as a row of one character, the view as a second row, and a third row of how
-/// many signals the caller's own listeners have received, so that the test can tell what is on screen from the
-/// bytes the terminal received.
-fn frame(
-    received: Arc<AtomicUsize>,
-    hold: Hold,
-) -> impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn {
+/// Draws one row per journal state and view, so the tests can identify it in terminal output.
+fn frame(hold: Hold) -> impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn {
     move |journal, screen, _, buf| {
         let state = match journal {
             Journal::Missing => 'M',
-            Journal::Starting => 'S',
             Journal::Problem(_) => 'P',
             Journal::Ready { log, .. } => {
                 char::from_digit(u32::try_from(log.total).unwrap(), 10).unwrap()
@@ -78,73 +70,12 @@ fn frame(
             View::Help => 'b',
             View::Log => 'c',
         };
-        let count = u32::try_from(received.load(Ordering::SeqCst)).unwrap();
-        let count = char::from_digit(count, 10).unwrap();
         for x in 0..buf.area.width {
             buf[(x, 0)].set_char(state);
             buf[(x, 1)].set_char(view);
-            buf[(x, 2)].set_char(count);
         }
         Drawn { scroll: 0, hold }
     }
-}
-
-/// `run_after` as `togi run` uses it: the caller keeps its own listeners for SIGINT, SIGTERM and SIGHUP, counts
-/// what they receive, and stops the dashboard on SIGINT.
-fn integrated(
-    state_dir: &Path,
-    received: &Arc<AtomicUsize>,
-    render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
-) -> Result<(), Error> {
-    let stop = Stop::new();
-    let (listening, ready) = std::sync::mpsc::channel();
-    let (finish, finished) = tokio::sync::oneshot::channel::<()>();
-    let caller = std::thread::spawn({
-        let stop = stop.clone();
-        let received = Arc::clone(received);
-        move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            runtime.block_on(async move {
-                let mut interrupt = signal(SignalKind::interrupt()).unwrap();
-                let mut terminate = signal(SignalKind::terminate()).unwrap();
-                let mut hangup = signal(SignalKind::hangup()).unwrap();
-                listening.send(()).unwrap();
-                let mut finished = finished;
-                loop {
-                    tokio::select! {
-                        _ = interrupt.recv() => {
-                            received.fetch_add(1, Ordering::SeqCst);
-                            stop.stop();
-                        }
-                        _ = terminate.recv() => {
-                            received.fetch_add(1, Ordering::SeqCst);
-                        }
-                        _ = hangup.recv() => {
-                            received.fetch_add(1, Ordering::SeqCst);
-                        }
-                        _ = &mut finished => return,
-                    }
-                }
-            });
-        }
-    });
-    ready.recv().unwrap();
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let outcome = run_after_rendered(
-        state_dir,
-        0,
-        &stop,
-        stdout.as_fd(),
-        Some(stdin.as_fd()),
-        render,
-    );
-    let _ = finish.send(());
-    caller.join().unwrap();
-    outcome
 }
 
 /// After the dashboard: waits for a line on the keyboard, then makes the listener a caller keeps for SIGINT and
@@ -180,7 +111,6 @@ fn real_process_helper() {
     } else {
         Hold::Never
     };
-    let received = Arc::new(AtomicUsize::new(0));
     let once = || {
         let stdin = std::io::stdin();
         let stdout = std::io::stdout();
@@ -190,12 +120,11 @@ fn real_process_helper() {
             Some(stdin.as_fd()),
             Quit::Keys,
             None,
-            frame(Arc::clone(&received), hold),
+            frame(hold),
         )
         .map(|_| ())
     };
     let outcome = match mode.as_str() {
-        "integrated" => integrated(&state_dir, &received, frame(Arc::clone(&received), hold)),
         "frames" => {
             let stdin = std::io::stdin();
             let stdout = std::io::stdout();
@@ -207,17 +136,6 @@ fn real_process_helper() {
                 None,
             )
             .map(|_| ())
-        }
-        "frames_after" => {
-            let stdin = std::io::stdin();
-            let stdout = std::io::stdout();
-            run_after(
-                &state_dir,
-                0,
-                &Stop::new(),
-                stdout.as_fd(),
-                Some(stdin.as_fd()),
-            )
         }
         "twice" => once().and_then(|()| {
             say(SECOND);
@@ -879,62 +797,6 @@ fn real_process_a_wait_still_sees_what_came_in_the_same_read_as_the_previous_mat
 }
 
 #[test]
-fn real_process_run_after_handles_only_sigwinch() {
-    let state = TempDir::new().unwrap();
-    let mut pty = Pty::open(80, 24);
-    let helper = Helper::start(
-        &pty,
-        state.path(),
-        Launch {
-            mode: "integrated",
-            frozen: true,
-            ..PLAIN
-        },
-    );
-    let first = pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'S'));
-    pty.resize(100, 30);
-    helper.signal(Signal::WINCH);
-    pty.wait_for(first, "a frame of the new width", |bytes| {
-        end_of(bytes, &"S".repeat(99).into_bytes())
-    });
-    rustix::io::write(&pty.master, b"q").unwrap();
-    pty.drain();
-    let status = helper.finish();
-    assert_restored(&pty, status, false);
-}
-
-#[test]
-fn real_process_run_after_leaves_sigint_sigterm_and_sighup_to_its_caller() {
-    let state = TempDir::new().unwrap();
-    let mut pty = Pty::open(80, 24);
-    let helper = Helper::start(
-        &pty,
-        state.path(),
-        Launch {
-            mode: "integrated",
-            ..PLAIN
-        },
-    );
-    let mut seen = pty.wait_for(0, "the first frame", |bytes| {
-        state_shown(bytes, 'S')
-            .zip(state_shown(bytes, '0'))
-            .map(|(state, count)| state.max(count))
-    });
-    for (signal, count) in [(Signal::TERM, '1'), (Signal::HUP, '2')] {
-        helper.signal(signal);
-        seen = pty.wait_for(
-            seen,
-            &format!("a frame after {signal:?} counting it at the caller"),
-            |bytes| state_shown(bytes, count),
-        );
-    }
-    helper.signal(Signal::INT);
-    pty.drain();
-    let status = helper.finish();
-    assert_restored(&pty, status, false);
-}
-
-#[test]
 fn real_process_the_helper_does_nothing_unless_started_by_a_test() {
     assert!(std::env::var_os(STATE_DIR).is_none());
 }
@@ -1004,25 +866,6 @@ fn real_process_a_running_trial_redraws_the_dashboard_s_clock() {
         "the clock of a running trial stood still"
     );
     helper.signal(Signal::TERM);
-    pty.drain();
-    let status = helper.finish();
-    assert_restored(&pty, status, false);
-}
-
-#[test]
-fn real_process_run_after_draws_the_dashboard_s_starting_frame() {
-    let state = TempDir::new().unwrap();
-    let mut pty = Pty::open(160, 45);
-    let helper = Helper::start(
-        &pty,
-        state.path(),
-        Launch {
-            mode: "frames_after",
-            ..PLAIN
-        },
-    );
-    pty.wait_for(0, "the starting frame", |bytes| end_of(bytes, b"STARTING"));
-    rustix::io::write(&pty.master, b"q").unwrap();
     pty.drain();
     let status = helper.finish();
     assert_restored(&pty, status, false);

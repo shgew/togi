@@ -21,7 +21,6 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use tempfile::TempDir;
 use togi_cli::Exit;
-use togi_cli::dashboard::Surface;
 use togi_cli::system::System;
 use togi_config::Config;
 use togi_hardware::{Diagnosis, RebootError};
@@ -625,10 +624,6 @@ impl System for Host {
 
     fn stderr(&self) -> Box<dyn Write> {
         panic!("only run keeps a handle on stderr")
-    }
-
-    fn surface(&self) -> Arc<dyn Surface> {
-        panic!("only run draws the dashboard")
     }
 }
 

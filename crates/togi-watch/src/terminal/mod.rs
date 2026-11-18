@@ -267,7 +267,7 @@ fn run_rendered(
     switch: Option<Direction>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<Outcome, Error> {
-    let mut source = Source::new(state_dir, None);
+    let mut source = Source::new(state_dir);
     refuse_foreign(&mut source)?;
     start(
         source,
@@ -295,51 +295,6 @@ fn refuse_foreign(source: &mut Source) -> Result<(), Error> {
         .refusal()
         .map_or(Ok(()), |refusal| Err(refusal.into()))
 }
-
-/// [`run`] for a journal a run is about to append to, which takes its cancellation from the caller. Until the
-/// journal holds an event after sequence number `since`, the last one before the run, the screen says the run is
-/// starting instead of showing what an earlier run left in it. It ends when the viewer quits or `stop` is used,
-/// and leaves SIGINT, SIGTERM and SIGHUP to the caller: it listens only for SIGWINCH.
-pub fn run_after(
-    state_dir: &Path,
-    since: u64,
-    stop: &Stop,
-    out: BorrowedFd<'_>,
-    keys: Option<BorrowedFd<'_>>,
-) -> Result<(), Error> {
-    run_after_rendered(state_dir, since, stop, out, keys, dashboard())
-}
-
-/// [`run_after`] with `render` drawing each frame, as for [`run_rendered`].
-fn run_after_rendered(
-    state_dir: &Path,
-    since: u64,
-    stop: &Stop,
-    out: BorrowedFd<'_>,
-    keys: Option<BorrowedFd<'_>>,
-    render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
-) -> Result<(), Error> {
-    let mut source = Source::new(state_dir, Some(since));
-    refuse_foreign(&mut source)?;
-    start(
-        source,
-        &Config {
-            day_controls: false,
-            watch: Some(state_dir),
-            tick: None,
-            stop: Some(stop),
-            terminating: false,
-            quit: Quit::Keys,
-            switch: None,
-        },
-        out,
-        keys,
-        Timestamp::now,
-        render,
-    )
-    .map(|_| ())
-}
-
 /// The dashboard's frames: [`frames::render`] in the system's time zone.
 fn dashboard() -> impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn {
     let zone = TimeZone::system();
@@ -354,6 +309,11 @@ fn start(
     now: impl Fn() -> Timestamp,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<Outcome, Error> {
+    #[cfg(not(target_os = "linux"))]
+    if let Some(directory) = config.watch {
+        notify::open(directory)?;
+    }
+
     let facts = togi_render::OutputFacts::detect(
         &out,
         std::env::var_os("NO_COLOR").as_deref(),
@@ -544,7 +504,7 @@ pub fn one_frame_in(
     zone: &TimeZone,
 ) -> Result<(), Error> {
     one_frame_loaded(
-        Source::read_in(fs, state_dir, None),
+        Source::read_in(fs, state_dir),
         width,
         height,
         out,
@@ -562,7 +522,7 @@ fn one_frame_with(
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
     one_frame_source(
-        Source::new(state_dir, None),
+        Source::new(state_dir),
         width,
         height,
         out,
@@ -772,7 +732,7 @@ mod tests {
         render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
     ) -> Result<(), Error> {
         one_frame_source(
-            Source::memory(journal, None),
+            Source::memory(journal),
             width,
             height,
             out,
@@ -934,7 +894,7 @@ mod tests {
                     .build()
                     .unwrap(),
                 recorder.backend(),
-                Source::memory(&state, None),
+                Source::memory(&state),
                 &live,
                 Some(read.as_fd()),
                 Colours::None,
@@ -987,7 +947,7 @@ mod tests {
             run_events(
                 &recorder,
                 &live,
-                Source::memory(&state, None),
+                Source::memory(&state),
                 Colours::Console,
                 |journal, screen, now, buf, events| {
                     if !sent {
@@ -1076,7 +1036,7 @@ mod tests {
             run_events(
                 &recorder,
                 &live,
-                Source::memory(&state, None),
+                Source::memory(&state),
                 Colours::None,
                 |journal, screen, now, buf, events| {
                     sizes.push((screen.width, screen.height));
@@ -1117,7 +1077,7 @@ mod tests {
             run_drive(
                 &recorder,
                 &live,
-                Source::memory(&state, None),
+                Source::memory(&state),
                 Colours::None,
                 plain,
             )
@@ -1151,7 +1111,7 @@ mod tests {
             run_drive(
                 &recorder,
                 &live,
-                Source::memory(&state, None),
+                Source::memory(&state),
                 Colours::None,
                 |journal, screen, now, buf| {
                     frames += 1;
@@ -1191,14 +1151,7 @@ mod tests {
                 switch: None,
             };
             assert_eq!(
-                run_drive(
-                    &recorder,
-                    &live,
-                    Source::memory(&state, None),
-                    colours,
-                    plain,
-                )
-                .unwrap(),
+                run_drive(&recorder, &live, Source::memory(&state), colours, plain,).unwrap(),
                 Outcome::Ended
             );
             let raw = recorder.raw();
@@ -1233,7 +1186,7 @@ mod tests {
             run_drive(
                 &recorder,
                 &live,
-                Source::memory(&state, None),
+                Source::memory(&state),
                 Colours::None,
                 |journal, screen, now, buf| {
                     crate::frames::render(journal, screen, now, &jiff::tz::TimeZone::UTC, buf)
@@ -1332,7 +1285,7 @@ mod tests {
         let result = drive_with(
             &timer_runtime(),
             recorder.backend(),
-            Source::memory(&state, None),
+            Source::memory(&state),
             &live,
             None,
             Colours::None,
@@ -1458,7 +1411,6 @@ mod tests {
     fn describe(journal: &Journal<'_>, screen: &Screen, _: Timestamp, buf: &mut Buffer) -> Drawn {
         let words = match journal {
             Journal::Missing => "no session yet".to_owned(),
-            Journal::Starting => "starting".to_owned(),
             Journal::Problem(error) => format!("problem: {}", togi_render::error_chain(error)),
             Journal::Ready { log, .. } => format!("{} events", log.total),
         };
@@ -1647,7 +1599,7 @@ mod tests {
         let error = run_drive(
             &recorder,
             &live,
-            Source::memory(&state, None),
+            Source::memory(&state),
             Colours::None,
             plain,
         )
@@ -1680,7 +1632,7 @@ mod tests {
         let result = run_events(
             &recorder,
             &live,
-            Source::memory(&state, None),
+            Source::memory(&state),
             Colours::None,
             |journal, screen, now, buf, events| {
                 state.write(&super::testing::go_journal());

@@ -380,7 +380,7 @@ Human rendering escapes untrusted controls before adding application-owned styli
 
 The journal's `msg`, other evidence fields, and raw `togi events --json` lines are never sanitized or restyled: the escaped text exists only at human rendering boundaries.
 
-`togi events` renders the journal the same way:
+The internal diagnostic command `togi events` renders the journal the same way:
 
 ```
 togi events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]

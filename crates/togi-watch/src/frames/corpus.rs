@@ -198,7 +198,6 @@ fn states(swept: &mut Swept) {
     for size in SIZES {
         for (name, journal) in [
             ("missing", Journal::Missing),
-            ("starting", Journal::Starting),
             ("problem", Journal::Problem(&unreadable)),
         ] {
             for once in [false, true] {

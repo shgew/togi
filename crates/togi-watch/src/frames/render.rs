@@ -13,7 +13,7 @@ use super::layout::{Layout, SizeClass};
 use super::measure::measure;
 use super::panels::{context_lines, history_panel, log_arrivals, log_body};
 use super::scene::Scene;
-use super::story::{Story, last_lines, narrator_lines, problem_story, starting_story, story};
+use super::story::{Story, last_lines, narrator_lines, problem_story, story};
 use crate::model::Model;
 use crate::screen::{Drawn, Hold, Journal, Log, Screen, View};
 
@@ -49,7 +49,6 @@ pub fn render(
             let scene = Scene::new(model.snapshot(), now, zone, screen.colours);
             folded(&scene, &NO_LOG, screen, buf)
         }
-        Journal::Starting => unfolded(&starting_story(), "starting", screen, now, zone, buf),
         Journal::Problem(error) => unfolded(
             &problem_story(error, screen.one_frame),
             "can't read journal",
